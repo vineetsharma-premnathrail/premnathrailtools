@@ -13,6 +13,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import Select from '@/components/shared/Select'
 
 const DOC_TYPE_LABELS: Record<QualityDocumentType, string> = {
   sop: 'SOP',
@@ -195,11 +196,11 @@ export default function QualityDocumentsPage() {
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ flex: '1 1 160px' }}>
                     <label style={sheetLabel}>Doc Type <Req /></label>
-                    <select style={sheetInput} value={uploadDocType} onChange={(e) => setUploadDocType(e.target.value as QualityDocumentType)}>
+                    <Select style={sheetInput} value={uploadDocType} onChange={(e) => setUploadDocType(e.target.value as QualityDocumentType)}>
                       {(Object.keys(DOC_TYPE_LABELS) as QualityDocumentType[]).map((t) => (
                         <option key={t} value={t}>{DOC_TYPE_LABELS[t]}</option>
                       ))}
-                    </select>
+                    </Select>
                   </div>
                   <div style={{ flex: '0 1 130px' }}>
                     <label style={sheetLabel}>Version</label>
@@ -225,12 +226,12 @@ export default function QualityDocumentsPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <select style={{ ...inputStyle, flex: '0 1 200px' }} value={filterDocType} onChange={(e) => setFilterDocType(e.target.value)}>
+        <Select style={{ ...inputStyle, flex: '0 1 200px' }} value={filterDocType} onChange={(e) => setFilterDocType(e.target.value)}>
           <option value="">All doc types</option>
           {(Object.keys(DOC_TYPE_LABELS) as QualityDocumentType[]).map((t) => (
             <option key={t} value={t}>{DOC_TYPE_LABELS[t]}</option>
           ))}
-        </select>
+        </Select>
         <div style={{ flex: '0 1 280px', minWidth: 220 }}>
           <SearchableSelect
             value={filterStandardId}

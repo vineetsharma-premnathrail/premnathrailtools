@@ -67,6 +67,7 @@ export default function CalcResults({
             </div>
           )}
           {rest.length > 0 && (
+            <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <tbody>
                 {rest.map((r) => (
@@ -78,6 +79,7 @@ export default function CalcResults({
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </>
       )}

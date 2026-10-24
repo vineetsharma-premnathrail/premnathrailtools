@@ -11,6 +11,7 @@ import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheet
 import { ErrorBanner, INSPECTION_TYPE_LABELS, sheetGap } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import Select from '@/components/shared/Select'
 
 interface ItemOpt { id: number; item_code: string; item_name: string; uom?: string }
 
@@ -79,9 +80,9 @@ export default function NewManualLotPage() {
           <ErrorBanner error={error} />
           <SheetSection icon="box" title="Lot">
             <label style={sheetLabel}>Inspection type</label>
-            <select style={sheetInput} value={form.inspection_type} onChange={(e) => setForm({ ...form, inspection_type: e.target.value })}>
+            <Select style={sheetInput} value={form.inspection_type} onChange={(e) => setForm({ ...form, inspection_type: e.target.value })}>
               {MANUAL_TYPES.map((t) => <option key={t} value={t}>{INSPECTION_TYPE_LABELS[t]}</option>)}
-            </select>
+            </Select>
             <label style={{ ...sheetLabel, ...sheetGap }}>Item <Req /></label>
             <SearchableSelect value={form.item_id} onChange={(v) => setForm({ ...form, item_id: v })} placeholder="Search item code / name"
               options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
@@ -109,10 +110,10 @@ export default function NewManualLotPage() {
             {form.take_from_free && (
               <>
                 <label style={{ ...sheetLabel, ...sheetGap }}>Store <Req /></label>
-                <select style={sheetInput} value={form.location_id} onChange={(e) => setForm({ ...form, location_id: e.target.value })}>
+                <Select style={sheetInput} value={form.location_id} onChange={(e) => setForm({ ...form, location_id: e.target.value })}>
                   <option value="">Select store…</option>
                   {locations.map((l) => <option key={l.id} value={l.id}>{l.code} — {l.name}</option>)}
-                </select>
+                </Select>
               </>
             )}
             <p style={sheetHint}>Untick only when the material is not in a store&apos;s Free stock.</p>

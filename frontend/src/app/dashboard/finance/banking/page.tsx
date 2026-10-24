@@ -200,7 +200,7 @@ function BookTab({ accounts, accountId, setAccountId }: { accounts: BankAccount[
         </Field>
         <Field label="From" style={{ flex: '0 1 150px' }} tour="fin-bk-book-from"><DateField value={from} onChange={setFrom} /></Field>
         <Field label="To" style={{ flex: '0 1 150px' }} tour="fin-bk-book-to"><DateField value={to} onChange={setTo} /></Field>
-        <button type="button" data-tour="fin-bk-book-show" style={{ ...primaryBtnStyle, marginBottom: 1 }} onClick={() => load()} disabled={!account || loading}>{loading ? 'Loading…' : 'Show'}</button>
+        <button type="button" data-tour="fin-bk-book-show" style={{ ...primaryBtnStyle }} onClick={() => load()} disabled={!account || loading}>{loading ? 'Loading…' : 'Show'}</button>
       </div>
 
       {data && (
@@ -484,14 +484,14 @@ function ReconciliationTab({ accounts }: { accounts: BankAccount[] }) {
                     <DateField value={clearedDate} onChange={setClearedDate} />
                   </Field>
                   {canEdit && <button type="button" data-tour="fin-bk-brs-match-btn" disabled={busy || selected.length === 0} onClick={matchSelected}
-                    style={{ ...primaryBtnStyle, marginBottom: 1, opacity: busy || selected.length === 0 ? 0.5 : 1 }}>
+                    style={{ ...primaryBtnStyle, opacity: busy || selected.length === 0 ? 0.5 : 1 }}>
                     Mark {selected.length || ''} as Cleared
                   </button>}
                   {selected.length > 0 && <span style={{ fontSize: 12, color: TEXT.secondary, paddingBottom: 9 }}>Net of selected: {inr(selectedTotal)}</span>}
                 </div>
                 {canComplete && <button type="button" data-tour="fin-bk-brs-complete-btn" disabled={busy || !balanced} onClick={() => setConfirmComplete(true)}
                   title={balanced ? '' : 'The difference must be zero before the reconciliation can be completed.'}
-                  style={{ ...primaryBtnStyle, background: '#16a34a', marginBottom: 1, opacity: busy || !balanced ? 0.5 : 1, cursor: busy || !balanced ? 'not-allowed' : 'pointer' }}>
+                  style={{ ...primaryBtnStyle, background: '#16a34a', opacity: busy || !balanced ? 0.5 : 1, cursor: busy || !balanced ? 'not-allowed' : 'pointer' }}>
                   Complete Reconciliation
                 </button>}
               </div>

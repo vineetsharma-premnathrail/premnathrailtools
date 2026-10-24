@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, Eye, PencilSimple, Trash, User, Users, X } from '@phosphor-icons/react'
@@ -8,6 +9,7 @@ import { rndApi } from '@/lib/api'
 import { recordHref } from '@/lib/recordRef'
 import RndNav from '@/components/rnd/RndNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import { btnBase, smallBtnSize, inputStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 
@@ -151,7 +153,7 @@ export default function RndHistoryPage() {
           <button
             data-tour="rnd-hist-admin-toggle"
             onClick={() => { setAdminMode((v) => !v); setSelectedUserId(''); }}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 14px', borderRadius: 8, border: 'none', background: adminMode ? '#7c3aed' : '#fff', color: adminMode ? '#fff' : '#7c3aed', boxShadow: adminMode ? 'none' : '0 1px 3px rgba(0,0,0,0.08)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
+            style={{ ...btnBase, gap: 7, border: '1px solid transparent', background: adminMode ? '#7c3aed' : '#fff', color: adminMode ? '#fff' : '#7c3aed', boxShadow: adminMode ? 'none' : '0 1px 3px rgba(0,0,0,0.08)' }}
           >
             <UserIcon multiple={!adminMode} />
             {adminMode ? 'My History' : 'View All Users'}
@@ -168,7 +170,7 @@ export default function RndHistoryPage() {
       {adminMode && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, background: '#f5f3ff', border: '1px solid #ddd6fe', marginBottom: 14, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11.5, fontWeight: 600, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '.04em' }}>Admin View — All Users</span>
-          <select
+          <Select
             data-tour="rnd-hist-user-filter"
             value={selectedUserId}
             onChange={(e) => setSelectedUserId(e.target.value ? Number(e.target.value) : '')}
@@ -178,12 +180,12 @@ export default function RndHistoryPage() {
             {adminUsers.map((u) => (
               <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
             ))}
-          </select>
+          </Select>
           <span style={{ fontSize: 12, color: '#7c3aed' }}>{records.length} records</span>
         </div>
       )}
 
-      <div data-tour="rnd-hist-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
+      <div data-tour="rnd-hist-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
         <StatCard label="Total Records" value={String(stats.total)} bg="#fff7ed" />
         <StatCard label="Tools Used" value={String(stats.tools)} bg="#f0fdf4" />
         <StatCard label="Latest" value={stats.latest} bg="#eff6ff" />
@@ -228,7 +230,7 @@ export default function RndHistoryPage() {
                       <input
                         autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && confirmRename(r.id)}
-                        style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12.5, width: 180, outline: 'none' }}
+                        style={{ ...inputStyle, padding: '6px 10px', minHeight: 30, fontSize: 12.5, width: 180 }}
                       />
                     ) : (r.calculation_name || '—')}
                   </td>
@@ -275,7 +277,7 @@ export default function RndHistoryPage() {
 }
 
 function iconBtnStyle(color: string): React.CSSProperties {
-  return { width: 26, height: 26, borderRadius: 6, border: '1px solid #e2e8f0', background: '#fff', color, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
+  return { width: 30, height: 30, borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }
 }
 
 function EyeIcon() {
@@ -302,9 +304,9 @@ function FilterPill({ label, active, onClick }: { label: string; active: boolean
     <button
       onClick={onClick}
       style={{
-        padding: '7px 14px', borderRadius: 9999, border: `1px solid ${active ? '#f97316' : '#e2e8f0'}`,
+        ...btnBase, ...smallBtnSize, borderRadius: 9999, border: `1px solid ${active ? '#f97316' : '#e2e8f0'}`,
         background: active ? '#fff7ed' : '#fff', color: active ? '#c2410c' : '#64748b',
-        fontSize: 11.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em', cursor: 'pointer',
+        fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '.03em',
       }}
     >
       {label}

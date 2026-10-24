@@ -7,11 +7,12 @@ import { useCan } from '@/lib/permissions'
 import { extractErrorMessages } from '@/lib/validation'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { MaintenanceStoreItemOption } from '@/types'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import PortalFormDialog from '@/components/maintenance/PortalFormDialog'
 import DateField from '@/components/erp/DateField'
 import { SHEET, SheetSection, SheetIcon, Optional, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import { formatINR } from '@/components/maintenance/labels'
+import Select from '@/components/shared/Select'
 
 const PR_STATUS_HEX: Record<string, string> = { submitted: '#F59E0B', approved: '#2563EB', po_raised: '#9333EA', received: '#16A34A', closed: '#0f766e', rejected: '#DC2626', cancelled: '#78716c' }
 const PURPOSE_LABELS: Record<string, string> = { spares: 'Spares (out of stock)', external_service: 'Outside repair / service' }
@@ -21,9 +22,9 @@ const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
-const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6' }
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }
 const tdStyle: React.CSSProperties = { padding: '8px 10px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
-const smallBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }
+const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 
 type Line = { item: MaintenanceStoreItemOption | null; quantity: string }
 
@@ -130,22 +131,22 @@ export default function WorkOrderPurchaseCard({ woId, woStatus, onChanged }: { w
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <div style={{ flex: '1 1 220px' }}>
               <label style={sheetLabel}>For</label>
-              <select style={sheetInput} value={form.purpose} onChange={(e) => { setForm({ ...form, purpose: e.target.value }); setLines([{ item: null, quantity: '1' }]) }}>
+              <Select style={sheetInput} value={form.purpose} onChange={(e) => { setForm({ ...form, purpose: e.target.value }); setLines([{ item: null, quantity: '1' }]) }}>
                 <option value="spares">Spares (out of stock)</option>
                 <option value="external_service">Outside repair / service</option>
-              </select>
+              </Select>
             </div>
             <div style={{ flex: '0 1 180px' }}>
               <label style={sheetLabel}>Category</label>
-              <select style={sheetInput} value={form.category_code} onChange={(e) => setForm({ ...form, category_code: e.target.value })}>
+              <Select style={sheetInput} value={form.category_code} onChange={(e) => setForm({ ...form, category_code: e.target.value })}>
                 {CATEGORIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
+              </Select>
             </div>
             <div style={{ flex: '0 1 120px' }}>
               <label style={sheetLabel}>Priority</label>
-              <select style={sheetInput} value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
+              <Select style={sheetInput} value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
                 <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
-              </select>
+              </Select>
             </div>
             <div style={{ flex: '0 1 160px' }}>
               <label style={sheetLabel}>Required by</label>

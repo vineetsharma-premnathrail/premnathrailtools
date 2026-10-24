@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 // Cross-job Electrical Drawing Register — every drawing on every RRV job,
 // filterable by type, latest revision status and as-built flag. Rows open the
 // job page on its Drawings tab, where revisions are submitted and approved.
@@ -15,6 +16,7 @@ import ElectricalNav from '@/components/electrical/ElectricalNav'
 import {
   inputStyle, thStyle, tdStyle, smallBtn, pill, Pill, ErrorBanner, useLookupErrors, REVISION_STATUS_LABELS, REVISION_STATUS_HEX,
 } from '@/components/electrical/shared'
+import { secondaryBtnStyle } from '@/components/shared/ui'
 
 const COLUMNS = ['Drawing No.', 'Title', 'Job', 'Type', 'Latest Rev', 'Approved Rev', 'As-built', '']
 
@@ -83,8 +85,8 @@ export default function ElectricalDrawingRegisterPage() {
           type="button"
           onClick={() => setStatusFilter(awaitingOnly ? '' : 'submitted')}
           style={awaitingOnly
-            ? { ...smallBtn, padding: '9px 16px', fontSize: 13, color: '#b45309', borderColor: 'rgba(245,158,11,0.55)', background: 'rgba(245,158,11,0.12)' }
-            : { ...smallBtn, padding: '9px 16px', fontSize: 13 }}
+            ? { ...secondaryBtnStyle, color: '#b45309', borderColor: 'rgba(245,158,11,0.55)', background: 'rgba(245,158,11,0.12)' }
+            : secondaryBtnStyle}
         >
           {awaitingOnly ? '✓ Awaiting approval only' : 'Awaiting approval only'}
         </button>
@@ -101,19 +103,19 @@ export default function ElectricalDrawingRegisterPage() {
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
         />
-        <select data-tour="elec-dreg-type-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 200px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+        <Select data-tour="elec-dreg-type-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 200px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
           <option value="">All drawing types</option>
           {Object.entries(drawingTypes).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="elec-dreg-status-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 200px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="elec-dreg-status-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 200px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All revision statuses</option>
           {Object.entries(REVISION_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="elec-dreg-as-built-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 150px' }} value={asBuiltFilter} onChange={(e) => setAsBuiltFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="elec-dreg-as-built-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 150px' }} value={asBuiltFilter} onChange={(e) => setAsBuiltFilter(e.target.value)}>
           <option value="">As-built: All</option>
           <option value="yes">As-built: Yes</option>
           <option value="no">As-built: No</option>
-        </select>
+        </Select>
       </div>
 
       <div data-tour="elec-dreg-table" style={{

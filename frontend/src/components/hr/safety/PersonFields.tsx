@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { Req, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import DateField from '@/components/erp/DateField'
@@ -52,9 +53,9 @@ export default function PersonFields({ value, onChange, meta }: { value: PersonF
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
       <div style={{ flex: '0 1 170px', minWidth: 150 }}>
         <label style={label}>Category</label>
-        <select style={input} value={value.person_type} onChange={(e) => set('person_type', e.target.value)}>
+        <Select style={input} value={value.person_type} onChange={(e) => set('person_type', e.target.value)}>
           {meta.person_types.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        </Select>
       </div>
       {value.person_type === 'employee' ? (
         <div style={{ flex: '1 1 240px', maxWidth: 320 }}>
@@ -84,9 +85,9 @@ export default function PersonFields({ value, onChange, meta }: { value: PersonF
       </div>
       <div style={{ flex: '0 1 180px', minWidth: 160 }}>
         <label style={label}>Outcome</label>
-        <select style={input} value={value.outcome} onChange={(e) => set('outcome', e.target.value)}>
+        <Select style={input} value={value.outcome} onChange={(e) => set('outcome', e.target.value)}>
           {meta.outcomes.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        </Select>
       </div>
       <div style={{ flex: '1 1 180px', maxWidth: 260 }}>
         <label style={label}>Nature of injury</label>

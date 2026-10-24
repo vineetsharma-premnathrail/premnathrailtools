@@ -258,7 +258,7 @@ function SplinePageInner() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div data-tour="rnd-spl-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+          <div data-tour="rnd-spl-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
             <StatTile label="Torque Capacity" value={result?.torque_capacity.toFixed(2)} unit="N·m" bg="#eff6ff" color="#2563eb" />
             <StatTile label="Working Torque" value={result?.working_torque.toFixed(2)} unit="N·m" bg="#fff7ed" color="#c2410c" />
             <StatTile label="Factor of Safety" value={result?.safety_factor.toFixed(2)} unit="unitless" bg="#f0fdf4" color="#166534" />

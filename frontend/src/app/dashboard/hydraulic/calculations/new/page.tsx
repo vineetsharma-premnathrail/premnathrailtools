@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -7,8 +8,8 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { hydraulicApi } from '@/lib/api'
 import { HydCalcComputeResult, HydCalcInputMeta, HydCalcTypeMeta, HydLookupOption } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { secondaryBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -220,9 +221,9 @@ function CalculatorInner() {
           {inp.optional && <span style={{ fontWeight: 500, color: TEXT.muted }}> (optional)</span>}
         </label>
         {inp.kind === 'select' ? (
-          <select style={inputStyle} value={value} onChange={(e) => set(e.target.value)}>
+          <Select style={inputStyle} value={value} onChange={(e) => set(e.target.value)}>
             {(inp.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+          </Select>
         ) : (
           <div style={{ display: 'flex', alignItems: 'stretch', border: `1px solid ${BORDER.normal}`, borderRadius: 10, background: 'rgba(255,255,255,.7)', overflow: 'hidden' }}>
             <input
@@ -357,11 +358,7 @@ function CalculatorInner() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 14, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12, color: TEXT.muted }}>The server re-runs the calculation when saving, so the stored results always match the inputs.</span>
-                <button data-tour="hyd-calcnew-save-btn" type="button" onClick={handleSave} disabled={saving} style={{
-                  padding: '12px 22px', borderRadius: 12, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
-                  background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1,
-                  boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-                }}>
+                <button data-tour="hyd-calcnew-save-btn" type="button" onClick={handleSave} disabled={saving} style={{ ...primaryBtnStyle, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}>
                   {saving ? 'Saving…' : 'Save Calculation'}
                 </button>
               </div>

@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import Select from '@/components/shared/Select'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { approvalsApi, organizationApi, rolesApi, usersApi } from '@/lib/api'
@@ -19,6 +20,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 import TourButton from '@/components/tour/TourButton'
 import ApprovesInPanel from '@/components/organization/ApprovesInPanel'
+import AnchoredPopover from '@/components/shared/AnchoredPopover'
 import { extractErrorMessages } from '@/lib/validation'
 
 // One role: its name/flags, its Permission Matrix (module › tab › action) and
@@ -54,6 +56,7 @@ export default function RoleDetailPage() {
   const [directory, setDirectory] = useState<DirectoryUser[]>([])
   const [memberIds, setMemberIds] = useState<number[]>([])
   const [memberSearch, setMemberSearch] = useState('')
+  const memberAnchorRef = useRef<HTMLDivElement>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -336,7 +339,7 @@ export default function RoleDetailPage() {
                   {grantedModules.map((mk) => (
                     <div key={mk} style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between' }}>
                       <span style={{ fontSize: 13, color: SHEET.INK, fontWeight: 600 }}>{catalog.modules[mk].label}</span>
-                      <select value={dataScopes[mk] || defaultScope} disabled={locked || !canFeature('organization', 'roles', 'data_access', 'edit')} style={{ ...sheetInput, width: 220 }}
+                      <Select value={dataScopes[mk] || defaultScope} disabled={locked || !canFeature('organization', 'roles', 'data_access', 'edit')} style={{ ...sheetInput, width: 220 }}
                         onChange={(e) => setDataScopes((s) => {
                           const next = { ...s }
                           if (e.target.value === defaultScope) delete next[mk]
@@ -344,7 +347,7 @@ export default function RoleDetailPage() {
                           return next
                         })}>
                         {(catalog.scope_levels || []).map((lv) => <option key={lv} value={lv}>{scopeLabels[lv] || lv}</option>)}
-                      </select>
+                      </Select>
                     </div>
                   ))}
                 </div>
@@ -390,18 +393,16 @@ export default function RoleDetailPage() {
                 <>
                   {isNew && <p style={{ ...sheetHint, margin: '0 0 10px' }}>The people you add here get the role when you click Create Role.</p>}
                   {canEditMembers && (
-                    <div style={{ position: 'relative', maxWidth: 420, marginBottom: 14 }}>
+                    <div ref={memberAnchorRef} style={{ maxWidth: 420, marginBottom: 14 }}>
                       <input value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)} placeholder="Add a user — type a name or email…" style={sheetInput} />
-                      {candidates.length > 0 && (
-                        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, background: '#fff', border: `1px solid ${SHEET.LINE}`, borderRadius: 10, marginTop: 4, boxShadow: '0 10px 30px rgba(0,0,0,0.12)' }}>
+                      <AnchoredPopover anchorRef={memberAnchorRef} open={candidates.length > 0} style={{ border: `1px solid ${SHEET.LINE}` }}>
                           {candidates.map((u) => (
                             <button key={u.id} type="button" onClick={() => { setMemberIds((ids) => [...ids, u.id]); setMemberSearch('') }}
                               style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: SHEET.BODY }}>
                               {u.name} <span style={{ color: SHEET.MUTED, fontSize: 11.5 }}>{u.email}{u.department ? ` · ${u.department}` : ''}</span>
                             </button>
                           ))}
-                        </div>
-                      )}
+                      </AnchoredPopover>
                     </div>
                   )}
                   {members.length === 0 && <p style={{ fontSize: 13, color: SHEET.MUTED }}>Nobody holds this role yet.</p>}

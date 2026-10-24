@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -330,17 +331,17 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
     )
   }
   const yesNo = (k: BoolKey, allowUnset = false) => (
-    <select style={sheetInput} value={form?.[k] ?? ''} onChange={(e) => set(k)(e.target.value)}>
+    <Select style={sheetInput} value={form?.[k] ?? ''} onChange={(e) => set(k)(e.target.value)}>
       {allowUnset && <option value="">— Not set —</option>}
       <option value="true">Yes</option>
       <option value="false">No</option>
-    </select>
+    </Select>
   )
   const choice = (k: FieldKey, options: Record<string, string>, blank = '— Select —') => (
-    <select style={sheetInput} {...inp(k)}>
+    <Select style={sheetInput} {...inp(k)}>
       {blank && <option value="">{blank}</option>}
       {Object.entries(options).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-    </select>
+    </Select>
   )
   const short: React.CSSProperties = { flex: '0 1 170px', minWidth: 150 }
   const med: React.CSSProperties = { flex: '1 1 220px', maxWidth: 320 }
@@ -411,9 +412,9 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
                 form.employee_code ? undefined : 'Left blank, the next WF- number is assigned.')}
               {field('full_name', <input style={sheetInput} {...inp('full_name')} placeholder="As on Aadhaar" autoFocus={isNewWorker} />, { flex: '1 1 240px', maxWidth: 340 })}
               {field('worker_type', (
-                <select style={sheetInput} value={form.worker_type} onChange={(e) => onWorkerTypeChange(e.target.value)}>
+                <Select style={sheetInput} value={form.worker_type} onChange={(e) => onWorkerTypeChange(e.target.value)}>
                   {Object.entries(rules.worker_types).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+                </Select>
               ), { flex: '0 1 220px', minWidth: 200 })}
             </div>
             <div style={row}>

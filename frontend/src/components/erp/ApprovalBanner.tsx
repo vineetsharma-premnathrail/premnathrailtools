@@ -81,10 +81,10 @@ export default function ApprovalBanner({
         </div>
         {legacy && onApprove && (
           <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" disabled={busy} style={{ ...primaryBtnStyle, padding: '7px 14px' }} onClick={() => setDialog('approve')}>
+            <button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => setDialog('approve')}>
               {approveLabel || 'Approve'}
             </button>
-            <button type="button" disabled={busy} style={{ ...dangerBtnStyle, padding: '7px 14px' }} onClick={() => setDialog('reject')}>
+            <button type="button" disabled={busy} style={dangerBtnStyle} onClick={() => setDialog('reject')}>
               {rejectLabel || 'Reject'}
             </button>
           </div>

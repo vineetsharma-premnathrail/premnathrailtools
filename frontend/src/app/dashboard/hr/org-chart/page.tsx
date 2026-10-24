@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
@@ -188,10 +189,10 @@ export default function HrOrgChartPage() {
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
         <input data-tour="hr-org-search" style={searchInputStyle} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find a person, designation or department…" />
-        <select data-tour="hr-org-dept-filter" style={{ ...searchInputStyle, width: 200 }} value={department} onChange={(e) => setDepartment(e.target.value)}>
+        <Select data-tour="hr-org-dept-filter" style={{ ...searchInputStyle, width: 200 }} value={department} onChange={(e) => setDepartment(e.target.value)}>
           <option value="">All departments</option>
           {departments.map((d) => <option key={d} value={d}>{d}</option>)}
-        </select>
+        </Select>
         {!filtering && (
           <>
             <button type="button" data-tour="hr-org-expand-all" style={linkActionStyle} onClick={expandAll}>Expand all</button>

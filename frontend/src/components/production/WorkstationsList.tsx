@@ -11,6 +11,7 @@ import WorkstationForm, { WORKSTATION_TYPE_LABELS } from '@/components/productio
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 import { useCan } from '@/lib/permissions'
+import Select from '@/components/shared/Select'
 
 const STATUS_LABELS: Record<string, string> = { active: 'Active', under_maintenance: 'Under Maintenance', inactive: 'Inactive' }
 const STATUS_HEX: Record<string, string> = { active: '#16A34A', under_maintenance: '#F59E0B', inactive: '#78716c' }
@@ -86,14 +87,14 @@ export default function WorkstationsList({ openNew = false }: { openNew?: boolea
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <input data-tour="production-ws-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search by code or name…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select data-tour="production-ws-type-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+        <Select data-tour="production-ws-type-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
           <option value="">All types</option>
           {Object.entries(WORKSTATION_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="production-ws-status-filter" style={{ ...inputStyle, flex: '0 1 180px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="production-ws-status-filter" style={{ ...inputStyle, flex: '0 1 180px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
       </div>
 
       <div data-tour="production-ws-table" style={{
@@ -104,7 +105,7 @@ export default function WorkstationsList({ openNew = false }: { openNew?: boolea
           <thead>
             <tr>
               {['Code', 'Name', 'Type', 'Plant', 'Capacity / day', 'Rate / hr', 'Open Ops', 'Status', ''].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}
                 </th>
               ))}

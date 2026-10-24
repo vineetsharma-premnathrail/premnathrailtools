@@ -5,8 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
 import { HydCalculation, HydCalcTypeMeta, HydLookupOption } from '@/types'
-import { TEXT, DANGER, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, DANGER, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { secondaryBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
@@ -190,12 +190,13 @@ export default function HydCalculationDetailPage() {
           {meta?.description && <p style={{ fontSize: 13, color: TEXT.muted, margin: '-6px 0 16px' }}>{meta.description}</p>}
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
-            <div style={{ flex: '1 1 340px', maxWidth: 520, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: '1 1 340px', maxWidth: 520, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <div data-tour="hyd-calcd-inputs" style={cardStyle}>
                 <p style={sectionTitle}>Inputs</p>
                 {inputRows.length === 0 ? (
                   <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No inputs recorded.</p>
                 ) : (
+                  <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <tbody>
                       {inputRows.map((r) => (
@@ -207,6 +208,7 @@ export default function HydCalculationDetailPage() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 )}
               </div>
             </div>
@@ -244,11 +246,7 @@ export default function HydCalculationDetailPage() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 14, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12, color: TEXT.muted }}>Inputs can&apos;t be edited — re-run it in the calculator and save a new calculation instead.</span>
-              {canEdit ? <button data-tour="hyd-calcd-save-btn" type="submit" disabled={saving} style={{
-                padding: '12px 22px', borderRadius: 12, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
-                background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1,
-                boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-              }}>
+              {canEdit ? <button data-tour="hyd-calcd-save-btn" type="submit" disabled={saving} style={{ ...primaryBtnStyle, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}>
                 {saving ? 'Saving…' : 'Save Changes'}
               </button> : (
                 <span style={{ fontSize: 12, color: TEXT.muted }}>Changing the title, system or remarks needs the &lsquo;edit&rsquo; right on Calculations.</span>

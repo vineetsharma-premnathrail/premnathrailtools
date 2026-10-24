@@ -5,13 +5,15 @@ import { hrApi } from '@/lib/api'
 import { HrLeaveRequest } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import PromptDialog from '@/components/erp/PromptDialog'
+import { smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 
 const SESSION_SHORT: Record<string, string> = { full: '', first_half: ' (1st half)', second_half: ' (2nd half)' }
 const td: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
+// Row action chip on the shared 30px small-button scale; colour = meaning.
 const actionBtn = (color: string): React.CSSProperties => ({
-  fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 9999, border: `1px solid ${color}55`,
-  background: `${color}14`, color, cursor: 'pointer', marginRight: 6,
+  ...smallSecondaryBtnStyle, fontWeight: 700, borderRadius: 9999, border: `1px solid ${color}55`,
+  background: `${color}14`, color, marginRight: 6,
 })
 
 function num(v: string | number) {
@@ -92,7 +94,7 @@ export default function LeaveApprovals() {
             <thead>
               <tr>
                 {['Employee', 'Leave', 'Dates', 'Days', 'Reason', 'Applied', ''].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
+                  <th key={h} style={{ textAlign: h === 'Days' ? 'right' : 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -112,7 +114,7 @@ export default function LeaveApprovals() {
                     {dmy(r.from_date)}{SESSION_SHORT[r.from_session]}
                     {r.to_date !== r.from_date && <> → {dmy(r.to_date)}{SESSION_SHORT[r.to_session]}</>}
                   </td>
-                  <td style={{ ...td, fontWeight: 700 }}>{num(r.days)}</td>
+                  <td style={{ ...td, fontWeight: 700, textAlign: 'right' }}>{num(r.days)}</td>
                   <td style={{ ...td, maxWidth: 260 }}>
                     {r.reason}
                     {r.contact_during_leave && <div style={{ fontSize: 11.5, color: TEXT.muted, marginTop: 2 }}>Contact: {r.contact_during_leave}</div>}

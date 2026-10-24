@@ -18,7 +18,9 @@ import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetLabel, sheetH
 
 type Opt = { value: string; label: string }
 const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', whiteSpace: 'nowrap' }
-const td: React.CSSProperties = { padding: '7px 10px', fontSize: 12.5, borderTop: `1px solid ${SHEET.LINE}`, verticalAlign: 'top' }
+const td: React.CSSProperties = { padding: '7px 10px', fontSize: 12.5, borderTop: `1px solid ${SHEET.LINE}`, verticalAlign: 'middle' }
+const numTh: React.CSSProperties = { ...th, textAlign: 'right' }
+const numTd: React.CSSProperties = { ...td, textAlign: 'right', whiteSpace: 'nowrap' }
 const errBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
 const money = (v: number | null | undefined) => (v == null ? '—' : v.toLocaleString('en-IN', { maximumFractionDigits: 2 }))
 
@@ -83,20 +85,22 @@ export default function SplitPoDialog({ rfq, onClose, onDone }: { rfq: RFQ; onCl
           {prop?.groups.map((g) => (
             <div key={g.vendor_id} style={{ border: `1px solid ${SHEET.LINE}`, borderRadius: 12, padding: 12, marginBottom: 10 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: SHEET.INK, marginBottom: 6 }}>{g.vendor_name}</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr>{['Item', 'Qty', 'Rate', 'GST %', 'Delivery date'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', minWidth: 560, borderCollapse: 'collapse' }}>
+                <thead><tr>{['Item', 'Qty', 'Rate', 'GST %', 'Delivery date'].map((h, i) => <th key={h} style={i >= 1 && i <= 3 ? numTh : th}>{h}</th>)}</tr></thead>
                 <tbody>
                   {g.lines.map((l) => (
                     <tr key={l.pr_item_id}>
                       <td style={td}>{l.item_name}</td>
-                      <td style={td}>{l.quantity} {l.unit || ''}</td>
-                      <td style={td}>{money(l.unit_price)}</td>
-                      <td style={td}>{l.tax_rate ?? '—'}</td>
+                      <td style={numTd}>{l.quantity} {l.unit || ''}</td>
+                      <td style={numTd}>{money(l.unit_price)}</td>
+                      <td style={numTd}>{l.tax_rate ?? '—'}</td>
                       <td style={{ ...td, width: 170 }}><DateField value={dates[`${g.vendor_id}:${l.pr_item_id}`] || ''} onChange={(v) => setDates((s) => ({ ...s, [`${g.vendor_id}:${l.pr_item_id}`]: v }))} /></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           ))}
           {prop && prop.unawarded.length > 0 && (

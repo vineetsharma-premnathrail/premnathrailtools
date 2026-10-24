@@ -16,6 +16,7 @@ import OutstandingSubNav from '@/components/finance/OutstandingSubNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { FormSheet, SheetSection, SHEET, sheetInput, SheetError } from '@/components/shared/FormSheet'
 import { SField, SRow, SheetBody, SheetFooter, sw } from '@/components/finance/financeSheet'
+import Select from '@/components/shared/Select'
 import {
   primaryBtnStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh, inr, dmy,
   ErrorBanner, InfoBanner, StatusPill, PageHeader, TableWrap, EmptyRow, StatCard, SubTabs,
@@ -164,9 +165,9 @@ function NewDisputeDialog({ onClose, onDone }: { onClose: () => void; onDone: ()
               <input type="number" min={0} step="0.01" style={{ ...sheetInput, textAlign: 'right' }} value={amount} onChange={(e) => setAmount(e.target.value)} />
             </SField>
             <SField label="Reason" req style={sw(250)}>
-              <select style={sheetInput} value={reason} onChange={(e) => setReason(e.target.value)}>
+              <Select style={sheetInput} value={reason} onChange={(e) => setReason(e.target.value)}>
                 {Object.entries(REASONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              </Select>
             </SField>
           </SRow>
         </SheetSection>
@@ -215,18 +216,18 @@ function ResolveDialog({ dispute, onClose, onDone }: { dispute: ARDispute; onClo
         <SheetError error={error} />
         <SheetSection icon="check" title="Resolution" color="#16a34a">
           <SField label="Resolution" req style={{ marginBottom: 14 }}>
-            <select style={sheetInput} value={resolution} onChange={(e) => setResolution(e.target.value as 'credit_note' | 'write_off' | 'paid')}>
+            <Select style={sheetInput} value={resolution} onChange={(e) => setResolution(e.target.value as 'credit_note' | 'write_off' | 'paid')}>
               <option value="credit_note">Credit note given (GST reversed by the note)</option>
               <option value="write_off">Write off the disputed amount (no GST change)</option>
               <option value="paid">Claim withdrawn — customer pays in full</option>
-            </select>
+            </Select>
           </SField>
           {resolution === 'credit_note' && (
             <SField label="Credit note against this invoice" style={{ marginBottom: 14 }}>
-              <select style={sheetInput} value={noteId} onChange={(e) => setNoteId(e.target.value)}>
+              <Select style={sheetInput} value={noteId} onChange={(e) => setNoteId(e.target.value)}>
                 <option value="">{notes.length ? 'Pick the credit note' : 'None yet — raise it in Finance › Sales › Credit Notes first'}</option>
                 {notes.map((n) => <option key={n.id} value={n.id}>{n.note_number} — {inr(n.total_amount)} ({n.status})</option>)}
-              </select>
+              </Select>
             </SField>
           )}
           {resolution === 'write_off' && (

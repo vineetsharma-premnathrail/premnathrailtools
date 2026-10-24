@@ -7,10 +7,12 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { qualityApi } from '@/lib/api'
 import { QualityStandard } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
+import Select from '@/components/shared/Select'
+import { primaryBtnStyle } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<string, string> = { active: 'Active', draft: 'Draft', obsolete: 'Obsolete' }
 const STATUS_HEX: Record<string, string> = { active: '#16A34A', draft: '#F59E0B', obsolete: '#78716c' }
@@ -61,11 +63,7 @@ export default function QualityStandardsPage() {
         </div>
         {can('quality', 'standards', 'create') && (<button
           onClick={() => router.push('/dashboard/quality/standards/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
+          style={primaryBtnStyle}
         >
           + New Standard
         </button>)}
@@ -84,12 +82,12 @@ export default function QualityStandardsPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select style={{ ...inputStyle, flex: '0 1 160px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <Select style={{ ...inputStyle, flex: '0 1 160px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           <option value="active">Active</option>
           <option value="draft">Draft</option>
           <option value="obsolete">Obsolete</option>
-        </select>
+        </Select>
       </div>
 
       <div style={{

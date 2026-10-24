@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRecordId } from '@/lib/recordRef'
@@ -241,7 +242,7 @@ function UserDetailsTab({ user, isSelf, onRefresh }: { user: User; isSelf: boole
       <ConfirmDialog open={askDeactivate} title="Deactivate an approver?" confirmLabel="Deactivate anyway"
         message={deactivateWarning} onConfirm={() => toggleActive(true)} onCancel={() => setAskDeactivate(false)} />
       <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '0 0 16px' }}>Name, email, designation, department, and office location are synced from Azure AD and aren&apos;t editable here.</p>
-      <div data-tour="org-user-details-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      <div data-tour="org-user-details-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 10px))), 1fr))', gap: 20 }}>
         <div><div style={labelStyle}>Full Name</div><div style={valueStyle}>{user.name}</div></div>
         <div><div style={labelStyle}>Email</div><div style={valueStyle}>{user.email}</div></div>
         <div><div style={labelStyle}>Designation</div><div style={valueStyle}>{user.designation || '—'}</div></div>
@@ -361,32 +362,32 @@ function AssignmentsTab({ user, assignments, branches, departments, onRefresh }:
             <SheetSection icon="building" title="Branch & post">
               <div style={sheetRow}>
                 <SheetField label="Branch" req>
-                  <select data-tour="org-user-asg-branch" style={sheetInput} value={form.branch_id} onChange={(e) => setForm((f) => ({ ...f, branch_id: e.target.value }))} disabled={!!editing}>
+                  <Select data-tour="org-user-asg-branch" style={sheetInput} value={form.branch_id} onChange={(e) => setForm((f) => ({ ...f, branch_id: e.target.value }))} disabled={!!editing}>
                     <option value="">— Select —</option>
                     {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  </select>
+                  </Select>
                 </SheetField>
                 <SheetField label="Employee ID"><input data-tour="org-user-asg-empid" style={sheetInput} value={form.employee_id} onChange={(e) => setForm((f) => ({ ...f, employee_id: e.target.value }))} /></SheetField>
               </div>
               {editing && <p style={{ ...sheetHint, margin: '-8px 0 14px' }}>Branch is locked while editing — remove and re-add to move someone to a different branch.</p>}
               <div style={sheetRow}>
                 <SheetField label="Department">
-                  <select data-tour="org-user-asg-dept" style={sheetInput} value={form.department_id} onChange={(e) => setForm((f) => ({ ...f, department_id: e.target.value }))}>
+                  <Select data-tour="org-user-asg-dept" style={sheetInput} value={form.department_id} onChange={(e) => setForm((f) => ({ ...f, department_id: e.target.value }))}>
                     <option value="">— Select —</option>
                     {departmentsForBranch.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  </select>
+                  </Select>
                 </SheetField>
                 <SheetField label="Designation"><input data-tour="org-user-asg-designation" style={sheetInput} value={form.designation} onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))} /></SheetField>
               </div>
               <div style={{ ...sheetRow, marginBottom: 0 }}>
                 <SheetField label="Role"><input data-tour="org-user-asg-role" style={sheetInput} value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} /></SheetField>
                 <SheetField label="Access Level">
-                  <select data-tour="org-user-asg-access" style={sheetInput} value={form.access_level} onChange={(e) => setForm((f) => ({ ...f, access_level: e.target.value }))}>
+                  <Select data-tour="org-user-asg-access" style={sheetInput} value={form.access_level} onChange={(e) => setForm((f) => ({ ...f, access_level: e.target.value }))}>
                     <option value="">— Select —</option>
                     <option value="view">View</option>
                     <option value="edit">Edit</option>
                     <option value="admin">Admin</option>
-                  </select>
+                  </Select>
                 </SheetField>
               </div>
             </SheetSection>
@@ -395,10 +396,10 @@ function AssignmentsTab({ user, assignments, branches, departments, onRefresh }:
                 <SheetField label="Effective From" tour="org-user-asg-from" basis={160}><DateField value={form.effective_from} onChange={(v) => setForm((f) => ({ ...f, effective_from: v }))} /></SheetField>
                 <SheetField label="Effective To" tour="org-user-asg-to" basis={160}><DateField value={form.effective_to} onChange={(v) => setForm((f) => ({ ...f, effective_to: v }))} /></SheetField>
                 <SheetField label="Status" req basis={140}>
-                  <select data-tour="org-user-asg-status" style={sheetInput} value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
+                  <Select data-tour="org-user-asg-status" style={sheetInput} value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
-                  </select>
+                  </Select>
                 </SheetField>
               </div>
               <div data-tour="org-user-asg-primary">
@@ -701,10 +702,10 @@ function DataAccessTab({ userId }: { userId: number }) {
         {rows.map((r) => (
           <div key={r.module_key} style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <span style={{ flex: '1 1 200px', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>{r.module_label}</span>
-            <select style={{ ...inputStyle, width: 200 }} disabled={!canEdit} value={draft[r.module_key] || ''}
+            <Select style={{ ...inputStyle, width: 200 }} disabled={!canEdit} value={draft[r.module_key] || ''}
               onChange={(e) => setDraft((d) => { const n = { ...d }; if (e.target.value) n[r.module_key] = e.target.value; else delete n[r.module_key]; return n })}>
               {SCOPE_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
+            </Select>
             <span style={{ width: 190, fontSize: 12, color: TEXT.muted }}>now: {r.effective_label}</span>
           </div>
         ))}
@@ -870,9 +871,9 @@ function UserDocumentsTab({ userId, documents, onRefresh }: { userId: number; do
             <SheetSection icon="doc" title="Details">
               <div style={sheetRow}>
                 <SheetField label="Document Type" req basis={160}>
-                  <select data-tour="org-user-doc-type" style={sheetInput} value={meta.document_type} onChange={(e) => setMeta((m) => ({ ...m, document_type: e.target.value }))}>
+                  <Select data-tour="org-user-doc-type" style={sheetInput} value={meta.document_type} onChange={(e) => setMeta((m) => ({ ...m, document_type: e.target.value }))}>
                     {DOCUMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  </Select>
                 </SheetField>
                 <SheetField label="Document Name" req basis={240}><input data-tour="org-user-doc-name" style={sheetInput} value={meta.document_name} onChange={(e) => setMeta((m) => ({ ...m, document_name: e.target.value }))} placeholder="e.g. PAN Card" /></SheetField>
               </div>
@@ -889,9 +890,9 @@ function UserDocumentsTab({ userId, documents, onRefresh }: { userId: number; do
             <SheetSection icon="tag" title="Classification">
               <div style={sheetRow}>
                 <SheetField label="Confidentiality" req basis={160}>
-                  <select data-tour="org-user-doc-confidentiality" style={sheetInput} value={meta.confidentiality} onChange={(e) => setMeta((m) => ({ ...m, confidentiality: e.target.value }))}>
+                  <Select data-tour="org-user-doc-confidentiality" style={sheetInput} value={meta.confidentiality} onChange={(e) => setMeta((m) => ({ ...m, confidentiality: e.target.value }))}>
                     {CONFIDENTIALITY_LEVELS.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  </Select>
                 </SheetField>
                 <SheetField label="Tags (comma separated)" basis={240}><input data-tour="org-user-doc-tags" style={sheetInput} value={meta.tags} onChange={(e) => setMeta((m) => ({ ...m, tags: e.target.value }))} placeholder="e.g. kyc, joining" /></SheetField>
               </div>

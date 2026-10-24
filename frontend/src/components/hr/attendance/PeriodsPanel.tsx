@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useState } from 'react'
 import { hrPeriodApi } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
@@ -113,14 +114,14 @@ export default function PeriodsPanel() {
                 <div style={{ flex: '0 1 100px' }}><label style={sheetLabel}>Year <Req /></label><input type="number" value={year} onChange={(e) => setYear(Number(e.target.value) || now.getFullYear())} style={sheetInput} /></div>
                 <div style={{ flex: '0 1 150px' }}>
                   <label style={sheetLabel}>Month <Req /></label>
-                  <select value={month} onChange={(e) => setMonth(Number(e.target.value))} style={sheetInput}>{MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}</select>
+                  <Select value={month} onChange={(e) => setMonth(Number(e.target.value))} style={sheetInput}>{MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}</Select>
                 </div>
                 <div style={{ flex: '1 1 200px' }}>
                   <label style={sheetLabel}>Plant</label>
-                  <select value={branchId} onChange={(e) => setBranchId(e.target.value)} style={sheetInput}>
+                  <Select value={branchId} onChange={(e) => setBranchId(e.target.value)} style={sheetInput}>
                     <option value="">All plants</option>
                     {plants.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
+                  </Select>
                 </div>
               </div>
               <p style={sheetHint}>Attendance of {MONTHS[month - 1]} {year} for {plantName} becomes read-only: marking, imports, punches, roster, regularizations, leave and overtime are blocked until a Partner unlocks it.</p>

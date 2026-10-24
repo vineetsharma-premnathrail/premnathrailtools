@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
@@ -112,9 +113,9 @@ export function TravelFormDialog({
               <Fld label="Depart" req basis={160}><DateField value={f.depart_date} onChange={set('depart_date')} /></Fld>
               <Fld label="Return" basis={160}><DateField value={f.return_date} onChange={set('return_date')} /></Fld>
               <Fld label="Mode" basis={180}>
-                <select data-tour="hr-travel-form-mode" style={sheetInput} value={f.travel_mode} onChange={(e) => set('travel_mode')(e.target.value)}>
+                <Select data-tour="hr-travel-form-mode" style={sheetInput} value={f.travel_mode} onChange={(e) => set('travel_mode')(e.target.value)}>
                   {Object.entries(TRAVEL_MODE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+                </Select>
               </Fld>
             </div>
             <label data-tour="hr-travel-form-accommodation" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: SHEET.BODY, cursor: 'pointer', marginTop: 14 }}>

@@ -11,6 +11,7 @@ import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 interface Line { itemId: string; quantity: string; batchNumber: string }
 
@@ -104,17 +105,17 @@ export default function NewStockTransferPage() {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '1 1 200px' }}>
                 <label style={sheetLabel}>From Store <Req /></label>
-                <select data-tour="transfer-from" style={sheetInput} value={fromLocationId} onChange={(e) => setFromLocationId(e.target.value)}>
+                <Select data-tour="transfer-from" style={sheetInput} value={fromLocationId} onChange={(e) => setFromLocationId(e.target.value)}>
                   <option value="">— Select —</option>
                   {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                </select>
+                </Select>
               </div>
               <div style={{ flex: '1 1 200px' }}>
                 <label style={sheetLabel}>To Store <Req /></label>
-                <select data-tour="transfer-to" style={sheetInput} value={toLocationId} onChange={(e) => setToLocationId(e.target.value)}>
+                <Select data-tour="transfer-to" style={sheetInput} value={toLocationId} onChange={(e) => setToLocationId(e.target.value)}>
                   <option value="">— Select —</option>
                   {toLocations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                </select>
+                </Select>
               </div>
             </div>
             <label style={{ ...sheetLabel, marginTop: 14 }}>Reason <Optional /></label>
@@ -154,7 +155,7 @@ export default function NewStockTransferPage() {
                 <input {...(idx === 0 ? { 'data-tour': 'transfer-batch' } : {})} style={sheetInput} value={line.batchNumber} onChange={(e) => updateLine(idx, { batchNumber: e.target.value })} />
               </div>
               <button type="button" aria-label="Remove line" {...(idx === 0 ? { 'data-tour': 'transfer-remove-line-btn' } : {})} onClick={() => removeLine(idx)} disabled={lines.length === 1}
-                style={{ ...sheetBtn('secondary', SHEET.INK, lines.length === 1), padding: '9px 11px' }}><SheetIcon name="trash" size={15} /></button>
+                style={{ ...sheetBtn('secondary', SHEET.INK, lines.length === 1), padding: 0, width: 38, height: 38, justifyContent: 'center', flex: 'none' }}><SheetIcon name="trash" size={15} /></button>
             </div>
           ))}
           <button type="button" data-tour="transfer-add-item-btn" onClick={addLine} style={sheetBtn('ghost', SHEET.BLUE)}><SheetIcon name="plus" size={15} />Add Item</button>

@@ -13,6 +13,7 @@ import DateField from '@/components/erp/DateField'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 import { ErrorBanner } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 interface ItemOpt { id: number; item_code: string; item_name: string; uom?: string }
 
@@ -164,13 +165,13 @@ export default function NewInspectionCallPage() {
               <F label="Batch / serial"><input style={sheetInput} value={form.batch_number} onChange={(e) => setForm({ ...form, batch_number: e.target.value })} /></F>
             </div>
             <F label={<>Our final inspection lot <Optional /></>}>
-              <select style={sheetInput} value={form.lot_id} onChange={(e) => {
+              <Select style={sheetInput} value={form.lot_id} onChange={(e) => {
                 const l = lots.find((x) => String(x.id) === e.target.value)
                 setForm({ ...form, lot_id: e.target.value, batch_number: form.batch_number || l?.batch_number || '' })
               }}>
                 <option value="">—</option>
                 {lots.map((l) => <option key={l.id} value={l.id}>{l.lot_number} · {l.batch_number || ''} · {l.accepted_qty} accepted</option>)}
-              </select>
+              </Select>
             </F>
           </SheetSection>
         </>}
@@ -182,10 +183,10 @@ export default function NewInspectionCallPage() {
                 {req?.agency ? `${req.agency_label || req.agency} · from Sales Order ${req.so_number}` : (req ? 'None on the Sales Order' : 'Reading the Sales Order…')}
               </div>
             ) : (
-              <select style={sheetInput} value={form.agency} onChange={(e) => setForm({ ...form, agency: e.target.value })}>
+              <Select style={sheetInput} value={form.agency} onChange={(e) => setForm({ ...form, agency: e.target.value })}>
                 <option value="">Select…</option>
                 {agencies.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
-              </select>
+              </Select>
             )}
             <div style={{ ...row, marginTop: 14 }}>
               <F label="Call raised on" flex="1 1 140px"><DateField value={form.requested_date} onChange={(v) => setForm({ ...form, requested_date: v })} /></F>

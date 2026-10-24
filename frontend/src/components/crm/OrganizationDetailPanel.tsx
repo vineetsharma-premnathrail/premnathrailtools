@@ -12,7 +12,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages, isValidEmail } from '@/lib/validation'
 import { orgTypeHasRailwayFields } from '@/components/crm/constants'
-import { Card, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, handleEnterAsTab } from '@/components/crm/ui'
+import { Card, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, handleEnterAsTab, smallSecondaryBtnStyle } from '@/components/crm/ui'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import { recordPath, refOf } from '@/lib/recordRef'
 import { formatDateTime } from '@/lib/format'
@@ -406,7 +406,7 @@ function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: Organizati
                 </div>
               </div>
               {canModify && (
-                <button onClick={() => startEdit(c)} data-tour={c.id === org.contacts[0]?.id ? 'orgdetail-contact-edit-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, flexShrink: 0 }}>Edit</button>
+                <button onClick={() => startEdit(c)} data-tour={c.id === org.contacts[0]?.id ? 'orgdetail-contact-edit-btn' : undefined} style={{ ...smallSecondaryBtnStyle, flexShrink: 0 }}>Edit</button>
               )}
               </div>
 

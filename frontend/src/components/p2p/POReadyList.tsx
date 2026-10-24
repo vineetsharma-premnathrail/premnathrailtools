@@ -13,6 +13,7 @@ import SplitPoDialog from '@/components/p2p/SplitPoDialog'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordHref } from '@/lib/recordRef'
+import { smallPrimaryBtnStyle } from '@/components/shared/ui'
 
 const READY = new Set(['vendor_quotations', 'technical_evaluation', 'commercial_evaluation', 'vendor_selected', 'po_drafted'])
 const th: React.CSSProperties = { position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap' }
@@ -81,7 +82,7 @@ export default function POReadyList({ onCreate }: { onCreate?: (rfqId: number) =
                     </span>
                   </td>
                   <td style={td} onClick={(e) => e.stopPropagation()}>
-                    <button type="button" onClick={open} style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 14px', borderRadius: 9, border: 'none', background: '#1f1108', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    <button type="button" onClick={open} style={{ ...smallPrimaryBtnStyle, background: '#1f1108', border: 'none', color: '#fff', whiteSpace: 'nowrap' }}>
                       {drafted ? 'Continue PO' : 'Create PO'}
                     </button>
                   </td>

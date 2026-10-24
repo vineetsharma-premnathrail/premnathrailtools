@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -169,32 +170,32 @@ export default function HrEmployeesPage() {
         <input data-tour="hr-emp-search" style={searchInputStyle} value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder="Search name, email or employee code…" />
         <div data-tour="hr-emp-dept-filter" style={{ width: 200 }}><SearchableSelect value={departmentId} onChange={resetPage(setDepartmentId)} options={deptOptions} placeholder="All departments" /></div>
         <div data-tour="hr-emp-desig-filter" style={{ width: 200 }}><SearchableSelect value={designationId} onChange={resetPage(setDesignationId)} options={desigOptions} placeholder="All designations" /></div>
-        <select data-tour="hr-emp-plant-filter" style={{ ...selectStyle, width: 160 }} value={branchId} onChange={(e) => resetPage(setBranchId)(e.target.value)}>
+        <Select data-tour="hr-emp-plant-filter" style={{ ...selectStyle, width: 160 }} value={branchId} onChange={(e) => resetPage(setBranchId)(e.target.value)}>
           <option value="">All plants</option>
           {(lookups?.branches || []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-        </select>
-        <select data-tour="hr-emp-status-filter" style={{ ...selectStyle, width: 150 }} value={employmentStatus} onChange={(e) => resetPage(setEmploymentStatus)(e.target.value)}>
+        </Select>
+        <Select data-tour="hr-emp-status-filter" style={{ ...selectStyle, width: 150 }} value={employmentStatus} onChange={(e) => resetPage(setEmploymentStatus)(e.target.value)}>
           <option value="">Any status</option>
           {Object.entries(EMPLOYMENT_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="hr-emp-type-filter" style={{ ...selectStyle, width: 150 }} value={employmentType} onChange={(e) => resetPage(setEmploymentType)(e.target.value)}>
+        </Select>
+        <Select data-tour="hr-emp-type-filter" style={{ ...selectStyle, width: 150 }} value={employmentType} onChange={(e) => resetPage(setEmploymentType)(e.target.value)}>
           <option value="">Any type</option>
           {Object.entries(EMPLOYMENT_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="hr-emp-worker-type-filter" style={{ ...selectStyle, width: 170 }} value={workerType} onChange={(e) => resetPage(setWorkerType)(e.target.value)}>
+        </Select>
+        <Select data-tour="hr-emp-worker-type-filter" style={{ ...selectStyle, width: 170 }} value={workerType} onChange={(e) => resetPage(setWorkerType)(e.target.value)}>
           <option value="">Any worker type</option>
           {Object.entries(WORKER_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="hr-emp-profile-filter" style={{ ...selectStyle, width: 150 }} value={hasProfile} onChange={(e) => resetPage(setHasProfile)(e.target.value)}>
+        </Select>
+        <Select data-tour="hr-emp-profile-filter" style={{ ...selectStyle, width: 150 }} value={hasProfile} onChange={(e) => resetPage(setHasProfile)(e.target.value)}>
           <option value="">Profile: any</option>
           <option value="yes">Has HR profile</option>
           <option value="no">Profile missing</option>
-        </select>
-        <select data-tour="hr-emp-account-filter" style={{ ...selectStyle, width: 170 }} value={userStatus} onChange={(e) => resetPage(setUserStatus)(e.target.value)}>
+        </Select>
+        <Select data-tour="hr-emp-account-filter" style={{ ...selectStyle, width: 170 }} value={userStatus} onChange={(e) => resetPage(setUserStatus)(e.target.value)}>
           <option value="active">Active accounts</option>
           <option value="inactive">Deactivated accounts</option>
           <option value="all">All accounts</option>
-        </select>
+        </Select>
         {filtersActive && <button type="button" data-tour="hr-emp-clear-filters" style={linkActionStyle} onClick={clearFilters}>Clear filters</button>}
       </div>
 

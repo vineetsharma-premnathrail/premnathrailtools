@@ -13,6 +13,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import Select from '@/components/shared/Select'
 
 export default function StoreLocationsPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
@@ -110,7 +111,7 @@ export default function StoreLocationsPage() {
     <div>
       <StoreNav />
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <div>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
             Store &amp; Inventory · Settings
@@ -162,10 +163,10 @@ export default function StoreLocationsPage() {
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
                 <div style={{ flex: '1 1 200px' }}>
                   <label style={sheetLabel}>Branch</label>
-                  <select data-tour="wh-branch" style={sheetInput} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+                  <Select data-tour="wh-branch" style={sheetInput} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
                     <option value="">— Select —</option>
                     {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div style={{ flex: '1 1 200px' }}>
                   <label style={sheetLabel}>Store Type</label>

@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { recordPath } from '@/lib/recordRef'
@@ -59,18 +60,18 @@ export default function ProductsPage() {
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
         <input style={{ ...inputStyle, flex: '1 1 220px', maxWidth: 320 }} placeholder="Search code, name or model…" value={filters.search} onChange={(e) => setF('search', e.target.value)} />
-        <select style={{ ...inputStyle, flex: '0 1 200px' }} value={filters.product_type} onChange={(e) => setF('product_type', e.target.value)}>
+        <Select style={{ ...inputStyle, flex: '0 1 200px' }} value={filters.product_type} onChange={(e) => setF('product_type', e.target.value)}>
           <option value="">All types</option>
           {Object.entries(PRODUCT_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={filters.status} onChange={(e) => setF('status', e.target.value)}>
+        </Select>
+        <Select style={{ ...inputStyle, flex: '0 1 170px' }} value={filters.status} onChange={(e) => setF('status', e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(PRODUCT_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-        <select style={{ ...inputStyle, flex: '0 1 220px' }} value={filters.application_id} onChange={(e) => setF('application_id', e.target.value)}>
+        </Select>
+        <Select style={{ ...inputStyle, flex: '0 1 220px' }} value={filters.application_id} onChange={(e) => setF('application_id', e.target.value)}>
           <option value="">All applications</option>
           {applications.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
+        </Select>
       </div>
 
       <div style={tableWrapStyle}>

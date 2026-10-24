@@ -7,10 +7,12 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { qualityApi } from '@/lib/api'
 import { QualityInspection } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
+import Select from '@/components/shared/Select'
+import { primaryBtnStyle } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<string, string> = { pending: 'Pending', in_progress: 'In Progress', passed: 'Passed', failed: 'Failed', conditionally_passed: 'Conditionally Passed' }
 const STATUS_HEX: Record<string, string> = { pending: '#F59E0B', in_progress: '#2563EB', passed: '#16A34A', failed: '#DC2626', conditionally_passed: '#7C3AED' }
@@ -63,11 +65,7 @@ export default function FinalInspectionListPage() {
         </div>
         {can('quality', 'final_inspection', 'create') && (<button
           onClick={() => router.push('/dashboard/quality/final-inspection/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
+          style={primaryBtnStyle}
         >
           + New Inspection
         </button>)}
@@ -86,14 +84,14 @@ export default function FinalInspectionListPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select style={{ ...inputStyle, flex: '0 1 180px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <Select style={{ ...inputStyle, flex: '0 1 180px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           <option value="pending">Pending</option>
           <option value="in_progress">In Progress</option>
           <option value="passed">Passed</option>
           <option value="failed">Failed</option>
           <option value="conditionally_passed">Conditionally Passed</option>
-        </select>
+        </Select>
       </div>
 
       <div style={{

@@ -13,6 +13,7 @@ import { formatDate } from '@/lib/format'
 import { TEXT } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import { StoreItem, StoreItemMeta, StoreItemVendorSuggestion } from '@/types'
+import Select from '@/components/shared/Select'
 
 export type ItemErpValues = Pick<StoreItem,
   'preferred_vendor_id' | 'make' | 'manufacturer' | 'manufacturer_part_number' | 'min_order_qty'
@@ -133,11 +134,11 @@ export function ItemErpForm({ values, onChange, meta, itemType, uom, effective }
             <span style={hint}>From the vendor&apos;s tax invoice. Required on GST invoices and e-invoices.</span>
           </SField>
           <SField label="GST rate">
-            <select data-tour="item-gst" style={sheetInput} value={values.gst_rate ?? ''}
+            <Select data-tour="item-gst" style={sheetInput} value={values.gst_rate ?? ''}
               onChange={(e) => onChange({ gst_rate: e.target.value === '' ? null : Number(e.target.value) })}>
               <option value="">— Not set —</option>
               {(meta?.gst_rates || []).map((r) => <option key={r} value={r}>{r}%</option>)}
-            </select>
+            </Select>
             <span style={hint}>Rates come from Finance&apos;s GST rate master.</span>
           </SField>
         </SRow>

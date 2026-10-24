@@ -26,6 +26,7 @@ import {
 } from '@/components/finance/financeUi'
 import { recordHref } from '@/lib/recordRef'
 import { useDocCurrency } from '@/components/finance/DocCurrencyFields'
+import Select from '@/components/shared/Select'
 
 type Errors = string | string[]
 
@@ -92,6 +93,7 @@ function LinesTable({ lines, interstate }: { lines: TaxLine[]; interstate: boole
   const num: React.CSSProperties = { ...numTd, padding: '6px 10px', fontSize: 12 }
   const th: React.CSSProperties = { ...thStyle, position: 'static', background: 'transparent', padding: '6px 10px' }
   return (
+    <div style={{ overflowX: 'auto' }}>
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead>
         <tr>
@@ -119,6 +121,7 @@ function LinesTable({ lines, interstate }: { lines: TaxLine[]; interstate: boole
         ))}
       </tbody>
     </table>
+    </div>
   )
 }
 
@@ -126,6 +129,7 @@ function SettlementList({ rows }: { rows: Settlement[] | undefined }) {
   if (!rows) return <div style={{ fontSize: 12, color: TEXT.muted }}>Loading settlements…</div>
   if (rows.length === 0) return <div style={{ fontSize: 12, color: TEXT.muted }}>Nothing received against this invoice yet.</div>
   return (
+    <div style={{ overflowX: 'auto' }}>
     <table style={{ borderCollapse: 'collapse', minWidth: 420 }}>
       <tbody>
         {rows.map((s) => (
@@ -137,6 +141,7 @@ function SettlementList({ rows }: { rows: Settlement[] | undefined }) {
         ))}
       </tbody>
     </table>
+    </div>
   )
 }
 
@@ -259,15 +264,15 @@ function InvoicesTab(ctx: Ctx) {
 
       <div data-tour="fin-sinv-list" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14, alignItems: 'flex-end' }}>
         <Field label="Status" style={{ flex: '0 1 150px' }} tour="fin-sinv-status">
-          <select style={inputStyle} value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
+          <Select style={inputStyle} value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
             <option value="">All</option><option value="pending">Draft</option><option value="posted">Issued</option><option value="cancelled">Cancelled</option>
-          </select>
+          </Select>
         </Field>
         <Field label="Collection" style={{ flex: '0 1 160px' }} tour="fin-sinv-collection">
-          <select style={inputStyle} value={fCollection} onChange={(e) => setFCollection(e.target.value)}>
+          <Select style={inputStyle} value={fCollection} onChange={(e) => setFCollection(e.target.value)}>
             <option value="">All</option><option value="pending">Uncollected</option><option value="partial">Part received</option>
             <option value="overdue">Overdue</option><option value="collected">Received</option>
-          </select>
+          </Select>
         </Field>
         <Field label="Customer" style={{ flex: '1 1 260px', maxWidth: 360 }} tour="fin-sinv-customer-filter">
           <SearchableSelect value={fCustomer} onChange={setFCustomer} options={customerOptions} placeholder="All customers" />
@@ -577,10 +582,10 @@ function SalesInvoiceForm({ setup, ledgers, rates, customers, onSaved, onCancel 
                 <DateField value={invoiceDate} onChange={setInvoiceDate} />
               </SField>
               <SField label="Place of supply" req style={sw(240)} tour="fin-sinv-pos" hint="Where the goods are delivered; decides CGST+SGST vs IGST.">
-                <select style={sheetInput} value={placeOfSupply} onChange={(e) => setPlaceOfSupply(e.target.value)}>
+                <Select style={sheetInput} value={placeOfSupply} onChange={(e) => setPlaceOfSupply(e.target.value)}>
                   {!placeOfSupply && <option value="">— select —</option>}
                   {stateEntries.map(([c, n]) => <option key={c} value={c}>{c} — {n}</option>)}
-                </select>
+                </Select>
               </SField>
             </SRow>
           </SheetSection>
@@ -856,9 +861,9 @@ function CreditNoteForm({ ledgers, rates, onSaved, onCancel }: Ctx & { onSaved: 
                 <DateField value={noteDate} onChange={setNoteDate} />
               </SField>
               <SField label="Reason" req style={sw(220)} tour="fin-cn-reason">
-                <select style={sheetInput} value={reason} onChange={(e) => setReason(e.target.value)}>
+                <Select style={sheetInput} value={reason} onChange={(e) => setReason(e.target.value)}>
                   {Object.entries(REASON_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+                </Select>
               </SField>
             </SRow>
           </SheetSection>

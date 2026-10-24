@@ -4,13 +4,15 @@ import { useCallback, useEffect, useState } from 'react'
 import { hrTimeApi } from '@/lib/api'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import PromptDialog from '@/components/erp/PromptDialog'
+import { smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { OvertimeRequest, hhmm } from '@/components/hr/safety/types'
 
 const td: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
+// Row action chip on the shared 30px small-button scale; colour = meaning.
 const actionBtn = (color: string): React.CSSProperties => ({
-  fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 9999, border: `1px solid ${color}55`,
-  background: `${color}14`, color, cursor: 'pointer', marginRight: 6,
+  ...smallSecondaryBtnStyle, fontWeight: 700, borderRadius: 9999, border: `1px solid ${color}55`,
+  background: `${color}14`, color, marginRight: 6,
 })
 const dmy = (iso: string) => `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}`
 

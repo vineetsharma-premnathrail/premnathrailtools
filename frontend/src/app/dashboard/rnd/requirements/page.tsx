@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -108,15 +109,15 @@ export default function RndRequirementsPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select data-tour="rnd-req-source" style={{ ...inputStyle, flex: '0 1 170px' }} value={source} onChange={(e) => setSource(e.target.value)}>
+        <Select data-tour="rnd-req-source" style={{ ...inputStyle, flex: '0 1 170px' }} value={source} onChange={(e) => setSource(e.target.value)}>
           <option value="">Inquiries &amp; Tenders</option>
           <option value="inquiry">Inquiries only</option>
           <option value="tender">Tenders only</option>
-        </select>
-        <select data-tour="rnd-req-mine" style={{ ...inputStyle, flex: '0 1 170px' }} value={mine ? 'mine' : ''} onChange={(e) => setMine(e.target.value === 'mine')}>
+        </Select>
+        <Select data-tour="rnd-req-mine" style={{ ...inputStyle, flex: '0 1 170px' }} value={mine ? 'mine' : ''} onChange={(e) => setMine(e.target.value === 'mine')}>
           <option value="">Everyone&apos;s</option>
           <option value="mine">Awaiting my response</option>
-        </select>
+        </Select>
       </div>
 
       <div style={{

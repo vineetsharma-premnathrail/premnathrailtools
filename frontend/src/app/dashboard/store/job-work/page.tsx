@@ -15,6 +15,7 @@ import DateField from '@/components/erp/DateField'
 import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import Select from '@/components/shared/Select'
 
 // Job work / subcontracting (SAP item category L, ME2O, GST ITC-04): the
 // challan is a Material Issue of type Job work; its material sits in
@@ -516,9 +517,9 @@ function ReturnAsIsDialog({ challan, onClose, onDone }: {
                         onChange={(e) => setQty({ ...qty, [l.issue_item_id]: e.target.value })} />
                     </td>
                     <td style={{ ...cell, width: 220 }}>
-                      <select style={{ ...sheetInput, padding: '7px 10px' }} value={condition[l.issue_item_id] || conditions[0]?.value || ''} onChange={(e) => setCondition({ ...condition, [l.issue_item_id]: e.target.value })}>
+                      <Select style={{ ...sheetInput, padding: '7px 10px' }} value={condition[l.issue_item_id] || conditions[0]?.value || ''} onChange={(e) => setCondition({ ...condition, [l.issue_item_id]: e.target.value })}>
                         {conditions.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                      </select>
+                      </Select>
                     </td>
                   </tr>
                 ))}

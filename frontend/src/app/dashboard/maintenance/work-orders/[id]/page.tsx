@@ -6,8 +6,8 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { approvalsApi, maintenanceApi } from '@/lib/api'
 import { MaintenanceLookups, MaintenanceStoreItemOption, MaintenanceWorkOrder, MaintenanceWorkOrderSpare, MaintenanceWorkOrderTask } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -28,6 +28,7 @@ import {
   FAILURE_CATEGORY_LABELS, PRIORITY_LABELS, WO_STATUS_LABELS, WO_TYPE_LABELS,
   formatINR, formatMinutes, localInputToIso, nowLocalInput,
 } from '@/components/maintenance/labels'
+import Select from '@/components/shared/Select'
 
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', assigned: '#2563EB', in_progress: '#F59E0B', on_hold: '#9333EA', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
 const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
@@ -53,14 +54,11 @@ const inputStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
 }
 const smallInput: React.CSSProperties = { ...inputStyle, padding: '7px 10px', fontSize: 13 }
-const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6' }
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }
 const tdStyle: React.CSSProperties = { padding: '8px 10px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
 const linkStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer', marginRight: 10 }
-const primaryBtn: React.CSSProperties = {
-  padding: '9px 18px', borderRadius: 12, border: 'none', cursor: 'pointer',
-  background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600,
-}
-const smallBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }
+const primaryBtn: React.CSSProperties = primaryBtnStyle
+const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 
 const fmtQty = (q: number) => (Number.isInteger(q) ? String(q) : q.toFixed(2))
 
@@ -677,10 +675,10 @@ export default function MaintenanceWorkOrderDetailPage() {
         onConfirm={submitComplete} onCancel={() => setCompleteOpen(false)}>
         <SheetSection icon="alert" title="Root Cause Analysis" extra={needsRca ? undefined : <Optional />}>
           <label style={sheetLabel}>Failure Category {needsRca && <Req />}</label>
-          <select data-tour="maint-woc-failure" style={sheetInput} value={cp.failure_category} onChange={(e) => setCp({ ...cp, failure_category: e.target.value })}>
+          <Select data-tour="maint-woc-failure" style={sheetInput} value={cp.failure_category} onChange={(e) => setCp({ ...cp, failure_category: e.target.value })}>
             <option value="">— Select —</option>
             {Object.entries(FAILURE_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
           <label style={{ ...sheetLabel, marginTop: 14 }}>Root Cause {needsRca && <Req />}</label>
           <textarea data-tour="maint-woc-root-cause" style={{ ...sheetInput, minHeight: 60, resize: 'vertical' }} value={cp.root_cause} onChange={(e) => setCp({ ...cp, root_cause: e.target.value })} placeholder="Why did it fail?" />
           <label style={{ ...sheetLabel, marginTop: 14 }}>Action Taken {needsRca && <Req />}</label>
@@ -718,15 +716,15 @@ export default function MaintenanceWorkOrderDetailPage() {
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
             <div style={{ flex: '1 1 150px' }}>
               <label style={sheetLabel}>Type</label>
-              <select data-tour="maint-wodt-type" style={sheetInput} value={dt.wo_type || ''} onChange={(e) => setDt({ ...dt, wo_type: e.target.value })}>
+              <Select data-tour="maint-wodt-type" style={sheetInput} value={dt.wo_type || ''} onChange={(e) => setDt({ ...dt, wo_type: e.target.value })}>
                 {Object.entries(WO_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              </Select>
             </div>
             <div style={{ flex: '1 1 130px' }}>
               <label style={sheetLabel}>Priority</label>
-              <select data-tour="maint-wodt-priority" style={sheetInput} value={dt.priority || ''} onChange={(e) => setDt({ ...dt, priority: e.target.value })}>
+              <Select data-tour="maint-wodt-priority" style={sheetInput} value={dt.priority || ''} onChange={(e) => setDt({ ...dt, priority: e.target.value })}>
                 {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              </Select>
             </div>
           </div>
           <label style={{ ...sheetLabel, marginTop: 14 }}>Instructions</label>
@@ -775,10 +773,10 @@ export default function MaintenanceWorkOrderDetailPage() {
         ) : (
           <SheetSection icon="search" title="Spare Part">
             <label style={sheetLabel}>Store Location <Req /></label>
-            <select data-tour="maint-wosp-location" style={sheetInput} value={sp.location_id} onChange={(e) => setSp({ ...sp, location_id: e.target.value, store_item_id: '' })}>
+            <Select data-tour="maint-wosp-location" style={sheetInput} value={sp.location_id} onChange={(e) => setSp({ ...sp, location_id: e.target.value, store_item_id: '' })}>
               <option value="">— Select —</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
+            </Select>
             <label style={{ ...sheetLabel, marginTop: 14 }}>Spare Part <Req /></label>
             <input data-tour="maint-wosp-item" style={sheetInput} value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} placeholder="Search by item code, name or part number…" />
             <div style={{ maxHeight: 200, overflowY: 'auto', marginTop: 6, border: `1px solid ${SHEET.LINE}`, borderRadius: 10 }}>

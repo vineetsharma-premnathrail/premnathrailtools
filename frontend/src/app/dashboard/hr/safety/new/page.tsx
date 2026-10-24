@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -109,15 +110,15 @@ export default function NewSafetyIncidentPage() {
                     </div>
                     <div style={{ flex: '1 1 210px', maxWidth: 260 }}>
                       {L('Type', true)}
-                      <select style={sheetInput} value={f.incident_type} onChange={(e) => set('incident_type', e.target.value)}>
+                      <Select style={sheetInput} value={f.incident_type} onChange={(e) => set('incident_type', e.target.value)}>
                         {meta.incident_types.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
+                      </Select>
                     </div>
                     <div style={{ flex: '0 1 130px', minWidth: 120 }}>
                       {L('Severity', true)}
-                      <select style={sheetInput} value={f.severity} onChange={(e) => set('severity', e.target.value)}>
+                      <Select style={sheetInput} value={f.severity} onChange={(e) => set('severity', e.target.value)}>
                         {meta.severities.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
+                      </Select>
                     </div>
                     <div style={{ flex: '0 1 160px', minWidth: 150 }}>
                       {L('Date', true)}
@@ -141,10 +142,10 @@ export default function NewSafetyIncidentPage() {
               right={<>
                 <SheetSection icon="building" title="Where">
                   {L('Plant')}
-                  <select style={sheetInput} value={f.branch_id} onChange={(e) => set('branch_id', e.target.value)}>
+                  <Select style={sheetInput} value={f.branch_id} onChange={(e) => set('branch_id', e.target.value)}>
                     <option value="">Customer site / other</option>
                     {meta.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  </select>
+                  </Select>
                   <div style={{ marginTop: 12 }}>
                     {L('Department')}
                     <SearchableSelect value={f.department_id} onChange={(v) => set('department_id', v)} placeholder="Select…"

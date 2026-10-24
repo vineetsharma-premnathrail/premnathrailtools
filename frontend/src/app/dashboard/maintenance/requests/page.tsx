@@ -11,6 +11,7 @@ import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDateTime } from '@/lib/format'
 import { PRIORITY_LABELS, REQUEST_STATUS_LABELS, REQUEST_TYPE_LABELS, WO_STATUS_LABELS } from '@/components/maintenance/labels'
+import Select from '@/components/shared/Select'
 
 const STATUS_HEX: Record<string, string> = { open: '#F59E0B', acknowledged: '#2563EB', converted: '#0f766e', rejected: '#DC2626', duplicate: '#78716c' }
 const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
@@ -94,15 +95,15 @@ export default function MaintenanceRequestsPage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input data-tour="maint-req-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search by number, asset or problem…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select data-tour="maint-req-status-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <Select data-tour="maint-req-status-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(REQUEST_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
         {lookups && (lookups.branches.length > 1 || branchFilter) && (
-          <select data-tour="maint-req-plant-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+          <Select data-tour="maint-req-plant-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
             <option value="">All plants</option>
             {lookups.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
+          </Select>
         )}
         {isMaintenanceUser && (
           <label data-tour="maint-req-mine" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
@@ -119,7 +120,7 @@ export default function MaintenanceRequestsPage() {
           <thead>
             <tr>
               {['Number', 'Asset', 'Type', 'Problem', 'Priority', 'Reported', 'Raised By', 'Status', 'Work Order', ''].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}
                 </th>
               ))}

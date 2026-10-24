@@ -1,5 +1,6 @@
 'use client'
 
+import { primaryBtnStyle } from '@/components/shared/ui'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -132,7 +133,7 @@ export default function DesignReviewsPage() {
           <button
             data-tour="design-reviews-new-sub-btn"
             onClick={() => router.push('/dashboard/design/reviews/submissions/new')}
-            style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}
+            style={primaryBtnStyle}
           >
             + New submission
           </button>

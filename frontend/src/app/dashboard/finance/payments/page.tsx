@@ -31,6 +31,7 @@ import {
 } from '@/components/finance/financeUi'
 import { useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import Select from '@/components/shared/Select'
 
 const TABS = ['All', 'Vendor Payments', 'Customer Receipts', 'Expense Payments', 'Other Receipts', 'Contra'] as const
 type Tab = typeof TABS[number]
@@ -500,9 +501,9 @@ function PaymentsPage() {
               <SheetSection icon="doc" title="Voucher">
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
                   <SField label="Voucher type" req style={{ flex: '0 1 260px', minWidth: 220 }} tour="fin-pay-type">
-                    <select style={sheetInput} value={ptype} onChange={(e) => changeType(e.target.value as PaymentType)}>
+                    <Select style={sheetInput} value={ptype} onChange={(e) => changeType(e.target.value as PaymentType)}>
                       {CREATE_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                    </select>
+                    </Select>
                   </SField>
                   {isParty && (
                     <SField label={ptype === 'vendor' ? 'Vendor' : 'Customer'} req style={{ flex: '1 1 260px', maxWidth: 380 }} tour="fin-pay-party">
@@ -537,9 +538,9 @@ function PaymentsPage() {
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                   <SField label="Mode" style={{ flex: '0 1 150px', minWidth: 130 }} tour="fin-pay-mode">
-                    <select style={sheetInput} value={mode} onChange={(e) => setMode(e.target.value)}>
+                    <Select style={sheetInput} value={mode} onChange={(e) => setMode(e.target.value)}>
                       {modeOptions.map((m) => <option key={m} value={m}>{MODE_LABELS[m]}</option>)}
-                    </select>
+                    </Select>
                   </SField>
                   {mode === 'cheque' && (
                     <>
@@ -685,15 +686,15 @@ function PaymentsPage() {
                               return (
                                 <tr key={d.key}>
                                   <td style={{ ...tcell, width: 200 }}>
-                                    <select style={sheetInput} value={d.target_id} onChange={(e) => set({ target_id: e.target.value })}>
+                                    <Select style={sheetInput} value={d.target_id} onChange={(e) => set({ target_id: e.target.value })}>
                                       <option value="">Pick bill</option>
                                       {openDocs.map((o) => <option key={o.id} value={String(o.id)}>{o.doc_number}</option>)}
-                                    </select>
+                                    </Select>
                                   </td>
                                   <td style={{ ...tcell, width: 230 }}>
-                                    <select style={sheetInput} value={d.reason} onChange={(e) => set({ reason: e.target.value })}>
+                                    <Select style={sheetInput} value={d.reason} onChange={(e) => set({ reason: e.target.value })}>
                                       {DEDUCTION_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                                    </select>
+                                    </Select>
                                   </td>
                                   <td style={{ ...tcell, width: 130 }}>
                                     <input type="number" min={0} step="0.01" style={{ ...sheetInput, textAlign: 'right' }} value={d.amount} onChange={(e) => set({ amount: e.target.value })} />
@@ -812,13 +813,13 @@ function PaymentsPage() {
         <Field label="From" style={{ flex: '0 1 160px', minWidth: 150 }} tour="fin-pay-from"><DateField value={fromDate} onChange={setFromDate} /></Field>
         <Field label="To" style={{ flex: '0 1 160px', minWidth: 150 }} tour="fin-pay-to"><DateField value={toDate} onChange={setToDate} /></Field>
         <Field label="Status" style={{ flex: '0 1 140px', minWidth: 130 }} tour="fin-pay-status">
-          <select style={inputStyle} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <Select style={inputStyle} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="">All</option>
             <option value="posted">Posted</option>
             <option value="pending_approval">Waiting approval</option>
             <option value="rejected">Rejected</option>
             <option value="cancelled">Cancelled</option>
-          </select>
+          </Select>
         </Field>
       </div>
 

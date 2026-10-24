@@ -1,53 +1,142 @@
 'use client'
 
 import { useMemo } from 'react'
-import { COLORS, RADII, BORDER, BORDERS, GLASS, SHADOWS, TEXT } from '@/lib/theme'
+import { COLORS, RADII, BORDER, BORDERS, CONTROL, GLASS, SHADOWS, TEXT } from '@/lib/theme'
 import { CrmActivityAttachment } from '@/types'
 import { crmApi } from '@/lib/api'
 import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 
+// ---- Control + button scale (CONTROL in theme.ts) --------------------------
+// Every input, dropdown trigger, date field and button is 38px tall (small: 30px)
+// from padding + lineHeight + a 1px border. Module style files (crm/ui, finance,
+// hr, sales, pm, electrical, rnd) spread these instead of their own paddings, so
+// controls in one row line up app-wide. Override colours, never the height.
+
 export const inputStyle: React.CSSProperties = {
   width: '100%',
-  padding: '10px 12px',
-  borderRadius: RADII.lg,
+  padding: `10px ${CONTROL.padX}px`,
+  borderRadius: CONTROL.radius,
   border: `1px solid ${BORDER.normal}`,
   background: COLORS.surface,
-  fontSize: 13,
+  fontSize: CONTROL.fontSize,
+  lineHeight: CONTROL.lineHeight,
+  minHeight: CONTROL.height,
+  color: TEXT.body,
   outline: 'none',
   boxSizing: 'border-box',
+  minWidth: 0,
+}
+
+/** Shared box for every button: centred icon + label, never wraps, 38px tall. */
+export const btnBase: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 6,
+  fontSize: CONTROL.fontSize,
+  fontWeight: 600,
+  lineHeight: CONTROL.lineHeight,
+  padding: '10px 18px',
+  minHeight: CONTROL.height,
+  borderRadius: CONTROL.radius,
+  whiteSpace: 'nowrap',
+  boxSizing: 'border-box',
+  cursor: 'pointer',
+  flex: 'none',
 }
 
 export const primaryBtnStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  padding: '10px 20px',
-  borderRadius: RADII.lg,
-  border: 'none',
+  ...btnBase,
+  border: '1px solid transparent',
   background: COLORS.brandGradient,
   color: '#fff',
-  cursor: 'pointer',
 }
 
 export const secondaryBtnStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  padding: '9px 18px',
-  borderRadius: RADII.lg,
+  ...btnBase,
   border: `1px solid ${BORDER.normal}`,
   background: COLORS.surface,
   color: '#57534e',
-  cursor: 'pointer',
 }
 
 export const dangerBtnStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  padding: '9px 18px',
-  borderRadius: RADII.lg,
+  ...btnBase,
   border: BORDERS.dangerStrong,
   background: 'rgba(220,38,38,0.06)',
   color: COLORS.danger,
-  cursor: 'pointer',
+}
+
+/** 30px variant for row actions inside tables, chips and toolbars. */
+export const smallBtnSize: React.CSSProperties = {
+  padding: '6px 12px',
+  minHeight: CONTROL.heightSm,
+  fontSize: CONTROL.fontSizeSm,
+  gap: 4,
+}
+export const smallPrimaryBtnStyle: React.CSSProperties = { ...primaryBtnStyle, ...smallBtnSize }
+export const smallSecondaryBtnStyle: React.CSSProperties = { ...secondaryBtnStyle, ...smallBtnSize }
+export const smallDangerBtnStyle: React.CSSProperties = { ...dangerBtnStyle, ...smallBtnSize }
+
+/** Square icon-only button, same height as an input (pairs with a field in one row). */
+export const iconBtnStyle: React.CSSProperties = {
+  ...secondaryBtnStyle,
+  padding: 0,
+  width: CONTROL.height,
+  minWidth: CONTROL.height,
+  height: CONTROL.height,
+}
+
+// ---- Tables -----------------------------------------------------------------
+/** Scroll box around every data table: scrolls both ways inside the card, so a
+ * wide table never widens the page; the sticky header stays visible. */
+export const tableWrapStyle: React.CSSProperties = {
+  width: '100%',
+  overflow: 'auto',
+  maxHeight: 'calc(100vh - 320px)',
+  borderRadius: 12,
+  border: `1px solid ${BORDER.light}`,
+  background: 'rgba(255,255,255,.55)',
+}
+export const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse' }
+export const thStyle: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '10px 12px',
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: '.04em',
+  textTransform: 'uppercase',
+  color: TEXT.muted,
+  background: '#fdf1e6',
+  whiteSpace: 'nowrap',
+  position: 'sticky',
+  top: 0,
+  zIndex: 1,
+  verticalAlign: 'middle',
+}
+export const tdStyle: React.CSSProperties = {
+  padding: '9px 12px',
+  fontSize: 13,
+  color: TEXT.body,
+  borderTop: `1px solid ${BORDER.light}`,
+  verticalAlign: 'middle',
+}
+export const numThStyle: React.CSSProperties = { ...thStyle, textAlign: 'right' }
+export const numTdStyle: React.CSSProperties = { ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }
+
+/** Wraps a <table> in the shared scroll box. `maxHeight="none"` for short tables
+ * inside a page that already scrolls. */
+export function TableScroll({ children, maxHeight, style, minWidth }: { children: React.ReactNode; maxHeight?: number | string; style?: React.CSSProperties; minWidth?: number }) {
+  return (
+    <div className="table-scroll" style={{ ...tableWrapStyle, ...(maxHeight !== undefined ? { maxHeight } : {}), ...style }}>
+      {minWidth ? <div style={{ minWidth }}>{children}</div> : children}
+    </div>
+  )
+}
+
+/** Toolbar row above a table / list: filters on the left, actions on the right,
+ * wraps on narrow screens, every control the same height. */
+export function Toolbar({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  return <div className="ui-toolbar" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, ...style }}>{children}</div>
 }
 
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {

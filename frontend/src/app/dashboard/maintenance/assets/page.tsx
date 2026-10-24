@@ -13,6 +13,7 @@ import AssetImportDialog from '@/components/maintenance/AssetImportDialog'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import { recordPath, refOf } from '@/lib/recordRef'
 import { useCan } from '@/lib/permissions'
+import Select from '@/components/shared/Select'
 
 const STATUS_HEX: Record<string, string> = { operational: '#16A34A', breakdown: '#DC2626', under_maintenance: '#F59E0B', standby: '#2563EB', decommissioned: '#78716c' }
 const CRIT_HEX: Record<string, string> = { A: '#DC2626', B: '#F59E0B', C: '#78716c' }
@@ -126,26 +127,26 @@ export default function MaintenanceAssetsPage() {
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <input data-tour="maint-asset-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search by code, name, serial or location…" value={search} onChange={(e) => setSearch(e.target.value)} />
         {lookups && lookups.branches.length > 1 && (
-          <select data-tour="maint-asset-plant-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+          <Select data-tour="maint-asset-plant-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
             <option value="">All plants</option>
             {lookups.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
+          </Select>
         )}
-        <select data-tour="maint-asset-category-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+        <Select data-tour="maint-asset-category-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
           <option value="">All categories</option>
           {Object.entries(ASSET_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="maint-asset-crit-filter" style={{ ...inputStyle, flex: '0 1 140px' }} value={criticalityFilter} onChange={(e) => setCriticalityFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="maint-asset-crit-filter" style={{ ...inputStyle, flex: '0 1 140px' }} value={criticalityFilter} onChange={(e) => setCriticalityFilter(e.target.value)}>
           <option value="">Any criticality</option>
           <option value="A">A</option>
           <option value="B">B</option>
           <option value="C">C</option>
-        </select>
-        <select data-tour="maint-asset-status-filter" style={{ ...inputStyle, flex: '0 1 180px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="maint-asset-status-filter" style={{ ...inputStyle, flex: '0 1 180px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           <option value="down">Down (breakdown + under maintenance)</option>
           {Object.entries(ASSET_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
       </div>
 
       {selected.length > 0 && (
@@ -176,7 +177,7 @@ export default function MaintenanceAssetsPage() {
                 <input type="checkbox" aria-label="Select all assets on this page" checked={allOnPageSelected} onChange={toggleAllOnPage} disabled={pageIds.length === 0} />
               </th>
               {['Code', 'Name', 'Category', 'Plant', 'Location', 'Crit.', 'Open WOs', 'Status', ''].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}
                 </th>
               ))}

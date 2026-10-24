@@ -11,6 +11,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDateTime } from '@/lib/format'
 import { DOC_TYPE_LABELS } from '@/components/maintenance/labels'
+import Select from '@/components/shared/Select'
 
 const inputStyle: React.CSSProperties = {
   padding: '8px 10px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
@@ -130,9 +131,9 @@ export default function MaintenanceAttachments({
 
       {canUpload && (
         <div data-tour="maint-attach-upload" style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 14, flexWrap: 'wrap' }}>
-          <select style={{ ...inputStyle, flex: '0 1 160px' }} value={docType} onChange={(e) => setDocType(e.target.value)}>
+          <Select style={{ ...inputStyle, flex: '0 1 160px' }} value={docType} onChange={(e) => setDocType(e.target.value)}>
             {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
           <input key={inputKey} type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
             onChange={(e) => setFiles(Array.from(e.target.files || []))} style={{ ...inputStyle, flex: '1 1 220px', maxWidth: 360 }} />
           <button type="button" onClick={upload} disabled={!files.length || uploading}

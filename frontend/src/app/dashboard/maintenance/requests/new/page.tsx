@@ -12,6 +12,7 @@ import { recordPath, useRecordId } from '@/lib/recordRef'
 import MaintenanceAssetPicker from '@/components/maintenance/MaintenanceAssetPicker'
 import { extractErrorMessages } from '@/lib/validation'
 import { PRIORITY_LABELS, REQUEST_TYPE_LABELS, localInputToIso, nowLocalInput } from '@/components/maintenance/labels'
+import Select from '@/components/shared/Select'
 
 export default function NewMaintenanceRequestPage() {
   const { isAuthorized, isLoading } = useRequireAnyApp('maintenance', 'production')
@@ -144,9 +145,9 @@ export default function NewMaintenanceRequestPage() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ flex: '0 1 240px', minWidth: 200 }}>
                   <label style={sheetLabel}>Type</label>
-                  <select data-tour="maint-reqf-type" style={sheetInput} value={requestType} onChange={(e) => handleTypeChange(e.target.value)}>
+                  <Select data-tour="maint-reqf-type" style={sheetInput} value={requestType} onChange={(e) => handleTypeChange(e.target.value)}>
                     {Object.entries(REQUEST_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div style={{ flex: '0 1 220px', minWidth: 200 }}>
                   <label style={sheetLabel}>When did it happen?</label>
@@ -154,10 +155,10 @@ export default function NewMaintenanceRequestPage() {
                 </div>
                 <div style={{ flex: '0 1 170px', minWidth: 150 }}>
                   <label style={sheetLabel}>Priority</label>
-                  <select data-tour="maint-reqf-priority" style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value)}>
+                  <Select data-tour="maint-reqf-priority" style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value)}>
                     <option value="">Auto (from criticality)</option>
                     {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </div>
               </div>
               <label style={{ ...sheetLabel, marginTop: 14 }}>What&apos;s wrong? <Req /></label>

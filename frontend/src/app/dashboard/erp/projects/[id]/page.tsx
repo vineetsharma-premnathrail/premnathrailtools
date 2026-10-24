@@ -17,7 +17,7 @@ import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import LetterEditorDialog, { letterTypeTitle } from '@/components/erp/LetterEditorDialog'
 import ManagedDocumentPanel, { openRecordInWord } from '@/components/shared/ManagedDocumentPanel'
 import FileUploadPreview from '@/components/FileUploadPreview'
-import { Card, InfoRow, secondaryBtnStyle } from '@/components/shared/ui'
+import { Card, InfoRow, secondaryBtnStyle, dangerBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -549,7 +549,7 @@ function CreatedDocuments({ projectId, letters, loading, error, setError, reload
     }
   }
 
-  const actionBtn: React.CSSProperties = { fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#57534e', cursor: 'pointer', whiteSpace: 'nowrap' }
+  const actionBtn: React.CSSProperties = smallSecondaryBtnStyle
 
   return (
     <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -593,7 +593,7 @@ function CreatedDocuments({ projectId, letters, loading, error, setError, reload
                 {canPrint && <button type="button" onClick={() => onOpenPdf(l)} style={actionBtn}>PDF</button>}
                 {canEdit && <button type="button" onClick={() => onEdit(l)} style={actionBtn}>Edit</button>}
                 {canDelete(l.created_by_id) && (
-                  <button type="button" onClick={() => setToDelete(l)} style={{ ...actionBtn, border: '1px solid rgba(220,38,38,0.25)', background: 'rgba(220,38,38,0.06)', color: '#b91c1c' }}>
+                  <button type="button" onClick={() => setToDelete(l)} style={smallDangerBtnStyle}>
                     Delete
                   </button>
                 )}
@@ -764,14 +764,3 @@ function AuditTab({ projectId }: { projectId: number }) {
   )
 }
 
-const dangerBtnStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  padding: '9px 16px',
-  borderRadius: 10,
-  border: '1px solid rgba(220,38,38,0.25)',
-  background: 'rgba(220,38,38,0.06)',
-  color: '#b91c1c',
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-}

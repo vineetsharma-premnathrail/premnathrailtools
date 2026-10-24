@@ -15,6 +15,7 @@ import {
   COMPLAINT_STATUS_LABELS, COMPLAINT_STATUS_HEX, SEVERITY_HEX,
 } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 interface Stats { total: number; open: number; this_year: number; repeats: number; avg_response_days: number | null; total_cost: number }
 
@@ -85,14 +86,14 @@ export default function QualityComplaintsPage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input style={{ ...filterInputStyle, flex: '1 1 240px', maxWidth: 420 }} placeholder="Search number, customer, item, serial / batch…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...filterInputStyle, flex: '0 1 200px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <Select style={{ ...filterInputStyle, flex: '0 1 200px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="live">All open</option>
           <option value="">All statuses</option>
           {Object.entries(COMPLAINT_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-        <select style={{ ...filterInputStyle, flex: '0 1 150px' }} value={severity} onChange={(e) => setSeverity(e.target.value)}>
+        </Select>
+        <Select style={{ ...filterInputStyle, flex: '0 1 150px' }} value={severity} onChange={(e) => setSeverity(e.target.value)}>
           <option value="">All severities</option><option value="critical">Critical</option><option value="major">Major</option><option value="minor">Minor</option>
-        </select>
+        </Select>
       </div>
 
       <div style={tableWrapStyle}>

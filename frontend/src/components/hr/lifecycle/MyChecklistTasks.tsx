@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { hrApi } from '@/lib/api'
 import { HrChecklistTask } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 
@@ -76,7 +77,7 @@ export default function MyChecklistTasks({ compact = false }: { compact?: boolea
             <button
               type="button"
               onClick={() => router.push(recordPath('/dashboard/hr/lifecycle', t, 'event_id'))}
-              style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 9999, border: `1px solid ${BORDER.normal}`, background: '#fff', color: '#57534e', cursor: 'pointer' }}
+              style={{ ...smallSecondaryBtnStyle, borderRadius: 9999 }}
             >
               Open
             </button>
@@ -85,7 +86,7 @@ export default function MyChecklistTasks({ compact = false }: { compact?: boolea
               data-tour="hr-lc-my-task-done"
               disabled={busyId === t.id}
               onClick={() => markDone(t)}
-              style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 9999, border: '1px solid rgba(22,163,74,0.35)', background: 'rgba(22,163,74,0.08)', color: '#15803d', cursor: busyId === t.id ? 'wait' : 'pointer' }}
+              style={{ ...smallSecondaryBtnStyle, fontWeight: 700, borderRadius: 9999, border: '1px solid rgba(22,163,74,0.35)', background: 'rgba(22,163,74,0.08)', color: '#15803d', cursor: busyId === t.id ? 'wait' : 'pointer' }}
             >
               {busyId === t.id ? 'Saving…' : '✓ Mark done'}
             </button>

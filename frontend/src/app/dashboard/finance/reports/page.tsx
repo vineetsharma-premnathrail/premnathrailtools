@@ -28,6 +28,7 @@ import {
   EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
 import { CostCenterReport, InternalOrdersReport } from '@/components/finance/ControllingReports'
+import Select from '@/components/shared/Select'
 
 const TABS = ['Trial Balance', 'Profit & Loss', 'Balance Sheet', 'Cash Flow', 'Aging', 'Budget Variance', 'Cost Centres', 'Internal Orders', 'Monthly Pack', 'Year-end Close'] as const
 type Tab = typeof TABS[number]
@@ -680,10 +681,10 @@ export default function FinanceReportsPage() {
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 16 }}>
           <div data-tour="fin-rep-ye-fy" style={{ flex: '0 1 200px' }}>
             <label style={labelStyle}>Financial year</label>
-            <select style={inputStyle} value={fyCode} onChange={(e) => setFyCode(e.target.value)}>
+            <Select style={inputStyle} value={fyCode} onChange={(e) => setFyCode(e.target.value)}>
               {fys.length === 0 && fyCode && <option value={fyCode}>{fyCode}</option>}
               {fys.map((f) => <option key={f.code} value={f.code}>{f.code}{f.status !== 'open' ? ` (${f.status})` : ''}</option>)}
-            </select>
+            </Select>
           </div>
           {fy && <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 10px' }}>{dmy(fy.start_date)} to {dmy(fy.end_date)}{fy.lock_date ? ` · locked up to ${dmy(fy.lock_date)}` : ''}</p>}
         </div>
@@ -747,7 +748,7 @@ export default function FinanceReportsPage() {
                 const on = quickActive(k)
                 return (
                   <button key={k} type="button" onClick={() => setRange(k)} style={{
-                    ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12,
+                    ...secondaryBtnStyle,
                     ...(on ? { borderColor: BRAND.primary, background: `${BRAND.primary}1a`, color: BRAND.primaryActive } : {}),
                   }}>{l}</button>
                 )

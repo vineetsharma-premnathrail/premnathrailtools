@@ -5,13 +5,14 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi, storeMaterialDocsApi } from '@/lib/api'
 import { StoreItem, StoreLocation, StoreStockTransaction } from '@/types'
 import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
-import { inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import StockEntryDialog from '@/components/store/StockEntryDialog'
 import { useCan } from '@/lib/permissions'
+import Select from '@/components/shared/Select'
 
 // The stock ledger — every posting from Record Stock Entry, issues, returns,
 // transfers, adjustments, GRNs and quarantine clears. Read-only.
@@ -211,26 +212,26 @@ export default function StoreMovementsPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select data-tour="movements-store-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterLocation} onChange={(e) => setFilterLocation(e.target.value)}>
+        <Select data-tour="movements-store-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterLocation} onChange={(e) => setFilterLocation(e.target.value)}>
           <option value="">All stores</option>
           {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-        </select>
-        <select data-tour="movements-category-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+        </Select>
+        <Select data-tour="movements-category-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
           <option value="">All categories</option>
           {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
+        </Select>
         <input data-tour="movements-date-from" type="date" title="From date" style={{ ...inputStyle, flex: '0 1 150px', width: 'auto' }} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
         <input data-tour="movements-date-to" type="date" title="To date" style={{ ...inputStyle, flex: '0 1 150px', width: 'auto' }} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-        <select data-tour="movements-type-filter" style={{ ...inputStyle, flex: '1 1 160px', width: 'auto' }} value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+        <Select data-tour="movements-type-filter" style={{ ...inputStyle, flex: '1 1 160px', width: 'auto' }} value={filterType} onChange={(e) => setFilterType(e.target.value)}>
           <option value="">All movement types</option>
           {Object.entries(TXN_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
         <input data-tour="movements-ref-filter" style={{ ...inputStyle, flex: '1 1 160px', width: 'auto' }} placeholder="Document / reference no." value={refNo} onChange={(e) => setRefNo(e.target.value)} />
         <input style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} placeholder="Vendor" value={vendor} onChange={(e) => setVendor(e.target.value)} />
-        <select style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={userId} onChange={(e) => setUserId(e.target.value)}>
+        <Select style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={userId} onChange={(e) => setUserId(e.target.value)}>
           <option value="">All users</option>
           {users.map((u) => <option key={u.id} value={u.id}>{u.label}</option>)}
-        </select>
+        </Select>
         {hasFilters && <button onClick={clearFilters} style={secondaryBtnStyle}>Clear</button>}
         {can('store', 'movements', 'export') && (
           <button data-tour="movements-export-btn" onClick={exportExcel} disabled={exporting} style={secondaryBtnStyle}>{exporting ? 'Exporting…' : 'Export Excel'}</button>
@@ -240,8 +241,8 @@ export default function StoreMovementsPage() {
         <span>{total} movement(s){total > PAGE_SIZE ? ` — page ${page + 1} of ${pages}` : ''}</span>
         {total > PAGE_SIZE && (
           <>
-            <button disabled={page === 0} onClick={() => setPage((p) => p - 1)} style={{ ...secondaryBtnStyle, padding: '4px 12px', fontSize: 12 }}>‹ Prev</button>
-            <button disabled={page + 1 >= pages} onClick={() => setPage((p) => p + 1)} style={{ ...secondaryBtnStyle, padding: '4px 12px', fontSize: 12 }}>Next ›</button>
+            <button disabled={page === 0} onClick={() => setPage((p) => p - 1)} style={smallSecondaryBtnStyle}>‹ Prev</button>
+            <button disabled={page + 1 >= pages} onClick={() => setPage((p) => p + 1)} style={smallSecondaryBtnStyle}>Next ›</button>
           </>
         )}
       </div>

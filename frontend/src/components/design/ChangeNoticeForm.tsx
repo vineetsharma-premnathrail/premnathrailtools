@@ -1,5 +1,7 @@
 'use client'
 
+import AnchoredDropdown from '@/components/design/AnchoredDropdown'
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { designApi } from '@/lib/api'
 import { DesignChangeNotice, DesignLookupOption } from '@/types'
@@ -137,15 +139,15 @@ export default function ChangeNoticeForm({
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
                 <div data-tour="design-ecnform-reason" style={{ flex: '1 1 190px', maxWidth: 260 }}>
                   <label style={labelStyle}>Reason</label>
-                  <select style={inputStyle} value={reason} onChange={(e) => setReason(e.target.value)}>
+                  <Select style={inputStyle} value={reason} onChange={(e) => setReason(e.target.value)}>
                     {Object.entries(ECN_REASON_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div data-tour="design-ecnform-priority" style={{ flex: '0 1 130px', minWidth: 120 }}>
                   <label style={labelStyle}>Priority</label>
-                  <select style={inputStyle} value={priority} onChange={(e) => setPriority(e.target.value)}>
+                  <Select style={inputStyle} value={priority} onChange={(e) => setPriority(e.target.value)}>
                     {Object.entries(ECN_PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div data-tour="design-ecnform-target-date" style={{ flex: '0 1 170px', minWidth: 160 }}>
                   <label style={labelStyle}>Target date</label>
@@ -186,13 +188,13 @@ export default function ChangeNoticeForm({
             <div style={{ position: 'relative', maxWidth: 520 }}>
               <input data-tour="design-ecnform-docs-search" style={inputStyle} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search active documents by number or title to add…" />
               {matches.length > 0 && (
-                <div style={dropStyle}>
+                <AnchoredDropdown style={dropStyle}>
                   {matches.map((d) => (
                     <div key={d.id} onClick={() => { setRows((prev) => [...prev, { document_id: d.id, label: d.label, change_description: '' }]); setSearch('') }} style={optionStyle}>
                       {d.label}
                     </div>
                   ))}
-                </div>
+                </AnchoredDropdown>
               )}
             </div>
             {rows.length === 0 ? (
@@ -216,13 +218,13 @@ export default function ChangeNoticeForm({
             <div style={{ position: 'relative', maxWidth: 520 }}>
               <input data-tour="design-ecnform-boms-search" style={inputStyle} value={bomSearch} onChange={(e) => setBomSearch(e.target.value)} placeholder="Search BOMs by number or title to add…" />
               {bomMatches.length > 0 && (
-                <div style={dropStyle}>
+                <AnchoredDropdown style={dropStyle}>
                   {bomMatches.map((b) => (
                     <div key={b.id} onClick={() => { setBomRows((prev) => [...prev, { bom_id: b.id, label: b.label, change_description: '' }]); setBomSearch('') }} style={optionStyle}>
                       {b.label}{b.extra ? <span style={{ color: SHEET.MUTED }}> · {b.extra}</span> : null}
                     </div>
                   ))}
-                </div>
+                </AnchoredDropdown>
               )}
             </div>
             {bomRows.length === 0 ? (
@@ -274,9 +276,9 @@ export function EffectivityFields({ value: v, set, tours, extra }: { value: EffV
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
         <div data-tour={tours ? 'design-ecnform-effectivity' : undefined} style={{ flex: '0 1 250px', minWidth: 220 }}>
           <label style={labelStyle}>Change takes effect</label>
-          <select style={inputStyle} value={v.effectivityType} onChange={(e) => set.setEffectivityType(e.target.value)}>
+          <Select style={inputStyle} value={v.effectivityType} onChange={(e) => set.setEffectivityType(e.target.value)}>
             {Object.entries(ECN_EFFECTIVITY_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-          </select>
+          </Select>
         </div>
         {v.effectivityType === 'date' && (
           <div style={{ flex: '0 1 170px', minWidth: 160 }}>
@@ -300,15 +302,15 @@ export function EffectivityFields({ value: v, set, tours, extra }: { value: EffV
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
         <div data-tour={tours ? 'design-ecnform-stock-disposition' : undefined} style={{ flex: '0 1 170px', minWidth: 150 }}>
           <label style={labelStyle}>Stock on hand</label>
-          <select style={inputStyle} value={v.stockDisposition} onChange={(e) => set.setStockDisposition(e.target.value)}>
+          <Select style={inputStyle} value={v.stockDisposition} onChange={(e) => set.setStockDisposition(e.target.value)}>
             {Object.entries(DISPOSITION_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-          </select>
+          </Select>
         </div>
         <div data-tour={tours ? 'design-ecnform-wip-disposition' : undefined} style={{ flex: '0 1 170px', minWidth: 150 }}>
           <label style={labelStyle}>Work in progress</label>
-          <select style={inputStyle} value={v.wipDisposition} onChange={(e) => set.setWipDisposition(e.target.value)}>
+          <Select style={inputStyle} value={v.wipDisposition} onChange={(e) => set.setWipDisposition(e.target.value)}>
             {Object.entries(DISPOSITION_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-          </select>
+          </Select>
         </div>
         <div data-tour={tours ? 'design-ecnform-disposition-note' : undefined} style={{ flex: '1 1 260px', maxWidth: 520 }}>
           <label style={labelStyle}>Disposition note</label>

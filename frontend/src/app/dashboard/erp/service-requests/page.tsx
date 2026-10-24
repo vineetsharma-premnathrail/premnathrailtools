@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -10,7 +11,7 @@ import { SLA_STATE_HEX, SLA_STATE_LABELS } from '@/lib/eamApi'
 import { formatDate } from '@/lib/format'
 import { Project, ServiceRequest, SRStatus } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
-import { inputStyle } from '@/components/shared/ui'
+import { inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import Checkbox from '@/components/Checkbox'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
@@ -231,29 +232,29 @@ export default function ServiceRequestsPage() {
           data-tour="erp-sr-search"
           style={{ ...inputStyle, flex: '1 1 260px', width: 'auto' }}
         />
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }} data-tour="erp-sr-status-filter">
+        <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }} data-tour="erp-sr-status-filter">
           <option value="all">All Statuses</option>
           {Object.entries(STATUS_LABELS).map(([v, l]) => (
             <option key={v} value={v}>{l}</option>
           ))}
-        </select>
-        <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }} data-tour="erp-sr-priority-filter">
+        </Select>
+        <Select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }} data-tour="erp-sr-priority-filter">
           <option value="all">All Priorities</option>
           <option value="standard">Standard</option>
           <option value="urgent">Urgent</option>
-        </select>
-        <select value={serviceTypeFilter} onChange={(e) => setServiceTypeFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }} data-tour="erp-sr-type-filter">
+        </Select>
+        <Select value={serviceTypeFilter} onChange={(e) => setServiceTypeFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }} data-tour="erp-sr-type-filter">
           <option value="all">All Service Types</option>
           {SERVICE_TYPES.map((t) => (
             <option key={t.value} value={t.value}>{t.label}</option>
           ))}
-        </select>
-        <select value={slaFilter} onChange={(e) => setSlaFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }}>
+        </Select>
+        <Select value={slaFilter} onChange={(e) => setSlaFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }}>
           <option value="all">Any SLA</option>
           <option value="breached">SLA breached</option>
           <option value="at_risk">SLA at risk</option>
           <option value="met">SLA met</option>
-        </select>
+        </Select>
         <span data-tour="erp-sr-overdue" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 6px', fontSize: 13, fontWeight: 600, color: '#57534e' }}>
           <Checkbox checked={overdueOnly} onChange={(e) => { setOverdueOnly(e.target.checked) }} />
           Overdue Only
@@ -354,14 +355,3 @@ export default function ServiceRequestsPage() {
   )
 }
 
-const secondaryBtnStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  padding: '10px 18px',
-  borderRadius: 10,
-  border: '1px solid rgba(0,0,0,0.1)',
-  background: '#fff',
-  color: '#57534e',
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-}

@@ -1,5 +1,7 @@
 'use client'
 
+import Select from '@/components/shared/Select'
+import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
@@ -394,10 +396,11 @@ export default function InquiryForm({
         </button>
       </>}>
     <form id={formId} onSubmit={handleSubmit} onKeyDown={handleEnterAsTab} style={{ position: 'relative' }}>
-      {saving && (
+      {saving && createPortal(
         <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(2px)' }}>
           <div className="loader" />
-        </div>
+        </div>,
+        document.body,
       )}
       <div ref={errorRef} style={{ padding: error && (!Array.isArray(error) || error.length) ? '16px 24px 0' : 0 }}><SheetError error={error} /></div>
 
@@ -425,24 +428,24 @@ export default function InquiryForm({
           </div>
           <div style={{ flex: '1 1 130px', minWidth: 130 }}>
             <F label={<>Lead Source <Req /></>} tourId="inq-lead-source">
-              <select value={form.lead_source} onChange={(e) => set('lead_source', e.target.value)} style={inputStyle}>
+              <Select value={form.lead_source} onChange={(e) => set('lead_source', e.target.value)} style={inputStyle}>
                 <option value="">-- Select Source --</option>
                 {LEAD_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
+              </Select>
             </F>
           </div>
           <div style={{ flex: '1 1 260px', minWidth: 220 }}>
             <F label={<>Customer Requirement Priority <Req /></>} tourId="inq-priority">
-              <select value={form.priority} onChange={(e) => set('priority', e.target.value)} style={inputStyle}>
+              <Select value={form.priority} onChange={(e) => set('priority', e.target.value)} style={inputStyle}>
                 {priorityOptions(initial?.priority).map((p) => <option key={p} value={p}>{priorityLabel(p)}</option>)}
-              </select>
+              </Select>
             </F>
           </div>
           <div style={{ flex: '1 1 130px', minWidth: 130 }}>
             <F label={<>Status <Req /></>} tourId="inq-status">
-              <select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
+              <Select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
                 {inquiryStatusOptions(form.status).map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
+              </Select>
             </F>
           </div>
           <div style={{ flex: '1 1 110px', minWidth: 110 }}>
@@ -611,11 +614,11 @@ export default function InquiryForm({
             />
           </F>
           <F label={<>Contact Person <Req /></>} tourId="inq-contact">
-            <select value={form.org_contact_id} onChange={(e) => set('org_contact_id', e.target.value)} disabled={!form.org_id} style={inputStyle}>
+            <Select value={form.org_contact_id} onChange={(e) => set('org_contact_id', e.target.value)} disabled={!form.org_id} style={inputStyle}>
               <option value="">-- Select Contact --</option>
               {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               <option value="__new__">+ Add New Contact</option>
-            </select>
+            </Select>
           </F>
         </div>
         {selectedContact && (

@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 // Service › Contracts — customer AMC / CMC service contracts (SAP VA45 list).
 
 import { useEffect, useState } from 'react'
@@ -60,10 +61,10 @@ export default function ServiceContractsPage() {
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
         <div style={{ flex: '0 1 280px', minWidth: 200 }}><input style={inputStyle} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search number, title, PO…" /></div>
         <div style={{ flex: '0 1 180px', minWidth: 160 }}>
-          <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value)}>
+          <Select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">All statuses</option>
             {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         </div>
         <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
           <input type="checkbox" checked={expiring} onChange={(e) => setExpiring(e.target.checked)} /> Ending within 60 days

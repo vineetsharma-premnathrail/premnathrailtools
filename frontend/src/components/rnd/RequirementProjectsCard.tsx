@@ -9,8 +9,9 @@ import { useRouter } from 'next/navigation'
 import { rndApi } from '@/lib/api'
 import { recordPath } from '@/lib/recordRef'
 import { RndLinkedProject } from '@/types'
-import { TEXT, BORDER, GLASS, SHADOWS, GRADIENTS } from '@/lib/theme'
+import { TEXT, BORDER, GLASS, SHADOWS } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
+import { smallPrimaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
@@ -63,7 +64,7 @@ export default function RequirementProjectsCard({ source, recordId, isHead }: { 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.heading, margin: 0 }}>Prototype / Research</p>
         {isHead && !picking && (
-          <button type="button" onClick={openPicker} style={{ padding: '7px 14px', borderRadius: 10, border: 'none', background: GRADIENTS.primary, color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+          <button type="button" onClick={openPicker} style={smallPrimaryBtnStyle}>
             + Link project
           </button>
         )}

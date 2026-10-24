@@ -13,6 +13,7 @@ import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { FormSheet, SheetColumns, SheetSection, SheetIconName, SHEET, sheetInput, SheetError } from '@/components/shared/FormSheet'
 import { SField, SRow, SheetBody, SheetFooter, sw, sg } from '@/components/finance/financeSheet'
+import Select from '@/components/shared/Select'
 import {
   inputStyle, sectionStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, Field, ErrorBanner, InfoBanner, StatusPill, TableWrap, EmptyRow, StatCard, ledgerOptions,
@@ -82,10 +83,10 @@ function MasterFields({ f, set, blockOpts }: { f: MasterForm; set: (p: Partial<M
       <SheetSection icon="clock" title="Depreciation">
         <SRow>
           <SField label="Method" req style={sw(190)}>
-            <select style={sheetInput} value={f.depreciation_method} onChange={(e) => set({ depreciation_method: e.target.value as 'slm' | 'wdv' })}>
+            <Select style={sheetInput} value={f.depreciation_method} onChange={(e) => set({ depreciation_method: e.target.value as 'slm' | 'wdv' })}>
               <option value="slm">Straight line (SLM)</option>
               <option value="wdv">Written-down value (WDV)</option>
-            </select>
+            </Select>
           </SField>
           {f.depreciation_method === 'slm'
             ? <SField label="Useful life (months)" req style={sw(160)}><input type="number" min={1} style={sheetInput} value={f.useful_life_months} onChange={(e) => set({ useful_life_months: e.target.value })} placeholder="e.g. 180" /></SField>
@@ -359,16 +360,16 @@ function RetireDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
             <SRow>
               <SField label="Date" req style={sw(160)}><DateField value={date} onChange={setDate} /></SField>
               <SField label="Type" req style={sw(190)}>
-                <select style={sheetInput} value={type} onChange={(e) => setType(e.target.value as 'scrap' | 'sale')}>
+                <Select style={sheetInput} value={type} onChange={(e) => setType(e.target.value as 'scrap' | 'sale')}>
                   <option value="sale">Sale to a customer</option><option value="scrap">Scrap (no buyer)</option>
-                </select>
+                </Select>
               </SField>
             </SRow>
             <SRow mb={0}>
               <SField label="Retire by" style={sw(150)}>
-                <select style={sheetInput} value={by} onChange={(e) => { const v = e.target.value as 'percent' | 'quantity'; setBy(v); setShare(v === 'percent' ? '100' : '1') }}>
+                <Select style={sheetInput} value={by} onChange={(e) => { const v = e.target.value as 'percent' | 'quantity'; setBy(v); setShare(v === 'percent' ? '100' : '1') }}>
                   <option value="percent">% of cost</option><option value="quantity">Units</option>
-                </select>
+                </Select>
               </SField>
               <SField label={by === 'percent' ? 'Percent' : 'Units'} req style={sw(120)}><input type="number" min={0} step="any" style={sheetInput} value={share} onChange={(e) => setShare(e.target.value)} /></SField>
             </SRow>

@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -103,13 +104,13 @@ export default function ElectricalPurchaseRequirementsPage() {
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
         />
-        <select data-tour="elec-pur-status-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 280px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <Select data-tour="elec-pur-status-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 280px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
           {STATUS_FILTERS.map((s) => <option key={s.value || 'open'} value={s.value}>{s.label}</option>)}
-        </select>
-        <select data-tour="elec-pur-category-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 200px' }} value={category} onChange={(e) => setCategory(e.target.value)}>
+        </Select>
+        <Select data-tour="elec-pur-category-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 200px' }} value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="">All categories</option>
           {Object.entries(meta?.component_categories || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
       </div>
 
       {!loading && (

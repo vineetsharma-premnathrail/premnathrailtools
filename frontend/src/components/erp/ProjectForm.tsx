@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useRef, useState } from 'react'
 import { DirectoryUser, Project } from '@/types'
 import { usersApi } from '@/lib/api'
@@ -333,10 +334,10 @@ export default function ProjectForm({
               <Field label="Serial Number" req><input value={form.serial_number} onChange={(e) => set('serial_number', e.target.value)} placeholder="e.g. PNR-RR-2026-88" style={sheetInput} data-tour="erp-pf-serial" /></Field>
               <Field label="Model Name"><input value={form.model_name} onChange={(e) => set('model_name', e.target.value)} placeholder="e.g. Catenary Track Car Pro" style={sheetInput} data-tour="erp-pf-model" /></Field>
               <Field label="Machine Classification">
-                <select value={form.machine_type} onChange={(e) => set('machine_type', e.target.value)} style={sheetInput} data-tour="erp-pf-machine-type">
+                <Select value={form.machine_type} onChange={(e) => set('machine_type', e.target.value)} style={sheetInput} data-tour="erp-pf-machine-type">
                   <option value="">-- Select Machine Type --</option>
                   {MACHINE_TYPES.map((m) => <option key={m} value={m}>{m}</option>)}
-                </select>
+                </Select>
               </Field>
 
               {form.machine_type === 'Other' && (
@@ -349,15 +350,15 @@ export default function ProjectForm({
 
               <Field label="Year of Manufacture"><div data-tour="erp-pf-year"><YearField value={form.year_of_manufacture} onChange={(v) => set('year_of_manufacture', v)} style={sheetInput} /></div></Field>
               <Field label="Operational Status">
-                <select value={form.status} onChange={(e) => set('status', e.target.value)} style={sheetInput} data-tour="erp-pf-status">
+                <Select value={form.status} onChange={(e) => set('status', e.target.value)} style={sheetInput} data-tour="erp-pf-status">
                   {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </select>
+                </Select>
               </Field>
               <Field label="Application Type">
-                <select value={form.application_type} onChange={(e) => set('application_type', e.target.value)} style={sheetInput} data-tour="erp-pf-app-type">
+                <Select value={form.application_type} onChange={(e) => set('application_type', e.target.value)} style={sheetInput} data-tour="erp-pf-app-type">
                   <option value="">-- Select Application Type --</option>
                   {APPLICATION_TYPES.map((a) => <option key={a} value={a}>{a}</option>)}
-                </select>
+                </Select>
               </Field>
 
               {form.application_type === 'Other' && (
@@ -401,10 +402,10 @@ export default function ProjectForm({
                   </Field>
                 ) : (
                   <Field label="State">
-                    <select value={form.site_state} onChange={(e) => set('site_state', e.target.value)} style={sheetInput} data-tour="erp-pf-state">
+                    <Select value={form.site_state} onChange={(e) => set('site_state', e.target.value)} style={sheetInput} data-tour="erp-pf-state">
                       <option value="">-- Select State / UT --</option>
                       {INDIA_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    </Select>
                   </Field>
                 )}
                 <Field label="Pincode"><input value={form.site_pincode} onChange={(e) => set('site_pincode', e.target.value)} placeholder="6-digit PIN code" style={sheetInput} data-tour="erp-pf-pincode" /></Field>
@@ -467,9 +468,9 @@ export default function ProjectForm({
 
             <SheetSection icon="shield" title="Warranty Coverage Details">
               <Field label="Warranty Status">
-                <select value={warrantyStatus} onChange={(e) => setWarrantyStatus(e.target.value)} style={sheetInput} data-tour="erp-pf-warranty-status">
+                <Select value={warrantyStatus} onChange={(e) => setWarrantyStatus(e.target.value)} style={sheetInput} data-tour="erp-pf-warranty-status">
                   {WARRANTY_STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                </Select>
               </Field>
               {warrantyStatus === 'active' && (
                 <Row>
@@ -490,9 +491,9 @@ export default function ProjectForm({
                 </Field>
               )}
               <Field label="AMC Service Status">
-                <select value={form.amc_status} onChange={(e) => set('amc_status', e.target.value)} style={sheetInput} data-tour="erp-pf-amc-status">
+                <Select value={form.amc_status} onChange={(e) => set('amc_status', e.target.value)} style={sheetInput} data-tour="erp-pf-amc-status">
                   {AMC_STATUS_OPTIONS.map((o) => <option key={o.label} value={o.value}>{o.label}</option>)}
-                </select>
+                </Select>
               </Field>
               {form.amc_status && (
                 <Field label="AMC End Date"><DateField value={form.amc_end_date} onChange={(v) => set('amc_end_date', v)} /></Field>

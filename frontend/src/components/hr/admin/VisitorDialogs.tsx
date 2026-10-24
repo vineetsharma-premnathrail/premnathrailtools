@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
@@ -125,10 +126,10 @@ export function RegisterVisitorDialog({
                 </Fld>
               )}
               <Fld label="Plant" basis={190}>
-                <select style={sheetInput} value={f.branch_id} onChange={(e) => set('branch_id')(e.target.value)}>
+                <Select style={sheetInput} value={f.branch_id} onChange={(e) => set('branch_id')(e.target.value)}>
                   <option value="">{isHr ? "Host's plant" : 'My plant'}</option>
                   {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
+                </Select>
               </Fld>
             </div>
             {isHr && (
@@ -141,10 +142,10 @@ export function RegisterVisitorDialog({
               <div data-tour="hr-visitor-form-badge-id" style={{ ...row, marginTop: 12 }}>
                 <Fld label="Badge no." basis={130}><input style={sheetInput} value={f.badge_no} onChange={(e) => set('badge_no')(e.target.value)} /></Fld>
                 <Fld label="ID proof" basis={170}>
-                  <select style={sheetInput} value={f.id_proof_type} onChange={(e) => set('id_proof_type')(e.target.value)}>
+                  <Select style={sheetInput} value={f.id_proof_type} onChange={(e) => set('id_proof_type')(e.target.value)}>
                     <option value="">—</option>
                     {ID_PROOF_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  </Select>
                 </Fld>
                 <Fld label="ID last 4" basis={110}><input style={sheetInput} maxLength={4} value={f.id_proof_last4} onChange={(e) => set('id_proof_last4')(e.target.value)} /></Fld>
               </div>
@@ -306,10 +307,10 @@ export function EditVisitorDialog({
                 </Fld>
               )}
               <Fld label="Plant" basis={190}>
-                <select style={sheetInput} value={f.branch_id} onChange={(e) => set('branch_id')(e.target.value)}>
+                <Select style={sheetInput} value={f.branch_id} onChange={(e) => set('branch_id')(e.target.value)}>
                   {!f.branch_id && <option value="">—</option>}
                   {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
+                </Select>
               </Fld>
             </div>
             {expected && (
@@ -325,10 +326,10 @@ export function EditVisitorDialog({
             <div style={row}>
               {isHr && <Fld label="Badge no." basis={130}><input style={sheetInput} value={f.badge_no} onChange={(e) => set('badge_no')(e.target.value)} /></Fld>}
               <Fld label="ID proof" basis={150} grow>
-                <select style={sheetInput} value={f.id_proof_type} onChange={(e) => set('id_proof_type')(e.target.value)}>
+                <Select style={sheetInput} value={f.id_proof_type} onChange={(e) => set('id_proof_type')(e.target.value)}>
                   <option value="">—</option>
                   {ID_PROOF_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
+                </Select>
               </Fld>
               <Fld label="ID last 4" basis={110}><input style={sheetInput} maxLength={4} value={f.id_proof_last4} onChange={(e) => set('id_proof_last4')(e.target.value)} /></Fld>
             </div>
@@ -397,10 +398,10 @@ export function CheckInDialog({ visitor, onClose, onDone }: { visitor: HrVisitor
           <div data-tour="hr-visitor-checkin-badge-id" style={row}>
             <Fld label="Badge no." basis={130}><input autoFocus style={sheetInput} value={badge} onChange={(e) => setBadge(e.target.value)} /></Fld>
             <Fld label="ID proof" basis={170}>
-              <select style={sheetInput} value={idType} onChange={(e) => setIdType(e.target.value)}>
+              <Select style={sheetInput} value={idType} onChange={(e) => setIdType(e.target.value)}>
                 <option value="">—</option>
                 {ID_PROOF_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
+              </Select>
             </Fld>
             <Fld label="ID last 4" basis={110}><input style={sheetInput} maxLength={4} value={idLast4} onChange={(e) => setIdLast4(e.target.value)} /></Fld>
           </div>

@@ -10,6 +10,7 @@ import MaintenanceAssetPicker from '@/components/maintenance/MaintenanceAssetPic
 import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
 import { PM_FREQUENCY_UNIT_LABELS, WO_TYPE_LABELS } from '@/components/maintenance/labels'
+import Select from '@/components/shared/Select'
 
 const PM_WO_TYPES = ['preventive', 'calibration', 'inspection']
 
@@ -214,9 +215,9 @@ export default function PmPlanForm({
           </div>
           <div style={{ flex: '0 1 170px', minWidth: 150 }}>
             <label style={sheetLabel}>Job Type</label>
-            <select data-tour="maint-pmf-type" style={sheetInput} value={f.wo_type} onChange={(e) => set('wo_type')(e.target.value)}>
+            <Select data-tour="maint-pmf-type" style={sheetInput} value={f.wo_type} onChange={(e) => set('wo_type')(e.target.value)}>
               {PM_WO_TYPES.map((t) => <option key={t} value={t}>{WO_TYPE_LABELS[t] || t}</option>)}
-            </select>
+            </Select>
           </div>
         </div>
         <div style={{ marginTop: 14 }}>
@@ -230,11 +231,11 @@ export default function PmPlanForm({
         <div style={{ ...rowStyle, marginBottom: 12 }}>
           <div style={{ flex: '0 1 280px', minWidth: 240 }}>
             <label style={sheetLabel}>Trigger</label>
-            <select style={sheetInput} value={f.trigger_type} onChange={(e) => set('trigger_type')(e.target.value)}>
+            <Select style={sheetInput} value={f.trigger_type} onChange={(e) => set('trigger_type')(e.target.value)}>
               <option value="calendar">Calendar (every N days / months)</option>
               <option value="meter">Counter (every N running hours / km)</option>
               <option value="calendar_or_meter">Calendar or counter — whichever first</option>
-            </select>
+            </Select>
           </div>
           {usesMeter && (
             <>
@@ -261,17 +262,17 @@ export default function PmPlanForm({
             <label style={sheetLabel}>Every <Req /></label>
             <div style={{ display: 'flex', gap: 8 }}>
               <input style={{ ...sheetInput, width: 70 }} type="number" min={1} step={1} value={f.frequency_value} onChange={(e) => set('frequency_value')(e.target.value)} />
-              <select style={sheetInput} value={f.frequency_unit} onChange={(e) => set('frequency_unit')(e.target.value)}>
+              <Select style={{ ...sheetInput, flex: 1, minWidth: 0 }} value={f.frequency_unit} onChange={(e) => set('frequency_unit')(e.target.value)}>
                 {Object.entries(PM_FREQUENCY_UNIT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              </Select>
             </div>
           </div>
           <div style={{ flex: '0 1 200px', minWidth: 190 }}>
             <label style={sheetLabel}>Next Due From</label>
-            <select data-tour="maint-pmf-basis" style={sheetInput} value={f.schedule_basis} onChange={(e) => set('schedule_basis')(e.target.value)}>
+            <Select data-tour="maint-pmf-basis" style={sheetInput} value={f.schedule_basis} onChange={(e) => set('schedule_basis')(e.target.value)}>
               <option value="fixed">Due date (fixed calendar)</option>
               <option value="floating">Last completion (floating)</option>
-            </select>
+            </Select>
           </div>
           <div data-tour="maint-pmf-next-due" style={{ flex: '0 1 160px', minWidth: 150 }}>
             <label style={sheetLabel}>Next Due Date <Req /></label>

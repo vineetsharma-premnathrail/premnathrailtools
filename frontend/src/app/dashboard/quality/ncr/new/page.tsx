@@ -12,6 +12,7 @@ import DateField from '@/components/erp/DateField'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, Req } from '@/components/shared/FormSheet'
 import { ErrorBanner, sheetGap } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 interface ItemOpt { id: number; item_code: string; item_name: string; uom?: string }
 
@@ -83,14 +84,14 @@ export default function NewNcrPage() {
           <SheetSection icon="alert" title="Non-conformance" color="#DC2626">
             <div style={row}>
               <F label="Source">
-                <select style={sheetInput} value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>
+                <Select style={sheetInput} value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>
                   {sources.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </select>
+                </Select>
               </F>
               <F label="Severity" flex="0 1 150px">
-                <select style={sheetInput} value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value })}>
+                <Select style={sheetInput} value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value })}>
                   <option value="minor">Minor</option><option value="major">Major</option><option value="critical">Critical</option>
-                </select>
+                </Select>
               </F>
               <F label="NCR date" flex="0 1 170px"><DateField value={form.ncr_date} onChange={(v) => setForm({ ...form, ncr_date: v })} /></F>
             </div>
@@ -112,10 +113,10 @@ export default function NewNcrPage() {
             </div>
             <div style={row}>
               <F label="Defect code">
-                <select style={sheetInput} value={form.defect_code_id} onChange={(e) => setForm({ ...form, defect_code_id: e.target.value })}>
+                <Select style={sheetInput} value={form.defect_code_id} onChange={(e) => setForm({ ...form, defect_code_id: e.target.value })}>
                   <option value="">—</option>
                   {codes.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name} ({c.category})</option>)}
-                </select>
+                </Select>
               </F>
               <F label="Reference document">
                 <input style={sheetInput} value={form.source_reference} onChange={(e) => setForm({ ...form, source_reference: e.target.value })} placeholder="Complaint / audit / job no." />
@@ -136,10 +137,10 @@ export default function NewNcrPage() {
                 {form.block_stock && (
                   <>
                     <label style={{ ...sheetLabel, ...sheetGap }}>Store <Req /></label>
-                    <select style={sheetInput} value={form.location_id} onChange={(e) => setForm({ ...form, location_id: e.target.value })}>
+                    <Select style={sheetInput} value={form.location_id} onChange={(e) => setForm({ ...form, location_id: e.target.value })}>
                       <option value="">Select store…</option>
                       {locations.map((l) => <option key={l.id} value={l.id}>{l.code} — {l.name}</option>)}
-                    </select>
+                    </Select>
                   </>
                 )}
               </>

@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useRef, useState } from 'react'
 import { Organization, OrgContact } from '@/types'
 import { crmApi } from '@/lib/api'
@@ -400,10 +401,10 @@ export default function OrganizationForm({
             </div>
             <div style={{ flex: '1 1 190px', minWidth: 170 }}>
               <Field label={<>Customer Organization Type <Req /></>} tourId="org-type">
-                <select value={form.org_type} onChange={(e) => setOrgType(e.target.value)} style={inputStyle}>
+                <Select value={form.org_type} onChange={(e) => setOrgType(e.target.value)} style={inputStyle}>
                   <option value="">-- Select Type --</option>
                   {ORG_TYPES.map((o) => <option key={o} value={o}>{ORG_TYPE_LABELS[o] || o}</option>)}
-                </select>
+                </Select>
                 {form.org_type === 'Other' && (
                   <input value={orgTypeCustom} onChange={(e) => setOrgTypeCustom(e.target.value)} placeholder="Specify customer organization type" style={{ ...inputStyle, marginTop: 8 }} />
                 )}
@@ -415,10 +416,10 @@ export default function OrganizationForm({
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '0 1 200px', minWidth: 170 }}>
                 <Field label="Railway Zone" tourId="org-railway-zone">
-                  <select value={form.railway_zone} onChange={(e) => set('railway_zone', e.target.value)} style={inputStyle}>
+                  <Select value={form.railway_zone} onChange={(e) => set('railway_zone', e.target.value)} style={inputStyle}>
                     <option value="">-- Select Zone --</option>
                     {RAILWAY_ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
-                  </select>
+                  </Select>
                   {form.railway_zone === 'Other' && (
                     <input value={railwayZoneCustom} onChange={(e) => setRailwayZoneCustom(e.target.value)} placeholder="Specify railway zone" style={{ ...inputStyle, marginTop: 8 }} />
                   )}
@@ -437,9 +438,9 @@ export default function OrganizationForm({
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ flex: '1 1 160px', minWidth: 140 }}>
               <Field label="Country" tourId="org-country">
-                <select value={form.country} onChange={(e) => set('country', e.target.value)} style={inputStyle}>
+                <Select value={form.country} onChange={(e) => set('country', e.target.value)} style={inputStyle}>
                   {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
+                </Select>
                 {form.country === 'Other' && (
                   <input value={countryCustom} onChange={(e) => setCountryCustom(e.target.value)} placeholder="Specify country" style={{ ...inputStyle, marginTop: 8 }} />
                 )}

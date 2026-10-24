@@ -11,6 +11,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
 import { useCan } from '@/lib/permissions'
+import Select from '@/components/shared/Select'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', released: 'Released', in_progress: 'In Progress', completed: 'Completed', closed: 'Closed', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', released: '#2563EB', in_progress: '#F59E0B', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
@@ -114,10 +115,10 @@ export default function ProductionWorkOrdersPage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input data-tour="production-wo-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search by WO number or product…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select data-tour="production-wo-priority-filter" style={{ ...inputStyle, flex: '0 1 160px' }} value={priority} onChange={(e) => setPriority(e.target.value)}>
+        <Select data-tour="production-wo-priority-filter" style={{ ...inputStyle, flex: '0 1 160px' }} value={priority} onChange={(e) => setPriority(e.target.value)}>
           <option value="">All priorities</option>
           {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
         <label data-tour="production-wo-overdue-filter" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.secondary, cursor: 'pointer' }}>
           <input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} /> Overdue only
         </label>
@@ -131,7 +132,7 @@ export default function ProductionWorkOrdersPage() {
           <thead>
             <tr>
               {['WO Number', 'Product', 'Machine / Project', 'Qty', 'Progress', 'Priority', 'Planned End', 'Status', ''].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}
                 </th>
               ))}

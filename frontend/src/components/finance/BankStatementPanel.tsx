@@ -15,6 +15,8 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { FormSheet, SheetSection, SheetIconName, SHEET, sheetBtn, sheetInput, SheetError } from '@/components/shared/FormSheet'
 import { SField, SheetFooter } from '@/components/finance/financeSheet'
+import Select from '@/components/shared/Select'
+import { smallBtnSize } from '@/components/shared/ui'
 import {
   sectionStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle,
   thStyle, tdStyle, numTd, numTh, inr, dmy, ErrorBanner, InfoBanner, StatusPill, TableWrap, EmptyRow, ledgerOptions,
@@ -151,9 +153,9 @@ export default function BankStatementPanel({ recon, canCreate, canEdit, canBook 
           <SheetError error={importError} />
           <SheetSection icon="doc" title="Statement file">
             <SField label="Bank format" req style={{ maxWidth: 320, marginBottom: 14 }} hint={fmtNote || undefined}>
-              <select style={sheetInput} value={format} onChange={(e) => setFormat(e.target.value)}>
+              <Select style={sheetInput} value={format} onChange={(e) => setFormat(e.target.value)}>
                 {formats.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-              </select>
+              </Select>
             </SField>
             <SField label="Statement file (CSV / XLSX)" req hint={`Lines dated after ${dmy(recon.statement_date)} are refused; lines already imported from an earlier file are skipped.`}>
               <input key={fileKey} type="file" accept=".csv,.xlsx,.txt" style={sheetInput} onChange={(e) => setFile(e.target.files?.[0] || null)} />
@@ -175,9 +177,9 @@ export default function BankStatementPanel({ recon, canCreate, canEdit, canBook 
       )}
 
       {data && data.lines.length > 0 && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
           {(['all', 'unmatched'] as const).map((f) => (
-            <button key={f} type="button" onClick={() => setFilter(f)} style={{ ...secondaryBtnStyle, padding: '5px 12px', fontSize: 12, background: filter === f ? '#fde7d2' : '#fff' }}>
+            <button key={f} type="button" onClick={() => setFilter(f)} style={{ ...secondaryBtnStyle, ...smallBtnSize, background: filter === f ? '#fde7d2' : '#fff' }}>
               {f === 'all' ? 'All lines' : 'Only unmatched'}
             </button>
           ))}
@@ -338,9 +340,9 @@ function BookDialog({ line, kinds, onClose, onDone }: { line: StatementLine | nu
       <SheetSection icon="list" title="Voucher">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <SField label="What is it?" req style={{ maxWidth: 300 }}>
-            <select style={sheetInput} value={kind} onChange={(e) => setKind(e.target.value)}>
+            <Select style={sheetInput} value={kind} onChange={(e) => setKind(e.target.value)}>
               {kinds.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
-            </select>
+            </Select>
           </SField>
           <SField label="Ledger" req={needsLedger} hint={needsLedger ? undefined : 'Leave blank to use the Ledger Settings default.'}>
             <SearchableSelect value={gl} onChange={setGl} options={opts} placeholder="Select ledger…" />

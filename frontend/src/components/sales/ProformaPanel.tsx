@@ -12,7 +12,7 @@ import { useCan } from '@/lib/permissions'
 import { SalesOrder, SalesProforma } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
-import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { smallPrimaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
 import { sectionStyle, h2Style, thStyle, tdStyle, Pill, ErrorBanner } from '@/components/sales/SalesUi'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { formatINR } from '@/components/sales/labels'
@@ -73,7 +73,7 @@ export default function ProformaPanel({ order }: { order: SalesOrder }) {
                 <span style={{ fontSize: 12.5 }}>{b.sequence}. {b.percent}% advance — {formatINR(b.amount)}</span>
                 {pi ? <span style={{ fontSize: 12, color: '#2563EB', fontWeight: 700 }}>{pi.pi_number}</span>
                   : canEdit && !['invoiced', 'settled'].includes(b.status) && (
-                    <button type="button" data-tour="so-proforma-issue" disabled={busy} onClick={() => setIssueFor(b.id)} style={{ ...primaryBtnStyle, padding: '5px 11px', fontSize: 11.5 }}>Issue proforma</button>
+                    <button type="button" data-tour="so-proforma-issue" disabled={busy} onClick={() => setIssueFor(b.id)} style={{ ...smallPrimaryBtnStyle }}>Issue proforma</button>
                   )}
               </div>
             )
@@ -96,8 +96,8 @@ export default function ProformaPanel({ order }: { order: SalesOrder }) {
                   <td style={tdStyle}>{formatINR(pi.received_amount)}{pi.status === 'issued' && pi.balance_amount > 0 && <div style={{ fontSize: 11, color: '#b45309' }}>{formatINR(pi.balance_amount)} due</div>}</td>
                   <td style={tdStyle}><Pill label={pi.status_label} hex={STATUS_HEX[pi.status] || '#64748B'} />{pi.cancel_reason && <div style={{ fontSize: 11, color: '#78716c' }}>{pi.cancel_reason}</div>}</td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                    {canPrint && <button type="button" onClick={() => openPdf(pi)} style={{ ...secondaryBtnStyle, padding: '5px 11px', fontSize: 11.5, marginRight: 6 }}>PDF</button>}
-                    {canCancel && pi.status === 'issued' && <button type="button" disabled={busy} onClick={() => setCancelId(pi.id)} style={{ ...dangerBtnStyle, padding: '5px 11px', fontSize: 11.5 }}>Cancel</button>}
+                    {canPrint && <button type="button" onClick={() => openPdf(pi)} style={{ ...smallSecondaryBtnStyle, marginRight: 6 }}>PDF</button>}
+                    {canCancel && pi.status === 'issued' && <button type="button" disabled={busy} onClick={() => setCancelId(pi.id)} style={{ ...smallDangerBtnStyle }}>Cancel</button>}
                   </td>
                 </tr>
               ))}

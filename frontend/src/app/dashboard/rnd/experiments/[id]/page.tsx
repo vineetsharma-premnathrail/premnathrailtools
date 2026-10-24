@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
@@ -297,31 +298,31 @@ export default function RndExperimentDetailPage() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                   <div style={{ flex: '0 1 160px', minWidth: 140 }}>
                     <label style={labelStyle}>Type</label>
-                    <select style={inputStyle} value={experimentType} onChange={(e) => setExperimentType(e.target.value as RndExperimentType)}>
+                    <Select style={inputStyle} value={experimentType} onChange={(e) => setExperimentType(e.target.value as RndExperimentType)}>
                       <option value="research">Research</option>
                       <option value="lab_test">Lab Test</option>
                       <option value="field_trial">Field Trial</option>
                       <option value="simulation">Simulation</option>
                       <option value="validation">Validation</option>
-                    </select>
+                    </Select>
                   </div>
                   <div data-tour="rnd-ed-status" style={{ flex: '0 1 160px', minWidth: 140 }}>
                     <label style={labelStyle}>Status</label>
-                    <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value as RndExperimentStatus)}>
+                    <Select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value as RndExperimentStatus)}>
                       <option value="planned">Planned</option>
                       <option value="in_progress">In Progress</option>
                       <option value="completed">Completed</option>
                       <option value="cancelled">Cancelled</option>
-                    </select>
+                    </Select>
                   </div>
                   <div data-tour="rnd-ed-result" style={{ flex: '0 1 160px', minWidth: 140 }}>
                     <label style={labelStyle}>Result {status === 'completed' && <Req />}</label>
-                    <select style={inputStyle} value={result} onChange={(e) => setResult(e.target.value as RndExperimentResult | '')}>
+                    <Select style={inputStyle} value={result} onChange={(e) => setResult(e.target.value as RndExperimentResult | '')}>
                       <option value="">—</option>
                       <option value="pass">Pass</option>
                       <option value="fail">Fail</option>
                       <option value="inconclusive">Inconclusive</option>
-                    </select>
+                    </Select>
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
@@ -385,11 +386,11 @@ export default function RndExperimentDetailPage() {
                       <td style={{ padding: 4 }}><input style={cellInputStyle} value={r.measured} onChange={(e) => updateRow(idx, { measured: e.target.value })} /></td>
                       <td style={{ padding: 4 }}><input style={cellInputStyle} value={r.unit} onChange={(e) => updateRow(idx, { unit: e.target.value })} placeholder="kN" /></td>
                       <td style={{ padding: 4 }}>
-                        <select style={cellInputStyle} value={r.result} onChange={(e) => updateRow(idx, { result: e.target.value as ParamRow['result'] })}>
+                        <Select style={cellInputStyle} value={r.result} onChange={(e) => updateRow(idx, { result: e.target.value as ParamRow['result'] })}>
                           <option value="">—</option>
                           <option value="pass">Pass</option>
                           <option value="fail">Fail</option>
-                        </select>
+                        </Select>
                       </td>
                       <td style={{ padding: 4, textAlign: 'center' }}>
                         <button

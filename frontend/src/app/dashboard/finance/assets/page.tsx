@@ -22,6 +22,7 @@ import {
 } from '@/components/finance/financeUi'
 import { recordHref } from '@/lib/recordRef'
 import { CapitalisationTab, RetirementsTab, AssetReconciliationTab, TaxDepreciationTab } from '@/components/finance/AssetAccountingTabs'
+import Select from '@/components/shared/Select'
 
 const TABS = ['Register', 'Depreciation', 'Capitalisation', 'Retirements', 'Reconciliation', 'Tax Depreciation'] as const
 type Tab = typeof TABS[number]
@@ -163,11 +164,11 @@ function RegisterTab({ canManage }: { canManage: boolean }) {
       <ErrorBanner error={error} />
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', marginBottom: 16 }}>
         <Field label="Show" style={short(170)} tour="fin-fa-status-filter">
-          <select style={inputStyle} value={statusFilter} onChange={(e) => { setLoading(true); setStatusFilter(e.target.value as 'active' | 'disposed' | '') }}>
+          <Select style={inputStyle} value={statusFilter} onChange={(e) => { setLoading(true); setStatusFilter(e.target.value as 'active' | 'disposed' | '') }}>
             <option value="active">Active</option>
             <option value="disposed">Disposed</option>
             <option value="">All</option>
-          </select>
+          </Select>
         </Field>
         {!showForm && can('accounts', 'fixed_assets', 'create') && <button data-tour="fin-fa-new-btn" style={primaryBtnStyle} onClick={() => setShowForm(true)}>+ Register asset</button>}
       </div>
@@ -222,10 +223,10 @@ function RegisterTab({ canManage }: { canManage: boolean }) {
                 </SRow>
                 <SRow>
                   <SField label="Method" req style={sw(200)} tour="fin-fa-method">
-                    <select style={sheetInput} value={form.depreciation_method} onChange={(e) => set({ depreciation_method: e.target.value as 'slm' | 'wdv' })}>
+                    <Select style={sheetInput} value={form.depreciation_method} onChange={(e) => set({ depreciation_method: e.target.value as 'slm' | 'wdv' })}>
                       <option value="slm">Straight line (SLM)</option>
                       <option value="wdv">Written-down value (WDV)</option>
-                    </select>
+                    </Select>
                   </SField>
                   {form.depreciation_method === 'slm' ? (
                     <SField label="Useful life (months)" req style={sw(160)} tour="fin-fa-life">
@@ -543,6 +544,7 @@ function DepreciationTab({ canManage, canRequest, canReverse }: { canManage: boo
                 rows.push(
                   <tr key={`${r.id}-lines`}>
                     <td colSpan={7} style={{ ...tdStyle, background: 'rgba(255,255,255,.5)', padding: '8px 12px 12px 32px' }}>
+                      <div style={{ overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead>
                           <tr>
@@ -563,6 +565,7 @@ function DepreciationTab({ canManage, canRequest, canReverse }: { canManage: boo
                           ))}
                         </tbody>
                       </table>
+                      </div>
                     </td>
                   </tr>,
                 )

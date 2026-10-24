@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { hrApi } from '@/lib/api'
 import { HrLifecycleEvent } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 
@@ -59,7 +60,7 @@ export default function EmployeeLifecycleTab({ userId, userRef }: { userId: numb
               key={t}
               type="button"
               onClick={() => router.push(`/dashboard/hr/lifecycle/new?${new URLSearchParams({ type: t, user_id: userRef })}`)}
-              style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 9999, border: `1px solid ${TYPE_HEX[t]}55`, background: '#fff', color: TYPE_HEX[t], cursor: 'pointer' }}
+              style={{ ...smallSecondaryBtnStyle, borderRadius: 9999, border: `1px solid ${TYPE_HEX[t]}55`, background: '#fff', color: TYPE_HEX[t] }}
             >
               + {label}
             </button>

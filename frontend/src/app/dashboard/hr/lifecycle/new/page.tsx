@@ -8,6 +8,7 @@ import { HrLifecycleEventType, HrLifecycleMeta } from '@/types'
 import { extractErrorMessages } from '@/lib/validation'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import SearchableSelect from '@/components/erp/SearchableSelect'
+import { smallSecondaryBtnStyle } from '@/components/shared/ui'
 import HrNav from '@/components/hr/HrNav'
 import EventFields, { EMPTY_EVENT_FORM, EventFormState, formToPayload } from '@/components/hr/lifecycle/EventFields'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -133,7 +134,7 @@ function NewEventInner() {
                       type="button"
                       onClick={() => setSubjectMode(k)}
                       style={{
-                        fontSize: 12.5, fontWeight: 600, padding: '7px 14px', borderRadius: 9999, cursor: 'pointer', fontFamily: 'inherit',
+                        ...smallSecondaryBtnStyle, borderRadius: 9999, fontFamily: 'inherit',
                         border: subjectMode === k ? `1px solid ${SHEET.BLUE}` : `1px solid ${SHEET.LINE}`,
                         background: subjectMode === k ? '#eff6ff' : '#fff',
                         color: subjectMode === k ? SHEET.BLUE : SHEET.BODY,

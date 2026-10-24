@@ -8,6 +8,7 @@ import { getHistoryFromLink } from '@/components/rnd/historyLink'
 import RndNav from '@/components/rnd/RndNav'
 import TerminalPanel from '@/components/rnd/TerminalPanel'
 import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, calcButtonStyle, downloadCsv, downloadBlob, getErrorMessage } from '@/components/rnd/toolStyles'
+import { secondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 
 interface LoadDistResult {
@@ -166,10 +167,10 @@ function LoadDistributionPageInner() {
           <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>Load Distribution Calculator</h1>
           <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0' }}>Wheel load analysis · UIC 518 / EN 14363 · ΔQ/Q safety check</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button data-tour="rnd-load-csv-btn" onClick={exportCsv} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export CSV</button>
-          <button data-tour="rnd-load-docx-btn" onClick={downloadDocx} disabled={busy} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export Report (.docx)</button>
-          <a data-tour="rnd-load-history-btn" href="/dashboard/rnd/history" style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>History</a>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button data-tour="rnd-load-csv-btn" onClick={exportCsv} style={secondaryBtnStyle}>Export CSV</button>
+          <button data-tour="rnd-load-docx-btn" onClick={downloadDocx} disabled={busy} style={secondaryBtnStyle}>Export Report (.docx)</button>
+          <a data-tour="rnd-load-history-btn" href="/dashboard/rnd/history" style={{ ...secondaryBtnStyle, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', textDecoration: 'none' }}>History</a>
         </div>
       </div>
 

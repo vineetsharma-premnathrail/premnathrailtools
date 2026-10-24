@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { electricalApi } from '@/lib/api'
 import {
@@ -356,17 +357,17 @@ export default function TestsTab({ job, meta, canEdit, onChanged }: { job: Elect
             <SheetSection icon="list" title="Test">
               <div style={{ ...rowStyle, marginBottom: 0 }}>
                 <F tour="elec-test-phase" label="Phase" basis={140}>
-                  <select
+                  <Select
                     style={sheetInput}
                     value={form.phase}
                     disabled={mode !== 'create'}
                     onChange={(e) => set('phase', e.target.value as ElectricalTestPhase)}
                   >
                     {PHASES.map((p) => <option key={p} value={p}>{TEST_PHASE_LABELS[p]}</option>)}
-                  </select>
+                  </Select>
                 </F>
                 <F tour="elec-test-type" label="Test Type" req={mode !== 'edit'} basis={200} grow max={320}>
-                  <select
+                  <Select
                     style={sheetInput}
                     value={form.test_type}
                     disabled={mode === 'edit'}
@@ -374,7 +375,7 @@ export default function TestsTab({ job, meta, canEdit, onChanged }: { job: Elect
                   >
                     <option value="">Select test type…</option>
                     {Object.entries(meta.test_types).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </F>
                 <F tour="elec-test-date" label="Test Date" req basis={150}>
                   <DateField value={form.test_date} onChange={(v) => set('test_date', v)} />
@@ -387,10 +388,10 @@ export default function TestsTab({ job, meta, canEdit, onChanged }: { job: Elect
                   <input style={sheetInput} value={form.circuit} maxLength={150} placeholder="e.g. Headlamp circuit L1" onChange={(e) => set('circuit', e.target.value)} />
                 </F>
                 <F tour="elec-test-panel" label="Panel" basis={180} grow max={300}>
-                  <select style={sheetInput} value={form.panel_id} onChange={(e) => set('panel_id', e.target.value)}>
+                  <Select style={sheetInput} value={form.panel_id} onChange={(e) => set('panel_id', e.target.value)}>
                     <option value="">— None —</option>
                     {panelOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                  </Select>
                 </F>
               </div>
               <div style={{ ...rowStyle, marginBottom: 0 }}>

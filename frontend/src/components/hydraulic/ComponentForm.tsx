@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { hydraulicApi } from '@/lib/api'
 import { HydComponent, HydLookupOption } from '@/types'
@@ -144,9 +145,9 @@ export default function ComponentForm({
                 {initial ? (
                   <div style={{ ...sheetInput, background: SHEET.SOFT }}>{COMPONENT_CATEGORY_LABELS[initial.category] || initial.category}</div>
                 ) : (
-                  <select style={sheetInput} value={category} onChange={(e) => setCategory(e.target.value)}>
+                  <Select style={sheetInput} value={category} onChange={(e) => setCategory(e.target.value)}>
                     {Object.entries(COMPONENT_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 )}
               </Cell>
               <Cell basis={240} grow max={380}>
@@ -155,16 +156,16 @@ export default function ComponentForm({
               </Cell>
               <Cell basis={130}>
                 <label style={sheetLabel}>Medium</label>
-                <select data-tour="hyd-comp-medium" style={sheetInput} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
+                <Select data-tour="hyd-comp-medium" style={sheetInput} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
                   {Object.entries(MEDIA_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+                </Select>
               </Cell>
               <Cell basis={120}>
                 <label style={sheetLabel}>Status</label>
-                <select data-tour="hyd-comp-status" style={sheetInput} value={status} onChange={(e) => setStatus(e.target.value)}>
+                <Select data-tour="hyd-comp-status" style={sheetInput} value={status} onChange={(e) => setStatus(e.target.value)}>
                   <option value="active">Active</option>
                   <option value="obsolete">Obsolete</option>
-                </select>
+                </Select>
               </Cell>
             </div>
             {!initial && <p style={sheetHint}>The code is generated from the category (e.g. PMP-0001) and the category can&apos;t be changed later.</p>}

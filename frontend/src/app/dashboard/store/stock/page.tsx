@@ -13,6 +13,7 @@ import StockImportDialog from '@/components/store/StockImportDialog'
 import StockAsOfPanel from '@/components/store/StockAsOfPanel'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import Select from '@/components/shared/Select'
 
 // No hand-made stock posting here (2026-10-12, SAP standard): every movement
 // has its own document — GRN, Issues, Returns, Transfers, Adjustments,
@@ -230,7 +231,7 @@ export default function StoreStockPage() {
     <div>
       <StoreNav />
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <div>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
             Store &amp; Inventory
@@ -271,9 +272,9 @@ export default function StoreStockPage() {
             )}
             <SheetSection icon="alert" title="Disposition">
               <label style={sheetLabel}>What happened to it? <Req /></label>
-              <select data-tour="stock-clear-disposition" style={sheetInput} value={clearDisposition} onChange={(e) => setClearDisposition(e.target.value)} autoFocus>
+              <Select data-tour="stock-clear-disposition" style={sheetInput} value={clearDisposition} onChange={(e) => setClearDisposition(e.target.value)} autoFocus>
                 {QUARANTINE_DISPOSITIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
-              </select>
+              </Select>
               <div style={{ maxWidth: 180, marginTop: 14 }}>
                 <label style={sheetLabel}>Quantity <Req /></label>
                 <input data-tour="stock-clear-qty" type="number" style={sheetInput} value={clearQty} onChange={(e) => setClearQty(e.target.value)} />
@@ -295,18 +296,18 @@ export default function StoreStockPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select data-tour="stock-store-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterLocation} onChange={(e) => setFilterLocation(e.target.value)}>
+        <Select data-tour="stock-store-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterLocation} onChange={(e) => setFilterLocation(e.target.value)}>
           <option value="">All stores</option>
           {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-        </select>
-        <select data-tour="stock-category-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterCategory} onChange={(e) => { setFilterCategory(e.target.value); setFilterSubcategory('') }}>
+        </Select>
+        <Select data-tour="stock-category-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterCategory} onChange={(e) => { setFilterCategory(e.target.value); setFilterSubcategory('') }}>
           <option value="">All categories</option>
           {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select data-tour="stock-subcategory-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterSubcategory} onChange={(e) => setFilterSubcategory(e.target.value)}>
+        </Select>
+        <Select data-tour="stock-subcategory-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterSubcategory} onChange={(e) => setFilterSubcategory(e.target.value)}>
           <option value="">All subcategories</option>
           {subcategories.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
+        </Select>
         {hasFilters && <button onClick={clearFilters} style={secondaryBtnStyle}>Clear</button>}
       </div>
 

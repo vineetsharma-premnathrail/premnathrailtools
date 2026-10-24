@@ -217,7 +217,7 @@ export default function MaintenanceAssetDetailPage() {
                 <thead>
                   <tr>
                     {['Date', 'Number', 'Title', 'Status', 'Downtime', ...(showCosts ? ['Cost'] : [])].map((h) => (
-                      <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6' }}>{h}</th>
+                      <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -258,7 +258,7 @@ export default function MaintenanceAssetDetailPage() {
                 <thead>
                   <tr>
                     {['Plan', 'Title', 'Every', 'Basis', 'Next Due', 'Last Done', 'Status'].map((h) => (
-                      <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6' }}>{h}</th>
+                      <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }}>{h}</th>
                     ))}
                   </tr>
                 </thead>

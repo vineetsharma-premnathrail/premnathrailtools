@@ -14,6 +14,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
+import Select from '@/components/shared/Select'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -112,17 +113,17 @@ export default function PhysicalCountListPage() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ flex: '1 1 200px' }}>
                   <label style={sheetLabel}>Store <Req /></label>
-                  <select style={sheetInput} value={locationId} onChange={(e) => setLocationId(e.target.value)} autoFocus>
+                  <Select style={sheetInput} value={locationId} onChange={(e) => setLocationId(e.target.value)} autoFocus>
                     <option value="">Select store…</option>
                     {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div style={{ flex: '1 1 200px' }}>
                   <label style={sheetLabel}>Category</label>
-                  <select style={sheetInput} value={category} onChange={(e) => setCategory(e.target.value)}>
+                  <Select style={sheetInput} value={category} onChange={(e) => setCategory(e.target.value)}>
                     <option value="">All stocked items</option>
                     {categories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-                  </select>
+                  </Select>
                 </div>
               </div>
               <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: SHEET.BODY, marginTop: 14, cursor: 'pointer' }}>

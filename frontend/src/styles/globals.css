@@ -268,12 +268,14 @@ textarea:focus {
 /* Glass Section/Card containers (shared/ui.tsx, crm/ui.tsx) — a subtle lift
    + brand-tinted border/shadow on hover so the whole card feels interactive,
    not just its individual inputs. */
+/* No transform here: a transformed ancestor becomes the containing block for
+   every position:fixed child, so a dropdown/date picker/popup inside a hovered
+   card jumped to the card's corner, and the card nudged its own layout. */
 @media (hover: hover) and (pointer: fine) {
   .glass-section {
-    transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+    transition: box-shadow .2s ease, border-color .2s ease;
   }
   .glass-section:hover {
-    transform: translateY(-2px);
     border-color: rgba(255, 122, 69, 0.35) !important;
     box-shadow: 0 16px 40px rgba(255, 122, 69, 0.12), 0 2px 6px rgba(15,23,42,.08);
   }
@@ -429,9 +431,80 @@ input[type='number'] {
   background-clip: padding-box;
 }
 
+/* Firefox: same thin, quiet scrollbar as the WebKit rules above. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
+}
+
 /* Prevent any single element (image, table, wide inline-style block) from
    forcing horizontal page scroll on small screens. */
 img, svg { max-width: 100%; height: auto; }
+
+/* ===================== Global UI consistency layer =====================
+   The control scale lives in theme.ts (CONTROL) and the shared styles in
+   components/shared/ui.tsx; these rules are the safety net for markup that
+   doesn't use them yet. `npm run test:ui` keeps new code on the shared ones. */
+
+/* Buttons and fields use the page font, not the browser's form font. */
+button, input, select, textarea { font-family: inherit; }
+
+/* A native <select> left over (only `multiple` lists should remain) gets the
+   same box as inputStyle instead of the OS control. */
+select:not([multiple]) {
+  appearance: none;
+  -webkit-appearance: none;
+  min-height: 38px;
+  line-height: 16px;
+  padding-right: 32px !important;
+  border-radius: 10px;
+  background-color: #fff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 256 256'%3E%3Cpath fill='%23a8a29e' d='M213.66 101.66l-80 80a8 8 0 0 1-11.32 0l-80-80a8 8 0 0 1 11.32-11.32L128 164.69l74.34-74.35a8 8 0 0 1 11.32 11.32Z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px;
+  cursor: pointer;
+}
+
+/* Keyboard focus ring for the app's own dropdown trigger (Select / SearchableSelect). */
+.ui-select-trigger:focus-visible {
+  outline: none;
+  border-color: #ff7a45 !important;
+  box-shadow: 0 0 0 4px rgba(255, 122, 69, 0.20);
+}
+@media (hover: hover) and (pointer: fine) {
+  .ui-select-trigger:not([aria-disabled='true']):hover {
+    border-color: #ffc3a8 !important;
+    box-shadow: 0 0 0 4px rgba(255, 122, 69, 0.14);
+  }
+}
+
+/* Tables: header cells never wrap mid-word, cells line up vertically, and a
+   table inside a scroll box is at least as wide as the box. */
+th { white-space: nowrap; vertical-align: middle; }
+td { vertical-align: middle; }
+.table-scroll > table,
+.table-scroll > div > table { min-width: 100%; }
+
+/* Flex/grid children may shrink below their content width — the usual cause
+   of a field or card being pushed past the right edge of its section. */
+.ui-toolbar > *,
+.sheet-columns > *,
+.grid-2 > *, .grid-3 > *, .grid-4 > * { min-width: 0; }
+
+/* Phones: toolbar controls (search, filters, actions) stack full width
+   instead of squeezing three dropdowns into one unreadable row. */
+@media (max-width: 640px) {
+  .ui-toolbar > * { flex: 1 1 100% !important; max-width: 100% !important; width: 100% !important; }
+  .ui-toolbar > button { width: auto !important; flex: 1 1 auto !important; }
+}
+
+/* Responsive two-pane / multi-column page layouts: add className="ui-cols"
+   to any inline-grid layout of side-by-side panes so it stacks below 1024px. */
+.ui-cols > * { min-width: 0; }
+@media (max-width: 1024px) {
+  .ui-cols { grid-template-columns: 1fr !important; }
+}
 
 /* For swipeable single-row strips (tab bars, chip rows) that scroll
    horizontally on narrow screens — keeps the scroll gesture but drops the

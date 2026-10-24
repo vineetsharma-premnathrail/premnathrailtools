@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
@@ -115,9 +116,9 @@ export function AssetFormDialog({
             </div>
             <div data-tour="hr-asset-form-identity" style={{ ...row, marginTop: 12 }}>
               <Fld label="Category" basis={170}>
-                <select style={sheetInput} value={f.category} onChange={(e) => set('category')(e.target.value)}>
+                <Select style={sheetInput} value={f.category} onChange={(e) => set('category')(e.target.value)}>
                   {Object.entries(ASSET_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+                </Select>
               </Fld>
               <Fld label="Make" basis={150}><input style={sheetInput} value={f.make} onChange={(e) => set('make')(e.target.value)} placeholder="Dell" /></Fld>
               <Fld label="Model" basis={150}><input style={sheetInput} value={f.model} onChange={(e) => set('model')(e.target.value)} /></Fld>
@@ -141,10 +142,10 @@ export function AssetFormDialog({
             <label style={sheetLabel}>Plant</label>
             <SearchableSelect value={f.branch_id} onChange={set('branch_id')} placeholder="All / not set" options={[{ value: '', label: '— Not set —' }, ...branches.map((b) => ({ value: String(b.id), label: b.name }))]} />
             <label style={{ ...sheetLabel, marginTop: 14 }}>Condition</label>
-            <select style={sheetInput} value={f.condition} onChange={(e) => set('condition')(e.target.value)}>
+            <Select style={sheetInput} value={f.condition} onChange={(e) => set('condition')(e.target.value)}>
               <option value="">—</option>
               {Object.entries(ASSET_CONDITION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            </Select>
           </SheetSection>
           <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
             <textarea rows={4} data-tour="hr-asset-form-remarks" style={{ ...sheetInput, resize: 'vertical' }} value={f.remarks} onChange={(e) => set('remarks')(e.target.value)} />
@@ -223,9 +224,9 @@ export function IssueAssetDialog({
             <Fld label="Issued on" basis={160}><DateField value={issuedOn} onChange={setIssuedOn} /></Fld>
             <Fld label="Expected return" basis={160}><DateField value={expectedReturn} onChange={setExpectedReturn} /></Fld>
             <Fld label="Condition" basis={130}>
-              <select style={sheetInput} value={condition} onChange={(e) => setCondition(e.target.value)}>
+              <Select style={sheetInput} value={condition} onChange={(e) => setCondition(e.target.value)}>
                 {Object.entries(ASSET_CONDITION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              </Select>
             </Fld>
           </div>
           <label style={{ ...sheetLabel, marginTop: 14 }}>Remarks <Optional /></label>
@@ -295,16 +296,16 @@ export function ReturnAssetDialog({
           <div data-tour="hr-asset-return-fields" style={row}>
             <Fld label="Returned on" basis={160}><DateField value={returnedOn} onChange={setReturnedOn} /></Fld>
             <Fld label="Condition on return" basis={170}>
-              <select style={sheetInput} value={condition} onChange={(e) => setCondition(e.target.value)}>
+              <Select style={sheetInput} value={condition} onChange={(e) => setCondition(e.target.value)}>
                 {Object.entries(ASSET_CONDITION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              </Select>
             </Fld>
             <Fld label="Send to" basis={170}>
-              <select style={sheetInput} value={nextStatus} onChange={(e) => setNextStatus(e.target.value)}>
+              <Select style={sheetInput} value={nextStatus} onChange={(e) => setNextStatus(e.target.value)}>
                 <option value="in_stock">In stock</option>
                 <option value="under_repair">Under repair</option>
                 <option value="retired">Retired</option>
-              </select>
+              </Select>
             </Fld>
           </div>
           <label style={{ ...sheetLabel, marginTop: 14 }}>Remarks <Optional /></label>

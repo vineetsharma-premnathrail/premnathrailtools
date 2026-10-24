@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -130,14 +131,14 @@ function RndPrototypesListPageInner() {
             placeholder="All projects"
           />
         </div>
-        <select data-tour="rnd-proto-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <Select data-tour="rnd-proto-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           <option value="design">Design</option>
           <option value="building">Building</option>
           <option value="testing">Testing</option>
           <option value="validated">Validated</option>
           <option value="rejected">Rejected</option>
-        </select>
+        </Select>
       </div>
 
       <div style={{

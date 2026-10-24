@@ -15,6 +15,7 @@ import {
   CAPA_STATUS_LABELS, CAPA_STATUS_HEX, CAPA_TRIGGER_LABELS, SEVERITY_HEX,
 } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 export default function QualityCapaListPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
@@ -63,15 +64,15 @@ export default function QualityCapaListPage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input style={{ ...filterInputStyle, flex: '1 1 240px', maxWidth: 380 }} placeholder="Search CAPA number, title, item…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...filterInputStyle, flex: '0 1 200px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <Select style={{ ...filterInputStyle, flex: '0 1 200px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="live">All not closed</option>
           <option value="">All statuses</option>
           {Object.entries(CAPA_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-        <select style={{ ...filterInputStyle, flex: '0 1 200px' }} value={trigger} onChange={(e) => setTrigger(e.target.value)}>
+        </Select>
+        <Select style={{ ...filterInputStyle, flex: '0 1 200px' }} value={trigger} onChange={(e) => setTrigger(e.target.value)}>
           <option value="">Any trigger</option>
           {Object.entries(CAPA_TRIGGER_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
+        </Select>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
           <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Mine (owner / team / action)
         </label>

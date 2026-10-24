@@ -19,6 +19,7 @@ import {
   AVL_STATUS_LABELS, AVL_STATUS_HEX, SAMPLING_LABELS,
 } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 type Tab = 'vendors' | 'avl' | 'ratings' | 'audits'
 const TABS: [Tab, string][] = [['vendors', 'Vendors'], ['avl', 'Approved vendor list'], ['ratings', 'Monthly rating'], ['audits', 'Vendor audits']]
@@ -143,10 +144,10 @@ export default function SupplierQualityPage() {
         <>
           <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
             <input style={{ ...filterInputStyle, flex: '1 1 240px', maxWidth: 380 }} placeholder="Search vendor or item…" value={search} onChange={(e) => setSearch(e.target.value)} />
-            <select style={{ ...filterInputStyle, flex: '0 1 170px' }} value={avlStatus} onChange={(e) => setAvlStatus(e.target.value)}>
+            <Select style={{ ...filterInputStyle, flex: '0 1 170px' }} value={avlStatus} onChange={(e) => setAvlStatus(e.target.value)}>
               <option value="">All statuses</option>
               {Object.entries(AVL_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
+            </Select>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
               <input type="checkbox" checked={pendingOnly} onChange={(e) => setPendingOnly(e.target.checked)} /> Waiting for a Partner
             </label>
@@ -273,9 +274,9 @@ export default function SupplierQualityPage() {
             <div style={{ flex: '0 1 110px' }}><label style={sheetLabel}>Score (0–100)</label><input type="number" min={0} max={100} style={sheetInput} value={result.score} onChange={(e) => setResult({ ...result, score: e.target.value })} /></div>
             <div style={{ flex: '1 1 160px' }}>
               <label style={sheetLabel}>Result</label>
-              <select style={sheetInput} value={result.result} onChange={(e) => setResult({ ...result, result: e.target.value })}>
+              <Select style={sheetInput} value={result.result} onChange={(e) => setResult({ ...result, result: e.target.value })}>
                 <option value="satisfactory">Satisfactory</option><option value="conditional">Conditional</option><option value="unsatisfactory">Unsatisfactory</option>
-              </select>
+              </Select>
             </div>
           </div>
           <label style={{ ...sheetLabel, ...sheetGap }}>Findings <Optional /></label>

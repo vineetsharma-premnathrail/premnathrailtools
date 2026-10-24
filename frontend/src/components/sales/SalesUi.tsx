@@ -2,23 +2,17 @@
 
 import { ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
+import { secondaryBtnStyle, inputStyle as sharedInput, thStyle as sharedTh, tdStyle as sharedTd } from '@/components/shared/ui'
 
 export const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
-export const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
-}
+export const inputStyle: React.CSSProperties = { ...sharedInput, background: 'rgba(255,255,255,.7)' }
 export const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-export const thStyle: React.CSSProperties = {
-  textAlign: 'left', padding: '10px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase',
-  color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap',
-}
-export const tdStyle: React.CSSProperties = { padding: '9px 12px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
+export const thStyle: React.CSSProperties = sharedTh
+export const tdStyle: React.CSSProperties = sharedTd
 export const h2Style: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 12px' }
 
 export function Pill({ label, hex }: { label: string; hex: string }) {

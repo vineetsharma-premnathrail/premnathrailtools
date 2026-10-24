@@ -15,6 +15,7 @@ import { FormSheet, SheetSection, SHEET, sheetInput, SheetError } from '@/compon
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { SField, SRow, SheetBody, SheetFooter, sw } from '@/components/finance/financeSheet'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import Select from '@/components/shared/Select'
 import {
   productCostingApi, CostEstimate, CostEstimateLine, CostableItem, StandardPriceRow, OrderVariance, OrderVarianceSummary,
 } from '@/lib/controllingCostingApi'
@@ -149,10 +150,10 @@ export function CostEstimatesTab() {
               </SField>
               <SRow mb={0}>
                 <SField label="BOM version" style={sw(220)}>
-                  <select style={sheetInput} value={form.bom_id} onChange={(e) => setForm({ ...form, bom_id: e.target.value })} disabled={!item}>
+                  <Select style={sheetInput} value={form.bom_id} onChange={(e) => setForm({ ...form, bom_id: e.target.value })} disabled={!item}>
                     <option value="">Active version</option>
                     {item?.boms.map((b) => <option key={b.id} value={b.id}>{b.bom_number} v{b.version} ({b.status})</option>)}
-                  </select>
+                  </Select>
                 </SField>
                 <SField label="Costing date" style={sw(160)}><DateField value={form.costing_date} onChange={(v) => setForm({ ...form, costing_date: v })} /></SField>
                 <SField label="Lot size" style={sw(120)} hint="Blank = BOM base">
@@ -180,10 +181,10 @@ export function CostEstimatesTab() {
       <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
         <input style={{ ...inputStyle, maxWidth: 280 }} placeholder="Search item / estimate no." value={search}
           onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') load() }} />
-        <select style={{ ...inputStyle, maxWidth: 170 }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <Select style={{ ...inputStyle, maxWidth: 170 }} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(EST_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
         <button style={secondaryBtnStyle} onClick={load}>Search</button>
       </div>
 
@@ -381,10 +382,10 @@ export function OrderVarianceTab() {
         Actual = material issued − returned at the value actually issued, labour booked on the shop floor, and overhead from the period-end run. Positive variance = over target.
       </InfoBanner>
       <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-        <select style={{ ...inputStyle, maxWidth: 200 }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <Select style={{ ...inputStyle, maxWidth: 200 }} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All work orders</option>
           {Object.entries(WO_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
       </div>
       <TableWrap minWidth={1050} maxHeight="calc(100vh - 420px)" tour="order-variance-list">
         <thead><tr>

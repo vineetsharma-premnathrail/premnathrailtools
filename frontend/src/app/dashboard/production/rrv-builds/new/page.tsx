@@ -13,6 +13,7 @@ import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, Req, Optional, 
 import { RRV_DEFAULT_REQUIRED_TESTS, RRV_PRIORITY_LABELS, RRV_TEST_TYPES, toOptions } from '@/components/production/rrvMeta'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
+import Select from '@/components/shared/Select'
 
 const errorBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
 
@@ -157,9 +158,9 @@ export default function NewRrvBuildPage() {
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
                 <div data-tour="production-rrv-new-priority" style={{ flex: '1 1 120px' }}>
                   <label style={sheetLabel}>Priority</label>
-                  <select style={sheetInput} value={form.priority} onChange={(e) => set('priority')(e.target.value)}>
+                  <Select style={sheetInput} value={form.priority} onChange={(e) => set('priority')(e.target.value)}>
                     {Object.entries(RRV_PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div data-tour="production-rrv-new-start" style={{ flex: '1 1 150px' }}>
                   <label style={sheetLabel}>Planned start</label>

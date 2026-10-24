@@ -1,6 +1,8 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import AnchoredPopover from '@/components/shared/AnchoredPopover'
 import { CaretDown } from '@phosphor-icons/react'
 import { useAuth } from '@/hooks/useAuth'
 import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
@@ -72,6 +74,7 @@ export default function ActivityForm({
   const [contactSearch, setContactSearch] = useState('')
   const [contactsOpen, setContactsOpen] = useState(false)
   const contactsRef = useRef<HTMLDivElement>(null)
+  const contactsPopRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [showCamera, setShowCamera] = useState(false)
   const [contacts, setContacts] = useState<OrgContact[]>([])
@@ -125,7 +128,8 @@ export default function ActivityForm({
   useEffect(() => {
     if (!contactsOpen) return
     const onClick = (e: MouseEvent) => {
-      if (contactsRef.current && !contactsRef.current.contains(e.target as Node)) {
+      const t = e.target as Node
+      if (contactsRef.current && !contactsRef.current.contains(t) && !contactsPopRef.current?.contains(t)) {
         setContactsOpen(false)
         setContactSearch('')
         setAddingContact(false)
@@ -236,9 +240,9 @@ export default function ActivityForm({
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
                 <div data-tour="activity-type" style={{ flex: '1 1 150px', minWidth: 140 }}>
                   <label style={sheetLabel}>Activity Type</label>
-                  <select value={form.activity_type} onChange={(e) => set('activity_type', e.target.value)} style={inputStyle}>
+                  <Select value={form.activity_type} onChange={(e) => set('activity_type', e.target.value)} style={inputStyle}>
                     {ACTIVITY_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div data-tour="activity-next-followup" style={{ flex: '1 1 150px', minWidth: 140 }}>
                   <label style={sheetLabel}>Next Follow-up Date</label>
@@ -246,9 +250,9 @@ export default function ActivityForm({
                 </div>
                 <div data-tour="activity-status" style={{ flex: '1 1 120px', minWidth: 120 }}>
                   <label style={sheetLabel}>Status</label>
-                  <select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
+                  <Select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
                     {FOLLOW_UP_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                  </Select>
                 </div>
               </div>
             </SheetSection>
@@ -284,8 +288,9 @@ export default function ActivityForm({
                   <CaretDown size={14} color="#94a3b8" style={{ flex: 'none', marginLeft: 'auto' }} />
                 </div>
 
-                {contactsOpen && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, zIndex: 50, background: '#fff', borderRadius: 12, border: `1px solid ${SHEET.LINE}`, boxShadow: '0 16px 36px rgba(0,0,0,0.14)', display: 'flex', flexDirection: 'column' }}>
+                {/* Portaled so the sheet's scroll body can't clip it; flips up near the screen bottom. */}
+                <AnchoredPopover anchorRef={contactsRef} open={contactsOpen} maxHeight={440} style={{ borderRadius: 12, border: `1px solid ${SHEET.LINE}`, boxShadow: '0 16px 36px rgba(0,0,0,0.14)' }}>
+                  <div ref={contactsPopRef} style={{ display: 'flex', flexDirection: 'column' }}>
                     {addingContact ? (
                       <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
                         <div><label style={sheetLabel}>Name <Req /></label><input value={newContact.name} onChange={(e) => setNewContact((c) => ({ ...c, name: e.target.value }))} placeholder="Contact name" style={inputStyle} /></div>
@@ -338,7 +343,7 @@ export default function ActivityForm({
                       </>
                     )}
                   </div>
-                )}
+                </AnchoredPopover>
               </div>
               <p style={sheetHint}>People of this customer organization who took part. Add a new contact here if they are not saved yet.</p>
             </SheetSection>

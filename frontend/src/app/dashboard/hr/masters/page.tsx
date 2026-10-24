@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { TEXT } from '@/lib/theme'
+import { smallSecondaryBtnStyle } from '@/components/shared/ui'
 import HrNav from '@/components/hr/HrNav'
 import DesignationsMaster from '@/components/hr/masters/DesignationsMaster'
 import GradesMaster from '@/components/hr/masters/GradesMaster'
@@ -48,12 +49,8 @@ export default function HrMastersPage() {
               data-tour={`hr-mst-tab-${s.key}`}
               onClick={() => setActive(s.key)}
               style={{
-                fontSize: 12.5,
-                fontWeight: 600,
-                padding: '7px 14px',
+                ...smallSecondaryBtnStyle,
                 borderRadius: 9999,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
                 border: isActive ? '1px solid #FF6A2A' : '1px solid rgba(0,0,0,0.1)',
                 background: isActive ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,0.7)',
                 color: isActive ? '#e0521a' : '#57534e',

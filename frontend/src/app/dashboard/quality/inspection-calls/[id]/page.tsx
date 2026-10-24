@@ -17,6 +17,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
 import { SheetSection, sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
+import Select from '@/components/shared/Select'
 
 const STATUS_LABELS: Record<string, string> = {
   requested: 'Requested', scheduled: 'Scheduled', accepted: 'Accepted', partially_accepted: 'Partly accepted', rejected: 'Rejected', cancelled: 'Cancelled',
@@ -225,16 +226,16 @@ export default function InspectionCallDetailPage() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ flex: '1 1 140px' }}>
                   <label style={sheetLabel}>NCR severity</label>
-                  <select style={sheetInput} value={res.severity} onChange={(e) => setRes({ ...res, severity: e.target.value })}>
+                  <Select style={sheetInput} value={res.severity} onChange={(e) => setRes({ ...res, severity: e.target.value })}>
                     <option value="minor">Minor</option><option value="major">Major</option><option value="critical">Critical</option>
-                  </select>
+                  </Select>
                 </div>
                 <div style={{ flex: '1 1 240px' }}>
                   <label style={sheetLabel}>Block rejected stock in store</label>
-                  <select style={sheetInput} value={res.location_id} onChange={(e) => setRes({ ...res, location_id: e.target.value })}>
+                  <Select style={sheetInput} value={res.location_id} onChange={(e) => setRes({ ...res, location_id: e.target.value })}>
                     <option value="">Don&apos;t block (not in a store)</option>
                     {locations.map((l) => <option key={l.id} value={l.id}>{l.code} — {l.name}</option>)}
-                  </select>
+                  </Select>
                 </div>
               </div>
             </SheetSection>

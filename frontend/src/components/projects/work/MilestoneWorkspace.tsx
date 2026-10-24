@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { approvalsApi, pmWorkApi, projectsApi } from '@/lib/api'
@@ -14,7 +15,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 import {
   AttachmentList, DOC_TYPE_LABELS, ErrorBanner, FlagPill, MILESTONE_HEX, MILESTONE_LABELS, Notice, PRIORITY_LABELS, Pill,
-  ProgressBar, actionBtn, inputStyle, sectionStyle, todayIso,
+  ProgressBar, actionBtn, smallActionBtn, inputStyle, sectionStyle, todayIso,
 } from './pmUi'
 import { FormSheet, Optional, Req, SHEET, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import { TaskTable } from './DepartmentWork'
@@ -160,7 +161,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
           <span><strong>Lead:</strong> {m.lead_name || '—'}</span>
           <span><strong>Assistants:</strong> {m.assistants.length ? m.assistants.map((a) => a.name).join(', ') : '—'}</span>
           {ws.can_plan && !['achieved', 'cancelled'].includes(m.status) && teamEdit === null && (
-            <button type="button" onClick={() => setTeamEdit(m.assistant_user_ids || [])} style={{ ...actionBtn('secondary'), padding: '3px 10px', fontSize: 11.5 }}>Edit team</button>
+            <button type="button" onClick={() => setTeamEdit(m.assistant_user_ids || [])} style={{ ...smallActionBtn('secondary') }}>Edit team</button>
           )}
         </div>
         {teamEdit !== null && (
@@ -247,7 +248,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
               <SheetSection icon={selfTask ? 'calendar' : 'user'} title={selfTask ? 'Schedule' : 'Assignment & Schedule'}>
                 {!selfTask && <div data-tour="pm-task-form-assignee" style={{ marginBottom: 14, maxWidth: 360 }}>
                   <label style={sheetLabel}>Assigned to <Req /></label>
-                  <select style={sheetInput} value={form.assignee_id} onChange={(e) => setForm({ ...form, assignee_id: e.target.value })}>
+                  <Select style={sheetInput} value={form.assignee_id} onChange={(e) => setForm({ ...form, assignee_id: e.target.value })}>
                     <option value="">Select…</option>
                     <optgroup label="WBS team">
                       {teamIds.map((id) => <option key={id} value={id}>{teamPeople.find((p) => p.id === id)?.name || teamNames.get(id) || `User #${id}`}{id === m.lead_user_id ? ' (lead)' : ''}</option>)}
@@ -257,7 +258,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
                         {deptPeople.map((p) => <option key={p.id} value={p.id}>{p.name}{p.designation ? ` — ${p.designation}` : ''}</option>)}
                       </optgroup>
                     )}
-                  </select>
+                  </Select>
                 </div>}
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   <div data-tour="pm-task-form-due" style={{ flex: '0 1 170px', minWidth: 150 }}>
@@ -266,9 +267,9 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
                   </div>
                   <div data-tour="pm-task-form-priority" style={{ flex: '0 1 140px', minWidth: 120 }}>
                     <label style={sheetLabel}>Priority <Req /></label>
-                    <select style={sheetInput} value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
+                    <Select style={sheetInput} value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
                       {Object.entries(PRIORITY_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                    </select>
+                    </Select>
                   </div>
                   <div data-tour="pm-task-form-hours" style={{ flex: '0 1 130px', minWidth: 110 }}>
                     <label style={sheetLabel}>Estimated hours</label>
@@ -289,12 +290,12 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
             actions={canPlan ? (t) => (
               <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
                 {['todo', 'in_progress', 'blocked'].includes(t.status) && (
-                  <button type="button" onClick={() => { setSelfTask(false); setForm({ id: t.id, title: t.title, description: t.description || '', assignee_id: t.assignee_id ? String(t.assignee_id) : '', due_date: t.due_date || '', priority: t.priority, estimated_hours: t.estimated_hours != null ? String(t.estimated_hours) : '' }) }} style={{ ...actionBtn('secondary'), padding: '4px 9px', fontSize: 11.5 }}>Edit</button>
+                  <button type="button" onClick={() => { setSelfTask(false); setForm({ id: t.id, title: t.title, description: t.description || '', assignee_id: t.assignee_id ? String(t.assignee_id) : '', due_date: t.due_date || '', priority: t.priority, estimated_hours: t.estimated_hours != null ? String(t.estimated_hours) : '' }) }} style={{ ...smallActionBtn('secondary') }}>Edit</button>
                 )}
-                {t.status === 'done' && <button type="button" onClick={() => setReasonFor({ task: t, kind: 'reopen' })} style={{ ...actionBtn('secondary'), padding: '4px 9px', fontSize: 11.5 }}>Reopen</button>}
-                {['todo', 'in_progress', 'blocked'].includes(t.status) && <button type="button" onClick={() => setReasonFor({ task: t, kind: 'cancel' })} style={{ ...actionBtn('danger'), padding: '4px 9px', fontSize: 11.5 }}>Cancel</button>}
+                {t.status === 'done' && <button type="button" onClick={() => setReasonFor({ task: t, kind: 'reopen' })} style={{ ...smallActionBtn('secondary') }}>Reopen</button>}
+                {['todo', 'in_progress', 'blocked'].includes(t.status) && <button type="button" onClick={() => setReasonFor({ task: t, kind: 'cancel' })} style={{ ...smallActionBtn('danger') }}>Cancel</button>}
                 {t.status === 'todo' && !t.started_at && t.subtasks_total === 0 && (
-                  <button type="button" onClick={() => setDeleteTask(t)} title="Only works while nothing is recorded on the task (no comments or files) — otherwise use Cancel" style={{ ...actionBtn('danger'), padding: '4px 9px', fontSize: 11.5 }}>Delete</button>
+                  <button type="button" onClick={() => setDeleteTask(t)} title="Only works while nothing is recorded on the task (no comments or files) — otherwise use Cancel" style={{ ...smallActionBtn('danger') }}>Delete</button>
                 )}
               </div>
             ) : undefined}
@@ -307,9 +308,9 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
           <h2 style={{ fontSize: 16, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Evidence</h2>
           {canPlan && (
             <div style={{ display: 'flex', gap: 8 }}>
-              <select data-tour="pm-mw-evidence-type" style={{ ...inputStyle, width: 150 }} value={docType} onChange={(e) => setDocType(e.target.value)}>
+              <Select data-tour="pm-mw-evidence-type" style={{ ...inputStyle, width: 150 }} value={docType} onChange={(e) => setDocType(e.target.value)}>
                 {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              </Select>
               <input ref={fileRef} type="file" multiple hidden onChange={(e) => uploadEvidence(e.target.files)} />
               <button data-tour="pm-mw-attach-btn" type="button" disabled={busy} onClick={() => fileRef.current?.click()} style={actionBtn('secondary', busy)}>Attach files</button>
             </div>

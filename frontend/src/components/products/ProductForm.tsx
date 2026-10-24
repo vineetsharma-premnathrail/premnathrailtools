@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { productsApi } from '@/lib/api'
 import { FinishedProduct, ProductApplication, ProductMeta, ProductStoreItemOption } from '@/types'
@@ -125,18 +126,18 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
               </div>
               <div style={{ flex: '0 1 200px', minWidth: 170 }}>
                 <L>Type</L>
-                <select style={sheetInput} value={form.product_type} onChange={(e) => set('product_type', e.target.value)}>
+                <Select style={sheetInput} value={form.product_type} onChange={(e) => set('product_type', e.target.value)}>
                   {(meta?.types || []).map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
+                </Select>
               </div>
               <div style={{ flex: '1 1 160px', maxWidth: 220 }}>
                 <L>Model number</L><input style={sheetInput} value={form.model_number} onChange={(e) => set('model_number', e.target.value)} placeholder="PRT-SV-01" />
               </div>
               <div style={{ flex: '0 1 160px', minWidth: 150 }}>
                 <L>Status</L>
-                <select style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)}>
+                <Select style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)}>
                   {(meta?.statuses || []).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </select>
+                </Select>
               </div>
             </div>
             <p style={hintStyle}>Only <b>Active</b> products should be quoted and sold. Phased out = still serviced, not sold new. A product can be deleted only while it is In development.</p>

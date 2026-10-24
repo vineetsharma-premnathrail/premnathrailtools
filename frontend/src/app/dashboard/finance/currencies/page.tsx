@@ -15,6 +15,7 @@ import {
   inr, dmy, todayIso, currentPeriod, Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, useFinanceSubTabs, PageHeader, TableWrap, EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
 import { fxApi, Currency, ExchangeRate, FxRevaluation, FxRevaluationPreview } from '@/lib/financeAssetsFxApi'
+import Select from '@/components/shared/Select'
 
 const TABS = ['Currencies & Rates', 'Revaluation'] as const
 type Tab = typeof TABS[number]
@@ -134,17 +135,17 @@ function RatesTab({ canCreate, canAddRate, canEdit }: { canCreate: boolean; canA
             <SheetSection icon="rupee" title="Rate">
               <SRow>
                 <SField label="Currency" req style={sw(130)}>
-                  <select style={sheetInput} value={rate.currency} onChange={(e) => setRate({ ...rate, currency: e.target.value })}>
+                  <Select style={sheetInput} value={rate.currency} onChange={(e) => setRate({ ...rate, currency: e.target.value })}>
                     <option value="">Pick</option>
                     {currencies.filter((c) => c.is_active).map((c) => <option key={c.id} value={c.code}>{c.code}</option>)}
-                  </select>
+                  </Select>
                 </SField>
                 <SField label="Date" req style={sw(160)}><DateField value={rate.rate_date} onChange={(v) => setRate({ ...rate, rate_date: v })} /></SField>
                 <SField label="Rate (₹)" req style={sw(130)}><input type="number" min={0} step="any" style={sheetInput} value={rate.rate} onChange={(e) => setRate({ ...rate, rate: e.target.value })} /></SField>
               </SRow>
               <SRow mb={0}>
                 <SField label="Type" style={sw(130)}>
-                  <select style={sheetInput} value={rate.rate_type} onChange={(e) => setRate({ ...rate, rate_type: e.target.value })}><option value="bank">Bank</option><option value="customs">Customs</option></select>
+                  <Select style={sheetInput} value={rate.rate_type} onChange={(e) => setRate({ ...rate, rate_type: e.target.value })}><option value="bank">Bank</option><option value="customs">Customs</option></Select>
                 </SField>
                 <SField label="Source" optional style={sg(180, 260)}><input style={sheetInput} value={rate.source} onChange={(e) => setRate({ ...rate, source: e.target.value })} placeholder="e.g. HDFC TT selling" /></SField>
               </SRow>

@@ -5,6 +5,7 @@
 // and the project's Edit sheet; the server (rnd/services/project_origin.py)
 // applies the same rules.
 
+import Select from '@/components/shared/Select'
 import { useEffect, useRef, useState } from 'react'
 import { Handshake, Wrench, Lightbulb, Flask } from '@phosphor-icons/react'
 import type { Icon as PhosphorIcon } from '@phosphor-icons/react'
@@ -236,10 +237,10 @@ export default function ProjectOriginFields({ value, onChange, creating }: {
             </div>
             <div style={{ flex: '0 1 240px', minWidth: 210 }}>
               <label style={sheetLabel}>Reason <Req /></label>
-              <select style={sheetInput} value={d.reason} onChange={(e) => set({ ...clearSource, reason: e.target.value as RndImprovementReason })}>
+              <Select style={sheetInput} value={d.reason} onChange={(e) => set({ ...clearSource, reason: e.target.value as RndImprovementReason })}>
                 <option value="">Select reason…</option>
                 {REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-              </select>
+              </Select>
             </div>
           </div>
           {reasonKind && (

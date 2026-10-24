@@ -7,6 +7,7 @@ import { qualityApi } from '@/lib/api'
 import { QualityInspectionLot } from '@/types'
 import { TEXT } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 import {
   Pill, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtQty, fmtDate,
   INSPECTION_TYPE_LABELS, LOT_STATUS_LABELS, LOT_STATUS_HEX, DECISION_LABELS,
@@ -53,15 +54,15 @@ export default function LotList({ mine = false, initialType = '' }: { mine?: boo
       <ErrorBanner error={error} />
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <input style={{ ...filterInputStyle, flex: '1 1 240px', maxWidth: 420 }} placeholder="Search lot, item, GRN / WO number, vendor…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...filterInputStyle, flex: '0 1 200px' }} value={type} onChange={(e) => setType(e.target.value)}>
+        <Select style={{ ...filterInputStyle, flex: '0 1 200px' }} value={type} onChange={(e) => setType(e.target.value)}>
           <option value="">All inspection types</option>
           {Object.entries(INSPECTION_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
+        </Select>
         {!mine && (
-          <select style={{ ...filterInputStyle, flex: '0 1 180px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+          <Select style={{ ...filterInputStyle, flex: '0 1 180px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">All statuses</option>
             {Object.entries(LOT_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
+          </Select>
         )}
       </div>
       <div style={tableWrapStyle}>

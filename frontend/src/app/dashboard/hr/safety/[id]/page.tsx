@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAuth, useRequireApp } from '@/hooks/useAuth'
@@ -18,7 +19,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
-import { dangerBtnStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { dangerBtnStyle, primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import PersonFields, { EMPTY_PERSON, PersonForm, personToPayload } from '@/components/hr/safety/PersonFields'
 import { SafetyIncident, SafetyMeta, SafetyPerson, TYPE_LABELS, downloadBlob } from '@/components/hr/safety/types'
 
@@ -46,7 +47,7 @@ const labelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, letterS
 const h3: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 12px' }
 const errorBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
 const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
-const smallBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '5px 11px', fontSize: 11.5 }
+const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 
 const fmtD = (iso: string | null) => (iso ? iso.slice(0, 10).split('-').reverse().join('-') : '—')
 const fmtDT = (iso: string | null) => {
@@ -252,10 +253,10 @@ export default function SafetyIncidentPage() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ flex: '0 1 260px', minWidth: 220 }}>
                   <label style={labelStyle}>Root-cause category</label>
-                  <select style={inputStyle} value={inv.root_cause_category} onChange={(e) => setInv({ ...inv, root_cause_category: e.target.value })}>
+                  <Select style={inputStyle} value={inv.root_cause_category} onChange={(e) => setInv({ ...inv, root_cause_category: e.target.value })}>
                     <option value="">Select…</option>
                     {(meta?.root_cause_categories || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div style={{ flex: '1 1 100%' }}><label style={labelStyle}>Root cause</label><textarea style={{ ...inputStyle, minHeight: 70 }} value={inv.root_cause} onChange={(e) => setInv({ ...inv, root_cause: e.target.value })} placeholder="Why did it really happen (why-why)?" /></div>
                 <div style={{ flex: '1 1 100%' }}><label style={labelStyle}>Contributing factors</label><textarea style={{ ...inputStyle, minHeight: 50 }} value={inv.contributing_factors} onChange={(e) => setInv({ ...inv, contributing_factors: e.target.value })} /></div>
@@ -375,8 +376,8 @@ export default function SafetyIncidentPage() {
             <SheetSection icon="alert" title="Incident" color="#DC2626">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ flex: '1 1 100%' }}><label style={sheetLabel}>Title</label><input style={sheetInput} value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} /></div>
-                <div style={{ flex: '1 1 220px', maxWidth: 260 }}><label style={sheetLabel}>Type</label><select style={sheetInput} value={edit.incident_type} onChange={(e) => setEdit({ ...edit, incident_type: e.target.value })}>{meta.incident_types.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
-                <div style={{ flex: '0 1 130px' }}><label style={sheetLabel}>Severity</label><select style={sheetInput} value={edit.severity} onChange={(e) => setEdit({ ...edit, severity: e.target.value })}>{meta.severities.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+                <div style={{ flex: '1 1 220px', maxWidth: 260 }}><label style={sheetLabel}>Type</label><Select style={sheetInput} value={edit.incident_type} onChange={(e) => setEdit({ ...edit, incident_type: e.target.value })}>{meta.incident_types.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</Select></div>
+                <div style={{ flex: '0 1 130px' }}><label style={sheetLabel}>Severity</label><Select style={sheetInput} value={edit.severity} onChange={(e) => setEdit({ ...edit, severity: e.target.value })}>{meta.severities.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</Select></div>
                 <div style={{ flex: '1 1 220px' }}><label style={sheetLabel}>Exact place</label><input style={sheetInput} value={edit.location_text} onChange={(e) => setEdit({ ...edit, location_text: e.target.value })} /></div>
               </div>
             </SheetSection>
@@ -428,7 +429,7 @@ export default function SafetyIncidentPage() {
             {error.length > 0 && <div style={errorBox}>{error.join(' ')}</div>}
             <SheetSection icon="shield" title="Action">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-                <div style={{ flex: '0 1 150px' }}><label style={sheetLabel}>Type</label><select style={sheetInput} value={newAction.action_type} onChange={(e) => setNewAction({ ...newAction, action_type: e.target.value })}><option value="corrective">Corrective</option><option value="preventive">Preventive</option></select></div>
+                <div style={{ flex: '0 1 150px' }}><label style={sheetLabel}>Type</label><Select style={sheetInput} value={newAction.action_type} onChange={(e) => setNewAction({ ...newAction, action_type: e.target.value })}><option value="corrective">Corrective</option><option value="preventive">Preventive</option></Select></div>
                 <div style={{ flex: '1 1 260px' }}><label style={sheetLabel}>Action <Req /></label><input autoFocus style={sheetInput} value={newAction.description} onChange={(e) => setNewAction({ ...newAction, description: e.target.value })} placeholder="e.g. Restore the light-curtain interlock" /></div>
               </div>
             </SheetSection>

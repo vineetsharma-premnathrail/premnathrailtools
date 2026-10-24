@@ -12,6 +12,7 @@ import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { formatINR, formatMinutes, PRIORITY_LABELS, WO_STATUS_LABELS } from '@/components/maintenance/labels'
+import Select from '@/components/shared/Select'
 
 const WO_STATUS_HEX: Record<string, string> = { draft: '#78716c', assigned: '#2563EB', in_progress: '#F59E0B', on_hold: '#9333EA', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
 const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
@@ -23,10 +24,6 @@ const cardStyle: React.CSSProperties = {
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 12px' }
 const rowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: `1px solid ${BORDER.light}`, cursor: 'pointer', flexWrap: 'wrap' }
-const selectStyle: React.CSSProperties = {
-  padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
-}
 
 function Kpi({ label, value, sub, hex, onClick }: { label: string; value: string | number; sub?: string; hex?: string; onClick?: () => void }) {
   return (
@@ -93,10 +90,10 @@ export default function MaintenanceDashboardPage() {
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           {lookups && lookups.branches.length > 1 && (
-            <select data-tour="maint-dash-plant-filter" style={selectStyle} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+            <Select data-tour="maint-dash-plant-filter" style={{ width: 200 }} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
               <option value="">All plants</option>
               {lookups.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
+            </Select>
           )}
           <button
             data-tour="maint-dash-report-btn"

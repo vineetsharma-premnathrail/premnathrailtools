@@ -10,6 +10,7 @@
 //
 // The page itself must still do the useRequireApp() guard.
 
+import Select from '@/components/shared/Select'
 import { ReactNode, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { SettingSpecDto, SettingsPayload, DirectoryUser } from '@/types'
@@ -319,9 +320,9 @@ export default function ModuleSettingsPage({
         return <textarea value={String(v ?? '')} maxLength={5000} rows={6} onChange={(e) => setField(spec.key, e.target.value)} style={{ ...inputStyle, maxWidth: 720, resize: 'vertical', fontFamily: 'inherit', ...errBorder }} />
       case 'select':
         return (
-          <select value={String(v ?? '')} onChange={(e) => setField(spec.key, e.target.value)} style={{ ...inputStyle, maxWidth: 280, ...errBorder }}>
+          <Select value={String(v ?? '')} onChange={(e) => setField(spec.key, e.target.value)} style={{ ...inputStyle, maxWidth: 280, ...errBorder }}>
             {(spec.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+          </Select>
         )
       case 'multi_select': {
         const selected = Array.isArray(v) ? (v as string[]) : []

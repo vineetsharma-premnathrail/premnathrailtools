@@ -1,24 +1,22 @@
 'use client'
 
 import { FormSheet, SheetIconName } from '@/components/shared/FormSheet'
-import { TEXT, BORDER, GLASS, SHADOWS } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
+import { inputStyle as sharedInput, thStyle as sharedTh, tdStyle as sharedTd } from '@/components/shared/ui'
 
 /** Small shared bits for the HCM screens (roster, punches, periods,
  * assignment history, registers, claim posting). Popups portal to <body> —
  * glass cards (backdrop-filter) would clip a fixed overlay. */
 
-export const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
-}
+export const inputStyle: React.CSSProperties = { ...sharedInput, background: 'rgba(255,255,255,.7)' }
 export const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }
 export const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
 export const tableWrap: React.CSSProperties = { ...sectionStyle, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }
-export const th: React.CSSProperties = { textAlign: 'left', padding: '9px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }
-export const td: React.CSSProperties = { padding: '8px 12px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
+export const th: React.CSSProperties = sharedTh
+export const td: React.CSSProperties = { ...sharedTd, fontSize: 12.5, verticalAlign: 'top' }
 export const h3: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 6px' }
 export const hint: React.CSSProperties = { fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }
 

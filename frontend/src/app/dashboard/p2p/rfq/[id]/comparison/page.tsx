@@ -24,6 +24,7 @@ import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import Select from '@/components/shared/Select'
 
 const card: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -281,10 +282,10 @@ export default function QuotationComparisonPage() {
                           </td>
                         ))}
                         <td style={{ ...td, minWidth: 220 }}>
-                          <select value={picks[l.pr_item_id] || ''} disabled={!canAward} onChange={(e) => setPicks((s) => ({ ...s, [l.pr_item_id]: e.target.value }))} style={{ ...inputStyle, padding: '6px 8px' }}>
+                          <Select value={picks[l.pr_item_id] || ''} disabled={!canAward} onChange={(e) => setPicks((s) => ({ ...s, [l.pr_item_id]: e.target.value }))} style={{ ...inputStyle, padding: '6px 8px' }}>
                             <option value="">—</option>
                             {l.quotes.map((c, i) => c && c.eligible && <option key={i} value={c.vendor_quotation_item_id}>{cmp.vendors[i].vendor_name} ({c.rank})</option>)}
-                          </select>
+                          </Select>
                           {notL1 ? <input value={reasons[l.pr_item_id] || ''} onChange={(e) => setReasons((s) => ({ ...s, [l.pr_item_id]: e.target.value }))} placeholder="Why not L1? *" style={{ ...inputStyle, padding: '6px 8px', marginTop: 6 }} /> : null}
                         </td>
                       </tr>

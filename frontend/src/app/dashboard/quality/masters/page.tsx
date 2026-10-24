@@ -11,6 +11,7 @@ import { sheetInput, sheetLabel, sheetHint, Req, Optional, SheetIconName } from 
 import { useCan } from '@/lib/permissions'
 import { Pill, PageHeader, ErrorBanner, ActionSheet, sheetGap, tableWrapStyle, thStyle, tdStyle, SEVERITY_HEX, DISPOSITION_TYPE_LABELS } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 type Tab = 'characteristics' | 'defect-codes' | 'disposition-codes' | 'sampling'
 const TABS: { key: Tab; label: string }[] = [
@@ -200,20 +201,20 @@ export default function QualityMastersPage() {
               <div style={{ flex: '0 1 130px' }}><Field label="Lot size"><input type="number" min={1} style={inputStyle} value={calc.lot_size} onChange={(e) => setCalc({ ...calc, lot_size: e.target.value })} /></Field></div>
               <div style={{ flex: '0 1 110px' }}><Field label="AQL"><input style={inputStyle} value={calc.aql} onChange={(e) => setCalc({ ...calc, aql: e.target.value })} /></Field></div>
               <div style={{ flex: '0 1 120px' }}>
-                <Field label="Level"><select style={inputStyle} value={calc.level} onChange={(e) => setCalc({ ...calc, level: e.target.value })}><option>I</option><option>II</option><option>III</option></select></Field>
+                <Field label="Level"><Select style={inputStyle} value={calc.level} onChange={(e) => setCalc({ ...calc, level: e.target.value })}><option>I</option><option>II</option><option>III</option></Select></Field>
               </div>
               <div style={{ flex: '0 1 140px' }}>
-                <Field label="State"><select style={inputStyle} value={calc.severity} onChange={(e) => setCalc({ ...calc, severity: e.target.value })}><option value="normal">Normal</option><option value="tightened">Tightened</option><option value="reduced">Reduced</option></select></Field>
+                <Field label="State"><Select style={inputStyle} value={calc.severity} onChange={(e) => setCalc({ ...calc, severity: e.target.value })}><option value="normal">Normal</option><option value="tightened">Tightened</option><option value="reduced">Reduced</option></Select></Field>
               </div>
               <button type="button" style={primaryBtnStyle} onClick={runCalc}>Calculate</button>
             </div>
             {calcResult && <p style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, margin: 0 }}>{calcResult}</p>}
           </Section>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, color: TEXT.muted }}>Single sampling plans (n / Ac / Re), arrows already resolved:</span>
-            <select style={{ ...inputStyle, width: 150 }} value={severity} onChange={(e) => setSeverity(e.target.value)}>
+            <Select style={{ ...inputStyle, width: 150 }} value={severity} onChange={(e) => setSeverity(e.target.value)}>
               <option value="normal">Normal (II-A)</option><option value="tightened">Tightened (II-B)</option><option value="reduced">Reduced (II-C)</option>
-            </select>
+            </Select>
           </div>
           <div style={tableWrapStyle}>
             <table style={{ borderCollapse: 'collapse', minWidth: 900 }}>
@@ -245,15 +246,15 @@ export default function QualityMastersPage() {
               <div style={{ ...pair, ...sheetGap }}>
                 <div style={half}>
                   <label style={sheetLabel}>Type</label>
-                  <select style={sheetInput} value={charForm.char_type} onChange={(e) => setCharForm({ ...charForm, char_type: e.target.value })}>
+                  <Select style={sheetInput} value={charForm.char_type} onChange={(e) => setCharForm({ ...charForm, char_type: e.target.value })}>
                     <option value="variable">Measured value</option><option value="attribute">Pass / fail</option>
-                  </select>
+                  </Select>
                 </div>
                 <div style={half}>
                   <label style={sheetLabel}>Class</label>
-                  <select style={sheetInput} value={charForm.classification} onChange={(e) => setCharForm({ ...charForm, classification: e.target.value })}>
+                  <Select style={sheetInput} value={charForm.classification} onChange={(e) => setCharForm({ ...charForm, classification: e.target.value })}>
                     <option value="critical">Critical</option><option value="major">Major</option><option value="minor">Minor</option>
-                  </select>
+                  </Select>
                 </div>
               </div>
               <div style={{ ...pair, ...sheetGap }}>
@@ -271,9 +272,9 @@ export default function QualityMastersPage() {
                 <div style={{ flex: '1 1 220px' }}><label style={sheetLabel}>Name <Req /></label><input style={sheetInput} value={defForm.name} onChange={(e) => setDefForm({ ...defForm, name: e.target.value })} /></div>
               </div>
               <label style={{ ...sheetLabel, ...sheetGap }}>Category</label>
-              <select style={sheetInput} value={defForm.category} onChange={(e) => setDefForm({ ...defForm, category: e.target.value })}>
+              <Select style={sheetInput} value={defForm.category} onChange={(e) => setDefForm({ ...defForm, category: e.target.value })}>
                 {DEFECT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+              </Select>
             </>
           )}
           {adding === 'disposition-codes' && (
@@ -283,9 +284,9 @@ export default function QualityMastersPage() {
                 <div style={{ flex: '1 1 220px' }}><label style={sheetLabel}>Name <Req /></label><input style={sheetInput} value={dispForm.name} onChange={(e) => setDispForm({ ...dispForm, name: e.target.value })} /></div>
               </div>
               <label style={{ ...sheetLabel, ...sheetGap }}>Acts as</label>
-              <select style={sheetInput} value={dispForm.disposition_type} onChange={(e) => setDispForm({ ...dispForm, disposition_type: e.target.value })}>
+              <Select style={sheetInput} value={dispForm.disposition_type} onChange={(e) => setDispForm({ ...dispForm, disposition_type: e.target.value })}>
                 {Object.entries(DISPOSITION_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
+              </Select>
               <p style={sheetHint}>&ldquo;Acts as&rdquo; decides who must approve it and what happens to the Blocked stock.</p>
             </>
           )}

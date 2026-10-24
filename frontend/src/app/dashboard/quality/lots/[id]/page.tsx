@@ -24,6 +24,7 @@ import QualityRecordDoc from '@/components/quality/QualityRecordDoc'
 import { useCan } from '@/lib/permissions'
 import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
 import { SheetIcon, sheetInput, sheetLabel, sheetHint, sheetBtn, Req, Optional, SHEET } from '@/components/shared/FormSheet'
+import Select from '@/components/shared/Select'
 
 interface Draft { values: string; defects: string; defect_code_id: string; gauge_id: string; gauge_reference: string; remarks: string }
 
@@ -230,19 +231,19 @@ export default function LotDetailPage() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
           <div style={{ flex: '0 1 200px', minWidth: 170 }}>
             <Field label="Sampling state">
-              <select style={inputStyle} value={lot.sampling_severity} disabled={lot.status !== 'created' || busy || !canEdit}
+              <Select style={inputStyle} value={lot.sampling_severity} disabled={lot.status !== 'created' || busy || !canEdit}
                 onChange={(e) => run(() => qualityApi.setLotSampling(lot.id, e.target.value), 'Failed to change sampling.')}>
                 <option value="normal">Normal</option><option value="tightened">Tightened</option><option value="reduced">Reduced</option>
-              </select>
+              </Select>
             </Field>
           </div>
           <div style={{ flex: '0 1 240px', minWidth: 200 }}>
             <Field label="Inspector">
-              <select style={inputStyle} value={lot.assigned_to_id ? String(lot.assigned_to_id) : ''} disabled={!editable || busy}
+              <Select style={inputStyle} value={lot.assigned_to_id ? String(lot.assigned_to_id) : ''} disabled={!editable || busy}
                 onChange={(e) => e.target.value && run(() => qualityApi.assignLot(lot.id, Number(e.target.value)), 'Failed to assign the lot.')}>
                 <option value="">Unassigned</option>
                 {users.filter((u) => allowInspector(u.id) || u.id === lot.assigned_to_id).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+              </Select>
             </Field>
           </div>
           {lot.test_certificate_required && (
@@ -318,21 +319,21 @@ export default function LotDetailPage() {
                       </td>
                       <td style={cell}>
                         {resultsEditable ? (
-                          <select style={{ ...gridInput, width: 170 }} value={d.defect_code_id} onChange={(e) => setDraft(r.id, { defect_code_id: e.target.value })}>
+                          <Select style={{ ...gridInput, width: 170 }} value={d.defect_code_id} onChange={(e) => setDraft(r.id, { defect_code_id: e.target.value })}>
                             <option value="">— (needed if it fails)</option>
                             {codes.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
-                          </select>
+                          </Select>
                         ) : (r.defect_code_label || '—')}
                       </td>
                       <td style={cell}>
                         {resultsEditable ? (
-                          <select style={{ ...gridInput, width: 150 }} value={d.gauge_id} onChange={(e) => {
+                          <Select style={{ ...gridInput, width: 150 }} value={d.gauge_id} onChange={(e) => {
                             const g = gauges.find((x) => String(x.id) === e.target.value)
                             setDraft(r.id, { gauge_id: e.target.value, gauge_reference: g ? g.code : '' })
                           }}>
                             <option value="">— No gauge —</option>
                             {gauges.map((g) => <option key={g.id} value={g.id}>{g.code} — {g.name}</option>)}
-                          </select>
+                          </Select>
                         ) : (r.gauge_reference || '—')}
                       </td>
                       <td style={cell}>

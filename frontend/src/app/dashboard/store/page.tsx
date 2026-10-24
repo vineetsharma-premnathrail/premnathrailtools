@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { StoreItem, StoreItemCategory } from '@/types'
 import { TEXT, BRAND, GLASS, SHADOWS, SUCCESS } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, inputStyle } from '@/components/shared/ui'
 import ItemImportDialog from '@/components/store/ItemImportDialog'
 import StoreNav from '@/components/store/StoreNav'
 import { recordPath } from '@/lib/recordRef'
@@ -14,9 +14,10 @@ import { useItemTypes } from '@/components/store/itemTypes'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import Select from '@/components/shared/Select'
 
 const filterSelectStyle: React.CSSProperties = {
-  padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)', background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', textOverflow: 'ellipsis',
+  ...inputStyle, width: undefined, background: 'rgba(255,255,255,.7)', textOverflow: 'ellipsis',
 }
 
 export default function StoreItemsPage() {
@@ -110,14 +111,14 @@ export default function StoreItemsPage() {
     <div>
       <StoreNav />
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <div>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
             Store &amp; Inventory
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Item Master</h1>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {can('store', 'items', 'export') && <button data-tour="items-export-btn" onClick={exportExcel} disabled={exporting} style={{ ...secondaryBtnStyle, opacity: exporting ? 0.7 : 1 }}>{exporting ? 'Exporting…' : 'Export'}</button>}
           {can('store', 'items', 'import') && <button data-tour="items-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>}
           {can('store', 'items', 'create') && (
@@ -132,15 +133,15 @@ export default function StoreItemsPage() {
       <MessageDialog open={!!exportError} variant="error" title="Export Failed" message={exportError} onClose={() => setExportError('')} />
       <MessageDialog open={!!error} variant="error" title="Failed to Load Items" message={error} onClose={() => setError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
 
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         <input
           data-tour="items-search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by name, code or technical specification…"
-          style={{ flex: '1 1 240px', maxWidth: 300, padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)', background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none' }}
+          style={{ ...inputStyle, flex: '1 1 240px', width: undefined, maxWidth: 300, background: 'rgba(255,255,255,.7)' }}
         />
-        <select
+        <Select
           data-tour="items-type-filter"
           value={typeFilter}
           onChange={(e) => { setTypeFilter(e.target.value); setCategoryFilter(''); setSubcategoryFilter('') }}
@@ -150,10 +151,10 @@ export default function StoreItemsPage() {
           {Object.entries(ITEM_TYPE_LABELS).map(([value, label]) => (
             <option key={value} value={value}>{label}</option>
           ))}
-        </select>
+        </Select>
         {/* Type → Category → Subcategory: each step appears only once the one before it is picked */}
         {typeFilter && (
-          <select
+          <Select
             data-tour="items-category-filter"
             value={categoryFilter}
             onChange={(e) => { setCategoryFilter(e.target.value); setSubcategoryFilter('') }}
@@ -161,10 +162,10 @@ export default function StoreItemsPage() {
           >
             <option value="">All Categories</option>
             {categoryOptions.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-          </select>
+          </Select>
         )}
         {subcategoryOptions.length > 0 && (
-          <select
+          <Select
             data-tour="items-subcategory-filter"
             value={subcategoryFilter}
             onChange={(e) => setSubcategoryFilter(e.target.value)}
@@ -172,7 +173,7 @@ export default function StoreItemsPage() {
           >
             <option value="">All Subcategories</option>
             {subcategoryOptions.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-          </select>
+          </Select>
         )}
         {hasFilters && (
           <button type="button" onClick={() => { setSearch(''); setTypeFilter(''); setCategoryFilter(''); setSubcategoryFilter('') }}
@@ -182,8 +183,8 @@ export default function StoreItemsPage() {
         )}
       </div>
 
-      <div ref={tableRef} data-tour="items-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflowY: 'auto', overflowX: 'hidden', height: tableHeight }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+      <div ref={tableRef} data-tour="items-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', height: tableHeight }}>
+        <table style={{ width: '100%', minWidth: 960, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
           <colgroup>
             <col style={{ width: 130 }} /><col style={{ width: 100 }} /><col style={{ width: 130 }} /><col style={{ width: 120 }} />
             <col /><col style={{ width: 70 }} /><col /><col style={{ width: 96 }} />
@@ -191,7 +192,7 @@ export default function StoreItemsPage() {
           <thead>
             <tr>
               {['Code', 'Type', 'Category', 'Subcategory', 'Name', 'UOM', 'Technical Specification', 'Status'].map((h) => (
-                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', whiteSpace: 'nowrap', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
               ))}
             </tr>
           </thead>

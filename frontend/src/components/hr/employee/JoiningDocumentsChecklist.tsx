@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { hrApi } from '@/lib/api'
@@ -187,10 +188,10 @@ export default function JoiningDocumentsChecklist({ rules, ctx, owner, staged, o
         <div style={{ border: `1px dashed ${BORDER.normal}`, borderRadius: 12, padding: 12, marginBottom: 14 }}>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
             {field('Document Type *', (
-              <select style={sheetInput} value={draft.key} onChange={(e) => setDraft({ ...draft, key: e.target.value })}>
+              <Select style={sheetInput} value={draft.key} onChange={(e) => setDraft({ ...draft, key: e.target.value })}>
                 <option value="">— Select —</option>
                 {typeOptions.map((k) => <option key={k} value={k}>{rules.documents[k]}{required.includes(k) ? ' (required)' : ''}</option>)}
-              </select>
+              </Select>
             ), { flex: '1 1 210px', maxWidth: 280 })}
             {field('File *', <input ref={fileRef} type="file" accept={ACCEPT} style={{ ...sheetInput, padding: 7 }} onChange={(e) => setDraft({ ...draft, file: e.target.files?.[0] || null })} />, { flex: '1 1 220px', maxWidth: 320 })}
             {field('Reference No.', <input style={sheetInput} value={draft.document_number} onChange={(e) => setDraft({ ...draft, document_number: e.target.value })} placeholder="If any" />, { flex: '0 1 150px', minWidth: 130 })}

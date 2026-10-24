@@ -8,10 +8,10 @@
 import { useEffect, useState } from 'react'
 import { rndApi } from '@/lib/api'
 import { RndPerson, RndRequirementAccessRow } from '@/types'
-import { TEXT, BORDER, GRADIENTS, SHADOWS, GLASS } from '@/lib/theme'
+import { TEXT, BORDER, SHADOWS, GLASS } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import Checkbox from '@/components/Checkbox'
-import { dangerBtnStyle } from '@/components/shared/ui'
+import { dangerBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
@@ -28,10 +28,7 @@ const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 16,
 }
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary,
-  color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: `0 6px 16px ${SHADOWS.glowOrange}`,
-}
+const primaryBtn: React.CSSProperties = { ...primaryBtnStyle, boxShadow: `0 6px 16px ${SHADOWS.glowOrange}` }
 
 /** canEdit: the role's R&D › Requirements › Access 'edit' (default true) — without it the list is read-only. */
 export default function RequirementAccessTab({ source, recordId, canEdit = true }: { source: 'inquiry' | 'tender'; recordId: number; canEdit?: boolean }) {

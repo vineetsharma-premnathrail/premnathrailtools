@@ -28,7 +28,7 @@ const inputStyle: React.CSSProperties = {
   width: '100%', padding: '8px 10px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
 }
-const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted }
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted }
 const tdStyle: React.CSSProperties = { padding: '8px 10px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'middle' }
 
 const fmtQty = (q: number | null | undefined) => (q == null ? '—' : `${Math.round(q * 1000) / 1000}`)

@@ -10,6 +10,7 @@ import RndNav from '@/components/rnd/RndNav'
 import Checkbox from '@/components/Checkbox'
 import { extractErrorMessages } from '@/lib/validation'
 import { getErrorMessage, downloadBlob } from '@/components/rnd/toolStyles'
+import { btnBase, smallBtnSize } from '@/components/shared/ui'
 
 interface BrakingRow {
   mode: 'Rail' | 'Road'
@@ -571,7 +572,7 @@ function BrakingCalculatorPageInner() {
         <div style={cardStyle}>
           <div style={cardHeaderStyle}><span style={cardTitleStyle}>Control &amp; Actions</span></div>
           <div style={{ ...cardBodyStyle, gridTemplateColumns: 'unset' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14 }}>
               <div data-tour="rnd-brk-road-mode">
                 <div style={{ ...labelStyle, marginBottom: 6 }}>Mode</div>
                 <span style={radioLabelStyle}><Checkbox checked={roadModeEnabled} onChange={(e) => setRoadModeEnabled(e.target.checked)} /> Road Mode</span>
@@ -767,7 +768,7 @@ function BrakingCalculatorPageInner() {
 }
 
 function smBtnStyle(bg: string, border: string, color: string): React.CSSProperties {
-  return { padding: '7px 12px', borderRadius: 6, border: `1px solid ${border}`, background: bg, color, fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }
+  return { ...btnBase, ...smallBtnSize, border: `1px solid ${border}`, background: bg, color }
 }
 
 function thStyle(align: 'left' | 'right' | 'center'): React.CSSProperties {

@@ -5,8 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
 import { HydCircuit } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, DANGER } from '@/lib/theme'
-import { secondaryBtnStyle, InfoRow } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, BORDER, DANGER } from '@/lib/theme'
+import { secondaryBtnStyle, InfoRow, primaryBtnStyle } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -28,10 +28,7 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer',
-  background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-}
+const primaryBtn: React.CSSProperties = { ...primaryBtnStyle, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }
 const dangerBtn: React.CSSProperties = { ...secondaryBtnStyle, color: DANGER.primary, borderColor: DANGER.border }
 const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
 

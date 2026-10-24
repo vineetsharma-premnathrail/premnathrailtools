@@ -19,6 +19,7 @@
 //    (`canCreate`), each task carries its department, and `departmentFilter`
 //    adds the All · My department · per-department chips.
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { ArrowCounterClockwise, Calendar, ChatCenteredText, Check, Clock, PencilSimple, Plus, ShieldCheck, X } from '@phosphor-icons/react'
 import { RndPerson, RndTask, RndTaskApproval, RndTaskCreateInput, RndTaskEditInput, RndTaskPriority, RndTaskWorkStatus, RndWorkDepartment, RndWorkDocument } from '@/types'
@@ -26,7 +27,7 @@ import { TEXT, BORDER } from '@/lib/theme'
 import { formatDate, formatDateTime } from '@/lib/format'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { dangerBtnStyle, smallSecondaryBtnStyle, btnBase, smallBtnSize } from '@/components/shared/ui'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, SheetIconName, FileDropZone, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
 import { useAuthStore } from '@/store/authStore'
@@ -122,7 +123,7 @@ function ActionBtn({ icon, label, onClick, variant = 'ghost', active = false, di
       : { background: active ? 'rgba(255,122,69,0.1)' : 'rgba(255,255,255,0.8)', color: active ? '#c2410c' : tone, border: `1px solid ${active ? 'rgba(255,122,69,0.45)' : variant === 'warn' ? 'rgba(220,38,38,0.35)' : BORDER.normal}` }
   return (
     <button type="button" data-tour={tour} onClick={onClick} disabled={disabled} title={title}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 10, fontSize: 12.5, fontWeight: 600,
+      style={{ ...btnBase, ...smallBtnSize, gap: 6,
         cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.45 : 1, whiteSpace: 'nowrap', transition: 'background 120ms ease', ...style }}>
       <Icon name={icon} />{label}
     </button>
@@ -201,7 +202,7 @@ const inputStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
 }
 const smallLabel: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }
-const smallBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }
+const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 
 const todayIso = () => {
   const d = new Date()
@@ -417,15 +418,15 @@ function TaskForm({
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
               <div style={{ flex: '1 1 130px' }}>
                 <label style={sheetLabel}>Priority</label>
-                <select style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value as RndTaskPriority)}>
+                <Select style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value as RndTaskPriority)}>
                   {(Object.keys(PRIORITY_LABELS) as RndTaskPriority[]).map((k) => <option key={k} value={k}>{PRIORITY_LABELS[k]}</option>)}
-                </select>
+                </Select>
               </div>
               <div style={{ flex: '1 1 140px' }}>
                 <label style={sheetLabel}>Status</label>
-                <select style={sheetInput} value={workStatus} onChange={(e) => setWorkStatus(e.target.value as RndTaskWorkStatus)}>
+                <Select style={sheetInput} value={workStatus} onChange={(e) => setWorkStatus(e.target.value as RndTaskWorkStatus)}>
                   {(Object.keys(WORK_LABELS) as RndTaskWorkStatus[]).map((k) => <option key={k} value={k}>{WORK_LABELS[k]}</option>)}
-                </select>
+                </Select>
               </div>
             </div>
           </SheetSection>
@@ -695,11 +696,11 @@ function TaskView({
           )}
           <span style={{ flex: '1 1 0', minWidth: 8 }} />
           {isOpen && canProgress && (
-            <select title="Work status — how the task stands" aria-label="Work status" value={workStatus} disabled={busy}
+            <Select title="Work status — how the task stands" aria-label="Work status" value={workStatus} disabled={busy}
               onChange={(e) => progress({ work_status: e.target.value as RndTaskWorkStatus }, 'Could not change the status.')}
               style={{ fontSize: 12.5, fontWeight: 700, padding: '6px 10px', borderRadius: 999, border: `1.5px solid ${WORK_HEX[workStatus]}55`, background: `${WORK_HEX[workStatus]}1a`, color: WORK_HEX[workStatus], cursor: 'pointer' }}>
               {(Object.keys(WORK_LABELS) as RndTaskWorkStatus[]).map((k) => <option key={k} value={k}>{WORK_LABELS[k]}</option>)}
-            </select>
+            </Select>
           )}
           {canSplit && <ActionBtn tour="rnd-task-subtask-btn" icon="plus" label="Sub-task" onClick={() => choose('subtask')} />}
           {canReview && rights.edit && isDone && <ActionBtn icon="undo" label="Reopen" onClick={() => choose('reopen')} />}

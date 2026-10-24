@@ -14,7 +14,7 @@ import PromptDialog from '@/components/erp/PromptDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import {
   AttachmentList, ErrorBanner, FlagPill, Notice, PRIORITY_HEX, PRIORITY_LABELS, Pill, ProgressBar, TASK_HEX, TASK_LABELS,
-  actionBtn, sectionStyle, todayIso,
+  actionBtn, smallActionBtn, sectionStyle, todayIso,
 } from './pmUi'
 import { FormSheet, Optional, Req, SHEET, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import { MentionComposer, MentionText } from './PmChat'
@@ -143,7 +143,7 @@ export default function TaskDetailView({ taskId }: { taskId: number }) {
               <span style={{ fontSize: 13, color: s.status === 'done' ? TEXT.muted : TEXT.body, textDecoration: s.status === 'done' ? 'line-through' : 'none', flex: 1 }}>{s.title}</span>
               {s.due_date && <span style={{ fontSize: 12, color: TEXT.muted }}>{formatDate(s.due_date)}</span>}
               {workable && isOpen && s.status !== 'done' && (
-                <button type="button" title="Delete sub-task" onClick={() => setDelSub(s)} style={{ ...actionBtn('danger'), padding: '2px 8px', fontSize: 11 }}>×</button>
+                <button type="button" title="Delete sub-task" onClick={() => setDelSub(s)} style={{ ...smallActionBtn('danger') }}>×</button>
               )}
             </div>
           ))}
@@ -188,7 +188,7 @@ export default function TaskDetailView({ taskId }: { taskId: number }) {
             <span style={{ flex: 1, color: TEXT.body }}>{lg.note || ''}</span>
             <span style={{ fontSize: 12, color: TEXT.muted }}>{lg.user_name}</span>
             {lg.user_id === user?.id && t.project_status === 'active' && (
-              <button type="button" onClick={() => act(() => pmWorkApi.deleteTime(lg.id), 'Could not remove the entry.')} style={{ ...actionBtn('danger'), padding: '2px 8px', fontSize: 11 }}>×</button>
+              <button type="button" onClick={() => act(() => pmWorkApi.deleteTime(lg.id), 'Could not remove the entry.')} style={{ ...smallActionBtn('danger') }}>×</button>
             )}
           </div>
         ))}

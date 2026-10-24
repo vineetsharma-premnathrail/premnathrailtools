@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react'
 import { crmApi } from '@/lib/api'
-import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/crm/ui'
+import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallDangerBtnStyle, smallSecondaryBtnStyle } from '@/components/crm/ui'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -154,8 +154,8 @@ export default function ProductCategoriesManager() {
                 <tr key={c.id} style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
                   <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600 }}>{c.name}</td>
                   <td style={{ padding: '10px 14px', display: 'flex', gap: 8 }}>
-                    {canRemove(c.created_by_id) && <button onClick={() => startEdit(c)} data-tour={rowIdx === 0 ? 'pc-row-edit-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '4px 10px', fontSize: 12 }}>Edit</button>}
-                    {canRemove(c.created_by_id) && <button onClick={() => setPendingDelete(c)} data-tour={rowIdx === 0 ? 'pc-row-delete-btn' : undefined} style={{ ...dangerBtnStyle, padding: '4px 10px', fontSize: 12 }}>Delete</button>}
+                    {canRemove(c.created_by_id) && <button onClick={() => startEdit(c)} data-tour={rowIdx === 0 ? 'pc-row-edit-btn' : undefined} style={{ ...smallSecondaryBtnStyle }}>Edit</button>}
+                    {canRemove(c.created_by_id) && <button onClick={() => setPendingDelete(c)} data-tour={rowIdx === 0 ? 'pc-row-delete-btn' : undefined} style={{ ...smallDangerBtnStyle }}>Delete</button>}
                   </td>
                 </tr>
               ))

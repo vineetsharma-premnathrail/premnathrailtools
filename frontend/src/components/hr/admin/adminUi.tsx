@@ -7,7 +7,8 @@
 
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetIconName } from '@/components/shared/FormSheet'
-import { TEXT, GLASS, SHADOWS, BORDER, GRADIENTS } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, inputStyle as sharedInput } from '@/components/shared/ui'
 
 const inrFormatter = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -92,22 +93,15 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
   )
 }
 
+// Buttons + inputs ride the shared 38px control scale (shared/ui); only the
+// glow / translucent background stay local.
 export const primaryActionStyle: React.CSSProperties = {
-  padding: '11px 20px', borderRadius: 12, border: 'none', cursor: 'pointer',
-  background: GRADIENTS.primary, color: '#fff', fontSize: 13.5, fontWeight: 600,
-  boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`, whiteSpace: 'nowrap',
+  ...primaryBtnStyle, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
 }
 
-export const filterInputStyle: React.CSSProperties = {
-  padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
-}
+export const filterInputStyle: React.CSSProperties = { ...sharedInput, width: 'auto', background: 'rgba(255,255,255,.7)' }
 
-export const formInputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
-  fontFamily: 'inherit',
-}
+export const formInputStyle: React.CSSProperties = { ...sharedInput, background: 'rgba(255,255,255,.7)', fontFamily: 'inherit' }
 
 export const labelStyle: React.CSSProperties = {
   fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.secondary, marginBottom: 6, display: 'block',

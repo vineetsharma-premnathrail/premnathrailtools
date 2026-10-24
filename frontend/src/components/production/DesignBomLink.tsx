@@ -9,8 +9,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { productionApi } from '@/lib/api'
 import { ProductionBom, ProductionBomDesignDiff, ProductionDesignSource } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { secondaryBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDateTime } from '@/lib/format'
@@ -30,16 +30,13 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 6px' }
-const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }
 const tdStyle: React.CSSProperties = { padding: '9px 12px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
 const inputStyle: React.CSSProperties = {
   padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
 }
-const primaryBtn: React.CSSProperties = {
-  padding: '8px 14px', borderRadius: 10, border: 'none', cursor: 'pointer',
-  background: GRADIENTS.primary, color: '#fff', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap',
-}
+const primaryBtn: React.CSSProperties = primaryBtnStyle
 const errorBox = (error: string | string[]) => (
   <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
     {Array.isArray(error) ? error.join(' ') : error}

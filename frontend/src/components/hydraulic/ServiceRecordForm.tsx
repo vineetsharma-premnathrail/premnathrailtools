@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { hydraulicApi } from '@/lib/api'
 import { HydLookupOption, HydServiceRecord } from '@/types'
@@ -19,7 +20,7 @@ const rowStyle: React.CSSProperties = {
   display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', padding: 12, borderRadius: 12,
   border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,.45)',
 }
-const removeBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '9px 12px', color: DANGER.primary, borderColor: DANGER.border }
+const removeBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '10px 12px', color: DANGER.primary, borderColor: DANGER.border }
 
 // Service types that take the system out of service while the job is open
 // (backend HYD_DOWNTIME_SERVICE_TYPES).
@@ -215,9 +216,9 @@ export default function ServiceRecordForm({
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
           <div data-tour="hyd-svcf-type" style={{ flex: '0 1 190px', minWidth: 170 }}>
             <label style={labelStyle}>Service Type</label>
-            <select style={inputStyle} value={serviceType} onChange={(e) => setServiceType(e.target.value)}>
+            <Select style={inputStyle} value={serviceType} onChange={(e) => setServiceType(e.target.value)}>
               {Object.entries(SERVICE_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            </Select>
           </div>
           <div data-tour="hyd-svcf-date" style={{ flex: '0 1 170px', minWidth: 160 }}>
             <label style={labelStyle}>Service Date <Req /></label>

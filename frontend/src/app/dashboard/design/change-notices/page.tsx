@@ -1,5 +1,7 @@
 'use client'
 
+import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -47,7 +49,7 @@ const tableWrap: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 380px)',
 }
-const bigBtn: React.CSSProperties = { padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }
+const bigBtn: React.CSSProperties = primaryBtnStyle
 
 function pill(label: string, hex: string) {
   return <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
@@ -179,10 +181,10 @@ export default function DesignChangesPage() {
           </div>
           <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
             <input data-tour="design-ecrs-search" style={{ ...inputStyle, flex: '1 1 280px', maxWidth: 420 }} placeholder="Search by ECR number or title…" value={ecrSearch} onChange={(e) => setEcrSearch(e.target.value)} />
-            <select data-tour="design-ecrs-source" style={{ ...inputStyle, flex: '0 1 220px' }} value={ecrSource} onChange={(e) => setEcrSource(e.target.value)}>
+            <Select data-tour="design-ecrs-source" style={{ ...inputStyle, flex: '0 1 220px' }} value={ecrSource} onChange={(e) => setEcrSource(e.target.value)}>
               <option value="">All sources</option>
               {Object.entries(ECR_SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            </Select>
           </div>
 
           <div data-tour="design-ecrs-table" style={tableWrap}>
@@ -232,7 +234,7 @@ export default function DesignChangesPage() {
               <span style={{ flex: '1 1 320px' }}>
                 ECNs normally come from an approved change request — open the ECR and use “Create ECN”. Raise one directly only for a change that skips the change board.
               </span>
-              <button type="button" data-tour="design-ecns-new-btn" onClick={() => router.push('/dashboard/design/change-notices/new')} style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid rgba(37,99,235,0.35)', background: '#fff', color: '#1e40af', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+              <button type="button" data-tour="design-ecns-new-btn" onClick={() => router.push('/dashboard/design/change-notices/new')} style={{ ...secondaryBtnStyle, border: '1px solid rgba(37,99,235,0.35)', color: '#1e40af' }}>
                 + New ECN
               </button>
             </div>

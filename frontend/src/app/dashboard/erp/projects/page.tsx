@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -8,7 +9,7 @@ import { useCan } from '@/lib/permissions'
 import { erpApi } from '@/lib/api'
 import { Project, ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
-import { inputStyle, Field } from '@/components/shared/ui'
+import { inputStyle, Field, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import BulkImportDialog from '@/components/erp/BulkImportDialog'
@@ -228,42 +229,42 @@ export default function ProjectsRegistryPage() {
           </div>
           <div style={{ flex: '1 1 160px', minWidth: 150 }}>
             <Field label="Machine Status">
-              <select value={draft.status} onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))} style={inputStyle} data-tour="erp-proj-status-filter">
+              <Select value={draft.status} onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))} style={inputStyle} data-tour="erp-proj-status-filter">
                 <option value="all">All Statuses</option>
                 {STATUS_FILTER_OPTIONS.map((s) => (
                   <option key={s.value} value={s.value}>{s.label}</option>
                 ))}
-              </select>
+              </Select>
             </Field>
           </div>
           <div style={{ flex: '1 1 160px', minWidth: 150 }}>
             <Field label="Application Type">
-              <select value={draft.application_type} onChange={(e) => setDraft((d) => ({ ...d, application_type: e.target.value }))} style={inputStyle} data-tour="erp-proj-app-filter">
+              <Select value={draft.application_type} onChange={(e) => setDraft((d) => ({ ...d, application_type: e.target.value }))} style={inputStyle} data-tour="erp-proj-app-filter">
                 <option value="all">All Applications</option>
                 {APPLICATION_TYPE_FILTER_OPTIONS.map((a) => (
                   <option key={a.value} value={a.value}>{a.label}</option>
                 ))}
-              </select>
+              </Select>
             </Field>
           </div>
           <div style={{ flex: '1 1 160px', minWidth: 150 }}>
             <Field label="Client Company">
-              <select value={draft.client_company} onChange={(e) => setDraft((d) => ({ ...d, client_company: e.target.value }))} style={inputStyle} data-tour="erp-proj-client-filter">
+              <Select value={draft.client_company} onChange={(e) => setDraft((d) => ({ ...d, client_company: e.target.value }))} style={inputStyle} data-tour="erp-proj-client-filter">
                 <option value="all">All Clients</option>
                 {filterOptions.client_companies.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
-              </select>
+              </Select>
             </Field>
           </div>
           <div style={{ flex: '1 1 160px', minWidth: 150 }}>
             <Field label="CRM Customer">
-              <select value={draft.customer_id} onChange={(e) => setDraft((d) => ({ ...d, customer_id: e.target.value }))} style={inputStyle}>
+              <Select value={draft.customer_id} onChange={(e) => setDraft((d) => ({ ...d, customer_id: e.target.value }))} style={inputStyle}>
                 <option value="all">All Customers</option>
                 {customers.map((c) => (
                   <option key={c.id} value={String(c.id)}>{c.label}</option>
                 ))}
-              </select>
+              </Select>
             </Field>
           </div>
           <div style={{ display: 'flex', gap: 10, flex: 'none' }}>
@@ -340,28 +341,4 @@ function StatCard({ label, value, color }: { label: string; value: number; color
   )
 }
 
-const primaryBtnStyle: React.CSSProperties = {
-  fontSize: 12.5,
-  fontWeight: 600,
-  padding: '9px 18px',
-  borderRadius: 9,
-  border: 'none',
-  background: '#1f1108',
-  color: '#fff',
-  cursor: 'pointer',
-  textTransform: 'uppercase',
-  letterSpacing: '.03em',
-}
 
-const secondaryBtnStyle: React.CSSProperties = {
-  fontSize: 12.5,
-  fontWeight: 600,
-  padding: '9px 18px',
-  borderRadius: 9,
-  border: '1px solid rgba(0,0,0,0.12)',
-  background: '#fff',
-  color: '#57534e',
-  cursor: 'pointer',
-  textTransform: 'uppercase',
-  letterSpacing: '.03em',
-}

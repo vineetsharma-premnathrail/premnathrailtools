@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { storeBatchesApi } from '@/lib/api'
 import { inputStyle } from '@/components/shared/ui'
 import { TEXT } from '@/lib/theme'
+import Select from '@/components/shared/Select'
 
 interface AvailableBatch {
   batch_id: number | null
@@ -40,10 +41,10 @@ export default function BatchPicker({ itemId, locationId, quantity, value, onCha
 
   return (
     <div>
-      <select style={{ ...inputStyle, minWidth: 200 }} value={value} onChange={(e) => onChange(e.target.value)}>
+      <Select style={{ ...inputStyle, minWidth: 200 }} value={value} onChange={(e) => onChange(e.target.value)}>
         <option value="">Auto — first in, first out</option>
         {batches.map((b) => <option key={b.batch_number} value={b.batch_number} disabled={!b.issuable}>{label(b)}</option>)}
-      </select>
+      </Select>
       {error && <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 3 }}>{error}</div>}
       {!value && suggestion.length > 0 && (
         <div style={{ fontSize: 11, color: TEXT.muted, marginTop: 3 }}>

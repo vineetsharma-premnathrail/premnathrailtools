@@ -3,11 +3,13 @@
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CaretDown, X } from '@phosphor-icons/react'
 import { createPortal } from 'react-dom'
+import AnchoredPopover from '@/components/shared/AnchoredPopover'
 import { COLORS, RADII, BORDERS, GLASS, SHADOWS, TEXT, BRAND, SUCCESS } from '@/lib/theme'
 import { CrmActivityAttachment } from '@/types'
 import { crmApi } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
+import { inputStyle, primaryBtnStyle, secondaryBtnStyle, smallPrimaryBtnStyle, smallSecondaryBtnStyle, smallBtnSize } from '@/components/shared/ui'
 
 // A plain "×" character renders as a colored circular emoji glyph on some
 // systems/fonts instead of a typographic X — this SVG is the drop-in
@@ -148,6 +150,29 @@ export function RevisionSelector({ revisions, selectedId, onSelect, tourId }: { 
 }
 
 /**
+ * A small action menu (e.g. "Change Status") pinned under the right edge of its
+ * anchor — or above it near the bottom of the screen — portaled to <body> so a
+ * glass card or scroll box can't clip it. Re-measured on scroll and resize.
+ * `menuRef` lets the caller's outside-click check include the portaled list.
+ */
+export function AnchoredMenu({ anchorRef, menuRef, open, children, minWidth = 200, maxHeight = 260 }: {
+  anchorRef: React.RefObject<HTMLElement | null>
+  menuRef?: React.RefObject<HTMLDivElement | null>
+  open: boolean
+  children: React.ReactNode
+  minWidth?: number
+  maxHeight?: number
+}) {
+  // Right-aligned menu off a button: the shared popover does the placement.
+  return (
+    <AnchoredPopover anchorRef={anchorRef} boxRef={menuRef} open={open} align="right" minWidth={minWidth} maxHeight={maxHeight}
+      style={{ borderRadius: 12, border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 16px 36px rgba(0,0,0,0.16)', padding: 6 }}>
+      {children}
+    </AnchoredPopover>
+  )
+}
+
+/**
  * Click-to-expand workflow stage indicator — a ring-progress badge (current
  * stage number over a conic-gradient ring showing overall % complete) plus
  * the stage name, a % pill, and a dropdown of every stage so an authorized
@@ -172,10 +197,14 @@ export function StageProgress({ stage, stages, canModify, allowBackward = false,
   const pct = stages.length ? ((activeIdx + 1) / stages.length) * 100 : 0
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const popRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
-    const onClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (ref.current && !ref.current.contains(t) && !popRef.current?.contains(t)) setOpen(false)
+    }
     document.addEventListener('mousedown', onClick)
     return () => document.removeEventListener('mousedown', onClick)
   }, [open])
@@ -207,9 +236,9 @@ export function StageProgress({ stage, stages, canModify, allowBackward = false,
         </div>
       </div>
 
-      {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0, zIndex: 20, borderRadius: 14, background: 'rgba(255,255,255,.96)', backdropFilter: GLASS.blurStrong, WebkitBackdropFilter: GLASS.blurStrong, border: '1px solid rgba(255,255,255,.4)', boxShadow: SHADOWS.glass(true), overflow: 'hidden' }}>
-        <div style={{ maxHeight: 340, overflowY: 'auto', padding: 6 }}>
+      {/* Portaled + flips up near the screen bottom — an absolute list was clipped by glass cards. */}
+      <AnchoredPopover anchorRef={ref} open={open} maxHeight={340} style={{ borderRadius: 14, background: 'rgba(255,255,255,.96)', backdropFilter: GLASS.blurStrong, WebkitBackdropFilter: GLASS.blurStrong, border: '1px solid rgba(255,255,255,.4)', boxShadow: SHADOWS.glass(true) }}>
+        <div ref={popRef} style={{ padding: 6 }}>
           {stages.map((s, i) => {
             const done = i < activeIdx
             const active = i === activeIdx
@@ -234,8 +263,7 @@ export function StageProgress({ stage, stages, canModify, allowBackward = false,
             )
           })}
         </div>
-        </div>
-      )}
+      </AnchoredPopover>
     </div>
   )
 }
@@ -401,49 +429,13 @@ export function SpecInfoRow({ label, value, change }: { label: string; value: st
   )
 }
 
-export const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 12px',
-  borderRadius: RADII.lg,
-  border: BORDERS.default,
-  background: COLORS.surface,
-  fontSize: 13,
-  outline: 'none',
-  boxSizing: 'border-box',
-}
-
-export const primaryBtnStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  padding: '10px 20px',
-  borderRadius: RADII.lg,
-  border: 'none',
-  background: COLORS.brandGradient,
-  color: '#fff',
-  cursor: 'pointer',
-}
-
-export const secondaryBtnStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  padding: '9px 18px',
-  borderRadius: RADII.lg,
-  border: BORDERS.default,
-  background: COLORS.surface,
-  color: '#57534e',
-  cursor: 'pointer',
-}
-
-export const dangerBtnStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  padding: '9px 18px',
-  borderRadius: RADII.lg,
-  border: BORDERS.default,
-  background: COLORS.surface,
-  color: COLORS.danger,
-  cursor: 'pointer',
-}
+// Same control + button scale as every other module (shared/ui.tsx, CONTROL in
+// theme.ts). The old glass border here was nearly invisible on white cards.
+export { inputStyle, primaryBtnStyle, secondaryBtnStyle }
+export const dangerBtnStyle: React.CSSProperties = { ...secondaryBtnStyle, color: COLORS.danger }
+// 30px row-action variants (table rows, card action strips).
+export { smallPrimaryBtnStyle, smallSecondaryBtnStyle }
+export const smallDangerBtnStyle: React.CSSProperties = { ...dangerBtnStyle, ...smallBtnSize }
 
 export function Field({ label, children, tourId }: { label: string; children: React.ReactNode; tourId?: string }) {
   return (

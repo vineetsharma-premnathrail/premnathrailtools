@@ -311,7 +311,7 @@ export default function LetterEditorDialog({
 
         {type === 'general' && (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 14, marginBottom: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 180px) minmax(0, 1fr)', gap: 14, marginBottom: 14 }}>
               <div>
                 <label style={labelStyle}>Date <Req /></label>
                 <DateField value={letterDate} onChange={setLetterDate} />

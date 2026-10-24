@@ -99,7 +99,7 @@ export default function AvlDetailPage() {
           {!a.legacy_pending ? (
             <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Approvers decide in the Approval panel below (Organization › Approval Workflows › Vendor block / unblock).</p>
           ) : isPartner ? (
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <button type="button" disabled={busy} style={a.pending_action === 'block' ? dangerBtnStyle : primaryBtnStyle}
                 onClick={() => run(() => qualityApi.avlDecision(a.id, true, ''), 'Failed to record the decision.')}>Approve {a.pending_action}</button>
               <button type="button" disabled={busy} style={secondaryBtnStyle}

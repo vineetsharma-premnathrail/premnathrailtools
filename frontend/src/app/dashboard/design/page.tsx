@@ -1,5 +1,6 @@
 'use client'
 
+import { primaryBtnStyle } from '@/components/shared/ui'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -115,7 +116,7 @@ export default function DesignDashboardPage() {
           <button
             data-tour="design-dash-new-doc-btn"
             onClick={() => router.push('/dashboard/design/documents/new')}
-            style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}
+            style={primaryBtnStyle}
           >
             + New Document
           </button>

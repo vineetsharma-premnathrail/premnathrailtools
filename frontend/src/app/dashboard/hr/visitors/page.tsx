@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { canActOnTab } from '@/lib/tabAccess'
@@ -12,7 +13,7 @@ import MyHrTabs from '@/components/hr/MyHrTabs'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import PromptDialog from '@/components/erp/PromptDialog'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { RegisterVisitorDialog, CheckInDialog, EditVisitorDialog } from '@/components/hr/admin/VisitorDialogs'
 import {
   PageHeader, ErrorBanner, SuccessBanner, Pill, EmptyRow, primaryActionStyle, filterInputStyle, sectionStyle,
@@ -181,7 +182,7 @@ export default function HrVisitorsPage() {
       data-tour={`hr-visitors-tab-${key}`}
       onClick={() => setTab(key)}
       style={{
-        fontSize: 12.5, fontWeight: 600, padding: '7px 14px', borderRadius: 9999, cursor: 'pointer',
+        ...smallSecondaryBtnStyle, borderRadius: 9999,
         border: tab === key ? '1px solid #FF6A2A' : '1px solid rgba(0,0,0,0.1)',
         background: tab === key ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,0.7)', color: tab === key ? '#e0521a' : '#57534e',
       }}
@@ -210,10 +211,10 @@ export default function HrVisitorsPage() {
         <>
           <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
             <div data-tour="hr-visitors-board-date" style={{ flex: '0 1 170px' }}><DateField value={boardDate} onChange={setBoardDate} /></div>
-            <select data-tour="hr-visitors-board-plant" style={{ ...filterInputStyle, flex: '0 1 190px' }} value={boardBranch} onChange={(e) => setBoardBranch(e.target.value)}>
+            <Select data-tour="hr-visitors-board-plant" style={{ ...filterInputStyle, flex: '0 1 190px' }} value={boardBranch} onChange={(e) => setBoardBranch(e.target.value)}>
               <option value="">All plants</option>
               {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
+            </Select>
             {boardDate !== todayIso() && <button type="button" style={linkActionStyle} onClick={() => setBoardDate(todayIso())}>Back to today</button>}
             <button type="button" data-tour="hr-visitors-board-refresh" style={{ ...secondaryBtnStyle, marginLeft: 'auto' }} onClick={loadBoard}>{boardLoading ? 'Refreshing…' : 'Refresh'}</button>
           </div>
@@ -250,16 +251,16 @@ export default function HrVisitorsPage() {
                 <div data-tour="hr-visitors-host-filter" style={{ flex: '0 1 200px', minWidth: 170 }}>
                   <SearchableSelect value={hostF} onChange={setHostF} placeholder="Any host" options={[{ value: '', label: 'Any host' }, ...people.map((p) => ({ value: String(p.id), label: p.name }))]} />
                 </div>
-                <select data-tour="hr-visitors-plant-filter" style={{ ...filterInputStyle, flex: '0 1 160px' }} value={branchF} onChange={(e) => setBranchF(e.target.value)}>
+                <Select data-tour="hr-visitors-plant-filter" style={{ ...filterInputStyle, flex: '0 1 160px' }} value={branchF} onChange={(e) => setBranchF(e.target.value)}>
                   <option value="">All plants</option>
                   {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
+                </Select>
               </>
             )}
-            <select data-tour="hr-visitors-status-filter" style={{ ...filterInputStyle, flex: '0 1 150px' }} value={statusF} onChange={(e) => setStatusF(e.target.value)}>
+            <Select data-tour="hr-visitors-status-filter" style={{ ...filterInputStyle, flex: '0 1 150px' }} value={statusF} onChange={(e) => setStatusF(e.target.value)}>
               <option value="">All statuses</option>
               {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            </Select>
             {(dateFrom || dateTo || statusF || hostF || branchF || search) && (
               <button type="button" style={linkActionStyle} onClick={() => { setDateFrom(''); setDateTo(''); setStatusF(''); setHostF(''); setBranchF(''); setSearch('') }}>Clear filters</button>
             )}

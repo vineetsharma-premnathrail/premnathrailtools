@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -35,7 +36,7 @@ const tableWrap: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
 }
-const th: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }
+const th: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }
 const td: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
 const errorBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
 const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
@@ -189,15 +190,15 @@ export default function HrSafetyPage() {
           {view === 'incidents' ? (
             <>
               <input style={{ ...inputStyle, flex: '1 1 220px', maxWidth: 300 }} placeholder="Search number, title or place…" value={search} onChange={(e) => setSearch(e.target.value)} />
-              <select style={{ ...inputStyle, flex: '0 1 190px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+              <Select style={{ ...inputStyle, flex: '0 1 190px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
                 <option value="open">Open (not closed)</option>
                 <option value="">All statuses</option>
                 {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-              <select style={{ ...inputStyle, flex: '0 1 200px' }} value={type} onChange={(e) => setType(e.target.value)}>
+              </Select>
+              <Select style={{ ...inputStyle, flex: '0 1 200px' }} value={type} onChange={(e) => setType(e.target.value)}>
                 <option value="">All types</option>
                 {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              </Select>
             </>
           ) : (
             <>

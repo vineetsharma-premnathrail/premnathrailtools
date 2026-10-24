@@ -11,6 +11,7 @@ import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 interface Line { itemId: string; quantity: string; condition: string; batchNumber: string }
 
@@ -148,26 +149,26 @@ export default function NewMaterialReturnPage() {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '1 1 200px' }}>
                 <label style={sheetLabel}>Store <Req /></label>
-                <select data-tour="return-location" style={sheetInput} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+                <Select data-tour="return-location" style={sheetInput} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
                   <option value="">— Select —</option>
                   {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                </select>
+                </Select>
               </div>
               <div style={{ flex: '1 1 200px' }}>
                 <label style={sheetLabel}>Source <Req /></label>
-                <select data-tour="return-source-type" style={sheetInput} value={sourceType} onChange={(e) => setSourceType(e.target.value)}>
+                <Select data-tour="return-source-type" style={sheetInput} value={sourceType} onChange={(e) => setSourceType(e.target.value)}>
                   {sources.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </select>
+                </Select>
               </div>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
               {source?.requires_issue ? (
                 <div style={{ flex: '1 1 200px' }}>
                   <label style={sheetLabel}>Material Issue <Req /></label>
-                  <select data-tour="return-source-issue" style={sheetInput} value={sourceIssueId} onChange={(e) => pickIssue(e.target.value)}>
+                  <Select data-tour="return-source-issue" style={sheetInput} value={sourceIssueId} onChange={(e) => pickIssue(e.target.value)}>
                     <option value="">— Select —</option>
                     {issues.map((i) => <option key={i.id} value={i.id}>{i.issue_number}{i.department_name ? ` — ${i.department_name}` : ''}</option>)}
-                  </select>
+                  </Select>
                 </div>
               ) : (
                 <div style={{ flex: '1 1 200px' }}>
@@ -177,10 +178,10 @@ export default function NewMaterialReturnPage() {
               )}
               <div style={{ flex: '1 1 200px' }}>
                 <label style={sheetLabel}>Department {needsDepartment ? <Req /> : <Optional />}</label>
-                <select data-tour="return-department" style={sheetInput} value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
+                <Select data-tour="return-department" style={sheetInput} value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
                   <option value="">— Select —</option>
                   {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
+                </Select>
               </div>
             </div>
             <label style={{ ...sheetLabel, marginTop: 14 }}>Reason <Optional /></label>
@@ -224,16 +225,16 @@ export default function NewMaterialReturnPage() {
               </div>
               <div style={{ flex: '0 0 250px' }}>
                 {idx === 0 && <label style={sheetLabel}>Condition</label>}
-                <select {...(idx === 0 ? { 'data-tour': 'return-condition' } : {})} style={sheetInput} value={line.condition} onChange={(e) => updateLine(idx, { condition: e.target.value })}>
+                <Select {...(idx === 0 ? { 'data-tour': 'return-condition' } : {})} style={sheetInput} value={line.condition} onChange={(e) => updateLine(idx, { condition: e.target.value })}>
                   {conditions.map((c) => <option key={c.value} value={c.value}>{c.label} — {c.stock_effect === 'quarantine' ? 'to quarantine' : 'to usable stock'}</option>)}
-                </select>
+                </Select>
               </div>
               <div style={{ flex: '0 0 140px' }}>
                 {idx === 0 && <label style={sheetLabel}>Batch #</label>}
                 <input {...(idx === 0 ? { 'data-tour': 'return-batch' } : {})} style={sheetInput} value={line.batchNumber} onChange={(e) => updateLine(idx, { batchNumber: e.target.value })} />
               </div>
               <button type="button" aria-label="Remove line" {...(idx === 0 ? { 'data-tour': 'return-remove-line-btn' } : {})} onClick={() => removeLine(idx)} disabled={lines.length === 1}
-                style={{ ...sheetBtn('secondary', SHEET.INK, lines.length === 1), padding: '9px 11px' }}><SheetIcon name="trash" size={15} /></button>
+                style={{ ...sheetBtn('secondary', SHEET.INK, lines.length === 1), padding: 0, width: 38, height: 38, justifyContent: 'center', flex: 'none' }}><SheetIcon name="trash" size={15} /></button>
             </div>
           ))}
           <button type="button" data-tour="return-add-item-btn" onClick={addLine} style={sheetBtn('ghost', SHEET.BLUE)}><SheetIcon name="plus" size={15} />Add Item</button>

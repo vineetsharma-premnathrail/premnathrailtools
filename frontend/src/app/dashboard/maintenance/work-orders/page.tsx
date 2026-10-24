@@ -12,6 +12,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { formatDate } from '@/lib/format'
 import { PRIORITY_LABELS, WO_STATUS_LABELS, WO_TYPE_LABELS, formatINR, formatMinutes } from '@/components/maintenance/labels'
+import Select from '@/components/shared/Select'
 
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', assigned: '#2563EB', in_progress: '#F59E0B', on_hold: '#9333EA', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
 const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
@@ -99,19 +100,19 @@ export default function MaintenanceWorkOrdersPage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input data-tour="maint-wo-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search by number, title or asset…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select data-tour="maint-wo-type-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+        <Select data-tour="maint-wo-type-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
           <option value="">All types</option>
           {Object.entries(WO_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="maint-wo-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="maint-wo-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">{openOnly ? 'Open + completed' : 'All statuses'}</option>
           {Object.entries(WO_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
         {lookups && (lookups.branches.length > 1 || branchFilter) && (
-          <select data-tour="maint-wo-plant-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+          <Select data-tour="maint-wo-plant-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
             <option value="">All plants</option>
             {lookups.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
+          </Select>
         )}
         {!statusFilter && (
           <label data-tour="maint-wo-hide-closed" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
@@ -131,7 +132,7 @@ export default function MaintenanceWorkOrdersPage() {
           <thead>
             <tr>
               {['Number', 'Asset', 'Title', 'Type', 'Priority', 'Technician', 'Planned', 'Downtime', 'Cost', 'Status', ''].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}
                 </th>
               ))}

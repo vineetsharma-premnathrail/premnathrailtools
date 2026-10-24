@@ -7,9 +7,9 @@ import { formatDateTime } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { ManagedDocumentChanges, ManagedDocumentState } from '@/types'
 import MessageDialog from '@/components/erp/MessageDialog'
-import { secondaryBtnStyle } from '@/components/crm/ui'
+import { smallSecondaryBtnStyle } from '@/components/shared/ui'
 
-const smallBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '5px 11px', fontSize: 11.5 }
+const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 
 type Busy = '' | 'create' | 'edit' | 'docx'
 
@@ -162,7 +162,7 @@ export default function ManagedDocumentPanel({ entityType, entityId, revision, c
       {loadError && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
           <p style={{ fontSize: 12, color: '#b91c1c', margin: 0 }}>{loadError}</p>
-          <button type="button" onClick={load} style={{ ...smallBtn, padding: '3px 9px', fontSize: 11 }}>Retry</button>
+          <button type="button" onClick={load} style={smallBtn}>Retry</button>
         </div>
       )}
       {doc?.is_stale && (
@@ -285,7 +285,7 @@ function ChangesBox({ changes, recordLabel, open, onToggle }: { changes: Managed
           {' '}“Download PDF” and “Download .docx” include these edits.
         </p>
         {lines.length > 0 && (
-          <button type="button" onClick={onToggle} style={{ ...smallBtn, padding: '3px 9px', fontSize: 11 }}>
+          <button type="button" onClick={onToggle} style={smallBtn}>
             {open ? 'Hide changes' : 'Show changes'}
           </button>
         )}

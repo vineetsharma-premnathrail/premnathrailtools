@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -11,7 +12,7 @@ import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, SheetIconName, SHEET, Req, Optional, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { DANGER_RED } from '@/components/design/DesignSheets'
 import ReasonSheet from '@/components/shared/ReasonSheet'
@@ -50,10 +51,7 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 16,
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary,
-  color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: `0 6px 16px ${SHADOWS.glowOrange}`,
-}
+const primaryBtn: React.CSSProperties = primaryBtnStyle
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6' }
 const tdStyle: React.CSSProperties = { padding: '9px 10px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
 const sheetTh: React.CSSProperties = { textAlign: 'left', padding: '9px 10px', fontSize: 11.5, fontWeight: 600, color: SHEET.MUTED, background: SHEET.SOFT, borderBottom: `1px solid ${SHEET.LINE}` }
@@ -490,7 +488,7 @@ export default function DesignBomDetailPage() {
                       )}
                       <span style={{ flex: 1 }} />
                       {isOpenSelected && can('edit_revision') && openRev?.status === 'draft' && !editingRevision && (
-                        <button data-tour="design-bom-edit-rev-btn" type="button" style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }} onClick={startEditRevision}>Edit revision &amp; lines</button>
+                        <button data-tour="design-bom-edit-rev-btn" type="button" style={{ ...smallSecondaryBtnStyle }} onClick={startEditRevision}>Edit revision &amp; lines</button>
                       )}
                     </div>
 
@@ -511,10 +509,10 @@ export default function DesignBomDetailPage() {
                             </div>
                             <div style={{ flex: '1 1 220px', maxWidth: 320 }}>
                               <label style={sheetLabel}>Under change notice</label>
-                              <select style={sheetInput} value={revForm.ecn_id} onChange={(e) => setRevForm({ ...revForm, ecn_id: e.target.value })}>
+                              <Select style={sheetInput} value={revForm.ecn_id} onChange={(e) => setRevForm({ ...revForm, ecn_id: e.target.value })}>
                                 <option value="">None</option>
                                 {bom.open_ecns.map((e) => <option key={e.id} value={e.id}>{e.ecn_number} — {e.title}</option>)}
-                              </select>
+                              </Select>
                             </div>
                           </div>
                         </SheetSection>
@@ -621,7 +619,7 @@ export default function DesignBomDetailPage() {
               {seeExplosion && (<div style={sectionStyle}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <p style={{ ...sectionTitle, margin: 0, flex: 1 }}>Multi-level explosion{selected ? ` · ${selected.revision_label}` : ''}</p>
-                  <button data-tour="design-bom-explosion-btn" type="button" style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }} onClick={toggleExplosion}>{explosionOpen ? 'Hide' : 'Show'}</button>
+                  <button data-tour="design-bom-explosion-btn" type="button" style={{ ...smallSecondaryBtnStyle }} onClick={toggleExplosion}>{explosionOpen ? 'Hide' : 'Show'}</button>
                 </div>
                 {explosionOpen && (
                   <div style={{ overflowX: 'auto', marginTop: 12 }}>
@@ -685,7 +683,7 @@ export default function DesignBomDetailPage() {
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
                   <p data-tour="design-bom-details" style={{ ...sectionTitle, margin: 0, flex: 1 }}>Details</p>
                   {can('edit') && !editingHeader && (
-                    <button data-tour="design-bom-details-edit-btn" type="button" style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }} onClick={startEditHeader}>Edit</button>
+                    <button data-tour="design-bom-details-edit-btn" type="button" style={{ ...smallSecondaryBtnStyle }} onClick={startEditHeader}>Edit</button>
                   )}
                 </div>
                 {(
@@ -796,10 +794,10 @@ export default function DesignBomDetailPage() {
               </div>
               <div data-tour="design-bom-newrev-ecn" style={{ marginTop: 12 }}>
                 <label style={sheetLabel}>Under change notice <Optional /></label>
-                <select style={sheetInput} value={newRev.ecn_id} onChange={(e) => setNewRev({ ...newRev, ecn_id: e.target.value })}>
+                <Select style={sheetInput} value={newRev.ecn_id} onChange={(e) => setNewRev({ ...newRev, ecn_id: e.target.value })}>
                   <option value="">{bom.open_ecns.length ? 'None' : 'No open ECN lists this BOM'}</option>
                   {bom.open_ecns.map((e) => <option key={e.id} value={e.id}>{e.ecn_number} — {e.title}</option>)}
-                </select>
+                </Select>
               </div>
             </SheetSection>
             <SheetSection icon="users" title="Signatories" extra={<Optional />}>

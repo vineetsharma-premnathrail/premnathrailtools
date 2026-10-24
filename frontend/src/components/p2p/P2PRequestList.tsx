@@ -13,6 +13,7 @@ import { userPoRoles } from '@/lib/p2pRoles'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import Select from '@/components/shared/Select'
 
 const STATUS_LABELS: Record<string, string> = {
   submitted: 'Submitted',
@@ -233,15 +234,15 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
       })()}
       {showFilters && (
         <div data-tour="p2p-list-filters" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 14 }}>
-          <select aria-label="Filter by category" style={filterSelectStyle} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+          <Select aria-label="Filter by category" style={filterSelectStyle} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
             <option value="">All categories</option>
             {categoryOptions.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-          </select>
-          <select aria-label="Filter by buyer" style={filterSelectStyle} value={buyerFilter} onChange={(e) => setBuyerFilter(e.target.value)}>
+          </Select>
+          <Select aria-label="Filter by buyer" style={filterSelectStyle} value={buyerFilter} onChange={(e) => setBuyerFilter(e.target.value)}>
             <option value="">All buyers</option>
             {buyerOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
             <option value="none">No buyer assigned</option>
-          </select>
+          </Select>
           <div aria-label="Filter by order project" style={{ flex: '0 1 300px', minWidth: 240 }}>
             <OrderProjectPicker value={opFilter} onChange={(v) => setOpFilter(v)} requireElement={false} placeholder="All order projects" />
           </div>

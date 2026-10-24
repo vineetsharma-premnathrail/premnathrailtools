@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
@@ -160,10 +161,10 @@ export default function EditPlantPage() {
   )
   const userSelect = (field: keyof Branch, label: string, tour: string) => (
     <F label={label} basis={240} max={340}>
-      <select data-tour={tour} style={sheetInput} value={(form[field] as number | null | undefined) || ''} onChange={(e) => setField(field, e.target.value ? Number(e.target.value) : null)}>
+      <Select data-tour={tour} style={sheetInput} value={(form[field] as number | null | undefined) || ''} onChange={(e) => setField(field, e.target.value ? Number(e.target.value) : null)}>
         <option value="">— Select —</option>
         {directory.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-      </select>
+      </Select>
     </F>
   )
 
@@ -217,9 +218,9 @@ export default function EditPlantPage() {
                   <div style={rowStyle}>
                     {text('plant_type', 'Branch Type', { tour: 'org-plant-type', req: true, keepEmpty: true, basis: 200, max: 280 })}
                     <F label="Branch Status" req basis={180} max={240}>
-                      <select data-tour="org-plant-status" style={sheetInput} value={form.status || 'active'} onChange={(e) => setField('status', e.target.value)}>
+                      <Select data-tour="org-plant-status" style={sheetInput} value={form.status || 'active'} onChange={(e) => setField('status', e.target.value)}>
                         {Object.entries(PLANT_STATUS_LABELS).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
-                      </select>
+                      </Select>
                     </F>
                     {text('industry_function', 'Industry / Function', { tour: 'org-plant-industry', basis: 240, max: 340 })}
                   </div>
@@ -260,16 +261,16 @@ export default function EditPlantPage() {
                 <SheetSection icon="gear" title="Defaults">
                   <div style={rowStyle}>
                     <F label="Default Store" basis={240} max={340}>
-                      <select data-tour="org-plant-op-default-store" style={sheetInput} value={form.default_warehouse_id || ''} onChange={(e) => setField('default_warehouse_id', e.target.value ? Number(e.target.value) : null)}>
+                      <Select data-tour="org-plant-op-default-store" style={sheetInput} value={form.default_warehouse_id || ''} onChange={(e) => setField('default_warehouse_id', e.target.value ? Number(e.target.value) : null)}>
                         <option value="">— Select —</option>
                         {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                      </select>
+                      </Select>
                     </F>
                     <F label="Default Cost Center" basis={240} max={340}>
-                      <select data-tour="org-plant-op-default-cc" style={sheetInput} value={form.default_cost_center_id || ''} onChange={(e) => setField('default_cost_center_id', e.target.value ? Number(e.target.value) : null)}>
+                      <Select data-tour="org-plant-op-default-cc" style={sheetInput} value={form.default_cost_center_id || ''} onChange={(e) => setField('default_cost_center_id', e.target.value ? Number(e.target.value) : null)}>
                         <option value="">— Select —</option>
                         {costCenters.map((cc) => <option key={cc.id} value={cc.id}>{cc.name}</option>)}
-                      </select>
+                      </Select>
                     </F>
                   </div>
                   <div style={{ ...rowStyle, marginBottom: 0 }}>
@@ -515,39 +516,39 @@ function UserAssignmentsEditor({ branchId, assignments, directory, departments, 
         <SheetError error={error} />
         <div style={rowStyle}>
           <F label="User" req basis={240} max={340}>
-            <select data-tour="org-plant-user-user" style={sheetInput} value={form.user_id} onChange={(e) => set('user_id', e.target.value)}>
+            <Select data-tour="org-plant-user-user" style={sheetInput} value={form.user_id} onChange={(e) => set('user_id', e.target.value)}>
               <option value="">— Select —</option>
               {directory.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
+            </Select>
           </F>
           <F label="Employee ID" basis={140} max={200}><input data-tour="org-plant-user-empid" style={sheetInput} value={form.employee_id} onChange={(e) => set('employee_id', e.target.value)} /></F>
           <F label="Department" basis={220} max={300}>
-            <select data-tour="org-plant-user-dept" style={sheetInput} value={form.department_id} onChange={(e) => set('department_id', e.target.value)}>
+            <Select data-tour="org-plant-user-dept" style={sheetInput} value={form.department_id} onChange={(e) => set('department_id', e.target.value)}>
               <option value="">— Select —</option>
               {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
+            </Select>
           </F>
         </div>
         <div style={rowStyle}>
           <F label="Designation" basis={200} max={280}><input data-tour="org-plant-user-designation" style={sheetInput} value={form.designation} onChange={(e) => set('designation', e.target.value)} /></F>
           <F label="Role" basis={200} max={280}><input data-tour="org-plant-user-role" style={sheetInput} value={form.role} onChange={(e) => set('role', e.target.value)} /></F>
           <F label="Access Level" basis={140} max={180}>
-            <select data-tour="org-plant-user-access" style={sheetInput} value={form.access_level} onChange={(e) => set('access_level', e.target.value)}>
+            <Select data-tour="org-plant-user-access" style={sheetInput} value={form.access_level} onChange={(e) => set('access_level', e.target.value)}>
               <option value="">— Select —</option>
               <option value="view">View</option>
               <option value="edit">Edit</option>
               <option value="admin">Admin</option>
-            </select>
+            </Select>
           </F>
         </div>
         <div style={rowStyle}>
           <F label="Effective From" basis={170} max={220}><div data-tour="org-plant-user-from"><DateField value={form.effective_from} onChange={(v) => set('effective_from', v)} /></div></F>
           <F label="Effective To" basis={170} max={220}><div data-tour="org-plant-user-to"><DateField value={form.effective_to} onChange={(v) => set('effective_to', v)} /></div></F>
           <F label="Status" basis={130} max={170}>
-            <select data-tour="org-plant-user-status" style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)}>
+            <Select data-tour="org-plant-user-status" style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)}>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
-            </select>
+            </Select>
           </F>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
@@ -661,10 +662,10 @@ function WarehousesEditor({ branchId, warehouses, directory, onRefresh }: { bran
             <F label="Store Code" req basis={140} max={200}><input data-tour="org-plant-store-code" style={sheetInput} value={form.code} onChange={(e) => set('code', e.target.value.toUpperCase())} /></F>
             <F label="Store Type" req basis={180} max={260}><input data-tour="org-plant-store-type" style={sheetInput} value={form.warehouse_type} onChange={(e) => set('warehouse_type', e.target.value)} placeholder="Raw Material" /></F>
             <F label="Store Manager" basis={220} max={300}>
-              <select data-tour="org-plant-store-manager" style={sheetInput} value={form.manager_user_id} onChange={(e) => set('manager_user_id', e.target.value)}>
+              <Select data-tour="org-plant-store-manager" style={sheetInput} value={form.manager_user_id} onChange={(e) => set('manager_user_id', e.target.value)}>
                 <option value="">— Select —</option>
                 {directory.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+              </Select>
             </F>
           </div>
           <div style={rowStyle}>
@@ -675,11 +676,11 @@ function WarehousesEditor({ branchId, warehouses, directory, onRefresh }: { bran
             <F label="Inventory Type" basis={180} max={260}><input data-tour="org-plant-store-inventory-type" style={sheetInput} value={form.inventory_type} onChange={(e) => set('inventory_type', e.target.value)} /></F>
             <F label="Operating Hours" basis={160} max={220}><input data-tour="org-plant-store-hours" style={sheetInput} value={form.operating_hours} onChange={(e) => set('operating_hours', e.target.value)} placeholder="09:00–18:00" /></F>
             <F label="Status" req basis={170} max={220}>
-              <select data-tour="org-plant-store-status" style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)}>
+              <Select data-tour="org-plant-store-status" style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)}>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
                 <option value="under_maintenance">Under Maintenance</option>
-              </select>
+              </Select>
             </F>
           </div>
           <SaveBtn tour="org-plant-store-save" saving={saving} label={editingId ? 'Save Changes' : 'Save Store'} />
@@ -790,32 +791,32 @@ function CostCentersEditor({ branchId, costCenters, directory, departments, onRe
         </div>
         <div style={rowStyle}>
           <F label="Department" basis={220} max={300}>
-            <select data-tour="org-plant-cc-dept" style={sheetInput} value={form.department_id} onChange={(e) => set('department_id', e.target.value)}>
+            <Select data-tour="org-plant-cc-dept" style={sheetInput} value={form.department_id} onChange={(e) => set('department_id', e.target.value)}>
               <option value="">— Select —</option>
               {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
+            </Select>
           </F>
           <F label="Cost Center Head" basis={220} max={300}>
-            <select data-tour="org-plant-cc-head" style={sheetInput} value={form.head_user_id} onChange={(e) => set('head_user_id', e.target.value)}>
+            <Select data-tour="org-plant-cc-head" style={sheetInput} value={form.head_user_id} onChange={(e) => set('head_user_id', e.target.value)}>
               <option value="">— Select —</option>
               {directory.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
+            </Select>
           </F>
           <F label="Parent Cost Center" basis={220} max={300}>
-            <select data-tour="org-plant-cc-parent" style={sheetInput} value={form.parent_cost_center_id} onChange={(e) => set('parent_cost_center_id', e.target.value)}>
+            <Select data-tour="org-plant-cc-parent" style={sheetInput} value={form.parent_cost_center_id} onChange={(e) => set('parent_cost_center_id', e.target.value)}>
               <option value="">— None —</option>
               {costCenters.filter((cc) => cc.id !== editingId).map((cc) => <option key={cc.id} value={cc.id}>{cc.name}</option>)}
-            </select>
+            </Select>
           </F>
         </div>
         <div style={rowStyle}>
           <F label="Effective From" basis={170} max={220}><div data-tour="org-plant-cc-from"><DateField value={form.effective_from} onChange={(v) => set('effective_from', v)} /></div></F>
           <F label="Effective To" basis={170} max={220}><div data-tour="org-plant-cc-to"><DateField value={form.effective_to} onChange={(v) => set('effective_to', v)} /></div></F>
           <F label="Status" basis={130} max={170}>
-            <select data-tour="org-plant-cc-status" style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)}>
+            <Select data-tour="org-plant-cc-status" style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)}>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
-            </select>
+            </Select>
           </F>
         </div>
         <SaveBtn tour="org-plant-cc-save" saving={saving} label={editingId ? 'Save Changes' : 'Save Cost Center'} />
@@ -909,9 +910,9 @@ function DocumentsEditor({ branchId, documents, onRefresh }: { branchId: number;
         </div>
         <div style={rowStyle}>
           <F label="Document Type" req basis={170} max={220}>
-            <select data-tour="org-plant-doc-type" style={sheetInput} value={meta.document_type} onChange={(e) => set('document_type', e.target.value)}>
+            <Select data-tour="org-plant-doc-type" style={sheetInput} value={meta.document_type} onChange={(e) => set('document_type', e.target.value)}>
               {DOCUMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
+            </Select>
           </F>
           <F label="Document Name" req basis={260} max={360}><input data-tour="org-plant-doc-name" style={sheetInput} value={meta.document_name} onChange={(e) => set('document_name', e.target.value)} /></F>
           <F label="Document Number" basis={180} max={260}><input data-tour="org-plant-doc-number" style={sheetInput} value={meta.document_number} onChange={(e) => set('document_number', e.target.value)} /></F>
@@ -925,9 +926,9 @@ function DocumentsEditor({ branchId, documents, onRefresh }: { branchId: number;
           <F label="Version" basis={100} max={140}><input data-tour="org-plant-doc-version" style={sheetInput} value={meta.version} onChange={(e) => set('version', e.target.value)} /></F>
           <F label="Status" basis={140} max={200}><input data-tour="org-plant-doc-status" style={sheetInput} value={meta.status} onChange={(e) => set('status', e.target.value)} placeholder="Active" /></F>
           <F label="Confidentiality" basis={150} max={200}>
-            <select data-tour="org-plant-doc-confidentiality" style={sheetInput} value={meta.confidentiality} onChange={(e) => set('confidentiality', e.target.value)}>
+            <Select data-tour="org-plant-doc-confidentiality" style={sheetInput} value={meta.confidentiality} onChange={(e) => set('confidentiality', e.target.value)}>
               {CONFIDENTIALITY_LEVELS.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+            </Select>
           </F>
           <F label="Tags (comma separated)" basis={220}><input data-tour="org-plant-doc-tags" style={sheetInput} value={meta.tags} onChange={(e) => set('tags', e.target.value)} /></F>
         </div>

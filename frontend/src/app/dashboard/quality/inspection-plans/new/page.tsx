@@ -10,6 +10,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 import { ErrorBanner, INSPECTION_TYPE_LABELS, sheetGap } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 interface ItemOpt { id: number; item_code: string; item_name: string }
 
@@ -67,9 +68,9 @@ export default function NewInspectionPlanPage() {
             <SearchableSelect value={form.item_id} onChange={(v) => setForm({ ...form, item_id: v })} placeholder="Search item"
               options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
             <label style={{ ...sheetLabel, ...sheetGap }}>Inspection type</label>
-            <select style={sheetInput} value={form.inspection_type} onChange={(e) => setForm({ ...form, inspection_type: e.target.value })}>
+            <Select style={sheetInput} value={form.inspection_type} onChange={(e) => setForm({ ...form, inspection_type: e.target.value })}>
               {Object.entries(INSPECTION_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
+            </Select>
             <label style={{ ...sheetLabel, ...sheetGap }}>Title <Optional /></label>
             <input style={sheetInput} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
           </SheetSection>
@@ -77,22 +78,22 @@ export default function NewInspectionPlanPage() {
         right={<>
           <SheetSection icon="search" title="Sampling">
             <label style={sheetLabel}>Sampling</label>
-            <select style={sheetInput} value={form.sampling_type} onChange={(e) => setForm({ ...form, sampling_type: e.target.value })}>
+            <Select style={sheetInput} value={form.sampling_type} onChange={(e) => setForm({ ...form, sampling_type: e.target.value })}>
               <option value="aql">AQL table (ISO 2859-1)</option><option value="full">100% inspection</option><option value="fixed">Fixed quantity</option>
-            </select>
+            </Select>
             {form.sampling_type === 'aql' && (
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', ...sheetGap }}>
                 <div style={{ flex: '1 1 110px' }}>
                   <label style={sheetLabel}>AQL</label>
-                  <select style={sheetInput} value={form.aql} onChange={(e) => setForm({ ...form, aql: e.target.value })}>
+                  <Select style={sheetInput} value={form.aql} onChange={(e) => setForm({ ...form, aql: e.target.value })}>
                     {['0.065', '0.10', '0.15', '0.25', '0.40', '0.65', '1.0', '1.5', '2.5', '4.0', '6.5', '10.0'].map((a) => <option key={a} value={a}>{a}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div style={{ flex: '1 1 130px' }}>
                   <label style={sheetLabel}>Level</label>
-                  <select style={sheetInput} value={form.inspection_level} onChange={(e) => setForm({ ...form, inspection_level: e.target.value })}>
+                  <Select style={sheetInput} value={form.inspection_level} onChange={(e) => setForm({ ...form, inspection_level: e.target.value })}>
                     <option value="I">General I</option><option value="II">General II</option><option value="III">General III</option>
-                  </select>
+                  </Select>
                 </div>
               </div>
             )}

@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 // Create / edit form of a customer AMC / CMC service contract (VA41 / VA42).
 // Machines are the customer's own installed base (erp_projects.customer_id).
 
@@ -101,9 +102,9 @@ export default function ServiceContractForm({ initial, saving, onSave, onCancel,
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ flex: '0 1 220px', minWidth: 200 }}>
               <label style={sheetLabel}>Contract type</label>
-              <select style={sheetInput} value={f.contract_type} onChange={(e) => set({ contract_type: e.target.value, ...(e.target.value !== 'amc' ? { labour_covered: true, spares_covered: true } : {}) })}>
+              <Select style={sheetInput} value={f.contract_type} onChange={(e) => set({ contract_type: e.target.value, ...(e.target.value !== 'amc' ? { labour_covered: true, spares_covered: true } : {}) })}>
                 {Object.entries(CONTRACT_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              </Select>
             </div>
             <div style={{ flex: '1 1 260px', maxWidth: 420 }}>
               <label style={sheetLabel}>Customer {!lockCustomer && <Req />}</label>
@@ -128,9 +129,9 @@ export default function ServiceContractForm({ initial, saving, onSave, onCancel,
             <div style={{ flex: '0 1 110px', minWidth: 100 }}><label style={sheetLabel}>SAC</label><input style={sheetInput} value={f.sac_code} onChange={(e) => set({ sac_code: e.target.value })} placeholder="998717" /></div>
             <div style={{ flex: '0 1 170px', minWidth: 150 }}>
               <label style={sheetLabel}>Billing</label>
-              <select style={sheetInput} value={f.billing_frequency} onChange={(e) => set({ billing_frequency: e.target.value })}>
+              <Select style={sheetInput} value={f.billing_frequency} onChange={(e) => set({ billing_frequency: e.target.value })}>
                 {Object.entries(FREQUENCY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              </Select>
             </div>
           </div>
           <label style={{ ...check, marginTop: 12 }}>

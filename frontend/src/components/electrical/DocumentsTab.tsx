@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 // Documents tab of an Electrical job — file attachments (specs, test and
 // commissioning reports, manuals, photos …), optionally tied to a stage.
 // Drawings are not uploaded here; they have their own revision-controlled tab.
@@ -125,10 +126,10 @@ export default function DocumentsTab({ job, meta, canEdit, onChanged }: { job: E
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
           <h3 style={{ ...sectionTitle, margin: 0 }}>Documents ({docs.length})</h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <select data-tour="elec-docs-category-filter" style={{ ...inputStyle, width: 'auto', minWidth: 200 }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+            <Select data-tour="elec-docs-category-filter" style={{ ...inputStyle, width: 'auto', minWidth: 200 }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
               <option value="">All categories</option>
               {Object.entries(categories).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            </Select>
             {canUpload && <button data-tour="elec-doc-open-btn" type="button" style={primaryBtn} disabled={busy} onClick={openUpload}>+ Upload Documents</button>}
           </div>
         </div>
@@ -201,15 +202,15 @@ export default function DocumentsTab({ job, meta, canEdit, onChanged }: { job: E
               </div>
               <div style={rowStyle}>
                 <F tour="elec-doc-category" label="Category" basis={190} grow>
-                  <select style={sheetInput} value={category} onChange={(e) => setCategory(e.target.value)}>
+                  <Select style={sheetInput} value={category} onChange={(e) => setCategory(e.target.value)}>
                     {Object.entries(categories).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </F>
                 <F tour="elec-doc-stage" label="Stage" basis={210} grow>
-                  <select style={sheetInput} value={stageKey} onChange={(e) => setStageKey(e.target.value)}>
+                  <Select style={sheetInput} value={stageKey} onChange={(e) => setStageKey(e.target.value)}>
                     <option value="">— Not tied to a stage —</option>
                     {stages.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-                  </select>
+                  </Select>
                 </F>
               </div>
               <div style={{ ...rowStyle, marginBottom: 0 }}>

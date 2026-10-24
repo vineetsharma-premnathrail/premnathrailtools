@@ -8,7 +8,7 @@ import { P2PGoodsReceipt, P2PVendorReturn } from '@/types'
 import PromptDialog from '@/components/erp/PromptDialog'
 import DateField from '@/components/erp/DateField'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, SUCCESS, DANGER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -18,6 +18,7 @@ import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
+import Select from '@/components/shared/Select'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -268,7 +269,7 @@ export default function StoreGrnDetailPage() {
           <button
             type="button"
             onClick={() => router.push('/dashboard/store/new')}
-            style={{ ...secondaryBtnStyle, marginTop: 10, fontSize: 12 }}
+            style={{ ...smallSecondaryBtnStyle, marginTop: 10 }}
           >
             + Add Item to Item Master
           </button>
@@ -379,9 +380,9 @@ export default function StoreGrnDetailPage() {
                     </td>
                     <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
                       {editable ? (
-                        <select value={r.quality_status} onChange={(e) => setRow(it.id, { quality_status: e.target.value })} style={{ ...inputStyle, width: 150 }}>
+                        <Select value={r.quality_status} onChange={(e) => setRow(it.id, { quality_status: e.target.value })} style={{ ...inputStyle, width: 150 }}>
                           {QUALITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
+                        </Select>
                       ) : (
                         <span style={{ fontSize: 12, fontWeight: 600, color: it.quality_status === 'passed' ? SUCCESS.text : it.quality_status === 'failed' ? DANGER.text : TEXT.body }}>
                           {it.quality_status === 'in_quality' ? QUALITY_LOT_LABEL : QUALITY_OPTIONS.find((o) => o.value === it.quality_status)?.label || it.quality_status}
@@ -470,10 +471,10 @@ export default function StoreGrnDetailPage() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ flex: '1 1 240px', maxWidth: 320 }}>
                   <label style={sheetLabel}>Reason <Req /></label>
-                  <select value={rtvReason} onChange={(e) => setRtvReason(e.target.value)} style={sheetInput}>
+                  <Select value={rtvReason} onChange={(e) => setRtvReason(e.target.value)} style={sheetInput}>
                     <option value="">Select…</option>
                     {RETURN_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div style={{ flex: '0 1 170px', minWidth: 150 }}>
                   <label style={sheetLabel}>Return Date</label>

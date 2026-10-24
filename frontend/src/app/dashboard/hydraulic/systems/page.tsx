@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -111,11 +112,11 @@ export default function HydSystemsPage() {
             )
           })}
         </div>
-        <select data-tour="hyd-sys-status-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <Select data-tour="hyd-sys-status-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {/* 'Under Maintenance' is retired (plan rule R5); old records still show their badge. */}
           {Object.entries(SYSTEM_STATUS_LABELS).filter(([k]) => k !== 'under_maintenance').map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
         <input data-tour="hyd-sys-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search number, name, application or loco / machine serial…" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 

@@ -6,12 +6,13 @@ import { useCan } from '@/lib/permissions'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDateTime } from '@/lib/format'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import PortalFormDialog from '@/components/maintenance/PortalFormDialog'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { SHEET, SheetSection, Optional, Req, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import { localInputToIso, nowLocalInput } from '@/components/maintenance/labels'
+import Select from '@/components/shared/Select'
 
 const STATUS_LABELS: Record<string, string> = { issued: 'Issued', active: 'Active', closed: 'Closed', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { issued: '#F59E0B', active: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
@@ -20,7 +21,7 @@ const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
-const smallBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }
+const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 
 const plusHours = (h: number) => {
   const d = new Date(Date.now() + h * 3600 * 1000)
@@ -156,9 +157,9 @@ export default function WorkOrderPermitsCard({ woId, woStatus, permitRequired, a
         }), () => setIssueOpen(false), true)}>
         <SheetSection icon="calendar" title="Permit & Validity">
           <label style={sheetLabel}>Permit type</label>
-          <select style={sheetInput} value={form.permit_type || ''} onChange={(e) => setForm({ ...form, permit_type: e.target.value })}>
+          <Select style={sheetInput} value={form.permit_type || ''} onChange={(e) => setForm({ ...form, permit_type: e.target.value })}>
             {types.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </select>
+          </Select>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
             <div style={{ flex: '1 1 200px' }}>
               <label style={sheetLabel}>Valid from</label>

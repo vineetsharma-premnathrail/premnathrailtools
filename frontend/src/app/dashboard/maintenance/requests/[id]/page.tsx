@@ -6,8 +6,8 @@ import { useRequireAnyApp } from '@/hooks/useAuth'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { maintenanceApi } from '@/lib/api'
 import { MaintenanceLookups, MaintenanceRequest } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS } from '@/lib/theme'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
+import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle } from '@/components/shared/ui'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -24,6 +24,7 @@ import { formatDateTime } from '@/lib/format'
 import {
   PRIORITY_LABELS, REQUEST_STATUS_LABELS, REQUEST_TYPE_LABELS, WO_STATUS_LABELS, WO_TYPE_LABELS, formatMinutes,
 } from '@/components/maintenance/labels'
+import Select from '@/components/shared/Select'
 
 const STATUS_HEX: Record<string, string> = { open: '#F59E0B', acknowledged: '#2563EB', converted: '#0f766e', rejected: '#DC2626', duplicate: '#78716c' }
 const WO_STATUS_HEX: Record<string, string> = { draft: '#78716c', assigned: '#2563EB', in_progress: '#F59E0B', on_hold: '#9333EA', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
@@ -36,10 +37,7 @@ const sectionStyle: React.CSSProperties = {
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }
 const gridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16 }
-const primaryBtn: React.CSSProperties = {
-  padding: '9px 18px', borderRadius: 12, border: 'none', cursor: 'pointer',
-  background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600,
-}
+const primaryBtn: React.CSSProperties = primaryBtnStyle
 
 export default function MaintenanceRequestDetailPage() {
   const { isAuthorized, isLoading, user } = useRequireAnyApp('maintenance', 'production')
@@ -329,15 +327,15 @@ export default function MaintenanceRequestDetailPage() {
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
             <div style={{ flex: '1 1 150px' }}>
               <label style={sheetLabel}>Type</label>
-              <select data-tour="maint-reqcv-type" style={sheetInput} value={cv.wo_type} onChange={(e) => setCv({ ...cv, wo_type: e.target.value })}>
+              <Select data-tour="maint-reqcv-type" style={sheetInput} value={cv.wo_type} onChange={(e) => setCv({ ...cv, wo_type: e.target.value })}>
                 {Object.entries(WO_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              </Select>
             </div>
             <div style={{ flex: '1 1 130px' }}>
               <label style={sheetLabel}>Priority</label>
-              <select data-tour="maint-reqcv-priority" style={sheetInput} value={cv.priority} onChange={(e) => setCv({ ...cv, priority: e.target.value })}>
+              <Select data-tour="maint-reqcv-priority" style={sheetInput} value={cv.priority} onChange={(e) => setCv({ ...cv, priority: e.target.value })}>
                 {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              </Select>
             </div>
           </div>
           <label style={{ ...sheetLabel, marginTop: 14 }}>Instructions</label>

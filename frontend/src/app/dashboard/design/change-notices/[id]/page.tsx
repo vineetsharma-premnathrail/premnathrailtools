@@ -14,7 +14,7 @@ import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetLabel, SheetE
 import { DANGER_RED } from '@/components/design/DesignSheets'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import {
   ACK_DEPARTMENT_LABELS, DISPOSITION_LABELS, ECN_EFFECTIVITY_LABELS, ECN_PRIORITY_LABELS, ECN_REASON_LABELS, ECN_STATUS_LABELS,
 } from '@/components/design/designMeta'
@@ -40,10 +40,7 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 16,
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary,
-  color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: `0 6px 16px ${SHADOWS.glowOrange}`,
-}
+const primaryBtn: React.CSSProperties = primaryBtnStyle
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
@@ -349,7 +346,7 @@ export default function ChangeNoticeDetailPage() {
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
                   <p style={{ ...sectionTitle, margin: 0, flex: 1 }}>Effectivity &amp; disposition</p>
                   {can('edit_effectivity') && (
-                    <button type="button" data-tour="design-ecn-eff-edit-btn" style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }} onClick={startEditEff}>Edit</button>
+                    <button type="button" data-tour="design-ecn-eff-edit-btn" style={{ ...smallSecondaryBtnStyle }} onClick={startEditEff}>Edit</button>
                   )}
                 </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
@@ -378,7 +375,7 @@ export default function ChangeNoticeDetailPage() {
                             <td style={{ ...tdStyle, maxWidth: 280, whiteSpace: 'pre-wrap' }}>{a.remarks || '—'}</td>
                             <td style={tdStyle}>
                               {a.can_acknowledge && !a.acknowledged_at && (
-                                <button type="button" disabled={busy} style={{ ...secondaryBtnStyle, padding: '5px 12px', fontSize: 12 }} onClick={() => setAckRow(a)}>Acknowledge</button>
+                                <button type="button" disabled={busy} style={{ ...smallSecondaryBtnStyle }} onClick={() => setAckRow(a)}>Acknowledge</button>
                               )}
                             </td>
                           </tr>

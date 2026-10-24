@@ -12,6 +12,7 @@ import { PageHeader, ErrorBanner, Pill, ActionSheet, sheetGap } from '@/componen
 import { sheetInput, sheetLabel, sheetHint, Req } from '@/components/shared/FormSheet'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 interface Spec { key: string; group: string; label: string; type: 'int' | 'float' | 'str' | 'choice'; help?: string; choices?: [string, string][]; min?: number; max?: number }
 interface RoleUser { id: number; name: string; email: string; is_admin: boolean; is_partner: boolean; roles: string[] }
@@ -134,9 +135,9 @@ export default function QualitySettingsPage() {
               <div key={sp.key} style={{ flex: '1 1 240px', maxWidth: 320 }} title={sp.help || ''}>
                 <Field label={sp.label}>
                   {sp.type === 'choice' ? (
-                    <select style={inputStyle} disabled={!canEdit} value={values[sp.key] || ''} onChange={(e) => setValues({ ...values, [sp.key]: e.target.value })}>
+                    <Select style={inputStyle} disabled={!canEdit} value={values[sp.key] || ''} onChange={(e) => setValues({ ...values, [sp.key]: e.target.value })}>
                       {(sp.choices || []).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
+                    </Select>
                   ) : (
                     <input style={inputStyle} disabled={!canEdit} type={sp.type === 'str' ? 'text' : 'number'} min={sp.min} max={sp.max}
                       value={values[sp.key] ?? ''} onChange={(e) => setValues({ ...values, [sp.key]: e.target.value })} />
@@ -198,9 +199,9 @@ export default function QualitySettingsPage() {
           <SearchableSelect value={roleForm.user_id} onChange={(v) => setRoleForm({ ...roleForm, user_id: v })} placeholder="Select user…"
             options={users.map((u) => ({ value: String(u.id), label: u.name }))} />
           <label style={{ ...sheetLabel, ...sheetGap }}>Role <Req /></label>
-          <select style={sheetInput} value={roleForm.role} onChange={(e) => setRoleForm({ ...roleForm, role: e.target.value })}>
+          <Select style={sheetInput} value={roleForm.role} onChange={(e) => setRoleForm({ ...roleForm, role: e.target.value })}>
             {roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-          </select>
+          </Select>
           <p style={sheetHint}>The user gets every permission of this role; permissions they already hold are kept.</p>
         </ActionSheet>
       )}

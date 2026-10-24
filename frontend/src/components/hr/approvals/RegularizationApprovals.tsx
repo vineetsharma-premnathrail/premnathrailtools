@@ -5,6 +5,7 @@ import { hrApi } from '@/lib/api'
 import { HrAttendanceRegularization } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import PromptDialog from '@/components/erp/PromptDialog'
+import { smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 
 const ATT_LABELS: Record<string, string> = {
@@ -12,9 +13,10 @@ const ATT_LABELS: Record<string, string> = {
   weekly_off: 'Weekly off', on_duty: 'On duty', work_from_home: 'Work from home',
 }
 const td: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
+// Row action chip on the shared 30px small-button scale; colour = meaning.
 const actionBtn = (color: string): React.CSSProperties => ({
-  fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 9999, border: `1px solid ${color}55`,
-  background: `${color}14`, color, cursor: 'pointer', marginRight: 6,
+  ...smallSecondaryBtnStyle, fontWeight: 700, borderRadius: 9999, border: `1px solid ${color}55`,
+  background: `${color}14`, color, marginRight: 6,
 })
 
 function dmy(iso: string | null) {

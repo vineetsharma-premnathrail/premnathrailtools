@@ -7,20 +7,23 @@
 import { useCallback, useEffect, useState } from 'react'
 import { landedCostApi, PoChargesView } from '@/lib/mmLogisticsApi'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, smallSecondaryBtnStyle, TableScroll } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { useCan } from '@/lib/permissions'
+import Select from '@/components/shared/Select'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
 const cell: React.CSSProperties = { padding: '7px 10px', fontSize: 13, color: TEXT.body }
-const head: React.CSSProperties = { ...cell, fontSize: 11.5, fontWeight: 700, color: TEXT.secondary, textAlign: 'left' }
+const head: React.CSSProperties = { ...cell, fontSize: 11.5, fontWeight: 700, color: TEXT.secondary, textAlign: 'left', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fff', zIndex: 1 }
+const num: React.CSSProperties = { ...cell, textAlign: 'right', whiteSpace: 'nowrap' }
+const numHead: React.CSSProperties = { ...head, textAlign: 'right' }
 const money = (n: number | null | undefined) => (n == null ? '—' : `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
 
 const EMPTY = { charge_type: 'freight', basis: 'value', amount: '', gst_rate: '', description: '', bill_reference: '', voucher_date: '' }
@@ -88,53 +91,59 @@ export default function PoDeliveryCostsPanel({ poId, onChanged }: { poId: number
       )}
 
       {view.charges.length > 0 && (
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
-          <thead><tr>{['Planned cost', 'Basis', 'Amount', 'GST (credit)', ''].map((h) => <th key={h} style={head}>{h}</th>)}</tr></thead>
+        <TableScroll style={{ marginBottom: 12 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr>{['Planned cost', 'Basis', 'Amount', 'GST (credit)', ''].map((h, i) => <th key={h} style={i === 2 || i === 3 ? numHead : head}>{h}</th>)}</tr></thead>
           <tbody>
             {view.charges.map((c) => (
               <tr key={c.id} style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
                 <td style={cell}>{c.charge_label}{c.description ? ` — ${c.description}` : ''}</td>
                 <td style={cell}>{c.basis === 'quantity' ? 'By quantity' : 'By value'}</td>
-                <td style={cell}>{money(c.amount)}</td>
-                <td style={cell}>{c.gst_rate != null ? `${c.gst_rate}%` : '—'}</td>
-                <td style={cell}>{view.editable && canRemove && <button type="button" onClick={() => setRemoveId(c.id)} style={{ ...secondaryBtnStyle, padding: '4px 10px', fontSize: 12 }}>Remove</button>}</td>
+                <td style={num}>{money(c.amount)}</td>
+                <td style={num}>{c.gst_rate != null ? `${c.gst_rate}%` : '—'}</td>
+                <td style={{ ...cell, textAlign: 'right' }}>{view.editable && canRemove && <button type="button" onClick={() => setRemoveId(c.id)} style={smallSecondaryBtnStyle}>Remove</button>}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        </TableScroll>
       )}
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
-        <thead><tr>{['Line', 'Qty', 'PO rate', 'Delivery cost', 'Landed rate'].map((h) => <th key={h} style={head}>{h}</th>)}</tr></thead>
+      <TableScroll style={{ marginBottom: 12 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead><tr>{['Line', 'Qty', 'PO rate', 'Delivery cost', 'Landed rate'].map((h, i) => <th key={h} style={i === 0 ? head : numHead}>{h}</th>)}</tr></thead>
         <tbody>
           {view.lines.map((l) => (
             <tr key={l.po_item_id} style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
               <td style={cell}>{l.item_code ? `${l.item_code} · ` : ''}{l.item_name}{l.category !== 'stock' ? ` (${l.category} — not loaded)` : ''}</td>
-              <td style={cell}>{l.quantity} {l.unit || ''}</td>
-              <td style={cell}>{money(l.po_rate)}</td>
-              <td style={cell}>{money(l.allocated)}</td>
-              <td style={{ ...cell, fontWeight: 700 }}>{money(l.landed_rate)}</td>
+              <td style={num}>{l.quantity} {l.unit || ''}</td>
+              <td style={num}>{money(l.po_rate)}</td>
+              <td style={num}>{money(l.allocated)}</td>
+              <td style={{ ...num, fontWeight: 700 }}>{money(l.landed_rate)}</td>
             </tr>
           ))}
         </tbody>
       </table>
+      </TableScroll>
 
       {view.vouchers.length > 0 && (
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
-          <thead><tr>{['Voucher', 'Date', 'Cost', 'Amount', 'Into stock', 'Consumed share'].map((h) => <th key={h} style={head}>{h}</th>)}</tr></thead>
+        <TableScroll style={{ marginBottom: 12 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr>{['Voucher', 'Date', 'Cost', 'Amount', 'Into stock', 'Consumed share'].map((h, i) => <th key={h} style={i >= 3 ? numHead : head}>{h}</th>)}</tr></thead>
           <tbody>
             {view.vouchers.map((v) => (
               <tr key={v.id} style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
                 <td style={cell}>{v.voucher_number}{v.bill_reference ? ` · ${v.bill_reference}` : ''}</td>
                 <td style={cell}>{formatDate(v.voucher_date)}</td>
                 <td style={cell}>{v.charge_label}</td>
-                <td style={cell}>{money(v.amount)}</td>
-                <td style={cell}>{money(v.value_to_stock)}</td>
-                <td style={cell}>{money(v.value_to_consumption)}</td>
+                <td style={num}>{money(v.amount)}</td>
+                <td style={num}>{money(v.value_to_stock)}</td>
+                <td style={num}>{money(v.value_to_consumption)}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        </TableScroll>
       )}
 
       {canEdit && (
@@ -156,15 +165,15 @@ export default function PoDeliveryCostsPanel({ poId, onChanged }: { poId: number
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ flex: '1 1 200px' }}>
                   <label style={sheetLabel}>{voucherMode ? 'Cost billed after receipt' : 'Planned cost'} <Req /></label>
-                  <select style={sheetInput} value={form.charge_type} onChange={(e) => setForm({ ...form, charge_type: e.target.value })}>
+                  <Select style={sheetInput} value={form.charge_type} onChange={(e) => setForm({ ...form, charge_type: e.target.value })}>
                     {view.meta.charge_types.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div style={{ flex: '0 1 160px' }}>
                   <label style={sheetLabel}>Apportion</label>
-                  <select style={sheetInput} value={form.basis} onChange={(e) => setForm({ ...form, basis: e.target.value })}>
+                  <Select style={sheetInput} value={form.basis} onChange={(e) => setForm({ ...form, basis: e.target.value })}>
                     {view.meta.bases.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                  </Select>
                 </div>
               </div>
               <label style={{ ...sheetLabel, marginTop: 14 }}>Description</label>

@@ -10,6 +10,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import RndNav from '@/components/rnd/RndNav'
+import AnchoredPopover from '@/components/rnd/AnchoredPopover'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath } from '@/lib/recordRef'
 import { useUrlProjectId } from '@/components/rnd/projectLink'
@@ -128,6 +129,9 @@ function BomEditor({ lines, onChange, onError }: { lines: BomLine[]; onChange: (
 
   return (
     <div>
+      {/* The line grid scrolls sideways on narrow screens instead of widening the page. */}
+      <div style={{ overflowX: 'auto' }}>
+      <div style={{ minWidth: 820 }}>
       <div style={{ display: 'flex', gap: 8, padding: '0 0 6px', borderBottom: `1px solid ${BORDER.light}`, marginBottom: 8 }}>
         <div style={{ ...BOM_COLS.item, ...bomHeadStyle }}>Item *</div>
         <div style={{ ...BOM_COLS.code, ...bomHeadStyle }}>Item Code</div>
@@ -158,7 +162,7 @@ function BomEditor({ lines, onChange, onError }: { lines: BomLine[]; onChange: (
                   onKeyDown={(e) => { if (e.key === 'Escape') setActiveKey(null) }}
                 />
                 {open && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, marginTop: 4, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 8, overflow: 'hidden', background: '#fff', boxShadow: '0 8px 20px rgba(0,0,0,0.08)' }}>
+                  <AnchoredPopover>
                     {results.length === 0 ? (
                       <div style={{ padding: '6px 10px', fontSize: 12, color: TEXT.muted }}>
                         {searching ? 'Searching…' : 'No Item Master match. The part will be saved as free text.'}
@@ -174,7 +178,7 @@ function BomEditor({ lines, onChange, onError }: { lines: BomLine[]; onChange: (
                         </div>
                       ))
                     )}
-                  </div>
+                  </AnchoredPopover>
                 )}
               </div>
               <div style={BOM_COLS.code}>
@@ -208,6 +212,8 @@ function BomEditor({ lines, onChange, onError }: { lines: BomLine[]; onChange: (
             </div>
           )
         })}
+      </div>
+      </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 14, flexWrap: 'wrap' }}>

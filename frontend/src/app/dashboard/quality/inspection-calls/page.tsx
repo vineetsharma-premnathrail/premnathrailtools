@@ -16,6 +16,7 @@ import {
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import Select from '@/components/shared/Select'
 
 const STATUS_LABELS: Record<string, string> = {
   requested: 'Requested', scheduled: 'Scheduled', accepted: 'Accepted', partially_accepted: 'Partly accepted', rejected: 'Rejected', cancelled: 'Cancelled',
@@ -59,10 +60,10 @@ function CallsTab() {
       <ErrorBanner error={error} />
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <input style={{ ...filterInputStyle, flex: '1 1 240px', maxWidth: 420 }} placeholder="Search call, item, order, certificate…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...filterInputStyle, flex: '0 1 180px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <Select style={{ ...filterInputStyle, flex: '0 1 180px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
+        </Select>
         <div style={{ flex: '1 1 260px', maxWidth: 380 }}>
           <OrderProjectPicker value={op} onChange={(v) => setOp(v)} requireElement={false} placeholder="All order projects" />
         </div>
@@ -158,11 +159,11 @@ function ContractsTab({ agencies, canApprove }: { agencies: { value: string; lab
                     onChange={(e) => save(c, e.target.checked, c.inspection_agency || agencies[0]?.value || '')} />
                 </td>
                 <td style={tdStyle}>
-                  <select style={{ ...inputStyle, width: 170 }} value={c.inspection_agency || ''} disabled={!canApprove || !c.third_party_inspection_required}
+                  <Select style={{ ...inputStyle, width: 170 }} value={c.inspection_agency || ''} disabled={!canApprove || !c.third_party_inspection_required}
                     onChange={(e) => save(c, true, e.target.value)}>
                     <option value="">—</option>
                     {agencies.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
-                  </select>
+                  </Select>
                 </td>
               </tr>
             ))}

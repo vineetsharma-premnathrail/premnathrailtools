@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Paperclip, UploadSimple } from '@phosphor-icons/react'
 import { useParams, useRouter } from 'next/navigation'
@@ -18,7 +19,7 @@ import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import FileUploadPreview from '@/components/FileUploadPreview'
 import CameraCapture from '@/components/CameraCapture'
 import Link from 'next/link'
-import { inputStyle, Field, Card, InfoRow } from '@/components/shared/ui'
+import { inputStyle, Field, Card, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallPrimaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
@@ -367,7 +368,7 @@ function OverviewTab({ sr, project, projectError, canModify, onPatch, onRequestS
 
         <Card title="Status, Type & Priority">
           <Field label="Status">
-            <select
+            <Select
               data-tour="erp-srd-status"
               value={sr.status}
               disabled={!canModify || sr.is_locked}
@@ -377,10 +378,10 @@ function OverviewTab({ sr, project, projectError, canModify, onPatch, onRequestS
               {[...WORKFLOW_STEPS, CANCELLED_STEP].map((s) => (
                 <option key={s.key} value={s.key}>{s.label}</option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Service Type">
-            <select
+            <Select
               data-tour="erp-srd-service-type"
               value={sr.service_type || ''}
               disabled={!canModify || sr.is_locked}
@@ -391,10 +392,10 @@ function OverviewTab({ sr, project, projectError, canModify, onPatch, onRequestS
               {SERVICE_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Priority">
-            <select
+            <Select
               data-tour="erp-srd-priority"
               value={sr.priority}
               disabled={!canModify || sr.is_locked}
@@ -403,7 +404,7 @@ function OverviewTab({ sr, project, projectError, canModify, onPatch, onRequestS
             >
               <option value="standard">Standard</option>
               <option value="urgent">Urgent</option>
-            </select>
+            </Select>
           </Field>
         </Card>
 
@@ -1084,6 +1085,7 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
               Part not in the list? Add it in{' '}
               <a href="/dashboard/store/new" target="_blank" rel="noopener noreferrer" style={{ color: '#c2410c', fontWeight: 600 }}>Store › Item Master</a>
               {' '}(opens in a new tab), then{' '}
+              {/* ui-audit-ignore-next-line adhoc-button — inline text link inside a sentence */}
               <button type="button" onClick={loadMasterItems} disabled={loadingMaster} style={{ border: 'none', background: 'none', padding: 0, color: '#c2410c', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
                 {loadingMaster ? 'refreshing…' : 'refresh items'}
               </button>.
@@ -1098,9 +1100,9 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
             </div>
             <div style={{ flex: '0 1 160px', minWidth: 140 }}>
               <label style={sheetLabel}>Priority</label>
-              <select style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value)} data-tour="erp-srd-pr-priority">
+              <Select style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value)} data-tour="erp-srd-pr-priority">
                 {['low', 'medium', 'high'].map((p) => <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>)}
-              </select>
+              </Select>
             </div>
             <div style={{ flex: '1 1 300px' }}>
               <label style={sheetLabel}>Remarks <Optional /></label>
@@ -1194,7 +1196,7 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
                       <button
                         onClick={() => saveReceive(m.id, m.quantity)}
                         disabled={savingReceive === m.id || receiveInputs[m.id] === undefined || receiveInputs[m.id] === ''}
-                        style={{ ...primaryBtnStyle, padding: '5px 10px', fontSize: 11.5, opacity: savingReceive === m.id ? 0.6 : 1 }}
+                        style={{ ...smallPrimaryBtnStyle, opacity: savingReceive === m.id ? 0.6 : 1 }}
                       >
                         {savingReceive === m.id ? '…' : 'Mark'}
                       </button>
@@ -1215,9 +1217,9 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
                       </span>
                       {(canIssue || canReturn) && (
                         <div style={{ display: 'flex', gap: 6 }}>
-                          {canIssue && <button onClick={() => setIssuing(m)} style={{ ...primaryBtnStyle, padding: '4px 10px', fontSize: 11.5 }}>Issue</button>}
+                          {canIssue && <button onClick={() => setIssuing(m)} style={{ ...smallPrimaryBtnStyle }}>Issue</button>}
                           {canReturn && (m.net_issued || 0) > 0 && (
-                            <button onClick={() => setReturning(m)} style={{ ...secondaryBtnStyle, padding: '4px 10px', fontSize: 11.5 }}>Return</button>
+                            <button onClick={() => setReturning(m)} style={{ ...smallSecondaryBtnStyle }}>Return</button>
                           )}
                         </div>
                       )}
@@ -1226,7 +1228,7 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
                 </td>
                 <td style={{ padding: '10px 14px' }}>
                   {canDelete && !(m.qty_issued || 0) && (
-                    <button onClick={() => setPendingRemove({ id: m.id, name: m.material_name })} style={{ ...dangerBtnStyle, padding: '4px 10px', fontSize: 11.5 }}>Remove</button>
+                    <button onClick={() => setPendingRemove({ id: m.id, name: m.material_name })} style={{ ...smallDangerBtnStyle }}>Remove</button>
                   )}
                 </td>
               </tr>
@@ -1492,7 +1494,7 @@ function AttachmentsTab({ sr, canEdit, canDelete, onRefresh }: { sr: ServiceRequ
                   {a.filename}
                 </a>
                 {canDelete && (
-                  <button onClick={() => setPendingDelete({ id: a.id, filename: a.filename })} style={{ ...dangerBtnStyle, padding: '4px 10px', fontSize: 11.5 }}>Delete</button>
+                  <button onClick={() => setPendingDelete({ id: a.id, filename: a.filename })} style={{ ...smallDangerBtnStyle }}>Delete</button>
                 )}
               </div>
             ))}
@@ -1557,38 +1559,5 @@ function AuditTab({ srId }: { srId: number }) {
   )
 }
 
-const primaryBtnStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  padding: '9px 18px',
-  borderRadius: 10,
-  border: 'none',
-  background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)',
-  color: '#fff',
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-}
 
-const secondaryBtnStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  padding: '9px 18px',
-  borderRadius: 10,
-  border: '1px solid rgba(0,0,0,0.1)',
-  background: '#fff',
-  color: '#57534e',
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-}
 
-const dangerBtnStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  padding: '9px 16px',
-  borderRadius: 10,
-  border: '1px solid rgba(220,38,38,0.25)',
-  background: 'rgba(220,38,38,0.06)',
-  color: '#b91c1c',
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-}

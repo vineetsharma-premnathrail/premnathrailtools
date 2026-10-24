@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
@@ -382,16 +383,16 @@ export default function EditOrganizationInfoPage() {
                 <div style={rowStyle}>
                   {text('default_tax', 'Default Tax', { tour: 'org-edit-default-tax', ph: 'GST 18%', basis: 180, max: 260 })}
                   <F label="Default Plant" basis={240} max={340}>
-                    <select data-tour="org-edit-default-plant" style={sheetInput} value={form.default_plant_id || ''} onChange={(e) => setField('default_plant_id', e.target.value ? Number(e.target.value) : null)}>
+                    <Select data-tour="org-edit-default-plant" style={sheetInput} value={form.default_plant_id || ''} onChange={(e) => setField('default_plant_id', e.target.value ? Number(e.target.value) : null)}>
                       <option value="">— Select —</option>
                       {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                    </select>
+                    </Select>
                   </F>
                   <F label="Default Store" basis={240} max={340}>
-                    <select data-tour="org-edit-default-warehouse" style={sheetInput} value={form.default_warehouse_id || ''} onChange={(e) => setField('default_warehouse_id', e.target.value ? Number(e.target.value) : null)}>
+                    <Select data-tour="org-edit-default-warehouse" style={sheetInput} value={form.default_warehouse_id || ''} onChange={(e) => setField('default_warehouse_id', e.target.value ? Number(e.target.value) : null)}>
                       <option value="">— Select —</option>
                       {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                    </select>
+                    </Select>
                   </F>
                 </div>
                 <div style={{ ...rowStyle, marginBottom: 0 }}>
@@ -754,10 +755,10 @@ function FinancialYearsEditor({ financialYears, onRefresh }: { financialYears: C
         </div>
         <div style={rowStyle}>
           <F label="Status" basis={140} max={180}>
-            <select data-tour="org-fy-status" style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)}>
+            <Select data-tour="org-fy-status" style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)}>
               <option value="open">Open</option>
               <option value="closed">Closed</option>
-            </select>
+            </Select>
           </F>
           <F label="Lock Date" basis={170} max={220}><DateField value={form.lock_date} onChange={(v) => set('lock_date', v)} /></F>
           <F label="Period Closing Rule" basis={260}><input style={sheetInput} value={form.period_closing_rule} onChange={(e) => set('period_closing_rule', e.target.value)} /></F>
@@ -867,9 +868,9 @@ function DocumentsEditor({ documents, onRefresh }: { documents: CompanyDocument[
         </div>
         <div style={rowStyle}>
           <F label="Document Type" req basis={170} max={220}>
-            <select data-tour="org-doc-type" style={sheetInput} value={meta.document_type} onChange={(e) => set('document_type', e.target.value)}>
+            <Select data-tour="org-doc-type" style={sheetInput} value={meta.document_type} onChange={(e) => set('document_type', e.target.value)}>
               {DOCUMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
+            </Select>
           </F>
           <F label="Document Name" req basis={260} max={360}><input data-tour="org-doc-name" style={sheetInput} value={meta.document_name} onChange={(e) => set('document_name', e.target.value)} /></F>
           <F label="Document Number" basis={180} max={260}><input style={sheetInput} value={meta.document_number} onChange={(e) => set('document_number', e.target.value)} /></F>
@@ -879,9 +880,9 @@ function DocumentsEditor({ documents, onRefresh }: { documents: CompanyDocument[
           <F label="Expiry Date" basis={170} max={220}><div data-tour="org-doc-expiry"><DateField value={meta.expiry_date} onChange={(v) => set('expiry_date', v)} /></div></F>
           <F label="Issuing Authority" basis={220} max={320}><input style={sheetInput} value={meta.issuing_authority} onChange={(e) => set('issuing_authority', e.target.value)} /></F>
           <F label="Confidentiality" basis={150} max={200}>
-            <select data-tour="org-doc-confidentiality" style={sheetInput} value={meta.confidentiality} onChange={(e) => set('confidentiality', e.target.value)}>
+            <Select data-tour="org-doc-confidentiality" style={sheetInput} value={meta.confidentiality} onChange={(e) => set('confidentiality', e.target.value)}>
               {CONFIDENTIALITY_LEVELS.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+            </Select>
           </F>
         </div>
         <div style={rowStyle}>

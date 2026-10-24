@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -85,14 +86,14 @@ export default function HydCircuitsPage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input data-tour="hyd-cir-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search circuit no., title or drawing no…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select data-tour="hyd-cir-medium-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
+        <Select data-tour="hyd-cir-medium-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
           <option value="">Hydraulic + Pneumatic</option>
           {Object.entries(SYSTEM_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="hyd-cir-status-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="hyd-cir-status-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
         <div data-tour="hyd-cir-superseded-toggle" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: statusFilter ? TEXT.muted : TEXT.body }}
           title={statusFilter ? 'A status filter is set, so this has no effect — clear it to use this toggle.' : undefined}>
           <Checkbox id="hyd-circuits-superseded" checked={showSuperseded} onChange={(e) => setShowSuperseded(e.target.checked)} disabled={!!statusFilter} />

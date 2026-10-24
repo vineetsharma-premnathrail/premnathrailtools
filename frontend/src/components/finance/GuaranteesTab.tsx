@@ -17,6 +17,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import { TreasuryModal as Modal } from '@/components/finance/BankStatementPanel'
 import { SheetColumns, SheetSection, SheetIconName, sheetInput, SheetError } from '@/components/shared/FormSheet'
 import { SField, SRow, SheetFooter, sw, sg } from '@/components/finance/financeSheet'
+import Select from '@/components/shared/Select'
 import {
   inputStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle,
   thStyle, tdStyle, numTd, numTh, inr, dmy, todayIso, Field, ErrorBanner, InfoBanner, StatusPill, TableWrap, EmptyRow, StatCard,
@@ -87,15 +88,15 @@ export default function GuaranteesTab({ initialId }: { initialId?: number | null
       </div>
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12 }}>
         <Field label="Direction" style={{ flex: '0 1 170px' }}>
-          <select style={inputStyle} value={direction} onChange={(e) => setDirection(e.target.value)}>
+          <Select style={inputStyle} value={direction} onChange={(e) => setDirection(e.target.value)}>
             <option value="">Issued & received</option><option value="issued">Issued by us</option><option value="received">Received by us</option>
-          </select>
+          </Select>
         </Field>
         <label style={{ fontSize: 12.5, color: TEXT.secondary, display: 'flex', gap: 6, alignItems: 'center', paddingBottom: 10 }}>
           <input type="checkbox" checked={openOnly} onChange={(e) => setOpenOnly(e.target.checked)} /> Open only
         </label>
         <div style={{ flex: 1 }} />
-        {canCreate && <button type="button" style={{ ...primaryBtnStyle, marginBottom: 1 }} onClick={() => setShowNew(true)}>+ New Instrument</button>}
+        {canCreate && <button type="button" style={{ ...primaryBtnStyle }} onClick={() => setShowNew(true)}>+ New Instrument</button>}
       </div>
 
       <TableWrap minWidth={1180}>
@@ -198,22 +199,22 @@ function NewInstrument({ types, onClose, onSaved }: { types: Opt[]; onClose: () 
           <SheetSection icon="shield" title="Instrument">
             <SRow>
               <SField label="Direction" req style={sw(180)}>
-                <select style={sheetInput} value={f.direction} onChange={(e) => set('direction', e.target.value)}>
+                <Select style={sheetInput} value={f.direction} onChange={(e) => set('direction', e.target.value)}>
                   <option value="issued">Issued by us</option><option value="received">Received by us</option>
-                </select>
+                </Select>
               </SField>
               <SField label="Instrument" req style={sg(220, 300)}>
-                <select style={sheetInput} value={f.instrument_type} onChange={(e) => set('instrument_type', e.target.value)}>
+                <Select style={sheetInput} value={f.instrument_type} onChange={(e) => set('instrument_type', e.target.value)}>
                   {types.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
+                </Select>
               </SField>
             </SRow>
             <SRow mb={0}>
               {issued && ['emd', 'security_deposit'].includes(f.instrument_type) && (
                 <SField label="Given as" style={sw(250)}>
-                  <select style={sheetInput} value={f.instrument_form} onChange={(e) => set('instrument_form', e.target.value)}>
+                  <Select style={sheetInput} value={f.instrument_form} onChange={(e) => set('instrument_form', e.target.value)}>
                     <option value="bank_guarantee">{FORM_LABELS.bank_guarantee}</option><option value="deposit">{FORM_LABELS.deposit}</option>
-                  </select>
+                  </Select>
                 </SField>
               )}
               <SField label="Amount (₹)" req style={sw(170)}>
@@ -467,9 +468,9 @@ function ActionDialog({ bg, action, onClose, onDone }: { bg: BankGuarantee; acti
         {money && (
           <SRow mb={needsReason ? 14 : 0}>
             <SField label="Mode" style={sw(130)}>
-              <select style={sheetInput} value={f.payment_mode} onChange={(e) => set('payment_mode', e.target.value)}>
+              <Select style={sheetInput} value={f.payment_mode} onChange={(e) => set('payment_mode', e.target.value)}>
                 {['neft', 'rtgs', 'imps', 'dd'].map((m) => <option key={m} value={m}>{m.toUpperCase()}</option>)}
-              </select>
+              </Select>
             </SField>
             <SField label="Bank ref / UTR" optional style={sg(180, 260)}><input style={sheetInput} value={f.reference_no} maxLength={100} onChange={(e) => set('reference_no', e.target.value)} /></SField>
           </SRow>

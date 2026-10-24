@@ -23,6 +23,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { useCan } from '@/lib/permissions'
+import Select from '@/components/shared/Select'
 
 const STATUSES = [
   { value: 'active', label: 'Active' },
@@ -201,9 +202,9 @@ export default function StoreItemDetailPage() {
                 </div>
                 <div style={{ flex: '0 1 170px', minWidth: 150 }}>
                   <label style={sheetLabel}>Status</label>
-                  <select data-tour="item-edit-status" style={sheetInput} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as StoreItem['status'] })}>
+                  <Select data-tour="item-edit-status" style={sheetInput} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as StoreItem['status'] })}>
                     {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                  </select>
+                  </Select>
                 </div>
               </div>
               <label style={{ ...sheetLabel, marginTop: 14 }}>Technical Specification</label>

@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { ArrowSquareOut, MagnifyingGlass } from '@phosphor-icons/react'
 import { crmApi } from '@/lib/api'
@@ -183,9 +184,9 @@ export default function CrmDocumentFolder({ tourId, title, folderType, docs, gen
           <div style={{ padding: '20px 24px' }}>
             <SheetError error={uploadError} />
             <SheetSection icon="tag" title="Category">
-              <select value={docCategory} onChange={(e) => setDocCategory(e.target.value)} style={{ ...sheetInput, maxWidth: 300 }}>
+              <Select value={docCategory} onChange={(e) => setDocCategory(e.target.value)} style={{ ...sheetInput, maxWidth: 300 }}>
                 {(categories.length ? categories : [FALLBACK_CATEGORY]).map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+              </Select>
               <p style={sheetHint}>Choices come from CRM › Settings › Lists › Document Categories.</p>
             </SheetSection>
             <SheetSection icon="clip" title="Files">

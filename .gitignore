@@ -41,3 +41,8 @@ Thumbs.db
 *.sqlite3
 *.db
 backend/db_backups/
+
+# Playwright UI layout tests (frontend/e2e): saved login session + reports
+frontend/e2e/.auth/
+frontend/test-results/
+frontend/playwright-report/

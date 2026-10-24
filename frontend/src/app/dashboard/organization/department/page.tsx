@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { CaretDown, CaretRight } from '@phosphor-icons/react'
 import { createPortal } from 'react-dom'
@@ -267,7 +268,7 @@ export default function OrganizationDepartmentPage() {
               </div>
               <div>
                 <label style={sheetLabel}>Branch <Optional /></label>
-                <select data-tour="org-dept-branch" style={sheetInput} value={newBranchId} onChange={(e) => {
+                <Select data-tour="org-dept-branch" style={sheetInput} value={newBranchId} onChange={(e) => {
                   const next = e.target.value
                   setNewBranchId(next)
                   // Heads picked for the old unit don't belong to the new one.
@@ -277,7 +278,7 @@ export default function OrganizationDepartmentPage() {
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
-                </select>
+                </Select>
                 <p style={sheetHint}>Leave empty for a department that spans all branches.</p>
               </div>
             </SheetSection>

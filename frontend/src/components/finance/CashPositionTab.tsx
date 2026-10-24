@@ -13,6 +13,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import DateField from '@/components/erp/DateField'
 import { FormSheet, SheetSection, sheetInput, SheetError } from '@/components/shared/FormSheet'
 import { SField, SRow, SheetBody, SheetFooter, sw, sg } from '@/components/finance/financeSheet'
+import Select from '@/components/shared/Select'
 import {
   inputStyle, sectionStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle,
   thStyle, tdStyle, numTd, numTh, inr, dmy, todayIso, Field, ErrorBanner, InfoBanner, TableWrap, EmptyRow, StatCard,
@@ -68,9 +69,9 @@ export default function CashPositionTab() {
           <StatCard label={`Projected after ${cp.horizon_weeks} weeks`} value={inr(cp.columns[cp.columns.length - 1]?.closing_balance)} />
           <StatCard label="Lowest Projected Balance" value={inr(cp.lowest_balance)} tone={cp.lowest_balance < 0 ? '#dc2626' : undefined} />
           <Field label="Horizon" style={{ flex: '0 1 140px' }}>
-            <select style={inputStyle} value={weeks} onChange={(e) => setWeeks(Number(e.target.value))}>
+            <Select style={inputStyle} value={weeks} onChange={(e) => setWeeks(Number(e.target.value))}>
               {[4, 8, 13, 26].map((w) => <option key={w} value={w}>{w} weeks</option>)}
-            </select>
+            </Select>
           </Field>
         </div>
       )}
@@ -235,14 +236,14 @@ function PlannedItems({ items, cats, canCreate, canEdit, canDelete, onChanged }:
             <SheetSection icon="rupee" title="Flow">
               <SRow>
                 <SField label="In / Out" req style={sw(140)}>
-                  <select style={sheetInput} value={form.direction} onChange={(e) => set('direction', e.target.value)}>
+                  <Select style={sheetInput} value={form.direction} onChange={(e) => set('direction', e.target.value)}>
                     <option value="outflow">Outflow</option><option value="inflow">Inflow</option>
-                  </select>
+                  </Select>
                 </SField>
                 <SField label="Category" req style={sg(200, 280)}>
-                  <select style={sheetInput} value={form.category} onChange={(e) => set('category', e.target.value)}>
+                  <Select style={sheetInput} value={form.category} onChange={(e) => set('category', e.target.value)}>
                     {cats.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                  </select>
+                  </Select>
                 </SField>
               </SRow>
               <SRow mb={0}>
@@ -258,9 +259,9 @@ function PlannedItems({ items, cats, canCreate, canEdit, canDelete, onChanged }:
               <SRow mb={0}>
                 <SField label="First date" req style={sw(160)}><DateField value={form.expected_date} onChange={(v) => set('expected_date', v)} /></SField>
                 <SField label="Repeat" style={sw(140)}>
-                  <select style={sheetInput} value={form.recurrence} onChange={(e) => set('recurrence', e.target.value)}>
+                  <Select style={sheetInput} value={form.recurrence} onChange={(e) => set('recurrence', e.target.value)}>
                     {Object.entries(REPEAT_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
+                  </Select>
                 </SField>
                 {form.recurrence !== 'none' && <SField label="Repeat until" optional style={sw(170)}><DateField value={form.end_date} onChange={(v) => set('end_date', v)} /></SField>}
               </SRow>

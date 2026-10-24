@@ -6,10 +6,25 @@
 // people / channels / extra-address editor opens only when the row is expanded.
 // State stays in ModuleSettingsPage's draft, so Save / Discard / Unsaved work as before.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { DirectoryUser, SettingSpecDto } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER, BRAND } from '@/lib/theme'
 import { inputStyle } from '@/components/shared/ui'
+import AnchoredPopover from '@/components/shared/AnchoredPopover'
+
+/** A search input with its match list portaled under it, so the list is never
+ * clipped by the card / settings page it sits in. */
+function SearchWithList({ input, open, children }: { input: React.ReactNode; open: boolean; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  return (
+    <>
+      <div ref={ref}>{input}</div>
+      <AnchoredPopover anchorRef={ref} open={open} style={{ border: `1px solid ${BORDER.normal}`, boxShadow: '0 8px 24px rgba(15,23,42,.12)' }}>
+        {children}
+      </AnchoredPopover>
+    </>
+  )
+}
 
 export interface NotificationEvent {
   group: string
@@ -179,20 +194,19 @@ export default function NotificationRulesPanel({
                         </div>
                       )}
                       {canEdit ? (
-                        <>
-                          <input value={search[ev.group] || ''} placeholder="Search people to add..."
-                            onChange={(e) => setSearch((s) => ({ ...s, [ev.group]: e.target.value }))} style={inputStyle} />
-                          {matches.length > 0 && (
-                            <div style={{ position: 'absolute', left: 0, right: 0, zIndex: 5, marginTop: 4, borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: '#fff', overflow: 'hidden', boxShadow: '0 8px 24px rgba(15,23,42,.12)' }}>
-                              {matches.map((u) => (
-                                <div key={u.id} style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', borderBottom: `1px solid ${BORDER.light}` }}
-                                  onClick={() => { setField(ev.keys.users, [...ids, u.id]); setSearch((s) => ({ ...s, [ev.group]: '' })) }}>
-                                  {u.name} <span style={{ color: TEXT.muted }}>· {u.email}</span>
-                                </div>
-                              ))}
+                        <SearchWithList
+                          open={matches.length > 0}
+                          input={(
+                            <input value={search[ev.group] || ''} placeholder="Search people to add..."
+                              onChange={(e) => setSearch((s) => ({ ...s, [ev.group]: e.target.value }))} style={inputStyle} />
+                          )}>
+                          {matches.map((u) => (
+                            <div key={u.id} style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', borderBottom: `1px solid ${BORDER.light}` }}
+                              onClick={() => { setField(ev.keys.users, [...ids, u.id]); setSearch((s) => ({ ...s, [ev.group]: '' })) }}>
+                              {u.name} <span style={{ color: TEXT.muted }}>· {u.email}</span>
                             </div>
-                          )}
-                        </>
+                          ))}
+                        </SearchWithList>
                       ) : ids.length === 0 && <div style={{ fontSize: 13, color: TEXT.muted }}>Nobody</div>}
                     </div>
 

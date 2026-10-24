@@ -21,7 +21,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import ManagedDocumentPanel, { openRecordInWord } from '@/components/shared/ManagedDocumentPanel'
-import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallBtnSize } from '@/components/shared/ui'
 import { useCan } from '@/lib/permissions'
 
 const ENTITY = 'rnd_technical_offer'
@@ -31,7 +31,7 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 16,
 }
 const embeddedStyle: React.CSSProperties = { marginTop: 12, paddingTop: 12, borderTop: '1px dashed rgba(0,0,0,0.1)' }
-const smallBtn = (base: React.CSSProperties): React.CSSProperties => ({ ...base, padding: '6px 14px', fontSize: 12.5 })
+const smallBtn = (base: React.CSSProperties): React.CSSProperties => ({ ...base, ...smallBtnSize })
 const note = (hex: string): React.CSSProperties => ({ fontSize: 12.5, color: TEXT.body, margin: '10px 0 0', padding: '8px 12px', borderRadius: 8, background: `${hex}12`, border: `1px solid ${hex}33` })
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', submitted: 'Awaiting R&D head', released: 'Sent to BD', superseded: 'Superseded' }

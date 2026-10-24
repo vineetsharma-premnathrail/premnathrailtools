@@ -17,6 +17,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/OrderProjectPicker'
 import { recordPath } from '@/lib/recordRef'
+import Select from '@/components/shared/Select'
 
 const STATUS_LABELS: Record<string, string> = { active: 'Active', fulfilled: 'Fulfilled', cancelled: 'Cancelled' }
 const STATUS_COLORS: Record<string, string> = { active: INFO.primary, fulfilled: SUCCESS.primary, cancelled: TEXT.muted }
@@ -137,7 +138,7 @@ export default function StoreStockReservationsPage() {
     <div>
       <StoreNav />
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <div>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
             Store &amp; Inventory
@@ -188,10 +189,10 @@ export default function StoreStockReservationsPage() {
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
                 <div style={{ flex: '1 1 220px' }}>
                   <label style={sheetLabel}>Store <Req /></label>
-                  <select data-tour="res-location" style={sheetInput} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+                  <Select data-tour="res-location" style={sheetInput} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
                     <option value="">— Select —</option>
                     {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div style={{ flex: '0 1 140px', minWidth: 110 }}>
                   <label style={sheetLabel}>Quantity <Req /></label>

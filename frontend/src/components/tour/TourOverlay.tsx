@@ -82,7 +82,7 @@ export default function TourOverlay() {
     // the actual input/select/textarea inside it to read its live value —
     // and to highlight/measure directly, so the ring hugs just the real
     // control instead of boxing in its label text too. Table column headers
-    // are the exception: a filterable column's <select> shrinks to fit just
+    // are the exception: a filterable column's native select shrinks to fit just
     // its own text, so drilling into it highlights a tiny floating pill
     // instead of the header cell everyone else's sortable-column steps
     // already box — keep those on the whole <th> for a consistent look.
@@ -102,13 +102,22 @@ export default function TourOverlay() {
       // those nested dropdowns (e.g. the Lead Info Status select) and boxed
       // just that, instead of the whole overview the step actually describes.
       const isFieldWrapper = el.tagName !== 'TH' && !!el.querySelector(':scope > label.field-label')
+      // The app's own dropdown (shared Select / SearchableSelect) is a div with
+      // role="combobox" that keeps its value in data-value and fires a DOM
+      // 'change' when an option is picked — treated exactly like a native select.
+      // `data-tour` on a <Select> lands on its .ui-select box, so drill into it.
+      const CONTROLS = 'input,select,textarea,[role=combobox]'
       const inputEl = (
-        el.tagName !== 'TH' && el.matches('input,select,textarea') && isVisible(el)
+        el.classList.contains('ui-select')
+          ? el.querySelector('[role=combobox]')
+          : el.tagName !== 'TH' && el.matches(CONTROLS) && isVisible(el)
           ? el
           : isFieldWrapper
-          ? (Array.from(el.querySelectorAll('input,select,textarea')).find(isVisible) as HTMLElement | undefined) ?? null
+          ? (Array.from(el.querySelectorAll(CONTROLS)).find(isVisible) as HTMLElement | undefined) ?? null
           : null
       ) as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null
+      const isSelectLike = inputEl?.tagName === 'SELECT' || inputEl?.getAttribute('role') === 'combobox'
+      const valueOf = () => (inputEl?.getAttribute('role') === 'combobox' ? inputEl.getAttribute('data-value') || '' : inputEl?.value ?? '')
       // Some fields (the organization/contact SearchableSelect, DateField,
       // etc.) are a custom div-based control rather than a native
       // input/select — there's nothing for the query above to find, so
@@ -158,7 +167,7 @@ export default function TourOverlay() {
       }
       rafId = requestAnimationFrame(syncLoop)
 
-      const isStepFilled = () => !inputEl || !step.required || inputEl.value.trim().length > 0
+      const isStepFilled = () => !inputEl || !step.required || valueOf().trim().length > 0
       const checkFilled = () => setFilled(isStepFilled())
       checkFilled()
       inputEl?.addEventListener('input', checkFilled)
@@ -167,14 +176,14 @@ export default function TourOverlay() {
       // Auto-focus the field this step is pointing at, so the user can start
       // typing straight away instead of having to click into it first — after
       // the scroll above settles, so focus() doesn't fight scrollIntoView().
-      // Skipped for <select>: calling .focus() on one right after its native
+      // Skipped for a native select: calling .focus() on one right after its native
       // dropdown just closed can make some browsers reopen it, and there's
       // nothing to "type into" on a select anyway. Also skipped for a
       // combobox-style input (data-tour-no-autofocus) whose onFocus pops
       // open its own suggestions panel — auto-focusing it would pop that
       // open unprompted the moment the step arrives, cluttering the screen
       // before the user has actually asked to interact with it.
-      const skipAutoFocus = inputEl?.tagName === 'SELECT' || inputEl?.hasAttribute('data-tour-no-autofocus')
+      const skipAutoFocus = isSelectLike || inputEl?.hasAttribute('data-tour-no-autofocus')
       const focusTimer = skipAutoFocus ? undefined : setTimeout(() => { if (genRef.current === myGen) inputEl?.focus() }, 300)
 
       // Enter submits/tabs by default (see handleEnterAsTab on the form) — while
@@ -187,7 +196,7 @@ export default function TourOverlay() {
       const onKeyDown = (e: Event) => {
         const ke = e as KeyboardEvent
         const isMultilineTextarea = inputEl?.tagName === 'TEXTAREA' && !step.advanceOnEnter
-        if (ke.key !== 'Enter' || isMultilineTextarea || inputEl?.tagName === 'SELECT') return
+        if (ke.key !== 'Enter' || isMultilineTextarea || isSelectLike) return
         // Always swallow Enter here — even when the field isn't filled yet, so
         // it can't fall through to the form's own Enter handling and trigger a
         // native submit (that's exactly how an empty required field ended up
@@ -200,7 +209,7 @@ export default function TourOverlay() {
       }
       inputEl?.addEventListener('keydown', onKeyDown, true)
 
-      // A <select> has no separate "confirm" keystroke the way a text input has
+      // A native select has no separate "confirm" keystroke the way a text input has
       // Enter — picking a genuinely different option already is the completed
       // action, so that alone advances the tour. No artificial delay: React has
       // already re-rendered (and so any field this reveals/hides, e.g. Railway
@@ -209,7 +218,7 @@ export default function TourOverlay() {
       // selected — the browser fires no 'change' event for that, so Next stays
       // a manual click there, same as any other already-filled optional field.
       const onSelectChange = () => {
-        if (inputEl?.tagName !== 'SELECT' || !isStepFilled()) return
+        if (!isSelectLike || !isStepFilled()) return
         advanceForward()
       }
       inputEl?.addEventListener('change', onSelectChange)

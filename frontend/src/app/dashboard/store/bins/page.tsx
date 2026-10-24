@@ -21,6 +21,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import Select from '@/components/shared/Select'
 
 type BinType = 'rack' | 'shelf' | 'bin'
 type Bin = { id: number; location_id: number; parent_id: number | null; bin_type: BinType; code: string; name?: string | null; is_active: boolean }
@@ -330,18 +331,18 @@ export default function StoreBinsPage() {
       />
 
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-        <select style={{ ...inputStyle, flex: '0 1 260px', width: 'auto' }} value={locationId} onChange={(e) => { setBins([]); setStock([]); setExpanded(new Set()); setLoading(!!e.target.value); setLocationId(e.target.value) }}>
+        <Select style={{ ...inputStyle, flex: '0 1 260px', width: 'auto' }} value={locationId} onChange={(e) => { setBins([]); setStock([]); setExpanded(new Set()); setLoading(!!e.target.value); setLocationId(e.target.value) }}>
           <option value="">— Pick a store —</option>
           {locations.map((l) => <option key={l.id} value={l.id}>{l.name}{l.code ? ` (${l.code})` : ''}</option>)}
-        </select>
+        </Select>
         {locationId && (
           <>
-            <select style={{ ...inputStyle, flex: '0 1 180px', width: 'auto' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as '' | BinType)}>
+            <Select style={{ ...inputStyle, flex: '0 1 180px', width: 'auto' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as '' | BinType)}>
               <option value="">Racks, shelves &amp; bins</option>
               <option value="rack">Racks only</option>
               <option value="shelf">Shelves only</option>
               <option value="bin">Bins only</option>
-            </select>
+            </Select>
             <input style={{ ...inputStyle, flex: '0 1 260px', width: 'auto' }} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find an item — code or name" />
             <span style={{ fontSize: 12.5, color: TEXT.muted }}>{counts.rack} racks · {counts.shelf} shelves · {counts.bin} bins</span>
             <label style={{ fontSize: 12.5, color: TEXT.secondary, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
@@ -468,21 +469,21 @@ export default function StoreBinsPage() {
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ flex: '0 1 140px', minWidth: 120 }}>
                   <label style={sheetLabel}>Type <Req /></label>
-                  <select style={sheetInput} value={form.bin_type} onChange={(e) => {
+                  <Select style={sheetInput} value={form.bin_type} onChange={(e) => {
                     const t = e.target.value as BinType
                     const keep = form.parent_id && PARENT_TYPES[t].includes(byId.get(Number(form.parent_id))?.bin_type as BinType)
                     setForm({ ...form, bin_type: t, parent_id: keep ? form.parent_id : '' })
                   }}>
                     {(['rack', 'shelf', 'bin'] as BinType[]).map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 {form.bin_type !== 'rack' && (
                   <div style={{ flex: '1 1 220px', maxWidth: 320 }}>
                     <label style={sheetLabel}>{form.bin_type === 'shelf' ? <>In rack <Req /></> : <>In rack / shelf <Optional /></>}</label>
-                    <select style={sheetInput} value={form.parent_id} onChange={(e) => setForm({ ...form, parent_id: e.target.value })}>
+                    <Select style={sheetInput} value={form.parent_id} onChange={(e) => setForm({ ...form, parent_id: e.target.value })}>
                       <option value="">{form.bin_type === 'shelf' ? '— pick a rack —' : '— none (directly in the store) —'}</option>
                       {parentOptions.map((p) => <option key={p.id} value={p.id}>{TYPE_LABEL[p.bin_type]} {p.code}{p.name ? ` — ${p.name}` : ''}</option>)}
-                    </select>
+                    </Select>
                   </div>
                 )}
               </div>
@@ -519,23 +520,23 @@ export default function StoreBinsPage() {
             )}
             <SheetSection icon="box" title="Item">
               <label style={sheetLabel}>{moveSheet.mode === 'putaway' ? 'Unassigned item' : 'Item in this bin'} <Req /></label>
-              <select style={sheetInput} value={srcKey} autoFocus onChange={(e) => {
+              <Select style={sheetInput} value={srcKey} autoFocus onChange={(e) => {
                 setSrcKey(e.target.value)
                 const r = moveSheet.sources.find((x) => rowKey(x) === e.target.value)
                 setMoveQty(r ? String(r.quantity) : '')
               }}>
                 <option value="">— pick the item —</option>
                 {moveSheet.sources.map((r) => <option key={rowKey(r)} value={rowKey(r)}>{r.item_code} — {r.item_name} ({r.quantity} {r.uom || ''})</option>)}
-              </select>
+              </Select>
             </SheetSection>
             <SheetSection icon="right" title="Destination">
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 220px' }}>
                   <label style={sheetLabel}>To bin <Req /></label>
-                  <select style={sheetInput} value={toBin} onChange={(e) => setToBin(e.target.value)} disabled={!!moveSheet.to}>
+                  <Select style={sheetInput} value={toBin} onChange={(e) => setToBin(e.target.value)} disabled={!!moveSheet.to}>
                     <option value="">{moveSheet.mode === 'move' ? 'Unassigned (take out of the bin)' : '— pick a bin —'}</option>
                     {bins.filter((b) => b.is_active && b.id !== moveFor?.bin_id).map((b) => <option key={b.id} value={b.id}>{TYPE_LABEL[b.bin_type]} {b.code}{b.name ? ` — ${b.name}` : ''}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div style={{ flex: '0 1 130px', minWidth: 110 }}>
                   <label style={sheetLabel}>Quantity <Req /></label>

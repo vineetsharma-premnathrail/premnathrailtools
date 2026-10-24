@@ -1,5 +1,7 @@
 'use client'
 
+import AnchoredDropdown from '@/components/design/AnchoredDropdown'
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -10,7 +12,7 @@ import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle } from '@/components/shared/ui'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { DANGER_RED } from '@/components/design/DesignSheets'
 import ReasonSheet from '@/components/shared/ReasonSheet'
@@ -51,10 +53,7 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 16,
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary,
-  color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: `0 6px 16px ${SHADOWS.glowOrange}`,
-}
+const primaryBtn: React.CSSProperties = primaryBtnStyle
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6' }
 const tdStyle: React.CSSProperties = { padding: '9px 10px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
 const dropStyle: React.CSSProperties = { position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, marginTop: 4, borderRadius: 10, border: `1px solid ${SHEET.LINE}`, background: '#fff', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', maxHeight: 280, overflowY: 'auto' }
@@ -633,9 +632,9 @@ export default function ChangeRequestDetailPage() {
                 </div>
                 <div data-tour="design-ecr-ecn-effectivity" style={{ flex: '0 1 250px', minWidth: 220 }}>
                   <label style={labelStyle}>Change takes effect</label>
-                  <select style={inputStyle} value={ecnForm.effectivity_type} onChange={(e) => setEcnForm({ ...ecnForm, effectivity_type: e.target.value })}>
+                  <Select style={inputStyle} value={ecnForm.effectivity_type} onChange={(e) => setEcnForm({ ...ecnForm, effectivity_type: e.target.value })}>
                     {Object.entries(ECN_EFFECTIVITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 {ecnForm.effectivity_type === 'date' && (
                   <div style={{ flex: '0 1 170px', minWidth: 160 }}>
@@ -660,15 +659,15 @@ export default function ChangeRequestDetailPage() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div data-tour="design-ecr-ecn-stock" style={{ flex: '0 1 170px', minWidth: 150 }}>
                   <label style={labelStyle}>Stock on hand</label>
-                  <select style={inputStyle} value={ecnForm.stock_disposition} onChange={(e) => setEcnForm({ ...ecnForm, stock_disposition: e.target.value })}>
+                  <Select style={inputStyle} value={ecnForm.stock_disposition} onChange={(e) => setEcnForm({ ...ecnForm, stock_disposition: e.target.value })}>
                     {Object.entries(DISPOSITION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div data-tour="design-ecr-ecn-wip" style={{ flex: '0 1 170px', minWidth: 150 }}>
                   <label style={labelStyle}>Work in progress</label>
-                  <select style={inputStyle} value={ecnForm.wip_disposition} onChange={(e) => setEcnForm({ ...ecnForm, wip_disposition: e.target.value })}>
+                  <Select style={inputStyle} value={ecnForm.wip_disposition} onChange={(e) => setEcnForm({ ...ecnForm, wip_disposition: e.target.value })}>
                     {Object.entries(DISPOSITION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </div>
               </div>
               <div data-tour="design-ecr-ecn-disposition-note" style={{ marginTop: 12 }}>
@@ -740,13 +739,13 @@ export default function ChangeRequestDetailPage() {
                   <div style={{ position: 'relative' }}>
                     <input style={inputStyle} value={boardSearch} onChange={(e) => setBoardSearch(e.target.value)} placeholder="Search people to add to the board…" />
                     {boardMatches.length > 0 && (
-                      <div style={dropStyle}>
+                      <AnchoredDropdown style={dropStyle}>
                         {boardMatches.map((u) => (
                           <div key={u.id} onClick={() => { setBoardIds((prev) => [...prev, u.id]); setBoardTouched(true); setBoardSearch('') }} style={optionStyle}>
                             {u.label}{u.code ? <span style={{ color: SHEET.MUTED }}> · {u.code}</span> : null}
                           </div>
                         ))}
-                      </div>
+                      </AnchoredDropdown>
                     )}
                   </div>
                   <p style={sheetHint}>
@@ -777,15 +776,15 @@ export default function ChangeRequestDetailPage() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
                   <div style={{ flex: '1 1 200px', maxWidth: 260 }}>
                     <label style={labelStyle}>Source</label>
-                    <select style={inputStyle} value={form.source} onChange={(e) => { setForm({ ...form, source: e.target.value, quality_id: '' }); setQualityRecords([]) }}>
+                    <Select style={inputStyle} value={form.source} onChange={(e) => { setForm({ ...form, source: e.target.value, quality_id: '' }); setQualityRecords([]) }}>
                       {Object.entries(ECR_SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                    </select>
+                    </Select>
                   </div>
                   <div style={{ flex: '0 1 140px', minWidth: 120 }}>
                     <label style={labelStyle}>Urgency</label>
-                    <select style={inputStyle} value={form.urgency} onChange={(e) => setForm({ ...form, urgency: e.target.value })}>
+                    <Select style={inputStyle} value={form.urgency} onChange={(e) => setForm({ ...form, urgency: e.target.value })}>
                       {Object.entries(ECR_URGENCY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                    </select>
+                    </Select>
                   </div>
                 </div>
                 <label style={{ ...labelStyle, marginTop: 14 }}>Reason <Req /></label>
@@ -799,22 +798,22 @@ export default function ChangeRequestDetailPage() {
                     <label style={labelStyle}>Add a released drawing</label>
                     <input style={inputStyle} value={docSearch} onChange={(e) => setDocSearch(e.target.value)} placeholder="Search drawings…" />
                     {docMatches.length > 0 && (
-                      <div style={dropStyle}>
+                      <AnchoredDropdown style={dropStyle}>
                         {docMatches.map((d) => (
                           <div key={d.id} onClick={() => { setItems((prev) => [...prev, { kind: 'document', id: d.id, label: d.label, note: '' }]); setDocSearch('') }} style={optionStyle}>{d.label}</div>
                         ))}
-                      </div>
+                      </AnchoredDropdown>
                     )}
                   </div>
                   <div style={{ position: 'relative', flex: '1 1 200px' }}>
                     <label style={labelStyle}>Add a released BOM</label>
                     <input style={inputStyle} value={bomSearch} onChange={(e) => setBomSearch(e.target.value)} placeholder="Search BOMs…" />
                     {bomMatches.length > 0 && (
-                      <div style={dropStyle}>
+                      <AnchoredDropdown style={dropStyle}>
                         {bomMatches.map((b) => (
                           <div key={b.id} onClick={() => { setItems((prev) => [...prev, { kind: 'bom', id: b.id, label: b.label, note: '' }]); setBomSearch('') }} style={optionStyle}>{b.label}</div>
                         ))}
-                      </div>
+                      </AnchoredDropdown>
                     )}
                   </div>
                 </div>

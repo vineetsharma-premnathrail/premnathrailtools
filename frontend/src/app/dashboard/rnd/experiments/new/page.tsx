@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -182,13 +183,13 @@ function NewRndExperimentPageInner() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div data-tour="rnd-ef-type" style={{ flex: '0 1 170px', minWidth: 150 }}>
                   <label style={labelStyle}>Type</label>
-                  <select style={inputStyle} value={experimentType} onChange={(e) => setExperimentType(e.target.value as RndExperimentType)}>
+                  <Select style={inputStyle} value={experimentType} onChange={(e) => setExperimentType(e.target.value as RndExperimentType)}>
                     <option value="research">Research</option>
                     <option value="lab_test">Lab Test</option>
                     <option value="field_trial">Field Trial</option>
                     <option value="simulation">Simulation</option>
                     <option value="validation">Validation</option>
-                  </select>
+                  </Select>
                 </div>
                 <div data-tour="rnd-ef-date" style={{ flex: '0 1 170px', minWidth: 150 }}>
                   <label style={labelStyle}>Experiment Date</label>
@@ -244,11 +245,11 @@ function NewRndExperimentPageInner() {
                       <td style={{ padding: 4 }}><input style={cellInputStyle} value={r.measured} onChange={(e) => updateRow(idx, { measured: e.target.value })} /></td>
                       <td style={{ padding: 4 }}><input style={cellInputStyle} value={r.unit} onChange={(e) => updateRow(idx, { unit: e.target.value })} placeholder="kN" /></td>
                       <td style={{ padding: 4 }}>
-                        <select style={cellInputStyle} value={r.result} onChange={(e) => updateRow(idx, { result: e.target.value as ParamRow['result'] })}>
+                        <Select style={cellInputStyle} value={r.result} onChange={(e) => updateRow(idx, { result: e.target.value as ParamRow['result'] })}>
                           <option value="">—</option>
                           <option value="pass">Pass</option>
                           <option value="fail">Fail</option>
-                        </select>
+                        </Select>
                       </td>
                       <td style={{ padding: 4, textAlign: 'center' }}>
                         <button

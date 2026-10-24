@@ -6,14 +6,14 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { productionApi, rrvApi } from '@/lib/api'
 import { ProductionLookupOption, ProductionReworkOrder, ProductionRrvBuildDetail, ProductionRrvBuildStage, ProductionRrvConsumption, ProductionWorkOrder } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import ProductionNav from '@/components/production/ProductionNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, SheetIconName, SHEET, Req, Optional, sheetBtn, sheetHint, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import ReasonSheet from '@/components/shared/ReasonSheet'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle, smallSecondaryBtnStyle, smallPrimaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
@@ -24,6 +24,7 @@ import { recordHref, recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useCan } from '@/lib/permissions'
 import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
+import Select from '@/components/shared/Select'
 
 const BUILD_LABELS: Record<string, string> = { planned: 'Planned', in_progress: 'In Progress', on_hold: 'On Hold', completed: 'Completed', handed_over: 'Handed Over', cancelled: 'Cancelled' }
 const BUILD_HEX: Record<string, string> = { planned: '#78716c', in_progress: '#2563EB', on_hold: '#F59E0B', completed: '#7C3AED', handed_over: '#16A34A', cancelled: '#78716c' }
@@ -49,12 +50,9 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 16,
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }
-const primaryBtn: React.CSSProperties = {
-  padding: '9px 16px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary,
-  color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: `0 6px 16px ${SHADOWS.glowOrange}`,
-}
-const smallBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '5px 12px', fontSize: 12 }
-const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6' }
+const primaryBtn: React.CSSProperties = primaryBtnStyle
+const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }
 const tdStyle: React.CSSProperties = { padding: '9px 10px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
 
 function pill(label: string, hex: string) {
@@ -340,7 +338,7 @@ export default function RrvBuildDetailPage() {
           {canWork && s.status === 'not_started' && <button data-tour="production-rrv-stage-start-btn" type="button" disabled={busy} style={smallBtn} onClick={() => act(() => rrvApi.startStage(b!.id, s.stage_key), 'Starting failed.', `${s.label} started.`)}>Start</button>}
           {canWork && !done && (!signOff || can('sign_off') || can('request_sign_off')) && (
             <button data-tour="production-rrv-stage-complete-btn" type="button" disabled={busy || s.gate_problems.length > 0} title={s.gate_problems.join(' ')}
-              style={{ ...primaryBtn, padding: '6px 14px', fontSize: 12, opacity: s.gate_problems.length ? 0.5 : 1, cursor: s.gate_problems.length ? 'not-allowed' : 'pointer' }}
+              style={{ ...smallPrimaryBtnStyle, opacity: s.gate_problems.length ? 0.5 : 1, cursor: s.gate_problems.length ? 'not-allowed' : 'pointer' }}
               onClick={() => setPrompt({ kind: 'stage_complete', key: s.stage_key, label: s.label })}>
               {signOff && !can('sign_off') ? 'Request Sign-off' : 'Complete'}
             </button>
@@ -549,7 +547,7 @@ export default function RrvBuildDetailPage() {
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
                   <p style={{ ...sectionTitle, margin: 0, flex: 1 }}>Required tests</p>
                   {can('edit') && reqTests === null && b.status !== 'completed' && <button data-tour="production-rrv-required-tests-change-btn" style={smallBtn} onClick={() => { setPopupError(''); setReqTests([...b.required_tests]) }}>Change</button>}
-                  {can('record_test') && <button data-tour="production-rrv-test-open-btn" type="button" disabled={busy} style={{ ...primaryBtn, padding: '6px 14px', fontSize: 12, marginLeft: 8 }} onClick={() => { setPopupError(''); setTestOpen(true) }}>+ Record Test</button>}
+                  {can('record_test') && <button data-tour="production-rrv-test-open-btn" type="button" disabled={busy} style={{ ...smallPrimaryBtnStyle, marginLeft: 8 }} onClick={() => { setPopupError(''); setTestOpen(true) }}>+ Record Test</button>}
                 </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     {Object.entries(b.test_status).map(([k, v]) => (
@@ -616,9 +614,9 @@ export default function RrvBuildDetailPage() {
                     <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
                       {rw.status === 'open' && rf('rework', 'edit') && <button disabled={busy} style={smallBtn} onClick={() => act(() => rrvApi.startRework(rw.id), 'Starting rework failed.', `${rw.rework_number} started.`)}>Start</button>}
                       {(rw.status === 'open' || rw.status === 'in_progress') && rf('rework', 'edit') && <button disabled={busy} style={smallBtn} onClick={() => { setPopupError(''); setDoneForm({ id: rw.id, corrective_action: '', root_cause: rw.root_cause || '', hours_spent: '' }) }}>Mark Done</button>}
-                      {rw.status === 'done' && rf('rework', 'approve') && <button disabled={busy} style={{ ...primaryBtn, padding: '5px 12px', fontSize: 12 }} onClick={() => setPrompt({ kind: 'rework_verify', rw })}>Verify</button>}
+                      {rw.status === 'done' && rf('rework', 'approve') && <button disabled={busy} style={smallPrimaryBtnStyle} onClick={() => setPrompt({ kind: 'rework_verify', rw })}>Verify</button>}
                       {rw.status === 'done' && rf('rework', 'reject') && <button disabled={busy} style={smallBtn} onClick={() => setPrompt({ kind: 'rework_reject', rw })}>Send Back</button>}
-                      {can('sign_off') && rf('rework', 'cancel') && ['open', 'in_progress', 'done'].includes(rw.status) && <button disabled={busy} style={{ ...dangerBtnStyle, padding: '5px 12px', fontSize: 12 }} onClick={() => setPrompt({ kind: 'rework_cancel', rw })}>Cancel</button>}
+                      {can('sign_off') && rf('rework', 'cancel') && ['open', 'in_progress', 'done'].includes(rw.status) && <button disabled={busy} style={smallDangerBtnStyle} onClick={() => setPrompt({ kind: 'rework_cancel', rw })}>Cancel</button>}
                     </div>
                   ) : null}
                 </div>
@@ -742,9 +740,9 @@ export default function RrvBuildDetailPage() {
                 </div>
                 <div data-tour="production-rrv-edit-priority" style={{ marginTop: 14 }}>
                   <label style={sheetLabel}>Priority</label>
-                  <select style={sheetInput} value={details.priority} onChange={(e) => setDetails({ ...details, priority: e.target.value })}>
+                  <Select style={sheetInput} value={details.priority} onChange={(e) => setDetails({ ...details, priority: e.target.value })}>
                     {Object.entries(RRV_PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div data-tour="production-rrv-edit-start" style={{ marginTop: 14 }}><label style={sheetLabel}>Planned start</label><DateField value={details.planned_start_date} onChange={(v) => setDetails({ ...details, planned_start_date: v })} /></div>
                 <div data-tour="production-rrv-edit-target-completion" style={{ marginTop: 14 }}><label style={sheetLabel}>Target completion</label><DateField value={details.target_completion_date} onChange={(v) => setDetails({ ...details, target_completion_date: v })} /></div>
@@ -780,10 +778,10 @@ export default function RrvBuildDetailPage() {
               </div>
               <div data-tour="production-rrv-wo-link-role" style={{ marginTop: 14 }}>
                 <label style={sheetLabel}>As</label>
-                <select style={sheetInput} value={linkWo.role} onChange={(e) => setLinkWo({ ...linkWo, role: e.target.value })}>
+                <Select style={sheetInput} value={linkWo.role} onChange={(e) => setLinkWo({ ...linkWo, role: e.target.value })}>
                   <option value="sub_assembly">Sub-assembly</option>
                   {!hasMain && <option value="main">Main assembly</option>}
-                </select>
+                </Select>
               </div>
             </SheetSection>
           </div>
@@ -824,17 +822,17 @@ export default function RrvBuildDetailPage() {
               <SheetSection icon="shield" title="Test">
                 <div data-tour="production-rrv-test-type">
                   <label style={sheetLabel}>Test <Req /></label>
-                  <select style={sheetInput} value={testForm.test_type} onChange={(e) => setTestForm({ ...testForm, test_type: e.target.value })}>
+                  <Select style={sheetInput} value={testForm.test_type} onChange={(e) => setTestForm({ ...testForm, test_type: e.target.value })}>
                     {Object.entries(RRV_TEST_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
                   <div data-tour="production-rrv-test-date" style={{ flex: '1 1 150px' }}><label style={sheetLabel}>Date <Req /></label><DateField value={testForm.test_date} onChange={(v) => setTestForm({ ...testForm, test_date: v })} /></div>
                   <div data-tour="production-rrv-test-result" style={{ flex: '1 1 120px' }}>
                     <label style={sheetLabel}>Result <Req /></label>
-                    <select style={sheetInput} value={testForm.result} onChange={(e) => setTestForm({ ...testForm, result: e.target.value })}>
+                    <Select style={sheetInput} value={testForm.result} onChange={(e) => setTestForm({ ...testForm, result: e.target.value })}>
                       <option value="pass">Pass</option><option value="fail">Fail</option>
-                    </select>
+                    </Select>
                   </div>
                 </div>
               </SheetSection>

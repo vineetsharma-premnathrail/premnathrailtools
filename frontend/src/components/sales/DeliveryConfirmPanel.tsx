@@ -14,12 +14,12 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import DateField from '@/components/erp/DateField'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { sectionStyle, h2Style, thStyle, tdStyle, Pill, ErrorBanner } from '@/components/sales/SalesUi'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { FormSheet, SheetSection, SheetIcon, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 
-const smallBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '5px 10px', fontSize: 11.5 }
+const smallBtn: React.CSSProperties = { ...smallSecondaryBtnStyle }
 const EVENT_LABELS: Record<string, string> = { dispatch: 'Dispatched', delivery: 'Delivered (POD)', commissioning: 'Commissioned' }
 const EVENT_HEX: Record<string, string> = { dispatch: '#8B5CF6', delivery: '#16A34A', commissioning: '#0EA5E9' }
 const SOURCE_LABELS: Record<string, string> = { store_issue: 'Store dispatch issue', rrv_handover: 'RRV handover', manual: 'Sales' }
@@ -114,23 +114,25 @@ export default function DeliveryConfirmPanel({ order, onChange }: { order: Sales
       </p>
 
       {events.length > 0 && (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr>{['Date', 'Event', 'Vehicle / lot', 'Qty', 'Reference', 'Recorded by', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
-          <tbody>
-            {events.map((e) => (
-              <tr key={e.id} style={{ opacity: e.reversed_at ? 0.55 : 1 }}>
-                <td style={tdStyle}>{formatDate(e.event_date)}</td>
-                <td style={tdStyle}><Pill label={EVENT_LABELS[e.event] || e.event} hex={EVENT_HEX[e.event] || '#78716c'} /></td>
-                <td style={tdStyle}>{e.row_label}</td>
-                <td style={tdStyle}>{e.quantity}</td>
-                <td style={tdStyle}>{e.reference || '—'}{e.material_issue_number ? <div style={{ fontSize: 11.5, color: TEXT.muted }}>{e.material_issue_number}</div> : null}</td>
-                <td style={tdStyle}>{SOURCE_LABELS[e.source] || e.source}{e.created_by_name ? ` · ${e.created_by_name}` : ''}
-                  {e.reversed_at ? <div style={{ fontSize: 11.5, color: '#b91c1c' }}>Reversed by {e.reversed_by_name}: {e.reverse_reason}</div> : null}</td>
-                <td style={tdStyle}>{!e.reversed_at && order.can.reverse_delivery && <button style={{ ...smallBtn, color: '#DC2626' }} disabled={busy} onClick={() => setReverseFor(e)}>Reverse</button>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>{['Date', 'Event', 'Vehicle / lot', 'Qty', 'Reference', 'Recorded by', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+            <tbody>
+              {events.map((e) => (
+                <tr key={e.id} style={{ opacity: e.reversed_at ? 0.55 : 1 }}>
+                  <td style={tdStyle}>{formatDate(e.event_date)}</td>
+                  <td style={tdStyle}><Pill label={EVENT_LABELS[e.event] || e.event} hex={EVENT_HEX[e.event] || '#78716c'} /></td>
+                  <td style={tdStyle}>{e.row_label}</td>
+                  <td style={tdStyle}>{e.quantity}</td>
+                  <td style={tdStyle}>{e.reference || '—'}{e.material_issue_number ? <div style={{ fontSize: 11.5, color: TEXT.muted }}>{e.material_issue_number}</div> : null}</td>
+                  <td style={tdStyle}>{SOURCE_LABELS[e.source] || e.source}{e.created_by_name ? ` · ${e.created_by_name}` : ''}
+                    {e.reversed_at ? <div style={{ fontSize: 11.5, color: '#b91c1c' }}>Reversed by {e.reversed_by_name}: {e.reverse_reason}</div> : null}</td>
+                  <td style={tdStyle}>{!e.reversed_at && order.can.reverse_delivery && <button style={{ ...smallBtn, color: '#DC2626' }} disabled={busy} onClick={() => setReverseFor(e)}>Reverse</button>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {form && (() => {

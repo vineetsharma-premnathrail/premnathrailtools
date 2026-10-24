@@ -65,7 +65,7 @@ export default function TravelApprovals() {
               </div>
               <div style={{ flex: '1 1 280px' }}><TravelSummary t={t} /></div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button type="button" data-tour="hr-appr-travel-approve" style={{ ...primaryActionStyle, padding: '8px 16px' }} onClick={() => setPending({ kind: 'approve', t })}>Approve</button>
+                <button type="button" data-tour="hr-appr-travel-approve" style={primaryActionStyle} onClick={() => setPending({ kind: 'approve', t })}>Approve</button>
                 <button type="button" style={dangerBtnStyle} onClick={() => setPending({ kind: 'reject', t })}>Reject</button>
               </div>
             </div>

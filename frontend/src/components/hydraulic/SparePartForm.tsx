@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { hydraulicApi } from '@/lib/api'
 import { HydLookupOption, HydSparePart } from '@/types'
@@ -142,28 +143,28 @@ export default function SparePartForm({
           </div>
           <div data-tour="hyd-sparef-category" style={{ flex: '0 1 200px', minWidth: 180 }}>
             <label style={labelStyle}>Category</label>
-            <select style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)}>
+            <Select style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)}>
               {Object.entries(SPARE_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            </Select>
           </div>
           <div data-tour="hyd-sparef-medium" style={{ flex: '0 1 140px', minWidth: 130 }}>
             <label style={labelStyle}>Medium</label>
-            <select style={inputStyle} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
+            <Select style={inputStyle} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
               {Object.entries(MEDIA_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            </Select>
           </div>
           <div data-tour="hyd-sparef-criticality" style={{ flex: '0 1 140px', minWidth: 130 }}>
             <label style={labelStyle}>Criticality</label>
-            <select style={inputStyle} value={criticality} onChange={(e) => setCriticality(e.target.value)}>
+            <Select style={inputStyle} value={criticality} onChange={(e) => setCriticality(e.target.value)}>
               {Object.entries(CRITICALITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            </Select>
           </div>
           <div data-tour="hyd-sparef-status" style={{ flex: '0 1 130px', minWidth: 120 }}>
             <label style={labelStyle}>Status</label>
-            <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value)}>
+            <Select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="active">Active</option>
               <option value="obsolete">Obsolete</option>
-            </select>
+            </Select>
           </div>
         </div>
         {!initial && <p style={hintStyle}>The part code (HSP-00001…) is generated when you save.</p>}

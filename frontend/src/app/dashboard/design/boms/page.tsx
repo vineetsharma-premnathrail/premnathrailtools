@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -8,7 +9,7 @@ import { DesignBom, DesignLookupOption, DesignNewItemRequest, DesignWhereUsed } 
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
 import { BOM_STATUS_LABELS, toOptions } from '@/components/design/designMeta'
 import { useDesignMe } from '@/components/design/useDesignMe'
 import { extractErrorMessages } from '@/lib/validation'
@@ -153,7 +154,7 @@ export default function DesignBomsPage() {
           <button
             data-tour="design-boms-new-btn"
             onClick={() => router.push('/dashboard/design/boms/new')}
-            style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}
+            style={primaryBtnStyle}
           >
             + New BOM
           </button>
@@ -290,16 +291,16 @@ export default function DesignBomsPage() {
       <div style={sectionStyle}>
         <p data-tour="design-boms-where-used" style={{ ...sectionTitle, marginBottom: 12 }}>Where used</p>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
-          <select data-tour="design-boms-wu-kind" style={{ ...inputStyle, flex: '0 1 150px' }} value={wuKind} onChange={(e) => { setWuKind(e.target.value as 'item' | 'drawing'); setWuPick(''); setWuResult(null); setWuError('') }}>
+          <Select data-tour="design-boms-wu-kind" style={{ ...inputStyle, flex: '0 1 150px' }} value={wuKind} onChange={(e) => { setWuKind(e.target.value as 'item' | 'drawing'); setWuPick(''); setWuResult(null); setWuError('') }}>
             <option value="item">Item</option>
             <option value="drawing">Drawing</option>
-          </select>
+          </Select>
           <div data-tour="design-boms-wu-pick" style={{ flex: '1 1 300px', maxWidth: 440 }}>
             <SearchableSelect value={wuPick} onChange={runWhereUsed} options={wuOptions} placeholder={wuKind === 'item' ? 'Pick an Item Master item…' : 'Pick a drawing…'} />
           </div>
           <input data-tour="design-boms-wu-search" style={{ ...inputStyle, flex: '0 1 220px' }} value={wuSearch} placeholder={wuKind === 'item' ? 'Not listed? Search items…' : 'Not listed? Search drawings…'}
             onChange={(e) => setWuSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') searchWuItems() }} />
-          <button type="button" style={{ ...secondaryBtnStyle, padding: '8px 14px', fontSize: 12.5 }} disabled={!wuSearch.trim()} onClick={searchWuItems}>Search</button>
+          <button type="button" style={secondaryBtnStyle} disabled={!wuSearch.trim()} onClick={searchWuItems}>Search</button>
         </div>
         {wuError && <p style={{ fontSize: 12.5, color: '#b91c1c', margin: '0 0 8px' }}>{Array.isArray(wuError) ? wuError.join(' ') : wuError}</p>}
         {wuBusy && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Searching…</p>}

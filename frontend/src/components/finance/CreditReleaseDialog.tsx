@@ -9,6 +9,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { CreditPosition } from '@/types'
 import { inr, ErrorBanner } from '@/components/finance/financeUi'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import Select from '@/components/shared/Select'
 
 export default function CreditReleaseDialog({ position, salesOrderId, soNumber, defaultCheckpoint = 'so_confirmation', onClose, onDone }: {
   position: Pick<CreditPosition, 'customer_id' | 'customer_name' | 'block_reasons' | 'exposure' | 'credit_limit' | 'overdue_amount'>
@@ -59,10 +60,10 @@ export default function CreditReleaseDialog({ position, salesOrderId, soNumber, 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
             <div style={{ flex: '0 1 230px', minWidth: 200 }}>
               <label style={sheetLabel}>For <Req /></label>
-              <select style={sheetInput} value={checkpoint} onChange={(e) => setCheckpoint(e.target.value as 'so_confirmation' | 'dispatch')}>
+              <Select style={sheetInput} value={checkpoint} onChange={(e) => setCheckpoint(e.target.value as 'so_confirmation' | 'dispatch')}>
                 <option value="so_confirmation">Sales order confirmation</option>
                 <option value="dispatch">Dispatch</option>
-              </select>
+              </Select>
             </div>
             <div style={{ flex: '1 1 160px' }}>
               <label style={sheetLabel}>Order</label>

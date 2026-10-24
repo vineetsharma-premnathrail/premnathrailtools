@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useState } from 'react'
 import { accountsApi, hrClaimFinanceApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
@@ -77,21 +78,21 @@ export default function ClaimFinancePanel({ claimId, claimStatus }: { claimId: n
         <Banner errors={error} />
         <SheetSection icon="building" title="Paid From">
           <label style={sheetLabel}>Bank / cash account <Req /></label>
-          <select value={form.bank_account_id} onChange={(e) => {
+          <Select value={form.bank_account_id} onChange={(e) => {
             const b = banks.find((x) => String(x.id) === e.target.value)
             setForm({ ...form, bank_account_id: e.target.value, payment_mode: b?.account_kind === 'cash' ? 'cash' : form.payment_mode === 'cash' ? 'neft' : form.payment_mode })
           }} style={sheetInput}>
             <option value="">Pick an account…</option>
             {banks.map((b) => <option key={b.id} value={b.id}>{b.bank_name}{b.account_no ? ` — ${b.account_no}` : ''}</option>)}
-          </select>
+          </Select>
         </SheetSection>
         <SheetSection icon="rupee" title="Payment">
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <div style={{ flex: '0 1 140px' }}>
               <label style={sheetLabel}>Mode</label>
-              <select value={form.payment_mode} onChange={(e) => setForm({ ...form, payment_mode: e.target.value })} style={sheetInput}>
+              <Select value={form.payment_mode} onChange={(e) => setForm({ ...form, payment_mode: e.target.value })} style={sheetInput}>
                 {['neft', 'rtgs', 'imps', 'upi', 'cheque', 'cash'].map((m) => <option key={m} value={m}>{m.toUpperCase()}</option>)}
-              </select>
+              </Select>
             </div>
             <div style={{ flex: '0 1 170px' }}><label style={sheetLabel}>Paid on</label><DateField value={form.paid_on} onChange={(v) => setForm({ ...form, paid_on: v })} /></div>
             <div style={{ flex: '1 1 180px', maxWidth: 260 }}><label style={sheetLabel}>Bank reference</label><input value={form.payment_reference} onChange={(e) => setForm({ ...form, payment_reference: e.target.value })} style={sheetInput} /></div>

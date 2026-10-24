@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
@@ -25,7 +26,7 @@ import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import QuotationStatusBar from '@/components/crm/QuotationStatusBar'
 import LostReasonDialog, { LOST_STAGE, LOST_STATUS } from '@/components/crm/LostReasonDialog'
 import { INQ_STAGES, inquiryStatusOptions, priorityOptions, priorityLabel, QUOTE_CONDITIONS, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
-import { Card, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos, RevisionSelector, SpecInfoRow, SpecRevision, ComboBox, handleEnterAsTab, StageProgress } from '@/components/crm/ui'
+import { Card, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos, RevisionSelector, SpecInfoRow, SpecRevision, ComboBox, handleEnterAsTab, StageProgress, smallDangerBtnStyle, smallSecondaryBtnStyle, AnchoredMenu } from '@/components/crm/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { refOf } from '@/lib/recordRef'
@@ -431,17 +432,17 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
             <div>
               <p style={leadLabel}>Status</p>
               {canModify ? (
-                <select data-tour="inq-info-status" value={inquiry.status} onChange={(e) => onChangeLeadInfo({ status: e.target.value })} style={{ ...inputStyle, padding: '6px 10px', fontSize: 12.5, width: '100%' }}>
+                <Select data-tour="inq-info-status" value={inquiry.status} onChange={(e) => onChangeLeadInfo({ status: e.target.value })} style={{ ...inputStyle, padding: '6px 10px', fontSize: 12.5, width: '100%' }}>
                   {inquiryStatusOptions(inquiry.status).map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
+                </Select>
               ) : <p style={{ fontSize: 13, color: '#1f1108', margin: 0 }}>{inquiry.status || 'Not provided'}</p>}
             </div>
             <div>
               <p style={leadLabel}>Customer Requirement Priority</p>
               {canModify ? (
-                <select data-tour="inq-info-priority" value={inquiry.priority} onChange={(e) => onChangeLeadInfo({ priority: e.target.value })} style={{ ...inputStyle, padding: '6px 10px', fontSize: 12.5, width: '100%' }}>
+                <Select data-tour="inq-info-priority" value={inquiry.priority} onChange={(e) => onChangeLeadInfo({ priority: e.target.value })} style={{ ...inputStyle, padding: '6px 10px', fontSize: 12.5, width: '100%' }}>
                   {priorityOptions(inquiry.priority).map((p) => <option key={p} value={p}>{priorityLabel(p)}</option>)}
-                </select>
+                </Select>
               ) : <p style={{ fontSize: 13, color: '#1f1108', margin: 0 }}>{inquiry.priority || 'Not provided'}</p>}
             </div>
             <div style={{ ...infoGrid, gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', paddingTop: 10, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
@@ -948,25 +949,25 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
               <SheetSection icon="doc" title="Quotation">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
                 <SF label={<>Quotation Type <Req /></>} tourId="quot-type">
-                  <select value={form.quotation_type} onChange={(e) => setForm((f) => ({ ...f, quotation_type: e.target.value }))} style={{ ...sheetInput, ...errInputStyle(!!fieldErrors.quotation_type) }}>
+                  <Select value={form.quotation_type} onChange={(e) => setForm((f) => ({ ...f, quotation_type: e.target.value }))} style={{ ...sheetInput, ...errInputStyle(!!fieldErrors.quotation_type) }}>
                     <option value="Domestic">Domestic (INR)</option>
                     <option value="Export">Export (USD)</option>
-                  </select>
+                  </Select>
                   {fieldErrors.quotation_type && <p style={fieldErrorTextStyle}>{fieldErrors.quotation_type}</p>}
                 </SF>
                 {!isExport && (
                   <SF label="GST Type" tourId="quot-gst-type">
-                    <select value={form.gst_type} onChange={(e) => setForm((f) => ({ ...f, gst_type: e.target.value }))} style={sheetInput}>
+                    <Select value={form.gst_type} onChange={(e) => setForm((f) => ({ ...f, gst_type: e.target.value }))} style={sheetInput}>
                       <option value="CGST_SGST">CGST + SGST (Intra-state)</option>
                       <option value="IGST">IGST (Inter-state)</option>
-                    </select>
+                    </Select>
                   </SF>
                 )}
                 <SF label="Pricing" tourId="quot-pricing-mode">
-                  <select value={form.pricing_mode} onChange={(e) => setForm((f) => ({ ...f, pricing_mode: e.target.value }))} style={sheetInput}>
+                  <Select value={form.pricing_mode} onChange={(e) => setForm((f) => ({ ...f, pricing_mode: e.target.value }))} style={sheetInput}>
                     <option value="itemwise">Item-wise (price per line)</option>
                     <option value="lumpsum">Lump sum (one total price)</option>
-                  </select>
+                  </Select>
                 </SF>
                 <SF label={<>Date of Quote <Req /></>} tourId="quot-date">
                   <DateField value={form.quote_date} onChange={(v) => setForm((f) => ({
@@ -982,12 +983,12 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                     {technicalOffers.length === 0 ? (
                       <p style={{ fontSize: 12.5, color: '#78716c', margin: '10px 0 0' }}>No Technical Offer from R&amp;D yet — R&amp;D prepares it in R&amp;D › Requirements › Technical Offers and the R&amp;D head sends it to the BD team.</p>
                     ) : (
-                      <select value={form.technical_offer_id} onChange={(e) => setForm((f) => ({ ...f, technical_offer_id: e.target.value }))} style={sheetInput}>
+                      <Select value={form.technical_offer_id} onChange={(e) => setForm((f) => ({ ...f, technical_offer_id: e.target.value }))} style={sheetInput}>
                         <option value="">— No technical offer —</option>
                         {technicalOffers.map((o) => (
                           <option key={o.id} value={String(o.id)}>{o.offer_number} · {o.title}{o.status === 'superseded' ? ' (superseded)' : ''}</option>
                         ))}
-                      </select>
+                      </Select>
                     )}
                   </SF>
                   {(() => {
@@ -1104,18 +1105,18 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                 {!isLumpSum && <SF label="Discount" tourId="quot-discount">
                   <div style={{ display: 'flex', gap: 6 }}>
                     <input type="number" min={0} value={form.discount} onChange={(e) => setForm((f) => ({ ...f, discount: e.target.value }))} placeholder="0" style={{ ...sheetInput, ...errInputStyle(!!fieldErrors.discount) }} />
-                    <select value={form.discount_type} onChange={(e) => setForm((f) => ({ ...f, discount_type: e.target.value }))} style={{ ...sheetInput, width: 90, flex: '0 0 90px' }}>
+                    <Select value={form.discount_type} onChange={(e) => setForm((f) => ({ ...f, discount_type: e.target.value }))} style={{ ...sheetInput, width: 90, flex: '0 0 90px' }}>
                       <option value="percent">%</option>
                       <option value="flat">{isExport ? 'USD' : 'INR'}</option>
-                    </select>
+                    </Select>
                   </div>
                   {fieldErrors.discount && <p style={fieldErrorTextStyle}>{fieldErrors.discount}</p>}
                 </SF>}
                 <SF label={isLumpSum ? 'Quote Conditions (not printed on a Commercial Offer)' : <>Quote Conditions <Req /></>} tourId="quot-conditions">
-                  <select value={form.quote_conditions} onChange={(e) => setForm((f) => ({ ...f, quote_conditions: e.target.value }))} style={{ ...sheetInput, ...errInputStyle(!!fieldErrors.quote_conditions) }}>
+                  <Select value={form.quote_conditions} onChange={(e) => setForm((f) => ({ ...f, quote_conditions: e.target.value }))} style={{ ...sheetInput, ...errInputStyle(!!fieldErrors.quote_conditions) }}>
                     <option value="">— Select —</option>
                     {QUOTE_CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  </Select>
                   {fieldErrors.quote_conditions && <p style={fieldErrorTextStyle}>{fieldErrors.quote_conditions}</p>}
                 </SF>
               </div>
@@ -1258,18 +1259,18 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
               {seeQuotePrices && <ManagedDocumentPanel entityType="crm_quotation" entityId={q.id} revision={q.revision_number} canModify={canModify && ['draft', 'submitted'].includes(q.status || 'draft')}recordLabel="quotation" downloadName={q.quot_number || `Quotation-${q.id}`} />}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
-              {canFeature('crm', 'inquiries_tenders', 'quotations', 'print') && seeQuotePrices && <button onClick={() => downloadPdf(q)} disabled={downloadingId === q.id} data-tour={qIdx === 0 ? 'quot-download-pdf-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, opacity: downloadingId === q.id ? 0.7 : 1 }}>
+              {canFeature('crm', 'inquiries_tenders', 'quotations', 'print') && seeQuotePrices && <button onClick={() => downloadPdf(q)} disabled={downloadingId === q.id} data-tour={qIdx === 0 ? 'quot-download-pdf-btn' : undefined} style={{ ...smallSecondaryBtnStyle, opacity: downloadingId === q.id ? 0.7 : 1 }}>
                 {downloadingId === q.id ? 'Generating…' : 'Download PDF'}
               </button>}
               {/* Finalised (approved and later) quotations are locked for everyone — a new offer is + Create Quote. */}
               {canCreateQuote && q.status !== 'draft' && (
-                <button onClick={() => startRevise(q, true)} data-tour={qIdx === 0 ? 'quot-new-revision-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>
+                <button onClick={() => startRevise(q, true)} data-tour={qIdx === 0 ? 'quot-new-revision-btn' : undefined} style={{ ...smallSecondaryBtnStyle }}>
                   Create revision from this quotation
                 </button>
               )}
               {/* Edit only while draft: a quotation awaiting approval must be withdrawn first (status bar), else the save is refused. */}
               {canModify && (q.status || 'draft') === 'draft' && (
-                <button onClick={() => startRevise(q)} data-tour={qIdx === 0 ? 'quot-revise-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>
+                <button onClick={() => startRevise(q)} data-tour={qIdx === 0 ? 'quot-revise-btn' : undefined} style={{ ...smallSecondaryBtnStyle }}>
                   Edit
                 </button>
               )}
@@ -1496,14 +1497,14 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
               <ActivityPhotos attachments={a.attachments} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button onClick={() => setViewingActivity(a)} data-tour={idx === 0 ? 'activity-row-view-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>View</button>
-              {canEditActivity(a) && <button onClick={() => startEdit(a)} data-tour={idx === 0 ? 'activity-row-edit-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Edit</button>}
+              <button onClick={() => setViewingActivity(a)} data-tour={idx === 0 ? 'activity-row-view-btn' : undefined} style={{ ...smallSecondaryBtnStyle }}>View</button>
+              {canEditActivity(a) && <button onClick={() => startEdit(a)} data-tour={idx === 0 ? 'activity-row-edit-btn' : undefined} style={{ ...smallSecondaryBtnStyle }}>Edit</button>}
               {canEditActivity(a) && <ChangeStatusButton currentStatus={a.status || FOLLOW_UP_STATUSES[0]} statuses={FOLLOW_UP_STATUSES} onSelect={(s) => changeStatus(a, s)} tourId={idx === 0 ? 'inq-followup-change-status-btn' : undefined} />}
-              {canFeature('crm', 'inquiries_tenders', 'followups', 'print') && <button disabled={exportingMomId === a.id} onClick={() => exportMom(a)} data-tour={idx === 0 ? 'activity-row-export-mom-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, opacity: exportingMomId === a.id ? 0.7 : 1 }}>
+              {canFeature('crm', 'inquiries_tenders', 'followups', 'print') && <button disabled={exportingMomId === a.id} onClick={() => exportMom(a)} data-tour={idx === 0 ? 'activity-row-export-mom-btn' : undefined} style={{ ...smallSecondaryBtnStyle, opacity: exportingMomId === a.id ? 0.7 : 1 }}>
                 {exportingMomId === a.id ? 'Exporting…' : 'Export MoM'}
               </button>}
               {canFeature('crm', 'inquiries_tenders', 'followups', 'delete') && !!user && (user.role === 'admin' || a.created_by_id == null || a.created_by_id === user.id) && (
-                <button onClick={() => setDeletingActivity(a)} data-tour={idx === 0 ? 'activity-row-delete-btn' : undefined} style={{ ...dangerBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Delete</button>
+                <button onClick={() => setDeletingActivity(a)} data-tour={idx === 0 ? 'activity-row-delete-btn' : undefined} style={{ ...smallDangerBtnStyle }}>Delete</button>
               )}
             </div>
           </div>
@@ -1526,19 +1527,22 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
 function ChangeStatusButton({ currentStatus, statuses, onSelect, tourId }: { currentStatus: string; statuses: string[]; onSelect: (s: string) => void; tourId?: string }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
-    const onClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (ref.current && !ref.current.contains(t) && !menuRef.current?.contains(t)) setOpen(false)
+    }
     document.addEventListener('mousedown', onClick)
     return () => document.removeEventListener('mousedown', onClick)
   }, [open])
 
   return (
     <div ref={ref} data-tour={tourId} style={{ position: 'relative' }}>
-      <button type="button" onClick={() => setOpen((v) => !v)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Change Status</button>
-      {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 30, minWidth: 200, maxHeight: 260, overflowY: 'auto', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 16px 36px rgba(0,0,0,0.16)', padding: 6 }}>
+      <button type="button" onClick={() => setOpen((v) => !v)} style={{ ...smallSecondaryBtnStyle }}>Change Status</button>
+      <AnchoredMenu anchorRef={ref} menuRef={menuRef} open={open}>
           {statuses.map((s) => {
             const active = s === currentStatus
             return (
@@ -1553,8 +1557,7 @@ function ChangeStatusButton({ currentStatus, statuses, onSelect, tourId }: { cur
               </div>
             )
           })}
-        </div>
-      )}
+      </AnchoredMenu>
     </div>
   )
 }

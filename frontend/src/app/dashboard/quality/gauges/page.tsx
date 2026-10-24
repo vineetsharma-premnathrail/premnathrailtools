@@ -12,6 +12,7 @@ import { FormSheet, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, shee
 import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import Select from '@/components/shared/Select'
 
 const STATE_LABELS: Record<string, string> = { ok: 'In calibration', due_soon: 'Due soon', overdue: 'Overdue', never_calibrated: 'Never calibrated', blocked: 'Blocked' }
 const STATE_HEX: Record<string, string> = { ok: '#16A34A', due_soon: '#F59E0B', overdue: '#DC2626', never_calibrated: '#78716c', blocked: '#DC2626' }
@@ -199,9 +200,9 @@ export default function QualityGaugesPage() {
             <div style={half}><label style={sheetLabel}>Calibrated on <Req /></label><DateField value={cal.calibrated_on} onChange={(v) => setCal({ ...cal, calibrated_on: v })} /></div>
             <div style={half}>
               <label style={sheetLabel}>Result <Req /></label>
-              <select style={sheetInput} value={cal.result} onChange={(e) => setCal({ ...cal, result: e.target.value })}>
+              <Select style={sheetInput} value={cal.result} onChange={(e) => setCal({ ...cal, result: e.target.value })}>
                 {Object.entries(RESULT_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
+              </Select>
             </div>
           </div>
           {cal.result !== 'fail' && (

@@ -11,6 +11,7 @@ import { msmeApi, MsmeAlertRow, Msme43bhRow } from '@/lib/mmLogisticsApi'
 import { extractErrorMessages } from '@/lib/validation'
 import FinanceNav from '@/components/finance/FinanceNav'
 import OutstandingSubNav from '@/components/finance/OutstandingSubNav'
+import Select from '@/components/shared/Select'
 import {
   sectionStyle, thStyle, tdStyle, numTd, numTh, inr, dmy, inputStyle,
   ErrorBanner, InfoBanner, StatusPill, PageHeader, TableWrap, EmptyRow, StatCard,
@@ -99,9 +100,9 @@ export default function MsmeDuesPage() {
       <div style={sectionStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Sec. 43B(h) statement</h3>
-          <select style={{ ...inputStyle, width: 140 }} value={fy} onChange={(e) => setFy(Number(e.target.value))}>
+          <Select style={{ ...inputStyle, width: 140 }} value={fy} onChange={(e) => setFy(Number(e.target.value))}>
             {years.map((y) => <option key={y} value={y}>FY {y}-{String((y + 1) % 100).padStart(2, '0')}</option>)}
-          </select>
+          </Select>
           {report && <span style={{ fontSize: 13, fontWeight: 700 }}>Disallowed: {inr(report.total_disallowed)}</span>}
         </div>
         {report && <InfoBanner>{report.note} Medium enterprises and traders are listed separately — outside 43B(h).</InfoBanner>}

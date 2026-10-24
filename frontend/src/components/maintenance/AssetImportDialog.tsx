@@ -23,7 +23,7 @@ async function blobError(err: unknown, fallback: string): Promise<string> {
   return extractErrorMessages(err, fallback).join(' ')
 }
 
-const thStyle: React.CSSProperties = { textAlign: 'left', padding: '7px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0 }
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '7px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }
 const tdStyle: React.CSSProperties = { padding: '7px 10px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
 
 export default function AssetImportDialog({ open, onClose, onImported }: { open: boolean; onClose: () => void; onImported: () => void }) {

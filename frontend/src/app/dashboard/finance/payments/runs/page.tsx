@@ -21,6 +21,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
+import Select from '@/components/shared/Select'
 import {
   inputStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, Field, ErrorBanner, StatusPill, PageHeader, TableWrap, EmptyRow,
@@ -188,9 +189,9 @@ export default function PaymentRunsPage() {
                       options={banks.map((b) => ({ value: String(b.id), label: `${b.bank_name}${b.account_no ? ` — ${b.account_no}` : ''} · bal ${inr(b.book_balance)}` }))} />
                   </SField>
                   <SField label="Mode" style={sw(140)}>
-                    <select style={sheetInput} value={mode} onChange={(e) => setMode(e.target.value)}>
+                    <Select style={sheetInput} value={mode} onChange={(e) => setMode(e.target.value)}>
                       {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                    </select>
+                    </Select>
                   </SField>
                 </SRow>
               </SheetSection>
@@ -210,10 +211,10 @@ export default function PaymentRunsPage() {
 
       <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
         <Field label="Status" style={{ flex: '0 1 200px', minWidth: 180 }}>
-          <select style={inputStyle} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <Select style={inputStyle} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="">All</option>
             {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         </Field>
       </div>
 
@@ -271,6 +272,7 @@ export default function PaymentRunsPage() {
                           {r.notes && <span><b>Notes:</b> {r.notes}</span>}
                           {r.rejection_reason && <span style={{ color: '#b91c1c' }}><b>Reason:</b> {r.rejection_reason}</span>}
                         </div>
+                        <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
                           <thead>
                             <tr>
@@ -307,6 +309,7 @@ export default function PaymentRunsPage() {
                             ))}
                           </tbody>
                         </table>
+                        </div>
                         {r.status === 'approved' && canExecute && (
                           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginTop: 12 }}>
                             <button style={primaryBtnStyle} onClick={() => { setExecuteDate(todayIso()); setExecuteRun(r) }}>Pay now</button>

@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -170,11 +171,11 @@ export default function NewRndProjectPage() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div data-tour="rnd-pf-priority" style={{ flex: '1 1 240px', minWidth: 220, maxWidth: 300 }}>
                   <label style={labelStyle}>Priority</label>
-                  <select style={inputStyle} value={priority} onChange={(e) => setPriority(e.target.value as RndProjectPriority)}>
+                  <Select style={inputStyle} value={priority} onChange={(e) => setPriority(e.target.value as RndProjectPriority)}>
                     <option value="high">High — Important requirement</option>
                     <option value="medium">Medium — Normal requirement</option>
                     <option value="low">Low — Can be handled later</option>
-                  </select>
+                  </Select>
                 </div>
                 <div data-tour="rnd-pf-start" style={{ flex: '0 1 160px', minWidth: 150 }}>
                   <label style={labelStyle}>Start Date</label>

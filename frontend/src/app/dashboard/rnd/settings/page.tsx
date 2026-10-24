@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import { RndOfferPerson, RndPerson, RndSettings } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import RndNav from '@/components/rnd/RndNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
-import { dangerBtnStyle } from '@/components/shared/ui'
+import { dangerBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 
 const sectionStyle: React.CSSProperties = {
@@ -16,10 +16,7 @@ const sectionStyle: React.CSSProperties = {
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 6px' }
 const noteStyle: React.CSSProperties = { fontSize: 12.5, color: TEXT.muted, margin: '0 0 14px', lineHeight: 1.55 }
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary,
-  color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: `0 6px 16px ${SHADOWS.glowOrange}`,
-}
+const primaryBtn: React.CSSProperties = { ...primaryBtnStyle, boxShadow: `0 6px 16px ${SHADOWS.glowOrange}` }
 
 export default function RndSettingsPage() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')

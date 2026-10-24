@@ -9,6 +9,7 @@ import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, DANGER } from '@/lib/theme'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -97,10 +98,10 @@ export default function StoreReorderPage() {
       <MessageDialog open={!!error} variant="error" title="Reorder" message={error} onClose={() => setError('')} />
 
       <div data-tour="store-reorder-filters" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
-        <select style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)}>
+        <Select style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="">All categories</option>
           {categories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-        </select>
+        </Select>
         <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: TEXT.body }}>
           <input type="checkbox" checked={dueOnly} onChange={(e) => setDueOnly(e.target.checked)} /> Only items due for reorder
         </label>

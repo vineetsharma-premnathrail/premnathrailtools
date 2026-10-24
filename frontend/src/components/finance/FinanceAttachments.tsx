@@ -22,6 +22,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDateTime } from '@/lib/format'
 import { ErrorBanner, inputStyle, secondaryBtnStyle } from '@/components/finance/financeUi'
+import Select from '@/components/shared/Select'
 
 export const PROOF_DOC_TYPES: Record<string, string> = {
   bill: 'Bill / tax invoice',
@@ -170,9 +171,9 @@ export default function FinanceAttachments({ entityType, entityId, tabKey, locke
 
       {canUpload && (
         <div data-tour="fin-proof-upload" style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 12, flexWrap: 'wrap' }}>
-          <select style={{ ...inputStyle, width: 'auto', flex: '0 1 200px' }} value={docType} onChange={(e) => setDocType(e.target.value)}>
+          <Select style={{ ...inputStyle, width: 'auto', flex: '0 1 200px' }} value={docType} onChange={(e) => setDocType(e.target.value)}>
             {kinds.map((k) => <option key={k} value={k}>{PROOF_DOC_TYPES[k]}</option>)}
-          </select>
+          </Select>
           <input key={inputKey} type="file" multiple accept={ACCEPT}
             onChange={(e) => setFiles(Array.from(e.target.files || []))} style={{ ...inputStyle, flex: '1 1 220px', maxWidth: 360, width: 'auto' }} />
           <button type="button" onClick={upload} disabled={!files.length || uploading}
@@ -227,9 +228,9 @@ export function ProofPicker({ entityType, value, onChange, required = false, hin
         </div>
       ))}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-        <select style={{ ...inputStyle, width: 'auto', flex: '0 1 200px' }} value={docType} onChange={(e) => setDocType(e.target.value)}>
+        <Select style={{ ...inputStyle, width: 'auto', flex: '0 1 200px' }} value={docType} onChange={(e) => setDocType(e.target.value)}>
           {kinds.map((k) => <option key={k} value={k}>{PROOF_DOC_TYPES[k]}</option>)}
-        </select>
+        </Select>
         <input key={inputKey} type="file" multiple accept={ACCEPT} style={{ ...inputStyle, flex: '1 1 220px', maxWidth: 360, width: 'auto' }}
           onChange={(e) => {
             const picked = Array.from(e.target.files || []).map((file) => ({ key: Math.random().toString(36).slice(2), file, docType }))

@@ -15,6 +15,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import Select from '@/components/shared/Select'
 
 export default function StoreCategoriesPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
@@ -133,7 +134,7 @@ export default function StoreCategoriesPage() {
     <div>
       <StoreNav />
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <div>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
             Store &amp; Inventory · Settings
@@ -183,10 +184,10 @@ export default function StoreCategoriesPage() {
                 </div>
                 <div style={{ flex: '1 1 220px', minWidth: 200 }}>
                   <label style={sheetLabel}>Parent Category</label>
-                  <select data-tour="cat-parent" style={{ ...sheetInput, ...(editing ? { background: SHEET.SOFT, color: SHEET.MUTED } : {}) }} value={parentId} onChange={(e) => setParentId(e.target.value)} disabled={!!editing}>
+                  <Select data-tour="cat-parent" style={{ ...sheetInput, ...(editing ? { background: SHEET.SOFT, color: SHEET.MUTED } : {}) }} value={parentId} onChange={(e) => setParentId(e.target.value)} disabled={!!editing}>
                     <option value="">— Top-level category —</option>
                     {parentOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
+                  </Select>
                 </div>
               </div>
               <p style={sheetHint}>{editing ? 'Code and parent are fixed once created.' : 'Leave the code blank to generate one. Picking a parent makes this a subcategory.'}</p>
@@ -194,9 +195,9 @@ export default function StoreCategoriesPage() {
 
             {!parentId && (
               <SheetSection icon="box" title="Item Type">
-                <select style={sheetInput} value={itemType} onChange={(e) => setItemType(e.target.value)}>
+                <Select style={sheetInput} value={itemType} onChange={(e) => setItemType(e.target.value)}>
                   {ITEM_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
+                </Select>
                 {editing && <p style={sheetHint}>Its subcategories follow this item type.</p>}
               </SheetSection>
             )}

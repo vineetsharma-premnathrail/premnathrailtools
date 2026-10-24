@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useMemo, useState } from 'react'
 import { designApi } from '@/lib/api'
 import { DesignBomLine, DesignBomLineInput, DesignLookupOption } from '@/types'
@@ -275,10 +276,10 @@ export default function BomLinesEditor({
                   <SearchableSelect value={r.document_id} onChange={(v) => update(r.key, { document_id: v })} options={docOptions} placeholder="No drawing" disabled={disabled} />
                 </td>
                 <td style={tdStyle}>
-                  <select style={cellInput} value={r.make_buy} disabled={disabled} onChange={(e) => update(r.key, { make_buy: e.target.value as 'make' | 'buy' })}>
+                  <Select style={cellInput} value={r.make_buy} disabled={disabled} onChange={(e) => update(r.key, { make_buy: e.target.value as 'make' | 'buy' })}>
                     <option value="buy">Buy</option>
                     <option value="make">Make</option>
-                  </select>
+                  </Select>
                 </td>
                 <td style={tdStyle}>
                   <input style={cellInput} value={r.remarks} disabled={disabled} onChange={(e) => update(r.key, { remarks: e.target.value })} />

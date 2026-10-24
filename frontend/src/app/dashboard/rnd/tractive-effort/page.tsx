@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -8,6 +9,7 @@ import { getHistoryFromLink } from '@/components/rnd/historyLink'
 import RndNav from '@/components/rnd/RndNav'
 import TerminalPanel from '@/components/rnd/TerminalPanel'
 import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, calcButtonStyle, downloadCsv, downloadBlob, getErrorMessage } from '@/components/rnd/toolStyles'
+import { secondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 
 interface TractiveResult {
@@ -154,10 +156,10 @@ function TractiveEffortPageInner() {
           <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>Tractive Effort Calculator</h1>
           <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0' }}>TE · Power · OHE Current · Indian Railways resistance formulas</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button data-tour="rnd-te-csv-btn" onClick={exportCsv} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export CSV</button>
-          <button data-tour="rnd-te-docx-btn" onClick={downloadDocx} disabled={busy} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export Report (.docx)</button>
-          <a data-tour="rnd-te-history-btn" href="/dashboard/rnd/history" style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>History</a>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button data-tour="rnd-te-csv-btn" onClick={exportCsv} style={secondaryBtnStyle}>Export CSV</button>
+          <button data-tour="rnd-te-docx-btn" onClick={downloadDocx} disabled={busy} style={secondaryBtnStyle}>Export Report (.docx)</button>
+          <a data-tour="rnd-te-history-btn" href="/dashboard/rnd/history" style={{ ...secondaryBtnStyle, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', textDecoration: 'none' }}>History</a>
         </div>
       </div>
 
@@ -205,16 +207,16 @@ function TractiveEffortPageInner() {
               <div data-tour="rnd-te-gradient"><label style={labelStyle}>Gradient</label><input style={inputStyle} type="number" step="0.1" value={gradient} onChange={(e) => setGradient(e.target.value)} /></div>
               <div data-tour="rnd-te-grad-unit">
                 <label style={labelStyle}>Unit</label>
-                <select style={inputStyle} value={gradType} onChange={(e) => setGradType(e.target.value as typeof gradType)}>
+                <Select style={inputStyle} value={gradType} onChange={(e) => setGradType(e.target.value as typeof gradType)}>
                   <option>1 in G</option><option>Degree</option>
-                </select>
+                </Select>
               </div>
               <div data-tour="rnd-te-curvature"><label style={labelStyle}>Curvature</label><input style={inputStyle} type="number" step="0.1" value={curvature} onChange={(e) => setCurvature(e.target.value)} /></div>
               <div data-tour="rnd-te-curve-unit">
                 <label style={labelStyle}>Unit</label>
-                <select style={inputStyle} value={curvatureUnit} onChange={(e) => setCurvatureUnit(e.target.value as typeof curvatureUnit)}>
+                <Select style={inputStyle} value={curvatureUnit} onChange={(e) => setCurvatureUnit(e.target.value as typeof curvatureUnit)}>
                   <option>Degree</option><option>Radius(m)</option>
-                </select>
+                </Select>
               </div>
             </div>
           </div>
@@ -231,7 +233,7 @@ function TractiveEffortPageInner() {
               <span style={{ ...cardTitleStyle, color: '#fff' }}>Results Summary</span>
             </div>
             <div style={{ padding: 16 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
                 <SummaryTile label="Tractive Effort" value={r?.te.toFixed(0)} unit="kg" bg="#fff7ed" color="#c2410c" />
                 <SummaryTile label="Rail Horsepower" value={r?.power.toFixed(0)} unit="HP" bg="#f0fdf4" color="#166534" />
                 <SummaryTile label="OHE Current (25kV)" value={r?.ohe_current.toFixed(1)} unit="Amps" bg="#faf5ff" color="#7c3aed" />

@@ -11,6 +11,7 @@ import DateField from '@/components/erp/DateField'
 import { Field, Section, inputStyle } from '@/components/shared/ui'
 import { PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, fmtMoney, INSPECTION_TYPE_LABELS } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 interface ItemOpt { id: number; item_code: string; item_name: string }
 
@@ -64,9 +65,9 @@ export default function QualityReportsPage() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ flex: '0 1 220px' }}>
             <Field label="Count">
-              <select style={inputStyle} value={f.basis} onChange={(e) => setF({ ...f, basis: e.target.value, source: '' })}>
+              <Select style={inputStyle} value={f.basis} onChange={(e) => setF({ ...f, basis: e.target.value, source: '' })}>
                 <option value="ncr">NCRs</option><option value="lot_results">Failed characteristics on lots</option>
-              </select>
+              </Select>
             </Field>
           </div>
           <div style={{ flex: '0 1 160px' }}><Field label="From"><DateField value={f.date_from} onChange={(v) => setF({ ...f, date_from: v })} /></Field></div>
@@ -80,10 +81,10 @@ export default function QualityReportsPage() {
           <div style={{ flex: '1 1 180px', maxWidth: 260 }}><Field label="Vendor"><input style={inputStyle} value={f.vendor} onChange={(e) => setF({ ...f, vendor: e.target.value })} /></Field></div>
           <div style={{ flex: '0 1 220px' }}>
             <Field label={f.basis === 'ncr' ? 'NCR source' : 'Inspection type'}>
-              <select style={inputStyle} value={f.source} onChange={(e) => setF({ ...f, source: e.target.value })}>
+              <Select style={inputStyle} value={f.source} onChange={(e) => setF({ ...f, source: e.target.value })}>
                 <option value="">All</option>
                 {Object.entries(sources).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
+              </Select>
             </Field>
           </div>
         </div>

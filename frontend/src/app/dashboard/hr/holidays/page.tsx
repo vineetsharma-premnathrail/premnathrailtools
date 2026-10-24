@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { canActOnTab } from '@/lib/tabAccess'
@@ -7,7 +8,7 @@ import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { HrHoliday } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import HrNav from '@/components/hr/HrNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -207,16 +208,16 @@ export default function HrHolidaysPage() {
       </div>
       <div style={{ flex: '0 1 130px', minWidth: 120 }}>
         {!compact && <label style={sheetLabel}>Type</label>}
-        <select data-tour="hr-hol-form-type" style={sheetInput} value={r.holiday_type} onChange={(e) => onChange({ ...r, holiday_type: e.target.value })}>
+        <Select data-tour="hr-hol-form-type" style={sheetInput} value={r.holiday_type} onChange={(e) => onChange({ ...r, holiday_type: e.target.value })}>
           {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
       </div>
       <div style={{ flex: '0 1 150px', minWidth: 130 }}>
         {!compact && <label style={sheetLabel}>Plant</label>}
-        <select data-tour="hr-hol-form-plant" style={sheetInput} value={r.branch_id} onChange={(e) => onChange({ ...r, branch_id: e.target.value })}>
+        <Select data-tour="hr-hol-form-plant" style={sheetInput} value={r.branch_id} onChange={(e) => onChange({ ...r, branch_id: e.target.value })}>
           <option value="">All plants</option>
           {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-        </select>
+        </Select>
       </div>
     </div>
   )
@@ -243,7 +244,7 @@ export default function HrHolidaysPage() {
               type="button"
               data-tour="hr-hol-add-btn"
               onClick={() => { setFormErrors([]); setEditing({ id: null, row: { ...EMPTY_ROW } }) }}
-              style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}
+              style={{ ...primaryBtnStyle, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}
             >
               + Add Holiday
             </button>
@@ -259,19 +260,19 @@ export default function HrHolidaysPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select data-tour="hr-hol-year" style={{ ...inputStyle, width: 'auto', flex: '0 1 110px' }} value={year} onChange={(e) => setYear(Number(e.target.value))}>
+        <Select data-tour="hr-hol-year" style={{ ...inputStyle, width: 'auto', flex: '0 1 110px' }} value={year} onChange={(e) => setYear(Number(e.target.value))}>
           {[thisYear + 1, thisYear, thisYear - 1, thisYear - 2].map((y) => <option key={y} value={y}>{y}</option>)}
-        </select>
-        <select data-tour="hr-hol-plant-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 220px' }} value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="hr-hol-plant-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 220px' }} value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
           <option value="mine">My plant</option>
           {isHr && <option value="">Every plant (all entries)</option>}
           <option value="all_only">All-plant holidays only</option>
           {branches.map((b) => <option key={b.id} value={b.id}>{b.name} (incl. all-plant)</option>)}
-        </select>
-        <select data-tour="hr-hol-type-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 160px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="hr-hol-type-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 160px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
           <option value="">All types</option>
           {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
         {isHr && (
           <label data-tour="hr-hol-inactive-toggle" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: TEXT.secondary, cursor: 'pointer' }}>
             <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} /> Show inactive
@@ -393,18 +394,18 @@ export default function HrHolidaysPage() {
           <div style={{ padding: '20px 24px' }}>
             <Banner errors={copyErrors} />
             <SheetSection icon="calendar" title="Years">
-              <div style={{ display: 'flex', gap: 12 }}>
-                <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 140px', minWidth: 0 }}>
                   <label style={sheetLabel}>From year</label>
-                  <select data-tour="hr-hol-copy-from" style={sheetInput} value={copyFrom} onChange={(e) => setCopyFrom(Number(e.target.value))}>
+                  <Select data-tour="hr-hol-copy-from" style={sheetInput} value={copyFrom} onChange={(e) => setCopyFrom(Number(e.target.value))}>
                     {[thisYear + 1, thisYear, thisYear - 1, thisYear - 2].map((y) => <option key={y} value={y}>{y}</option>)}
-                  </select>
+                  </Select>
                 </div>
-                <div style={{ flex: 1 }}>
+                <div style={{ flex: '1 1 140px', minWidth: 0 }}>
                   <label style={sheetLabel}>To year</label>
-                  <select data-tour="hr-hol-copy-to" style={sheetInput} value={copyTo} onChange={(e) => setCopyTo(Number(e.target.value))}>
+                  <Select data-tour="hr-hol-copy-to" style={sheetInput} value={copyTo} onChange={(e) => setCopyTo(Number(e.target.value))}>
                     {[thisYear + 2, thisYear + 1, thisYear, thisYear - 1].map((y) => <option key={y} value={y}>{y}</option>)}
-                  </select>
+                  </Select>
                 </div>
               </div>
               <p style={sheetHint}>Festival dates follow the lunar calendar, so review them afterwards.</p>

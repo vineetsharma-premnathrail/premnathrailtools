@@ -6,6 +6,7 @@ import { ProductionLookupOption, ProductionWorkstation } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import Select from '@/components/shared/Select'
 
 export const WORKSTATION_TYPE_LABELS: Record<string, string> = {
   machine: 'Machine', work_center: 'Work Center', assembly_bay: 'Assembly Bay',
@@ -115,17 +116,17 @@ export default function WorkstationForm({
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
               <div data-tour="production-ws-form-type" style={{ flex: '0 1 180px', minWidth: 150 }}>
                 <label style={labelStyle}>Type</label>
-                <select style={inputStyle} value={workstationType} onChange={(e) => setWorkstationType(e.target.value)}>
+                <Select style={inputStyle} value={workstationType} onChange={(e) => setWorkstationType(e.target.value)}>
                   {Object.entries(WORKSTATION_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+                </Select>
               </div>
               <div data-tour="production-ws-form-status" style={{ flex: '0 1 190px', minWidth: 160 }}>
                 <label style={labelStyle}>Status</label>
-                <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value)}>
+                <Select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value)}>
                   <option value="active">Active</option>
                   <option value="under_maintenance">Under Maintenance</option>
                   <option value="inactive">Inactive</option>
-                </select>
+                </Select>
               </div>
             </div>
           </SheetSection>

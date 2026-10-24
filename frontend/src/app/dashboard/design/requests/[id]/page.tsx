@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -11,7 +12,7 @@ import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { PRIORITY_LABELS, REQUEST_SOURCE_LABELS, REQUEST_STATUS_LABELS, toOptions } from '@/components/design/designMeta'
 import { useDesignFeature } from '@/components/design/useDesignFeature'
 import { useDesignMe } from '@/components/design/useDesignMe'
@@ -59,10 +60,7 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 16,
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary,
-  color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: `0 6px 16px ${SHADOWS.glowOrange}`,
-}
+const primaryBtn: React.CSSProperties = primaryBtnStyle
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6' }
 const tdStyle: React.CSSProperties = { padding: '9px 10px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
 const hintStyle: React.CSSProperties = { fontSize: 12, color: TEXT.muted, margin: '6px 0 0' }
@@ -423,9 +421,9 @@ export default function DesignRequestDetailPage() {
                     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                       <div style={{ flex: '0 1 130px', minWidth: 120 }}>
                         <label style={sheetLabel}>Priority</label>
-                        <select style={sheetInput} value={edit.priority} onChange={(e) => setEdit({ ...edit, priority: e.target.value })}>
+                        <Select style={sheetInput} value={edit.priority} onChange={(e) => setEdit({ ...edit, priority: e.target.value })}>
                           {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                        </select>
+                        </Select>
                       </div>
                       <div style={{ flex: '0 1 170px', minWidth: 150 }}>
                         <label style={sheetLabel}>Due date <Optional /></label>
@@ -462,7 +460,7 @@ export default function DesignRequestDetailPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
                   <p style={{ ...sectionTitle, margin: 0, flex: 1 }}>Technical requirement · rev {req.requirement_revision}</p>
                   {req.history.length > 1 && (
-                    <button type="button" data-tour="design-req-history-btn" style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }} onClick={() => setShowHistory((v) => !v)}>
+                    <button type="button" data-tour="design-req-history-btn" style={{ ...smallSecondaryBtnStyle }} onClick={() => setShowHistory((v) => !v)}>
                       {showHistory ? 'Hide' : 'Show'} revision history ({req.history.length})
                     </button>
                   )}
@@ -495,8 +493,8 @@ export default function DesignRequestDetailPage() {
                   <p style={{ ...sectionTitle, margin: 0, flex: 1 }}>Deliverables · {req.released_count} / {req.document_count} released</p>
                   {isTeam && active && (
                     <>
-                      <button type="button" data-tour="design-req-new-drawing-btn" style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }} onClick={() => router.push(recordHref('/dashboard/design/documents/new', req, 'id', undefined, 'request_id'))}>+ New drawing for this request</button>
-                      <button type="button" data-tour="design-req-new-bom-btn" style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }} onClick={() => router.push(recordHref('/dashboard/design/boms/new', req, 'id', undefined, 'request_id'))}>+ New BOM</button>
+                      <button type="button" data-tour="design-req-new-drawing-btn" style={{ ...smallSecondaryBtnStyle }} onClick={() => router.push(recordHref('/dashboard/design/documents/new', req, 'id', undefined, 'request_id'))}>+ New drawing for this request</button>
+                      <button type="button" data-tour="design-req-new-bom-btn" style={{ ...smallSecondaryBtnStyle }} onClick={() => router.push(recordHref('/dashboard/design/boms/new', req, 'id', undefined, 'request_id'))}>+ New BOM</button>
                     </>
                   )}
                 </div>
@@ -529,7 +527,7 @@ export default function DesignRequestDetailPage() {
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
                   <p style={{ ...sectionTitle, margin: 0, flex: 1 }}>Details</p>
                   {can('edit') && (
-                    <button type="button" data-tour="design-req-edit-btn" style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }} onClick={startEdit}>Edit</button>
+                    <button type="button" data-tour="design-req-edit-btn" style={{ ...smallSecondaryBtnStyle }} onClick={startEdit}>Edit</button>
                   )}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

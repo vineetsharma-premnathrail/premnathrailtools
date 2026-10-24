@@ -89,7 +89,7 @@ export default function ExpenseApprovals() {
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
                     <span style={{ fontSize: 18, fontWeight: 800, color: TEXT.heading }}>{fmtINR(c.total_amount)}</span>
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <button type="button" data-tour="hr-appr-expense-approve" style={{ ...primaryActionStyle, padding: '8px 16px' }} onClick={() => setPending({ kind: 'approve', c })}>Approve</button>
+                      <button type="button" data-tour="hr-appr-expense-approve" style={primaryActionStyle} onClick={() => setPending({ kind: 'approve', c })}>Approve</button>
                       <button type="button" style={dangerBtnStyle} onClick={() => setPending({ kind: 'reject', c })}>Reject</button>
                     </div>
                   </div>

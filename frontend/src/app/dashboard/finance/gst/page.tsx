@@ -10,6 +10,7 @@ import { TEXT, BORDER } from '@/lib/theme'
 import FinanceNav from '@/components/finance/FinanceNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import DateField from '@/components/erp/DateField'
+import Select from '@/components/shared/Select'
 import {
   inputStyle, sectionStyle, primaryBtnStyle, secondaryBtnStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, currentPeriod, Field, ErrorBanner, InfoBanner, SubTabs, PageHeader, TableWrap, EmptyRow, StatCard,
@@ -90,10 +91,10 @@ function RegistersTab() {
       </InfoBanner>
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 16 }}>
         <Field label="Register" style={{ flex: '0 1 170px', minWidth: 150 }} tour="fin-gst-reg-kind">
-          <select style={inputStyle} value={kind} onChange={(e) => { setLoading(true); setKind(e.target.value as 'sales' | 'purchase') }}>
+          <Select style={inputStyle} value={kind} onChange={(e) => { setLoading(true); setKind(e.target.value as 'sales' | 'purchase') }}>
             <option value="sales">Sales (output)</option>
             <option value="purchase">Purchase (input)</option>
-          </select>
+          </Select>
         </Field>
         <Field label="From" style={{ flex: '0 1 160px', minWidth: 150 }} tour="fin-gst-reg-from"><DateField value={fromDate} onChange={setFromDate} /></Field>
         <Field label="To" style={{ flex: '0 1 160px', minWidth: 150 }} tour="fin-gst-reg-to"><DateField value={toDate} onChange={setToDate} /></Field>

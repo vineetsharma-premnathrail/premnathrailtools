@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 // Drawings tab of an Electrical job — the revision-controlled drawing register
 // behind the Electrical Schematics, Electrical Drawing / Revision and As-Built
 // Electrical Records stages. Each drawing carries R0, R1 … revisions that go
@@ -471,9 +472,9 @@ export default function DrawingsTab({ job, meta, canEdit, onChanged }: { job: El
               </div>
               <div style={rowStyle}>
                 <F tour="elec-drawing-type" label="Drawing type" basis={190}>
-                  <select style={sheetInput} value={addForm.drawing_type} onChange={(e) => setAddForm({ ...addForm, drawing_type: e.target.value })}>
+                  <Select style={sheetInput} value={addForm.drawing_type} onChange={(e) => setAddForm({ ...addForm, drawing_type: e.target.value })}>
                     {typeOptions.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </F>
                 <F tour="elec-drawing-number" label="Drawing number" basis={200} grow max={300}>
                   <input style={sheetInput} value={addForm.drawing_number} onChange={(e) => setAddForm({ ...addForm, drawing_number: e.target.value })} placeholder="Leave blank to auto-number" />
@@ -522,9 +523,9 @@ export default function DrawingsTab({ job, meta, canEdit, onChanged }: { job: El
               <input style={sheetInput} value={editForm.drawing_number} onChange={(e) => setEditForm({ ...editForm, drawing_number: e.target.value })} />
             </F>
             <F label="Drawing type" basis={180}>
-              <select style={sheetInput} value={editForm.drawing_type} onChange={(e) => setEditForm({ ...editForm, drawing_type: e.target.value })}>
+              <Select style={sheetInput} value={editForm.drawing_type} onChange={(e) => setEditForm({ ...editForm, drawing_type: e.target.value })}>
                 {typeOptions.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              </Select>
             </F>
           </div>
           <div style={rowStyle}>

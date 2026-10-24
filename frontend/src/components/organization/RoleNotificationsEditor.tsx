@@ -150,5 +150,5 @@ export default function RoleNotificationsEditor({ catalog, registry, permissions
 }
 
 function th(align: 'left' | 'center'): React.CSSProperties {
-  return { textAlign: align, padding: '8px 6px', paddingLeft: align === 'left' ? 14 : 6, fontSize: 10.5, fontWeight: 700, color: SHEET.MUTED, textTransform: 'uppercase' }
+  return { textAlign: align, padding: '8px 6px', paddingLeft: align === 'left' ? 14 : 6, fontSize: 10.5, fontWeight: 700, color: SHEET.MUTED, textTransform: 'uppercase', whiteSpace: 'nowrap' }
 }

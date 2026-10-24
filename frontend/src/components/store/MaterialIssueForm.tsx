@@ -16,9 +16,10 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import Select from '@/components/shared/Select'
 
 const inputStyle = sheetInput
-const smallBtn = (): React.CSSProperties => ({ ...sheetBtn('secondary', SHEET.INK), padding: '6px 12px', fontSize: 12.5 })
+const smallBtn = (): React.CSSProperties => ({ ...sheetBtn('secondary', SHEET.INK), padding: '6px 12px', minHeight: 30, fontSize: 12 })
 
 /** Sheet-styled labelled field. */
 function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
@@ -336,17 +337,17 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
       <SheetSection icon="list" title="Issue Details">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
           <Field label={<>Store <Req /></>}>
-            <select data-tour="issue-location" style={inputStyle} value={locationId} onChange={(e) => { setLocationId(e.target.value); setBalances(new Map()); setStockLoadedAt(null) }}>
+            <Select data-tour="issue-location" style={inputStyle} value={locationId} onChange={(e) => { setLocationId(e.target.value); setBalances(new Map()); setStockLoadedAt(null) }}>
               <option value="">— Select —</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
+            </Select>
           </Field>
           {!isChallan && (
             <Field label={<>Issue Type <Req /></>}>
-              <select data-tour="issue-type" style={inputStyle} value={issueType} onChange={(e) => { setIssueType(e.target.value); setVals({}); setOrderProject(null) }}>
+              <Select data-tour="issue-type" style={inputStyle} value={issueType} onChange={(e) => { setIssueType(e.target.value); setVals({}); setOrderProject(null) }}>
                 <option value="">— Select —</option>
                 {issueTypes.filter((t) => t.value !== JOB_WORK).map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
+              </Select>
             </Field>
           )}
         </div>
@@ -359,16 +360,16 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
               let input: React.ReactNode
               if (f.kind === 'bool') {
                 input = (
-                  <select style={inputStyle} value={v === true ? 'yes' : v === false ? 'no' : ''} onChange={(e) => setVal(f.key, e.target.value === '' ? null : e.target.value === 'yes')}>
+                  <Select style={inputStyle} value={v === true ? 'yes' : v === false ? 'no' : ''} onChange={(e) => setVal(f.key, e.target.value === '' ? null : e.target.value === 'yes')}>
                     <option value="">— Select —</option><option value="yes">Yes</option><option value="no">No</option>
-                  </select>
+                  </Select>
                 )
               } else if (f.kind === 'choice') {
                 input = (
-                  <select style={inputStyle} value={(v as string) || ''} onChange={(e) => setVal(f.key, e.target.value || null)}>
+                  <Select style={inputStyle} value={(v as string) || ''} onChange={(e) => setVal(f.key, e.target.value || null)}>
                     <option value="">— Select —</option>
                     {Object.entries(f.options || {}).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                  </select>
+                  </Select>
                 )
               } else if (f.kind === 'date') {
                 input = <DateField value={(v as string) || ''} onChange={(d) => setVal(f.key, d)} />
@@ -481,7 +482,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
             </span>
             <div style={{ display: 'flex', gap: 8 }}>
               <button type="button" onClick={issueWhatsAvailable} style={smallBtn()}>Issue only what&apos;s available</button>
-              <button type="button" onClick={removeUnavailable} style={{ ...sheetBtn('primary', '#dc2626'), padding: '6px 12px', fontSize: 12.5 }}>Remove short lines</button>
+              <button type="button" onClick={removeUnavailable} style={{ ...sheetBtn('primary', '#dc2626'), padding: '6px 12px', minHeight: 30, fontSize: 12 }}>Remove short lines</button>
             </div>
           </div>
         )}
@@ -546,7 +547,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
                     </td>
                     <td style={{ padding: '6px', width: 44 }}>
                       <button type="button" title="Remove this line" onClick={() => removeLine(idx)}
-                        aria-label="Remove line" style={{ ...sheetBtn('secondary', SHEET.INK), padding: '8px 10px', color: bad ? '#b91c1c' : undefined }}><SheetIcon name="trash" size={15} /></button>
+                        aria-label="Remove line" style={{ ...sheetBtn('secondary', SHEET.INK), padding: 0, width: 38, height: 38, justifyContent: 'center', color: bad ? '#b91c1c' : undefined }}><SheetIcon name="trash" size={15} /></button>
                     </td>
                   </tr>
                 )

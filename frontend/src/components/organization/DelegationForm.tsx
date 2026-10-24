@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useState } from 'react'
 import { ApprovalTransactionType, DirectoryUser } from '@/types'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
@@ -73,11 +74,11 @@ export default function DelegationForm({ users, types, forOthers, onSubmit, onCl
             <div style={{ flex: '0 1 170px', minWidth: 150 }}><label style={sheetLabel}>To <Req /></label><DateField value={end} onChange={setEnd} /></div>
           </div>
           <label style={{ ...sheetLabel, marginTop: 14 }}>For <Optional /></label>
-          <select style={sheetInput} value={scope} onChange={(e) => setScope(e.target.value)}>
+          <Select style={sheetInput} value={scope} onChange={(e) => setScope(e.target.value)}>
             <option value="">All approvals</option>
             {modules.map(([k, l]) => <option key={k} value={`m:${k}`}>{l} — all</option>)}
             {types.map((t) => <option key={t.key} value={`w:${t.key}`}>{t.module_label} — {t.label}</option>)}
-          </select>
+          </Select>
           <label style={{ ...sheetLabel, marginTop: 14 }}>Reason <Optional /></label>
           <input style={sheetInput} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. On leave" />
         </SheetSection>

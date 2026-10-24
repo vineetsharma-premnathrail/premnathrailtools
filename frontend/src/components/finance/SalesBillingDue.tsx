@@ -21,6 +21,7 @@ import {
 } from '@/components/finance/financeUi'
 import { ProofPicker, PickedProof, uploadPickedProof } from '@/components/finance/FinanceAttachments'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import Select from '@/components/shared/Select'
 
 const STATUS_LABELS: Record<string, string> = {
   not_due: 'Not due', due: 'Due', invoice_requested: 'Invoice requested', invoiced: 'Invoiced', settled: 'Settled', proforma_issued: 'Proforma issued',
@@ -77,9 +78,9 @@ export default function SalesBillingDueTab({ soId }: { soId?: number | null }) {
       {notice && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', color: '#15803d', fontSize: 13 }}>{notice}</div>}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
         <div style={{ flex: '0 1 200px' }}>
-          <select data-tour="fin-billing-due-filter" style={inputStyle} value={show} onChange={(e) => setShow(e.target.value)}>
+          <Select data-tour="fin-billing-due-filter" style={inputStyle} value={show} onChange={(e) => setShow(e.target.value)}>
             {SHOW_OPTIONS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         </div>
         <div style={{ fontSize: 13, color: TEXT.secondary }}>Billable now: <b>{inr(total)}</b> incl. GST</div>
       </div>

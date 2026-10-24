@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -41,7 +42,7 @@ const inputStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
 }
 const td: React.CSSProperties = { padding: '9px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
-const th: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }
+const th: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }
 const tableWrap: React.CSSProperties = { borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }
 const sectionStyle: React.CSSProperties = { borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20 }
 const linkBtn = (color: string): React.CSSProperties => ({ background: 'none', border: 'none', padding: 0, fontSize: 12.5, fontWeight: 600, color, cursor: 'pointer', marginRight: 12 })
@@ -301,14 +302,14 @@ export default function HrAttendancePage() {
 
   const filterBar = (
     <>
-      <select data-tour="hr-att-plant-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 160px' }} value={branchId} onChange={(e) => { setBranchId(e.target.value); setDeptId('') }}>
+      <Select data-tour="hr-att-plant-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 160px' }} value={branchId} onChange={(e) => { setBranchId(e.target.value); setDeptId('') }}>
         <option value="">All plants</option>
         {lookups?.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-      </select>
-      <select data-tour="hr-att-dept-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 190px' }} value={deptId} onChange={(e) => setDeptId(e.target.value)}>
+      </Select>
+      <Select data-tour="hr-att-dept-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 190px' }} value={deptId} onChange={(e) => setDeptId(e.target.value)}>
         <option value="">All departments</option>
         {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-      </select>
+      </Select>
       <input data-tour="hr-att-search" style={{ ...inputStyle, flex: '1 1 200px', maxWidth: 260 }} placeholder="Search name, email, code…" value={search} onChange={(e) => setSearch(e.target.value)} />
     </>
   )
@@ -348,10 +349,10 @@ export default function HrAttendancePage() {
           <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             <div data-tour="hr-att-reg-date" style={{ flex: '0 1 160px', minWidth: 150 }}><DateField value={regDate} onChange={(v) => v && setRegDate(v)} /></div>
             {filterBar}
-            <select data-tour="hr-att-status-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 160px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <Select data-tour="hr-att-status-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 160px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="">All statuses</option>
               {Object.entries(ATT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            </Select>
           </div>
           {register && (
             <div data-tour="hr-att-reg-counts" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
@@ -367,9 +368,9 @@ export default function HrAttendancePage() {
             <div data-tour="hr-att-bulk-bar" style={{ ...sectionStyle, padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: TEXT.heading }}>{selected.length} selected</span>
               <span style={{ fontSize: 13, color: TEXT.muted }}>Mark as</span>
-              <select style={{ ...inputStyle, width: 'auto' }} value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)}>
+              <Select style={{ ...inputStyle, width: 'auto' }} value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)}>
                 {MARKABLE.map((s) => <option key={s} value={s}>{ATT_LABELS[s]}</option>)}
-              </select>
+              </Select>
               <button type="button" style={primaryBtnStyle} onClick={() => setBulkConfirm(true)}>Apply to {selected.length}</button>
               <button type="button" style={secondaryBtnStyle} onClick={() => setSelected([])}>Clear selection</button>
             </div>
@@ -564,11 +565,11 @@ export default function HrAttendancePage() {
       {tab === 'periods' && tabOk('periods') && <PeriodsPanel />}
       {tab === 'corrections' && (
         <>
-          <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-            <select data-tour="hr-att-corr-status-filter" style={{ ...inputStyle, width: 'auto' }} value={regsStatus} onChange={(e) => setRegsStatus(e.target.value)}>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+            <Select data-tour="hr-att-corr-status-filter" style={{ ...inputStyle, width: 'auto' }} value={regsStatus} onChange={(e) => setRegsStatus(e.target.value)}>
               <option value="">All statuses</option>
               {Object.entries(REG_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            </Select>
           </div>
           <div data-tour="hr-att-corr-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1020 }}>
@@ -618,9 +619,9 @@ export default function HrAttendancePage() {
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 180px', maxWidth: 220 }}>
                   <label style={sheetLabel}>Status <Req /></label>
-                  <select data-tour="hr-att-edit-status" style={sheetInput} value={edit.status} onChange={(e) => setEdit({ ...edit, status: e.target.value })}>
+                  <Select data-tour="hr-att-edit-status" style={sheetInput} value={edit.status} onChange={(e) => setEdit({ ...edit, status: e.target.value })}>
                     {MARKABLE.map((s) => <option key={s} value={s}>{ATT_LABELS[s]}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div style={{ flex: '0 1 120px', minWidth: 110 }}>
                   <label style={sheetLabel}>Check-in</label>

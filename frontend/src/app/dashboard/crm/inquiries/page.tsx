@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { CaretUp, PushPin } from '@phosphor-icons/react'
 import Link from 'next/link'
@@ -352,7 +353,7 @@ export default function InquiriesPage() {
                   const key = col.key as ColFilterKey
                   return (
                     <th key={col.key} data-tour={`iq-col-${key}`} style={{ textAlign: 'left', padding: '5px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: colFilters[key] ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                      <select
+                      <Select
                         value={colFilters[key]}
                         onChange={(e) => setColFilter(key, e.target.value)}
                         style={{ font: 'inherit', color: 'inherit', background: 'transparent', border: 'none', outline: 'none', cursor: 'pointer', maxWidth: 140 }}
@@ -361,7 +362,7 @@ export default function InquiriesPage() {
                         {colFilterOptions[key].map((v) => (
                           <option key={v} value={v} style={{ textTransform: 'none', color: '#1f1108' }}>{v}</option>
                         ))}
-                      </select>
+                      </Select>
                     </th>
                   )
                 }

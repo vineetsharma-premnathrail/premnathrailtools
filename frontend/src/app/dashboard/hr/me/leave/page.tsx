@@ -1,11 +1,13 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { HrLeaveBalance, HrLeaveRequest, HrLeaveType } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle } from '@/components/shared/ui'
 import HrNav from '@/components/hr/HrNav'
 import MyHrTabs from '@/components/hr/MyHrTabs'
 import LeaveApplyForm from '@/components/hr/leave/LeaveApplyForm'
@@ -103,16 +105,16 @@ export default function MyLeavePage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>My Leave</h1>
           <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>Apply for leave, see your balances and track your requests.</p>
         </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <select data-tour="hr-myleave-year" style={inputStyle} value={year} onChange={(e) => setYear(Number(e.target.value))}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Select data-tour="hr-myleave-year" style={{ ...inputStyle, width: 110 }} value={year} onChange={(e) => setYear(Number(e.target.value))}>
             {[thisYear + 1, thisYear, thisYear - 1, thisYear - 2].map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
+          </Select>
           {!showForm && can('hr', 'me', 'create') && (
             <button
               type="button"
               data-tour="hr-myleave-apply-btn"
               onClick={() => { setShowForm(true); setNotice('') }}
-              style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}
+              style={{ ...primaryBtnStyle, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}
             >
               + Apply Leave
             </button>
@@ -176,10 +178,10 @@ export default function MyLeavePage() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 10, flexWrap: 'wrap' }}>
         <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>My requests</h3>
-        <select data-tour="hr-myleave-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <Select data-tour="hr-myleave-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
       </div>
 
       <div data-tour="hr-myleave-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
@@ -187,7 +189,7 @@ export default function MyLeavePage() {
           <thead>
             <tr>
               {['Request', 'Type', 'Dates', 'Days', 'Status', 'Approver / decision', ''].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
+                <th key={h} style={{ textAlign: h === 'Days' ? 'right' : 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -207,7 +209,7 @@ export default function MyLeavePage() {
                   {dmy(r.from_date)}{SESSION_SHORT[r.from_session]}
                   {r.to_date !== r.from_date && <> → {dmy(r.to_date)}{SESSION_SHORT[r.to_session]}</>}
                 </td>
-                <td style={td}>{num(r.days)}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{num(r.days)}</td>
                 <td style={td}>
                   <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[r.status]}1a`, color: STATUS_HEX[r.status], whiteSpace: 'nowrap' }}>
                     {STATUS_LABELS[r.status] || r.status}

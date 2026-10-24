@@ -5,8 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
 import { HydLookupOption, HydServiceRecord } from '@/types'
-import { TEXT, DANGER, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, DANGER, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { secondaryBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -38,10 +38,7 @@ const statLabel: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSp
 const statValue: React.CSSProperties = { fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: 0 }
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', whiteSpace: 'nowrap' }
 const tdStyle: React.CSSProperties = { padding: '9px 12px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'middle' }
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer',
-  background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-}
+const primaryBtn: React.CSSProperties = { ...primaryBtnStyle, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }
 const dangerBtn: React.CSSProperties = { ...secondaryBtnStyle, color: DANGER.primary, borderColor: DANGER.border }
 const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
 // Amounts are null when the role lacks Hydraulic › BOM › Prices & costs (backend blanks them).

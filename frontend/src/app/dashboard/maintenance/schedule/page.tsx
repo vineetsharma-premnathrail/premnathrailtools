@@ -12,6 +12,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { formatDate } from '@/lib/format'
 import { PM_DUE_STATE_LABELS, WO_STATUS_LABELS, WO_TYPE_LABELS } from '@/components/maintenance/labels'
+import Select from '@/components/shared/Select'
 
 const DUE_HEX: Record<string, string> = { overdue: '#DC2626', due_soon: '#F59E0B', scheduled: '#2563EB', inactive: '#78716c' }
 // Calendar entry states: projected (overdue / due / upcoming) + generated work-order statuses.
@@ -167,32 +168,32 @@ export default function MaintenanceSchedulePage() {
           {toggleBtn('plans', 'Plans')}
           {toggleBtn('upcoming', 'Upcoming')}
         </div>
-        <select data-tour="maint-pm-plant-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+        <Select data-tour="maint-pm-plant-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
           <option value="">All plants</option>
           {(lookups?.branches || []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-        </select>
+        </Select>
         {view === 'plans' ? (
           <>
             <input data-tour="maint-pm-search" style={{ ...inputStyle, flex: '1 1 220px', minWidth: 180, maxWidth: 360 }} placeholder="Search plan, title or asset…" value={search} onChange={(e) => setSearch(e.target.value)} />
-            <select data-tour="maint-pm-active-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={activeFilter} onChange={(e) => setActiveFilter(e.target.value as 'active' | 'inactive' | '')}>
+            <Select data-tour="maint-pm-active-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={activeFilter} onChange={(e) => setActiveFilter(e.target.value as 'active' | 'inactive' | '')}>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
               <option value="">All plans</option>
-            </select>
-            <select data-tour="maint-pm-due-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={dueFilter} onChange={(e) => setDueFilter(e.target.value)}>
+            </Select>
+            <Select data-tour="maint-pm-due-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={dueFilter} onChange={(e) => setDueFilter(e.target.value)}>
               <option value="">Any due date</option>
               <option value="overdue">Overdue</option>
               <option value="7">Due within 7 days</option>
               <option value="30">Due within 30 days</option>
-            </select>
+            </Select>
           </>
         ) : (
-          <select data-tour="maint-pm-weeks" style={{ ...inputStyle, flex: '0 1 160px' }} value={weeks} onChange={(e) => setWeeks(Number(e.target.value))}>
+          <Select data-tour="maint-pm-weeks" style={{ ...inputStyle, flex: '0 1 160px' }} value={weeks} onChange={(e) => setWeeks(Number(e.target.value))}>
             <option value={4}>Next 4 weeks</option>
             <option value={8}>Next 8 weeks</option>
             <option value={13}>Next 3 months</option>
             <option value={26}>Next 6 months</option>
-          </select>
+          </Select>
         )}
       </div>
 
@@ -202,7 +203,7 @@ export default function MaintenanceSchedulePage() {
             <thead>
               <tr>
                 {['Plan', 'Asset', 'Title', 'Type', 'Frequency', 'Next Due', 'Last Done', 'Technician', 'Current Job', 'Status', ''].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                     {h}
                   </th>
                 ))}

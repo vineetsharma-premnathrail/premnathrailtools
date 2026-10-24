@@ -11,6 +11,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 import { useCan } from '@/lib/permissions'
 import { DesignSourcesPanel } from '@/components/production/DesignBomLink'
+import Select from '@/components/shared/Select'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', active: 'Active', obsolete: 'Obsolete' }
 const STATUS_HEX: Record<string, string> = { draft: '#F59E0B', active: '#16A34A', obsolete: '#78716c' }
@@ -86,10 +87,10 @@ export default function ProductionBomListPage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <input data-tour="production-bom-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search by BOM number or product…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select data-tour="production-bom-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <Select data-tour="production-bom-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
       </div>
 
       <div data-tour="production-bom-table" style={{
@@ -100,7 +101,7 @@ export default function ProductionBomListPage() {
           <thead>
             <tr>
               {['BOM Number', 'Product', 'Version', 'Components', 'Operations', ...(seeCosts ? ['Std Cost / Unit'] : []), 'Work Orders', 'Status', ''].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}
                 </th>
               ))}

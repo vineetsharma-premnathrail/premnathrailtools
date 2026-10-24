@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 // Panels tab — covers the Panel Design and Panel Assembly stages. Moving a
 // panel to Assembled (or later) stamps who assembled it and when, server-side.
 import { useCallback, useEffect, useState } from 'react'
@@ -189,11 +190,11 @@ export default function PanelsTab({ job, meta, canEdit, onChanged }: { job: Elec
                   {canEdit ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
                       <Pill value={p.status} labels={PANEL_STATUS_LABELS} hex={PANEL_STATUS_HEX} />
-                      <select data-tour="elec-panel-status-select" aria-label={`Status of panel ${p.panel_tag}`} value={p.status} disabled={busy}
+                      <Select data-tour="elec-panel-status-select" aria-label={`Status of panel ${p.panel_tag}`} value={p.status} disabled={busy}
                         onChange={(e) => changeStatus(p, e.target.value)}
                         style={{ ...inputStyle, width: 'auto', padding: '4px 8px', fontSize: 12 }}>
                         {Object.entries(PANEL_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                      </select>
+                      </Select>
                     </div>
                   ) : <Pill value={p.status} labels={PANEL_STATUS_LABELS} hex={PANEL_STATUS_HEX} />}
                 </td>
@@ -240,9 +241,9 @@ export default function PanelsTab({ job, meta, canEdit, onChanged }: { job: Elec
                   <input style={sheetInput} value={form.name} maxLength={150} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Main Control Panel" />
                 </F>
                 <F tour="elec-panel-type" label="Panel Type" basis={160}>
-                  <select style={sheetInput} value={form.panel_type} onChange={(e) => set('panel_type', e.target.value)}>
+                  <Select style={sheetInput} value={form.panel_type} onChange={(e) => set('panel_type', e.target.value)}>
                     {Object.entries(meta.panel_types || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </F>
               </div>
             </SheetSection>
@@ -268,9 +269,9 @@ export default function PanelsTab({ job, meta, canEdit, onChanged }: { job: Elec
           right={<>
             <SheetSection icon="flag" title="Status">
               <div data-tour="elec-panel-status">
-                <select style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)} aria-label="Status">
+                <Select style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)} aria-label="Status">
                   {Object.entries(PANEL_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+                </Select>
               </div>
               <p style={sheetHint}>Setting the status to Assembled, Tested or Installed records you as the assembler with today&apos;s date.</p>
             </SheetSection>

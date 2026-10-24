@@ -15,6 +15,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { FormSheet, SheetColumns, SheetSection, SHEET, sheetInput, SheetError } from '@/components/shared/FormSheet'
 import { SField, SRow, SheetFooter, sw, sg } from '@/components/finance/financeSheet'
+import Select from '@/components/shared/Select'
 import {
   profitCentresApi, profitabilityApi, ProfitCentre, ProfitCentreMeta, ProfitCentrePL, Profitability, ProfitabilityItem,
 } from '@/lib/controllingCostingApi'
@@ -200,12 +201,12 @@ function PCFormDialog({ form, setForm, meta, parents, saving, error, onSave, onC
             </SRow>
             <SRow>
               <SField label="Business line" style={sw(200)}>
-                <select style={sheetInput} value={form.segment} onChange={(e) => set('segment', e.target.value)}>{meta.segments.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>
+                <Select style={sheetInput} value={form.segment} onChange={(e) => set('segment', e.target.value)}>{meta.segments.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</Select>
               </SField>
               <SField label="Plant" style={sg(200, 300)}>
-                <select style={sheetInput} value={form.branch_id} onChange={(e) => set('branch_id', e.target.value)}>
+                <Select style={sheetInput} value={form.branch_id} onChange={(e) => set('branch_id', e.target.value)}>
                   <option value="">Company-wide</option>{meta.branches.map((b) => <option key={b.id} value={b.id}>{b.code} — {b.name}</option>)}
-                </select>
+                </Select>
               </SField>
             </SRow>
             <SField label="Description" optional><input style={sheetInput} value={form.description} onChange={(e) => set('description', e.target.value)} /></SField>
@@ -221,7 +222,7 @@ function PCFormDialog({ form, setForm, meta, parents, saving, error, onSave, onC
               <SField label="Valid to" optional style={sw(160)}><DateField value={form.valid_to} onChange={(v) => set('valid_to', v)} /></SField>
             </SRow>
             <SField label="Status" style={{ maxWidth: 160, marginBottom: 14 }}>
-              <select style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)}><option value="active">Active</option><option value="inactive">Inactive</option></select>
+              <Select style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)}><option value="active">Active</option><option value="inactive">Inactive</option></Select>
             </SField>
             <label style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 13, color: SHEET.BODY }}>
               <input type="checkbox" checked={form.is_default} onChange={(e) => set('is_default', e.target.checked)} style={{ marginTop: 3 }} /> Company default (catches lines nothing else derives a profit centre for)
@@ -261,9 +262,9 @@ export function ProfitCentrePLTab() {
         <div style={{ width: 150 }}><label style={labelStyle}>From</label><DateField value={from} onChange={setFrom} /></div>
         <div style={{ width: 150 }}><label style={labelStyle}>To</label><DateField value={to} onChange={setTo} /></div>
         <div style={{ width: 190 }}><label style={labelStyle}>Columns</label>
-          <select style={inputStyle} value={groupBy} onChange={(e) => setGroupBy(e.target.value)}>
+          <Select style={inputStyle} value={groupBy} onChange={(e) => setGroupBy(e.target.value)}>
             <option value="profit_center">Profit centre</option><option value="plant">Plant</option><option value="segment">Business line</option>
-          </select></div>
+          </Select></div>
         <button style={primaryBtnStyle} onClick={load} disabled={loading}>{loading ? 'Loading…' : 'Show'}</button>
       </div>
       {data?.unassigned_lines && <InfoBanner tone="warning">Some posted lines have no profit centre (column &quot;Unassigned&quot;). Set a company default profit centre and use &quot;Fill blanks on past postings&quot; under Profit Centres.</InfoBanner>}
@@ -348,7 +349,7 @@ export function ProfitabilityTab() {
       </InfoBanner>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 14 }}>
         <div style={{ width: 180 }}><label style={labelStyle}>Margin per</label>
-          <select style={inputStyle} value={groupBy} onChange={(e) => setGroupBy(e.target.value)}>{GROUPS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}</select></div>
+          <Select style={inputStyle} value={groupBy} onChange={(e) => setGroupBy(e.target.value)}>{GROUPS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}</Select></div>
         <div style={{ width: 150 }}><label style={labelStyle}>From (optional)</label><DateField value={from} onChange={setFrom} /></div>
         <div style={{ width: 150 }}><label style={labelStyle}>To (optional)</label><DateField value={to} onChange={setTo} /></div>
         <button style={primaryBtnStyle} onClick={load} disabled={loading}>{loading ? 'Loading…' : 'Show'}</button>

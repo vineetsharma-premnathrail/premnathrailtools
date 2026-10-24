@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { projectsApi } from '@/lib/api'
@@ -39,10 +40,10 @@ export default function ProjectListView() {
       <ErrorBanner error={error} />
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
         <input data-tour="pm-all-search" style={{ ...inputStyle, maxWidth: 280 }} placeholder="Search code, name or customer…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select data-tour="pm-all-status-filter" style={{ ...inputStyle, maxWidth: 200 }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <Select data-tour="pm-all-status-filter" style={{ ...inputStyle, maxWidth: 200 }} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(PROJECT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
       </div>
       {loading ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Loading…</p> : projects.length === 0 ? (
         <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No projects match.</p>

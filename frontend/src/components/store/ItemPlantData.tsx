@@ -7,8 +7,9 @@ import { useEffect, useState } from 'react'
 import { itemPlantsApi, ItemPlantRow, ItemPlantsPayload } from '@/lib/mmLogisticsApi'
 import { extractErrorMessages } from '@/lib/validation'
 import { TEXT } from '@/lib/theme'
-import { Section, inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { Section, inputStyle, secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput } from '@/components/shared/FormSheet'
+import Select from '@/components/shared/Select'
 
 const NUM_FIELDS: { key: keyof ItemPlantRow; label: string; width: number }[] = [
   { key: 'reorder_level', label: 'Reorder level', width: 90 },
@@ -83,16 +84,16 @@ export default function ItemPlantData({ itemId, canEdit }: { itemId: number; can
               <td style={{ ...td, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>{plantName(r.branch_id)}</td>
               <td style={td}>
                 {ed ? (
-                  <select style={{ ...cell, width: 130 }} value={r.mrp_type} onChange={(e) => set(i, { mrp_type: e.target.value })}>
+                  <Select style={{ ...cell, width: 130 }} value={r.mrp_type} onChange={(e) => set(i, { mrp_type: e.target.value })}>
                     {data.meta.mrp_types.map((o) => <option key={o.value} value={o.value}>{o.label.split(' — ')[0]}</option>)}
-                  </select>
+                  </Select>
                 ) : <span style={{ fontSize: 13 }}>{data.meta.mrp_types.find((o) => o.value === r.mrp_type)?.label.split(' — ')[0]}</span>}
               </td>
               <td style={td}>
                 {ed ? (
-                  <select style={{ ...cell, width: 120 }} value={r.procurement_type} onChange={(e) => set(i, { procurement_type: e.target.value })}>
+                  <Select style={{ ...cell, width: 120 }} value={r.procurement_type} onChange={(e) => set(i, { procurement_type: e.target.value })}>
                     {data.meta.procurement_types.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                  </Select>
                 ) : <span style={{ fontSize: 13 }}>{data.meta.procurement_types.find((o) => o.value === r.procurement_type)?.label}</span>}
               </td>
               {NUM_FIELDS.map((f) => (
@@ -105,10 +106,10 @@ export default function ItemPlantData({ itemId, canEdit }: { itemId: number; can
               ))}
               <td style={td}>
                 {ed ? (
-                  <select style={{ ...cell, width: 150 }} value={r.default_location_id ?? ''} onChange={(e) => set(i, { default_location_id: e.target.value ? Number(e.target.value) : null })}>
+                  <Select style={{ ...cell, width: 150 }} value={r.default_location_id ?? ''} onChange={(e) => set(i, { default_location_id: e.target.value ? Number(e.target.value) : null })}>
                     <option value="">—</option>
                     {data.meta.stores.filter((s) => !s.branch_id || s.branch_id === r.branch_id).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
+                  </Select>
                 ) : <span style={{ fontSize: 13 }}>{data.meta.stores.find((s) => s.id === r.default_location_id)?.name || '—'}</span>}
               </td>
               <td style={td}>
@@ -118,7 +119,7 @@ export default function ItemPlantData({ itemId, canEdit }: { itemId: number; can
               </td>
               {ed && (
                 <td style={td}>
-                  <button type="button" onClick={() => setRows(rows.filter((_, j) => j !== i))} style={{ ...secondaryBtnStyle, padding: '5px 10px', fontSize: 12 }}>Remove</button>
+                  <button type="button" onClick={() => setRows(rows.filter((_, j) => j !== i))} style={smallSecondaryBtnStyle}>Remove</button>
                 </td>
               )}
             </tr>
@@ -156,10 +157,10 @@ export default function ItemPlantData({ itemId, canEdit }: { itemId: number; can
               {rows.length === 0 ? <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>No plant rows — add a plant below.</p> : grid(true)}
               {unused.length > 0 && (
                 <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <select style={{ ...sheetInput, width: 220 }} value={addPlant} onChange={(e) => setAddPlant(e.target.value)}>
+                  <Select style={{ ...sheetInput, width: 220 }} value={addPlant} onChange={(e) => setAddPlant(e.target.value)}>
                     <option value="">Add a plant…</option>
                     {unused.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
+                  </Select>
                   <button type="button" disabled={!addPlant} onClick={() => { setRows([...rows, blankRow(Number(addPlant))]); setAddPlant('') }}
                     style={sheetBtn('secondary', SHEET.INK, !addPlant)}><SheetIcon name="plus" size={15} />Add</button>
                 </div>

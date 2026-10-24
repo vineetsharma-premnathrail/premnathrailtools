@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useRef, useState } from 'react'
 import { hydraulicApi } from '@/lib/api'
 import { HydDocument, HydDocumentEntity } from '@/types'
@@ -213,9 +214,9 @@ export default function HydDocumentsPanel({
                 </div>
                 <div style={{ flex: '0 1 190px', minWidth: 160 }}>
                   <label style={sheetLabel}>Type</label>
-                  <select data-tour="hyd-docs-type" style={sheetInput} value={docType} onChange={(e) => setDocType(e.target.value)}>
+                  <Select data-tour="hyd-docs-type" style={sheetInput} value={docType} onChange={(e) => setDocType(e.target.value)}>
                     {Object.entries(DOCUMENT_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </div>
               </div>
               <label style={sheetLabel}>Description <Optional /></label>

@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react'
 import { crmApi } from '@/lib/api'
 import { CrmDocumentCategory } from '@/types'
-import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/crm/ui'
+import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallDangerBtnStyle, smallSecondaryBtnStyle } from '@/components/crm/ui'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -158,8 +158,8 @@ export default function DocumentCategoriesManager() {
                     <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600 }}>{c.label}</td>
                     <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.secondary }}>{c.document_count}</td>
                     <td style={{ padding: '10px 14px', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      {canEditList && <button onClick={() => startEdit(c)} data-tour={rowIdx === 0 ? 'dc-row-edit-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '4px 10px', fontSize: 12 }}>Edit</button>}
-                      {canEditList && <button onClick={() => setPendingDelete(c)} data-tour={rowIdx === 0 ? 'dc-row-delete-btn' : undefined} style={{ ...dangerBtnStyle, padding: '4px 10px', fontSize: 12 }}>Delete</button>}
+                      {canEditList && <button onClick={() => startEdit(c)} data-tour={rowIdx === 0 ? 'dc-row-edit-btn' : undefined} style={{ ...smallSecondaryBtnStyle }}>Edit</button>}
+                      {canEditList && <button onClick={() => setPendingDelete(c)} data-tour={rowIdx === 0 ? 'dc-row-delete-btn' : undefined} style={{ ...smallDangerBtnStyle }}>Delete</button>}
                     </td>
                   </tr>
                 ))

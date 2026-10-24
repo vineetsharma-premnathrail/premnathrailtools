@@ -17,6 +17,7 @@ import DateField from '@/components/erp/DateField'
 import MaintenanceAssetPicker from '@/components/maintenance/MaintenanceAssetPicker'
 import { primaryBtnStyle } from '@/components/shared/ui'
 import { ASSET_CATEGORY_LABELS, FAILURE_CATEGORY_LABELS, PRIORITY_LABELS, formatINR, formatMinutes } from '@/components/maintenance/labels'
+import Select from '@/components/shared/Select'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend)
 
@@ -38,7 +39,7 @@ const inputStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
 }
 const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0 }
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }
 const tdStyle: React.CSSProperties = { padding: '8px 10px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
 const numStyle: React.CSSProperties = { ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }
 
@@ -182,18 +183,18 @@ export default function MaintenanceReportsPage() {
         {lookups && lookups.branches.length > 1 && (
           <div style={{ flex: '0 1 180px', minWidth: 150 }}>
             <label style={labelStyle}>Plant</label>
-            <select style={{ ...inputStyle, width: '100%' }} value={branchId} onChange={(e) => { setBranchId(e.target.value); setAssetId('') }}>
+            <Select style={{ ...inputStyle, width: '100%' }} value={branchId} onChange={(e) => { setBranchId(e.target.value); setAssetId('') }}>
               <option value="">All plants</option>
               {lookups.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
+            </Select>
           </div>
         )}
         <div style={{ flex: '0 1 190px', minWidth: 160 }}>
           <label style={labelStyle}>Category</label>
-          <select style={{ ...inputStyle, width: '100%' }} value={category} onChange={(e) => setCategory(e.target.value)}>
+          <Select style={{ ...inputStyle, width: '100%' }} value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="">All categories</option>
             {Object.entries(ASSET_CATEGORY_LABELS).map(([kk, v]) => <option key={kk} value={kk}>{v}</option>)}
-          </select>
+          </Select>
         </div>
         <div style={{ flex: '1 1 220px', maxWidth: 320 }}>
           <label style={labelStyle}>Asset</label>

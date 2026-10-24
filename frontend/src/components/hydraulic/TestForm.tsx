@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { hydraulicApi } from '@/lib/api'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
@@ -271,20 +272,20 @@ export default function TestForm({
             <div style={{ ...fieldRow, marginBottom: 0 }}>
               <Cell tour="hyd-testf-type" basis={200} grow max={260}>
                 <label style={sheetLabel}>Test Type <Req /></label>
-                <select style={sheetInput} value={testType} onChange={(e) => setTestType(e.target.value)}>
+                <Select style={sheetInput} value={testType} onChange={(e) => setTestType(e.target.value)}>
                   {Object.entries(TEST_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+                </Select>
               </Cell>
               <Cell tour="hyd-testf-medium" basis={130}>
                 <label style={sheetLabel}>Medium</label>
                 {initial ? (
                   <div style={readOnlyBox}>{SYSTEM_TYPE_LABELS[systemType] || systemType}</div>
                 ) : (
-                  <select style={sheetInput} value={systemType}
+                  <Select style={sheetInput} value={systemType}
                     onChange={(e) => { setSystemType(e.target.value); setSystemId(''); setComponentId('') }}>
                     <option value="hydraulic">Hydraulic</option>
                     <option value="pneumatic">Pneumatic</option>
-                  </select>
+                  </Select>
                 )}
               </Cell>
               <Cell tour="hyd-testf-date" basis={160}>
@@ -416,9 +417,9 @@ export default function TestForm({
                         </span>
                       </div>
                     ) : (
-                      <select style={rowInput} value={r.result} onChange={(e) => updateRow(r.key, { result: e.target.value })}>
+                      <Select style={rowInput} value={r.result} onChange={(e) => updateRow(r.key, { result: e.target.value })}>
                         {Object.entries(READING_RESULT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                      </select>
+                      </Select>
                     )}
                   </div>
                   <div style={{ flex: '1 1 160px', maxWidth: 240 }}>

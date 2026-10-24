@@ -11,6 +11,7 @@ import QualityNav from '@/components/quality/QualityNav'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, Req, Optional } from '@/components/shared/FormSheet'
 import { ErrorBanner, sheetGap } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 export default function NewQualityStandardPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
@@ -81,11 +82,11 @@ export default function NewQualityStandardPage() {
         right={<>
           <SheetSection icon="calendar" title="Status">
             <label style={sheetLabel}>Status</label>
-            <select style={sheetInput} value={status} onChange={(e) => setStatus(e.target.value as QualityStandardStatus)}>
+            <Select style={sheetInput} value={status} onChange={(e) => setStatus(e.target.value as QualityStandardStatus)}>
               <option value="draft">Draft</option>
               <option value="active">Active</option>
               <option value="obsolete">Obsolete</option>
-            </select>
+            </Select>
             <label style={{ ...sheetLabel, ...sheetGap }}>Effective Date <Optional /></label>
             <DateField value={effectiveDate} onChange={setEffectiveDate} />
           </SheetSection>

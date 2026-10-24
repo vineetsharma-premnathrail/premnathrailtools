@@ -14,7 +14,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import DateField from '@/components/erp/DateField'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { h2Style, thStyle, tdStyle, Pill, ErrorBanner } from '@/components/sales/SalesUi'
 import { FormSheet, SheetSection, SheetIcon, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { formatINR } from '@/components/sales/labels'
@@ -26,7 +26,7 @@ const STATUS_HEX: Record<string, string> = {
   not_due: '#94a3b8', due: '#F59E0B', invoice_requested: '#8B5CF6', invoiced: '#2563EB', settled: '#16A34A', cancelled: '#78716c',
 }
 const MANUAL = ['drawing_approval', 'inspection', 'other']
-const smallBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '5px 10px', fontSize: 11.5 }
+const smallBtn: React.CSSProperties = { ...smallSecondaryBtnStyle }
 
 function todayIso() {
   const d = new Date()

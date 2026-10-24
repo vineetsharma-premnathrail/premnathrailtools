@@ -14,6 +14,7 @@ import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
+import { primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
 
 const VISIT_STATUSES = ['assigned', 'scheduled', 'in_progress', 'pending_parts', 'on_hold', 'work_completed']
 const inputStyle: React.CSSProperties = {
@@ -22,9 +23,9 @@ const inputStyle: React.CSSProperties = {
 }
 const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: '#57534e', marginBottom: 6, display: 'block' }
 const cardStyle: React.CSSProperties = { background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 16, padding: 18, marginBottom: 16 }
-const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#78716c', background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#78716c', background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' }
 const tdStyle: React.CSSProperties = { padding: '8px 10px', fontSize: 13, color: '#1f1108', borderTop: '1px solid rgba(0,0,0,0.06)', verticalAlign: 'top' }
-const btn: React.CSSProperties = { fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)', background: '#fff', color: '#57534e', cursor: 'pointer', whiteSpace: 'nowrap' }
+const btn: React.CSSProperties = smallSecondaryBtnStyle
 const inr = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 
 const toLocal = (iso: string | null) => {
@@ -150,7 +151,7 @@ export default function ServiceVisitsTab({ srId, srStatus, assignedId, onChanged
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <SlaBadge label="Response" state={data?.sla_response_state} />
             <SlaBadge label="Resolution" state={data?.sla_resolution_state} />
-            {canLog && <button type="button" style={btn} onClick={startNew}>+ Log visit</button>}
+            {canLog && <button type="button" style={secondaryBtnStyle} onClick={startNew}>+ Log visit</button>}
           </div>
         </div>
         <p style={{ fontSize: 12, color: '#78716c', margin: '8px 0 0' }}>
@@ -180,7 +181,7 @@ export default function ServiceVisitsTab({ srId, srStatus, assignedId, onChanged
                   <button type="button" style={{ ...btn, marginRight: 6 }} onClick={() => setDocFor(docFor === v.id ? null : v.id)}>Report</button>
                   {open && (canEditAll || v.engineer_id === me?.id) && <>
                     <button type="button" style={{ ...btn, marginRight: 6 }} onClick={() => startEdit(v)}>Edit</button>
-                    <button type="button" style={{ ...btn, color: '#DC2626' }} onClick={() => setDeleting(v)}>Remove</button>
+                    <button type="button" style={smallDangerBtnStyle} onClick={() => setDeleting(v)}>Remove</button>
                   </>}
                 </td>
               </tr>
@@ -241,8 +242,8 @@ export default function ServiceVisitsTab({ srId, srStatus, assignedId, onChanged
             </div>
             <p style={{ fontSize: 11.5, color: '#78716c', margin: '10px 0 0' }}>Hours on site are worked out from arrival / departure when left blank. Upload the signed paper report on the Attachments tab.</p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-              <button type="button" style={btn} onClick={() => setEditing(null)}>Cancel</button>
-              <button type="button" disabled={busy} onClick={save} style={{ ...btn, border: 'none', background: 'linear-gradient(135deg,#FF7A45,#FF5A1F)', color: '#fff', opacity: busy ? 0.7 : 1 }}>{busy ? 'Saving…' : 'Save visit'}</button>
+              <button type="button" style={secondaryBtnStyle} onClick={() => setEditing(null)}>Cancel</button>
+              <button type="button" disabled={busy} onClick={save} style={{ ...primaryBtnStyle, opacity: busy ? 0.7 : 1 }}>{busy ? 'Saving…' : 'Save visit'}</button>
             </div>
           </div>
         </div>, document.body)}

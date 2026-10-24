@@ -1,5 +1,7 @@
 'use client'
 
+import AnchoredDropdown from '@/components/design/AnchoredDropdown'
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -153,15 +155,15 @@ export default function RaiseChangeRequestPage() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
                 <div data-tour="design-ecrnew-source" style={{ flex: '1 1 200px', maxWidth: 260 }}>
                   <label style={labelStyle}>Source</label>
-                  <select style={inputStyle} value={source} onChange={(e) => { setSource(e.target.value); setQualityId(''); setQualityRecords([]) }}>
+                  <Select style={inputStyle} value={source} onChange={(e) => { setSource(e.target.value); setQualityId(''); setQualityRecords([]) }}>
                     {Object.entries(ECR_SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div data-tour="design-ecrnew-urgency" style={{ flex: '0 1 140px', minWidth: 120 }}>
                   <label style={labelStyle}>Urgency</label>
-                  <select style={inputStyle} value={urgency} onChange={(e) => setUrgency(e.target.value)}>
+                  <Select style={inputStyle} value={urgency} onChange={(e) => setUrgency(e.target.value)}>
                     {Object.entries(ECR_URGENCY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </div>
               </div>
               <div data-tour="design-ecrnew-reason" style={{ marginTop: 14 }}>
@@ -207,24 +209,24 @@ export default function RaiseChangeRequestPage() {
                 <label style={labelStyle}>Add a released drawing</label>
                 <input data-tour="design-ecrnew-doc-search" style={inputStyle} value={docSearch} onChange={(e) => setDocSearch(e.target.value)} placeholder="Search by drawing number or title…" />
                 {docMatches.length > 0 && (
-                  <div style={dropStyle}>
+                  <AnchoredDropdown style={dropStyle}>
                     {docMatches.map((d) => (
                       <div key={d.id} onClick={() => addItem('document', d)} style={optionStyle}>{d.label}</div>
                     ))}
-                  </div>
+                  </AnchoredDropdown>
                 )}
               </div>
               <div style={{ position: 'relative', flex: '1 1 300px', maxWidth: 460 }}>
                 <label style={labelStyle}>Add a released BOM</label>
                 <input data-tour="design-ecrnew-bom-search" style={inputStyle} value={bomSearch} onChange={(e) => setBomSearch(e.target.value)} placeholder="Search by BOM number or title…" />
                 {bomMatches.length > 0 && (
-                  <div style={dropStyle}>
+                  <AnchoredDropdown style={dropStyle}>
                     {bomMatches.map((b) => (
                       <div key={b.id} onClick={() => addItem('bom', b)} style={optionStyle}>
                         {b.label}{b.extra ? <span style={{ color: SHEET.MUTED }}> · {b.extra}</span> : null}
                       </div>
                     ))}
-                  </div>
+                  </AnchoredDropdown>
                 )}
               </div>
             </div>

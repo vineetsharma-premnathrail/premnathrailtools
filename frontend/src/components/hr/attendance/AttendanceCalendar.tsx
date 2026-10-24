@@ -2,6 +2,7 @@
 
 import { HrAttendanceCounts, HrAttendanceDay } from '@/types'
 import { TEXT, BORDER, GLASS, SHADOWS } from '@/lib/theme'
+import { iconBtnStyle } from '@/components/shared/ui'
 
 // Month grid of attendance statuses, shared by My Attendance, the HR month
 // view and the employee-detail Attendance tab. Days without a stored row show
@@ -109,7 +110,7 @@ export default function AttendanceCalendar({
 }
 
 export function MonthPicker({ year, month, onChange }: { year: number; month: number; onChange: (y: number, m: number) => void }) {
-  const btn: React.CSSProperties = { padding: '7px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.7)', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: TEXT.secondary }
+  const btn: React.CSSProperties = { ...iconBtnStyle, fontSize: 16, fontWeight: 700, color: TEXT.secondary }
   const prev = () => (month === 1 ? onChange(year - 1, 12) : onChange(year, month - 1))
   const next = () => (month === 12 ? onChange(year + 1, 1) : onChange(year, month + 1))
   return (

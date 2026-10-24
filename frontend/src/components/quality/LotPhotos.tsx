@@ -10,6 +10,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { ActionSheet } from '@/components/quality/QualityBits'
 import { sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
+import Select from '@/components/shared/Select'
 
 /** Inspection photos of a lot (SharePoint, served through the app). Added /
  *  removed only while the lot is open — after the usage decision they are
@@ -111,10 +112,10 @@ export default function LotPhotos({ lot, onChange }: { lot: QualityInspectionLot
           <input type="file" multiple accept="image/*" style={sheetInput} onChange={(e) => setFiles(Array.from(e.target.files || []))} />
           <p style={sheetHint}>{files.length ? `${files.length} photo(s) selected.` : 'Images only — defects, markings or the set-up.'}</p>
           <label style={{ ...sheetLabel, marginTop: 14 }}>Characteristic <Optional /></label>
-          <select style={sheetInput} value={resultId} onChange={(e) => setResultId(e.target.value)}>
+          <Select style={sheetInput} value={resultId} onChange={(e) => setResultId(e.target.value)}>
             <option value="">Whole lot</option>
             {lot.results.map((r) => <option key={r.id} value={r.id}>{r.characteristic_name}</option>)}
-          </select>
+          </Select>
           <label style={{ ...sheetLabel, marginTop: 14 }}>Caption <Optional /></label>
           <input style={sheetInput} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="e.g. Crack at weld toe" />
         </ActionSheet>

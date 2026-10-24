@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 // The project's correspondence log for the project manager: every WBS team
 // chat message, task comment and file a department sent, newest first, in
 // one place — filter by department, WBS or kind. Items since your last
@@ -94,18 +95,18 @@ export default function ProjectDiscussions({ projectId, limit, onOpenAll }: { pr
 
       {!compact && items.length > 0 && (
         <div data-tour="pm-disc-filters" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
-          <select style={{ ...inputStyle, width: 190 }} value={dept} onChange={(e) => { setDept(e.target.value); setWbs('') }}>
+          <Select style={{ ...inputStyle, width: 190 }} value={dept} onChange={(e) => { setDept(e.target.value); setWbs('') }}>
             <option value="">All departments</option>
             {depts.map((d) => <option key={d} value={d}>{d}</option>)}
-          </select>
-          <select style={{ ...inputStyle, width: 240 }} value={wbs} onChange={(e) => setWbs(e.target.value)}>
+          </Select>
+          <Select style={{ ...inputStyle, width: 240 }} value={wbs} onChange={(e) => setWbs(e.target.value)}>
             <option value="">All WBS</option>
             {wbsList.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-          </select>
-          <select style={{ ...inputStyle, width: 160 }} value={kind} onChange={(e) => setKind(e.target.value)}>
+          </Select>
+          <Select style={{ ...inputStyle, width: 160 }} value={kind} onChange={(e) => setKind(e.target.value)}>
             <option value="">Chat, comments &amp; files</option>
             {(Object.keys(KIND_LABELS) as PmCommItem['kind'][]).map((k) => <option key={k} value={k}>{KIND_LABELS[k]}</option>)}
-          </select>
+          </Select>
           <label style={{ fontSize: 12.5, color: TEXT.secondary, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
             <input type="checkbox" checked={onlyFiles} onChange={(e) => setOnlyFiles(e.target.checked)} /> Only with files
           </label>

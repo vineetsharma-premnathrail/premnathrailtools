@@ -3,6 +3,7 @@
 // Header / commercial-terms fields of a sales order. Shared by the new-order
 // form and the draft edit view on the detail page.
 
+import Select from '@/components/shared/Select'
 import DateField from '@/components/erp/DateField'
 import { PRICE_BASIS_LABELS, LD_PERIOD_LABELS, LD_BASIS_LABELS, WARRANTY_RULE_LABELS, ORDER_TYPE_LABELS } from '@/components/sales/labels'
 import { SheetSection, Req, SHEET, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
@@ -37,9 +38,9 @@ export default function OrderTermsFields({ v, set, agencies }: {
       <SheetSection icon="doc" title="Customer PO & Contract">
       <div style={row}>
         <F label="Order type" w={170}>
-          <select style={inputStyle} value={txt('order_type') || 'rrv_supply'} onChange={(e) => set({ order_type: e.target.value })}>
+          <Select style={inputStyle} value={txt('order_type') || 'rrv_supply'} onChange={(e) => set({ order_type: e.target.value })}>
             {Object.entries(ORDER_TYPE_LABELS).filter(([k]) => k !== 'service').map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
-          </select>
+          </Select>
         </F>
         <F label="Customer PO no. *" w={200} tour="sales-form-po">
           <input style={inputStyle} value={txt('customer_po_number')} onChange={(e) => set({ customer_po_number: e.target.value })} />
@@ -58,9 +59,9 @@ export default function OrderTermsFields({ v, set, agencies }: {
       <SheetSection icon="rupee" title="Commercial Terms">
       <div style={row}>
         <F label="Price basis" w={190} tour="sales-form-price-basis">
-          <select style={inputStyle} value={txt('price_basis') || 'for_destination'} onChange={(e) => set({ price_basis: e.target.value })}>
+          <Select style={inputStyle} value={txt('price_basis') || 'for_destination'} onChange={(e) => set({ price_basis: e.target.value })}>
             {Object.entries(PRICE_BASIS_LABELS).map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
-          </select>
+          </Select>
         </F>
         <F label="Freight terms" w={200} grow><input style={inputStyle} value={txt('freight_terms')} onChange={(e) => set({ freight_terms: e.target.value })} /></F>
         <F label="Transit insurance" w={200} grow><input style={inputStyle} value={txt('insurance_terms')} onChange={(e) => set({ insurance_terms: e.target.value })} /></F>
@@ -70,10 +71,10 @@ export default function OrderTermsFields({ v, set, agencies }: {
       <SheetSection icon="shield" title="Inspection, LD & Warranty">
       <div style={row}>
         <F label="Inspection agency" w={180} tour="sales-form-inspection">
-          <select style={inputStyle} value={txt('inspection_agency')} onChange={(e) => set({ inspection_agency: e.target.value || null })}>
+          <Select style={inputStyle} value={txt('inspection_agency')} onChange={(e) => set({ inspection_agency: e.target.value || null })}>
             <option value="">— none / self —</option>
             {agencies.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
-          </select>
+          </Select>
         </F>
         <label style={checkLabel}>
           <input type="checkbox" checked={!!v.third_party_inspection_required} onChange={(e) => set({ third_party_inspection_required: e.target.checked })} />
@@ -88,14 +89,14 @@ export default function OrderTermsFields({ v, set, agencies }: {
           <>
             <F label="LD rate %" w={100}><input type="number" min={0} step="0.1" style={inputStyle} value={num('ld_rate_percent')} onChange={(e) => numSet('ld_rate_percent', e.target.value)} /></F>
             <F label="Per" w={200}>
-              <select style={inputStyle} value={txt('ld_rate_period') || 'week'} onChange={(e) => set({ ld_rate_period: e.target.value })}>
+              <Select style={inputStyle} value={txt('ld_rate_period') || 'week'} onChange={(e) => set({ ld_rate_period: e.target.value })}>
                 {Object.entries(LD_PERIOD_LABELS).map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
-              </select>
+              </Select>
             </F>
             <F label="Of" w={200}>
-              <select style={inputStyle} value={txt('ld_basis') || 'delayed_value'} onChange={(e) => set({ ld_basis: e.target.value })}>
+              <Select style={inputStyle} value={txt('ld_basis') || 'delayed_value'} onChange={(e) => set({ ld_basis: e.target.value })}>
                 {Object.entries(LD_BASIS_LABELS).map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
-              </select>
+              </Select>
             </F>
             <F label="Cap % (blank = no cap)" w={150}><input type="number" min={0} step="0.5" style={inputStyle} value={num('ld_max_percent')} onChange={(e) => numSet('ld_max_percent', e.target.value)} /></F>
           </>
@@ -103,10 +104,10 @@ export default function OrderTermsFields({ v, set, agencies }: {
       </div>
       <div data-tour="sales-form-warranty" style={row}>
         <F label="Warranty rule" w={200}>
-          <select style={inputStyle} value={txt('warranty_rule')} onChange={(e) => set({ warranty_rule: e.target.value || null })}>
+          <Select style={inputStyle} value={txt('warranty_rule')} onChange={(e) => set({ warranty_rule: e.target.value || null })}>
             <option value="">— pick —</option>
             {Object.entries(WARRANTY_RULE_LABELS).map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
-          </select>
+          </Select>
         </F>
         <F label="Months from delivery" w={160}><input type="number" min={0} style={inputStyle} value={num('warranty_months_from_delivery')} onChange={(e) => numSet('warranty_months_from_delivery', e.target.value)} /></F>
         <F label="Months from commissioning" w={190}><input type="number" min={0} style={inputStyle} value={num('warranty_months_from_commissioning')} onChange={(e) => numSet('warranty_months_from_commissioning', e.target.value)} /></F>

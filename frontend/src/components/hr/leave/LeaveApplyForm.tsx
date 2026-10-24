@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useRef, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { HrLeavePreview, HrLeaveType } from '@/types'
@@ -127,9 +128,9 @@ export default function LeaveApplyForm({
           <SheetSection icon="calendar" title="Leave">
             <div style={{ maxWidth: 320, marginBottom: 12 }}>
               <label style={sheetLabel}>Leave type <Req /></label>
-              <select data-tour="hr-leave-form-type" style={sheetInput} value={leaveTypeId} onChange={(e) => setLeaveTypeId(e.target.value)}>
+              <Select data-tour="hr-leave-form-type" style={sheetInput} value={leaveTypeId} onChange={(e) => setLeaveTypeId(e.target.value)}>
                 {types.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.code}){t.is_paid ? '' : ' — unpaid'}</option>)}
-              </select>
+              </Select>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div data-tour="hr-leave-form-from" style={{ flex: '0 1 160px', minWidth: 150 }}>
@@ -138,11 +139,11 @@ export default function LeaveApplyForm({
               </div>
               <div style={{ flex: '0 1 150px', minWidth: 140 }}>
                 <label style={sheetLabel}>{single ? 'Session' : 'Start session'}</label>
-                <select data-tour="hr-leave-form-from-session" style={sheetInput} value={fromSession} onChange={(e) => setFromSession(e.target.value)}>
+                <Select data-tour="hr-leave-form-from-session" style={sheetInput} value={fromSession} onChange={(e) => setFromSession(e.target.value)}>
                   <option value="full">Full day</option>
                   {lt?.allow_half_day !== false && (single ? <option value="first_half">First half</option> : null)}
                   {lt?.allow_half_day !== false && <option value="second_half">{single ? 'Second half' : 'From second half'}</option>}
-                </select>
+                </Select>
               </div>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
@@ -153,10 +154,10 @@ export default function LeaveApplyForm({
               {!single && (
                 <div style={{ flex: '0 1 150px', minWidth: 140 }}>
                   <label style={sheetLabel}>End session</label>
-                  <select data-tour="hr-leave-form-to-session" style={sheetInput} value={toSession} onChange={(e) => setToSession(e.target.value)}>
+                  <Select data-tour="hr-leave-form-to-session" style={sheetInput} value={toSession} onChange={(e) => setToSession(e.target.value)}>
                     <option value="full">Full day</option>
                     {lt?.allow_half_day !== false && <option value="first_half">Till first half</option>}
-                  </select>
+                  </Select>
                 </div>
               )}
             </div>

@@ -5,8 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
 import { HydTest } from '@/types'
-import { TEXT, DANGER, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle, InfoRow } from '@/components/shared/ui'
+import { TEXT, DANGER, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { secondaryBtnStyle, InfoRow, primaryBtnStyle } from '@/components/shared/ui'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
@@ -34,10 +34,7 @@ const cardStyle: React.CSSProperties = {
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', whiteSpace: 'nowrap' }
 const tdStyle: React.CSSProperties = { padding: '9px 12px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer',
-  background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-}
+const primaryBtn: React.CSSProperties = { ...primaryBtnStyle, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }
 const errorBanner: React.CSSProperties = {
   padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)',
   border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13,

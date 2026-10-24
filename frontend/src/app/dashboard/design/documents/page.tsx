@@ -1,5 +1,7 @@
 'use client'
 
+import { primaryBtnStyle } from '@/components/shared/ui'
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -89,7 +91,7 @@ export default function DesignDocumentsPage() {
           <button
             data-tour="design-docs-new-btn"
             onClick={() => router.push('/dashboard/design/documents/new')}
-            style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}
+            style={primaryBtnStyle}
           >
             + New Document
           </button>
@@ -119,14 +121,14 @@ export default function DesignDocumentsPage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input data-tour="design-docs-search" style={{ ...inputStyle, flex: '1 1 260px', minWidth: 200, maxWidth: 420 }} placeholder="Search by number, legacy number, title or description…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select data-tour="design-docs-type-filter" style={{ ...inputStyle, flex: '0 1 180px' }} value={docType} onChange={(e) => setDocType(e.target.value)}>
+        <Select data-tour="design-docs-type-filter" style={{ ...inputStyle, flex: '0 1 180px' }} value={docType} onChange={(e) => setDocType(e.target.value)}>
           <option value="">All types</option>
           {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="design-docs-discipline-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={discipline} onChange={(e) => setDiscipline(e.target.value)}>
+        </Select>
+        <Select data-tour="design-docs-discipline-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={discipline} onChange={(e) => setDiscipline(e.target.value)}>
           <option value="">All disciplines</option>
           {Object.entries(DISCIPLINE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
         <span style={{ fontSize: 12, color: TEXT.muted }}>{loading ? '' : `${docs.length} document${docs.length === 1 ? '' : 's'}`}</span>
       </div>
 

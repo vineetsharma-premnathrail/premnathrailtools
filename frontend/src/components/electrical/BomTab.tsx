@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 // Electrical BOM tab — one list that carries four scope stages: the BOM
 // itself, Component Selection (make + part number), Component Specification
 // (rating + spec text) and Purchase Requirement (procurement status + the
@@ -435,9 +436,9 @@ export default function BomTab({ job, meta, canEdit, onChanged }: { job: Electri
             <SheetSection icon="box" title="Component">
               <div style={rowStyle}>
                 <F tour="elec-bom-category" label="Category" basis={190}>
-                  <select style={sheetInput} value={form.category} onChange={(e) => set('category', e.target.value)}>
+                  <Select style={sheetInput} value={form.category} onChange={(e) => set('category', e.target.value)}>
                     {Object.entries(meta.component_categories || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </F>
                 <F tour="elec-bom-store-item" label="Store Item" optional basis={240} grow>
                   <input style={{ ...sheetInput, marginBottom: 6 }} value={storeSearch} onChange={(e) => setStoreSearch(e.target.value)}
@@ -493,10 +494,10 @@ export default function BomTab({ job, meta, canEdit, onChanged }: { job: Electri
             <SheetSection icon="flag" title="Panel & Status">
               <div style={rowStyle}>
                 <F tour="elec-bom-panel" label="Panel" basis={240} grow>
-                  <select style={sheetInput} value={form.panel_id} onChange={(e) => set('panel_id', e.target.value)}>
+                  <Select style={sheetInput} value={form.panel_id} onChange={(e) => set('panel_id', e.target.value)}>
                     <option value="">— Not panel-mounted —</option>
                     {panels.map((p) => <option key={p.id} value={String(p.id)}>{p.panel_tag} — {p.name}</option>)}
-                  </select>
+                  </Select>
                 </F>
               </div>
               {!panels.length && (
@@ -504,16 +505,16 @@ export default function BomTab({ job, meta, canEdit, onChanged }: { job: Electri
               )}
               <div style={rowStyle}>
                 <F tour="elec-bom-selection" label="Selection" basis={130} grow>
-                  <select style={sheetInput} value={form.selection_status} onChange={(e) => set('selection_status', e.target.value)}>
+                  <Select style={sheetInput} value={form.selection_status} onChange={(e) => set('selection_status', e.target.value)}>
                     {Object.entries(SELECTION_LABELS)
                       .filter(([k]) => k !== 'approved' || canApprove || form.selection_status === 'approved')
                       .map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </F>
                 <F tour="elec-bom-procurement" label="Procurement" basis={130} grow>
-                  <select style={sheetInput} value={form.procurement_status} onChange={(e) => set('procurement_status', e.target.value)}>
+                  <Select style={sheetInput} value={form.procurement_status} onChange={(e) => set('procurement_status', e.target.value)}>
                     {procurementOptions.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </F>
               </div>
               <p style={{ ...sheetHint, margin: '-4px 0 12px' }}>

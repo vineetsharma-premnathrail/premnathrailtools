@@ -7,7 +7,7 @@ import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { productionApi } from '@/lib/api'
 import { ProductionLookupOption, ProductionQueueEntry } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ProductionNav from '@/components/production/ProductionNav'
@@ -29,7 +29,7 @@ const cardStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 16,
 }
 const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
-const smallBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }
+const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 const primarySmall: React.CSSProperties = {
   padding: '7px 14px', borderRadius: 10, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 12, fontWeight: 600,
 }

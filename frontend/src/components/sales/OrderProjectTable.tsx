@@ -49,6 +49,8 @@ export function DepartmentCell({ cell }: { cell: OrderProjectCell | null | undef
 
 export default function OrderProjectTable({ elements }: { elements: OrderProjectElement[] }) {
   const cols = ['Element', 'Contractual date', 'Status', ...DEPARTMENT_COLUMNS.map((c) => c.label)]
+  // ui-audit-ignore table-scroll — the caller (projects/order-projects/[id]) wraps this in its own
+  // overflow:auto box with a max height, so the sticky header scrolls with the page body.
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1250 }}>
       <thead><tr>{cols.map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>

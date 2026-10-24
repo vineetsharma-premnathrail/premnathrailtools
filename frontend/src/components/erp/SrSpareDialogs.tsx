@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { erpApi } from '@/lib/api'
 import { ServiceMaterial } from '@/types'
@@ -52,10 +53,10 @@ export function IssueSpareDialog({ srId, material, onClose, onDone }: { srId: nu
         {error && <div style={errorBox}>{error}</div>}
         <SheetSection icon="box" title="Spare">
           <label style={sheetLabel}>Store <Req /></label>
-          <select value={locationId} onChange={(e) => setLocationId(e.target.value)} disabled={!!material.location_id} style={sheetInput}>
+          <Select value={locationId} onChange={(e) => setLocationId(e.target.value)} disabled={!!material.location_id} style={sheetInput}>
             <option value="">— Select store —</option>
             {locations.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
-          </select>
+          </Select>
           <div style={{ maxWidth: 140, marginTop: 14 }}>
             <label style={sheetLabel}>Qty ({material.unit}) <Req /></label>
             <input type="number" min={0} step="0.01" value={qty} onChange={(e) => setQty(e.target.value)} style={sheetInput} />

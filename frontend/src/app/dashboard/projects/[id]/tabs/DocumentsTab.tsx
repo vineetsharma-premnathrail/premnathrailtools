@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useState } from 'react'
 import { projectsApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
@@ -63,16 +64,16 @@ export default function DocumentsTab({ project }: { project: PmProject }) {
       {(depts.length > 0 || milestones.length > 0) && (
         <div data-tour="pm-docs-dept-filter" style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
           {milestones.length > 0 && (
-            <select style={{ ...inputStyle, width: 240 }} value={milestone} onChange={(e) => setMilestone(e.target.value)}>
+            <Select style={{ ...inputStyle, width: 240 }} value={milestone} onChange={(e) => setMilestone(e.target.value)}>
               <option value="">All milestones</option>
               {milestones.map(([id, title]) => <option key={id} value={id}>{title}</option>)}
-            </select>
+            </Select>
           )}
           {depts.length > 0 && (
-            <select style={{ ...inputStyle, width: 220 }} value={dept} onChange={(e) => setDept(e.target.value)}>
+            <Select style={{ ...inputStyle, width: 220 }} value={dept} onChange={(e) => setDept(e.target.value)}>
               <option value="">All departments</option>
               {depts.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
+            </Select>
           )}
           <span style={{ fontSize: 12.5, color: TEXT.muted }}>{shown.length} file(s)</span>
         </div>

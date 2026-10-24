@@ -1,11 +1,12 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { ReactNode, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import RndNav from '@/components/rnd/RndNav'
-import { Field, inputStyle, primaryBtnStyle } from '@/components/shared/ui'
+import { Field, inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 
 export interface FieldDef {
   key: string
@@ -139,16 +140,16 @@ export default function ToolCalculatorPage({
       <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>{title}</h1>
       <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 24px' }}>{description}</p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 24, alignItems: 'start' }}>
+      <div className="ui-cols" style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 24, alignItems: 'start' }}>
         <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
           {fields.map((f) => (
             <Field key={f.key} label={f.label}>
               {f.options ? (
-                <select style={inputStyle} value={form[f.key] ?? ''} onChange={set(f.key)}>
+                <Select style={inputStyle} value={form[f.key] ?? ''} onChange={set(f.key)}>
                   {f.options.map((opt) => (
                     <option key={opt} value={opt}>{opt}</option>
                   ))}
-                </select>
+                </Select>
               ) : (
                 <input
                   style={inputStyle}
@@ -166,7 +167,7 @@ export default function ToolCalculatorPage({
           <button
             onClick={runCalculate}
             disabled={busy}
-            style={{ ...primaryBtnStyle, padding: '11px 16px', fontSize: 13.5, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}
+            style={{ ...primaryBtnStyle, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}
           >
             {busy ? 'Calculating…' : 'Calculate'}
           </button>
@@ -187,7 +188,7 @@ export default function ToolCalculatorPage({
                     key={d.label}
                     onClick={() => runDownload(d)}
                     disabled={busy}
-                    style={{ padding: '9px 14px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: '#57534e' }}
+                    style={secondaryBtnStyle}
                   >
                     {d.label}
                   </button>
@@ -196,12 +197,12 @@ export default function ToolCalculatorPage({
                   placeholder="Optional save name…"
                   value={saveName}
                   onChange={(e) => setSaveName(e.target.value)}
-                  style={{ ...inputStyle, width: 200 }}
+                  style={{ ...inputStyle, width: 200, maxWidth: '100%' }}
                 />
                 <button
                   onClick={saveToHistory}
                   disabled={busy}
-                  style={{ padding: '9px 14px', borderRadius: 10, border: 'none', background: '#7c3aed', color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}
+                  style={{ ...primaryBtnStyle, background: '#7c3aed' }}
                 >
                   Save to History
                 </button>

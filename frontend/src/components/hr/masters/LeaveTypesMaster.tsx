@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { HrLeaveType } from '@/types'
@@ -227,11 +228,11 @@ export default function LeaveTypesMaster() {
               </div>
               <div data-tour="hr-mst-lt-gender" style={{ flex: '0 1 150px', minWidth: 140 }}>
                 <label style={sheetLabel}>Only for</label>
-                <select style={sheetInput} value={form.gender_restriction} onChange={(e) => setForm({ ...form, gender_restriction: e.target.value as Form['gender_restriction'] })}>
+                <Select style={sheetInput} value={form.gender_restriction} onChange={(e) => setForm({ ...form, gender_restriction: e.target.value as Form['gender_restriction'] })}>
                   <option value="">Everyone</option>
                   <option value="female">Female employees</option>
                   <option value="male">Male employees</option>
-                </select>
+                </Select>
               </div>
             </div>
             <p style={{ ...sheetHint, margin: '0 0 14px' }}>

@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react'
 import { storeApi, storeSerialsApi } from '@/lib/api'
 import { TEXT, BORDER } from '@/lib/theme'
+import Select from '@/components/shared/Select'
 
 type Bin = { id: number; code: string; name?: string | null; is_active?: boolean }
 
@@ -40,11 +41,11 @@ export default function BinSerialPicker({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
       {bins.length > 0 && (
-        <select value={binId} onChange={(e) => onChange({ binId: e.target.value, serials: [] })}
+        <Select value={binId} onChange={(e) => onChange({ binId: e.target.value, serials: [] })}
           style={{ padding: '6px 8px', borderRadius: 8, border: `1px solid ${BORDER.normal}`, fontSize: 12.5, background: 'rgba(255,255,255,.7)' }}>
           <option value="">Bin: unassigned</option>
           {bins.map((b) => <option key={b.id} value={b.id}>Bin {b.code}{b.name ? ` — ${b.name}` : ''}</option>)}
-        </select>
+        </Select>
       )}
       {serialised && (
         <div>

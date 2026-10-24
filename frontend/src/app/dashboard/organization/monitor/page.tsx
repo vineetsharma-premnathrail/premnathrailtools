@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useState } from 'react'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { useCan } from '@/lib/permissions'
@@ -116,9 +117,9 @@ export default function SystemMonitorPage() {
           <button key={t.key} type="button" onClick={() => { setTab(t.key); setError(''); setNotice('') }} style={{ padding: '7px 14px', borderRadius: 9999, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: `1px solid ${tab === t.key ? '#FF7A45' : BORDER.normal}`, background: tab === t.key ? 'rgba(255,122,69,0.1)' : '#fff', color: tab === t.key ? '#c2410c' : TEXT.secondary }}>{t.label}</button>
         ))}
         {tab !== 'jobs' && (
-          <select value={days} onChange={(e) => setDays(Number(e.target.value))} style={{ ...inputStyle, width: 130, marginLeft: 'auto' }}>
+          <Select value={days} onChange={(e) => setDays(Number(e.target.value))} style={{ ...inputStyle, width: 130, marginLeft: 'auto' }}>
             <option value={1}>Last 24 hours</option><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option>
-          </select>
+          </Select>
         )}
       </div>
 

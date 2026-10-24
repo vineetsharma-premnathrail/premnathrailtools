@@ -4,8 +4,8 @@
 // job-page tabs and register pages, so the ten tab components don't each
 // re-declare the same maps. Built from lib/theme like every other module.
 import { useCallback, useState } from 'react'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, DANGER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, GRADIENTS, DANGER } from '@/lib/theme'
+import { secondaryBtnStyle, inputStyle as sharedInput, primaryBtnStyle as sharedPrimary, smallSecondaryBtnStyle, tableWrapStyle, thStyle as sharedTh, tdStyle as sharedTd } from '@/components/shared/ui'
 import { ElectricalLookupOption } from '@/types'
 import { extractErrorMessages } from '@/lib/validation'
 import { FormSheet, SheetIcon, SheetIconName, SHEET, sheetBtn, sheetLabel, Req, Optional } from '@/components/shared/FormSheet'
@@ -22,27 +22,21 @@ export function useJobFeatures() {
   return { jf, sees: (feature: string) => outside || jf(feature, 'view'), can }
 }
 
-export const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '9px 11px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
-}
+export const inputStyle: React.CSSProperties = { ...sharedInput, background: 'rgba(255,255,255,.7)' }
 export const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
 export const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
 export const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }
-export const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 1 }
-export const tdStyle: React.CSSProperties = { padding: '9px 12px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'middle' }
-export const primaryBtn: React.CSSProperties = {
-  padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer',
-  background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-}
-export const smallBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }
+export const thStyle: React.CSSProperties = sharedTh
+export const tdStyle: React.CSSProperties = sharedTd
+export const primaryBtn: React.CSSProperties = { ...sharedPrimary, background: GRADIENTS.primary, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }
+export const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 export const dangerBtn: React.CSSProperties = { ...secondaryBtnStyle, color: DANGER.primary, borderColor: DANGER.border }
 export const smallDangerBtn: React.CSSProperties = { ...smallBtn, color: DANGER.primary, borderColor: DANGER.border }
 export const linkStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer', background: 'none', border: 'none', padding: 0 }
-export const tableWrap: React.CSSProperties = { overflow: 'auto', maxHeight: 'calc(100vh - 320px)', borderRadius: 12, border: `1px solid ${BORDER.light}` }
+export const tableWrap: React.CSSProperties = tableWrapStyle
 export const mutedText: React.CSSProperties = { fontSize: 13, color: TEXT.muted, margin: 0 }
 
 export const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap', display: 'inline-block' })

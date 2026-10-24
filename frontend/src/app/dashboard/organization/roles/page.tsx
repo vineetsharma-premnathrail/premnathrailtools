@@ -100,7 +100,7 @@ export default function OrganizationRolesPage() {
             <thead>
               <tr style={{ background: 'rgba(0,0,0,0.02)' }}>
                 {['Role', 'Description', 'Type', 'Users'].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase' }}>{h}</th>
+                  <th key={h} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>

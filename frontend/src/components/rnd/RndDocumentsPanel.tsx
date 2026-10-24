@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { rndApi } from '@/lib/api'
 import { RndDocument, RndDocumentType, RndProject } from '@/types'
@@ -203,9 +204,9 @@ export default function RndDocumentsPanel({
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
                   <div data-tour="rnd-docpanel-type" style={{ flex: '0 1 200px', minWidth: 170 }}>
                     <label style={labelStyle}>Type</label>
-                    <select style={inputStyle} value={docType} onChange={(e) => setDocType(e.target.value as RndDocumentType)}>
+                    <Select style={inputStyle} value={docType} onChange={(e) => setDocType(e.target.value as RndDocumentType)}>
                       {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                    </select>
+                    </Select>
                   </div>
                   <div data-tour="rnd-docpanel-version" style={{ flex: '0 1 100px', minWidth: 90 }}>
                     <label style={labelStyle}>Version</label>

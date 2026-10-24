@@ -1,11 +1,12 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { HrChecklistTemplate, HrLifecycleEventType, HrLifecycleMeta } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -25,7 +26,7 @@ const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
-const th: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }
+const th: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }
 const td: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
 
 interface FormState { id: number | null; category: string; title: string; description: string; default_owner_user_id: string; sort_order: string; is_active: boolean }
@@ -115,7 +116,7 @@ export default function ChecklistTemplatesMaster() {
               type="button"
               onClick={() => { if (t.value !== type) setLoading(true); setType(t.value); setForm(null) }}
               style={{
-                fontSize: 12.5, fontWeight: 600, padding: '6px 13px', borderRadius: 9999, cursor: 'pointer',
+                ...smallSecondaryBtnStyle, borderRadius: 9999,
                 border: active ? `1px solid ${t.hex}` : '1px solid rgba(0,0,0,0.1)',
                 background: active ? `${t.hex}14` : 'rgba(255,255,255,0.7)', color: active ? t.hex : '#57534e',
               }}
@@ -143,9 +144,9 @@ export default function ChecklistTemplatesMaster() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div data-tour="hr-mst-cl-category" style={{ flex: '0 1 140px', minWidth: 120 }}>
                   <label style={sheetLabel}>Category</label>
-                  <select style={sheetInput} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                  <Select style={sheetInput} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
                     {Object.entries(CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div data-tour="hr-mst-cl-order" style={{ flex: '0 1 90px', minWidth: 80 }}>
                   <label style={sheetLabel}>Order</label>

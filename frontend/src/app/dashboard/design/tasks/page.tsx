@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { Fragment, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -9,7 +10,7 @@ import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { PRIORITY_LABELS, toOptions } from '@/components/design/designMeta'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
@@ -259,7 +260,7 @@ export default function DesignTasksPage() {
                           )}
                         </td>
                         <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                          <button type="button" disabled={busy} style={{ ...secondaryBtnStyle, padding: '5px 12px', fontSize: 12 }}
+                          <button type="button" disabled={busy} style={{ ...smallSecondaryBtnStyle }}
                             onClick={() => openLink(t.task_id)}>
                             + Link deliverable
                           </button>
@@ -334,11 +335,11 @@ export default function DesignTasksPage() {
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ flex: '0 1 130px', minWidth: 120 }}>
                   <label style={sheetLabel}>Type <Req /></label>
-                  <select data-tour="design-tasks-link-kind" style={sheetInput} value={linkForm.kind}
+                  <Select data-tour="design-tasks-link-kind" style={sheetInput} value={linkForm.kind}
                     onChange={(e) => setLinkForm({ kind: e.target.value as LinkForm['kind'], id: '' })}>
                     <option value="document">Drawing</option>
                     <option value="bom">BOM</option>
-                  </select>
+                  </Select>
                 </div>
                 <div data-tour="design-tasks-link-pick" style={{ flex: '1 1 260px', minWidth: 0 }}>
                   <label style={sheetLabel}>{linkForm.kind === 'bom' ? 'BOM' : 'Drawing'} <Req /></label>

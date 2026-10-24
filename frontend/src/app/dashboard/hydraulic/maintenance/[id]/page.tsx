@@ -5,8 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
 import { HydMaintenancePlan, HydServiceRecord } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { secondaryBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -28,10 +28,7 @@ const cardStyle: React.CSSProperties = {
 const statLabel: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }
 const statValue: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }
 const statSub: React.CSSProperties = { fontSize: 12, color: TEXT.secondary, margin: '2px 0 0' }
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer',
-  background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-}
+const primaryBtn: React.CSSProperties = { ...primaryBtnStyle, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }
 
 export default function HydMaintenancePlanDetailPage() {
   const { isAuthorized, isLoading } = useRequireApp('hydraulic')

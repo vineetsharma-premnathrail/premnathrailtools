@@ -80,6 +80,34 @@ export const SHADOWS = {
     ].join(', '),
 } as const
 
+/** One size scale for every form control and button, app-wide. Heights come
+ * from padding + lineHeight + 1px border (10 + 16 + 10 + 2 = 38), not a fixed
+ * `height`, so a textarea using the same input style still grows. Every
+ * module's inputStyle / button style spreads the shared ones built from this
+ * (components/shared/ui.tsx), so an input, a dropdown, a date field and a
+ * button in one row always line up. */
+export const CONTROL = {
+  height: 38,
+  heightSm: 30,
+  radius: 10,
+  fontSize: 13,
+  fontSizeSm: 12,
+  lineHeight: '16px',
+  padX: 12,
+} as const
+
+/** Stacking layers, lowest → highest. Popovers (dropdown lists, date pickers,
+ * menus) sit above popup sheets and the guided tour, so a list opened inside a
+ * FormSheet is never hidden behind it. */
+export const Z = {
+  sticky: 1,
+  sheet: 150,
+  tour: 2000,
+  popover: 3000,
+  blocker: 10000,
+  lock: 100000,
+} as const
+
 export const GRADIENTS = {
   primary: 'linear-gradient(135deg,#FF7A45,#FF6A2A)',
   page: `linear-gradient(160deg, ${BG.bg1} 0%, ${BG.bg3} 55%, ${BG.bg2} 100%)`,

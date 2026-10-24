@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -127,27 +128,27 @@ function RndExperimentsListPageInner() {
             placeholder="All projects"
           />
         </div>
-        <select data-tour="rnd-exp-type-filter" style={{ ...inputStyle, flex: '0 1 160px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+        <Select data-tour="rnd-exp-type-filter" style={{ ...inputStyle, flex: '0 1 160px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
           <option value="">All types</option>
           <option value="research">Research</option>
           <option value="lab_test">Lab Test</option>
           <option value="field_trial">Field Trial</option>
           <option value="simulation">Simulation</option>
           <option value="validation">Validation</option>
-        </select>
-        <select data-tour="rnd-exp-status-filter" style={{ ...inputStyle, flex: '0 1 160px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="rnd-exp-status-filter" style={{ ...inputStyle, flex: '0 1 160px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           <option value="planned">Planned</option>
           <option value="in_progress">In Progress</option>
           <option value="completed">Completed</option>
           <option value="cancelled">Cancelled</option>
-        </select>
-        <select data-tour="rnd-exp-result-filter" style={{ ...inputStyle, flex: '0 1 160px' }} value={resultFilter} onChange={(e) => setResultFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="rnd-exp-result-filter" style={{ ...inputStyle, flex: '0 1 160px' }} value={resultFilter} onChange={(e) => setResultFilter(e.target.value)}>
           <option value="">All results</option>
           <option value="pass">Pass</option>
           <option value="fail">Fail</option>
           <option value="inconclusive">Inconclusive</option>
-        </select>
+        </Select>
       </div>
 
       <div style={{

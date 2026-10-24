@@ -19,10 +19,22 @@ Not a native `type="date"` input. A text `<input>` + calendar icon, with a porta
 
 Props: `{ value, onChange, options: {value,label}[], placeholder? }`. Fake "select" trigger div that toggles a portaled (same body-portal + fixed-position pattern as DateField) dropdown with an `autoFocus` search input and a filtered option list. Single-value only, no native multi-select.
 
-**When to use which (rule, 2026-10-23)**: no native `<select>` in any form you create or edit. It draws the browser's own list (grey OS highlight, different font and height) and doesn't match `SearchableSelect` sitting next to it in the same row. Use:
-- `SearchableSelect` for every dropdown, short enums included (Charged To, Priority, Category).
+Also takes `searchable` (default: search box only when > 8 options), `style` (outer box), `triggerStyle`, `autoFocus`, `id`/`name`/`title`/`ariaLabel`/`required`, and options may carry `disabled` / `group`. The list flips upward near the bottom of the screen, is clamped inside the viewport, supports ↑/↓/Enter/Esc, and the trigger (`role="combobox"`, class `ui-select-trigger`) keeps its value in `data-value` and fires a DOM `change` on pick — the guided tour relies on that.
+
+**When to use which (rule, 2026-10-23; app-wide since 2026-10-24)**: no native `<select>` anywhere — `npm run test:ui` fails on one. Use:
+- `Select` from `components/shared/Select.tsx` — drop-in for a native select: same `<option>`/`<optgroup>` children, `value`, `onChange={(e) => e.target.value}`, `disabled`, `style`, `data-*`. Without a width it is as wide as its longest option (like a native select); `style={inputStyle}` makes it fill its cell. Not supported: `ref`, `onBlur/onFocus`, `size`, `e.target.selectedOptions/options`.
+- `SearchableSelect` directly when you already have `{value,label}[]` or need server search / add / edit rows.
 - A segmented toggle (two or three pill buttons) instead of a dropdown when there are only 2–3 fixed choices that the user flips often in a line row (e.g. Project / Inhouse).
-Existing native `<select>`s are converted when you touch that form. Don't leave a half-converted row.
+
+## Global UI consistency layer (2026-10-24)
+
+One scale, enforced by tests. Use these instead of local copies:
+- **Sizes** — `CONTROL` in `lib/theme.ts`: every input, dropdown trigger, date field and button is **38px** (small = **30px**), radius 10, font 13, from padding + 16px line-height + 1px border. Module style files (crm/ui, finance/financeUi, hr/hcmUi, sales/SalesUi, projects/work/pmUi, electrical/shared, rnd/toolStyles, FormSheet `sheetBtn`/`sheetInput`) all spread the shared ones — override colours, never the height.
+- **Buttons** — `components/shared/ui.tsx`: `primaryBtnStyle` / `secondaryBtnStyle` / `dangerBtnStyle` (page + form actions), `smallPrimaryBtnStyle` / `smallSecondaryBtnStyle` / `smallDangerBtnStyle` (table row actions, chips, toolbars), `iconBtnStyle` (38×38 icon next to a field), `btnBase` to build a new colour variant. No inline `padding` on a button.
+- **Tables** — `<TableScroll maxHeight? minWidth?>` (or `tableWrapStyle`) around every `<table>`; `thStyle`/`tdStyle`/`numThStyle`/`numTdStyle` (sticky nowrap header, right-aligned numbers). The page itself never scrolls sideways.
+- **Popovers** — `components/shared/AnchoredPopover.tsx` for every hand-rolled suggestion list / picker / menu (anchor by `anchorRef`, or the parent / previous element; `align="right"` for menus). Never an `absolute` list inside a card, sheet or scroll box. Layers come from `Z` in theme.ts (sheet 150 < tour 2000 < popover 3000).
+- **Layout** — `<Toolbar>` for filter/action rows (wraps; stacks on phones); `className="ui-cols"` on any inline grid of side-by-side panes (stacks < 1024px); field grids use `repeat(auto-fit, minmax(Npx, 1fr))`; flex/grid children holding inputs or tables get `minWidth: 0`; no `overflow: 'scroll'`. Never put `transform` on a card hover (it breaks every fixed popup inside it).
+- **Tests** — `npm run test:ui` (static audit, `scripts/ui-audit.mjs`: native-select, browser-dialog, overlay-portal, table-scroll fail; `--warn` adds adhoc-button, fixed-grid). `npm run test:ui:login` once, then `npm run test:ui:layout` (Playwright, Edge, every static dashboard page at 1366px and 390px: overflow, native select, row heights, clipped buttons, dropdown on screen). A deliberate exception gets `// ui-audit-ignore-next-line <rule>` with the reason.
 
 ## Input / dropdown / section design rules (no repeat mistakes)
 

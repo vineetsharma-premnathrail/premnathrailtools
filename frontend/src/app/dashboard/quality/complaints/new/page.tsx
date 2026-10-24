@@ -12,6 +12,7 @@ import DateField from '@/components/erp/DateField'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, FileDropZone, Req, Optional } from '@/components/shared/FormSheet'
 import { ErrorBanner } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 interface ItemOpt { id: number; item_code: string; item_name: string }
 
@@ -89,9 +90,9 @@ export default function NewComplaintPage() {
           <SheetSection icon="building" title="Where it came from">
             <div style={row}>
               <F label="Source">
-                <select style={sheetInput} value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>
+                <Select style={sheetInput} value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>
                   {Object.entries(meta?.sources || { email: 'Email / letter' }).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
+                </Select>
               </F>
               <F label={form.source === 'service_ticket' ? 'Service ticket no.' : 'Reference (email date, letter no.)'}>
                 <input style={sheetInput} value={form.source_reference} onChange={(e) => setForm({ ...form, source_reference: e.target.value })} />
@@ -126,21 +127,21 @@ export default function NewComplaintPage() {
             </div>
             <div style={row}>
               <F label="Category">
-                <select style={sheetInput} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                <Select style={sheetInput} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
                   <option value="">—</option>
                   {(meta?.categories || []).map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                </select>
+                </Select>
               </F>
               <F label="Defect code">
-                <select style={sheetInput} value={form.defect_code_id} onChange={(e) => setForm({ ...form, defect_code_id: e.target.value })}>
+                <Select style={sheetInput} value={form.defect_code_id} onChange={(e) => setForm({ ...form, defect_code_id: e.target.value })}>
                   <option value="">—</option>
                   {codes.filter((c) => c.is_active).map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
-                </select>
+                </Select>
               </F>
               <F label="Severity" flex="0 1 140px">
-                <select style={sheetInput} value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value })}>
+                <Select style={sheetInput} value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value })}>
                   <option value="minor">Minor</option><option value="major">Major</option><option value="critical">Critical</option>
-                </select>
+                </Select>
               </F>
             </div>
             <label style={sheetLabel}>Description (as the customer reported it) <Req /></label>

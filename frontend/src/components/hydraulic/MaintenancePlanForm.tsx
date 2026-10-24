@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { hydraulicApi } from '@/lib/api'
 import { recordHref, refOf } from '@/lib/recordRef'
@@ -156,9 +157,9 @@ export default function MaintenancePlanForm({
           </div>
           <div data-tour="hyd-planf-type" style={{ flex: '0 1 230px', minWidth: 200 }}>
             <label style={labelStyle}>Maintenance Type</label>
-            <select style={inputStyle} value={maintenanceType} onChange={(e) => setMaintenanceType(e.target.value)}>
+            <Select style={inputStyle} value={maintenanceType} onChange={(e) => setMaintenanceType(e.target.value)}>
               {Object.entries(MAINTENANCE_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            </Select>
           </div>
         </div>
         {!initial && <p style={hintStyle}>The system can&apos;t be changed after the plan is created.</p>}

@@ -1,12 +1,13 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { HrAttendanceDay, HrAttendanceMonth, HrAttendanceRegularization, HrAttendanceToday } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import HrNav from '@/components/hr/HrNav'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import MyHrTabs from '@/components/hr/MyHrTabs'
@@ -28,10 +29,7 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
 const td: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
-const primaryBtn: React.CSSProperties = {
-  padding: '11px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary,
-  color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-}
+const primaryBtn: React.CSSProperties = { ...primaryBtnStyle, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }
 
 function dmy(iso: string | null) {
   return iso ? `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}` : '—'
@@ -233,12 +231,12 @@ export default function MyAttendancePage() {
                 </div>
                 <div style={{ flex: '1 1 180px', minWidth: 160 }}>
                   <label style={sheetLabel}>Correct status <Req /></label>
-                  <select data-tour="hr-myatt-reg-status" style={sheetInput} value={regStatus} onChange={(e) => setRegStatus(e.target.value)}>
+                  <Select data-tour="hr-myatt-reg-status" style={sheetInput} value={regStatus} onChange={(e) => setRegStatus(e.target.value)}>
                     <option value="present">Present</option>
                     <option value="half_day">Half day</option>
                     <option value="on_duty">On duty (outside office)</option>
                     <option value="work_from_home">Work from home</option>
-                  </select>
+                  </Select>
                 </div>
               </div>
             </SheetSection>

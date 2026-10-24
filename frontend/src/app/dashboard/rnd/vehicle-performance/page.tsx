@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -9,6 +10,7 @@ import RndNav from '@/components/rnd/RndNav'
 import TerminalPanel from '@/components/rnd/TerminalPanel'
 import ChartJsLineChart, { colorForIndex } from '@/components/rnd/ChartJsLineChart'
 import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, calcButtonStyle, downloadCsv, downloadBlob, getErrorMessage } from '@/components/rnd/toolStyles'
+import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 
 interface GraphPoint { speed_kmh: number; value: number; slope: number; gear: number }
@@ -208,15 +210,15 @@ function VehiclePerformancePageInner() {
           <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>Vehicle Performance Calculator</h1>
           <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0' }}>Tractive effort · Speed vs slope · Shunting capability · Power analysis</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button data-tour="rnd-vp-csv-btn" onClick={exportCsv} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export CSV</button>
-          <button data-tour="rnd-vp-docx-btn" onClick={downloadDocx} disabled={busy} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Save Doc</button>
-          <a data-tour="rnd-vp-history-btn" href="/dashboard/rnd/history" style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>History</a>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button data-tour="rnd-vp-csv-btn" onClick={exportCsv} style={secondaryBtnStyle}>Export CSV</button>
+          <button data-tour="rnd-vp-docx-btn" onClick={downloadDocx} disabled={busy} style={{ ...secondaryBtnStyle, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#166534' }}>Save Doc</button>
+          <a data-tour="rnd-vp-history-btn" href="/dashboard/rnd/history" style={{ ...secondaryBtnStyle, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', textDecoration: 'none' }}>History</a>
         </div>
       </div>
 
       {result && (
-        <div data-tour="rnd-vp-summary" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 12 }}>
+        <div data-tour="rnd-vp-summary" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
           <SummaryTile label="Max Traction" value={result.traction_snapshot.max_traction_generated_n.toFixed(0)} unit="N" bg="#eff6ff" color="#1d4ed8" />
           <SummaryTile label="Traction (No Slip)" value={result.traction_snapshot.max_traction_slipping_n.toFixed(0)} unit="N" bg="#fff7ed" color="#c2410c" />
           <SummaryTile label="Status" value={result.traction_snapshot.result_message} unit="" bg={slipping ? '#fee2e2' : '#f0fdf4'} color={slipping ? '#991b1b' : '#166534'} />
@@ -255,16 +257,16 @@ function VehiclePerformancePageInner() {
               <div data-tour="rnd-vp-curve"><label style={labelStyle}>Max Curve</label><input style={inputStyle} type="number" value={maxCurve} onChange={(e) => setMaxCurve(e.target.value)} /></div>
               <div data-tour="rnd-vp-curve-unit">
                 <label style={labelStyle}>Curve Unit</label>
-                <select style={inputStyle} value={curveUnit} onChange={(e) => setCurveUnit(e.target.value as typeof curveUnit)}>
+                <Select style={inputStyle} value={curveUnit} onChange={(e) => setCurveUnit(e.target.value as typeof curveUnit)}>
                   <option value="degree">degree</option><option value="m">m (radius)</option>
-                </select>
+                </Select>
               </div>
               <div data-tour="rnd-vp-slope"><label style={labelStyle}>Max Slope</label><input style={inputStyle} type="number" step="0.1" value={maxSlope} onChange={(e) => setMaxSlope(e.target.value)} /></div>
               <div data-tour="rnd-vp-slope-unit">
                 <label style={labelStyle}>Slope Unit</label>
-                <select style={inputStyle} value={slopeUnit} onChange={(e) => setSlopeUnit(e.target.value as typeof slopeUnit)}>
+                <Select style={inputStyle} value={slopeUnit} onChange={(e) => setSlopeUnit(e.target.value as typeof slopeUnit)}>
                   <option value="%">%</option><option value="degree">degree</option>
-                </select>
+                </Select>
               </div>
             </div>
           </div>
@@ -290,15 +292,15 @@ function VehiclePerformancePageInner() {
             <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
               <span style={cardTitleStyle}>Torque Curve</span>
               <div style={{ display: 'flex', gap: 6 }}>
-                <label data-tour="rnd-vp-torque-import" style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: 11.5, fontWeight: 600, color: '#475569', cursor: 'pointer' }}>
+                <label data-tour="rnd-vp-torque-import" style={smallSecondaryBtnStyle}>
                   Import
                   <input type="file" accept=".csv" onChange={importTorqueCsv} style={{ display: 'none' }} />
                 </label>
-                <button data-tour="rnd-vp-torque-export" onClick={exportTorqueCsv} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: 11.5, fontWeight: 600, color: '#475569', cursor: 'pointer' }}>Export</button>
+                <button data-tour="rnd-vp-torque-export" onClick={exportTorqueCsv} style={smallSecondaryBtnStyle}>Export</button>
               </div>
             </div>
             <div style={{ padding: 12 }}>
-              <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+              <div style={{ maxHeight: 220, overflow: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead style={{ position: 'sticky', top: 0, background: '#fff' }}>
                     <tr><th style={{ textAlign: 'left', fontSize: 10.5, color: '#94a3b8', padding: '4px 6px' }}>RPM</th><th style={{ textAlign: 'left', fontSize: 10.5, color: '#94a3b8', padding: '4px 6px' }}>Torque (N·m)</th><th /></tr>
@@ -314,14 +316,14 @@ function VehiclePerformancePageInner() {
                   </tbody>
                 </table>
               </div>
-              <button data-tour="rnd-vp-torque-add" onClick={addTorqueRow} style={{ marginTop: 8, width: '100%', padding: '8px', borderRadius: 6, border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#64748b', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Add Row</button>
+              <button data-tour="rnd-vp-torque-add" onClick={addTorqueRow} style={{ ...secondaryBtnStyle, marginTop: 8, width: '100%', border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#64748b' }}>+ Add Row</button>
             </div>
           </div>
 
           <div className="rnd-main-grid" style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 12, alignItems: 'start' }}>
             <div data-tour="rnd-vp-speed-slope" style={cardStyle}>
               <div style={cardHeaderStyle}><span style={{ ...cardTitleStyle, fontSize: 11 }}>Speed vs Slope</span></div>
-              <div style={{ padding: 10, maxHeight: 300, overflowY: 'auto' }}>
+              <div style={{ padding: 10, maxHeight: 300, overflow: 'auto' }}>
                 {!result ? (
                   <p style={{ fontSize: 11.5, color: '#94a3b8', margin: 0 }}>Run calculation</p>
                 ) : (

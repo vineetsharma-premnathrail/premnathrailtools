@@ -9,8 +9,8 @@ import {
   ProductionLookupOption, ProductionStockMovement, ProductionTimeLog, ProductionWorkOrder,
   ProductionWorkOrderCosting, ProductionWorkOrderOperation,
 } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, DANGER } from '@/lib/theme'
-import { secondaryBtnStyle, InfoRow } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, BORDER, DANGER } from '@/lib/theme'
+import { secondaryBtnStyle, InfoRow, primaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -26,6 +26,7 @@ import { ChangeFlagBanner, DependentOrdersSection, JobWorkLinkDialog, WorkOrderL
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { productionEngineeringApi } from '@/lib/productionEngineeringApi'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import Select from '@/components/shared/Select'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', released: 'Released', in_progress: 'In Progress', completed: 'Completed', closed: 'Closed', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', released: '#2563EB', in_progress: '#F59E0B', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
@@ -47,13 +48,10 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }
-const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', whiteSpace: 'nowrap' }
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' }
 const tdStyle: React.CSSProperties = { padding: '9px 12px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'middle' }
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer',
-  background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-}
-const smallBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }
+const primaryBtn: React.CSSProperties = primaryBtnStyle
+const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 const dangerBtn: React.CSSProperties = { ...secondaryBtnStyle, color: DANGER.primary, borderColor: DANGER.border }
 const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
 const inr = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
@@ -753,9 +751,9 @@ export default function WorkOrderDetailPage() {
                   </div>
                   <div data-tour="production-wo-edit-priority" style={{ flex: '1 1 140px' }}>
                     <label style={sheetLabel}>Priority</label>
-                    <select style={sheetInput} value={edit.priority} onChange={(e) => setEdit({ ...edit, priority: e.target.value })}>
+                    <Select style={sheetInput} value={edit.priority} onChange={(e) => setEdit({ ...edit, priority: e.target.value })}>
                       {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                    </select>
+                    </Select>
                   </div>
                 </div>
                 <div data-tour="production-wo-edit-machine" style={{ marginTop: 14 }}>

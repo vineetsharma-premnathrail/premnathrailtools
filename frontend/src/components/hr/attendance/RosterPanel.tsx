@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useState } from 'react'
 import { hrApi, hrRosterApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
@@ -107,10 +108,10 @@ export default function RosterPanel() {
         <div style={{ flex: '0 1 170px', minWidth: 150 }}><label style={labelStyle}>Fortnight from</label><DateField value={from} onChange={(v) => setFrom(mondayOf(v))} /></div>
         <div style={{ flex: '0 1 220px', minWidth: 180 }}>
           <label style={labelStyle}>Plant</label>
-          <select value={branchId} onChange={(e) => setBranchId(e.target.value)} style={inputStyle}>
+          <Select value={branchId} onChange={(e) => setBranchId(e.target.value)} style={inputStyle}>
             <option value="">All plants</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
+          </Select>
         </div>
         <button type="button" style={secondaryBtnStyle} onClick={() => setFrom(addDays(from, -14))}>← Previous</button>
         <button type="button" style={secondaryBtnStyle} onClick={() => setFrom(addDays(from, 14))}>Next →</button>
@@ -189,10 +190,10 @@ export default function RosterPanel() {
         <Banner errors={error} />
         <SheetSection icon="list" title="Pattern">
           <label style={sheetLabel}>Pattern <Req /></label>
-          <select value={gen.pattern_id} onChange={(e) => setGen({ ...gen, pattern_id: e.target.value })} style={sheetInput}>
+          <Select value={gen.pattern_id} onChange={(e) => setGen({ ...gen, pattern_id: e.target.value })} style={sheetInput}>
             <option value="">Pick a pattern…</option>
             {patterns.filter((p) => p.is_active).map((p) => <option key={p.id} value={p.id}>{p.code} — {p.name} ({p.pattern.join(' ')})</option>)}
-          </select>
+          </Select>
           <label style={{ ...sheetLabel, marginTop: 14 }}>Until</label>
           <div style={{ maxWidth: 200 }}><DateField value={gen.to} onChange={(v) => setGen({ ...gen, to: v })} /></div>
           <label style={{ fontSize: 13, color: SHEET.BODY, display: 'flex', gap: 8, alignItems: 'center', marginTop: 14 }}>
@@ -210,9 +211,9 @@ export default function RosterPanel() {
         </>}>
         <Banner errors={error} />
         <SheetSection icon="tag" title="Pattern">
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ flex: '0 1 120px' }}><label style={sheetLabel}>Code <Req /></label><input value={pat.code} onChange={(e) => setPat({ ...pat, code: e.target.value })} style={sheetInput} /></div>
-            <div style={{ flex: 1 }}><label style={sheetLabel}>Name <Req /></label><input value={pat.name} onChange={(e) => setPat({ ...pat, name: e.target.value })} style={sheetInput} /></div>
+            <div style={{ flex: '1 1 200px', minWidth: 0 }}><label style={sheetLabel}>Name <Req /></label><input value={pat.name} onChange={(e) => setPat({ ...pat, name: e.target.value })} style={sheetInput} /></div>
           </div>
         </SheetSection>
         <SheetSection icon="history" title="Cycle">

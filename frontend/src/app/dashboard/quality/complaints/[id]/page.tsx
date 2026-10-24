@@ -25,7 +25,8 @@ import { sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/s
 
 const STEPS = ['open', 'under_investigation', 'response_sent', 'customer_accepted', 'closed']
 const linkStyle: React.CSSProperties = { color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }
-const miniTh: React.CSSProperties = { textAlign: 'left', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, padding: '6px 8px' }
+const miniTh: React.CSSProperties = { textAlign: 'left', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, padding: '6px 8px', whiteSpace: 'nowrap' }
+const miniNum: React.CSSProperties = { textAlign: 'right' }
 const miniTd: React.CSSProperties = { fontSize: 12.5, padding: '6px 8px', borderTop: '1px solid rgba(0,0,0,0.06)', color: TEXT.body }
 
 function Photo({ complaintId, photoId, name }: { complaintId: number; photoId: number; name: string }) {
@@ -213,29 +214,34 @@ export default function ComplaintDetailPage() {
             <div>
               <p style={{ fontSize: 12.5, fontWeight: 700, margin: '0 0 4px' }}>Same batch still in stock</p>
               {cont.in_stock.length === 0 ? <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>None in any store.</p> : (
-                <table style={{ borderCollapse: 'collapse', width: '100%', maxWidth: 640 }}>
-                  <thead><tr>{['Store', 'Free', 'Quality', 'Blocked'].map((h) => <th key={h} style={miniTh}>{h}</th>)}</tr></thead>
+                <div style={{ overflowX: 'auto', maxWidth: 640 }}>
+                <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                  <thead><tr>{['Store', 'Free', 'Quality', 'Blocked'].map((h, i) => <th key={h} style={i ? { ...miniTh, ...miniNum } : miniTh}>{h}</th>)}</tr></thead>
                   <tbody>{cont.in_stock.map((s) => (
-                    <tr key={s.location_id}><td style={miniTd}>{s.location_name}</td><td style={miniTd}>{s.free}</td><td style={miniTd}>{s.quality}</td><td style={miniTd}>{s.blocked}</td></tr>
+                    <tr key={s.location_id}><td style={miniTd}>{s.location_name}</td><td style={{ ...miniTd, ...miniNum }}>{s.free}</td><td style={{ ...miniTd, ...miniNum }}>{s.quality}</td><td style={{ ...miniTd, ...miniNum }}>{s.blocked}</td></tr>
                   ))}</tbody>
                 </table>
+                </div>
               )}
             </div>
             <div>
               <p style={{ fontSize: 12.5, fontWeight: 700, margin: '0 0 4px' }}>Same batch already delivered / issued</p>
               {cont.delivered.length === 0 ? <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>No issue or dispatch of this batch recorded.</p> : (
+                <div style={{ overflowX: 'auto' }}>
                 <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-                  <thead><tr>{['Issue', 'Type', 'Date', 'Qty', 'To'].map((h) => <th key={h} style={miniTh}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Issue', 'Type', 'Date', 'Qty', 'To'].map((h) => <th key={h} style={h === 'Qty' ? { ...miniTh, ...miniNum } : miniTh}>{h}</th>)}</tr></thead>
                   <tbody>{cont.delivered.map((d, i) => (
-                    <tr key={i}><td style={miniTd}>{d.issue_number}</td><td style={miniTd}>{d.issue_type || '—'}</td><td style={miniTd}>{fmtDate(d.issue_date)}</td><td style={miniTd}>{d.quantity}</td><td style={miniTd}>{d.to}</td></tr>
+                    <tr key={i}><td style={miniTd}>{d.issue_number}</td><td style={miniTd}>{d.issue_type || '—'}</td><td style={miniTd}>{fmtDate(d.issue_date)}</td><td style={{ ...miniTd, ...miniNum }}>{d.quantity}</td><td style={miniTd}>{d.to || '—'}</td></tr>
                   ))}</tbody>
                 </table>
+                </div>
               )}
             </div>
             {tr && (
               <div>
                 <p style={{ fontSize: 12.5, fontWeight: 700, margin: '0 0 4px' }}>Inspection history of the batch</p>
                 {tr.lots.length === 0 ? <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>No inspection lot carries this batch / serial.</p> : (
+                  <div style={{ overflowX: 'auto' }}>
                   <table style={{ borderCollapse: 'collapse', width: '100%' }}>
                     <thead><tr>{['Lot', 'Inspection', 'Source', 'Vendor', 'Decision', 'Date'].map((h) => <th key={h} style={miniTh}>{h}</th>)}</tr></thead>
                     <tbody>{tr.lots.map((l) => (
@@ -249,6 +255,7 @@ export default function ComplaintDetailPage() {
                       </tr>
                     ))}</tbody>
                   </table>
+                  </div>
                 )}
                 {(tr.machines.length > 0 || tr.ncrs.length > 0 || tr.inspection_calls.length > 0) && (
                   <p style={{ fontSize: 12.5, margin: '6px 0 0' }}>

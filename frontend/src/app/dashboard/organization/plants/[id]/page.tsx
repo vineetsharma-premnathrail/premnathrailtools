@@ -148,7 +148,7 @@ export default function PlantDetailPage() {
         {(tab === 'Basic' || !seeTab(tab)) && (
           <div style={sectionStyle}>
             <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Basic Information</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 10px))), 1fr))', gap: 20 }}>
               <div><div style={labelStyle}>Company</div><div style={valueStyle}>{plant.company_name || '—'}</div></div>
               <div><div style={labelStyle}>Branch Type</div><div style={valueStyle}>{plant.plant_type || '—'}</div></div>
               <div><div style={labelStyle}>Branch Head</div><div style={valueStyle}>{plant.head_user_name || '—'}</div></div>
@@ -189,7 +189,7 @@ export default function PlantDetailPage() {
         {tab === 'Operational Configuration' && (
           <div style={sectionStyle}>
             <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Operational Configuration</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 10px))), 1fr))', gap: 20 }}>
               <div><div style={labelStyle}>Working Calendar</div><div style={valueStyle}>{plant.working_calendar || '—'}</div></div>
               <div><div style={labelStyle}>Working Days</div><div style={valueStyle}>{plant.working_days || '—'}</div></div>
               <div><div style={labelStyle}>Working Hours</div><div style={valueStyle}>{plant.working_hours || '—'}</div></div>

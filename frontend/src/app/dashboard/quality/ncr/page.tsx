@@ -15,6 +15,7 @@ import {
   NCR_STATUS_LABELS, NCR_STATUS_HEX, SEVERITY_HEX, DISPOSITION_TYPE_LABELS,
 } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 export default function QualityNcrListPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
@@ -62,15 +63,15 @@ export default function QualityNcrListPage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input style={{ ...filterInputStyle, flex: '1 1 240px', maxWidth: 420 }} placeholder="Search NCR number, item, vendor, description…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...filterInputStyle, flex: '0 1 160px' }} value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)}>
+        <Select style={{ ...filterInputStyle, flex: '0 1 160px' }} value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)}>
           <option value="">All severities</option>
           <option value="critical">Critical</option><option value="major">Major</option><option value="minor">Minor</option>
-        </select>
-        <select style={{ ...filterInputStyle, flex: '0 1 200px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        </Select>
+        <Select style={{ ...filterInputStyle, flex: '0 1 200px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           <option value="live">All not closed</option>
           {Object.entries(NCR_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
+        </Select>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
           <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Waiting for my approval
         </label>

@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -95,19 +96,19 @@ export default function HydComponentsPage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <input data-tour="hyd-comp-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search code, name, make, model or part no…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select data-tour="hyd-comp-category-filter" style={{ ...inputStyle, flex: '0 1 210px' }} value={category} onChange={(e) => setCategory(e.target.value)}>
+        <Select data-tour="hyd-comp-category-filter" style={{ ...inputStyle, flex: '0 1 210px' }} value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="">All categories</option>
           {Object.entries(COMPONENT_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="hyd-comp-medium-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
+        </Select>
+        <Select data-tour="hyd-comp-medium-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
           <option value="">Hydraulic + Pneumatic</option>
           <option value="hydraulic">Hydraulic</option>
           <option value="pneumatic">Pneumatic</option>
-        </select>
-        <select data-tour="hyd-comp-status-filter" style={{ ...inputStyle, flex: '0 1 140px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="hyd-comp-status-filter" style={{ ...inputStyle, flex: '0 1 140px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
       </div>
 
       <div data-tour="hyd-comp-table" style={{

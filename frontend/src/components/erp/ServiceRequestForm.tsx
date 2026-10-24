@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useRef, useState } from 'react'
 import { MinusCircle, Warning } from '@phosphor-icons/react'
 import { useAuth } from '@/hooks/useAuth'
@@ -288,21 +289,21 @@ export default function ServiceRequestForm({
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ flex: '1 1 200px', maxWidth: 280 }}>
                   <label style={sheetLabel}>Service Type <Req /></label>
-                  <select value={form.service_type} onChange={(e) => set('service_type', e.target.value)} style={sheetInput} data-tour="erp-srf-service-type">
+                  <Select value={form.service_type} onChange={(e) => set('service_type', e.target.value)} style={sheetInput} data-tour="erp-srf-service-type">
                     <option value="">Select Service Type</option>
                     {SERVICE_TYPES.map((t) => (
                       <option key={t.value} value={t.value}>{t.label}</option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
                 <div style={{ flex: '1 1 180px', maxWidth: 240 }}>
                   <label style={sheetLabel}>Issue Category</label>
-                  <select value={form.issue_category} onChange={(e) => set('issue_category', e.target.value)} style={sheetInput} data-tour="erp-srf-category">
+                  <Select value={form.issue_category} onChange={(e) => set('issue_category', e.target.value)} style={sheetInput} data-tour="erp-srf-category">
                     <option value="">Select Category</option>
                     {['Mechanical', 'Electrical', 'Hydraulic', 'Pneumatic', 'Engine', 'Software', 'Other'].map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               </div>
               {form.service_type && (
@@ -395,11 +396,11 @@ export default function ServiceRequestForm({
                 </div>
               </div>
               <label style={{ ...sheetLabel, marginTop: 14 }}>{initial ? 'Status' : 'Initial Status'}</label>
-              <select value={form.status} onChange={(e) => set('status', e.target.value)} style={sheetInput} data-tour="erp-srf-status">
+              <Select value={form.status} onChange={(e) => set('status', e.target.value)} style={sheetInput} data-tour="erp-srf-status">
                 {/* A new SR starts at an opening step (backend SR_CREATE_STATUSES); Work Completed / Review /
                     Closed / Cancelled are reached only through the status steps on the SR page */}
                 {STATUS_OPTIONS.filter((s) => initial || !['work_completed', 'review', 'closed', 'cancelled'].includes(s.value)).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
+              </Select>
             </SheetSection>
             <SheetSection icon="chat" title="Notes" extra={<Optional />}>
               <textarea value={form.service_report_notes} onChange={(e) => set('service_report_notes', e.target.value)} rows={3} placeholder="Any additional notes..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-srf-notes" />

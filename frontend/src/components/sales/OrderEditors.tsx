@@ -4,6 +4,7 @@
 // Used by the new-order form, the draft detail page and the amendment editor,
 // so all three present the contract the same way.
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { SalesOrderLineInput, SalesOrderScheduleInput, SalesBillingLineInput } from '@/types'
 import { pricingApi } from '@/lib/sdServiceApi'
@@ -97,9 +98,9 @@ export function LinesEditor({ lines, onChange, readOnly, customerId, priceDate }
               <tr key={i}>
                 <td style={{ ...tdStyle, width: 36 }}>{l.line_number}</td>
                 <td style={{ ...tdStyle, width: 120 }}>
-                  <select disabled={readOnly} style={cellInput} value={l.line_type} onChange={(e) => set(i, { line_type: e.target.value })}>
+                  <Select disabled={readOnly} style={cellInput} value={l.line_type} onChange={(e) => set(i, { line_type: e.target.value })}>
                     {Object.entries(LINE_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </td>
                 <td style={{ ...tdStyle, minWidth: 200 }}>
                   {readOnly ? (products.find((p) => p.id === l.product_id)?.code || '—')
@@ -195,27 +196,29 @@ export function BillingPlanEditor({ rows, onChange, grandTotal, readOnly }: {
   const sum = Math.round(rows.reduce((s, r) => s + (Number(r.percent) || 0), 0) * 1000) / 1000
   return (
     <div>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead><tr>{['#', 'Milestone', 'Description', '%', 'Amount', 'Per vehicle', 'Credit days', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              <td style={{ ...tdStyle, width: 30 }}>{i + 1}</td>
-              <td style={{ ...tdStyle, width: 190 }}>
-                <select disabled={readOnly} style={cellInput} value={r.milestone_type} onChange={(e) => set(i, { milestone_type: e.target.value })}>
-                  {Object.entries(MILESTONE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-              </td>
-              <td style={tdStyle}><input disabled={readOnly} style={cellInput} value={r.description || ''} onChange={(e) => set(i, { description: e.target.value })} /></td>
-              <td style={{ ...tdStyle, width: 80 }}><input disabled={readOnly} type="number" min={0} max={100} style={cellInput} value={r.percent} onChange={(e) => set(i, { percent: Number(e.target.value) })} /></td>
-              <td style={{ ...tdStyle, width: 130, whiteSpace: 'nowrap' }}>{grandTotal == null ? '—' : formatINR(Math.round(grandTotal * (Number(r.percent) || 0)) / 100)}</td>
-              <td style={{ ...tdStyle, width: 90 }}><input disabled={readOnly} type="checkbox" checked={!!r.per_unit} onChange={(e) => set(i, { per_unit: e.target.checked })} /></td>
-              <td style={{ ...tdStyle, width: 90 }}><input disabled={readOnly} type="number" min={0} style={cellInput} value={r.due_days ?? ''} onChange={(e) => set(i, { due_days: e.target.value === '' ? null : Number(e.target.value) })} /></td>
-              <td style={{ ...tdStyle, width: 30 }}>{!readOnly && <button type="button" style={removeBtn} title="Remove milestone" aria-label="Remove milestone" onClick={() => onChange(rows.filter((_, j) => j !== i))}><RemoveIcon /></button>}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr>{['#', 'Milestone', 'Description', '%', 'Amount', 'Per vehicle', 'Credit days', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td style={{ ...tdStyle, width: 30 }}>{i + 1}</td>
+                <td style={{ ...tdStyle, width: 190 }}>
+                  <Select disabled={readOnly} style={cellInput} value={r.milestone_type} onChange={(e) => set(i, { milestone_type: e.target.value })}>
+                    {Object.entries(MILESTONE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </Select>
+                </td>
+                <td style={tdStyle}><input disabled={readOnly} style={cellInput} value={r.description || ''} onChange={(e) => set(i, { description: e.target.value })} /></td>
+                <td style={{ ...tdStyle, width: 80 }}><input disabled={readOnly} type="number" min={0} max={100} style={cellInput} value={r.percent} onChange={(e) => set(i, { percent: Number(e.target.value) })} /></td>
+                <td style={{ ...tdStyle, width: 130, whiteSpace: 'nowrap' }}>{grandTotal == null ? '—' : formatINR(Math.round(grandTotal * (Number(r.percent) || 0)) / 100)}</td>
+                <td style={{ ...tdStyle, width: 90 }}><input disabled={readOnly} type="checkbox" checked={!!r.per_unit} onChange={(e) => set(i, { per_unit: e.target.checked })} /></td>
+                <td style={{ ...tdStyle, width: 90 }}><input disabled={readOnly} type="number" min={0} style={cellInput} value={r.due_days ?? ''} onChange={(e) => set(i, { due_days: e.target.value === '' ? null : Number(e.target.value) })} /></td>
+                <td style={{ ...tdStyle, width: 30 }}>{!readOnly && <button type="button" style={removeBtn} title="Remove milestone" aria-label="Remove milestone" onClick={() => onChange(rows.filter((_, j) => j !== i))}><RemoveIcon /></button>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
         {!readOnly ? <button type="button" data-tour="sales-billing-add" style={smallBtn} onClick={() => onChange([...rows, { milestone_type: 'delivery', percent: Math.max(0, 100 - sum), per_unit: false }])}><AddIcon />Add milestone</button> : <span />}
         <span style={{ fontSize: 13, fontWeight: 700, color: Math.abs(sum - 100) < 0.001 ? '#16A34A' : '#DC2626' }}>

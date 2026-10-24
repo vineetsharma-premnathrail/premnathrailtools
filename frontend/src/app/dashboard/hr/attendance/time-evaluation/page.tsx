@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -25,7 +26,7 @@ const wrap: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
 }
-const th: React.CSSProperties = { textAlign: 'left', padding: '10px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }
+const th: React.CSSProperties = { textAlign: 'left', padding: '10px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }
 const td: React.CSSProperties = { padding: '9px 12px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, whiteSpace: 'nowrap' }
 const dmy = (iso: string) => `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}`
 
@@ -130,20 +131,20 @@ export default function TimeEvaluationPage() {
         <MonthPicker year={ym.y} month={ym.m} onChange={(y, m) => { setYm({ y, m }); setDetail(null) }} />
         {tab === 'month' && (
           <>
-            <select style={{ ...inputStyle, flex: '0 1 200px' }} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+            <Select style={{ ...inputStyle, flex: '0 1 200px' }} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
               <option value="">All plants</option>
               {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
+            </Select>
             <input style={{ ...inputStyle, flex: '1 1 200px', maxWidth: 280 }} placeholder="Search employee…" value={search} onChange={(e) => setSearch(e.target.value)} />
             {can('hr', 'attendance', 'export') && <button type="button" style={secondaryBtnStyle} onClick={exportCsv}>Export for ADP (CSV)</button>}
             {can('hr', 'attendance', 'edit') && <button type="button" style={primaryBtnStyle} onClick={() => setConfirmGen(true)}>Raise OT for approval</button>}
           </>
         )}
         {tab === 'overtime' && (
-          <select style={{ ...inputStyle, flex: '0 1 170px' }} value={otStatus} onChange={(e) => setOtStatus(e.target.value)}>
+          <Select style={{ ...inputStyle, flex: '0 1 170px' }} value={otStatus} onChange={(e) => setOtStatus(e.target.value)}>
             <option value="">All statuses</option>
             {Object.entries(OT_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         )}
       </div>
 

@@ -6,6 +6,7 @@
 // as every other module's local consts.
 import { TEXT, GLASS, SHADOWS, BORDER, BRAND } from '@/lib/theme'
 import { FormSheet, SheetIconName } from '@/components/shared/FormSheet'
+import { primaryBtnStyle, inputStyle as sharedInput } from '@/components/shared/ui'
 
 export const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -32,10 +33,7 @@ export const linkActionStyle: React.CSSProperties = { background: 'none', border
 export const dangerActionStyle: React.CSSProperties = { ...linkActionStyle, color: '#b91c1c' }
 export const mutedActionStyle: React.CSSProperties = { ...linkActionStyle, color: TEXT.secondary }
 
-export const searchInputStyle: React.CSSProperties = {
-  padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.7)',
-  fontSize: 13, outline: 'none', color: TEXT.body, width: 260, maxWidth: '100%', boxSizing: 'border-box',
-}
+export const searchInputStyle: React.CSSProperties = { ...sharedInput, background: 'rgba(255,255,255,.7)', width: 260, maxWidth: '100%' }
 
 export function ErrorBanner({ errors }: { errors: string[] | string }) {
   const list = Array.isArray(errors) ? errors : errors ? [errors] : []
@@ -82,8 +80,8 @@ export function MasterToolbar({ search, onSearch, showInactive, onToggleInactive
       </label>
       <div style={{ flex: 1 }} />
       {/* onAdd omitted = the user lacks Create on HR › Masters: no button. */}
-      {onAdd && <button type="button" data-tour="hr-mst-add-btn" onClick={onAdd} style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#FF7A45,#FF6A2A)', color: '#fff', cursor: 'pointer' }}>
-        <span style={{ fontSize: 16, lineHeight: 1, marginRight: 6 }}>+</span>{addLabel}
+      {onAdd && <button type="button" data-tour="hr-mst-add-btn" onClick={onAdd} style={primaryBtnStyle}>
+        <span style={{ fontSize: 16, lineHeight: 1 }}>+</span>{addLabel}
       </button>}
     </div>
   )

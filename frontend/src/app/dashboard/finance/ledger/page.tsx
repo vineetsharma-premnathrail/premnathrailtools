@@ -30,6 +30,7 @@ import { useRouter } from 'next/navigation'
 import { STATUS_LABELS, STATUS_HEX, VOUCHER_LABELS, POSTING_LABELS, VOUCHER_PATH } from '@/components/finance/voucherLabels'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import FinanceAttachments, { ProofClip, ProofPicker, PickedProof, uploadPickedProof, useProofCounts, useProofRules } from '@/components/finance/FinanceAttachments'
+import Select from '@/components/shared/Select'
 
 const TABS = ['Journal Vouchers', 'Day Book', 'Ledger Statement', 'Period Close'] as const
 type Tab = (typeof TABS)[number]
@@ -202,33 +203,33 @@ function JournalVouchers({ masters, userId, canReverse }: { masters: Masters; us
       <ErrorBanner error={error} />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-          <form data-tour="fin-jv-open-voucher" style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }} onSubmit={(ev) => { ev.preventDefault(); openByNumber() }}>
+          <form data-tour="fin-jv-open-voucher" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end' }} onSubmit={(ev) => { ev.preventDefault(); openByNumber() }}>
             <Field label="Open voucher no." style={{ flex: '0 1 220px' }}>
               <input style={inputStyle} value={lookupNo} onChange={(ev) => setLookupNo(ev.target.value)} placeholder="e.g. JV/2026-27/0001" />
             </Field>
-            <button type="submit" style={{ ...secondaryBtnStyle, marginBottom: 1 }} disabled={!lookupNo.trim() || lookingUp}>{lookingUp ? 'Opening…' : 'Open'}</button>
+            <button type="submit" style={{ ...secondaryBtnStyle }} disabled={!lookupNo.trim() || lookingUp}>{lookingUp ? 'Opening…' : 'Open'}</button>
           </form>
           {can('accounts', 'journal_vouchers', 'create') && <button type="button" data-tour="fin-jv-new-btn" style={primaryBtnStyle} onClick={() => setShowForm(true)}>+ New Journal</button>}
       </div>
 
       <div data-tour="fin-jv-filters" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14, alignItems: 'flex-end' }}>
         <Field label="Status" style={{ flex: '0 1 140px' }} tour="fin-jv-status">
-          <select style={inputStyle} value={filters.status} onChange={(e) => setF({ status: e.target.value })}>
+          <Select style={inputStyle} value={filters.status} onChange={(e) => setF({ status: e.target.value })}>
             <option value="">All</option>
             {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field label="Voucher Type" style={{ flex: '0 1 150px' }} tour="fin-jv-voucher-type">
-          <select style={inputStyle} value={filters.voucher_type} onChange={(e) => setF({ voucher_type: e.target.value })}>
+          <Select style={inputStyle} value={filters.voucher_type} onChange={(e) => setF({ voucher_type: e.target.value })}>
             <option value="">All</option>
             {Object.entries(VOUCHER_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field label="Posting Type" style={{ flex: '0 1 160px' }} tour="fin-jv-posting-type">
-          <select style={inputStyle} value={filters.posting_type} onChange={(e) => setF({ posting_type: e.target.value })}>
+          <Select style={inputStyle} value={filters.posting_type} onChange={(e) => setF({ posting_type: e.target.value })}>
             <option value="">All</option>
             {Object.entries(POSTING_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field label="From" style={{ flex: '0 1 150px' }} tour="fin-jv-from"><DateField value={filters.from_date} onChange={(v) => setF({ from_date: v })} /></Field>
         <Field label="To" style={{ flex: '0 1 150px' }} tour="fin-jv-to"><DateField value={filters.to_date} onChange={(v) => setF({ to_date: v })} /></Field>
@@ -547,9 +548,9 @@ function JournalForm({ masters, onCancel, onCreated }: { masters: Masters; onCan
             </div>
             <div style={{ flex: '0 1 170px', minWidth: 150 }} data-tour="fin-jv-form-type">
               <label style={sheetLabel}>Posting Type <Req /></label>
-              <select style={sheetInput} value={postingType} onChange={(e) => changeType(e.target.value as (typeof MANUAL_TYPES)[number])}>
+              <Select style={sheetInput} value={postingType} onChange={(e) => changeType(e.target.value as (typeof MANUAL_TYPES)[number])}>
                 {MANUAL_TYPES.map((t) => <option key={t} value={t}>{POSTING_LABELS[t]}</option>)}
-              </select>
+              </Select>
             </div>
             {postingType === 'accrual' && (
               <div style={{ flex: '0 1 170px', minWidth: 150 }} data-tour="fin-jv-auto-reverse">
@@ -705,12 +706,12 @@ function DayBookTab() {
         <Field label="From" style={{ flex: '0 1 150px' }} tour="fin-daybook-from"><DateField value={from} onChange={setFrom} /></Field>
         <Field label="To" style={{ flex: '0 1 150px' }} tour="fin-daybook-to"><DateField value={to} onChange={setTo} /></Field>
         <Field label="Voucher Type" style={{ flex: '0 1 150px' }} tour="fin-daybook-type">
-          <select style={inputStyle} value={voucherType} onChange={(e) => setVoucherType(e.target.value)}>
+          <Select style={inputStyle} value={voucherType} onChange={(e) => setVoucherType(e.target.value)}>
             <option value="">All</option>
             {Object.entries(VOUCHER_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         </Field>
-        <button type="button" data-tour="fin-daybook-show" style={{ ...primaryBtnStyle, marginBottom: 1 }} onClick={load} disabled={loading}>{loading ? 'Loading…' : 'Show'}</button>
+        <button type="button" data-tour="fin-daybook-show" style={{ ...primaryBtnStyle }} onClick={load} disabled={loading}>{loading ? 'Loading…' : 'Show'}</button>
       </div>
 
       <TableWrap minWidth={950} tour="fin-daybook-table">
@@ -803,7 +804,7 @@ function LedgerStatementTab({ ledgers }: { ledgers: GLAccount[] }) {
         </Field>
         <Field label="From" style={{ flex: '0 1 150px' }} tour="fin-ledstmt-from"><DateField value={from} onChange={setFrom} /></Field>
         <Field label="To" style={{ flex: '0 1 150px' }} tour="fin-ledstmt-to"><DateField value={to} onChange={setTo} /></Field>
-        <button type="button" data-tour="fin-ledstmt-show" style={{ ...primaryBtnStyle, marginBottom: 1 }} onClick={() => load()} disabled={!ledgerId || loading}>{loading ? 'Loading…' : 'Show'}</button>
+        <button type="button" data-tour="fin-ledstmt-show" style={{ ...primaryBtnStyle }} onClick={() => load()} disabled={!ledgerId || loading}>{loading ? 'Loading…' : 'Show'}</button>
       </div>
 
       {data && (
@@ -935,9 +936,9 @@ function PeriodCloseTab({ canClose, closesDirectly, isAdmin }: { canClose: boole
       <div data-tour="fin-period-panel" style={{ ...sectionStyle, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, flexWrap: 'wrap' }}>
           <Field label="Accounting Period" style={{ flex: '0 1 170px', minWidth: 150 }} tour="fin-period-select">
-            <select style={inputStyle} value={period} onChange={(e) => setPeriod(e.target.value)}>
+            <Select style={inputStyle} value={period} onChange={(e) => setPeriod(e.target.value)}>
               {recentPeriods().map((p) => <option key={p} value={p}>{periodLabel(p)}</option>)}
-            </select>
+            </Select>
           </Field>
           <div data-tour="fin-period-status" style={{ paddingBottom: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
             <StatusPill status={isClosed ? 'closed' : 'open'} labels={{ open: 'Open', closed: 'Closed' }} colors={{ open: '#16a34a', closed: '#64748b' }} />

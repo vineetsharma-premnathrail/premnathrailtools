@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { electricalApi } from '@/lib/api'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
@@ -161,9 +162,9 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel, titl
                   <input style={sheetInput} {...bind('title')} placeholder="e.g. RRV-450 electrical — Northern Railway" />
                 </F>
                 <F tour="elec-job-priority" label="Priority" basis={130}>
-                  <select style={sheetInput} {...bind('priority')}>
+                  <Select style={sheetInput} {...bind('priority')}>
                     {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </F>
               </div>
               <div style={rowStyle}>
@@ -198,10 +199,10 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel, titl
             <SheetSection icon="calendar" title="Ownership & Schedule">
               <div style={rowStyle}>
                 <F tour="elec-job-plant" label="Plant" basis={200} grow max={280}>
-                  <select style={sheetInput} {...bind('branch_id')}>
+                  <Select style={sheetInput} {...bind('branch_id')}>
                     <option value="">— Select plant —</option>
                     {branches.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
-                  </select>
+                  </Select>
                 </F>
                 <F tour="elec-job-lead-engineer" label="Lead Engineer" basis={240} grow max={320}>
                   <SearchableSelect value={values.lead_engineer_id} onChange={set('lead_engineer_id')} options={toOptions(users.filter((u) => u.id === initial?.lead_engineer_id || allowLead(u.id)), '— Unassigned —')} placeholder="Search people" />

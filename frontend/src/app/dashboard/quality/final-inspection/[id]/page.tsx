@@ -16,6 +16,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { ErrorBanner } from '@/components/quality/QualityBits'
 import { FormPage, SheetSection, SheetIcon, sheetInput, sheetLabel, sheetBtn, Req, Optional, SHEET } from '@/components/shared/FormSheet'
+import Select from '@/components/shared/Select'
 
 function emptyResult(sortOrder: number): QualityInspectionResultInput {
   return { parameter: '', method: '', acceptance_criteria: '', observed_value: '', result: 'na', sort_order: sortOrder }
@@ -209,13 +210,13 @@ export default function FinalInspectionDetailPage() {
               </div>
               <div style={{ flex: '0 1 190px', minWidth: 170 }}>
                 <label style={labelStyle}>Status</label>
-                <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value as QualityInspectionStatus)}>
+                <Select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value as QualityInspectionStatus)}>
                   <option value="pending">Pending</option>
                   <option value="in_progress">In Progress</option>
                   <option value="passed">Passed</option>
                   <option value="failed">Failed</option>
                   <option value="conditionally_passed">Conditionally Passed</option>
-                </select>
+                </Select>
               </div>
             </div>
             <label style={labelStyle}>Remarks <Optional /></label>
@@ -223,7 +224,7 @@ export default function FinalInspectionDetailPage() {
           </SheetSection>
 
           <SheetSection icon="list" title="Inspection results"
-            extra={canEdit ? <button type="button" onClick={addResult} style={{ ...sheetBtn('secondary'), marginLeft: 'auto', padding: '6px 12px' }}><SheetIcon name="plus" size={14} />Add result</button> : undefined}>
+            extra={canEdit ? <button type="button" onClick={addResult} style={{ ...sheetBtn('secondary'), marginLeft: 'auto' }}><SheetIcon name="plus" size={14} />Add result</button> : undefined}>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                 <thead>
@@ -252,11 +253,11 @@ export default function FinalInspectionDetailPage() {
                         <input style={inputStyle} value={r.observed_value || ''} onChange={(e) => updateResult(idx, 'observed_value', e.target.value)} />
                       </td>
                       <td style={{ ...cell, minWidth: 120 }}>
-                        <select style={inputStyle} value={r.result} onChange={(e) => updateResult(idx, 'result', e.target.value as QualityInspectionResultValue)}>
+                        <Select style={inputStyle} value={r.result} onChange={(e) => updateResult(idx, 'result', e.target.value as QualityInspectionResultValue)}>
                           <option value="na">N/A</option>
                           <option value="pass">Pass</option>
                           <option value="fail">Fail</option>
-                        </select>
+                        </Select>
                       </td>
                       <td style={cell}>
                         {canEdit && results.length > 1 && (

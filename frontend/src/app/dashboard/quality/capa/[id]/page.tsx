@@ -15,7 +15,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import QualityRecordDoc from '@/components/quality/QualityRecordDoc'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
-import { Field, Section, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { Field, Section, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
 import {
   Pill, PageHeader, ErrorBanner, fmtDate, fmtQty, CAPA_STATUS_LABELS, CAPA_STATUS_HEX, CAPA_TRIGGER_LABELS, SEVERITY_HEX,
   NCR_STATUS_LABELS,
@@ -24,6 +24,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { ActionSheet } from '@/components/quality/QualityBits'
 import { sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
+import Select from '@/components/shared/Select'
 
 const STEPS = ['open', 'root_cause_found', 'actions_in_progress', 'effectiveness_check', 'closed']
 const ANALYSIS_EDITABLE = ['open', 'reopened', 'root_cause_found']
@@ -31,7 +32,7 @@ const FISHBONE_LABELS: Record<string, string> = {
   man: 'Man (people / skill)', machine: 'Machine', method: 'Method', material: 'Material', measurement: 'Measurement', environment: 'Environment',
 }
 const linkStyle: React.CSSProperties = { color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }
-const smallBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '5px 10px', fontSize: 12 }
+const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 
 export default function CapaDetailPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
@@ -257,9 +258,9 @@ export default function CapaDetailPage() {
       <Section title="D4 — Root cause" style={{ marginBottom: 20 }}>
         <div style={{ flex: '0 1 220px', maxWidth: 260 }}>
           <Field label="Method">
-            <select style={inputStyle} disabled={!analysisEditable || !canEdit} value={d.root_cause_method} onChange={(e) => setD({ ...d, root_cause_method: e.target.value })}>
+            <Select style={inputStyle} disabled={!analysisEditable || !canEdit} value={d.root_cause_method} onChange={(e) => setD({ ...d, root_cause_method: e.target.value })}>
               <option value="">Select…</option><option value="why_why">Why-why (5 whys)</option><option value="fishbone">Fishbone (6M)</option><option value="both">Both</option>
-            </select>
+            </Select>
           </Field>
         </div>
         {['why_why', 'both'].includes(d.root_cause_method) && (
@@ -331,7 +332,7 @@ export default function CapaDetailPage() {
                 {a.status === 'open' && !closed && (canEdit || canApprove || a.owner_id === user?.id) && (
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                     <button type="button" style={smallBtn} onClick={() => { setDoneFor(a.id); setEvidence({ evidence: '', evidence_reference: '' }); openSheet('done') }}>Record evidence & mark done</button>
-                    {canCancelAction && <button type="button" style={{ ...smallBtn, color: '#b91c1c' }} onClick={() => setCancelFor(a.id)}>Cancel action</button>}
+                    {canCancelAction && <button type="button" style={smallDangerBtnStyle} onClick={() => setCancelFor(a.id)}>Cancel action</button>}
                   </div>
                 )}
               </div>
@@ -356,7 +357,7 @@ export default function CapaDetailPage() {
               onBlur={() => canEdit && d.implementation_summary !== (capa.implementation_summary || '') && save8d({ implementation_summary: d.implementation_summary })} />
           </Field>
         )}
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {canEdit && capa.status === 'root_cause_found' && (
             <button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => run(() => qualityApi.advanceCapa(capa.id), 'Failed to start the actions.')}>Start actions</button>
           )}
@@ -416,9 +417,9 @@ export default function CapaDetailPage() {
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
             <div style={{ flex: '1 1 160px' }}>
               <label style={sheetLabel}>Role</label>
-              <select style={sheetInput} value={teamAdd.role} onChange={(e) => setTeamAdd({ ...teamAdd, role: e.target.value })}>
+              <Select style={sheetInput} value={teamAdd.role} onChange={(e) => setTeamAdd({ ...teamAdd, role: e.target.value })}>
                 <option value="member">Member</option><option value="leader">Leader</option>
-              </select>
+              </Select>
             </div>
             <div style={{ flex: '1 1 200px' }}>
               <label style={sheetLabel}>Department <Optional /></label>
@@ -448,17 +449,17 @@ export default function CapaDetailPage() {
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <div style={{ flex: '1 1 180px' }}>
               <label style={sheetLabel}>Kind</label>
-              <select style={sheetInput} value={action.kind} onChange={(e) => setAction({ ...action, kind: e.target.value })}>
+              <Select style={sheetInput} value={action.kind} onChange={(e) => setAction({ ...action, kind: e.target.value })}>
                 <option value="corrective">D5 corrective</option><option value="preventive">D7 prevention</option>
-              </select>
+              </Select>
             </div>
             {action.kind === 'preventive' && (
               <div style={{ flex: '1 1 220px' }}>
                 <label style={sheetLabel}>Updates</label>
-                <select style={sheetInput} value={action.prevention_type} onChange={(e) => setAction({ ...action, prevention_type: e.target.value })}>
+                <Select style={sheetInput} value={action.prevention_type} onChange={(e) => setAction({ ...action, prevention_type: e.target.value })}>
                   <option value="">Select…</option>
                   {Object.entries(preventionLabels).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
+                </Select>
               </div>
             )}
           </div>

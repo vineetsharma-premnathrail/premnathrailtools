@@ -9,6 +9,7 @@ import MaintenanceAssetPicker from '@/components/maintenance/MaintenanceAssetPic
 import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
 import { ASSET_CATEGORY_LABELS, ASSET_STATUS_LABELS, CRITICALITY_LABELS } from '@/components/maintenance/labels'
+import Select from '@/components/shared/Select'
 
 const MANUAL_STATUSES = ['operational', 'standby', 'decommissioned']
 
@@ -175,15 +176,15 @@ export default function AssetForm({
           </div>
           <div style={{ flex: '0 1 190px', minWidth: 170 }}>
             <label style={sheetLabel}>Category</label>
-            <select data-tour="maint-af-category" style={sheetInput} value={f.category} onChange={(e) => set('category')(e.target.value)}>
+            <Select data-tour="maint-af-category" style={sheetInput} value={f.category} onChange={(e) => set('category')(e.target.value)}>
               {Object.entries(ASSET_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            </Select>
           </div>
           <div style={{ flex: '0 1 170px', minWidth: 150 }}>
             <label style={sheetLabel}>Criticality</label>
-            <select data-tour="maint-af-criticality" style={sheetInput} value={f.criticality} onChange={(e) => set('criticality')(e.target.value)}>
+            <Select data-tour="maint-af-criticality" style={sheetInput} value={f.criticality} onChange={(e) => set('criticality')(e.target.value)}>
               {Object.entries(CRITICALITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            </Select>
           </div>
           {isEdit && (
             <div data-tour="maint-af-status" style={{ flex: '0 1 180px', minWidth: 160 }}>
@@ -193,9 +194,9 @@ export default function AssetForm({
                   {ASSET_STATUS_LABELS[initial!.status] || initial!.status}
                 </div>
               ) : (
-                <select style={sheetInput} value={f.status} onChange={(e) => set('status')(e.target.value)}>
+                <Select style={sheetInput} value={f.status} onChange={(e) => set('status')(e.target.value)}>
                   {MANUAL_STATUSES.map((s) => <option key={s} value={s}>{ASSET_STATUS_LABELS[s]}</option>)}
-                </select>
+                </Select>
               )}
             </div>
           )}

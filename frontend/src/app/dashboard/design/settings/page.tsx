@@ -1,5 +1,7 @@
 'use client'
 
+import AnchoredDropdown from '@/components/design/AnchoredDropdown'
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { designApi } from '@/lib/api'
@@ -65,14 +67,14 @@ function UserChips({ ids, onChange, users, disabled, placeholder }: {
         <div style={{ position: 'relative', maxWidth: 360 }}>
           <input style={sheetInput} value={search} onChange={(e) => setSearch(e.target.value)} placeholder={placeholder} />
           {matches.length > 0 && (
-            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#fff', border: `1px solid ${SHEET.LINE}`, borderRadius: 10, boxShadow: SHADOWS.glass(), zIndex: 20, overflow: 'hidden' }}>
+            <AnchoredDropdown style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#fff', border: `1px solid ${SHEET.LINE}`, borderRadius: 10, boxShadow: SHADOWS.glass(), zIndex: 20, overflow: 'hidden' }}>
               {matches.map((u) => (
                 <div key={u.id} onClick={() => { onChange([...ids, u.id]); setSearch('') }} style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', borderTop: `1px solid ${SHEET.LINE}` }}>
                   <div style={{ color: SHEET.INK, fontWeight: 600 }}>{u.label}</div>
                   {u.code && <div style={{ fontSize: 11.5, color: SHEET.MUTED }}>{u.code}</div>}
                 </div>
               ))}
-            </div>
+            </AnchoredDropdown>
           )}
         </div>
       )}
@@ -227,9 +229,9 @@ export default function DesignSettingsPage() {
                   </div>
                   <div style={{ flex: '0 1 230px' }}>
                     {canEdit ? (
-                      <select style={sheetInput} value={r.role} onChange={(e) => updateTeamRow(idx, { role: e.target.value as TeamRow['role'] })}>
+                      <Select style={sheetInput} value={r.role} onChange={(e) => updateTeamRow(idx, { role: e.target.value as TeamRow['role'] })}>
                         {EDITABLE_ROLES.map((k) => <option key={k} value={k}>{TEAM_ROLE_LABELS[k]}</option>)}
-                      </select>
+                      </Select>
                     ) : pill(TEAM_ROLE_LABELS[r.role] || r.role, ROLE_HEX[r.role] || '#78716c')}
                   </div>
                   {noAppById.get(r.user_id) && (

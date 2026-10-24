@@ -1,5 +1,7 @@
 'use client'
 
+import AnchoredDropdown from '@/components/design/AnchoredDropdown'
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -12,7 +14,7 @@ import { useDesignMe } from '@/components/design/useDesignMe'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, SHEET, Req, Optional, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { DANGER_RED } from '@/components/design/DesignSheets'
 import ReasonSheet from '@/components/shared/ReasonSheet'
@@ -53,10 +55,7 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 16,
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary,
-  color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: `0 6px 16px ${SHADOWS.glowOrange}`,
-}
+const primaryBtn: React.CSSProperties = primaryBtnStyle
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6' }
 const tdStyle: React.CSSProperties = { padding: '9px 10px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
 
@@ -392,7 +391,7 @@ export default function CustomerSubmissionDetailPage() {
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
                   <p style={{ ...sectionTitle, margin: 0, flex: 1 }}>Customer comment actions</p>
                   {!!me?.is_team && addActions && sub.status !== 'draft' && sub.status !== 'cancelled' && panel !== 'add_action' && (
-                    <button type="button" data-tour="design-sub-add-action-btn" style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }} onClick={() => openPanel('add_action')}>+ Add action</button>
+                    <button type="button" data-tour="design-sub-add-action-btn" style={{ ...smallSecondaryBtnStyle }} onClick={() => openPanel('add_action')}>+ Add action</button>
                   )}
                 </div>
                 {sub.comments.length === 0 ? (
@@ -420,7 +419,7 @@ export default function CustomerSubmissionDetailPage() {
                             </td>
                             <td style={tdStyle}>
                               {canClose(c) && (
-                                <button type="button" disabled={busy} style={{ ...secondaryBtnStyle, padding: '5px 12px', fontSize: 12 }} onClick={() => setClosing(c)}>Close</button>
+                                <button type="button" disabled={busy} style={{ ...smallSecondaryBtnStyle }} onClick={() => setClosing(c)}>Close</button>
                               )}
                             </td>
                           </tr>
@@ -457,8 +456,8 @@ export default function CustomerSubmissionDetailPage() {
                       <p style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.letter_file_name}</p>
                       <p style={{ fontSize: 11.5, color: TEXT.muted, margin: 0 }}>{formatBytes(sub.letter_size)}</p>
                     </div>
-                    <button type="button" style={{ ...secondaryBtnStyle, padding: '5px 12px', fontSize: 12 }} onClick={() => openLetter(false)}>Open</button>
-                    <button type="button" style={{ ...secondaryBtnStyle, padding: '5px 12px', fontSize: 12 }} onClick={() => openLetter(true)}>Download</button>
+                    <button type="button" style={{ ...smallSecondaryBtnStyle }} onClick={() => openLetter(false)}>Open</button>
+                    <button type="button" style={{ ...smallSecondaryBtnStyle }} onClick={() => openLetter(true)}>Download</button>
                   </div>
                 ) : (
                   <p style={{ fontSize: 13, color: TEXT.muted, margin: '0 0 10px' }}>No customer letter attached.</p>
@@ -542,12 +541,12 @@ export default function CustomerSubmissionDetailPage() {
                           <span style={{ flex: '0 1 240px', fontSize: 13, fontWeight: 600, color: SHEET.INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {l.doc_number} {l.revision_label} <span style={{ fontWeight: 400, color: SHEET.MUTED }}>— {l.title}</span>
                           </span>
-                          <select style={{ ...sheetInput, flex: '0 1 210px', width: undefined, padding: '7px 10px' }} value={a.response} onChange={(e) => set({ response: e.target.value })}>
+                          <Select style={{ ...sheetInput, flex: '0 1 210px', width: undefined, padding: '7px 10px' }} value={a.response} onChange={(e) => set({ response: e.target.value })}>
                             <option value="">No response yet</option>
                             <option value="approved">{CUSTOMER_RESPONSE_LABELS.approved}</option>
                             <option value="approved_with_comments">{CUSTOMER_RESPONSE_LABELS.approved_with_comments}</option>
                             <option value="rejected">{CUSTOMER_RESPONSE_LABELS.rejected}</option>
-                          </select>
+                          </Select>
                           <input style={{ ...sheetInput, flex: '1 1 240px', width: undefined, padding: '7px 10px' }} value={a.comment} onChange={(e) => set({ comment: e.target.value })}
                             placeholder={a.response && a.response !== 'approved' ? 'Customer comment (required)' : 'Customer comment (optional)'} />
                         </div>
@@ -623,14 +622,14 @@ export default function CustomerSubmissionDetailPage() {
                 <div style={{ position: 'relative', maxWidth: 520 }}>
                   <input style={sheetInput} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search approved drawings waiting on the customer to add…" />
                   {matches.length > 0 && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, marginTop: 4, borderRadius: 10, border: `1px solid ${SHEET.LINE}`, background: '#fff', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+                    <AnchoredDropdown style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, marginTop: 4, borderRadius: 10, border: `1px solid ${SHEET.LINE}`, background: '#fff', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
                       {matches.map((a) => (
                         <div key={a.id} onClick={() => { setSelectedIds((prev) => [...prev, a.id]); setSearch('') }}
                           style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', borderTop: `1px solid ${SHEET.LINE}` }}>
                           {a.label}
                         </div>
                       ))}
-                    </div>
+                    </AnchoredDropdown>
                   )}
                 </div>
               </SheetSection>
@@ -675,10 +674,10 @@ export default function CustomerSubmissionDetailPage() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div data-tour="design-sub-action-drawing" style={{ flex: '1 1 220px' }}>
                   <label style={sheetLabel}>Drawing</label>
-                  <select style={sheetInput} value={action.document_id} onChange={(e) => setAction({ ...action, document_id: e.target.value })}>
+                  <Select style={sheetInput} value={action.document_id} onChange={(e) => setAction({ ...action, document_id: e.target.value })}>
                     <option value="">Whole submission</option>
                     {sub.lines.map((l) => <option key={l.id} value={l.document_id}>{l.doc_number} {l.revision_label} — {l.title}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div data-tour="design-sub-action-assignee" style={{ flex: '1 1 220px' }}>
                   <label style={sheetLabel}>Assigned to</label>

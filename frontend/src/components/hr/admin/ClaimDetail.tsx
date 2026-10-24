@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
@@ -9,7 +10,7 @@ import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, smallPrimaryBtnStyle, InfoRow } from '@/components/shared/ui'
 import {
   ErrorBanner, SuccessBanner, Pill, EmptyRow, FormDialog, primaryActionStyle, sectionStyle,
   thStyle, tdStyle, linkActionStyle, fmtDate, fmtDateTime, fmtINR, todayIso,
@@ -96,10 +97,10 @@ export function ClaimHeaderDialog({
           </div>
         </SheetSection>
         <SheetSection icon="truck" title="Linked Trip" extra={<Optional />}>
-          <select data-tour="hr-claim-header-trip" style={sheetInput} value={tripId} onChange={(e) => setTripId(e.target.value)}>
+          <Select data-tour="hr-claim-header-trip" style={sheetInput} value={tripId} onChange={(e) => setTripId(e.target.value)}>
             <option value="">— Not linked to a trip —</option>
             {trips.map((t) => <option key={t.id} value={t.id}>{t.request_no} · {t.from_city} → {t.to_city} · {fmtDate(t.depart_date)}</option>)}
-          </select>
+          </Select>
           {trips.length === 0 && <p style={sheetHint}>Only your approved or completed travel requests can be linked.</p>}
         </SheetSection>
       </div>
@@ -284,9 +285,9 @@ export default function ClaimDetail({ claimId, onChanged }: { claimId: number; o
     <>
       <td data-tour="hr-claim-line-date" style={{ ...tdStyle, minWidth: 150 }}><DateField value={l.expense_date} onChange={(v) => set({ ...l, expense_date: v })} /></td>
       <td style={{ ...tdStyle, minWidth: 150 }}>
-        <select data-tour="hr-claim-line-category" style={sheetInput} value={l.category} onChange={(e) => set({ ...l, category: e.target.value })}>
+        <Select data-tour="hr-claim-line-category" style={sheetInput} value={l.category} onChange={(e) => set({ ...l, category: e.target.value })}>
           {Object.entries(EXPENSE_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
       </td>
       <td style={{ ...tdStyle, minWidth: 200 }}><input data-tour="hr-claim-line-description" style={sheetInput} value={l.description} onChange={(e) => set({ ...l, description: e.target.value })} placeholder="Hotel, cab to site, lunch with client…" /></td>
       <td style={{ ...tdStyle, width: 120 }}><input data-tour="hr-claim-line-amount" style={{ ...sheetInput, textAlign: 'right' }} inputMode="decimal" value={l.amount} onChange={(e) => set({ ...l, amount: e.target.value.replace(/[^0-9.]/g, '') })} placeholder="0.00" /></td>
@@ -408,7 +409,7 @@ export default function ClaimDetail({ claimId, onChanged }: { claimId: number; o
                   <input ref={newFileRef} data-tour="hr-claim-line-receipt" type="file" accept="image/*,.pdf" onChange={(e) => setNewFile(e.target.files?.[0] || null)} style={{ fontSize: 12, maxWidth: 190 }} />
                 </td>
                 <td style={tdStyle}>
-                  <button type="button" data-tour="hr-claim-add-line-btn" style={{ ...primaryActionStyle, padding: '8px 14px', fontSize: 12.5 }} disabled={busy} onClick={addLine}>{busy ? 'Saving…' : '+ Add line'}</button>
+                  <button type="button" data-tour="hr-claim-add-line-btn" style={smallPrimaryBtnStyle} disabled={busy} onClick={addLine}>{busy ? 'Saving…' : '+ Add line'}</button>
                 </td>
               </tr>
             )}

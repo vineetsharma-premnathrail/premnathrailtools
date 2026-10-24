@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
+import AnchoredPopover from '@/components/shared/AnchoredPopover'
 import { projectsApi, usersApi } from '@/lib/api'
 import { DirectoryUser, PmDepartmentPerson } from '@/types'
 import { TEXT } from '@/lib/theme'
@@ -47,6 +48,7 @@ export default function PeoplePicker({ people, value, onChange, exclude = [], pl
   placeholder?: string
 }) {
   const [search, setSearch] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
   const byId = useMemo(() => new Map(people.map((p) => [p.id, p])), [people])
   const q = search.trim().toLowerCase()
   const matches = q ? people.filter((p) => !value.includes(p.id) && !exclude.includes(p.id) && p.name.toLowerCase().includes(q)).slice(0, 8) : []
@@ -62,17 +64,16 @@ export default function PeoplePicker({ people, value, onChange, exclude = [], pl
           ))}
         </div>
       )}
-      <input style={inputStyle} value={search} onChange={(e) => setSearch(e.target.value)} placeholder={placeholder} />
-      {matches.length > 0 && (
-        <div style={{ position: 'absolute', zIndex: 20, left: 0, right: 0, marginTop: 4, background: '#fff', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', border: '1px solid rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+      <input ref={inputRef} style={inputStyle} value={search} onChange={(e) => setSearch(e.target.value)} placeholder={placeholder} />
+      {/* Portaled so a card / scroll box can't clip the suggestions. */}
+      <AnchoredPopover anchorRef={inputRef} open={matches.length > 0} style={{ border: '1px solid rgba(0,0,0,0.08)' }}>
           {matches.map((p) => (
             <div key={p.id} onClick={() => { onChange([...value, p.id]); setSearch('') }} style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, borderTop: '1px solid rgba(0,0,0,0.04)' }}>
               <span style={{ fontWeight: 600, color: TEXT.heading }}>{p.name}</span>
               {p.sub && <span style={{ fontSize: 11.5, color: p.inDept ? '#0f766e' : TEXT.muted, marginLeft: 8 }}>{p.sub}</span>}
             </div>
           ))}
-        </div>
-      )}
+      </AnchoredPopover>
     </div>
   )
 }

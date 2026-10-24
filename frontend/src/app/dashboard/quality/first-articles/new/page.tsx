@@ -10,6 +10,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 import { ErrorBanner, sheetGap } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 interface ItemOpt { id: number; item_code: string; item_name: string; uom?: string }
 interface Requirement { applies: boolean; released: boolean; trigger?: string | null; drawing_ref?: string | null; open_fai?: string | null }
@@ -109,10 +110,10 @@ export default function NewFirstArticlePage() {
             {form.take_from_free && (
               <>
                 <label style={{ ...sheetLabel, ...sheetGap }}>Store <Req /></label>
-                <select style={sheetInput} value={form.location_id} onChange={(e) => setForm({ ...form, location_id: e.target.value })}>
+                <Select style={sheetInput} value={form.location_id} onChange={(e) => setForm({ ...form, location_id: e.target.value })}>
                   <option value="">Select store…</option>
                   {locations.map((l) => <option key={l.id} value={l.id}>{l.code} — {l.name}</option>)}
-                </select>
+                </Select>
               </>
             )}
             <p style={sheetHint}>Leave unticked when the sample isn&apos;t in stock yet (e.g. sent by the vendor ahead of the order).</p>

@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { projectsApi } from '@/lib/api'
@@ -15,7 +16,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 import { recordPath } from '@/lib/recordRef'
 import {
-  ErrorBanner, FlagPill, Notice, MILESTONE_HEX, MILESTONE_LABELS, Pill, ProgressBar, actionBtn, sectionStyle,
+  ErrorBanner, FlagPill, Notice, MILESTONE_HEX, MILESTONE_LABELS, Pill, ProgressBar, actionBtn, smallActionBtn, sectionStyle,
   tdStyle, thStyle, todayIso,
 } from '@/components/projects/work/pmUi'
 import { FormSheet, Optional, Req, SHEET, SheetColumns, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
@@ -163,10 +164,10 @@ export default function MilestonesTab({ project, onChange }: { project: PmProjec
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   <div data-tour="pm-ms-form-dept" style={{ flex: '1 1 220px', maxWidth: 320 }}>
                     <label style={sheetLabel}>Department <Req /></label>
-                    <select style={sheetInput} value={form.department_id} onChange={(e) => setForm({ ...form, department_id: e.target.value })}>
+                    <Select style={sheetInput} value={form.department_id} onChange={(e) => setForm({ ...form, department_id: e.target.value })}>
                       <option value="">Select…</option>
                       {depts.map((d) => <option key={d.id} value={d.id}>{d.name}{d.has_head ? ` — head ${d.heads.join(', ')}` : ''}</option>)}
-                    </select>
+                    </Select>
                   </div>
                   <div data-tour="pm-ms-form-target" style={{ flex: '0 1 170px', minWidth: 150 }}>
                     <label style={sheetLabel}>Target date <Req /></label>
@@ -204,17 +205,17 @@ export default function MilestonesTab({ project, onChange }: { project: PmProjec
               <SheetSection icon="right" title="Start rule">
                 <div data-tour="pm-ms-form-start-rule">
                   <label style={sheetLabel}>Starts</label>
-                  <select style={sheetInput} value={form.start_rule} onChange={(e) => setForm({ ...form, start_rule: e.target.value as PmStartRule })}>
+                  <Select style={sheetInput} value={form.start_rule} onChange={(e) => setForm({ ...form, start_rule: e.target.value as PmStartRule })}>
                     {START_RULES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 {needsStep(form.start_rule) && (
                   <div data-tour="pm-ms-form-waits-for" style={{ marginTop: 14 }}>
                     <label style={sheetLabel}>{form.start_rule === 'after_step_started' ? 'Can start once this step has started' : 'Waits for this step to be achieved'} <Req /></label>
-                    <select style={sheetInput} value={form.depends_on} onChange={(e) => setForm({ ...form, depends_on: e.target.value })}>
+                    <Select style={sheetInput} value={form.depends_on} onChange={(e) => setForm({ ...form, depends_on: e.target.value })}>
                       <option value="">Select step…</option>
                       {rows.filter((r) => r.id !== form.id && r.status !== 'cancelled').map((r) => <option key={r.id} value={r.id}>Step {r.sequence}: {r.title}</option>)}
-                    </select>
+                    </Select>
                   </div>
                 )}
               </SheetSection>
@@ -276,16 +277,16 @@ export default function MilestonesTab({ project, onChange }: { project: PmProjec
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                     {editable && m.status === 'submitted' && (
                       <>
-                        <button type="button" onClick={() => { setAcceptDate(todayIso()); setAcceptFor(m) }} style={{ ...actionBtn('primary'), padding: '5px 10px', marginRight: 6 }}>Accept</button>
-                        <button type="button" onClick={() => setReasonFor({ m, kind: 'reject' })} style={{ ...actionBtn('danger'), padding: '5px 10px', marginRight: 6 }}>Reject</button>
+                        <button type="button" onClick={() => { setAcceptDate(todayIso()); setAcceptFor(m) }} style={{ ...smallActionBtn('primary'), marginRight: 6 }}>Accept</button>
+                        <button type="button" onClick={() => setReasonFor({ m, kind: 'reject' })} style={{ ...smallActionBtn('danger'), marginRight: 6 }}>Reject</button>
                       </>
                     )}
                     {editable && !['achieved', 'cancelled'].includes(m.status) && (
                       <>
-                        <button type="button" onClick={() => edit(m)} style={{ ...actionBtn('secondary'), padding: '5px 10px', marginRight: 6 }}>Edit</button>
-                        {m.status !== 'submitted' && <button type="button" onClick={() => setReasonFor({ m, kind: 'cancel' })} style={{ ...actionBtn('danger'), padding: '5px 10px', marginRight: 6 }}>Cancel</button>}
+                        <button type="button" onClick={() => edit(m)} style={{ ...smallActionBtn('secondary'), marginRight: 6 }}>Edit</button>
+                        {m.status !== 'submitted' && <button type="button" onClick={() => setReasonFor({ m, kind: 'cancel' })} style={{ ...smallActionBtn('danger'), marginRight: 6 }}>Cancel</button>}
                         {deletable && m.status === 'not_started' && m.task_count === 0 && (
-                          <button type="button" onClick={() => setDeleteFor(m)} title="Only works while no task (not even a cancelled one) was ever created — otherwise use Cancel" style={{ ...actionBtn('danger'), padding: '5px 10px' }}>Delete</button>
+                          <button type="button" onClick={() => setDeleteFor(m)} title="Only works while no task (not even a cancelled one) was ever created — otherwise use Cancel" style={{ ...smallActionBtn('danger') }}>Delete</button>
                         )}
                       </>
                     )}

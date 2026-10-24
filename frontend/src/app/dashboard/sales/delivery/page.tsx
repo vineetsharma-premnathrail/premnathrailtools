@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -56,16 +57,16 @@ export default function SalesDeliveryPage() {
       <ErrorBanner error={error} />
 
       <div data-tour="sales-delivery-filters" style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <select style={{ ...inputStyle, width: 180 }} value={risk} onChange={(e) => setRisk(e.target.value)}>
+        <Select style={{ ...inputStyle, width: 180 }} value={risk} onChange={(e) => setRisk(e.target.value)}>
           <option value="">All vehicles</option>
           <option value="any">At risk or overdue</option>
           <option value="at_risk">At risk</option>
           <option value="overdue">Overdue</option>
-        </select>
-        <select style={{ ...inputStyle, width: 180 }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        </Select>
+        <Select style={{ ...inputStyle, width: 180 }} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All stages</option>
           {['open', 'build_planned', 'in_production', 'ready', 'dispatched'].map((s) => <option key={s} value={s}>{ROW_STATUS_LABELS[s]}</option>)}
-        </select>
+        </Select>
         <input style={{ ...inputStyle, width: 160 }} placeholder="Month YYYY-MM" value={month} onChange={(e) => setMonth(e.target.value)} />
       </div>
 
@@ -101,15 +102,17 @@ export default function SalesDeliveryPage() {
         <h2 style={h2Style}>DP extensions waiting for the customer</h2>
         <ErrorBanner error={extError} />
         {extError ? null : exts.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>None open. Request an extension from the order&apos;s Delivery Schedule tab.</p> : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['Order', 'Customer', 'Vehicles', 'Requested date', 'Reason'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
-            <tbody>{exts.map((e) => (
-              <tr key={e.id} onClick={() => router.push(`${recordPath('/dashboard/sales/orders', e, 'so_id')}?tab=schedule`)} style={{ cursor: 'pointer' }}>
-                <td style={{ ...tdStyle, fontWeight: 600 }}>{e.so_display}</td><td style={tdStyle}>{e.customer_name}</td><td style={tdStyle}>{e.vehicles.join(', ')}</td>
-                <td style={tdStyle}>{formatDate(e.requested_new_date)}</td><td style={tdStyle}>{EXTENSION_REASON_LABELS[e.reason_category]}: {e.reason}</td>
-              </tr>))}
-            </tbody>
-          </table>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr>{['Order', 'Customer', 'Vehicles', 'Requested date', 'Reason'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <tbody>{exts.map((e) => (
+                <tr key={e.id} onClick={() => router.push(`${recordPath('/dashboard/sales/orders', e, 'so_id')}?tab=schedule`)} style={{ cursor: 'pointer' }}>
+                  <td style={{ ...tdStyle, fontWeight: 600 }}>{e.so_display}</td><td style={tdStyle}>{e.customer_name}</td><td style={tdStyle}>{e.vehicles.join(', ')}</td>
+                  <td style={tdStyle}>{formatDate(e.requested_new_date)}</td><td style={tdStyle}>{EXTENSION_REASON_LABELS[e.reason_category]}: {e.reason}</td>
+                </tr>))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>

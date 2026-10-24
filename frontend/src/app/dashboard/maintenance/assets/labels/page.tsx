@@ -20,6 +20,7 @@ import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { resolveRecordRef, INVALID_LINK } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import Select from '@/components/shared/Select'
 
 const LABELS_PER_PAGE = 18
 
@@ -199,10 +200,10 @@ export default function MaintenanceAssetLabelsPage() {
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
             <div style={{ flex: '1 1 240px', maxWidth: 320 }}>
               <label style={labelStyle}>Plant</label>
-              <select data-tour="maint-labels-plant" style={inputStyle} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+              <Select data-tour="maint-labels-plant" style={inputStyle} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
                 <option value="">Select a plant…</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
+              </Select>
             </div>
             <button data-tour="maint-labels-load" type="button" style={secondaryBtnStyle} onClick={loadPlant} disabled={loading}>
               {loading ? 'Loading…' : 'Load labels'}

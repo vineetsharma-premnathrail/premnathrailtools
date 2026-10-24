@@ -14,6 +14,7 @@ import {
   Pill, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtDate, INSPECTION_TYPE_LABELS, PLAN_STATUS_HEX,
 } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 const SAMPLING_LABEL: Record<string, string> = { aql: 'AQL', full: '100%', fixed: 'Fixed' }
 
@@ -61,13 +62,13 @@ export default function InspectionPlansPage() {
       <ErrorBanner error={error} />
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <input style={{ ...filterInputStyle, flex: '1 1 240px', maxWidth: 420 }} placeholder="Search plan number or item…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...filterInputStyle, flex: '0 1 200px' }} value={type} onChange={(e) => setType(e.target.value)}>
+        <Select style={{ ...filterInputStyle, flex: '0 1 200px' }} value={type} onChange={(e) => setType(e.target.value)}>
           <option value="">All inspection types</option>
           {Object.entries(INSPECTION_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-        <select style={{ ...filterInputStyle, flex: '0 1 150px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        </Select>
+        <Select style={{ ...filterInputStyle, flex: '0 1 150px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option><option value="draft">Draft</option><option value="approved">Approved</option><option value="obsolete">Obsolete</option>
-        </select>
+        </Select>
       </div>
       <div style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 920 }}>

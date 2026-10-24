@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
@@ -150,17 +151,17 @@ export default function MyHrProfilePage() {
                     <div style={{ ...row, marginBottom: 0 }}>
                       <div data-tour="hr-me-blood-group" style={{ flex: '0 1 120px', minWidth: 110 }}>
                         <label style={sheetLabel}>Blood Group</label>
-                        <select style={sheetInput} {...inp('blood_group')}>
+                        <Select style={sheetInput} {...inp('blood_group')}>
                           <option value="">—</option>
                           {BLOOD_GROUPS.map((b) => <option key={b} value={b}>{b}</option>)}
-                        </select>
+                        </Select>
                       </div>
                       <div data-tour="hr-me-marital" style={{ flex: '0 1 160px', minWidth: 140 }}>
                         <label style={sheetLabel}>Marital Status</label>
-                        <select style={sheetInput} {...inp('marital_status')}>
+                        <Select style={sheetInput} {...inp('marital_status')}>
                           <option value="">—</option>
                           {MARITAL.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                        </select>
+                        </Select>
                       </div>
                     </div>
                   </SheetSection>

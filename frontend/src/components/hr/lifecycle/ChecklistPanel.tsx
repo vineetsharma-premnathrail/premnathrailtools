@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useMemo, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { HrChecklistItem, HrLifecycleEvent, HrLifecycleMeta } from '@/types'
@@ -222,9 +223,9 @@ export default function ChecklistPanel({
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div data-tour="hr-lcd-add-category" style={{ flex: '0 1 140px', minWidth: 120 }}>
                   <label style={sheetLabel}>Category</label>
-                  <select style={sheetInput} value={newItem.category} onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}>
+                  <Select style={sheetInput} value={newItem.category} onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}>
                     {(meta?.categories || CATEGORY_ORDER.map((c) => ({ value: c, label: CATEGORY_LABELS[c] }))).map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div data-tour="hr-lcd-add-title" style={{ flex: '1 1 260px' }}>
                   <label style={sheetLabel}>What needs doing <Req /></label>

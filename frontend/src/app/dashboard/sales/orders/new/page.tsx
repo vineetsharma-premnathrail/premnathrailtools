@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -204,10 +205,10 @@ export default function NewSalesOrderPage() {
                 </div>
                 <div style={{ flex: '0 1 280px', minWidth: 200 }}>
                   <label style={sheetLabel}>Contact person</label>
-                  <select style={sheetInput} value={contactId ?? ''} onChange={(e) => setContactId(e.target.value ? Number(e.target.value) : null)}>
+                  <Select style={sheetInput} value={contactId ?? ''} onChange={(e) => setContactId(e.target.value ? Number(e.target.value) : null)}>
                     <option value="">—</option>
                     {(customerId ? contacts : []).map((c) => <option key={c.id} value={c.id}>{c.name}{c.designation ? ` (${c.designation})` : ''}</option>)}
-                  </select>
+                  </Select>
                 </div>
               </div>
               {!fromLink && customerId && (

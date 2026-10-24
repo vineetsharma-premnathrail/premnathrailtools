@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -78,22 +79,22 @@ export default function HydSparePartsPage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <input data-tour="hyd-spare-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search part code, name or part no…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select data-tour="hyd-spare-category-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={category} onChange={(e) => setCategory(e.target.value)}>
+        <Select data-tour="hyd-spare-category-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="">All categories</option>
           {Object.entries(SPARE_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="hyd-spare-medium-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
+        </Select>
+        <Select data-tour="hyd-spare-medium-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
           <option value="">Hydraulic + Pneumatic</option>
           <option value="hydraulic">Hydraulic</option>
           <option value="pneumatic">Pneumatic</option>
-        </select>
-        <select data-tour="hyd-spare-criticality-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={criticality} onChange={(e) => setCriticality(e.target.value)}>
+        </Select>
+        <Select data-tour="hyd-spare-criticality-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={criticality} onChange={(e) => setCriticality(e.target.value)}>
           <option value="">All criticality</option>
           {Object.entries(CRITICALITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="hyd-spare-stock-filter" style={{ ...inputStyle, flex: '0 1 180px' }} value={stock} onChange={(e) => setStock(e.target.value)}>
+        </Select>
+        <Select data-tour="hyd-spare-stock-filter" style={{ ...inputStyle, flex: '0 1 180px' }} value={stock} onChange={(e) => setStock(e.target.value)}>
           {STOCK_FILTERS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
       </div>
 
       <div data-tour="hyd-spare-table" style={{

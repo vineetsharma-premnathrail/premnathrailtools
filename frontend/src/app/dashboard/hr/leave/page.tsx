@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
@@ -25,7 +26,7 @@ const inputStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
 }
 const td: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
-const th: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }
+const th: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }
 const tableWrap: React.CSSProperties = { borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }
 const linkBtn = (color: string): React.CSSProperties => ({ background: 'none', border: 'none', padding: 0, fontSize: 12.5, fontWeight: 600, color, cursor: 'pointer', marginRight: 12 })
 
@@ -284,14 +285,14 @@ export default function HrLeavePage() {
 
           <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
             <input data-tour="hr-leave-search" style={{ ...inputStyle, flex: '1 1 220px', maxWidth: 300 }} placeholder="Search employee or request no…" value={search} onChange={(e) => setSearch(e.target.value)} />
-            <select data-tour="hr-leave-status-filter" style={{ ...inputStyle, flex: '0 1 160px', width: 'auto' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+            <Select data-tour="hr-leave-status-filter" style={{ ...inputStyle, flex: '0 1 160px', width: 'auto' }} value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">All statuses</option>
               {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-            <select data-tour="hr-leave-type-filter" style={{ ...inputStyle, flex: '0 1 180px', width: 'auto' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+            </Select>
+            <Select data-tour="hr-leave-type-filter" style={{ ...inputStyle, flex: '0 1 180px', width: 'auto' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
               <option value="">All leave types</option>
               {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
+            </Select>
             <div data-tour="hr-leave-date-from" style={{ flex: '0 1 150px', minWidth: 140 }}><DateField value={dateFrom} onChange={setDateFrom} /></div>
             <span style={{ fontSize: 12, color: TEXT.muted }}>to</span>
             <div data-tour="hr-leave-date-to" style={{ flex: '0 1 150px', minWidth: 140 }}><DateField value={dateTo} onChange={setDateTo} /></div>
@@ -301,7 +302,7 @@ export default function HrLeavePage() {
           <div data-tour="hr-leave-requests-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1040 }}>
               <thead>
-                <tr>{['Request', 'Employee', 'Leave', 'Dates', 'Days', 'Status', 'Approver / decision', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
+                <tr>{['Request', 'Employee', 'Leave', 'Dates', 'Days', 'Status', 'Approver / decision', ''].map((h) => <th key={h} style={h === 'Days' ? { ...th, textAlign: 'right' } : th}>{h}</th>)}</tr>
               </thead>
               <tbody>
                 {reqLoading ? (
@@ -326,7 +327,7 @@ export default function HrLeavePage() {
                       {dmy(r.from_date)}{SESSION_SHORT[r.from_session]}
                       {r.to_date !== r.from_date && <div>→ {dmy(r.to_date)}{SESSION_SHORT[r.to_session]}</div>}
                     </td>
-                    <td style={{ ...td, fontWeight: 700 }}>{num(r.days)}</td>
+                    <td style={{ ...td, fontWeight: 700, textAlign: 'right' }}>{num(r.days)}</td>
                     <td style={td}>
                       <span data-tour="hr-leave-status-badge" style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[r.status]}1a`, color: STATUS_HEX[r.status], whiteSpace: 'nowrap' }}>{STATUS_LABELS[r.status] || r.status}</span>
                     </td>
@@ -351,20 +352,20 @@ export default function HrLeavePage() {
       {tab === 'balances' && (
         <>
           <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-            <select data-tour="hr-leave-bal-year" style={{ ...inputStyle, flex: '0 1 110px', width: 'auto' }} value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            <Select data-tour="hr-leave-bal-year" style={{ ...inputStyle, flex: '0 1 110px', width: 'auto' }} value={year} onChange={(e) => setYear(Number(e.target.value))}>
               {[thisYear + 1, thisYear, thisYear - 1, thisYear - 2].map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
-            <select data-tour="hr-leave-bal-type" style={{ ...inputStyle, flex: '0 1 180px', width: 'auto' }} value={balType} onChange={(e) => setBalType(e.target.value)}>
+            </Select>
+            <Select data-tour="hr-leave-bal-type" style={{ ...inputStyle, flex: '0 1 180px', width: 'auto' }} value={balType} onChange={(e) => setBalType(e.target.value)}>
               <option value="">All leave types</option>
               {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
+            </Select>
             <input data-tour="hr-leave-bal-search" style={{ ...inputStyle, flex: '1 1 220px', maxWidth: 300 }} placeholder="Search employee…" value={balSearch} onChange={(e) => setBalSearch(e.target.value)} />
             <span style={{ fontSize: 12, color: TEXT.muted }}>{balances.length} balance row(s)</span>
           </div>
           <div data-tour="hr-leave-balances-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
               <thead>
-                <tr>{['Employee', 'Leave type', 'Carried', 'Allotted', 'Adjusted', 'Used', 'Pending', 'Available', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
+                <tr>{['Employee', 'Leave type', 'Carried', 'Allotted', 'Adjusted', 'Used', 'Pending', 'Available', ''].map((h) => <th key={h} style={['Carried', 'Allotted', 'Adjusted', 'Used', 'Pending', 'Available'].includes(h) ? { ...th, textAlign: 'right' } : th}>{h}</th>)}</tr>
               </thead>
               <tbody>
                 {balLoading ? (
@@ -380,12 +381,12 @@ export default function HrLeavePage() {
                       <div style={{ fontSize: 11.5, color: TEXT.muted }}>{[b.employee_code, b.department_name].filter(Boolean).join(' · ')}</div>
                     </td>
                     <td style={td}>{b.leave_type_name} <span style={{ fontSize: 11, color: TEXT.muted }}>{b.leave_type_code}</span></td>
-                    <td style={td}>{num(b.opening)}</td>
-                    <td style={td}>{num(b.allotted)}</td>
-                    <td style={{ ...td, color: Number(b.adjusted) < 0 ? '#DC2626' : Number(b.adjusted) > 0 ? '#16A34A' : TEXT.body }}>{Number(b.adjusted) > 0 ? '+' : ''}{num(b.adjusted)}</td>
-                    <td style={td}>{num(b.used)}</td>
-                    <td style={{ ...td, color: Number(b.pending) > 0 ? '#B45309' : TEXT.muted }}>{num(b.pending)}</td>
-                    <td style={{ ...td, fontWeight: 800, color: TEXT.heading }}>{b.is_paid === false ? '—' : num(b.available)}</td>
+                    <td style={{ ...td, textAlign: 'right' }}>{num(b.opening)}</td>
+                    <td style={{ ...td, textAlign: 'right' }}>{num(b.allotted)}</td>
+                    <td style={{ ...td, textAlign: 'right', color: Number(b.adjusted) < 0 ? '#DC2626' : Number(b.adjusted) > 0 ? '#16A34A' : TEXT.body }}>{Number(b.adjusted) > 0 ? '+' : ''}{num(b.adjusted)}</td>
+                    <td style={{ ...td, textAlign: 'right' }}>{num(b.used)}</td>
+                    <td style={{ ...td, textAlign: 'right', color: Number(b.pending) > 0 ? '#B45309' : TEXT.muted }}>{num(b.pending)}</td>
+                    <td style={{ ...td, fontWeight: 800, color: TEXT.heading, textAlign: 'right' }}>{b.is_paid === false ? '—' : num(b.available)}</td>
                     <td style={td}>
                       {canAdjust && <button type="button" data-tour="hr-leave-bal-adjust-link" style={linkBtn('#E85A1F')} onClick={() => { setModalErrors([]); setAdjust({ user_id: String(b.user_id), leave_type_id: String(b.leave_type_id), year: b.year, delta: '', reason: '', label: `${b.user_name} · ${b.leave_type_name} · ${b.year} (available ${num(b.available)})` }) }}>Adjust</button>}
                     </td>
@@ -440,9 +441,9 @@ export default function HrLeavePage() {
                   <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                     <div style={{ flex: '0 1 120px' }}>
                       <label style={sheetLabel}>Year</label>
-                      <select data-tour="hr-leave-allot-year" style={sheetInput} value={allotYear} onChange={(e) => setAllotYear(Number(e.target.value))}>
+                      <Select data-tour="hr-leave-allot-year" style={sheetInput} value={allotYear} onChange={(e) => setAllotYear(Number(e.target.value))}>
                         {[thisYear + 1, thisYear, thisYear - 1].map((y) => <option key={y} value={y}>{y}</option>)}
-                      </select>
+                      </Select>
                     </div>
                     <label data-tour="hr-leave-allot-prorate" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: SHEET.BODY, cursor: 'pointer', paddingBottom: 10 }}>
                       <input type="checkbox" checked={prorate} onChange={(e) => setProrate(e.target.checked)} /> Pro-rate for employees who join during the year
@@ -494,18 +495,18 @@ export default function HrLeavePage() {
                   <label style={sheetLabel}>Employee <Req /></label>
                   <SearchableSelect value={adjust.user_id} onChange={(v) => setAdjust({ ...adjust, user_id: v })} options={employeeOptions} placeholder="Search employee…" />
                 </div>
-                <div style={{ display: 'flex', gap: 12 }}>
-                  <div style={{ flex: '1 1 200px' }}>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1 1 200px', minWidth: 0 }}>
                     <label style={sheetLabel}>Leave type <Req /></label>
-                    <select data-tour="hr-leave-adjust-type" style={sheetInput} value={adjust.leave_type_id} onChange={(e) => setAdjust({ ...adjust, leave_type_id: e.target.value })}>
+                    <Select data-tour="hr-leave-adjust-type" style={sheetInput} value={adjust.leave_type_id} onChange={(e) => setAdjust({ ...adjust, leave_type_id: e.target.value })}>
                       {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
+                    </Select>
                   </div>
                   <div style={{ flex: '0 1 110px' }}>
                     <label style={sheetLabel}>Year</label>
-                    <select data-tour="hr-leave-adjust-year" style={sheetInput} value={adjust.year} onChange={(e) => setAdjust({ ...adjust, year: Number(e.target.value) })}>
+                    <Select data-tour="hr-leave-adjust-year" style={sheetInput} value={adjust.year} onChange={(e) => setAdjust({ ...adjust, year: Number(e.target.value) })}>
                       {[thisYear + 1, thisYear, thisYear - 1].map((y) => <option key={y} value={y}>{y}</option>)}
-                    </select>
+                    </Select>
                   </div>
                 </div>
               </SheetSection>

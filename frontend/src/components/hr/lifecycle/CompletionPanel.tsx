@@ -1,11 +1,12 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { HrLifecycleEvent, HrLifecycleImpact, HrLifecycleMeta } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import { sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
@@ -26,10 +27,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <div><label style={sheetLabel}>{label}</label>{children}</div>
 }
 const errorBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
-const completeBtn: React.CSSProperties = {
-  padding: '11px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-  background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-}
+const completeBtn: React.CSSProperties = { ...primaryBtnStyle, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }
 
 function ImpactGroup({ title, count, tone = 'info', children }: { title: string; count: number; tone?: 'block' | 'move' | 'info'; children: React.ReactNode }) {
   const hex = tone === 'block' ? '#DC2626' : tone === 'move' ? '#2563EB' : '#78716C'
@@ -194,9 +192,9 @@ export default function CompletionPanel({
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
           <div data-tour="hr-lcd-join-employment-type" style={{ flex: '0 1 190px', minWidth: 170 }}>
             <Field label="Employment type">
-              <select style={inputStyle} value={employmentType} onChange={(e) => setEmploymentType(e.target.value)}>
+              <Select style={inputStyle} value={employmentType} onChange={(e) => setEmploymentType(e.target.value)}>
                 {(meta?.employment_types || Object.keys(EMPLOYMENT_TYPE_LABELS)).map((x) => <option key={x} value={x}>{EMPLOYMENT_TYPE_LABELS[x] || x}</option>)}
-              </select>
+              </Select>
             </Field>
           </div>
           <div data-tour="hr-lcd-join-employee-code" style={{ flex: '0 1 170px', minWidth: 150 }}>

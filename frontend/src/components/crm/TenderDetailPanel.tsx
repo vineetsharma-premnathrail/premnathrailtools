@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
@@ -19,7 +20,7 @@ import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDia
 import RequirementDiscussionTab from '@/components/crm/RequirementDiscussionTab'
 import SalesOrderHandoff from '@/components/crm/SalesOrderHandoff'
 import { TND_STAGES, TENDER_STATUSES, tenderStatusColor, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
-import { Card, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RevisionSelector, SpecInfoRow, SpecRevision, StageProgress } from '@/components/crm/ui'
+import { Card, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RevisionSelector, SpecInfoRow, SpecRevision, StageProgress, smallDangerBtnStyle, smallSecondaryBtnStyle, AnchoredMenu } from '@/components/crm/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { refOf } from '@/lib/recordRef'
@@ -338,9 +339,9 @@ function InfoTab({ tender, org, contact, revisions, selectedRevId, canModify, on
             label="Status"
             value={
               canModify ? (
-                <select data-tour="tnd-info-status" value={tender.status} onChange={(e) => onChangeLeadInfo({ status: e.target.value })} style={{ ...inputStyle, padding: '4px 8px', fontSize: 12.5, width: 'auto' }}>
+                <Select data-tour="tnd-info-status" value={tender.status} onChange={(e) => onChangeLeadInfo({ status: e.target.value })} style={{ ...inputStyle, padding: '4px 8px', fontSize: 12.5, width: 'auto' }}>
                   {TENDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
+                </Select>
               ) : (tender.status || 'Not provided')
             }
           />
@@ -545,14 +546,14 @@ function ActivitiesTab({ tender, org }: { tender: Tender; org: Organization | nu
               <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '2px 0 0' }}>Due: {a.next_followup || 'To Be Decided'}</p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <button onClick={() => setViewingActivity(a)} data-tour={idx === 0 ? 'activity-row-view-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>View</button>
-              {canEditActivity(a) && <button onClick={() => startEdit(a)} data-tour={idx === 0 ? 'activity-row-edit-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Edit</button>}
+              <button onClick={() => setViewingActivity(a)} data-tour={idx === 0 ? 'activity-row-view-btn' : undefined} style={{ ...smallSecondaryBtnStyle }}>View</button>
+              {canEditActivity(a) && <button onClick={() => startEdit(a)} data-tour={idx === 0 ? 'activity-row-edit-btn' : undefined} style={{ ...smallSecondaryBtnStyle }}>Edit</button>}
               {canEditActivity(a) && <ChangeStatusButton currentStatus={a.status || FOLLOW_UP_STATUSES[0]} statuses={FOLLOW_UP_STATUSES} onSelect={(s) => changeStatus(a, s)} tourId={idx === 0 ? 'tender-followup-change-status-btn' : undefined} />}
-              {canFeature('crm', 'inquiries_tenders', 'followups', 'print') && <button disabled={exportingMomId === a.id} onClick={() => exportMom(a)} data-tour={idx === 0 ? 'activity-row-export-mom-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, opacity: exportingMomId === a.id ? 0.7 : 1 }}>
+              {canFeature('crm', 'inquiries_tenders', 'followups', 'print') && <button disabled={exportingMomId === a.id} onClick={() => exportMom(a)} data-tour={idx === 0 ? 'activity-row-export-mom-btn' : undefined} style={{ ...smallSecondaryBtnStyle, opacity: exportingMomId === a.id ? 0.7 : 1 }}>
                 {exportingMomId === a.id ? 'Exporting…' : 'Export MoM'}
               </button>}
               {canFeature('crm', 'inquiries_tenders', 'followups', 'delete') && !!user && (user.role === 'admin' || a.created_by_id == null || a.created_by_id === user.id) && (
-                <button onClick={() => setDeletingActivity(a)} data-tour={idx === 0 ? 'activity-row-delete-btn' : undefined} style={{ ...dangerBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Delete</button>
+                <button onClick={() => setDeletingActivity(a)} data-tour={idx === 0 ? 'activity-row-delete-btn' : undefined} style={{ ...smallDangerBtnStyle }}>Delete</button>
               )}
             </div>
           </div>
@@ -575,19 +576,22 @@ function ActivitiesTab({ tender, org }: { tender: Tender; org: Organization | nu
 function ChangeStatusButton({ currentStatus, statuses, onSelect, tourId }: { currentStatus: string; statuses: string[]; onSelect: (s: string) => void; tourId?: string }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
-    const onClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (ref.current && !ref.current.contains(t) && !menuRef.current?.contains(t)) setOpen(false)
+    }
     document.addEventListener('mousedown', onClick)
     return () => document.removeEventListener('mousedown', onClick)
   }, [open])
 
   return (
     <div ref={ref} data-tour={tourId} style={{ position: 'relative' }}>
-      <button type="button" onClick={() => setOpen((v) => !v)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Change Status</button>
-      {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 30, minWidth: 200, maxHeight: 260, overflowY: 'auto', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 16px 36px rgba(0,0,0,0.16)', padding: 6 }}>
+      <button type="button" onClick={() => setOpen((v) => !v)} style={{ ...smallSecondaryBtnStyle }}>Change Status</button>
+      <AnchoredMenu anchorRef={ref} menuRef={menuRef} open={open}>
           {statuses.map((s) => {
             const active = s === currentStatus
             return (
@@ -602,8 +606,7 @@ function ChangeStatusButton({ currentStatus, statuses, onSelect, tourId }: { cur
               </div>
             )
           })}
-        </div>
-      )}
+      </AnchoredMenu>
     </div>
   )
 }

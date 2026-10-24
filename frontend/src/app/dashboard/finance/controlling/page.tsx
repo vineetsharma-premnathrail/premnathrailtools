@@ -22,6 +22,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import { FormSheet, SheetSection, SheetIcon, SheetIconName, SHEET, Req, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { SField, SRow, SheetFooter, sw, sg } from '@/components/finance/financeSheet'
+import Select from '@/components/shared/Select'
 import {
   financeCoApi, CoPlanVersion, CoPlanGrid, CoPlanGridRow, CoPlanVsActual, CoActivityRate, CoCycle, CoSegment,
   CoCycleRunResult, CoAllocationRun, CoCostingSheetRow, CoOverheadResult, CoOverheadRun,
@@ -219,13 +220,13 @@ function PlanningTab() {
       {notice && <InfoBanner tone="success">{notice}</InfoBanner>}
       <div style={{ ...sectionStyle, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <Field label="Financial year" style={{ flex: '0 1 130px' }}>
-          <select value={fy} onChange={(e) => setFy(e.target.value)} style={inputStyle}>{fyOptions().map((f) => <option key={f} value={f}>{f}</option>)}</select>
+          <Select value={fy} onChange={(e) => setFy(e.target.value)} style={inputStyle}>{fyOptions().map((f) => <option key={f} value={f}>{f}</option>)}</Select>
         </Field>
         <Field label="Plan version" style={{ flex: '1 1 260px', maxWidth: 360 }}>
-          <select value={selected ?? ''} onChange={(e) => setSelected(Number(e.target.value) || null)} style={inputStyle}>
+          <Select value={selected ?? ''} onChange={(e) => setSelected(Number(e.target.value) || null)} style={inputStyle}>
             {versions.length === 0 && <option value="">No versions for {fy}</option>}
             {versions.map((v) => <option key={v.id} value={v.id}>{v.code} — {v.name} ({v.version_type}{v.is_primary ? ', primary' : ''})</option>)}
-          </select>
+          </Select>
         </Field>
         {version && <StatusPill status={version.status} labels={STATUS_LABELS} colors={STATUS_HEX} />}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginLeft: 'auto' }}>
@@ -304,26 +305,26 @@ function PlanningTab() {
           </SRow>
           <SRow mb={0}>
             <SField label="Type" style={sw(150)}>
-              <select value={newForm.version_type} onChange={(e) => setNewForm({ ...newForm, version_type: e.target.value })} style={sheetInput}><option value="original">Original</option><option value="revised">Revised</option></select>
+              <Select value={newForm.version_type} onChange={(e) => setNewForm({ ...newForm, version_type: e.target.value })} style={sheetInput}><option value="original">Original</option><option value="revised">Revised</option></Select>
             </SField>
           </SRow>
         </SheetSection>
         <SheetSection icon="doc" title="Start from">
           <SRow mb={10}>
             <SField label="Start from" style={sw(200)}>
-              <select value={newForm.copy} onChange={(e) => setNewForm({ ...newForm, copy: e.target.value })} style={sheetInput}>
+              <Select value={newForm.copy} onChange={(e) => setNewForm({ ...newForm, copy: e.target.value })} style={sheetInput}>
                 <option value="none">Empty plan</option><option value="version">Copy a plan version</option><option value="actuals">A year&apos;s actuals</option>
-              </select>
+              </Select>
             </SField>
             {newForm.copy === 'version' && <SField label="Version to copy" req style={sg(200, 280)}>
-              <select value={newForm.copy_from_version_id} onChange={(e) => setNewForm({ ...newForm, copy_from_version_id: e.target.value })} style={sheetInput}>
+              <Select value={newForm.copy_from_version_id} onChange={(e) => setNewForm({ ...newForm, copy_from_version_id: e.target.value })} style={sheetInput}>
                 <option value="">Pick…</option>{versions.map((v) => <option key={v.id} value={v.id}>{v.code} — {v.name}</option>)}
-              </select>
+              </Select>
             </SField>}
             {newForm.copy === 'actuals' && <SField label="Actuals of FY" req style={sw(150)}>
-              <select value={newForm.copy_actuals_from_fy} onChange={(e) => setNewForm({ ...newForm, copy_actuals_from_fy: e.target.value })} style={sheetInput}>
+              <Select value={newForm.copy_actuals_from_fy} onChange={(e) => setNewForm({ ...newForm, copy_actuals_from_fy: e.target.value })} style={sheetInput}>
                 <option value="">Pick…</option>{fyOptions().map((f) => <option key={f} value={f}>{f}</option>)}
-              </select>
+              </Select>
             </SField>}
             {newForm.copy !== 'none' && <SField label="Uplift %" style={sw(110)}><input type="number" value={newForm.uplift_pct} onChange={(e) => setNewForm({ ...newForm, uplift_pct: e.target.value })} style={sheetInput} /></SField>}
           </SRow>
@@ -371,15 +372,15 @@ function PlanVsActualTab() {
       <InfoBanner>Variance = actual − plan. On a cost, a positive variance is an overspend (red); on income it is a shortfall. Actuals are posted journal lines carrying the cost centre, including CO allocations.</InfoBanner>
       <ErrorBanner error={error} />
       <div style={{ ...sectionStyle, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <Field label="Financial year" style={{ flex: '0 1 130px' }}><select value={fy} onChange={(e) => { setFy(e.target.value); setFromP(''); setToP('') }} style={inputStyle}>{fyOptions().map((f) => <option key={f} value={f}>{f}</option>)}</select></Field>
+        <Field label="Financial year" style={{ flex: '0 1 130px' }}><Select value={fy} onChange={(e) => { setFy(e.target.value); setFromP(''); setToP('') }} style={inputStyle}>{fyOptions().map((f) => <option key={f} value={f}>{f}</option>)}</Select></Field>
         <Field label="Plan version" style={{ flex: '1 1 220px', maxWidth: 300 }}>
-          <select value={versionId} onChange={(e) => setVersionId(e.target.value)} style={inputStyle}>
+          <Select value={versionId} onChange={(e) => setVersionId(e.target.value)} style={inputStyle}>
             {versions.length === 0 && <option value="">No versions for {fy}</option>}
             {versions.map((v) => <option key={v.id} value={v.id}>{v.code} — {v.name}{v.is_primary ? ' (primary)' : ''}</option>)}
-          </select>
+          </Select>
         </Field>
-        <Field label="From month" style={{ flex: '0 1 130px' }}><select value={fromP} onChange={(e) => setFromP(e.target.value)} style={inputStyle}><option value="">FY start</option>{months.map((m) => <option key={m} value={m}>{m}</option>)}</select></Field>
-        <Field label="To month" style={{ flex: '0 1 130px' }}><select value={toP} onChange={(e) => setToP(e.target.value)} style={inputStyle}><option value="">FY end</option>{months.map((m) => <option key={m} value={m}>{m}</option>)}</select></Field>
+        <Field label="From month" style={{ flex: '0 1 130px' }}><Select value={fromP} onChange={(e) => setFromP(e.target.value)} style={inputStyle}><option value="">FY start</option>{months.map((m) => <option key={m} value={m}>{m}</option>)}</Select></Field>
+        <Field label="To month" style={{ flex: '0 1 130px' }}><Select value={toP} onChange={(e) => setToP(e.target.value)} style={inputStyle}><option value="">FY end</option>{months.map((m) => <option key={m} value={m}>{m}</option>)}</Select></Field>
         <Field label="Cost centre (with sub-centres)" style={{ flex: '1 1 240px', maxWidth: 320 }}><SearchableSelect value={cc} onChange={setCc} options={[{ value: '', label: 'All cost centres' }, ...ccOptions]} placeholder="All cost centres" /></Field>
       </div>
       {data && <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
@@ -481,10 +482,10 @@ function ActivityRatesTab() {
           <SheetSection icon="tool" title="Activity">
             <SRow>
               <SField label="Activity type" req style={sw(200)}>
-                <select value={form.activity_type} onChange={(e) => setForm({ ...form, activity_type: e.target.value })} style={sheetInput}>{types.map((t) => <option key={t.value} value={t.value}>{t.value} — {t.label}</option>)}</select>
+                <Select value={form.activity_type} onChange={(e) => setForm({ ...form, activity_type: e.target.value })} style={sheetInput}>{types.map((t) => <option key={t.value} value={t.value}>{t.value} — {t.label}</option>)}</Select>
               </SField>
               <SField label="Rate for" req style={sw(160)}>
-                <select value={form.object} onChange={(e) => setForm({ ...form, object: e.target.value })} style={sheetInput}><option value="workstation">Workstation</option><option value="cost_center">Cost centre</option></select>
+                <Select value={form.object} onChange={(e) => setForm({ ...form, object: e.target.value })} style={sheetInput}><option value="workstation">Workstation</option><option value="cost_center">Cost centre</option></Select>
               </SField>
             </SRow>
             <SField label={form.object === 'workstation' ? 'Workstation' : 'Cost centre'} req style={{ maxWidth: 340 }}>
@@ -608,10 +609,12 @@ function AllocationsTab() {
           {preview.result.segments.map((s) => (
             <div key={s.name} style={{ marginBottom: 12 }}>
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>{s.name}: {s.sender_label} sends ₹{inr(s.allocated)} of ₹{inr(s.sender_amount)} ({BASIS_LABELS[s.basis]})</div>
+              <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr><th style={thStyle}>Receiver</th><th style={numTh}>Basis</th><th style={numTh}>Share %</th><th style={numTh}>Amount (₹)</th></tr></thead>
                 <tbody>{s.receivers.map((r) => <tr key={r.cost_center_id}><td style={tdStyle}>{r.label}</td><td style={numTd}>{r.basis_value}</td><td style={numTd}>{r.share_pct.toFixed(2)}</td><td style={numTd}>{inr(r.amount)}</td></tr>)}</tbody>
               </table>
+              </div>
             </div>
           ))}
         </div>
@@ -643,12 +646,12 @@ function AllocationsTab() {
               <SField label="Code" req style={sw(160)}><input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} style={sheetInput} placeholder="DIST-ADMIN" /></SField>
               <SField label="Name" req style={sg(220, 320)}><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={sheetInput} /></SField>
               <SField label="Method" req style={sw(170)}>
-                <select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value as CycleForm['method'] })} style={sheetInput}><option value="distribution">Distribution</option><option value="assessment">Assessment</option></select>
+                <Select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value as CycleForm['method'] })} style={sheetInput}><option value="distribution">Distribution</option><option value="assessment">Assessment</option></Select>
               </SField>
               {form.method === 'assessment' && <SField label="Assessment ledger" req style={sg(240, 320)}><SearchableSelect value={form.assessment_gl_account_id} onChange={(v) => setForm({ ...form, assessment_gl_account_id: v })} options={expenseOptions} placeholder="Pick ledger" /></SField>}
             </SRow>
             <SRow mb={0}>
-              <SField label="Status" style={sw(130)}><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as CycleForm['status'] })} style={sheetInput}><option value="active">Active</option><option value="inactive">Inactive</option></select></SField>
+              <SField label="Status" style={sw(130)}><Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as CycleForm['status'] })} style={sheetInput}><option value="active">Active</option><option value="inactive">Inactive</option></Select></SField>
               <SField label="Valid from" style={sw(160)}><DateField value={form.valid_from} onChange={(v) => setForm({ ...form, valid_from: v })} /></SField>
               <SField label="Valid to" optional style={sw(170)}><DateField value={form.valid_to} onChange={(v) => setForm({ ...form, valid_to: v })} /></SField>
             </SRow>
@@ -659,8 +662,8 @@ function AllocationsTab() {
                 <SRow mb={10}>
                   <SField label={`Segment ${i + 1} name`} style={sg(160, 220)}><input value={s.name} onChange={(e) => setSeg(i, { name: e.target.value })} style={sheetInput} /></SField>
                   <SField label="Sender cost centre" req style={sg(220, 280)}><SearchableSelect value={s.sender_cost_center_id ? String(s.sender_cost_center_id) : ''} onChange={(v) => setSeg(i, { sender_cost_center_id: Number(v) })} options={ccOptions} placeholder="Pick sender" /></SField>
-                  <SField label="Basis" style={sw(160)}><select value={s.basis} onChange={(e) => setSeg(i, { basis: e.target.value as CoSegment['basis'] })} style={sheetInput}><option value="fixed_percent">Fixed %</option><option value="headcount">Headcount</option><option value="activity_hours">Activity hours</option></select></SField>
-                  {s.basis === 'activity_hours' && <SField label="Activity" style={sw(120)}><select value={s.activity_type || ''} onChange={(e) => setSeg(i, { activity_type: e.target.value || null })} style={sheetInput}><option value="">All</option><option value="MCH">MCH</option><option value="LAB">LAB</option><option value="SET">SET</option></select></SField>}
+                  <SField label="Basis" style={sw(160)}><Select value={s.basis} onChange={(e) => setSeg(i, { basis: e.target.value as CoSegment['basis'] })} style={sheetInput}><option value="fixed_percent">Fixed %</option><option value="headcount">Headcount</option><option value="activity_hours">Activity hours</option></Select></SField>
+                  {s.basis === 'activity_hours' && <SField label="Activity" style={sw(120)}><Select value={s.activity_type || ''} onChange={(e) => setSeg(i, { activity_type: e.target.value || null })} style={sheetInput}><option value="">All</option><option value="MCH">MCH</option><option value="LAB">LAB</option><option value="SET">SET</option></Select></SField>}
                   {form.segments.length > 1 && <button type="button" style={{ ...sheetBtn('ghost', '#b91c1c'), alignSelf: 'flex-end' }} onClick={() => setForm({ ...form, segments: form.segments.filter((_, j) => j !== i) })}><SheetIcon name="trash" size={14} />Remove segment</button>}
                 </SRow>
                 <SField label="Sender ledgers" hint="Blank = every expense ledger." style={{ marginBottom: 10 }}>
@@ -796,7 +799,7 @@ function OverheadTab() {
           <SheetError error={formError} />
           <SheetSection icon="building" title="Plant & validity">
             <SField label="Plant" style={{ maxWidth: 300, marginBottom: 14 }} hint="A row without a plant applies to every plant without its own.">
-              <select value={form.branch_id} onChange={(e) => setForm({ ...form, branch_id: e.target.value })} style={sheetInput}><option value="">All plants</option>{branches.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}</select>
+              <Select value={form.branch_id} onChange={(e) => setForm({ ...form, branch_id: e.target.value })} style={sheetInput}><option value="">All plants</option>{branches.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}</Select>
             </SField>
             <SRow mb={0}>
               <SField label="Valid from" style={sw(160)}><DateField value={form.valid_from} onChange={(v) => setForm({ ...form, valid_from: v })} /></SField>

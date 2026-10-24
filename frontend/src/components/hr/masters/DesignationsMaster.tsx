@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { HrDesignation, HrLookups } from '@/types'
@@ -180,10 +181,10 @@ export default function DesignationsMaster() {
               </div>
               <div data-tour="hr-mst-desig-grade" style={{ maxWidth: 260 }}>
                 <label style={sheetLabel}>Default Grade</label>
-                <select style={sheetInput} value={form.grade_id} onChange={(e) => setForm({ ...form, grade_id: e.target.value })}>
+                <Select style={sheetInput} value={form.grade_id} onChange={(e) => setForm({ ...form, grade_id: e.target.value })}>
                   <option value="">— None —</option>
                   {gradeOptions.map((g) => <option key={g.id} value={g.id}>{g.code} · {g.name}{g.is_active ? '' : ' (inactive)'}</option>)}
-                </select>
+                </Select>
               </div>
             </SheetSection>
             <label data-tour="hr-mst-desig-active" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: SHEET.BODY, cursor: 'pointer' }}>

@@ -8,32 +8,22 @@ import { accountsApi, costCentersApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
 import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
+import { inputStyle as sharedInput, primaryBtnStyle as sharedPrimary, secondaryBtnStyle as sharedSecondary, thStyle as sharedTh, tdStyle as sharedTd } from '@/components/shared/ui'
 import { GLAccount, GSTRate, TaxLineInput } from '@/types'
+import Select from '@/components/shared/Select'
 
-export const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '9px 11px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
-}
+export const inputStyle: React.CSSProperties = { ...sharedInput, background: 'rgba(255,255,255,.7)' }
 export const labelStyle: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: TEXT.secondary, marginBottom: 5, display: 'block' }
 export const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
-export const primaryBtnStyle: React.CSSProperties = {
-  padding: '9px 16px', borderRadius: 9, border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
-  background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`, color: '#fff', whiteSpace: 'nowrap',
-}
-export const secondaryBtnStyle: React.CSSProperties = {
-  padding: '8px 14px', borderRadius: 9999, border: `1px solid ${BORDER.normal}`, fontSize: 12.5, fontWeight: 600,
-  cursor: 'pointer', background: '#fff', color: TEXT.secondary, whiteSpace: 'nowrap',
-}
+export const primaryBtnStyle: React.CSSProperties = { ...sharedPrimary, background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})` }
+export const secondaryBtnStyle: React.CSSProperties = { ...sharedSecondary, color: TEXT.secondary }
 export const linkBtnStyle: React.CSSProperties = { fontSize: 11.5, fontWeight: 600, color: BRAND.primaryActive, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }
 export const dangerLinkStyle: React.CSSProperties = { ...linkBtnStyle, color: '#b91c1c' }
-export const thStyle: React.CSSProperties = {
-  textAlign: 'left', padding: '10px 12px', fontSize: 11, fontWeight: 700, color: TEXT.secondary, textTransform: 'uppercase',
-  letterSpacing: '.04em', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap',
-}
-export const tdStyle: React.CSSProperties = { padding: '9px 12px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.normal}` }
+export const thStyle: React.CSSProperties = { ...sharedTh, color: TEXT.secondary }
+export const tdStyle: React.CSSProperties = { ...sharedTd, fontSize: 12.5 }
 export const numTd: React.CSSProperties = { ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }
 export const numTh: React.CSSProperties = { ...thStyle, textAlign: 'right' }
 
@@ -282,9 +272,9 @@ export function TaxLinesEditor({ lines, onChange, ledgers, rates, interstate, le
                   <td style={{ ...cell, width: 110 }}><input type="number" min={0} step="any" style={inputStyle} value={l.rate} onChange={(e) => set(l.key, { rate: Number(e.target.value) })} /></td>
                   <td style={{ ...cell, width: 95 }}><input type="number" min={0} step="any" style={inputStyle} value={l.discount_amount || 0} onChange={(e) => set(l.key, { discount_amount: Number(e.target.value) })} /></td>
                   <td style={{ ...cell, width: 85 }}>
-                    <select style={inputStyle} value={String(l.gst_rate)} onChange={(e) => set(l.key, { gst_rate: Number(e.target.value) })}>
+                    <Select style={inputStyle} value={String(l.gst_rate)} onChange={(e) => set(l.key, { gst_rate: Number(e.target.value) })}>
                       {active.map((r) => <option key={r.id} value={String(r.rate)}>{r.rate}%</option>)}
-                    </select>
+                    </Select>
                   </td>
                   <td style={{ ...cell, minWidth: 220 }}>
                     <SearchableSelect value={l.gl_account_id ? String(l.gl_account_id) : ''} onChange={(v: string) => set(l.key, { gl_account_id: v ? Number(v) : null })}

@@ -20,6 +20,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import QualityRecordDoc from '@/components/quality/QualityRecordDoc'
 import { useCan } from '@/lib/permissions'
 import { sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
+import Select from '@/components/shared/Select'
 
 const STEPS = ['open', 'disposition_decided', 'action_done', 'verified', 'closed']
 const ACTION_HINT: Record<string, string> = {
@@ -278,10 +279,10 @@ export default function NcrDetailPage() {
           onSubmit={() => act('propose-disposition', { disposition_code_id: Number(propose.disposition_code_id), remarks: propose.remarks || null,
             customer_approval_required: propose.customer_approval_required, customer_approval_reference: propose.customer_approval_reference || null }, 'Failed to propose the disposition.')}>
           <label style={sheetLabel}>Disposition <Req /></label>
-          <select style={sheetInput} value={propose.disposition_code_id} onChange={(e) => setPropose({ ...propose, disposition_code_id: e.target.value })} autoFocus>
+          <Select style={sheetInput} value={propose.disposition_code_id} onChange={(e) => setPropose({ ...propose, disposition_code_id: e.target.value })} autoFocus>
             <option value="">Select…</option>
             {codes.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
-          </select>
+          </Select>
           {ncr.disposition_status !== 'none' && <p style={sheetHint}>Re-proposing restarts the approvals.</p>}
           <label style={{ ...sheetLabel, marginTop: 14 }}>Remarks <Optional /></label>
           <textarea style={{ ...sheetInput, minHeight: 60 }} value={propose.remarks} onChange={(e) => setPropose({ ...propose, remarks: e.target.value })} />

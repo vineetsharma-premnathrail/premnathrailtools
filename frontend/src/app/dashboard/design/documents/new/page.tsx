@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -258,15 +259,15 @@ export default function NewDesignDocumentPage() {
               </div>
               <div data-tour="design-docnew-type" style={{ flex: '0 1 200px', minWidth: 180 }}>
                 <label style={sheetLabel}>Type <Req /></label>
-                <select style={sheetInput} value={documentType} onChange={(e) => setDocumentType(e.target.value)}>
+                <Select style={sheetInput} value={documentType} onChange={(e) => setDocumentType(e.target.value)}>
                   {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+                </Select>
               </div>
               <div data-tour="design-docnew-discipline" style={{ flex: '0 1 180px', minWidth: 160 }}>
                 <label style={sheetLabel}>Discipline <Req /></label>
-                <select style={sheetInput} value={discipline} onChange={(e) => setDiscipline(e.target.value)}>
+                <Select style={sheetInput} value={discipline} onChange={(e) => setDiscipline(e.target.value)}>
                   {Object.entries(DISCIPLINE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+                </Select>
               </div>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
@@ -358,9 +359,9 @@ export default function NewDesignDocumentPage() {
           <SheetSection icon="clip" title="Files">
             <div data-tour="design-docnew-file-role" style={{ marginBottom: 12 }}>
               <label style={sheetLabel}>Add as</label>
-              <select style={sheetInput} value={nextRole} onChange={(e) => setNextRole(e.target.value)}>
+              <Select style={sheetInput} value={nextRole} onChange={(e) => setNextRole(e.target.value)}>
                 {Object.entries(FILE_ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              </Select>
             </div>
             <div data-tour="design-docnew-files">
               <label style={sheetLabel}>Choose files</label>
@@ -375,10 +376,10 @@ export default function NewDesignDocumentPage() {
                       <div style={{ fontSize: 13, color: SHEET.INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.file.name}</div>
                       <div style={{ fontSize: 11.5, color: SHEET.MUTED }}>{formatBytes(s.file.size)}</div>
                     </div>
-                    <select value={s.role} onChange={(e) => setStaged((prev) => prev.map((p, i) => (i === idx ? { ...p, role: e.target.value } : p)))}
+                    <Select value={s.role} onChange={(e) => setStaged((prev) => prev.map((p, i) => (i === idx ? { ...p, role: e.target.value } : p)))}
                       style={{ ...sheetInput, width: 170, padding: '6px 8px', fontSize: 12.5 }}>
                       {Object.entries(FILE_ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                    </select>
+                    </Select>
                     <button type="button" onClick={() => setStaged((prev) => prev.filter((_, i) => i !== idx))}
                       style={sheetBtn('ghost', DANGER_RED)} aria-label={`Remove ${s.file.name}`}><SheetIcon name="x" size={14} /></button>
                   </div>

@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -108,18 +109,18 @@ export default function HrAssetsPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select data-tour="hr-asset-category-filter" style={{ ...filterInputStyle, flex: '0 1 160px' }} value={category} onChange={(e) => setCategory(e.target.value)}>
+        <Select data-tour="hr-asset-category-filter" style={{ ...filterInputStyle, flex: '0 1 160px' }} value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="">All categories</option>
           {Object.entries(ASSET_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="hr-asset-status-filter" style={{ ...filterInputStyle, flex: '0 1 150px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        </Select>
+        <Select data-tour="hr-asset-status-filter" style={{ ...filterInputStyle, flex: '0 1 150px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="hr-asset-plant-filter" style={{ ...filterInputStyle, flex: '0 1 170px' }} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+        </Select>
+        <Select data-tour="hr-asset-plant-filter" style={{ ...filterInputStyle, flex: '0 1 170px' }} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
           <option value="">All plants</option>
           {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-        </select>
+        </Select>
         <div data-tour="hr-asset-holder-filter" style={{ flex: '0 1 220px', minWidth: 180 }}>
           <SearchableSelect
             value={holderId}

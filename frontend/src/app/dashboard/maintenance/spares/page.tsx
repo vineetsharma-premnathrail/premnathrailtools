@@ -8,8 +8,9 @@ import { MaintenanceLookups, MaintenanceSpare } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import { recordPath } from '@/lib/recordRef'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 const STOCK_HEX: Record<string, string> = { below: '#DC2626', reorder: '#F59E0B', ok: '#16A34A', none: '#78716c' }
 const STOCK_LABELS: Record<string, string> = { below: 'Below min', reorder: 'At reorder', ok: 'OK', none: 'No min set' }
@@ -172,10 +173,10 @@ export default function MaintenanceSparesPage() {
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input data-tour="maint-spares-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200, maxWidth: 420 }} placeholder="Search by item code, name or part number…" value={search} onChange={(e) => setSearch(e.target.value)} />
         {lookups && lookups.branches.length > 1 && (
-          <select data-tour="maint-spares-plant-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+          <Select data-tour="maint-spares-plant-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
             <option value="">All plants</option>
             {lookups.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
+          </Select>
         )}
         <label data-tour="maint-spares-below-min" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
           <input type="checkbox" checked={belowMinOnly} onChange={(e) => setBelowMinOnly(e.target.checked)} /> Below minimum only
@@ -193,7 +194,7 @@ export default function MaintenanceSparesPage() {
           <thead>
             <tr>
               {headers.map((h, i) => (
-                <th key={i} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, width: i === 0 ? 36 : undefined }}>
+                <th key={i} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, width: i === 0 ? 36 : undefined }}>
                   {i === 0 && canRaisePr ? (
                     <input
                       type="checkbox" title="Select every below-minimum spare" checked={allBelowSelected} disabled={!belowRows.length}
@@ -248,7 +249,7 @@ export default function MaintenanceSparesPage() {
                       <td style={cellStyle}>{s.consumed_90d ? fmtQty(s.consumed_90d) : '—'}</td>
                       <td style={cellStyle} onClick={(e) => e.stopPropagation()}>
                         {s.below_min && canRaisePr && (
-                          <button onClick={() => raisePr(s)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12, whiteSpace: 'nowrap' }}>
+                          <button onClick={() => raisePr(s)} style={{ ...smallSecondaryBtnStyle, whiteSpace: 'nowrap' }}>
                             Raise PR ({fmtQty(prQty(s))})
                           </button>
                         )}

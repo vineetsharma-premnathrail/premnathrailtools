@@ -1,5 +1,6 @@
 'use client'
 
+import AnchoredDropdown from '@/components/design/AnchoredDropdown'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -163,14 +164,14 @@ export default function NewCustomerSubmissionPage() {
               <div style={{ position: 'relative', maxWidth: 520 }}>
                 <input data-tour="design-subnew-search" style={sheetInput} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by drawing number or title to add…" />
                 {matches.length > 0 && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, marginTop: 4, borderRadius: 10, border: `1px solid ${SHEET.LINE}`, background: '#fff', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+                  <AnchoredDropdown style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, marginTop: 4, borderRadius: 10, border: `1px solid ${SHEET.LINE}`, background: '#fff', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
                     {matches.map((a) => (
                       <div key={a.id} onClick={() => { setSelectedIds((prev) => [...prev, a.id]); setSearch('') }}
                         style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', borderTop: `1px solid ${SHEET.LINE}` }}>
                         {a.label}
                       </div>
                     ))}
-                  </div>
+                  </AnchoredDropdown>
                 )}
               </div>
               {unpicked.length > 0 && unpicked.length <= 12 && !search.trim() && (

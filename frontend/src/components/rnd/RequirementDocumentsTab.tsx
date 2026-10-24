@@ -13,6 +13,7 @@
 // Opening needs the Download right, uploading needs Upload (R&D: set by the R&D
 // head; a shared department has both).
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { rndApi } from '@/lib/api'
 import { RndMyAccess, RndWorkDepartment, RndWorkDocument } from '@/types'
@@ -213,9 +214,9 @@ export default function RequirementDocumentsTab({ source, recordId, access }: { 
               {myDepts.length > 1 ? (
                 <div style={{ maxWidth: 280, marginBottom: 12 }}>
                   <label style={sheetLabel}>Upload for</label>
-                  <select value={uploadDept} onChange={(e) => setUploadDept(e.target.value as RndWorkDepartment)} style={sheetInput}>
+                  <Select value={uploadDept} onChange={(e) => setUploadDept(e.target.value as RndWorkDepartment)} style={sheetInput}>
                     {myDepts.map((d) => <option key={d} value={d}>{DEPT_LABELS[d]}</option>)}
-                  </select>
+                  </Select>
                 </div>
               ) : uploadDept ? (
                 <p style={{ fontSize: 13, color: SHEET.BODY, margin: '0 0 12px' }}>Uploading for <strong>{DEPT_LABELS[uploadDept]}</strong></p>

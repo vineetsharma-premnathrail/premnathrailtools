@@ -14,6 +14,7 @@ import DateField from '@/components/erp/DateField'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 import { ErrorBanner } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 interface ItemOpt { id: number; item_code: string; item_name: string }
 
@@ -95,14 +96,14 @@ export default function NewCapaPage() {
             <input style={{ ...sheetInput, marginBottom: 14 }} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="The problem in one line" autoFocus />
             <div style={row}>
               <F label="Type">
-                <select style={sheetInput} value={form.action_type} onChange={(e) => setForm({ ...form, action_type: e.target.value })}>
+                <Select style={sheetInput} value={form.action_type} onChange={(e) => setForm({ ...form, action_type: e.target.value })}>
                   <option value="corrective">Corrective</option><option value="preventive">Preventive</option>
-                </select>
+                </Select>
               </F>
               <F label="Severity">
-                <select style={sheetInput} value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value })}>
+                <Select style={sheetInput} value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value })}>
                   <option value="minor">Minor</option><option value="major">Major</option><option value="critical">Critical</option>
-                </select>
+                </Select>
               </F>
             </div>
             <div style={row}>
@@ -111,10 +112,10 @@ export default function NewCapaPage() {
                   options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
               </F>
               <F label="Defect code">
-                <select style={sheetInput} value={form.defect_code_id} onChange={(e) => setForm({ ...form, defect_code_id: e.target.value })}>
+                <Select style={sheetInput} value={form.defect_code_id} onChange={(e) => setForm({ ...form, defect_code_id: e.target.value })}>
                   <option value="">—</option>
                   {codes.filter((c) => c.is_active).map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
-                </select>
+                </Select>
               </F>
             </div>
             <div style={row}>

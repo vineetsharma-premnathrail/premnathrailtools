@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { HrShift, HrLookups } from '@/types'
@@ -218,10 +219,10 @@ export default function ShiftsMaster() {
             <SheetSection icon="building" title="Plant & Status">
             <div data-tour="hr-mst-shift-plant" style={{ marginBottom: 14, maxWidth: 300 }}>
               <label style={sheetLabel}>Plant</label>
-              <select style={sheetInput} value={form.branch_id} onChange={(e) => setForm({ ...form, branch_id: e.target.value })}>
+              <Select style={sheetInput} value={form.branch_id} onChange={(e) => setForm({ ...form, branch_id: e.target.value })}>
                 <option value="">— All plants —</option>
                 {(lookups?.branches || []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
+              </Select>
             </div>
             <label data-tour="hr-mst-shift-active" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: SHEET.BODY, cursor: 'pointer' }}>
               <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} /> Active
@@ -234,7 +235,7 @@ export default function ShiftsMaster() {
       <div data-tour="hr-mst-shift-table" style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 780 }}>
           <thead>
-            <tr>{['Code', 'Name', 'Timing', 'Grace', 'Hours', 'Plant', 'Employees', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+            <tr>{['Code', 'Name', 'Timing', 'Grace', 'Hours', 'Plant', 'Employees', 'Status', ''].map((h) => <th key={h} style={['Grace', 'Hours', 'Employees'].includes(h) ? { ...thStyle, textAlign: 'right' } : thStyle}>{h}</th>)}</tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={9} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted, padding: 24 }}>Loading…</td></tr>}
@@ -251,10 +252,10 @@ export default function ShiftsMaster() {
                   {hhmm(r.start_time)} – {hhmm(r.end_time)}
                   {r.is_night && <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: '#7C3AED1a', color: '#7C3AED' }}>Night</span>}
                 </td>
-                <td style={{ ...tdStyle, color: TEXT.secondary }}>{r.grace_minutes} min</td>
-                <td style={{ ...tdStyle, color: TEXT.secondary }}>{r.working_hours != null ? Number(r.working_hours) : '—'}</td>
+                <td style={{ ...tdStyle, color: TEXT.secondary, textAlign: 'right' }}>{r.grace_minutes} min</td>
+                <td style={{ ...tdStyle, color: TEXT.secondary, textAlign: 'right' }}>{r.working_hours != null ? Number(r.working_hours) : '—'}</td>
                 <td style={{ ...tdStyle, color: TEXT.secondary }}>{r.branch_name || 'All plants'}</td>
-                <td style={{ ...tdStyle, color: TEXT.secondary }}>{r.employee_count}</td>
+                <td style={{ ...tdStyle, color: TEXT.secondary, textAlign: 'right' }}>{r.employee_count}</td>
                 <td style={tdStyle}><ActiveBadge active={r.is_active} /></td>
                 <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
                   <span data-tour="hr-mst-shift-row-actions" style={{ display: 'inline-flex', gap: 14 }}>

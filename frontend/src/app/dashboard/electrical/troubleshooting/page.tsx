@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -86,13 +87,13 @@ export default function ElectricalTroubleshootingPage() {
       <ErrorBanner error={error} />
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select data-tour="elec-ireg-status-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 190px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <Select data-tour="elec-ireg-status-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 190px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
           {STATUS_FILTERS.map((s) => <option key={s.value || 'all'} value={s.value}>{s.label}</option>)}
-        </select>
-        <select data-tour="elec-ireg-severity-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 160px' }} value={severity} onChange={(e) => setSeverity(e.target.value)}>
+        </Select>
+        <Select data-tour="elec-ireg-severity-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 160px' }} value={severity} onChange={(e) => setSeverity(e.target.value)}>
           <option value="">All severities</option>
           {Object.entries(SEVERITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
         <button data-tour="elec-ireg-mine-toggle" type="button" onClick={() => setMine((v) => !v)} style={toggleStyle(mine)} aria-pressed={mine}>
           {mine ? '✓ ' : ''}Assigned to me
         </button>

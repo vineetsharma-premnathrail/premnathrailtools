@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { productionEngineeringApi } from '@/lib/productionEngineeringApi'
 import { ProductionBom, ProductionDisciplineSource, ProductionExplosion } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER, DANGER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
@@ -18,7 +18,7 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: 0 }
-const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }
 const tdStyle: React.CSSProperties = { padding: '8px 12px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
@@ -188,7 +188,7 @@ export function DisciplineMergeSection({ bom, canEdit, canRemove = canEdit, onCh
                   <td style={tdStyle}>{m.merged_at ? `${formatDateTime(m.merged_at)} by ${m.merged_by_name || '—'}` : '—'}</td>
                   <td style={tdStyle}>
                     {isDraft && canRemove && (
-                      <button type="button" disabled={busy} style={{ ...secondaryBtnStyle, padding: '6px 10px', color: DANGER.primary, borderColor: DANGER.border }} onClick={() => setRemoveId(m.id)}>Remove</button>
+                      <button type="button" disabled={busy} style={smallDangerBtnStyle} onClick={() => setRemoveId(m.id)}>Remove</button>
                     )}
                   </td>
                 </tr>

@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -87,15 +88,15 @@ export default function ElectricalJobsPage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input data-tour="elec-jobs-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200, maxWidth: 420 }} placeholder="Search job no., title, model, vehicle, customer…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select data-tour="elec-jobs-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <Select data-tour="elec-jobs-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="open">Open (draft / active / hold)</option>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="elec-jobs-phase-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={phaseFilter} onChange={(e) => setPhaseFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="elec-jobs-phase-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={phaseFilter} onChange={(e) => setPhaseFilter(e.target.value)}>
           <option value="">Any phase</option>
           {Object.entries(PHASE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
         <label data-tour="elec-jobs-mine" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
           <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> My jobs
         </label>

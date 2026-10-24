@@ -1,5 +1,7 @@
 'use client'
 
+import Select from '@/components/shared/Select'
+import { primaryBtnStyle } from '@/components/shared/ui'
 import { useEffect, useState } from 'react'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { organizationApi } from '@/lib/api'
@@ -20,6 +22,7 @@ const statCardStyle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   padding: '9px 11px', borderRadius: 9, border: `1px solid ${BORDER.normal}`,
   background: '#fff', fontSize: 13, outline: 'none', color: TEXT.body,
+  minHeight: 38, boxSizing: 'border-box',
 }
 const cardRowStyle: React.CSSProperties = {
   display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 16px', borderRadius: 12,
@@ -193,17 +196,17 @@ export default function AuditLogsPage() {
       <div style={sectionStyle}>
         <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>All Audit Logs</h2>
 
-        <form onSubmit={runSearch} style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
-          <select data-tour="org-audit-filter-module" style={inputStyle} value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}>
+        <form onSubmit={runSearch} style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16, alignItems: 'center' }}>
+          <Select data-tour="org-audit-filter-module" style={{ ...inputStyle, flex: '1 1 180px', maxWidth: 240 }} value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}>
             <option value="">All Modules</option>
             {Object.entries(MODULE_LABELS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-          </select>
-          <select data-tour="org-audit-filter-action" style={inputStyle} value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
+          </Select>
+          <Select data-tour="org-audit-filter-action" style={{ ...inputStyle, flex: '1 1 160px', maxWidth: 220 }} value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
             <option value="">All Actions</option>
             {ACTION_OPTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
+          </Select>
           <input data-tour="org-audit-filter-search" style={{ ...inputStyle, flex: '1 1 240px' }} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search summary…" />
-          <button data-tour="org-audit-search-btn" type="submit" style={{ padding: '9px 18px', borderRadius: 9, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`, color: '#fff' }}>Search</button>
+          <button data-tour="org-audit-search-btn" type="submit" style={primaryBtnStyle}>Search</button>
         </form>
 
         {loading ? (

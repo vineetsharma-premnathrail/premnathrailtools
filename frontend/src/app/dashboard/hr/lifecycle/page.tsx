@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -7,6 +8,7 @@ import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { HrLifecycleCounts, HrLifecycleEvent, HrLifecycleEventType } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import HrNav from '@/components/hr/HrNav'
 import MyChecklistTasks from '@/components/hr/lifecycle/MyChecklistTasks'
@@ -87,11 +89,7 @@ export default function HrLifecyclePage() {
           type="button"
           data-tour="hr-lc-new-btn"
           onClick={() => router.push('/dashboard/hr/lifecycle/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
+          style={{ ...primaryBtnStyle, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}
         >
           + New Event
         </button>}
@@ -131,18 +129,18 @@ export default function HrLifecyclePage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select data-tour="hr-lc-type-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+        <Select data-tour="hr-lc-type-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
           <option value="">All types</option>
           {TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
-        </select>
-        <select data-tour="hr-lc-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="hr-lc-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="open">Open (draft + in progress)</option>
           <option value="">All statuses</option>
           <option value="draft">Draft</option>
           <option value="in_progress">In Progress</option>
           <option value="completed">Completed</option>
           <option value="cancelled">Cancelled</option>
-        </select>
+        </Select>
       </div>
 
       <div style={{

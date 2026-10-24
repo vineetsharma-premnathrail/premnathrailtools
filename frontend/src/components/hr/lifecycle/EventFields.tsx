@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { HrLifecycleEvent, HrLifecycleEventType, HrLifecycleMeta } from '@/types'
 import { TEXT } from '@/lib/theme'
 import { Req, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
@@ -193,10 +194,10 @@ export default function EventFields({
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <Box w={170} tour="hr-lce-exit-type">
               <Field label="Exit type">
-                <select style={textInput} value={form.exit_type} onChange={(e) => set('exit_type', e.target.value)}>
+                <Select style={textInput} value={form.exit_type} onChange={(e) => set('exit_type', e.target.value)}>
                   <option value="">Select…</option>
                   {meta.exit_types.map((t) => <option key={t} value={t}>{EXIT_TYPE_LABELS[t] || t}</option>)}
-                </select>
+                </Select>
               </Field>
             </Box>
             <Box w={170} tour="hr-lce-resignation-date">

@@ -10,7 +10,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi, storeSerialsApi } from '@/lib/api'
 import { StoreLocation } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -18,6 +18,7 @@ import PromptDialog from '@/components/erp/PromptDialog'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import Select from '@/components/shared/Select'
 
 const STATUS_HEX: Record<string, string> = {
   quality: '#d97706', in_stock: '#16a34a', blocked: '#dc2626', in_transit: '#2563eb', issued: '#7c3aed',
@@ -102,19 +103,19 @@ export default function StoreSerialsPage() {
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
         <input style={{ ...inputStyle, flex: '2 1 240px', maxWidth: 380, width: 'auto' }} placeholder="Serial no., item, vendor, issued to…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <select style={{ ...inputStyle, flex: '0 1 190px', width: 'auto' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <Select style={{ ...inputStyle, flex: '0 1 190px', width: 'auto' }} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
           {statuses.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
-        <select style={{ ...inputStyle, flex: '0 1 190px', width: 'auto' }} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+        </Select>
+        <Select style={{ ...inputStyle, flex: '0 1 190px', width: 'auto' }} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
           <option value="">All stores</option>
           {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-        </select>
+        </Select>
         <span style={{ fontSize: 12.5, color: TEXT.muted, alignSelf: 'center' }}>{total} unit(s)</span>
         {total > PAGE && (
           <>
-            <button disabled={page === 0} onClick={() => setPage((p) => p - 1)} style={{ ...secondaryBtnStyle, padding: '4px 12px', fontSize: 12 }}>‹ Prev</button>
-            <button disabled={page + 1 >= pages} onClick={() => setPage((p) => p + 1)} style={{ ...secondaryBtnStyle, padding: '4px 12px', fontSize: 12 }}>Next ›</button>
+            <button disabled={page === 0} onClick={() => setPage((p) => p - 1)} style={smallSecondaryBtnStyle}>‹ Prev</button>
+            <button disabled={page + 1 >= pages} onClick={() => setPage((p) => p + 1)} style={smallSecondaryBtnStyle}>Next ›</button>
           </>
         )}
       </div>

@@ -61,32 +61,36 @@ export default function SalesReportsPage() {
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         <div data-tour="sales-report-backlog" style={{ ...sectionStyle, flex: '1 1 420px' }}>
           <h2 style={h2Style}>Backlog by delivery month</h2>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['Month', 'Units', 'Value', 'At risk', 'Overdue', 'LD forecast'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
-            <tbody>
-              {backlog.length === 0 ? <tr><td colSpan={6} style={{ ...tdStyle, color: TEXT.muted }}>No undelivered vehicles.</td></tr> : backlog.map((b) => (
-                <tr key={b.month}>
-                  <td style={{ ...tdStyle, fontWeight: 600 }}>{b.month}</td><td style={tdStyle}>{b.units}</td><td style={tdStyle}>{formatINR(b.value)}</td>
-                  <td style={{ ...tdStyle, color: b.at_risk ? '#b45309' : undefined }}>{b.at_risk}</td><td style={{ ...tdStyle, color: b.overdue ? '#b91c1c' : undefined }}>{b.overdue}</td>
-                  <td style={tdStyle}>{formatINR(b.ld_forecast)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr>{['Month', 'Units', 'Value', 'At risk', 'Overdue', 'LD forecast'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <tbody>
+                {backlog.length === 0 ? <tr><td colSpan={6} style={{ ...tdStyle, color: TEXT.muted }}>No undelivered vehicles.</td></tr> : backlog.map((b) => (
+                  <tr key={b.month}>
+                    <td style={{ ...tdStyle, fontWeight: 600 }}>{b.month}</td><td style={tdStyle}>{b.units}</td><td style={tdStyle}>{formatINR(b.value)}</td>
+                    <td style={{ ...tdStyle, color: b.at_risk ? '#b45309' : undefined }}>{b.at_risk}</td><td style={{ ...tdStyle, color: b.overdue ? '#b91c1c' : undefined }}>{b.overdue}</td>
+                    <td style={tdStyle}>{formatINR(b.ld_forecast)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
         <div data-tour="sales-report-ld" style={{ ...sectionStyle, flex: '1 1 420px' }}>
           <h2 style={h2Style}>LD exposure</h2>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['Order', 'Customer', 'Overdue', 'At risk', 'Accrued', 'Forecast'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
-            <tbody>
-              {ld.length === 0 ? <tr><td colSpan={6} style={{ ...tdStyle, color: TEXT.muted }}>No exposure.</td></tr> : ld.map((r) => (
-                <tr key={r.so_id} onClick={() => router.push(`${recordPath('/dashboard/sales/orders', r, 'so_id')}?tab=schedule`)} style={{ cursor: 'pointer' }}>
-                  <td style={{ ...tdStyle, fontWeight: 600 }}>{r.so_number}</td><td style={tdStyle}>{r.customer_name}</td><td style={tdStyle}>{r.overdue_units}</td>
-                  <td style={tdStyle}>{r.at_risk_units}</td><td style={tdStyle}>{formatINR(r.ld_accrued)}</td><td style={tdStyle}>{formatINR(r.ld_forecast)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr>{['Order', 'Customer', 'Overdue', 'At risk', 'Accrued', 'Forecast'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <tbody>
+                {ld.length === 0 ? <tr><td colSpan={6} style={{ ...tdStyle, color: TEXT.muted }}>No exposure.</td></tr> : ld.map((r) => (
+                  <tr key={r.so_id} onClick={() => router.push(`${recordPath('/dashboard/sales/orders', r, 'so_id')}?tab=schedule`)} style={{ cursor: 'pointer' }}>
+                    <td style={{ ...tdStyle, fontWeight: 600 }}>{r.so_number}</td><td style={tdStyle}>{r.customer_name}</td><td style={tdStyle}>{r.overdue_units}</td>
+                    <td style={tdStyle}>{r.at_risk_units}</td><td style={tdStyle}>{formatINR(r.ld_accrued)}</td><td style={tdStyle}>{formatINR(r.ld_forecast)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

@@ -18,6 +18,7 @@ import DateField from '@/components/erp/DateField'
 import { FormSheet, SheetColumns, SheetSection, SHEET, sheetInput, SheetError } from '@/components/shared/FormSheet'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { SField, SRow, SheetBody, SheetFooter, sw, sg } from '@/components/finance/financeSheet'
+import Select from '@/components/shared/Select'
 import {
   sectionStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, ErrorBanner, InfoBanner, StatusPill, PageHeader, TableWrap, EmptyRow, StatCard,
@@ -348,9 +349,9 @@ function NoteDialog({ customerId, customerName, invoices, onClose, onDone }: {
           <SheetSection icon="chat" title="Contact">
             <SRow>
               <SField label="Type" req style={sw(190)}>
-                <select style={sheetInput} value={noteType} onChange={(e) => setNoteType(e.target.value)}>
+                <Select style={sheetInput} value={noteType} onChange={(e) => setNoteType(e.target.value)}>
                   {Object.entries(NOTE_TYPES).filter(([k]) => k !== 'reminder_sent').map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+                </Select>
               </SField>
               <SField label="Date" style={sw(160)}><DateField value={noteDate} onChange={setNoteDate} /></SField>
             </SRow>
@@ -359,10 +360,10 @@ function NoteDialog({ customerId, customerName, invoices, onClose, onDone }: {
                 <input style={sheetInput} value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Name / designation" />
               </SField>
               <SField label="Invoice" optional style={sg(200, 300)}>
-                <select style={sheetInput} value={invoiceId} onChange={(e) => setInvoiceId(e.target.value)}>
+                <Select style={sheetInput} value={invoiceId} onChange={(e) => setInvoiceId(e.target.value)}>
                   <option value="">Whole account</option>
                   {invoices.map((i) => <option key={i.ar_transaction_id} value={i.ar_transaction_id}>{i.invoice_number} — {inr(i.undisputed_due)}</option>)}
-                </select>
+                </Select>
               </SField>
             </SRow>
             <SField label="What was said" req>

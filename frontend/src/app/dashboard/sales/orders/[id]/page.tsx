@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -11,7 +12,7 @@ import { formatDate, formatDateTime } from '@/lib/format'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
-import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import SalesNav from '@/components/sales/SalesNav'
 import { sectionStyle, h2Style, thStyle, tdStyle, Pill, ErrorBanner, PageHeader, Fact } from '@/components/sales/SalesUi'
 import ReasonSheet from '@/components/shared/ReasonSheet'
@@ -233,7 +234,8 @@ export default function SalesOrderDetailPage() {
             <div style={{ color: '#b91c1c', marginTop: 6 }}>
               On credit hold: {(so.credit.block_reasons || []).join('; ')}.{' '}
               {so.credit.pending_release ? <>Release {so.credit.pending_release.release_number} is waiting for a Finance approver.</>
-                : <button type="button" style={{ background: 'none', border: 'none', padding: 0, color: '#0f766e', fontWeight: 700, cursor: 'pointer' }} onClick={() => setCreditRelease(true)}>Request credit release</button>}
+                : /* ui-audit-ignore-next-line adhoc-button — inline text link inside a sentence */
+                  <button type="button" style={{ background: 'none', border: 'none', padding: 0, color: '#0f766e', fontWeight: 700, cursor: 'pointer' }} onClick={() => setCreditRelease(true)}>Request credit release</button>}
             </div>
           )}
           {so.credit?.release && <div style={{ color: '#15803d', marginTop: 6 }}>Credit block released ({so.credit.release.release_number}) until {formatDate(so.credit.release.valid_until)}.</div>}
@@ -407,9 +409,9 @@ export default function SalesOrderDetailPage() {
                   <SheetSection icon="doc" title="Document">
                     <div style={{ maxWidth: 260 }}>
                       <label style={sheetLabel}>Document type <Req /></label>
-                      <select style={sheetInput} value={docType} onChange={(e) => setDocType(e.target.value)}>
+                      <Select style={sheetInput} value={docType} onChange={(e) => setDocType(e.target.value)}>
                         {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                      </select>
+                      </Select>
                     </div>
                   </SheetSection>
                   <SheetSection icon="clip" title="Files">
@@ -420,18 +422,20 @@ export default function SalesOrderDetailPage() {
               </FormSheet>
             )}
             {attachments.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No attachments. The customer PO (or LOA) is required before submitting.</p> : (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr>{['File', 'Type', 'Uploaded by', 'On', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
-                <tbody>{attachments.map((a) => (
-                  <tr key={a.id}>
-                    <td style={tdStyle}><span onClick={() => openAttachment(a)} style={{ color: '#FF6A2A', cursor: 'pointer', fontWeight: 600 }}>{a.filename}</span></td>
-                    <td style={tdStyle}>{DOC_TYPE_LABELS[a.doc_type] || a.doc_type}</td>
-                    <td style={tdStyle}>{a.created_by_name}</td>
-                    <td style={tdStyle}>{formatDate(a.created_at)}</td>
-                    <td style={tdStyle}>{canDeleteDocs && <button style={{ ...secondaryBtnStyle, padding: '4px 10px', fontSize: 11.5 }} onClick={() => run(async () => { await salesApi.deleteAttachment(a.id); setAttachments(await salesApi.listAttachments('sales_order', soId)) })}>Delete</button>}</td>
-                  </tr>))}
-                </tbody>
-              </table>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr>{['File', 'Type', 'Uploaded by', 'On', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <tbody>{attachments.map((a) => (
+                    <tr key={a.id}>
+                      <td style={tdStyle}><span onClick={() => openAttachment(a)} style={{ color: '#FF6A2A', cursor: 'pointer', fontWeight: 600 }}>{a.filename}</span></td>
+                      <td style={tdStyle}>{DOC_TYPE_LABELS[a.doc_type] || a.doc_type}</td>
+                      <td style={tdStyle}>{a.created_by_name}</td>
+                      <td style={tdStyle}>{formatDate(a.created_at)}</td>
+                      <td style={tdStyle}>{canDeleteDocs && <button style={{ ...smallSecondaryBtnStyle }} onClick={() => run(async () => { await salesApi.deleteAttachment(a.id); setAttachments(await salesApi.listAttachments('sales_order', soId)) })}>Delete</button>}</td>
+                    </tr>))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </>
@@ -443,16 +447,18 @@ export default function SalesOrderDetailPage() {
           <h2 style={h2Style}>{so.approval_via_engine ? 'Earlier decisions (before Approval Workflows)' : 'Approval history'}</h2>
           <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 10px' }}>Who approves sales orders, and above which order value, is set in Organization › Approval Workflows (Sales order).</p>
           {so.approvals.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No decisions yet.</p> : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr>{['Round', 'Level', 'Decision', 'By', 'When', 'Comment'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
-              <tbody>{so.approvals.map((a) => (
-                <tr key={a.id}>
-                  <td style={tdStyle}>{a.revision}</td><td style={tdStyle}>{LEVEL_LABELS[a.level]}</td>
-                  <td style={tdStyle}><Pill label={a.decision} hex={a.decision === 'approved' ? '#16A34A' : a.decision === 'returned' ? '#2563EB' : '#DC2626'} /></td>
-                  <td style={tdStyle}>{a.approver_name}{a.stand_in ? ' (admin stand-in)' : ''}</td><td style={tdStyle}>{formatDateTime(a.decided_at)}</td><td style={tdStyle}>{a.comment || '—'}</td>
-                </tr>))}
-              </tbody>
-            </table>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr>{['Round', 'Level', 'Decision', 'By', 'When', 'Comment'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                <tbody>{so.approvals.map((a) => (
+                  <tr key={a.id}>
+                    <td style={tdStyle}>{a.revision}</td><td style={tdStyle}>{LEVEL_LABELS[a.level]}</td>
+                    <td style={tdStyle}><Pill label={a.decision} hex={a.decision === 'approved' ? '#16A34A' : a.decision === 'returned' ? '#2563EB' : '#DC2626'} /></td>
+                    <td style={tdStyle}>{a.approver_name}{a.stand_in ? ' (admin stand-in)' : ''}</td><td style={tdStyle}>{formatDateTime(a.decided_at)}</td><td style={tdStyle}>{a.comment || '—'}</td>
+                  </tr>))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}

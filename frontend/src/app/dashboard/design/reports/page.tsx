@@ -1,5 +1,7 @@
 'use client'
 
+import { primaryBtnStyle } from '@/components/shared/ui'
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { designApi } from '@/lib/api'
@@ -112,16 +114,18 @@ function CountTable({ title, rows, labels }: { title: string; rows: { key: strin
     <div style={{ ...cardStyle, flex: '1 1 260px' }}>
       <p style={sectionTitle}>{title}</p>
       {rows.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No documents yet.</p> : (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.key}>
-                <td style={tdStyle}>{labels[r.key] || r.key}</td>
-                <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{r.count}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.key}>
+                  <td style={tdStyle}>{labels[r.key] || r.key}</td>
+                  <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{r.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )
@@ -229,24 +233,21 @@ export default function DesignReportsPage() {
           Every controlled document with its current revision, who checked and approved it, and any revision in progress — as a CSV for audits and customer submissions.
         </p>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <select data-tour="design-rep-mdl-status" style={{ ...inputStyle, flex: '0 1 220px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+          <Select data-tour="design-rep-mdl-status" style={{ ...inputStyle, flex: '0 1 220px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="draft,in_review,in_approval,released,revising">All active documents</option>
             <option value="released,revising">Released only</option>
             <option value="obsolete">Obsolete only</option>
             <option value="">Everything, incl. obsolete</option>
-          </select>
-          <select data-tour="design-rep-mdl-type" style={{ ...inputStyle, flex: '0 1 180px' }} value={docType} onChange={(e) => setDocType(e.target.value)}>
+          </Select>
+          <Select data-tour="design-rep-mdl-type" style={{ ...inputStyle, flex: '0 1 180px' }} value={docType} onChange={(e) => setDocType(e.target.value)}>
             <option value="">All types</option>
             {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-          <select data-tour="design-rep-mdl-discipline" style={{ ...inputStyle, flex: '0 1 170px' }} value={discipline} onChange={(e) => setDiscipline(e.target.value)}>
+          </Select>
+          <Select data-tour="design-rep-mdl-discipline" style={{ ...inputStyle, flex: '0 1 170px' }} value={discipline} onChange={(e) => setDiscipline(e.target.value)}>
             <option value="">All disciplines</option>
             {Object.entries(DISCIPLINE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-          <button type="button" data-tour="design-rep-mdl-export-btn" onClick={exportMdl} disabled={exporting} style={{
-            padding: '10px 18px', borderRadius: 12, border: 'none', cursor: exporting ? 'wait' : 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: `0 6px 16px ${SHADOWS.glowOrange}`,
-          }}>
+          </Select>
+          <button type="button" data-tour="design-rep-mdl-export-btn" onClick={exportMdl} disabled={exporting} style={{ ...primaryBtnStyle, cursor: exporting ? 'wait' : 'pointer' }}>
             {exporting ? 'Exporting…' : 'Download CSV'}
           </button>
         </div>
@@ -265,16 +266,18 @@ export default function DesignReportsPage() {
             <CountTable title="By discipline" rows={data.by_discipline} labels={DISCIPLINE_LABELS} />
             <div style={{ ...cardStyle, flex: '1 1 260px' }}>
               <p style={sectionTitle}>Releases — last 12 months</p>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <tbody>
-                  {data.releases_by_month.slice().reverse().map((m) => (
-                    <tr key={m.month}>
-                      <td style={tdStyle}>{monthLabel(m.month)}</td>
-                      <td style={{ ...tdStyle, textAlign: 'right', fontWeight: m.released ? 700 : 400, color: m.released ? TEXT.heading : TEXT.muted }}>{m.released}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <tbody>
+                    {data.releases_by_month.slice().reverse().map((m) => (
+                      <tr key={m.month}>
+                        <td style={tdStyle}>{monthLabel(m.month)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: m.released ? 700 : 400, color: m.released ? TEXT.heading : TEXT.muted }}>{m.released}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </>

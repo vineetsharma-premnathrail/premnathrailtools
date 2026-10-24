@@ -1,5 +1,6 @@
 'use client'
 
+import { primaryBtnStyle } from '@/components/shared/ui'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -45,7 +46,7 @@ export default function SalesDashboardPage() {
       <PageHeader title="Sales Dashboard" subtitle="Order book, delivery backlog and LD exposure.">
         {can('sales', 'orders', 'create') && (
           <button data-tour="sales-dash-new" onClick={() => router.push('/dashboard/sales/orders/new')}
-            style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}>
+            style={primaryBtnStyle}>
             + New Sales Order
           </button>
         )}
@@ -67,37 +68,41 @@ export default function SalesDashboardPage() {
           <div data-tour="sales-dash-approvals" style={sectionStyle}>
             <h2 style={h2Style}>Approvals waiting for me</h2>
             {!data?.approvals_waiting_for_me.length ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Nothing waiting for your approval.</p> : (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr>{['Order', 'Customer', 'Value', 'As'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {data.approvals_waiting_for_me.map((a) => (
-                    <tr key={a.id} onClick={() => router.push(recordPath('/dashboard/sales/orders', a))} style={{ cursor: 'pointer' }}>
-                      <td style={{ ...tdStyle, fontWeight: 600 }}>{a.display_number}</td>
-                      <td style={tdStyle}>{a.customer_name}</td>
-                      <td style={tdStyle}>{formatINR(a.grand_total)}</td>
-                      <td style={tdStyle}>{a.stage || LEVEL_LABELS[a.level || ''] || a.level}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr>{['Order', 'Customer', 'Value', 'As'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {data.approvals_waiting_for_me.map((a) => (
+                      <tr key={a.id} onClick={() => router.push(recordPath('/dashboard/sales/orders', a))} style={{ cursor: 'pointer' }}>
+                        <td style={{ ...tdStyle, fontWeight: 600 }}>{a.display_number}</td>
+                        <td style={tdStyle}>{a.customer_name}</td>
+                        <td style={tdStyle}>{formatINR(a.grand_total)}</td>
+                        <td style={tdStyle}>{a.stage || LEVEL_LABELS[a.level || ''] || a.level}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
           <div data-tour="sales-dash-extensions" style={sectionStyle}>
             <h2 style={h2Style}>DP extensions waiting for the customer</h2>
             {!data?.extensions_pending.length ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No open DP extension requests.</p> : (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr>{['Order', 'Vehicles', 'Requested date', 'Reason'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {data.extensions_pending.map((e) => (
-                    <tr key={e.id} onClick={() => router.push(`${recordPath('/dashboard/sales/orders', e, 'so_id')}?tab=schedule`)} style={{ cursor: 'pointer' }}>
-                      <td style={{ ...tdStyle, fontWeight: 600 }}>{e.so_display}</td>
-                      <td style={tdStyle}>{e.vehicles}</td>
-                      <td style={tdStyle}>{formatDate(e.requested_new_date)}</td>
-                      <td style={tdStyle}>{EXTENSION_REASON_LABELS[e.reason_category] || e.reason_category}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr>{['Order', 'Vehicles', 'Requested date', 'Reason'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {data.extensions_pending.map((e) => (
+                      <tr key={e.id} onClick={() => router.push(`${recordPath('/dashboard/sales/orders', e, 'so_id')}?tab=schedule`)} style={{ cursor: 'pointer' }}>
+                        <td style={{ ...tdStyle, fontWeight: 600 }}>{e.so_display}</td>
+                        <td style={tdStyle}>{e.vehicles}</td>
+                        <td style={tdStyle}>{formatDate(e.requested_new_date)}</td>
+                        <td style={tdStyle}>{EXTENSION_REASON_LABELS[e.reason_category] || e.reason_category}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>

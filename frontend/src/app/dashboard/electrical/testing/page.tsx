@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -83,18 +84,18 @@ export default function ElectricalTestRegisterPage() {
       <ErrorBanner error={lookupErrors} />
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select data-tour="elec-treg-phase-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 170px' }} value={phase} onChange={(e) => setPhase(e.target.value)}>
+        <Select data-tour="elec-treg-phase-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 170px' }} value={phase} onChange={(e) => setPhase(e.target.value)}>
           <option value="">All phases</option>
           {Object.entries(TEST_PHASE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="elec-treg-result-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 150px' }} value={result} onChange={(e) => setResult(e.target.value)}>
+        </Select>
+        <Select data-tour="elec-treg-result-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 150px' }} value={result} onChange={(e) => setResult(e.target.value)}>
           <option value="">All results</option>
           {Object.entries(TEST_RESULT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="elec-treg-type-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 230px' }} value={testType} onChange={(e) => setTestType(e.target.value)}>
+        </Select>
+        <Select data-tour="elec-treg-type-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 230px' }} value={testType} onChange={(e) => setTestType(e.target.value)}>
           <option value="">All test types</option>
           {Object.entries(meta?.test_types || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
         <button data-tour="elec-treg-retest-toggle" type="button" onClick={() => setNeedsRetest((v) => !v)} style={toggleStyle(needsRetest)} aria-pressed={needsRetest}>
           {needsRetest ? '✓ ' : ''}Needs retest only
         </button>

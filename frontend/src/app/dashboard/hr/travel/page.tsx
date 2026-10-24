@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -17,6 +18,7 @@ import {
   tableWrapStyle, thStyle, tdStyle, linkActionStyle, fmtDate, fmtINR,
 } from '@/components/hr/admin/adminUi'
 import { TEXT } from '@/lib/theme'
+import { smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { recordPath } from '@/lib/recordRef'
 
 type Tab = 'travel' | 'claims'
@@ -109,7 +111,7 @@ export default function HrTravelPage() {
       data-tour={`hr-travel-tab-${key}`}
       onClick={() => { setTab(key); setNotice('') }}
       style={{
-        fontSize: 12.5, fontWeight: 600, padding: '7px 14px', borderRadius: 9999, cursor: 'pointer',
+        ...smallSecondaryBtnStyle, borderRadius: 9999,
         border: tab === key ? '1px solid #FF6A2A' : '1px solid rgba(0,0,0,0.1)',
         background: tab === key ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,0.7)', color: tab === key ? '#e0521a' : '#57534e',
       }}
@@ -141,15 +143,15 @@ export default function HrTravelPage() {
           onChange={(e) => setSearch(e.target.value)}
         />
         {tab === 'travel' ? (
-          <select data-tour="hr-travel-status-filter" style={{ ...filterInputStyle, flex: '0 1 160px' }} value={travelStatus} onChange={(e) => setTravelStatus(e.target.value)}>
+          <Select data-tour="hr-travel-status-filter" style={{ ...filterInputStyle, flex: '0 1 160px' }} value={travelStatus} onChange={(e) => setTravelStatus(e.target.value)}>
             <option value="">All statuses</option>
             {Object.entries(TRAVEL_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         ) : (
-          <select data-tour="hr-claims-status-filter" style={{ ...filterInputStyle, flex: '0 1 180px' }} value={claimStatus} onChange={(e) => setClaimStatus(e.target.value)}>
+          <Select data-tour="hr-claims-status-filter" style={{ ...filterInputStyle, flex: '0 1 180px' }} value={claimStatus} onChange={(e) => setClaimStatus(e.target.value)}>
             <option value="">All submitted claims</option>
             {Object.entries(CLAIM_STATUS_LABELS).filter(([k]) => k !== 'draft').map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         )}
         <span style={{ fontSize: 12, color: TEXT.muted }}>{tab === 'travel' ? 'Departing' : 'Claim date'}</span>
         <div data-tour="hr-travel-date-from" style={{ flex: '0 1 150px' }}><DateField value={dateFrom} onChange={setDateFrom} /></div>

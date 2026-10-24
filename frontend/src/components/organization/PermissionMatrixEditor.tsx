@@ -382,5 +382,5 @@ export default function PermissionMatrixEditor({ registry, value, onChange, read
 const linkBtn: React.CSSProperties = { fontSize: 11.5, fontWeight: 600, color: BRAND.primaryActive, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }
 
 function th(align: 'left' | 'center'): React.CSSProperties {
-  return { textAlign: align, padding: '8px 6px', paddingLeft: align === 'left' ? 14 : 6, fontSize: 10.5, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase' }
+  return { textAlign: align, padding: '8px 6px', paddingLeft: align === 'left' ? 14 : 6, fontSize: 10.5, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', whiteSpace: 'nowrap' }
 }

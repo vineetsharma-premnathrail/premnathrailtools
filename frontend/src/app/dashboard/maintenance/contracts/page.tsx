@@ -12,6 +12,7 @@ import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import { recordPath } from '@/lib/recordRef'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 const STATUS_LABELS: Record<string, string> = { expired: 'Expired', expiring: 'Expiring', active: 'Active', none: 'Not covered' }
 const STATUS_HEX: Record<string, string> = { expired: '#DC2626', expiring: '#F59E0B', active: '#16A34A', none: '#78716c' }
@@ -174,25 +175,25 @@ export default function MaintenanceContractsPage() {
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input data-tour="maint-amc-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200, maxWidth: 380 }} placeholder="Search by asset code or name…" value={search} onChange={(e) => setSearch(e.target.value)} />
         {lookups && lookups.branches.length > 1 && (
-          <select data-tour="maint-amc-plant-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+          <Select data-tour="maint-amc-plant-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
             <option value="">All plants</option>
             {lookups.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
+          </Select>
         )}
-        <select data-tour="maint-amc-kind-filter" style={{ ...inputStyle, flex: '0 1 160px' }} value={kind} onChange={(e) => setKind(e.target.value as 'all' | 'warranty' | 'amc')}>
+        <Select data-tour="maint-amc-kind-filter" style={{ ...inputStyle, flex: '0 1 160px' }} value={kind} onChange={(e) => setKind(e.target.value as 'all' | 'warranty' | 'amc')}>
           <option value="all">Warranty + AMC</option>
           <option value="warranty">Warranty only</option>
           <option value="amc">AMC only</option>
-        </select>
-        <select data-tour="maint-amc-status-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={status} onChange={(e) => setStatus(e.target.value as MaintenanceContractStatus | '')}>
+        </Select>
+        <Select data-tour="maint-amc-status-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={status} onChange={(e) => setStatus(e.target.value as MaintenanceContractStatus | '')}>
           <option value="">Any status</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
         <label data-tour="maint-amc-window" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.secondary }}>
           Expiring within
-          <select style={{ ...inputStyle, padding: '7px 10px' }} value={windowDays} onChange={(e) => setWindowDays(Number(e.target.value))}>
+          <Select style={{ ...inputStyle, width: 120 }} value={windowDays} onChange={(e) => setWindowDays(Number(e.target.value))}>
             {WINDOW_OPTIONS.map((d) => <option key={d} value={d}>{d} days</option>)}
-          </select>
+          </Select>
         </label>
       </div>
 
@@ -201,7 +202,7 @@ export default function MaintenanceContractsPage() {
           <thead>
             <tr>
               {headers.map((h, i) => (
-                <th key={i} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                <th key={i} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}
                 </th>
               ))}

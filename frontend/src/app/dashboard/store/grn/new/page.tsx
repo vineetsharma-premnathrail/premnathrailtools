@@ -8,7 +8,7 @@ import { P2PReceivablePurchaseOrder, StoreLocation } from '@/types'
 import { TEXT, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -17,6 +17,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
+import Select from '@/components/shared/Select'
 
 const inputStyle: React.CSSProperties = sheetInput
 const labelStyle: React.CSSProperties = sheetLabel
@@ -55,11 +56,11 @@ function HeatRows({ rows, received, expiry, onChange }: { rows: HeatRow[]; recei
           <input style={{ ...cell, flex: '0 1 120px' }} placeholder="Mill TC no." value={r.tc_number} onChange={(e) => set(i, { tc_number: e.target.value })} />
           {expiry && <div style={{ flex: '0 1 140px' }}><DateField value={r.expiry_date} onChange={(v) => set(i, { expiry_date: v })} style={cell} /></div>}
           {canTc && <input style={{ ...cell, flex: '0 1 170px' }} type="file" accept=".pdf,image/*" onChange={(e) => set(i, { tc_file: e.target.files?.[0] || null })} />}
-          {rows.length > 1 && <button type="button" onClick={() => onChange(rows.filter((_, j) => j !== i))} style={{ ...secondaryBtnStyle, padding: '4px 10px', fontSize: 12 }}>Remove</button>}
+          {rows.length > 1 && <button type="button" onClick={() => onChange(rows.filter((_, j) => j !== i))} style={smallSecondaryBtnStyle}>Remove</button>}
         </div>
       ))}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <button type="button" onClick={() => onChange([...rows, emptyHeat()])} style={{ ...secondaryBtnStyle, padding: '4px 10px', fontSize: 12 }}>+ Another heat</button>
+        <button type="button" onClick={() => onChange([...rows, emptyHeat()])} style={smallSecondaryBtnStyle}>+ Another heat</button>
         <span style={{ fontSize: 11.5, color: Math.abs(sum - received) > 1e-6 ? '#b91c1c' : '#16a34a' }}>Heats total {sum} of {received} received</span>
       </div>
     </div>
@@ -209,10 +210,10 @@ export default function NewStoreGrnPage() {
           </div>
           <div data-tour="store-grn-form-location" style={{ flex: '0 1 220px', minWidth: 200 }}>
             <label style={labelStyle}>Store Location <Req /></label>
-            <select style={inputStyle} value={storeLocationId} onChange={(e) => setStoreLocationId(e.target.value)}>
+            <Select style={inputStyle} value={storeLocationId} onChange={(e) => setStoreLocationId(e.target.value)}>
               <option value="">— select the receiving store —</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
+            </Select>
           </div>
           <div data-tour="store-grn-form-date" style={{ flex: '0 1 180px', minWidth: 160 }}>
             <label style={labelStyle}>Received Date <Req /></label>
@@ -289,7 +290,7 @@ export default function NewStoreGrnPage() {
               type="button"
               data-tour="store-grn-form-fill-btn"
               onClick={() => setInvoiceQty(Object.fromEntries(selectedPo.items.filter((it) => it.pending_quantity > 0).map((it) => [it.id, String(it.pending_quantity)])))}
-              style={{ ...sheetBtn('secondary', SHEET.INK), padding: '6px 12px', fontSize: 12, marginLeft: 'auto' }}
+              style={{ ...smallSecondaryBtnStyle, marginLeft: 'auto' }}
             >
               Invoice qty = pending
             </button>
@@ -366,11 +367,11 @@ export default function NewStoreGrnPage() {
                       {variance === null ? '—' : variance === 0 ? 'Matches' : variance < 0 ? `Short ${-variance}` : `Excess ${variance}`}
                     </td>
                     <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
-                      <select style={{ ...inputStyle, width: 130 }} value={lineBin[it.id] || ''} disabled={!bins.length}
+                      <Select style={{ ...inputStyle, width: 130 }} value={lineBin[it.id] || ''} disabled={!bins.length}
                         onChange={(e) => setLineBin((b) => ({ ...b, [it.id]: e.target.value }))}>
                         <option value="">{bins.length ? '— no bin —' : 'No bins'}</option>
                         {bins.map((b) => <option key={b.id} value={b.id}>{b.code}{b.name ? ` — ${b.name}` : ''}</option>)}
-                      </select>
+                      </Select>
                     </td>
                   </tr>
                   )

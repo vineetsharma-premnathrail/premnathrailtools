@@ -16,6 +16,7 @@ import { Pill, PageHeader, ErrorBanner, ActionSheet, SheetBlock, fmtDate, INSPEC
 import { SheetIcon, sheetInput, sheetLabel, sheetHint, sheetBtn, Req, SHEET } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import Select from '@/components/shared/Select'
 
 type LineDraft = { characteristic_id: number; sequence: number; nominal: string; min_value: string; max_value: string; classification: string; method: string; aql: string }
 
@@ -163,10 +164,10 @@ export default function InspectionPlanDetailPage() {
                     <td style={cell}>{type === 'attribute' ? 'Pass/fail' : 'Measured'}</td>
                     <td style={cell}>
                       {draft ? (
-                        <select style={{ ...inputStyle, width: 110 }} value={l.classification} onChange={(e) => setLine(i, { classification: e.target.value })}>
+                        <Select style={{ ...inputStyle, width: 110 }} value={l.classification} onChange={(e) => setLine(i, { classification: e.target.value })}>
                           <option value="">Default ({ch?.classification || '—'})</option>
                           <option value="critical">Critical</option><option value="major">Major</option><option value="minor">Minor</option>
-                        </select>
+                        </Select>
                       ) : <Pill text={cls} hex={SEVERITY_HEX[cls]} />}
                     </td>
                     <td style={cell}>{numInput('nominal')}</td>
@@ -174,9 +175,9 @@ export default function InspectionPlanDetailPage() {
                     <td style={cell}>{numInput('max_value')}</td>
                     <td style={cell}>
                       {draft ? (
-                        <select style={{ ...inputStyle, width: 90 }} value={l.aql} onChange={(e) => setLine(i, { aql: e.target.value })}>
+                        <Select style={{ ...inputStyle, width: 90 }} value={l.aql} onChange={(e) => setLine(i, { aql: e.target.value })}>
                           {AQLS.map((a) => <option key={a} value={a}>{a || 'Plan'}</option>)}
-                        </select>
+                        </Select>
                       ) : (l.aql || 'Plan')}
                     </td>
                     <td style={cell}>{draft ? <input style={{ ...inputStyle, width: 160 }} value={l.method} placeholder={ch?.method || ''} onChange={(e) => setLine(i, { method: e.target.value })} /> : (l.method || ch?.method || '—')}</td>
@@ -195,10 +196,10 @@ export default function InspectionPlanDetailPage() {
           onClose={() => setAddOpen(false)} busy={false} submitLabel="Add to plan" disabled={!addChar}
           onSubmit={() => { setLines((ls) => [...ls, { characteristic_id: Number(addChar), sequence: (ls.length + 1) * 10, nominal: '', min_value: '', max_value: '', classification: '', method: '', aql: '' }]); setAddChar(''); setAddOpen(false) }}>
           <label style={sheetLabel}>Characteristic <Req /></label>
-          <select style={sheetInput} value={addChar} onChange={(e) => setAddChar(e.target.value)} autoFocus>
+          <Select style={sheetInput} value={addChar} onChange={(e) => setAddChar(e.target.value)} autoFocus>
             <option value="">Select…</option>
             {chars.filter((c) => !lines.some((l) => l.characteristic_id === c.id)).map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name} ({c.classification})</option>)}
-          </select>
+          </Select>
           <p style={sheetHint}>Set the nominal / limits, class override, AQL and method in the grid, then “Save draft”. Missing one? Add it in Quality → Masters.</p>
         </ActionSheet>
       )}

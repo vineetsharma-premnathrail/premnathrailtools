@@ -14,6 +14,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { useCan } from '@/lib/permissions'
+import Select from '@/components/shared/Select'
 
 interface ServiceLine {
   po_item_id: number
@@ -168,10 +169,10 @@ export default function ServiceEntriesPanel({ poId, poOpen, onChanged }: { poId:
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ flex: '1 1 260px' }}>
                   <label style={sheetLabel}>Service line <Req /></label>
-                  <select style={sheetInput} value={lineId} onChange={(e) => setLineId(e.target.value)}>
+                  <Select style={sheetInput} value={lineId} onChange={(e) => setLineId(e.target.value)}>
                     <option value="">— select —</option>
                     {openLines.map((l) => <option key={l.po_item_id} value={l.po_item_id}>{l.item_name} ({l.open_quantity} {l.unit || ''} open)</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div style={{ flex: '0 1 110px' }}>
                   <label style={sheetLabel}>Quantity <Req /></label>

@@ -6,6 +6,7 @@
 
 import { createPortal } from 'react-dom'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { inputStyle as sharedInput, thStyle as sharedTh, tdStyle as sharedTd, btnBase, smallBtnSize } from '@/components/shared/ui'
 import { PermissionAction, useCan } from '@/lib/permissions'
 
 /** Project Management features (backend core/features/projects.py, all on
@@ -104,16 +105,10 @@ export const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
-export const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
-}
+export const inputStyle: React.CSSProperties = { ...sharedInput, background: 'rgba(255,255,255,.7)' }
 export const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-export const thStyle: React.CSSProperties = {
-  textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase',
-  color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap',
-}
-export const tdStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
+export const thStyle: React.CSSProperties = { ...sharedTh, padding: '10px 14px' }
+export const tdStyle: React.CSSProperties = { ...sharedTd, padding: '10px 14px', verticalAlign: 'top' }
 
 /** Popup for add / edit forms. Rendered into document.body (portal): the
  * glass section cards use backdrop-filter, which traps a position:fixed
@@ -164,12 +159,16 @@ export function linkBtn(color = '#4f46e5', disabled = false): React.CSSPropertie
 
 export function actionBtn(kind: 'primary' | 'secondary' | 'danger', disabled = false): React.CSSProperties {
   const base: React.CSSProperties = {
-    padding: '8px 14px', borderRadius: 10, fontSize: 12.5, fontWeight: 700, cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.6 : 1, whiteSpace: 'nowrap',
+    ...btnBase, fontWeight: 700, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1,
   }
-  if (kind === 'primary') return { ...base, border: 'none', background: '#6366f1', color: '#fff' }
+  if (kind === 'primary') return { ...base, border: '1px solid transparent', background: '#6366f1', color: '#fff' }
   if (kind === 'danger') return { ...base, border: '1px solid rgba(220,38,38,0.35)', background: 'rgba(220,38,38,0.06)', color: '#b91c1c' }
   return { ...base, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.8)', color: TEXT.body }
+}
+
+/** 30px row-action variant of actionBtn (table rows, chips). */
+export function smallActionBtn(kind: 'primary' | 'secondary' | 'danger', disabled = false): React.CSSProperties {
+  return { ...actionBtn(kind, disabled), ...smallBtnSize }
 }
 
 export function AttachmentList({ files, onOpen, onDelete, canDelete }: {
@@ -189,7 +188,7 @@ export function AttachmentList({ files, onOpen, onDelete, canDelete }: {
           {f.doc_type && f.doc_type !== 'other' && <span style={{ fontSize: 10.5, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase' }}>{DOC_TYPE_LABELS[f.doc_type] || f.doc_type}</span>}
           <span style={{ fontSize: 11.5, color: TEXT.muted, marginLeft: 'auto' }}>{[f.uploaded_by_name, f.created_at ? new Date(f.created_at).toLocaleDateString('en-GB') : ''].filter(Boolean).join(' · ')}</span>
           {onDelete && (!canDelete || canDelete(f)) && (
-            <button type="button" onClick={() => onDelete(f.id)} style={{ ...actionBtn('danger'), padding: '3px 9px', fontSize: 11 }}>Remove</button>
+            <button type="button" onClick={() => onDelete(f.id)} style={{ ...smallActionBtn('danger') }}>Remove</button>
           )}
         </div>
       ))}

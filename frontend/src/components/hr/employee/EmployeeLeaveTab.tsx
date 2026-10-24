@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { hrApi } from '@/lib/api'
@@ -16,7 +17,7 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
 const td: React.CSSProperties = { padding: '9px 12px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
-const th: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6' }
+const th: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' }
 
 function num(v: string | number | null | undefined) {
   const n = Number(v || 0)
@@ -51,9 +52,9 @@ export default function EmployeeLeaveTab({ userId }: { userId: number }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
         <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Leave</h3>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <select data-tour="hr-emp-leave-year" value={year} onChange={(e) => setYear(Number(e.target.value))} style={{ padding: '7px 10px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.7)', fontSize: 13 }}>
+          <Select data-tour="hr-emp-leave-year" value={year} onChange={(e) => setYear(Number(e.target.value))} style={{ width: 110, background: 'rgba(255,255,255,.7)' }}>
             {[thisYear + 1, thisYear, thisYear - 1, thisYear - 2].map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
+          </Select>
           <Link href="/dashboard/hr/leave" data-tour="hr-emp-leave-manage" style={{ fontSize: 12.5, fontWeight: 600, color: '#E85A1F', textDecoration: 'none' }}>Manage leave →</Link>
         </div>
       </div>
@@ -84,9 +85,9 @@ export default function EmployeeLeaveTab({ userId }: { userId: number }) {
             </div>
           )}
 
-          <div data-tour="hr-emp-leave-requests" style={{ overflowX: 'auto', borderRadius: 12, border: `1px solid ${BORDER.light}` }}>
+          <div data-tour="hr-emp-leave-requests" style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)', borderRadius: 12, border: `1px solid ${BORDER.light}` }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
-              <thead><tr>{['Request', 'Type', 'Dates', 'Days', 'Status', 'Decided by'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Request', 'Type', 'Dates', 'Days', 'Status', 'Decided by'].map((h) => <th key={h} style={h === 'Days' ? { ...th, textAlign: 'right' } : th}>{h}</th>)}</tr></thead>
               <tbody>
                 {requests.length === 0 ? (
                   <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: TEXT.muted, padding: 16 }}>No leave requests in {year}.</td></tr>
@@ -95,7 +96,7 @@ export default function EmployeeLeaveTab({ userId }: { userId: number }) {
                     <td style={{ ...td, fontWeight: 600 }}>{r.request_no}</td>
                     <td style={td}>{r.leave_type_name}</td>
                     <td style={td}>{dmy(r.from_date)}{SESSION_SHORT[r.from_session]}{r.to_date !== r.from_date && <> → {dmy(r.to_date)}{SESSION_SHORT[r.to_session]}</>}</td>
-                    <td style={td}>{num(r.days)}</td>
+                    <td style={{ ...td, textAlign: 'right' }}>{num(r.days)}</td>
                     <td style={td}>
                       <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[r.status]}1a`, color: STATUS_HEX[r.status], whiteSpace: 'nowrap' }}>{STATUS_LABELS[r.status]}</span>
                     </td>

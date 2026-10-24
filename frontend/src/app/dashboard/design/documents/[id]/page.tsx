@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -14,7 +15,7 @@ import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, SheetIconName, SHEET, Req, Optional, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { DANGER_RED } from '@/components/design/DesignSheets'
 import ReasonSheet from '@/components/shared/ReasonSheet'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { DOC_TYPE_LABELS, DISCIPLINE_LABELS, FILE_ROLE_LABELS, DESIGN_FILE_ACCEPT, SUBMISSION_STATUS_LABELS, CUSTOMER_RESPONSE_LABELS, formatBytes, toOptions } from '@/components/design/designMeta'
 import { useDesignFeature } from '@/components/design/useDesignFeature'
@@ -60,10 +61,7 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 16,
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary,
-  color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: `0 6px 16px ${SHADOWS.glowOrange}`,
-}
+const primaryBtn: React.CSSProperties = primaryBtnStyle
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6' }
 const tdStyle: React.CSSProperties = { padding: '9px 10px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
 
@@ -525,7 +523,7 @@ export default function DesignDocumentDetailPage() {
                       )}
                       <span style={{ flex: 1 }} />
                       {isOpenSelected && can('edit_revision') && !editingRevision && (
-                        <button data-tour="design-doc-edit-rev-btn" type="button" style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }} onClick={startEditRevision}>Edit revision</button>
+                        <button data-tour="design-doc-edit-rev-btn" type="button" style={{ ...smallSecondaryBtnStyle }} onClick={startEditRevision}>Edit revision</button>
                       )}
                     </div>
 
@@ -557,10 +555,10 @@ export default function DesignDocumentDetailPage() {
                                 {FILE_ROLE_LABELS[f.file_role] || f.file_role} · {formatBytes(f.file_size)} · {f.uploaded_by_name || '—'} · {formatDate(f.created_at)}
                               </p>
                             </div>
-                            <button type="button" style={{ ...secondaryBtnStyle, padding: '5px 12px', fontSize: 12 }} onClick={() => openFile(f, false)}>Open</button>
-                            <button type="button" style={{ ...secondaryBtnStyle, padding: '5px 12px', fontSize: 12 }} onClick={() => openFile(f, true)}>Download</button>
+                            <button type="button" style={{ ...smallSecondaryBtnStyle }} onClick={() => openFile(f, false)}>Open</button>
+                            <button type="button" style={{ ...smallSecondaryBtnStyle }} onClick={() => openFile(f, true)}>Download</button>
                             {isOpenSelected && can('manage_files') && removeFiles && (
-                              <button type="button" disabled={busy} style={{ ...dangerBtnStyle, padding: '5px 12px', fontSize: 12 }}
+                              <button type="button" disabled={busy} style={{ ...smallDangerBtnStyle }}
                                 onClick={() => act(() => designApi.removeRevisionFile(selected.id, f.id), 'Removing the file failed.', `${f.file_name} removed.`)}>
                                 Remove
                               </button>
@@ -570,7 +568,7 @@ export default function DesignDocumentDetailPage() {
                       </div>
                     )}
                     {isOpenSelected && can('manage_files') && (
-                      <button data-tour="design-doc-upload" type="button" disabled={busy} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12, marginTop: 6 }} onClick={openUpload}>+ Upload files</button>
+                      <button data-tour="design-doc-upload" type="button" disabled={busy} style={{ ...smallSecondaryBtnStyle, marginTop: 6 }} onClick={openUpload}>+ Upload files</button>
                     )}
                     </>)}
                   </>
@@ -726,7 +724,7 @@ export default function DesignDocumentDetailPage() {
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
                   <p data-tour="design-doc-details" style={{ ...sectionTitle, margin: 0, flex: 1 }}>Details</p>
                   {can('edit') && !editingDetails && (
-                    <button data-tour="design-doc-details-edit-btn" type="button" style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }} onClick={startEditDetails}>Edit</button>
+                    <button data-tour="design-doc-details-edit-btn" type="button" style={{ ...smallSecondaryBtnStyle }} onClick={startEditDetails}>Edit</button>
                   )}
                 </div>
                 {(
@@ -855,10 +853,10 @@ export default function DesignDocumentDetailPage() {
               </div>
               <div data-tour="design-doc-newrev-ecn" style={{ marginTop: 12 }}>
                 <label style={sheetLabel}>Under change notice <Optional /></label>
-                <select style={sheetInput} value={newRev.ecn_id} onChange={(e) => setNewRev({ ...newRev, ecn_id: e.target.value })}>
+                <Select style={sheetInput} value={newRev.ecn_id} onChange={(e) => setNewRev({ ...newRev, ecn_id: e.target.value })}>
                   <option value="">{doc.open_ecns.length ? 'None' : 'No approved ECN lists this document'}</option>
                   {doc.open_ecns.map((e) => <option key={e.id} value={e.id}>{e.ecn_number} — {e.title}</option>)}
-                </select>
+                </Select>
               </div>
             </SheetSection>
             <SheetSection icon="users" title="Signatories" extra={<Optional />}>
@@ -893,10 +891,10 @@ export default function DesignDocumentDetailPage() {
               <textarea style={{ ...sheetInput, minHeight: 64, resize: 'vertical' }} value={revForm.change_summary} onChange={(e) => setRevForm({ ...revForm, change_summary: e.target.value })} autoFocus />
               <div style={{ marginTop: 12 }}>
                 <label style={sheetLabel}>Under change notice <Optional /></label>
-                <select style={sheetInput} value={revForm.ecn_id} onChange={(e) => setRevForm({ ...revForm, ecn_id: e.target.value })}>
+                <Select style={sheetInput} value={revForm.ecn_id} onChange={(e) => setRevForm({ ...revForm, ecn_id: e.target.value })}>
                   <option value="">None</option>
                   {doc.open_ecns.map((e) => <option key={e.id} value={e.id}>{e.ecn_number} — {e.title}</option>)}
-                </select>
+                </Select>
               </div>
             </SheetSection>
             <SheetSection icon="users" title="Signatories">
@@ -928,9 +926,9 @@ export default function DesignDocumentDetailPage() {
             <SheetSection icon="clip" title="Files">
               <div style={{ marginBottom: 12 }}>
                 <label style={sheetLabel}>Add as <Req /></label>
-                <select style={sheetInput} value={uploadRole} onChange={(e) => setUploadRole(e.target.value)}>
+                <Select style={sheetInput} value={uploadRole} onChange={(e) => setUploadRole(e.target.value)}>
                   {Object.entries(FILE_ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+                </Select>
               </div>
               <label style={sheetLabel}>Files <Req /></label>
               <DesignFileDrop disabled={busy} onFiles={(list) => setUploadStaged((prev) => [...prev, ...Array.from(list || []).filter((f) => !prev.some((p) => p.name.toLowerCase() === f.name.toLowerCase()))])} />
@@ -966,9 +964,9 @@ export default function DesignDocumentDetailPage() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
                   <div data-tour="design-doc-edit-discipline" style={{ flex: '1 1 180px' }}>
                     <label style={sheetLabel}>Discipline</label>
-                    <select style={sheetInput} value={details.discipline} onChange={(e) => setDetails({ ...details, discipline: e.target.value })}>
+                    <Select style={sheetInput} value={details.discipline} onChange={(e) => setDetails({ ...details, discipline: e.target.value })}>
                       {Object.entries(DISCIPLINE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                    </select>
+                    </Select>
                   </div>
                   <div data-tour="design-doc-edit-owner" style={{ flex: '1 1 200px' }}><label style={sheetLabel}>Owner</label><SearchableSelect value={details.owner_id} onChange={(v) => setDetails({ ...details, owner_id: v })} options={ownerOptions} /></div>
                 </div>

@@ -5,6 +5,7 @@
 // customer-specific prices and discounts, and freight. Documents (SO lines,
 // quotation lines, service invoices) default their price from these records.
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { salesApi } from '@/lib/api'
@@ -169,10 +170,10 @@ export default function SalesPricingPage() {
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14, alignItems: 'flex-end' }}>
         <div style={{ flex: '0 1 160px', minWidth: 140 }}>
           <label style={labelStyle}>Type</label>
-          <select style={inputStyle} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+          <Select style={inputStyle} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
             <option value="">All</option>
             {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         </div>
         <div style={{ flex: '1 1 260px', maxWidth: 340 }}>
           <label style={labelStyle}>Customer</label>
@@ -226,16 +227,16 @@ export default function SalesPricingPage() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ flex: '0 1 150px', minWidth: 140 }}>
                   <label style={sheetLabel}>Type <Req /></label>
-                  <select disabled={!!form.id} style={sheetInput} value={form.condition_type}
+                  <Select disabled={!!form.id} style={sheetInput} value={form.condition_type}
                     onChange={(e) => set({ condition_type: e.target.value, item_kind: e.target.value === 'freight' ? 'any' : e.target.value === 'price' ? 'product' : form.item_kind })}>
                     {(meta?.condition_types || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div style={{ flex: '0 1 190px', minWidth: 170 }}>
                   <label style={sheetLabel}>For <Req /></label>
-                  <select disabled={!!form.id} style={sheetInput} value={form.item_kind} onChange={(e) => set({ item_kind: e.target.value, product_id: '', store_item_id: '', service_code: '' })}>
+                  <Select disabled={!!form.id} style={sheetInput} value={form.item_kind} onChange={(e) => set({ item_kind: e.target.value, product_id: '', store_item_id: '', service_code: '' })}>
                     {kinds.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                  </Select>
                 </div>
               </div>
               {(form.item_kind === 'product' || form.item_kind === 'spare') && (
@@ -250,11 +251,11 @@ export default function SalesPricingPage() {
               {form.item_kind === 'service' && (
                 <div style={{ marginTop: 14, maxWidth: 380 }}>
                   <label style={sheetLabel}>Service rate <Req /></label>
-                  <select disabled={!!form.id} style={sheetInput} value={form.service_code}
+                  <Select disabled={!!form.id} style={sheetInput} value={form.service_code}
                     onChange={(e) => set({ service_code: e.target.value, uom: meta?.service_codes.find((s) => s.value === e.target.value)?.uom || form.uom })}>
                     <option value="">Pick…</option>
                     {(meta?.service_codes || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                  </Select>
                 </div>
               )}
               <div style={{ marginTop: 14, maxWidth: 420 }}>
@@ -270,9 +271,9 @@ export default function SalesPricingPage() {
                 {form.condition_type === 'freight' && (
                   <div style={{ flex: '0 1 190px', minWidth: 170 }}>
                     <label style={sheetLabel}>Freight basis</label>
-                    <select style={sheetInput} value={form.freight_basis} onChange={(e) => set({ freight_basis: e.target.value })}>
+                    <Select style={sheetInput} value={form.freight_basis} onChange={(e) => set({ freight_basis: e.target.value })}>
                       {(meta?.freight_bases || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
+                    </Select>
                   </div>
                 )}
                 {(form.condition_type === 'price' || (form.condition_type === 'freight' && form.freight_basis === 'per_order')) && (

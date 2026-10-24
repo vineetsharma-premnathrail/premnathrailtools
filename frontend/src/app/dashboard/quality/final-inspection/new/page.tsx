@@ -12,6 +12,7 @@ import QualityNav from '@/components/quality/QualityNav'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, Req, Optional } from '@/components/shared/FormSheet'
 import { ErrorBanner, sheetGap } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 function emptyResult(sortOrder: number): QualityInspectionResultInput {
   return { parameter: '', method: '', acceptance_criteria: '', observed_value: '', result: 'na', sort_order: sortOrder }
@@ -129,13 +130,13 @@ export default function NewFinalInspectionPage() {
             <div style={{ ...row, ...sheetGap }}>
               <F label="Inspection Date" flex="1 1 150px"><DateField value={inspectionDate} onChange={setInspectionDate} /></F>
               <F label="Status" flex="1 1 150px">
-                <select style={sheetInput} value={status} onChange={(e) => setStatus(e.target.value as QualityInspectionStatus)}>
+                <Select style={sheetInput} value={status} onChange={(e) => setStatus(e.target.value as QualityInspectionStatus)}>
                   <option value="pending">Pending</option>
                   <option value="in_progress">In Progress</option>
                   <option value="passed">Passed</option>
                   <option value="failed">Failed</option>
                   <option value="conditionally_passed">Conditionally Passed</option>
-                </select>
+                </Select>
               </F>
             </div>
           </SheetSection>
@@ -161,11 +162,11 @@ export default function NewFinalInspectionPage() {
                     <td style={{ ...td, minWidth: 180 }}><input style={sheetInput} value={r.acceptance_criteria || ''} onChange={(e) => updateResult(idx, 'acceptance_criteria', e.target.value)} /></td>
                     <td style={{ ...td, minWidth: 150 }}><input style={sheetInput} value={r.observed_value || ''} onChange={(e) => updateResult(idx, 'observed_value', e.target.value)} /></td>
                     <td style={{ ...td, minWidth: 120 }}>
-                      <select style={sheetInput} value={r.result} onChange={(e) => updateResult(idx, 'result', e.target.value as QualityInspectionResultValue)}>
+                      <Select style={sheetInput} value={r.result} onChange={(e) => updateResult(idx, 'result', e.target.value as QualityInspectionResultValue)}>
                         <option value="na">N/A</option>
                         <option value="pass">Pass</option>
                         <option value="fail">Fail</option>
-                      </select>
+                      </Select>
                     </td>
                     <td style={td}>
                       {results.length > 1 && (

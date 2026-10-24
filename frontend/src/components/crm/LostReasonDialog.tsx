@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 // Closing an inquiry as not ordered: structured lost reason (+ competitor) for
 // the win / loss report. The backend refuses the close without it.
 
@@ -50,10 +51,10 @@ function LostReasonSheet({ title, onConfirm, onCancel, initial }: Props) {
       <div style={{ padding: '20px 24px' }}>
         <SheetSection icon="alert" title="Lost Reason" color="#dc2626">
           <label style={sheetLabel}>Lost reason <Req /></label>
-          <select value={code} onChange={(e) => setCode(e.target.value)} style={sheetInput}>
+          <Select value={code} onChange={(e) => setCode(e.target.value)} style={sheetInput}>
             <option value="">-- Select reason --</option>
             {reasons.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-          </select>
+          </Select>
           {code === 'competitor' && (
             <>
               <label style={{ ...sheetLabel, marginTop: 14 }}>Lost to (competitor) <Req /></label>

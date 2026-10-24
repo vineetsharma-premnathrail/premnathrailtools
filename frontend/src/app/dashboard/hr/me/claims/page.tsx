@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
@@ -71,10 +72,10 @@ export default function MyClaimsPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <select data-tour="hr-myclaims-status-filter" style={{ ...filterInputStyle, flex: '0 1 170px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <Select data-tour="hr-myclaims-status-filter" style={{ ...filterInputStyle, flex: '0 1 170px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(CLAIM_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
       </div>
 
       <div data-tour="hr-myclaims-table" style={tableWrapStyle}>

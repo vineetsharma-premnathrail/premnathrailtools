@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ListBullets, ListNumbers, WarningCircle } from '@phosphor-icons/react'
+import { createPortal } from 'react-dom'
+import { CaretDown, ListBullets, ListNumbers, WarningCircle } from '@phosphor-icons/react'
 
 const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'LI', 'BR', 'DIV', 'P', 'SPAN'])
 const SAFE_FONT_SIZE = /^\d{1,2}px$/
@@ -84,6 +85,99 @@ const NO_IMAGE_MSG = 'Images can’t be added here — attach the file to the re
 
 const activeBtnStyle = (active: boolean): React.CSSProperties =>
   active ? { background: 'rgba(244,113,59,0.12)', color: '#c2410c' } : {}
+
+const FONT_SIZES: Array<[string, string]> = [['20px', 'Large'], ['14px', 'Medium'], ['11px', 'Small']]
+
+/** Font-size picker for the toolbar. Not a native select (OS list, wrong
+ * height) and not the shared Select either: every part of it uses
+ * onMouseDown preventDefault so the editor keeps its text selection while the
+ * list is open — the size must apply to the text the user highlighted. The
+ * list is portaled to <body> so the editor's overflow:hidden box can't clip it. */
+function FontSizeMenu({ onPick, tourAttr }: { onPick: (px: string) => void; tourAttr?: string }) {
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+
+  useEffect(() => {
+    if (!pos) return
+    const place = () => {
+      const r = btnRef.current?.getBoundingClientRect()
+      if (!r) return
+      const h = listRef.current?.offsetHeight ?? 110
+      const top = r.bottom + 4 + h > window.innerHeight ? Math.max(4, r.top - 4 - h) : r.bottom + 4
+      setPos((p) => (p && p.top === top && p.left === r.left ? p : { top, left: r.left }))
+    }
+    const close = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (btnRef.current?.contains(t) || listRef.current?.contains(t)) return
+      setPos(null)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPos(null) }
+    place()
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [pos])
+
+  const toggle = () => {
+    if (pos) { setPos(null); return }
+    const r = btnRef.current?.getBoundingClientRect()
+    if (r) setPos({ top: r.bottom + 4, left: r.left })
+  }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        title="Font size"
+        aria-haspopup="listbox"
+        aria-expanded={!!pos}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={toggle}
+        {...(tourAttr ? { 'data-tour': tourAttr } : {})}
+        style={{ ...TOOLBAR_BTN_STYLE, gap: 4, border: '1px solid rgba(0,0,0,0.08)', background: '#fff', fontSize: 12, fontWeight: 600 }}
+      >
+        Font Size <CaretDown size={11} />
+      </button>
+      {pos && createPortal(
+        <div
+          ref={listRef}
+          role="listbox"
+          onMouseDown={(e) => e.preventDefault()}
+          style={{
+            position: 'fixed', top: pos.top, left: pos.left, zIndex: 10050, minWidth: 120, padding: 4,
+            background: '#fff', borderRadius: 8, border: '1px solid rgba(0,0,0,0.1)', boxShadow: '0 8px 24px rgba(15,23,42,0.14)',
+          }}
+        >
+          {FONT_SIZES.map(([px, label]) => (
+            <button
+              key={px}
+              type="button"
+              role="option"
+              aria-selected={false}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { setPos(null); onPick(px) }}
+              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', border: 'none', borderRadius: 6, background: 'transparent', color: '#57534e', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(244,113,59,0.10)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </>
+  )
+}
 
 export default function RichTextEditor({
   value,
@@ -204,18 +298,7 @@ export default function RichTextEditor({
   return (
     <div style={{ border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, background: '#fff', overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '4px 6px', borderBottom: '1px solid rgba(0,0,0,0.06)', background: '#faf9f7' }}>
-        <select
-          value=""
-          onChange={(e) => { if (e.target.value) setFontSize(e.target.value); e.target.value = '' }}
-          title="Font size"
-          {...(tourId ? { 'data-tour': `${tourId}-fontsize` } : {})}
-          style={{ height: 28, borderRadius: 6, border: '1px solid rgba(0,0,0,0.08)', background: '#fff', color: '#57534e', fontSize: 12, fontWeight: 600, padding: '0 4px', cursor: 'pointer' }}
-        >
-          <option value="" disabled>Font Size</option>
-          <option value="20px">Large</option>
-          <option value="14px">Medium</option>
-          <option value="11px">Small</option>
-        </select>
+        <FontSizeMenu onPick={setFontSize} tourAttr={tourId ? `${tourId}-fontsize` : undefined} />
         <div style={{ width: 1, alignSelf: 'stretch', margin: '0 4px', background: 'rgba(0,0,0,0.08)' }} />
         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec('insertUnorderedList')} title="Bullet list" {...(tourId ? { 'data-tour': `${tourId}-bullet` } : {})} style={{ ...TOOLBAR_BTN_STYLE, ...activeBtnStyle(activeStates.ul) }}>
           <ListBullets size={15} />

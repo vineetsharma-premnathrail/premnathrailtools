@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:ui": "node scripts/ui-audit.mjs",
+    "test:ui:warn": "node scripts/ui-audit.mjs --warn",
+    "test:ui:login": "playwright test --project=login",
+    "test:ui:layout": "playwright test --project=laptop --project=phone"
   },
   "dependencies": {
     "@microsoft/teams-js": "^2.54.0",
@@ -22,6 +26,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

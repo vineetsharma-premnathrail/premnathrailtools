@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { hydraulicApi } from '@/lib/api'
 import { HydCircuit, HydLookupOption } from '@/types'
@@ -93,9 +94,9 @@ export default function CircuitForm({
               <Cell tour="hyd-cir-medium" basis={150}>
                 <label style={sheetLabel}>Medium</label>
                 {!initial && !systemId ? (
-                  <select style={sheetInput} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
+                  <Select style={sheetInput} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
                     {Object.entries(SYSTEM_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 ) : (
                   <div style={{ ...sheetInput, background: SHEET.SOFT }}>{SYSTEM_TYPE_LABELS[effectiveType] || effectiveType}</div>
                 )}

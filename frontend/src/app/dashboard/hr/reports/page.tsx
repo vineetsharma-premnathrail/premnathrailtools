@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
@@ -82,22 +83,22 @@ export default function HrReportsPage() {
         <div style={{ ...sectionStyle, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div style={{ flex: '1 1 260px', maxWidth: 340 }}>
             <label style={labelStyle}>Register</label>
-            <select value={form.register_type} onChange={(e) => setForm({ ...form, register_type: e.target.value })} style={inputStyle}>
+            <Select value={form.register_type} onChange={(e) => setForm({ ...form, register_type: e.target.value })} style={inputStyle}>
               {types.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-            </select>
+            </Select>
           </div>
           <div style={{ flex: '0 1 220px' }}>
             <label style={labelStyle}>Plant</label>
-            <select value={form.branch_id} onChange={(e) => setForm({ ...form, branch_id: e.target.value })} style={inputStyle}>
+            <Select value={form.branch_id} onChange={(e) => setForm({ ...form, branch_id: e.target.value })} style={inputStyle}>
               <option value="">Pick a plant…</option>
               {plants.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            </Select>
           </div>
           <div style={{ flex: '0 1 100px' }}><label style={labelStyle}>Year</label><input type="number" value={form.year} onChange={(e) => setForm({ ...form, year: Number(e.target.value) || now.getFullYear() })} style={inputStyle} /></div>
           {monthly && (
             <div style={{ flex: '0 1 150px' }}>
               <label style={labelStyle}>Month</label>
-              <select value={form.month} onChange={(e) => setForm({ ...form, month: Number(e.target.value) })} style={inputStyle}>{MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}</select>
+              <Select value={form.month} onChange={(e) => setForm({ ...form, month: Number(e.target.value) })} style={inputStyle}>{MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}</Select>
             </div>
           )}
           <button type="button" style={primaryBtnStyle} onClick={generate}>Generate</button>

@@ -20,6 +20,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import AllocateCreditDialog, { CreditSource } from '@/components/finance/AllocateCreditDialog'
+import Select from '@/components/shared/Select'
 import {
   primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, ErrorBanner, InfoBanner, StatusPill, PageHeader, TableWrap, EmptyRow, SubTabs, ledgerOptions,
@@ -224,20 +225,20 @@ export default function AdvancesWriteOffsPage() {
                   <SheetSection icon="users" title="Bill">
                     <SRow>
                       <SField label="Party type" style={sw(160)}>
-                        <select style={sheetInput} value={partyType} onChange={(e) => { setPartyType(e.target.value as 'customer' | 'vendor'); setPartyId(''); setDocs([]); setDocId('') }}>
+                        <Select style={sheetInput} value={partyType} onChange={(e) => { setPartyType(e.target.value as 'customer' | 'vendor'); setPartyId(''); setDocs([]); setDocId('') }}>
                           <option value="customer">Customer</option>
                           <option value="vendor">Vendor</option>
-                        </select>
+                        </Select>
                       </SField>
                       <SField label={partyType === 'vendor' ? 'Vendor' : 'Customer'} req style={sg(240, 360)}>
                         <SearchableSelect value={partyId} onChange={pickParty} options={partyOptions} placeholder="Search party…" />
                       </SField>
                     </SRow>
                     <SField label="Bill" req>
-                      <select style={sheetInput} value={docId} onChange={(e) => setDocId(e.target.value)}>
+                      <Select style={sheetInput} value={docId} onChange={(e) => setDocId(e.target.value)}>
                         <option value="">{partyId ? (docs.length ? 'Pick bill' : 'No open bills') : 'Pick party first'}</option>
                         {docs.map((d) => <option key={d.id} value={String(d.id)}>{d.doc_number} — due {inr(d.amount_due)}</option>)}
-                      </select>
+                      </Select>
                     </SField>
                   </SheetSection>
                   <p style={sheetHint}>
@@ -248,9 +249,9 @@ export default function AdvancesWriteOffsPage() {
                 right={<>
                   <SheetSection icon="rupee" title="Write-off">
                     <SField label="Reason" req style={{ marginBottom: 12 }}>
-                      <select style={sheetInput} value={reason} onChange={(e) => setReason(e.target.value)}>
+                      <Select style={sheetInput} value={reason} onChange={(e) => setReason(e.target.value)}>
                         {REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                      </select>
+                      </Select>
                     </SField>
                     <SRow mb={12}>
                       <SField label="Amount (₹)" req style={sw(150)}>

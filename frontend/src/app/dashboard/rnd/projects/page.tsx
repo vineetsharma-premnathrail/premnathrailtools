@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -107,22 +108,22 @@ function RndProjectList() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select data-tour="rnd-proj-stage-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
+        <Select data-tour="rnd-proj-stage-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
           <option value="">All stages</option>
           {Object.entries(STAGE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="rnd-proj-status-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="rnd-proj-status-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="rnd-proj-priority-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="rnd-proj-priority-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
           <option value="">All priorities</option>
           {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="rnd-proj-origin-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={originFilter} onChange={(e) => setOriginFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="rnd-proj-origin-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={originFilter} onChange={(e) => setOriginFilter(e.target.value)}>
           <option value="">All origins</option>
           {Object.entries(ORIGIN_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
       </div>
 
       <div style={{

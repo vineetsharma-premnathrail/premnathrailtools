@@ -38,7 +38,7 @@ export function milestonePercent(t: PmDeptTask): number {
 
 const eyebrow: React.CSSProperties = { fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: TEXT.muted, margin: 0 }
 const card: React.CSSProperties = { background: '#fff', border: `1px solid ${BORDER.light}`, borderRadius: 12 }
-const th: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, background: '#f8fafc', borderBottom: `1px solid ${BORDER.light}` }
+const th: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, background: '#f8fafc', borderBottom: `1px solid ${BORDER.light}`, whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 1 }
 const td: React.CSSProperties = { padding: '12px 14px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.light}`, verticalAlign: 'middle' }
 
 function Bar({ value, height = 10 }: { value: number; height?: number }) {
@@ -162,7 +162,7 @@ export default function MilestoneDetail({ t, onBack, onChanged, onEdit, onDelete
           <Bar value={pct} />
         </div>
         <div style={{ flex: '1 1 120px', display: 'flex', justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onBack} style={{ ...actionBtn('secondary'), borderRadius: 999, padding: '8px 16px' }}>← Back</button>
+          <button type="button" onClick={onBack} style={actionBtn('secondary')}>← Back</button>
         </div>
       </div>
       {t.status === 'cancelled' && t.cancel_reason && <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '8px 0 0' }}>Cancelled: {t.cancel_reason}</p>}

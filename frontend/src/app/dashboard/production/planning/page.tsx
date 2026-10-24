@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { productionApi } from '@/lib/api'
 import { ProductionMaterialRequirement, ProductionPlanning } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import ProductionNav from '@/components/production/ProductionNav'
 import StockRequirementsDrawer from '@/components/production/StockRequirementsDrawer'
 import { extractErrorMessages } from '@/lib/validation'
@@ -21,12 +21,12 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 6px' }
-const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }
 const tdStyle: React.CSSProperties = { padding: '9px 12px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
 const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
 const fmtQty = (n: number) => +n.toFixed(4)
 const DAY_MS = 86400000
-const actionBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '5px 12px', fontSize: 12 }
+const actionBtn: React.CSSProperties = smallSecondaryBtnStyle
 
 export default function ProductionPlanningPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('production')

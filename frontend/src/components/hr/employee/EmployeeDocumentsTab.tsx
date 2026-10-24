@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { UserDocument } from '@/types'
@@ -168,9 +169,9 @@ export default function EmployeeDocumentsTab({ userId, mode = 'hr' }: { userId: 
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
                   <div data-tour="hr-doc-type" style={{ flex: '0 1 220px', minWidth: 190 }}>
                     <label style={sheetLabel}>Document Type <Req /></label>
-                    <select style={sheetInput} value={meta.document_type} onChange={(e) => setMeta({ ...meta, document_type: e.target.value })}>
+                    <Select style={sheetInput} value={meta.document_type} onChange={(e) => setMeta({ ...meta, document_type: e.target.value })}>
                       {DOCUMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    </Select>
                   </div>
                   <div data-tour="hr-doc-name" style={{ flex: '1 1 200px', maxWidth: 300 }}>
                     <label style={sheetLabel}>Document Name <Req /></label>
@@ -211,9 +212,9 @@ export default function EmployeeDocumentsTab({ userId, mode = 'hr' }: { userId: 
               </SheetSection>
               <SheetSection icon="shield" title="Visibility">
                 <div data-tour="hr-doc-visibility">
-                  <select style={sheetInput} value={meta.confidentiality} onChange={(e) => setMeta({ ...meta, confidentiality: e.target.value })}>
+                  <Select style={sheetInput} value={meta.confidentiality} onChange={(e) => setMeta({ ...meta, confidentiality: e.target.value })}>
                     {CONFIDENTIALITY_LEVELS.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  </Select>
                   <p style={sheetHint}>&quot;HR Only&quot; documents are hidden from the employee&apos;s own My HR page.</p>
                 </div>
               </SheetSection>

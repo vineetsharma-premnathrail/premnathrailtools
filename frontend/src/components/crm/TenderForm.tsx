@@ -1,5 +1,7 @@
 'use client'
 
+import Select from '@/components/shared/Select'
+import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
@@ -268,10 +270,11 @@ export default function TenderForm({
         </button>
       </>}>
     <form id={formId} onSubmit={handleSubmit} onKeyDown={handleEnterAsTab} style={{ position: 'relative' }}>
-      {saving && (
+      {saving && createPortal(
         <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(2px)' }}>
           <div className="loader" />
-        </div>
+        </div>,
+        document.body,
       )}
       <div ref={errorRef} style={{ padding: hasError ? '16px 24px 0' : 0 }}><SheetError error={error} /></div>
 
@@ -290,10 +293,10 @@ export default function TenderForm({
               </div>
               <div style={{ flex: '0 1 160px', minWidth: 130 }}>
                 <F label="Tender Portal" tourId="tnd-portal">
-                  <select value={form.tender_portal} onChange={(e) => set('tender_portal', e.target.value)} style={inputStyle}>
+                  <Select value={form.tender_portal} onChange={(e) => set('tender_portal', e.target.value)} style={inputStyle}>
                     <option value="">-- Select Portal --</option>
                     {TENDER_PORTALS.map((p) => <option key={p} value={p}>{p}</option>)}
-                  </select>
+                  </Select>
                   {form.tender_portal === 'Other' && (
                     <input value={tenderPortalCustom} onChange={(e) => setTenderPortalCustom(e.target.value)} placeholder="Specify portal" style={{ ...inputStyle, marginTop: 8 }} />
                   )}
@@ -301,10 +304,10 @@ export default function TenderForm({
               </div>
               <div style={{ flex: '0 1 150px', minWidth: 120 }}>
                 <F label="Tender Type" tourId="tnd-type">
-                  <select value={form.tender_type} onChange={(e) => set('tender_type', e.target.value)} style={inputStyle}>
+                  <Select value={form.tender_type} onChange={(e) => set('tender_type', e.target.value)} style={inputStyle}>
                     <option value="">-- Select Type --</option>
                     {TENDER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  </Select>
                 </F>
               </div>
               <div style={{ flex: '0 1 140px', minWidth: 110 }}>
@@ -315,16 +318,16 @@ export default function TenderForm({
               </div>}
               <div style={{ flex: '0 1 100px', minWidth: 80 }}>
                 <F label="Currency" tourId="tnd-currency">
-                  <select value={form.currency} onChange={(e) => set('currency', e.target.value)} style={inputStyle}>
+                  <Select value={form.currency} onChange={(e) => set('currency', e.target.value)} style={inputStyle}>
                     {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  </Select>
                 </F>
               </div>
               <div style={{ flex: '0 1 170px', minWidth: 140 }}>
                 <F label="Status" tourId="tnd-status">
-                  <select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
+                  <Select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
                     {TENDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                  </Select>
                 </F>
               </div>
             </div>
@@ -379,17 +382,17 @@ export default function TenderForm({
               </div>
               <div style={{ flex: '1 1 140px' }}>
                 <F label={<>Lead Source <Req /></>} tourId="tnd-lead-source">
-                  <select value={form.lead_source} onChange={(e) => set('lead_source', e.target.value)} style={inputStyle}>
+                  <Select value={form.lead_source} onChange={(e) => set('lead_source', e.target.value)} style={inputStyle}>
                     <option value="">-- Select Source --</option>
                     {LEAD_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                  </Select>
                 </F>
               </div>
               <div style={{ flex: '1 1 200px' }}>
                 <F label={<>Priority <Req /></>} tourId="tnd-priority">
-                  <select value={form.priority} onChange={(e) => set('priority', e.target.value)} style={inputStyle}>
+                  <Select value={form.priority} onChange={(e) => set('priority', e.target.value)} style={inputStyle}>
                     {priorityOptions(initial?.priority).map((p) => <option key={p} value={p}>{priorityLabel(p)}</option>)}
-                  </select>
+                  </Select>
                 </F>
               </div>
               <div style={{ flex: '1 1 160px' }}>
@@ -412,11 +415,11 @@ export default function TenderForm({
                 />
               </F>
               <F label={<>Contact Person <Optional /></>} tourId="tnd-contact">
-                <select value={form.org_contact_id} onChange={(e) => set('org_contact_id', e.target.value)} disabled={!form.org_id} style={inputStyle}>
+                <Select value={form.org_contact_id} onChange={(e) => set('org_contact_id', e.target.value)} disabled={!form.org_id} style={inputStyle}>
                   <option value="">-- Select Contact --</option>
                   {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   <option value="__new__">+ Add New Contact</option>
-                </select>
+                </Select>
               </F>
               {form.org_contact_id === '__new__' && (
                 <div style={{ padding: 14, borderRadius: 10, background: '#fff', border: `1px solid ${SHEET.LINE}`, display: 'flex', flexDirection: 'column', gap: 12 }}>

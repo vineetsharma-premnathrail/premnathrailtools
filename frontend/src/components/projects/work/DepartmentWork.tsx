@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
@@ -11,7 +12,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 import {
   ErrorBanner, FlagPill, MILESTONE_HEX, MILESTONE_LABELS, PRIORITY_HEX, PRIORITY_LABELS, PROJECT_HEX, PROJECT_LABELS, Pill,
-  ProgressBar, TASK_HEX, TASK_LABELS, actionBtn, inputStyle, sectionStyle, tdStyle, thStyle, todayIso,
+  ProgressBar, TASK_HEX, TASK_LABELS, actionBtn, smallActionBtn, inputStyle, sectionStyle, tdStyle, thStyle, todayIso,
 } from './pmUi'
 
 /** Shared task table — milestone workspace, department work and My Tasks. */
@@ -148,10 +149,10 @@ export default function DepartmentWork({ departments, between }: { departments?:
           <h2 style={{ fontSize: 17, fontWeight: 700, color: TEXT.heading, margin: 0 }}>My projects</h2>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             {moduleDepts.length > 1 && (
-              <select data-tour="pm-dw-dept-filter" style={{ ...inputStyle, width: 200 }} value={deptId ?? ''} onChange={(e) => setDeptId(e.target.value ? Number(e.target.value) : undefined)}>
+              <Select data-tour="pm-dw-dept-filter" style={{ ...inputStyle, width: 200 }} value={deptId ?? ''} onChange={(e) => setDeptId(e.target.value ? Number(e.target.value) : undefined)}>
                 <option value="">{names.length ? 'All' : 'All my departments'}</option>
                 {moduleDepts.map((d) => <option key={d.id} value={d.id}>{d.name} (#{d.id})</option>)}
-              </select>
+              </Select>
             )}
             <label data-tour="pm-dw-show-finished" style={{ fontSize: 12.5, color: TEXT.secondary, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
               <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} /> Show finished
@@ -266,7 +267,7 @@ function WbsRow({ m, hint, onOpen }: { m: PmProjectMilestone; hint: string; onOp
       </span>
       <div style={{ textAlign: 'right' }}>
         {needsPlan
-          ? <button type="button" onClick={(e) => { e.stopPropagation(); onOpen() }} style={{ ...actionBtn('primary'), padding: '6px 12px', fontSize: 12 }}>Create &amp; assign tasks</button>
+          ? <button type="button" onClick={(e) => { e.stopPropagation(); onOpen() }} style={{ ...smallActionBtn('primary') }}>Create &amp; assign tasks</button>
           : <span style={{ fontSize: 12, fontWeight: 600, color: TEXT.muted }}>{hint}</span>}
       </div>
     </div>

@@ -12,6 +12,7 @@ import StoreNav from '@/components/store/StoreNav'
 import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import Select from '@/components/shared/Select'
 
 interface Line { itemId: string; actualQuantity: string; remarks: string }
 
@@ -119,10 +120,10 @@ export default function NewStockAdjustmentPage() {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '1 1 200px' }}>
                 <label style={sheetLabel}>Store <Req /></label>
-                <select data-tour="adjustment-location" style={sheetInput} value={locationId} onChange={(e) => { setLocationId(e.target.value); setLines([{ itemId: '', actualQuantity: '', remarks: '' }]) }}>
+                <Select data-tour="adjustment-location" style={sheetInput} value={locationId} onChange={(e) => { setLocationId(e.target.value); setLines([{ itemId: '', actualQuantity: '', remarks: '' }]) }}>
                   <option value="">— Select —</option>
                   {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                </select>
+                </Select>
               </div>
               <div style={{ flex: '1 1 240px' }}>
                 <label style={sheetLabel}>Approver <Req /></label>
@@ -158,10 +159,10 @@ export default function NewStockAdjustmentPage() {
               <div key={idx} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 10, flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 280px' }}>
                   {idx === 0 && <label style={sheetLabel}>Item <Req /></label>}
-                  <select {...(idx === 0 ? { 'data-tour': 'adjustment-item' } : {})} style={sheetInput} value={line.itemId} onChange={(e) => updateLine(idx, { itemId: e.target.value })} disabled={!locationId}>
+                  <Select {...(idx === 0 ? { 'data-tour': 'adjustment-item' } : {})} style={sheetInput} value={line.itemId} onChange={(e) => updateLine(idx, { itemId: e.target.value })} disabled={!locationId}>
                     <option value="">— Select —</option>
                     {items.map((i) => <option key={i.id} value={i.id}>{i.item_code} — {i.item_name}</option>)}
-                  </select>
+                  </Select>
                 </div>
                 <div style={{ flex: '0 0 120px' }}>
                   {idx === 0 && <label style={sheetLabel}>Existing Qty</label>}
@@ -175,7 +176,7 @@ export default function NewStockAdjustmentPage() {
                   {line.actualQuantity !== '' && existingQty != null ? (Number(line.actualQuantity) - existingQty > 0 ? '+' : '') + (Number(line.actualQuantity) - existingQty) : ''}
                 </div>
                 <button type="button" aria-label="Remove line" {...(idx === 0 ? { 'data-tour': 'adjustment-remove-line-btn' } : {})} onClick={() => removeLine(idx)} disabled={lines.length === 1}
-                  style={{ ...sheetBtn('secondary', SHEET.INK, lines.length === 1), padding: '9px 11px' }}><SheetIcon name="trash" size={15} /></button>
+                  style={{ ...sheetBtn('secondary', SHEET.INK, lines.length === 1), padding: 0, width: 38, height: 38, justifyContent: 'center', flex: 'none' }}><SheetIcon name="trash" size={15} /></button>
               </div>
             )
           })}

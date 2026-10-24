@@ -1,5 +1,7 @@
 'use client'
 
+import { primaryBtnStyle } from '@/components/shared/ui'
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { designApi } from '@/lib/api'
@@ -51,10 +53,7 @@ const tableWrap: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 360px)',
 }
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary,
-  color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: `0 6px 16px ${SHADOWS.glowOrange}`,
-}
+const primaryBtn: React.CSSProperties = primaryBtnStyle
 const thStyle: React.CSSProperties = {
   textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase',
   color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap',
@@ -456,10 +455,10 @@ export default function DesignLibraryPage() {
           <p style={noteStyle}>Preferred bought-out / standard items (fasteners, bearings, seals…) designers should pick first. Each is an Item Master code, optionally with its drawing and the standard it conforms to.</p>
           <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
             {searchBox(partSearch, setPartSearch, 'Search by item code, name or notes…')}
-            <select data-tour="design-lib-part-discipline" style={{ ...inputStyle, flex: '0 1 170px', width: undefined }} value={partDiscipline} onChange={(e) => setPartDiscipline(e.target.value)}>
+            <Select data-tour="design-lib-part-discipline" style={{ ...inputStyle, flex: '0 1 170px', width: undefined }} value={partDiscipline} onChange={(e) => setPartDiscipline(e.target.value)}>
               <option value="">All disciplines</option>
               {Object.entries(DISCIPLINE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            </Select>
             {countLabel(parts.length, 'part')}
             <span style={{ flex: 1 }} />
             {isTeam && lib('parts', 'create') && !partForm && <button type="button" data-tour="design-lib-part-add-btn" style={primaryBtn} onClick={() => { ensureLookups(); setPartForm({ ...emptyPart }) }}>+ Add Standard Part</button>}
@@ -681,9 +680,9 @@ export default function DesignLibraryPage() {
             <SheetSection icon="doc" title="Standard">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
                 <Field label="Body" basis={130}>
-                  <select style={sheetInput} value={stdForm.body} onChange={(e) => setStdForm({ ...stdForm, body: e.target.value })}>
+                  <Select style={sheetInput} value={stdForm.body} onChange={(e) => setStdForm({ ...stdForm, body: e.target.value })}>
                     {STANDARD_BODIES.map((b) => <option key={b} value={b}>{b === 'customer' ? 'Customer' : b === 'internal' ? 'Internal' : b === 'other' ? 'Other' : b}</option>)}
-                  </select>
+                  </Select>
                 </Field>
                 <Field label="Code" basis={170} req>
                   <input style={sheetInput} value={stdForm.code} onChange={(e) => setStdForm({ ...stdForm, code: e.target.value })} placeholder="e.g. IS 2062" autoFocus />
@@ -727,9 +726,9 @@ export default function DesignLibraryPage() {
                   )}
                 </Field>
                 <Field label="Discipline" basis={150}>
-                  <select style={sheetInput} value={partForm.discipline} onChange={(e) => setPartForm({ ...partForm, discipline: e.target.value })}>
+                  <Select style={sheetInput} value={partForm.discipline} onChange={(e) => setPartForm({ ...partForm, discipline: e.target.value })}>
                     {Object.entries(DISCIPLINE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </Field>
               </div>
             </SheetSection>
@@ -778,9 +777,9 @@ export default function DesignLibraryPage() {
                   <input style={sheetInput} value={makeForm.part_number} onChange={(e) => setMakeForm({ ...makeForm, part_number: e.target.value })} placeholder="e.g. 6205-2RS" />
                 </Field>
                 <Field label="Status" basis={140}>
-                  <select style={sheetInput} value={makeForm.status} onChange={(e) => setMakeForm({ ...makeForm, status: e.target.value })}>
+                  <Select style={sheetInput} value={makeForm.status} onChange={(e) => setMakeForm({ ...makeForm, status: e.target.value })}>
                     {Object.entries(MAKE_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </Field>
               </div>
               <p style={sheetHint}>Withdraw a make (rather than delete it) to keep the record of why it was dropped.</p>
@@ -805,9 +804,9 @@ export default function DesignLibraryPage() {
             <SheetSection icon="doc" title="Template">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
                 <Field label="Kind" basis={190}>
-                  <select style={sheetInput} value={tplForm.kind} onChange={(e) => setTplForm({ ...tplForm, kind: e.target.value })}>
+                  <Select style={sheetInput} value={tplForm.kind} onChange={(e) => setTplForm({ ...tplForm, kind: e.target.value })}>
                     {Object.entries(TEMPLATE_KIND_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </Field>
                 <Field label="Name" basis={240} grow req>
                   <input style={sheetInput} value={tplForm.name} onChange={(e) => setTplForm({ ...tplForm, name: e.target.value })} placeholder="e.g. A3 title block — 2026" autoFocus />
@@ -841,15 +840,15 @@ export default function DesignLibraryPage() {
                   <input style={sheetInput} value={clForm.name} onChange={(e) => setClForm({ ...clForm, name: e.target.value })} placeholder="e.g. Part drawing check — mechanical" autoFocus />
                 </Field>
                 <Field label="Document type" basis={180}>
-                  <select style={sheetInput} value={clForm.document_type} disabled={!!clForm.id} onChange={(e) => setClForm({ ...clForm, document_type: e.target.value })}>
+                  <Select style={sheetInput} value={clForm.document_type} disabled={!!clForm.id} onChange={(e) => setClForm({ ...clForm, document_type: e.target.value })}>
                     {Object.entries(CHECKLIST_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </Field>
                 <Field label="Discipline" basis={170}>
-                  <select style={sheetInput} value={clForm.discipline} onChange={(e) => setClForm({ ...clForm, discipline: e.target.value })}>
+                  <Select style={sheetInput} value={clForm.discipline} onChange={(e) => setClForm({ ...clForm, discipline: e.target.value })}>
                     <option value="">All disciplines</option>
                     {Object.entries(DISCIPLINE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </Field>
               </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: SHEET.BODY, cursor: 'pointer', marginTop: 12 }}>

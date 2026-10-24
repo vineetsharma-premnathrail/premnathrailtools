@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react'
 import { poReportsApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
@@ -58,8 +58,9 @@ function POHistoryDialog({ poId, onClose }: { poId: number; onClose: () => void 
               {l.summary && <span style={{ color: TEXT.muted }}>Delivered {l.summary.delivered_qty} · Invoiced {l.summary.invoiced_qty} · Open {l.summary.open_qty}</span>}
             </div>
             {l.events.length === 0 ? <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Nothing received or invoiced yet.</p> : (
+              <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
-                <thead><tr>{['Document', 'No.', 'Date', 'Status', 'Qty', 'Details'].map((h) => <th key={h} style={{ ...th, position: 'static' }}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Document', 'No.', 'Date', 'Status', 'Qty', 'Details'].map((h) => <th key={h} style={{ ...th, position: 'static', ...(h === 'Qty' ? { textAlign: 'right' } : {}) }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {l.events.map((e: any, i: number) => (
                     <tr key={i}>
@@ -67,7 +68,7 @@ function POHistoryDialog({ poId, onClose }: { poId: number; onClose: () => void 
                       <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{e.document_number}</td>
                       <td style={td}>{e.date || '—'}</td>
                       <td style={td}>{e.status || '—'}</td>
-                      <td style={td}>{e.quantity}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>{e.quantity}</td>
                       <td style={{ ...td, whiteSpace: 'normal' }}>
                         {e.type === 'grn' && [
                           e.accepted != null ? `accepted ${e.accepted}` : null, e.rejected ? `rejected ${e.rejected}` : null,
@@ -82,6 +83,7 @@ function POHistoryDialog({ poId, onClose }: { poId: number; onClose: () => void 
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         ))}
@@ -145,7 +147,7 @@ export default function POOpenItems() {
         <div style={{ display: 'flex', gap: 4 }}>
           {([['po', 'By PO line'], ['vendor', 'By vendor'], ['item', 'By item']] as [Group, string][]).map(([k, label]) => (
             <button key={k} type="button" onClick={() => setGroup(k)}
-              style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12, background: group === k ? 'rgba(255,122,69,0.12)' : undefined, color: group === k ? '#c2410c' : undefined }}>{label}</button>
+              style={{ ...smallSecondaryBtnStyle, background: group === k ? 'rgba(255,122,69,0.12)' : undefined, color: group === k ? '#c2410c' : undefined }}>{label}</button>
           ))}
         </div>
         <input style={{ ...inputStyle, flex: '1 1 180px', maxWidth: 260, width: 'auto' }} placeholder="Vendor" value={vendor} onChange={(e) => setVendor(e.target.value)} />

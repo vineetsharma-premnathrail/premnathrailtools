@@ -25,6 +25,7 @@ import {
 import { recordHref } from '@/lib/recordRef'
 import { useDocCurrency } from '@/components/finance/DocCurrencyFields'
 import FinanceAttachments, { ProofPicker, PickedProof, uploadPickedProof, useProofCounts, ProofClip, useProofRules } from '@/components/finance/FinanceAttachments'
+import Select from '@/components/shared/Select'
 
 type Errors = string | string[]
 
@@ -91,6 +92,7 @@ function LinesTable({ lines, interstate }: { lines: TaxLine[]; interstate: boole
   const num: React.CSSProperties = { ...numTd, padding: '6px 10px', fontSize: 12 }
   const th: React.CSSProperties = { ...thStyle, position: 'static', background: 'transparent', padding: '6px 10px' }
   return (
+    <div style={{ overflowX: 'auto' }}>
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead>
         <tr>
@@ -118,6 +120,7 @@ function LinesTable({ lines, interstate }: { lines: TaxLine[]; interstate: boole
         ))}
       </tbody>
     </table>
+    </div>
   )
 }
 
@@ -125,6 +128,7 @@ function SettlementList({ rows }: { rows: Settlement[] | undefined }) {
   if (!rows) return <div style={{ fontSize: 12, color: TEXT.muted }}>Loading settlements…</div>
   if (rows.length === 0) return <div style={{ fontSize: 12, color: TEXT.muted }}>Nothing settled against this bill yet.</div>
   return (
+    <div style={{ overflowX: 'auto' }}>
     <table style={{ borderCollapse: 'collapse', minWidth: 420 }}>
       <tbody>
         {rows.map((s) => (
@@ -136,6 +140,7 @@ function SettlementList({ rows }: { rows: Settlement[] | undefined }) {
         ))}
       </tbody>
     </table>
+    </div>
   )
 }
 
@@ -264,19 +269,19 @@ function InvoicesTab(ctx: Ctx) {
 
       <div data-tour="fin-pinv-list" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14, alignItems: 'flex-end' }}>
         <Field label="Status" style={{ flex: '0 1 150px' }} tour="fin-pinv-status">
-          <select style={inputStyle} value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
+          <Select style={inputStyle} value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
             <option value="">All</option><option value="pending">Pending</option><option value="posted">Posted</option><option value="cancelled">Cancelled</option>
-          </select>
+          </Select>
         </Field>
         <Field label="Payment" style={{ flex: '0 1 150px' }} tour="fin-pinv-payment">
-          <select style={inputStyle} value={fPay} onChange={(e) => setFPay(e.target.value)}>
+          <Select style={inputStyle} value={fPay} onChange={(e) => setFPay(e.target.value)}>
             <option value="">All</option><option value="pending">Unpaid</option><option value="partial">Part paid</option><option value="paid">Paid</option>
-          </select>
+          </Select>
         </Field>
         <Field label="Type" style={{ flex: '0 1 150px' }} tour="fin-pinv-type">
-          <select style={inputStyle} value={fType} onChange={(e) => setFType(e.target.value)}>
+          <Select style={inputStyle} value={fType} onChange={(e) => setFType(e.target.value)}>
             <option value="">All</option><option value="po">Against PO</option><option value="direct">Direct</option><option value="opening">Opening</option>
-          </select>
+          </Select>
         </Field>
         <Field label="Vendor" style={{ flex: '1 1 260px', maxWidth: 360 }} tour="fin-pinv-vendor-filter">
           <SearchableSelect value={fVendor} onChange={setFVendor} options={vendorOptions} placeholder="All vendors" />
@@ -564,10 +569,10 @@ function PurchaseInvoiceForm({ setup, ledgers, rates, vendors, pos, onSaved, onC
             </SRow>
             <SRow mb={0}>
               <SField label="Place of supply" req style={sw(240)} tour="fin-pinv-pos">
-                <select style={sheetInput} value={placeOfSupply} onChange={(e) => setPlaceOfSupply(e.target.value)}>
+                <Select style={sheetInput} value={placeOfSupply} onChange={(e) => setPlaceOfSupply(e.target.value)}>
                   {!placeOfSupply && <option value="">— select —</option>}
                   {stateEntries.map(([c, n]) => <option key={c} value={c}>{c} — {n}</option>)}
-                </select>
+                </Select>
               </SField>
               {docCur.fields}
             </SRow>
@@ -626,10 +631,10 @@ function PurchaseInvoiceForm({ setup, ledgers, rates, vendors, pos, onSaved, onC
               {lines.map((l, i) => (
                 <div key={l.key} style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 12.5, color: SHEET.BODY, minWidth: 180 }}>Line {i + 1}{l.description ? ` — ${l.description}` : ''}</span>
-                  <select style={{ ...sheetInput, maxWidth: 360 }} value={l.po_item_id ? String(l.po_item_id) : ''} onChange={(e) => setLinePoItem(l.key, e.target.value)}>
+                  <Select style={{ ...sheetInput, maxWidth: 360 }} value={l.po_item_id ? String(l.po_item_id) : ''} onChange={(e) => setLinePoItem(l.key, e.target.value)}>
                     <option value="">— pick the PO line —</option>
                     {(po.items || []).map((it) => <option key={it.id} value={it.id}>{it.item_name} · {it.quantity} {it.unit || ''} @ {it.unit_price ?? '—'}</option>)}
-                  </select>
+                  </Select>
                 </div>
               ))}
             </div>
@@ -912,9 +917,9 @@ function DebitNoteForm({ setup, ledgers, rates, vendors, onSaved, onCancel }: Ct
                 <DateField value={noteDate} onChange={setNoteDate} />
               </SField>
               <SField label="Reason" req style={sw(220)} tour="fin-dn-reason">
-                <select style={sheetInput} value={reason} onChange={(e) => setReason(e.target.value)}>
+                <Select style={sheetInput} value={reason} onChange={(e) => setReason(e.target.value)}>
                   {Object.entries(REASON_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+                </Select>
               </SField>
             </SRow>
           </SheetSection>

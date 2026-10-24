@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Calendar, CaretDown, CaretLeft, CaretRight, CaretUp, ChatCircle, Check, Clock, ClockCounterClockwise, Flag, Gear, LinkSimple, ListChecks, MagnifyingGlass, Package, Paperclip, PencilSimple, Plus, Star, Tag, Target, Trash, Truck, User, WarningCircle, X } from '@phosphor-icons/react'
 import type { Icon as PhosphorIcon } from '@phosphor-icons/react'
@@ -599,11 +600,11 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
                   ) : (
                     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                       <div style={{ flex: '0 1 200px' }}>
-                        <select style={sheetInput} value={msForm.status} onChange={(e) => setMsForm({ ...msForm, status: e.target.value })}>
+                        <Select style={sheetInput} value={msForm.status} onChange={(e) => setMsForm({ ...msForm, status: e.target.value })}>
                           <option value="todo">Not Started</option>
                           <option value="in_progress">In Progress</option>
                           <option value="blocked">On Hold</option>
-                        </select>
+                        </Select>
                       </div>
                       {msForm.status === 'blocked' && (
                         <div style={{ flex: '1 1 220px' }}>
@@ -717,15 +718,15 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
                   <div style={{ flex: '1 1 130px' }}>
                     <label style={sheetLabel}>Priority</label>
-                    <select style={sheetInput} value={taskForm.priority} onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })}>
+                    <Select style={sheetInput} value={taskForm.priority} onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })}>
                       {Object.entries(PRIORITY).map(([k, v]) => <option key={k} value={k}>{v.text}</option>)}
-                    </select>
+                    </Select>
                   </div>
                   <div style={{ flex: '1 1 140px' }}>
                     <label style={sheetLabel}>Status</label>
-                    <select style={sheetInput} value={taskForm.status} onChange={(e) => setTaskForm({ ...taskForm, status: e.target.value })}>
+                    <Select style={sheetInput} value={taskForm.status} onChange={(e) => setTaskForm({ ...taskForm, status: e.target.value })}>
                       {SUB_STATUS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                    </select>
+                    </Select>
                   </div>
                 </div>
               </SheetSection>
@@ -957,7 +958,7 @@ function MilestonePanel(props: {
           </div>
           <div style={{ fontSize: 12.5, color: MUTED, marginTop: 4 }}>{msDone(m)} / {msTotal(m)} Tasks Completed</div>
         </div>
-        <button type="button" onClick={props.onClose} aria-label="Close milestone" title="Back to all milestones" style={{ ...btn('secondary'), borderRadius: 999 }}><Icon name="up" size={16} /> Back</button>
+        <button type="button" onClick={props.onClose} aria-label="Close milestone" title="Back to all milestones" style={btn('secondary')}>← Back</button>
       </div>
 
       {/* Milestone actions */}

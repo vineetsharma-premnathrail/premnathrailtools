@@ -15,6 +15,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import Select from '@/components/shared/Select'
 
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '9px 12px', fontSize: 11.5, fontWeight: 600, color: SHEET.MUTED, background: SHEET.SOFT, borderBottom: `1px solid ${SHEET.LINE}`, whiteSpace: 'nowrap' }
 const tdStyle: React.CSSProperties = { padding: '9px 12px', fontSize: 13, color: SHEET.BODY, borderBottom: `1px solid ${SHEET.LINE}` }
@@ -164,12 +165,12 @@ export default function NewWorkOrderPage() {
                 </div>
                 <div data-tour="production-wo-new-priority" style={{ flex: '1 1 140px' }}>
                   <label style={sheetLabel}>Priority</label>
-                  <select style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value)}>
+                  <Select style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value)}>
                     <option value="low">Low</option>
                     <option value="normal">Normal</option>
                     <option value="high">High</option>
                     <option value="urgent">Urgent</option>
-                  </select>
+                  </Select>
                 </div>
               </div>
             </SheetSection>

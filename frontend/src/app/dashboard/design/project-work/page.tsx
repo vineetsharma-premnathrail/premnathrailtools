@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -10,7 +11,7 @@ import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { PRIORITY_LABELS, REQUEST_SOURCE_LABELS, REQUEST_STATUS_LABELS, toOptions } from '@/components/design/designMeta'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
@@ -227,7 +228,7 @@ export default function DesignRequestsPage() {
           type="button"
           data-tour="design-req-new-btn"
           onClick={() => { setForm({ ...EMPTY_FORM }); setFormError(''); setFormOpen(true) }}
-          style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}
+          style={primaryBtnStyle}
         >
           + New Request
         </button>
@@ -254,15 +255,15 @@ export default function DesignRequestsPage() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                   <div data-tour="design-reqnew-source" style={{ flex: '1 1 170px', maxWidth: 220 }}>
                     <label style={sheetLabel}>Source <Req /></label>
-                    <select style={sheetInput} value={form.source} onChange={(e) => set({ source: e.target.value, crm_record_id: '' })}>
+                    <Select style={sheetInput} value={form.source} onChange={(e) => set({ source: e.target.value, crm_record_id: '' })}>
                       {Object.entries(REQUEST_SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                    </select>
+                    </Select>
                   </div>
                   <div data-tour="design-reqnew-priority" style={{ flex: '0 1 130px', minWidth: 120 }}>
                     <label style={sheetLabel}>Priority</label>
-                    <select style={sheetInput} value={form.priority} onChange={(e) => set({ priority: e.target.value })}>
+                    <Select style={sheetInput} value={form.priority} onChange={(e) => set({ priority: e.target.value })}>
                       {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                    </select>
+                    </Select>
                   </div>
                   <div data-tour="design-reqnew-due" style={{ flex: '0 1 160px', minWidth: 150 }}>
                     <label style={sheetLabel}>Due date <Optional /></label>
@@ -286,10 +287,10 @@ export default function DesignRequestsPage() {
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                     <div data-tour="design-reqnew-crm-kind" style={{ flex: '0 1 120px', minWidth: 110 }}>
                       <label style={sheetLabel}>Record</label>
-                      <select style={sheetInput} value={form.crm_source} onChange={(e) => set({ crm_source: e.target.value, crm_record_id: '' })}>
+                      <Select style={sheetInput} value={form.crm_source} onChange={(e) => set({ crm_source: e.target.value, crm_record_id: '' })}>
                         <option value="inquiry">Inquiry</option>
                         <option value="tender">Tender</option>
-                      </select>
+                      </Select>
                     </div>
                     <div data-tour="design-reqnew-crm-record" style={{ flex: '1 1 160px', minWidth: 0 }}>
                       <label style={sheetLabel}>{form.crm_source === 'tender' ? 'Tender' : 'Inquiry'} <Optional /></label>
@@ -356,15 +357,15 @@ export default function DesignRequestsPage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input data-tour="design-reqs-search" style={{ ...filterInput, flex: '1 1 260px', minWidth: 200, maxWidth: 400 }} placeholder="Search by request number, title or CRM reference…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select data-tour="design-reqs-source" style={{ ...filterInput, flex: '0 1 170px' }} value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+        <Select data-tour="design-reqs-source" style={{ ...filterInput, flex: '0 1 170px' }} value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
           <option value="">All sources</option>
           {Object.entries(REQUEST_SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select data-tour="design-reqs-waiting" style={{ ...filterInput, flex: '0 1 190px' }} value={waitingFilter} onChange={(e) => setWaitingFilter(e.target.value)}>
+        </Select>
+        <Select data-tour="design-reqs-waiting" style={{ ...filterInput, flex: '0 1 190px' }} value={waitingFilter} onChange={(e) => setWaitingFilter(e.target.value)}>
           <option value="">Waiting on anyone</option>
           <option value="design">Waiting on Design</option>
           <option value="requester">Waiting on requester</option>
-        </select>
+        </Select>
         <div data-tour="design-reqs-order-project" style={{ flex: '0 1 280px', minWidth: 220 }}>
           <OrderProjectPicker value={opFilter} requireElement={false} placeholder="All order projects" onChange={(v) => setOpFilter(v ? { projectId: v.projectId, elementId: null } : null)} />
         </div>
@@ -373,7 +374,7 @@ export default function DesignRequestsPage() {
         </label>
         <span style={{ fontSize: 12, color: TEXT.muted }}>{loading ? '' : `${requests.length} request${requests.length === 1 ? '' : 's'}`}</span>
         <span style={{ flex: 1 }} />
-        <button type="button" data-tour="design-reqs-refresh-btn" style={{ ...secondaryBtnStyle, padding: '7px 14px', fontSize: 12.5 }} onClick={() => setReload((n) => n + 1)}>Refresh</button>
+        <button type="button" data-tour="design-reqs-refresh-btn" style={{ ...smallSecondaryBtnStyle }} onClick={() => setReload((n) => n + 1)}>Refresh</button>
       </div>
 
       <div data-tour="design-reqs-table" style={{

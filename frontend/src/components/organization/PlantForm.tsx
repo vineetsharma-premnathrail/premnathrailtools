@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { organizationApi, usersApi } from '@/lib/api'
 import { Branch, Company, DirectoryUser } from '@/types'
@@ -136,20 +137,20 @@ export default function PlantForm({ title, subtitle, nav, tabBar, initial, submi
             </div>
             <div style={rowStyle}>
               <F label="Company" req basis={260} max={360}>
-                <select data-tour="org-plant-company" style={sheetInput} value={form.company_id || ''} onChange={(e) => setField('company_id', e.target.value ? Number(e.target.value) : null)}>
+                <Select data-tour="org-plant-company" style={sheetInput} value={form.company_id || ''} onChange={(e) => setField('company_id', e.target.value ? Number(e.target.value) : null)}>
                   <option value="">— Select —</option>
                   {company && <option value={company.id}>{company.name}</option>}
-                </select>
+                </Select>
               </F>
               <F label="Branch Type" req basis={200} max={280}>
                 <input data-tour="org-plant-type" style={sheetInput} value={form.plant_type || ''} onChange={(e) => setField('plant_type', e.target.value)} placeholder="Manufacturing" />
               </F>
               <F label="Branch Status" req basis={180} max={240}>
-                <select data-tour="org-plant-status" style={sheetInput} value={form.status || 'active'} onChange={(e) => setField('status', e.target.value)}>
+                <Select data-tour="org-plant-status" style={sheetInput} value={form.status || 'active'} onChange={(e) => setField('status', e.target.value)}>
                   {Object.entries(PLANT_STATUS_LABELS).map(([val, label]) => (
                     <option key={val} value={val}>{label}</option>
                   ))}
-                </select>
+                </Select>
               </F>
             </div>
             <div style={{ ...rowStyle, marginBottom: 0 }}>
@@ -162,16 +163,16 @@ export default function PlantForm({ title, subtitle, nav, tabBar, initial, submi
           <SheetSection icon="users" title="People">
             <div style={{ ...rowStyle, marginBottom: 0 }}>
               <F label="Branch Head" basis={240} max={340}>
-                <select data-tour="org-plant-head" style={sheetInput} value={form.head_user_id || ''} onChange={(e) => setField('head_user_id', e.target.value ? Number(e.target.value) : null)}>
+                <Select data-tour="org-plant-head" style={sheetInput} value={form.head_user_id || ''} onChange={(e) => setField('head_user_id', e.target.value ? Number(e.target.value) : null)}>
                   <option value="">— Select —</option>
                   {directory.map(userOption)}
-                </select>
+                </Select>
               </F>
               <F label="Branch Manager" basis={240} max={340}>
-                <select data-tour="org-plant-manager" style={sheetInput} value={form.manager_user_id || ''} onChange={(e) => setField('manager_user_id', e.target.value ? Number(e.target.value) : null)}>
+                <Select data-tour="org-plant-manager" style={sheetInput} value={form.manager_user_id || ''} onChange={(e) => setField('manager_user_id', e.target.value ? Number(e.target.value) : null)}>
                   <option value="">— Select —</option>
                   {directory.map(userOption)}
-                </select>
+                </Select>
               </F>
             </div>
           </SheetSection>

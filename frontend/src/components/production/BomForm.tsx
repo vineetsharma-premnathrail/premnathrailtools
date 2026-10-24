@@ -10,6 +10,7 @@ import DateField from '@/components/erp/DateField'
 import { productionEngineeringLookups } from '@/lib/productionEngineeringApi'
 import { useCan } from '@/lib/permissions'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import Select from '@/components/shared/Select'
 
 // SAP item categories (CS01): stock = reserved + issued from Store;
 // non-stock = bought directly for the order; text / document = information lines.
@@ -245,9 +246,9 @@ export default function BomForm({
                 <div key={r.key} style={rowStyle}>
                   <div style={{ flex: '0 1 130px', minWidth: 120 }}>
                     <label style={labelStyle}>Category</label>
-                    <select style={inputStyle} value={r.item_category} onChange={(e) => updateItem(r.key, { item_category: e.target.value })}>
+                    <Select style={inputStyle} value={r.item_category} onChange={(e) => updateItem(r.key, { item_category: e.target.value })}>
                       {Object.entries(CATEGORY_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
+                    </Select>
                   </div>
                   {r.item_category === 'text' ? (
                     <div style={{ flex: '1 1 300px', maxWidth: 560 }}>
@@ -322,18 +323,18 @@ export default function BomForm({
                   </div>
                   <div style={{ flex: '0 1 130px', minWidth: 120 }}>
                     <label style={labelStyle}>Control key</label>
-                    <select style={inputStyle} value={o.control_key} onChange={(e) => updateOp(o.key, { control_key: e.target.value })}>
+                    <Select style={inputStyle} value={o.control_key} onChange={(e) => updateOp(o.key, { control_key: e.target.value })}>
                       <option value="internal">Internal</option>
                       <option value="external">External (job work)</option>
-                    </select>
+                    </Select>
                   </div>
                   <div style={{ flex: '0 1 140px', minWidth: 130 }}>
                     <label style={labelStyle}>Confirmation</label>
-                    <select style={inputStyle} value={o.confirmation} onChange={(e) => updateOp(o.key, { confirmation: e.target.value })}>
+                    <Select style={inputStyle} value={o.confirmation} onChange={(e) => updateOp(o.key, { confirmation: e.target.value })}>
                       <option value="optional">Optional</option>
                       <option value="required">Required</option>
                       <option value="none">None (milestone)</option>
-                    </select>
+                    </Select>
                   </div>
                   <div style={{ flex: '0 1 100px', minWidth: 90, display: 'flex', flexDirection: 'column' }}>
                     <label style={labelStyle}>Print</label>

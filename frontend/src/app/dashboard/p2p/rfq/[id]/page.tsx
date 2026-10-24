@@ -311,7 +311,7 @@ export default function RfqDetailPage() {
       {seeVendorQuotes && !hasInvites && (
       <div data-tour="rfq-detail-vendor-quotations" style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Supplier / Vendor Quotations</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
           {(['L1', 'L2', 'L3', 'L4'] as const).map((tier) => {
             const attachment = rfq.attachments.find((a) => a.vendor_tier === tier)
             if (!attachment) return null
@@ -381,7 +381,7 @@ export default function RfqDetailPage() {
             ) : (
               <>
                 {poDraft && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14, marginBottom: 14 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 14 }}>
                     <InfoRow label="PO Number" value={poDraft.po_number} />
                     <InfoRow label="Vendor" value={poDraft.vendor_name || '—'} />
                   </div>
@@ -404,7 +404,7 @@ export default function RfqDetailPage() {
           {['po_raised', 'po_approved', 'partially_received', 'received', 'closed'].includes(rfq.p2p_status) && (
             <div>
               {poDraft?.po_number && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14, marginBottom: 14 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 14 }}>
                   <InfoRow label="PO Number" value={poDraft.po_number} />
                   <InfoRow label="Vendor" value={poDraft.vendor_name || '—'} />
                   {seePoPrices && <InfoRow label="PO Value (incl. tax)" value={poDraft.total_value != null ? poDraft.total_value.toFixed(2) : '—'} />}
@@ -461,7 +461,7 @@ export default function RfqDetailPage() {
           {rfq.is_single_quotation && (
             <div data-tour="rfq-detail-single-quotation" style={sectionStyle}>
               <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Single Quotation</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
                 <InfoRow label="Reason for Single Quotation" value={rfq.single_quotation_reason || '—'} />
                 <InfoRow label="Comments" value={rfq.comments || '—'} />
               </div>
@@ -470,7 +470,7 @@ export default function RfqDetailPage() {
 
           <div data-tour="rfq-detail-commercial-terms" style={sectionStyle}>
             <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>{hasInvites ? 'Commercial Terms' : 'L1 Vendor Commercial Terms'}</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
               {/* Emailed RFQs: payment terms and delivery come with each vendor's quote. */}
               {!hasInvites && <InfoRow label="Payment Terms" value={rfq.payment_terms || '—'} />}
               {!hasInvites && <InfoRow label="Delivery Lead Time" value={rfq.delivery_lead_time || '—'} />}
@@ -483,7 +483,7 @@ export default function RfqDetailPage() {
 
       <div data-tour="rfq-detail-meta" style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Details</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
           <InfoRow label="Created By" value={rfq.created_by_name || '—'} />
           <InfoRow label="Created At" value={formatDateTime(rfq.created_at)} />
           <InfoRow label="Locked At" value={formatDateTime(rfq.locked_at)} />

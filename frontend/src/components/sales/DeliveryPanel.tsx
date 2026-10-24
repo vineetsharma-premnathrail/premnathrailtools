@@ -4,6 +4,7 @@
 // RRV build (link / unlink), production stage, contractual vs current date,
 // accrued and forecast LD; plus DP-extension requests and their decisions.
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useState } from 'react'
 import { SalesOrder, SalesExtension, SalesOrderSchedule } from '@/types'
 import { salesApi } from '@/lib/api'
@@ -13,7 +14,7 @@ import { formatDate } from '@/lib/format'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import { sectionStyle, h2Style, thStyle, tdStyle, Pill, ErrorBanner } from '@/components/sales/SalesUi'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
@@ -23,7 +24,7 @@ import { recordPath } from '@/lib/recordRef'
 import DeliveryConfirmPanel from '@/components/sales/DeliveryConfirmPanel'
 
 type Build = { id: number; build_number: string; rrv_model: string; status: string }
-const smallBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '5px 10px', fontSize: 11.5 }
+const smallBtn: React.CSSProperties = { ...smallSecondaryBtnStyle }
 
 export default function DeliveryPanel({ order, onChange }: { order: SalesOrder; onChange: (o: SalesOrder) => void }) {
   const [error, setError] = useState<string | string[]>('')
@@ -141,9 +142,9 @@ export default function DeliveryPanel({ order, onChange }: { order: SalesOrder; 
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ flex: '0 1 170px', minWidth: 150 }}><label style={sheetLabel}>New date requested</label><DateField value={extForm.date} onChange={(v) => setExtForm({ ...extForm, date: v })} /></div>
                   <div style={{ flex: '1 1 240px', minWidth: 200, maxWidth: 320 }}><label style={sheetLabel}>Reason category</label>
-                    <select style={sheetInput} value={extForm.cat} onChange={(e) => setExtForm({ ...extForm, cat: e.target.value })}>
+                    <Select style={sheetInput} value={extForm.cat} onChange={(e) => setExtForm({ ...extForm, cat: e.target.value })}>
                       {Object.entries(EXTENSION_REASON_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                    </select></div>
+                    </Select></div>
                 </div>
                 <label style={{ ...sheetLabel, marginTop: 14 }}>Reason</label>
                 <textarea style={{ ...sheetInput, minHeight: 64, resize: 'vertical' }} value={extForm.reason} onChange={(e) => setExtForm({ ...extForm, reason: e.target.value })} />
@@ -153,28 +154,30 @@ export default function DeliveryPanel({ order, onChange }: { order: SalesOrder; 
           </FormSheet>
         )}
         {exts.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No DP extensions on this order.</p> : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['Vehicles', 'Requested', 'Reason', 'Status', 'Granted', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
-            <tbody>
-              {exts.map((e) => (
-                <tr key={e.id}>
-                  <td style={tdStyle}>{e.vehicles.join(', ')}</td>
-                  <td style={tdStyle}>{formatDate(e.requested_new_date)}</td>
-                  <td style={tdStyle}>{EXTENSION_REASON_LABELS[e.reason_category]}: {e.reason}</td>
-                  <td style={tdStyle}><Pill label={e.status_label || e.status} hex={e.status === 'granted' ? '#16A34A' : e.status_label === 'Closed (order ended)' ? '#78716c' : e.status === 'refused' ? '#DC2626' : '#F59E0B'} /></td>
-                  <td style={tdStyle}>{e.granted_new_date ? `${formatDate(e.granted_new_date)} ${e.with_ld ? 'with LD' : 'without LD'} · ${e.customer_letter_ref || ''}` : e.decision_remarks || '—'}</td>
-                  <td style={tdStyle}>
-                    {e.status === 'requested' && order.can.decide_extension && (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button style={smallBtn} onClick={() => { setSheetError(''); setGrantFor(e); setGrant({ date: e.requested_new_date, withLd: false, letter: '', letterDate: '' }) }}>Granted</button>
-                        <button style={{ ...smallBtn, color: '#DC2626' }} onClick={() => setRefuseFor(e)}>Refused</button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr>{['Vehicles', 'Requested', 'Reason', 'Status', 'Granted', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <tbody>
+                {exts.map((e) => (
+                  <tr key={e.id}>
+                    <td style={tdStyle}>{e.vehicles.join(', ')}</td>
+                    <td style={tdStyle}>{formatDate(e.requested_new_date)}</td>
+                    <td style={tdStyle}>{EXTENSION_REASON_LABELS[e.reason_category]}: {e.reason}</td>
+                    <td style={tdStyle}><Pill label={e.status_label || e.status} hex={e.status === 'granted' ? '#16A34A' : e.status_label === 'Closed (order ended)' ? '#78716c' : e.status === 'refused' ? '#DC2626' : '#F59E0B'} /></td>
+                    <td style={tdStyle}>{e.granted_new_date ? `${formatDate(e.granted_new_date)} ${e.with_ld ? 'with LD' : 'without LD'} · ${e.customer_letter_ref || ''}` : e.decision_remarks || '—'}</td>
+                    <td style={tdStyle}>
+                      {e.status === 'requested' && order.can.decide_extension && (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button style={smallBtn} onClick={() => { setSheetError(''); setGrantFor(e); setGrant({ date: e.requested_new_date, withLd: false, letter: '', letterDate: '' }) }}>Granted</button>
+                          <button style={{ ...smallBtn, color: '#DC2626' }} onClick={() => setRefuseFor(e)}>Refused</button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
         {grantFor && (
           <FormSheet tour="sales-ext-grant-form" width={580} icon="check" iconColor="#16A34A" title="Customer Granted the Extension" subtitle={`Vehicles ${grantFor.vehicles.join(', ')} — record the customer's grant letter`}

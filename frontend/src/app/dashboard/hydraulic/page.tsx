@@ -7,8 +7,8 @@ import { useCan } from '@/lib/permissions'
 import { hydraulicApi } from '@/lib/api'
 import { recordPath } from '@/lib/recordRef'
 import { HydDashboard } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { secondaryBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import { TEST_TYPE_LABELS } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
@@ -90,11 +90,7 @@ export default function HydraulicDashboardPage() {
               data-tour="hyd-dash-new-system-btn"
               type="button"
               onClick={go('/systems/new')}
-              style={{
-                padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-                background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-                boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-              }}
+              style={{ ...primaryBtnStyle, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}
             >
               + New System
             </button>

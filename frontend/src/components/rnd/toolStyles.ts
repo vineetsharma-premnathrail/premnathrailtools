@@ -1,12 +1,10 @@
 import type { CSSProperties } from 'react'
 import axios from 'axios'
 import { extractErrorMessages } from '@/lib/validation'
-import { COLORS, RADII, BORDERS, GLASS, SHADOWS, BRAND } from '@/lib/theme'
+import { COLORS, RADII, GLASS, SHADOWS, BRAND } from '@/lib/theme'
+import { inputStyle as sharedInput, btnBase, smallBtnSize } from '@/components/shared/ui'
 
-export const inputStyle: CSSProperties = {
-  padding: '10px 12px', borderRadius: RADII.lg, border: BORDERS.slate, fontSize: 13, width: '100%', maxWidth: 260, boxSizing: 'border-box',
-  background: COLORS.surface, outline: 'none',
-}
+export const inputStyle: CSSProperties = { ...sharedInput, maxWidth: 260 }
 export const labelStyle: CSSProperties = {
   fontSize: 11, fontWeight: 600, color: COLORS.textFaint2, textTransform: 'uppercase', letterSpacing: '.04em', display: 'block', marginBottom: 6,
 }
@@ -24,13 +22,13 @@ export const cardBodyStyle: CSSProperties = { padding: 16, display: 'grid', gap:
 export const radioLabelStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#475569', cursor: 'pointer' }
 
 export function smBtnStyle(bg: string, border: string, color: string): CSSProperties {
-  return { padding: '7px 12px', borderRadius: 6, border: `1px solid ${border}`, background: bg, color, fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }
+  return { ...btnBase, ...smallBtnSize, border: `1px solid ${border}`, background: bg, color }
 }
 
 export function calcButtonStyle(busy: boolean): CSSProperties {
   return {
-    padding: '11px 20px', borderRadius: 8, border: 'none', background: `linear-gradient(135deg,${BRAND.primary},${BRAND.primaryHover})`,
-    color: '#fff', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '.03em',
+    ...btnBase, border: '1px solid transparent', background: `linear-gradient(135deg,${BRAND.primary},${BRAND.primaryHover})`,
+    color: '#fff', textTransform: 'uppercase', letterSpacing: '.03em',
     cursor: busy ? 'default' : 'pointer', boxShadow: `0 4px 12px ${SHADOWS.glowOrange}`, opacity: busy ? 0.7 : 1,
   }
 }

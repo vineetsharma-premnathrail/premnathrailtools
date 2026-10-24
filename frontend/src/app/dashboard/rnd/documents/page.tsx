@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -84,7 +85,7 @@ function RndDocuments() {
             placeholder="All projects"
           />
         </div>
-        <select data-tour="rnd-docs-type-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+        <Select data-tour="rnd-docs-type-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
           <option value="">All types</option>
           <option value="specification">Specification</option>
           <option value="drawing">Drawing</option>
@@ -92,7 +93,7 @@ function RndDocuments() {
           <option value="research_note">Research Note</option>
           <option value="process_document">Process Document</option>
           <option value="other">Other</option>
-        </select>
+        </Select>
       </div>
 
       <RndDocumentsPanel

@@ -6,17 +6,18 @@ import { useCan } from '@/lib/permissions'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDateTime } from '@/lib/format'
 import { TEXT, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import PortalFormDialog from '@/components/maintenance/PortalFormDialog'
 import { SHEET, SheetSection, Optional, Req, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import Select from '@/components/shared/Select'
 
 const STATE_LABELS: Record<string, string> = { ok: 'Within limits', below_limit: 'Below limit', above_limit: 'Above limit' }
 const STATE_HEX: Record<string, string> = { ok: '#16A34A', below_limit: '#DC2626', above_limit: '#DC2626' }
 const SOURCE_LABELS: Record<string, string> = { manual: 'Manual', scan: 'QR scan', wo_completion: 'WO completion' }
 
-const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }
 const tdStyle: React.CSSProperties = { padding: '8px 10px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
-const smallBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }
+const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 const fmt = (v: number | null | undefined) => (v == null ? '—' : String(Number(v.toFixed(2))))
 
 /** IK01-IK17: the asset's main counter, extra measuring points with limits
@@ -148,10 +149,10 @@ export default function AssetReadingsPanel({ assetId, onChanged }: { assetId: nu
         onCancel={() => setReadOpen(false)} onConfirm={submitReading}>
         <SheetSection icon="gear" title="Reading">
           <label style={sheetLabel}>Measuring point</label>
-          <select style={sheetInput} value={rd.measuring_point_id} onChange={(e) => setRd({ ...rd, measuring_point_id: e.target.value })}>
+          <Select style={sheetInput} value={rd.measuring_point_id} onChange={(e) => setRd({ ...rd, measuring_point_id: e.target.value })}>
             {main?.meter_unit && <option value="">Main counter ({main.meter_unit})</option>}
             {(points?.points || []).filter((p) => p.is_active).map((p) => <option key={p.id} value={String(p.id)}>{p.name} ({p.unit})</option>)}
-          </select>
+          </Select>
           <div style={{ maxWidth: 200, marginTop: 14 }}>
             <label style={sheetLabel}>Reading <Req /></label>
             <input style={sheetInput} type="number" value={rd.reading} onChange={(e) => setRd({ ...rd, reading: e.target.value })} />

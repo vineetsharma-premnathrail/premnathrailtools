@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { hydraulicApi } from '@/lib/api'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
@@ -157,9 +158,9 @@ export default function SystemForm({
                     {SYSTEM_TYPE_LABELS[initial.system_type] || initial.system_type}
                   </div>
                 ) : (
-                  <select style={sheetInput} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
+                  <Select style={sheetInput} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
                     {Object.entries(SYSTEM_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 )}
               </Cell>
               <Cell basis={240} grow max={380}>
@@ -177,12 +178,12 @@ export default function SystemForm({
               </Cell>
               <Cell basis={170}>
                 <label style={sheetLabel}>Status</label>
-                <select data-tour="hyd-sys-status" style={sheetInput} value={status} onChange={(e) => setStatus(e.target.value)}>
+                <Select data-tour="hyd-sys-status" style={sheetInput} value={status} onChange={(e) => setStatus(e.target.value)}>
                   {Object.entries(SYSTEM_STATUS_LABELS)
                     // 'Under Maintenance' is retired (plan rule R5) — shown only on a record already in that status.
                     .filter(([k]) => k !== 'under_maintenance' || initial?.status === 'under_maintenance')
                     .map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+                </Select>
               </Cell>
             </div>
           </SheetSection>

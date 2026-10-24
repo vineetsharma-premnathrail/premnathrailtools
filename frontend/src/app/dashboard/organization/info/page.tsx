@@ -170,7 +170,7 @@ export default function OrganizationInfoPage() {
           {(tab === 'Basic' || !seeTab(tab)) && (
             <div style={sectionStyle} data-tour="org-info-basic-panel">
               <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Basic Information</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 10px))), 1fr))', gap: 20 }}>
                 <div><div style={labelStyle}>Company Name</div><div style={valueStyle}>{company.name}</div></div>
                 <div><div style={labelStyle}>Legal Name</div><div style={valueStyle}>{company.legal_name || '—'}</div></div>
                 <div><div style={labelStyle}>Short Name</div><div style={valueStyle}>{company.short_name || '—'}</div></div>
@@ -216,7 +216,7 @@ export default function OrganizationInfoPage() {
           {tab === 'Legal & Registration' && seeStatutory && (
             <div style={sectionStyle} data-tour="org-info-legal-panel">
               <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Legal & Registration</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 10px))), 1fr))', gap: 20 }}>
                 <div><div style={labelStyle}>Legal Entity Type</div><div style={valueStyle}>{company.legal_entity_type || '—'}</div></div>
                 <div><div style={labelStyle}>Legal Status</div><div style={valueStyle}>{company.legal_status || '—'}</div></div>
                 <div><div style={labelStyle}>CIN</div><div style={valueStyle}>{company.cin || '—'}</div></div>
@@ -243,7 +243,7 @@ export default function OrganizationInfoPage() {
           {tab === 'Tax Configuration' && seeStatutory && (
             <div style={sectionStyle} data-tour="org-info-tax-panel">
               <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Tax Configuration</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 10px))), 1fr))', gap: 20 }}>
                 <div><div style={labelStyle}>GST Registration Type</div><div style={valueStyle}>{company.gst_registration_type || '—'}</div></div>
                 <div><div style={labelStyle}>TDS Applicable</div><div style={valueStyle}>{company.tds_applicable ? 'Yes' : 'No'}</div></div>
                 <div><div style={labelStyle}>TCS Applicable</div><div style={valueStyle}>{company.tcs_applicable ? 'Yes' : 'No'}</div></div>
@@ -310,7 +310,7 @@ export default function OrganizationInfoPage() {
           {tab === 'Branding' && (
             <div style={sectionStyle} data-tour="org-info-branding-panel">
               <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Branding</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 10px))), 1fr))', gap: 20 }}>
                 <div><div style={labelStyle}>Company Logo</div><div style={valueStyle}>{company.logo_url || '—'}</div></div>
                 <div>
                   <div style={labelStyle}>Primary Brand Color</div>
@@ -373,7 +373,7 @@ export default function OrganizationInfoPage() {
           {tab === 'Defaults & Controls' && (
             <div style={sectionStyle} data-tour="org-info-defaults-panel">
               <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Company Defaults & Controls</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 10px))), 1fr))', gap: 20 }}>
                 <div><div style={labelStyle}>Default Tax</div><div style={valueStyle}>{company.default_tax || '—'}</div></div>
                 <div><div style={labelStyle}>Default Plant</div><div style={valueStyle}>{company.default_plant_id ? `#${company.default_plant_id}` : '—'}</div></div>
                 <div><div style={labelStyle}>Default Store</div><div style={valueStyle}>{company.default_warehouse_id ? `#${company.default_warehouse_id}` : '—'}</div></div>

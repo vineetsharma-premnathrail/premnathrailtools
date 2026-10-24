@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { electricalApi } from '@/lib/api'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
@@ -363,9 +364,9 @@ export default function IssuesTab({ job, meta, canEdit, onChanged }: { job: Elec
                   <input style={sheetInput} value={form.title} maxLength={255} placeholder="e.g. Tail lamp flickers under load" onChange={(e) => set('title', e.target.value)} />
                 </F>
                 <F tour="elec-issue-severity" label="Severity" basis={130}>
-                  <select style={sheetInput} value={form.severity} onChange={(e) => set('severity', e.target.value as ElectricalIssueSeverity)}>
+                  <Select style={sheetInput} value={form.severity} onChange={(e) => set('severity', e.target.value as ElectricalIssueSeverity)}>
                     {Object.entries(SEVERITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  </Select>
                 </F>
               </div>
               <div data-tour="elec-issue-symptom">
@@ -384,18 +385,18 @@ export default function IssuesTab({ job, meta, canEdit, onChanged }: { job: Elec
             <SheetSection icon="link" title="Where It Was Found" extra={<Optional />}>
               <div style={rowStyle}>
                 <F tour="elec-issue-test" label="Linked Test" basis={240} grow>
-                  <select style={sheetInput} value={form.test_id} onChange={(e) => set('test_id', e.target.value)}>
+                  <Select style={sheetInput} value={form.test_id} onChange={(e) => set('test_id', e.target.value)}>
                     <option value="">— None —</option>
                     {testOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                  </Select>
                 </F>
               </div>
               <div style={rowStyle}>
                 <F tour="elec-issue-panel" label="Panel" basis={240} grow>
-                  <select style={sheetInput} value={form.panel_id} onChange={(e) => set('panel_id', e.target.value)}>
+                  <Select style={sheetInput} value={form.panel_id} onChange={(e) => set('panel_id', e.target.value)}>
                     <option value="">— None —</option>
                     {panels.map((p) => <option key={p.id} value={String(p.id)}>{p.panel_tag} — {p.name}</option>)}
-                  </select>
+                  </Select>
                 </F>
               </div>
               <div style={{ ...rowStyle, marginBottom: 0 }}>

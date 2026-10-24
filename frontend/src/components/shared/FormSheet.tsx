@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { secondaryBtnStyle } from '@/components/shared/ui'
+import { CONTROL } from '@/lib/theme'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { Check, Plus, X, ListChecks, User, Calendar, Paperclip, PencilSimple, Clock, ChatCircle, ShieldCheck, ArrowCounterClockwise, MagnifyingGlass, CaretLeft, CaretRight, ClockCounterClockwise, WarningCircle, Flag, Tag, Package, Truck, Gear, Star, Trash, Link as LinkIcon, FileText, CurrencyInr, Buildings, Users, ShoppingCart, Wrench, UploadSimple, PaperPlaneRight } from '@phosphor-icons/react'
 import type { Icon as PhosphorIcon } from '@phosphor-icons/react'
@@ -21,15 +22,18 @@ export const SHEET = {
 }
 const { INK, BODY, MUTED, LINE, BLUE } = SHEET
 
-export const sheetInput: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${LINE}`, fontSize: 13.5, color: INK, background: '#fff', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }
+export const sheetInput: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${LINE}`, fontSize: 13.5, lineHeight: CONTROL.lineHeight, minHeight: CONTROL.height, color: INK, background: '#fff', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }
 export const sheetLabel: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 600, color: BODY, marginBottom: 6 }
 export const sheetHint: React.CSSProperties = { fontSize: 12, color: MUTED, margin: '6px 0 0' }
 export const Req = () => <span style={{ color: '#e11d48' }}>*</span>
 
 export function sheetBtn(kind: 'primary' | 'secondary' | 'ghost' | 'danger', color = BLUE, disabled = false): React.CSSProperties {
-  const base: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1, whiteSpace: 'nowrap', fontFamily: 'inherit' }
+  // Same 38px scale as inputs and the shared buttons (CONTROL), so a footer or
+  // field-row button lines up with the fields next to it. Ghost (icon/close,
+  // inline text actions) keeps its compact size.
+  const base: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: `0 ${CONTROL.padX + 2}px`, minHeight: CONTROL.height, boxSizing: 'border-box', borderRadius: CONTROL.radius, fontSize: CONTROL.fontSize, lineHeight: CONTROL.lineHeight, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1, whiteSpace: 'nowrap', flexShrink: 0, fontFamily: 'inherit' }
   if (kind === 'primary') return { ...base, border: 'none', background: color, color: '#fff', boxShadow: `0 4px 12px ${color}33` }
-  if (kind === 'ghost') return { ...base, border: 'none', background: 'transparent', color, padding: '6px 8px' }
+  if (kind === 'ghost') return { ...base, border: 'none', background: 'transparent', color, padding: '6px 8px', minHeight: 0 }
   if (kind === 'danger') return { ...base, border: '1px solid #fecdd3', background: '#fff1f2', color: '#be123c' }
   return { ...base, border: `1px solid ${LINE}`, background: '#fff', color: INK }
 }

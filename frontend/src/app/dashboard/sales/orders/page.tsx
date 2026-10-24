@@ -1,5 +1,7 @@
 'use client'
 
+import { primaryBtnStyle } from '@/components/shared/ui'
+import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -54,7 +56,7 @@ export default function SalesOrdersPage() {
       <PageHeader title="Sales Orders" subtitle="One order per customer PO / LOA. Drafts get their SO number at confirmation.">
         {can('sales', 'orders', 'create') && (
           <button data-tour="sales-orders-new" onClick={() => router.push('/dashboard/sales/orders/new')}
-            style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}>
+            style={primaryBtnStyle}>
             + New Sales Order
           </button>
         )}
@@ -63,10 +65,10 @@ export default function SalesOrdersPage() {
 
       <div data-tour="sales-orders-filters" style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200, maxWidth: 380 }} placeholder="Search SO no., customer, PO / LOA no.…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...inputStyle, width: 190 }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <Select style={{ ...inputStyle, width: 190 }} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(SO_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        </Select>
         <input style={{ ...inputStyle, width: 150 }} placeholder="Due month YYYY-MM" value={month} onChange={(e) => setMonth(e.target.value)} />
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
           <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Waiting for my approval

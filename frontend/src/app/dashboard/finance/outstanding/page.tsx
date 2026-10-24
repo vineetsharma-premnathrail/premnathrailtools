@@ -15,7 +15,7 @@ import AllocateCreditDialog from '@/components/finance/AllocateCreditDialog'
 import OutstandingSubNav from '@/components/finance/OutstandingSubNav'
 import { useCan } from '@/lib/permissions'
 import {
-  sectionStyle, primaryBtnStyle, secondaryBtnStyle, thStyle, tdStyle, numTd, numTh,
+  sectionStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, fyStartIso, Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, PageHeader, TableWrap, EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
 import { recordHref } from '@/lib/recordRef'
@@ -270,7 +270,7 @@ function PartyDetail({ partyType, party, asOf, onClose }: { partyType: PartyType
                   <td style={{ ...numTd, fontWeight: 700, color: '#b45309' }}>{inr(c.available)}</td>
                   <td style={tdStyle}>
                     {!historical && docs.length > 0 && canFeature('accounts', 'payments', 'allocation', 'edit') && (
-                      <button style={{ fontSize: 11.5, fontWeight: 600, color: BRAND.primaryActive, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                      <button style={linkBtnStyle}
                         onClick={() => setSetOff(c)}>Set off</button>
                     )}
                   </td>

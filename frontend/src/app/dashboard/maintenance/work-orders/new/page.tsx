@@ -15,6 +15,7 @@ import MaintenanceAssetPicker from '@/components/maintenance/MaintenanceAssetPic
 import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
 import { PRIORITY_LABELS, WO_TYPE_LABELS, localInputToIso, nowLocalInput } from '@/components/maintenance/labels'
+import Select from '@/components/shared/Select'
 
 
 export default function NewMaintenanceWorkOrderPage() {
@@ -116,15 +117,15 @@ export default function NewMaintenanceWorkOrderPage() {
             </div>
             <div style={{ flex: '0 1 170px', minWidth: 150 }}>
               <label style={sheetLabel}>Type</label>
-              <select data-tour="maint-wof-type" style={sheetInput} value={woType} onChange={(e) => setWoType(e.target.value)}>
+              <Select data-tour="maint-wof-type" style={sheetInput} value={woType} onChange={(e) => setWoType(e.target.value)}>
                 {Object.entries(WO_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              </Select>
             </div>
             <div style={{ flex: '0 1 140px', minWidth: 120 }}>
               <label style={sheetLabel}>Priority</label>
-              <select data-tour="maint-wof-priority" style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value)}>
+              <Select data-tour="maint-wof-priority" style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value)}>
                 {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              </Select>
             </div>
           </div>
           <div style={{ marginTop: 14, maxWidth: 700 }}>

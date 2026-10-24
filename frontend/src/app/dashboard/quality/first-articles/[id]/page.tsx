@@ -123,7 +123,7 @@ export default function FirstArticleDetailPage() {
       {fai.status === 'open' ? (
         <Section title="Decision" style={{ marginBottom: 20 }}>
           {canDecide ? (
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               {canApproveFai && <button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => { setError(''); setConfirm('approve') }}>Approve FAI</button>}
               {canRejectFai && <button type="button" disabled={busy} style={dangerBtnStyle} onClick={() => { setError(''); setConfirm('reject') }}>Reject FAI</button>}
             </div>

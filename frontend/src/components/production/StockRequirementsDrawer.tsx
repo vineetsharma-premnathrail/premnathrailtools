@@ -20,7 +20,7 @@ const EXC_SHORT: Record<string, string> = {
   finish_in_past: 'Overdue', start_in_past: 'Start in past', below_safety_stock: 'Below safety',
 }
 const pill = (hex: string): React.CSSProperties => ({ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
-const th: React.CSSProperties = { textAlign: 'left', padding: '7px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }
+const th: React.CSSProperties = { textAlign: 'left', padding: '7px 10px', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '.03em', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }
 const td: React.CSSProperties = { padding: '7px 10px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
 const fmt = (n: number) => +n.toFixed(4)
 

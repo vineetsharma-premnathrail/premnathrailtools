@@ -13,6 +13,7 @@ import { TEXT, BRAND } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { recordHref } from '@/lib/recordRef'
 import { VOUCHER_PATH } from '@/components/finance/voucherLabels'
+import Select from '@/components/shared/Select'
 import {
   inr, dmy, sectionStyle, secondaryBtnStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh, labelStyle,
   ErrorBanner, InfoBanner, StatusPill, TableWrap, EmptyRow, StatCard,
@@ -255,10 +256,10 @@ export function InternalOrdersReport({ toDate, initialOrderId }: { toDate: strin
       <div style={{ ...sectionStyle, padding: '12px 16px', display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ flex: '0 1 180px' }}>
           <label style={labelStyle}>Status</label>
-          <select style={{ width: '100%', padding: '9px 10px', borderRadius: 10, fontSize: 13 }} value={status} onChange={(e) => setStatus(e.target.value)}>
+          <Select style={{ width: '100%', padding: '9px 10px', borderRadius: 10, fontSize: 13 }} value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">All</option>
             {Object.entries(IO_STATUS_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-          </select>
+          </Select>
         </div>
       </div>
       <TableWrap minWidth={1100} maxHeight="calc(100vh - 360px)" tour="fin-rep-io-table">

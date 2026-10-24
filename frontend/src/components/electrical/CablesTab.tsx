@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 // Cable schedule tab — covers Cable / Wiring Design (the schedule itself) and
 // Wiring / Harness Installation (moving cables through cut → harnessed →
 // installed → terminated → tested, usually a whole harness at a time).
@@ -228,18 +229,18 @@ export default function CablesTab({ job, canEdit, onChanged }: { job: Electrical
         </div>
         <div data-tour="elec-cables-status-filter" style={{ flex: '0 1 160px', minWidth: 140 }}>
           <label style={labelStyle}>Status</label>
-          <select style={inputStyle} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <Select style={inputStyle} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="">All statuses</option>
             {Object.entries(CABLE_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
         </div>
         <div data-tour="elec-cables-harness-filter" style={{ flex: '0 1 170px', minWidth: 140 }}>
           <label style={labelStyle}>Harness</label>
-          <select style={inputStyle} value={harnessFilter} onChange={(e) => setHarnessFilter(e.target.value)}>
+          <Select style={inputStyle} value={harnessFilter} onChange={(e) => setHarnessFilter(e.target.value)}>
             <option value="">All harnesses</option>
             <option value="__none__">— No harness —</option>
             {harnesses.map((h) => <option key={h} value={h}>{h}</option>)}
-          </select>
+          </Select>
         </div>
         {filtered && (
           <button type="button" style={secondaryBtnStyle} onClick={() => { setSearch(''); setStatusFilter(''); setHarnessFilter('') }}>Clear</button>
@@ -253,11 +254,11 @@ export default function CablesTab({ job, canEdit, onChanged }: { job: Electrical
       {canEdit && selectedVisible.length > 0 && (
         <div data-tour="elec-cables-bulk-bar" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', padding: '10px 14px', marginBottom: 12, borderRadius: 12, background: 'rgba(255,106,42,0.07)', border: '1px solid rgba(255,106,42,0.25)' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading }}>{selectedVisible.length} selected</span>
-          <select aria-label="New status for selected cables" style={{ ...inputStyle, width: 'auto', minWidth: 160 }} value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)}>
+          <Select aria-label="New status for selected cables" style={{ ...inputStyle, width: 'auto', minWidth: 160 }} value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)}>
             <option value="">Set status to…</option>
             {Object.entries(CABLE_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-          <button type="button" style={{ ...primaryBtn, padding: '8px 14px' }} disabled={busy || !bulkStatus} onClick={applyBulk}>
+          </Select>
+          <button type="button" style={primaryBtn} disabled={busy || !bulkStatus} onClick={applyBulk}>
             {busy ? 'Applying…' : `Apply to ${selectedVisible.length} cable${selectedVisible.length === 1 ? '' : 's'}`}
           </button>
           <button type="button" style={smallBtn} onClick={() => setSelected([])}>Clear selection</button>
@@ -391,9 +392,9 @@ export default function CablesTab({ job, canEdit, onChanged }: { job: Electrical
             </SheetSection>
             <SheetSection icon="flag" title="Status">
               <div data-tour="elec-cable-status">
-                <select style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)} aria-label="Status">
+                <Select style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)} aria-label="Status">
                   {Object.entries(CABLE_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+                </Select>
               </div>
             </SheetSection>
           </>}

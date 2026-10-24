@@ -8,6 +8,7 @@ import React, { useEffect, useState } from 'react'
 import { fxApi, Currency } from '@/lib/financeAssetsFxApi'
 import { inputStyle, Field } from '@/components/finance/financeUi'
 import { TEXT } from '@/lib/theme'
+import Select from '@/components/shared/Select'
 
 export function useDocCurrency(onDate: string, opts: { withAmount?: boolean } = {}) {
   const [currencies, setCurrencies] = useState<Currency[]>([])
@@ -30,10 +31,10 @@ export function useDocCurrency(onDate: string, opts: { withAmount?: boolean } = 
   const fields = currencies.length === 0 ? null : (
     <>
       <Field label="Currency" style={{ flex: '0 1 100px', minWidth: 90 }}>
-        <select style={inputStyle} value={currency} onChange={(e) => { setCurrency(e.target.value); setRate('') }}>
+        <Select style={inputStyle} value={currency} onChange={(e) => { setCurrency(e.target.value); setRate('') }}>
           <option value="INR">INR</option>
           {currencies.map((c) => <option key={c.id} value={c.code}>{c.code}</option>)}
-        </select>
+        </Select>
       </Field>
       {foreign && (
         <Field label={`Rate (₹ per ${currency})`} style={{ flex: '0 1 140px', minWidth: 130 }}>

@@ -14,6 +14,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { ErrorBanner } from '@/components/quality/QualityBits'
 import { FormPage, SheetSection, SheetIcon, sheetInput, sheetLabel, sheetHint, sheetBtn, Req, Optional, SHEET } from '@/components/shared/FormSheet'
+import Select from '@/components/shared/Select'
 
 const inputStyle = sheetInput
 const labelStyle = sheetLabel
@@ -136,11 +137,11 @@ export default function QualityStandardDetailPage() {
               </div>
               <div style={{ flex: '0 1 160px', minWidth: 140 }}>
                 <label style={labelStyle}>Status</label>
-                <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value as QualityStandardStatus)}>
+                <Select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value as QualityStandardStatus)}>
                   <option value="draft">Draft</option>
                   <option value="active">Active</option>
                   <option value="obsolete">Obsolete</option>
-                </select>
+                </Select>
               </div>
             </div>
             <label style={labelStyle}>Description <Optional /></label>

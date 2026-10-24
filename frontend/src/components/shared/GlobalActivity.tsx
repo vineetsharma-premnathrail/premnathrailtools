@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
 import { BRAND, TEXT } from '@/lib/theme'
 import { getActivitySnapshot, getServerActivitySnapshot, subscribeActivity } from '@/lib/requestActivity'
 
@@ -86,15 +87,19 @@ export default function GlobalActivity() {
         }
       `}</style>
 
-      {showBar && (
+      {/* Overlays are portaled to <body>: a glass card (backdrop-filter) up the
+          tree would otherwise trap these fixed layers inside itself. They only
+          appear after a client-side timer, so document is always defined here. */}
+      {showBar && createPortal(
         <div role="progressbar" aria-label="Loading" aria-busy="true"
           style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 3, zIndex: 10001, overflow: 'hidden', background: `${BRAND.primary}26`, pointerEvents: 'none' }}>
           <div className="pr-activity-bar-fill"
             style={{ width: '30%', height: '100%', background: `linear-gradient(90deg, transparent, ${BRAND.primary}, ${BRAND.primaryHover})`, animation: 'pr-activity-slide 1.1s ease-in-out infinite' }} />
-        </div>
+        </div>,
+        document.body,
       )}
 
-      {block && (
+      {block && createPortal(
         <div aria-hidden={!showCard}
           onClickCapture={(e) => { e.preventDefault(); e.stopPropagation() }}
           onMouseDownCapture={(e) => { e.preventDefault(); e.stopPropagation() }}
@@ -122,9 +127,10 @@ export default function GlobalActivity() {
               </div>
             </div>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
-      {uploads.length > 0 && (
+      {uploads.length > 0 && typeof document !== 'undefined' && createPortal(
         <div role="status" aria-live="polite"
           style={{
             position: 'fixed', right: 16, bottom: 16, zIndex: 10002, width: 'min(360px, calc(100vw - 32px))',
@@ -150,7 +156,8 @@ export default function GlobalActivity() {
               </div>
             )
           })}
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   )

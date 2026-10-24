@@ -8,6 +8,7 @@ import { getHistoryFromLink } from '@/components/rnd/historyLink'
 import RndNav from '@/components/rnd/RndNav'
 import TerminalPanel from '@/components/rnd/TerminalPanel'
 import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, calcButtonStyle, downloadCsv, downloadBlob, getErrorMessage } from '@/components/rnd/toolStyles'
+import { secondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 
 interface QmaxResult {
@@ -301,9 +302,9 @@ function QmaxPageInner() {
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Actions</span></div>
             <div style={cardBodyStyle}>
               <button data-tour="rnd-qmax-calculate-btn" onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : 'Calculate'}</button>
-              <button data-tour="rnd-qmax-csv-btn" onClick={exportCsv} style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export CSV</button>
-              <button data-tour="rnd-qmax-docx-btn" onClick={downloadDocx} disabled={busy} style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export Report (.docx)</button>
-              <a data-tour="rnd-qmax-history-btn" href="/dashboard/rnd/history" style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, cursor: 'pointer', textDecoration: 'none', textAlign: 'center' }}>History</a>
+              <button data-tour="rnd-qmax-csv-btn" onClick={exportCsv} style={secondaryBtnStyle}>Export CSV</button>
+              <button data-tour="rnd-qmax-docx-btn" onClick={downloadDocx} disabled={busy} style={secondaryBtnStyle}>Export Report (.docx)</button>
+              <a data-tour="rnd-qmax-history-btn" href="/dashboard/rnd/history" style={{ ...secondaryBtnStyle, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', textDecoration: 'none' }}>History</a>
             </div>
           </div>
           <div data-tour="rnd-qmax-output"><TerminalPanel title="qmax_output.log" text={result?.report || '> System Ready.\n> Awaiting parameters...\n>\n> Configure inputs on the left and\n> click Calculate to begin.'} /></div>

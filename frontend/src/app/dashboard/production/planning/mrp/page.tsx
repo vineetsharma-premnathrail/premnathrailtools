@@ -9,7 +9,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { productionApi } from '@/lib/api'
 import { mrpApi, MrpException, MrpRun, PlannedOrder, PrConversionResult } from '@/lib/mrpApi'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
 import ProductionNav from '@/components/production/ProductionNav'
 import StockRequirementsDrawer from '@/components/production/StockRequirementsDrawer'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -20,6 +20,7 @@ import { formatDate, formatDateTime } from '@/lib/format'
 import { canFeature } from '@/lib/permissions'
 import { recordPath } from '@/lib/recordRef'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import Select from '@/components/shared/Select'
 
 type Lookup = { id: number; label: string; code?: string | null; extra?: string | null }
 type Tab = 'orders' | 'list' | 'exceptions' | 'log'
@@ -43,7 +44,7 @@ const inputStyle: React.CSSProperties = { width: '100%', padding: '9px 11px', bo
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1, whiteSpace: 'nowrap' }
 const tdStyle: React.CSSProperties = { padding: '8px 10px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
 const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
-const smallBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '4px 10px', fontSize: 11.5 }
+const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 const fmt = (n: number) => +n.toFixed(4)
 const errorBox = (msg: string) => (
   <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{msg}</div>
@@ -236,10 +237,10 @@ export default function MrpPage() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
           <div style={{ flex: '1 1 220px', maxWidth: 320 }}>
             <label style={labelStyle}>Plant</label>
-            <select value={branchId} onChange={(e) => setBranchId(e.target.value)} style={inputStyle}>
+            <Select value={branchId} onChange={(e) => setBranchId(e.target.value)} style={inputStyle}>
               <option value="">Company-wide (all plants)</option>
               {branches.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
-            </select>
+            </Select>
           </div>
           <div style={{ flex: '0 1 150px', minWidth: 140 }}>
             <label style={labelStyle}>Horizon (days)</label>
@@ -273,18 +274,18 @@ export default function MrpPage() {
           <>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 12 }}>
               <input placeholder="Search order, item or demand…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...inputStyle, flex: '1 1 220px', maxWidth: 300 }} />
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...inputStyle, flex: '0 1 140px' }}>
+              <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...inputStyle, flex: '0 1 140px' }}>
                 <option value="open">Open</option><option value="converted">Converted</option><option value="all">All</option>
-              </select>
-              <select value={procFilter} onChange={(e) => setProcFilter(e.target.value)} style={{ ...inputStyle, flex: '0 1 130px' }}>
+              </Select>
+              <Select value={procFilter} onChange={(e) => setProcFilter(e.target.value)} style={{ ...inputStyle, flex: '0 1 130px' }}>
                 <option value="">Make + buy</option><option value="make">Make</option><option value="buy">Buy</option>
-              </select>
+              </Select>
               <div style={{ flex: 1 }} />
-              {canEdit && openSelected.length > 0 && <button type="button" style={smallBtn} onClick={() => firm(openSelected.map((o) => o.id))}>Firm selected ({openSelected.length})</button>}
+              {canEdit && openSelected.length > 0 && <button type="button" style={secondaryBtnStyle} onClick={() => firm(openSelected.map((o) => o.id))}>Firm selected ({openSelected.length})</button>}
               {canPr && selectedBuy.length > 0 && (
-                <button type="button" style={{ ...primaryBtnStyle, padding: '7px 14px', fontSize: 12.5 }} onClick={() => { setPrResult(null); setPrOpen(true) }}>Convert to PR ({selectedBuy.length})</button>
+                <button type="button" style={primaryBtnStyle} onClick={() => { setPrResult(null); setPrOpen(true) }}>Convert to PR ({selectedBuy.length})</button>
               )}
-              {canCreate && <button type="button" style={smallBtn} onClick={() => setNewOpen(true)}>+ New planned order</button>}
+              {canCreate && <button type="button" style={secondaryBtnStyle} onClick={() => setNewOpen(true)}>+ New planned order</button>}
             </div>
             <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
@@ -330,7 +331,7 @@ export default function MrpPage() {
                               {canEdit && !o.firmed && <button type="button" style={smallBtn} onClick={() => firm([o.id])}>Firm</button>}
                               {o.procurement === 'make' && canToWo && <button type="button" style={smallBtn} disabled={busy} onClick={() => setConverting(o)}>To WO</button>}
                               {o.procurement === 'buy' && canPr && <button type="button" style={smallBtn} onClick={() => { setSelected([o.id]); setPrResult(null); setPrOpen(true) }}>To PR</button>}
-                              {canDeletePo && <button type="button" style={{ ...smallBtn, color: '#DC2626' }} onClick={() => setDeleting(o)}>Delete</button>}
+                              {canDeletePo && <button type="button" style={smallDangerBtnStyle} onClick={() => setDeleting(o)}>Delete</button>}
                             </div>
                           )}
                         </td>
@@ -372,10 +373,10 @@ export default function MrpPage() {
         {tab === 'exceptions' && (
           <>
             <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-              <select value={excCode} onChange={(e) => setExcCode(e.target.value)} style={{ ...inputStyle, maxWidth: 320 }}>
+              <Select value={excCode} onChange={(e) => setExcCode(e.target.value)} style={{ ...inputStyle, maxWidth: 320 }}>
                 <option value="">All exception messages</option>
                 {Object.entries(excLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              </Select>
             </div>
             <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
@@ -478,15 +479,15 @@ export default function MrpPage() {
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                     <div style={{ flex: '1 1 220px' }}>
                       <label style={sheetLabel}>PR Category</label>
-                      <select value={prForm.category_code} onChange={(e) => setPrForm({ ...prForm, category_code: e.target.value })} style={sheetInput}>
+                      <Select value={prForm.category_code} onChange={(e) => setPrForm({ ...prForm, category_code: e.target.value })} style={sheetInput}>
                         {Object.entries(PR_CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                      </select>
+                      </Select>
                     </div>
                     <div style={{ flex: '0 1 140px' }}>
                       <label style={sheetLabel}>Priority</label>
-                      <select value={prForm.priority} onChange={(e) => setPrForm({ ...prForm, priority: e.target.value })} style={sheetInput}>
+                      <Select value={prForm.priority} onChange={(e) => setPrForm({ ...prForm, priority: e.target.value })} style={sheetInput}>
                         <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
-                      </select>
+                      </Select>
                     </div>
                   </div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: SHEET.BODY, marginTop: 14 }}>
@@ -521,9 +522,9 @@ export default function MrpPage() {
                 <div style={{ flex: '0 1 175px' }}><label style={sheetLabel}>Needed by (finish) <Req /></label><DateField value={newForm.finish_date} onChange={(v) => setNewForm({ ...newForm, finish_date: v })} /></div>
                 <div style={{ flex: '0 1 150px' }}>
                   <label style={sheetLabel}>Procurement</label>
-                  <select value={newForm.procurement} onChange={(e) => setNewForm({ ...newForm, procurement: e.target.value })} style={sheetInput}>
+                  <Select value={newForm.procurement} onChange={(e) => setNewForm({ ...newForm, procurement: e.target.value })} style={sheetInput}>
                     <option value="">From BOM</option><option value="make">Make</option><option value="buy">Buy</option>
-                  </select>
+                  </Select>
                 </div>
               </div>
               <p style={sheetHint}>Manual planned orders are firmed; the start date is back-scheduled from the lead time{branchId ? ' for the selected plant' : ''}.</p>
