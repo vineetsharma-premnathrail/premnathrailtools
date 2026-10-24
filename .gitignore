@@ -46,3 +46,8 @@ backend/db_backups/
 frontend/e2e/.auth/
 frontend/test-results/
 frontend/playwright-report/
+
+# --- Local tool/editor config: never public (may hold secrets) ---
+.claude/
+.vscode/
+*.zip
