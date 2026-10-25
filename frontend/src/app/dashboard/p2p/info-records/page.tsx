@@ -14,7 +14,8 @@ import { storeApi, vendorsApi } from '@/lib/api'
 import { InfoRecord, ItemOverview, ItemVendorRow, infoRecordsApi } from '@/lib/mmPurchasingApi'
 import { StoreItem } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, RowCount, Pill as SharedPill } from '@/components/shared/ui'
+import { formatDate } from '@/lib/format'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import P2PNav from '@/components/p2p/P2PNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
@@ -35,14 +36,19 @@ const sub: React.CSSProperties = { fontSize: 11.5, color: TEXT.muted, marginTop:
 const linkStyle: React.CSSProperties = { color: '#c2410c', fontWeight: 600, cursor: 'pointer', fontSize: 12.5 }
 const GREEN = '#15803d'
 const money = (v: number | null | undefined) => (v == null ? '—' : `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`)
-const ddmmyyyy = (d: string | null | undefined) => (d ? d.slice(0, 10).split('-').reverse().join('-') : '')
+const ddmmyyyy = (d: string | null | undefined) => (d ? formatDate(d.slice(0, 10)) : '')
+const qty = (v: number | null | undefined) => (v == null ? '—' : v.toLocaleString('en-IN', { maximumFractionDigits: 3 }))
+const VENDOR_STATUS_LABEL: Record<string, string> = { inactive: 'Inactive', blocked: 'Blocked', pending: 'Pending approval', draft: 'Draft' }
+const numTh: React.CSSProperties = { ...th, textAlign: 'right' }
+const numTd: React.CSSProperties = { ...td, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }
 const SOURCE_LABEL: Record<string, string> = { contract: 'rate contract', quote: 'quotation', last_po: 'last PO' }
 type Opt = { value: string; label: string }
 type ContractForm = { id?: number; vendor_id: string; unit_price: string; lead_time_days: string; min_order_qty: string; valid_from: string; valid_to: string }
 const EMPTY_CONTRACT: ContractForm = { vendor_id: '', unit_price: '', lead_time_days: '', min_order_qty: '', valid_from: '', valid_to: '' }
 
+/** Shared status pill, spaced from the text before it. */
 function Pill({ text, hex }: { text: string; hex: string }) {
-  return <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap', marginLeft: 6 }}>{text}</span>
+  return <span style={{ display: 'inline-flex', marginLeft: 6, verticalAlign: 'middle' }}><SharedPill label={text} hex={hex} /></span>
 }
 
 function Stat({ title, value, note }: { title: string; value: string; note?: string }) {
@@ -84,7 +90,7 @@ export default function ItemRatesPage() {
     if (!isAuthorized) return
     storeApi.listItems({ status: 'active' }).then(setItems).catch(() => setItems([]))
     vendorsApi.list({ status: 'active' }).then((vs) => setVendors(vs.map((v) => ({ value: String(v.id), label: v.name })))).catch(() => setVendors([]))
-    if (seeInfoRecords) infoRecordsApi.list({ unlinked: true }).then(setUnlinked).catch(() => setUnlinked([]))
+    if (seeInfoRecords) infoRecordsApi.list({ unlinked: true, limit: 2000 }).then(setUnlinked).catch(() => setUnlinked([]))
   }, [isAuthorized, seeInfoRecords])
 
   const loadItem = useCallback(async () => {
@@ -165,10 +171,22 @@ export default function ItemRatesPage() {
 
       <div style={card}>
         <span style={label}>Item</span>
-        <div style={{ maxWidth: 520 }}>
-          <SearchableSelect value={itemId} onChange={(v) => { setOv(null); setLoading(!!v); setItemId(v) }} placeholder="Search item code / name…" options={itemOptions} />
+        <div style={{ maxWidth: 640 }}>
+          <SearchableSelect autoFocus ariaLabel="Item" value={itemId} onChange={(v) => { setOv(null); setLoading(!!v); setItemId(v) }} placeholder="Search item code / name…" options={itemOptions} />
         </div>
       </div>
+
+      {!itemId && (
+        <div style={{ ...card, textAlign: 'center', padding: '44px 20px' }}>
+          <div aria-hidden style={{ width: 52, height: 52, margin: '0 auto 12px', borderRadius: 14, background: 'rgba(255,122,69,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <SheetIcon name="search" size={26} color="#FF7A45" />
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading }}>Pick an item above to see suppliers, rates and the last price paid</div>
+          <p style={{ fontSize: 13, color: '#5b6472', margin: '6px auto 0', maxWidth: 520 }}>
+            {items.length ? `${items.length.toLocaleString('en-IN')} active items to choose from. ` : ''}Rates fill in automatically from approved POs and vendor quotations.
+          </p>
+        </div>
+      )}
 
       {itemId && loading && !ov && <div style={{ ...card, color: TEXT.muted, fontSize: 13 }}>Loading…</div>}
 
@@ -199,7 +217,7 @@ export default function ItemRatesPage() {
             </div>
             <div style={{ overflow: 'auto', border: `1px solid ${BORDER.normal}`, borderRadius: 10 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-                <thead><tr>{['Vendor', 'Rate today', 'Last PO', 'Last quotation', 'Rate contract', 'Lead time', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Vendor', 'Rate today', 'Last PO', 'Last quotation', 'Rate contract', 'Lead time', ''].map((h, i) => <th key={h} style={th}>{h}{i === 0 && <RowCount count={ov.vendors.length} />}</th>)}</tr></thead>
                 <tbody>
                   {ov.vendors.length === 0 && (
                     <tr><td colSpan={7} style={{ ...td, color: TEXT.muted, padding: 20 }}>
@@ -216,7 +234,7 @@ export default function ItemRatesPage() {
                           {v.source?.is_fixed && <Pill text="Preferred" hex={GREEN} />}
                           {v.source && !v.source.is_fixed && !blocked && <Pill text="Approved" hex="#0891b2" />}
                           {blocked && <Pill text="Blocked" hex="#b91c1c" />}
-                          {v.vendor_status && v.vendor_status !== 'active' && <Pill text={v.vendor_status} hex="#b45309" />}
+                          {v.vendor_status && v.vendor_status !== 'active' && <Pill text={VENDOR_STATUS_LABEL[v.vendor_status] || v.vendor_status.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())} hex="#b45309" />}
                           {v.po_count > 0 && <div style={sub}>{v.po_count} approved PO{v.po_count > 1 ? 's' : ''}</div>}
                         </td>
                         <td style={td}>
@@ -227,7 +245,7 @@ export default function ItemRatesPage() {
                           {v.last_po ? (
                             <>
                               <span style={{ fontWeight: 600, color: v.last_po.unit_price === lowest.po ? GREEN : TEXT.body }}>{money(v.last_po.unit_price)}</span>
-                              <div style={sub}>{ddmmyyyy(v.last_po.po_date)} · {v.last_po.po_number} · {v.last_po.quantity} {v.last_po.unit || ''}</div>
+                              <div style={sub}>{ddmmyyyy(v.last_po.po_date)} · {v.last_po.po_number} · {qty(v.last_po.quantity)} {v.last_po.unit || ''}</div>
                             </>
                           ) : <span style={{ color: TEXT.muted }}>Never bought</span>}
                         </td>
@@ -251,7 +269,7 @@ export default function ItemRatesPage() {
                               {!v.contract.valid_today && <Pill text="Not valid today" hex="#b45309" />}
                               <div style={sub}>
                                 {v.contract.valid_from || v.contract.valid_to ? `${ddmmyyyy(v.contract.valid_from) || '…'} to ${ddmmyyyy(v.contract.valid_to) || '…'}` : 'No end date'}
-                                {v.contract.min_order_qty ? ` · MOQ ${v.contract.min_order_qty}` : ''}
+                                {v.contract.min_order_qty ? ` · Min. order ${qty(v.contract.min_order_qty)}` : ''}
                               </div>
                             </>
                           ) : <span style={{ color: TEXT.muted }}>—</span>}
@@ -259,9 +277,9 @@ export default function ItemRatesPage() {
                         <td style={td}>{v.lead_time_days != null ? `${v.lead_time_days} days` : '—'}</td>
                         <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                           {canEdit && v.vendor_id && (
-                            <span style={{ display: 'inline-flex', gap: 12 }}>
-                              <span onClick={() => openContract(v)} style={linkStyle}>{v.contract ? 'Edit contract' : 'Fix rate'}</span>
-                              {v.contract && <span onClick={() => setEndContract(v)} style={{ ...linkStyle, color: TEXT.secondary }}>End</span>}
+                            <span style={{ display: 'inline-flex', gap: 6 }}>
+                              <button type="button" onClick={() => openContract(v)} style={smallSecondaryBtnStyle}>{v.contract ? 'Edit contract' : 'Fix rate'}</button>
+                              {v.contract && <button type="button" onClick={() => setEndContract(v)} style={smallSecondaryBtnStyle}>End</button>}
                             </span>
                           )}
                         </td>
@@ -278,20 +296,20 @@ export default function ItemRatesPage() {
               <h2 style={h2}>Purchase history ({ov.history.length} approved PO line{ov.history.length === 1 ? '' : 's'})</h2>
               {ov.history.length > 0 && <span onClick={() => setShowHistory((x) => !x)} style={linkStyle}>{showHistory ? 'Hide' : 'Show'}</span>}
             </div>
-            {ov.history.length === 0 && <p style={{ ...sub, fontSize: 12.5, margin: '8px 0 0' }}>No approved PO for this item yet.</p>}
+            {ov.history.length === 0 && <p style={{ ...sub, fontSize: 12.5, margin: '8px 0 0' }}>No approved PO for this item yet — each approved PO line for it will be listed here.</p>}
             {showHistory && ov.history.length > 0 && (
               <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)', border: `1px solid ${BORDER.normal}`, borderRadius: 10, marginTop: 12 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
-                  <thead><tr>{['PO date', 'PO', 'Vendor', 'Qty', 'Rate', 'GST %', 'Requisition'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['PO Date', 'PO No.', 'Vendor', 'Qty', 'Rate', 'GST %', 'PR No.'].map((h, i) => <th key={h} style={i >= 3 && i <= 5 ? numTh : th}>{h}{i === 0 && <RowCount count={ov.history.length} />}</th>)}</tr></thead>
                   <tbody>
                     {ov.history.map((r, i) => (
                       <tr key={`${r.po_id}-${i}`}>
-                        <td style={td}>{ddmmyyyy(r.po_date)}</td>
+                        <td style={{ ...td, whiteSpace: 'nowrap' }}>{ddmmyyyy(r.po_date) || '—'}</td>
                         <td style={td}>{r.po_number}{r.amendment_no ? ` (A${r.amendment_no})` : ''}</td>
-                        <td style={td}>{r.vendor_name}</td>
-                        <td style={td}>{r.quantity} {r.unit || ''}</td>
-                        <td style={{ ...td, fontWeight: 600 }}>{money(r.unit_price)}</td>
-                        <td style={td}>{r.tax_rate ?? '—'}</td>
+                        <td style={td}>{r.vendor_name || '—'}</td>
+                        <td style={numTd}>{qty(r.quantity)} {r.unit || ''}</td>
+                        <td style={{ ...numTd, fontWeight: 600 }}>{money(r.unit_price)}</td>
+                        <td style={numTd}>{r.tax_rate ?? '—'}</td>
                         <td style={td}>{r.p2p_number || '—'}</td>
                       </tr>
                     ))}
@@ -315,19 +333,19 @@ export default function ItemRatesPage() {
           {showUnlinked && (
             <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)', border: `1px solid ${BORDER.normal}`, borderRadius: 10, marginTop: 12 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-                <thead><tr>{['Vendor', 'Catalog item', 'Part code', 'Price', 'Item Master item', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Vendor', 'Catalog Item', 'Part Code', 'Price', 'Item Master Item', ''].map((h, i) => <th key={h} style={i === 3 ? numTh : th}>{h}{i === 0 && <RowCount count={unlinked.length} />}</th>)}</tr></thead>
                 <tbody>
                   {unlinked.map((r) => (
                     <tr key={r.id}>
                       <td style={td}>{r.vendor_name}</td>
                       <td style={td}>{r.item_name}</td>
                       <td style={td}>{r.part_code || '—'}</td>
-                      <td style={td}>{money(r.unit_price)}</td>
+                      <td style={numTd}>{money(r.unit_price)}</td>
                       <td style={{ ...td, minWidth: 260 }}>
                         <SearchableSelect value={linkPick[r.id] || ''} onChange={(v) => setLinkPick((x) => ({ ...x, [r.id]: v }))} placeholder="Pick the item…" options={itemOptions} />
                       </td>
                       <td style={td}>
-                        <button type="button" disabled={busy || !linkPick[r.id]} style={{ ...secondaryBtnStyle, opacity: busy || !linkPick[r.id] ? 0.6 : 1 }} onClick={() => run(async () => {
+                        <button type="button" disabled={busy || !linkPick[r.id]} style={{ ...smallSecondaryBtnStyle, opacity: busy || !linkPick[r.id] ? 0.6 : 1 }} onClick={() => run(async () => {
                           await infoRecordsApi.link(r.id, Number(linkPick[r.id]))
                           setUnlinked((x) => x.filter((y) => y.id !== r.id))
                         }, 'Could not link the catalog line.')}>Link</button>
@@ -385,13 +403,13 @@ export default function ItemRatesPage() {
             <SheetSection icon="list" title="Approved list">
               <div style={{ overflow: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 10 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
-                  <thead><tr>{['Vendor', 'Valid', 'Preferred', 'Blocked', ''].map((h) => <th key={h} style={{ ...th, position: 'static', background: SHEET.SOFT }}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Vendor', 'Valid', 'Preferred', 'Blocked', ''].map((h, i) => <th key={h} style={{ ...th, position: 'static', background: SHEET.SOFT }}>{h}{i === 0 && <RowCount count={sources.length} />}</th>)}</tr></thead>
                   <tbody>
                     {sources.length === 0 && <tr><td colSpan={5} style={{ ...td, color: TEXT.muted }}>No list — any vendor can be ordered from.</td></tr>}
                     {sources.map((v) => v.source && (
                       <tr key={v.source.id}>
                         <td style={td}>{v.vendor_name}{!v.source.valid_today && !v.source.is_blocked && <Pill text="Not valid today" hex="#b45309" />}</td>
-                        <td style={td}>{ddmmyyyy(v.source.valid_from) || '…'} to {ddmmyyyy(v.source.valid_to) || '…'}</td>
+                        <td style={{ ...td, whiteSpace: 'nowrap' }}>{v.source.valid_from || v.source.valid_to ? `${ddmmyyyy(v.source.valid_from) || '…'} to ${ddmmyyyy(v.source.valid_to) || '…'}` : 'No end date'}</td>
                         <td style={td}><input type="checkbox" checked={v.source.is_fixed} disabled={busy} onChange={(ev) => run(() => infoRecordsApi.updateSource(v.source!.id, { is_fixed: ev.target.checked }), 'Could not update the vendor.')} /></td>
                         <td style={td}><input type="checkbox" checked={v.source.is_blocked} disabled={busy} onChange={(ev) => run(() => infoRecordsApi.updateSource(v.source!.id, { is_blocked: ev.target.checked }), 'Could not update the vendor.')} /></td>
                         <td style={td}>{can('p2p', 'vendors', 'delete') && canFeature('p2p', 'vendors', 'info_records', 'delete') && <span style={{ ...linkStyle, color: '#b91c1c' }} onClick={() => setRemoveSource(v)}>Remove</span>}</td>

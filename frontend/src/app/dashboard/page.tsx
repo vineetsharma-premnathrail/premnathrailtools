@@ -28,10 +28,10 @@ const modules = [
   {
     title: 'Service Module',
     app: 'erp' as const,
-    description: 'Project management, service requests, warranty tracking, and operational reports.',
+    description: 'Machines at customer sites, service requests, engineer visits, service contracts and warranty tracking.',
     icon: WrenchIcon,
     href: '/dashboard/erp',
-    features: ['Projects', 'Service Requests', 'Dashboard', 'Reports'],
+    features: ['Machines', 'Service Requests', 'Contracts', 'Reports'],
     barColor: 'linear-gradient(90deg,#FF7A45,#FF6A2A)',
     iconBg: 'rgba(255,122,69,0.14)',
     iconColor: BRAND.primaryHover,
@@ -67,10 +67,10 @@ const modules = [
   {
     title: 'Procurement',
     app: 'p2p' as const,
-    description: 'Standalone purchase requisitions — raise, approve, and track requests.',
+    description: 'Purchase requisitions, vendors, RFQs and purchase orders — raise, approve and track every buy.',
     icon: FileTextIcon,
     href: '/dashboard/p2p',
-    features: ['Requisitions'],
+    features: ['Requisitions', 'Vendors', 'RFQ', 'Purchase Orders'],
     barColor: 'linear-gradient(90deg,#0ea5e9,#38bdf8)',
     iconBg: 'rgba(14,165,233,0.12)',
     iconColor: '#0284c7',
@@ -234,10 +234,10 @@ const hrModule = {
 // can view one of its tabs (same rule as the sidebar's "Organization" link).
 const adminModule = {
   title: 'Organization',
-  description: 'Branch and department masters, plus user roles and permissions.',
+  description: 'Company info, branches and departments, users, roles & permissions, approval workflows and audit logs.',
   icon: OrganizationIcon,
   href: '/dashboard/organization',
-  features: ['Branch', 'Department', 'Users & Roles'],
+  features: ['Company', 'Branches', 'Users & Roles', 'Workflows'],
   barColor: 'linear-gradient(90deg,#64748b,#94a3b8)',
   iconBg: 'rgba(100,116,139,0.12)',
   iconColor: '#475569',
@@ -248,9 +248,9 @@ const adminModule = {
 export default function DashboardPage() {
   const { user } = useAuth()
   // My Approvals / My Tasks — every user's own work, one click from home.
-  // null = still loading (or the count couldn't be read: the card still opens).
-  const [waiting, setWaiting] = useState<number | null>(null)
-  const [openTasks, setOpenTasks] = useState<number | null>(null)
+  // undefined = still loading; null = the count couldn't be read (the card still opens).
+  const [waiting, setWaiting] = useState<number | null | undefined>(undefined)
+  const [openTasks, setOpenTasks] = useState<number | null | undefined>(undefined)
   useEffect(() => {
     if (!user) return
     approvalsApi.inbox().then((rows) => setWaiting(rows.length)).catch(() => setWaiting(null))
@@ -283,6 +283,8 @@ export default function DashboardPage() {
     ...LIVE_APPS.map(byApp),
     ...(canSeeOrganization ? [adminModule] : []),
   ].filter((m) => !!m)
+  const allClear = waiting === 0 && openTasks === 0
+  const [showUpcoming, setShowUpcoming] = useState(false)
   const upcomingModules = UPCOMING_APPS
     .map((app) => (app === 'hr' ? (user?.apps?.includes('hr') ? hrModule : undefined) : byApp(app)))
     .filter((m) => !!m)
@@ -290,16 +292,23 @@ export default function DashboardPage() {
   return (
     <div>
       <h1 style={{ fontSize: 30, fontWeight: 700, color: TEXT.heading, margin: '0 0 6px' }}>
-        {greeting}, {user?.name.split(' ')[0]}
+        {greeting}{user?.name ? `, ${user.name.split(' ')[0]}` : ''}
       </h1>
       <p style={{ fontSize: 14, color: TEXT.muted, margin: '0 0 28px' }}>{today}</p>
 
+      {allClear ? (
+        <p data-tour="dash-all-clear" style={{ fontSize: 13.5, color: '#475569', margin: '0 0 24px' }}>
+          You are all caught up. <Link href="/dashboard/organization/approvals" style={{ color: '#c2410c', fontWeight: 600 }}>My Approvals</Link>
+          {' · '}<Link href="/dashboard/projects/my-tasks" style={{ color: '#c2410c', fontWeight: 600 }}>My Tasks</Link>
+        </p>
+      ) : (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginBottom: 32, maxWidth: 640 }}>
         <WorkCard href="/dashboard/organization/approvals" title="My Approvals" count={waiting}
-          sub={waiting === null ? 'Documents waiting for your decision' : waiting ? `${waiting} waiting for your decision` : 'Nothing waiting for you'} accent="#FF6A2A" />
+          sub={waiting == null ? 'Documents waiting for your decision' : waiting ? `${waiting} waiting for your decision` : 'Nothing waiting for you'} accent="#FF6A2A" />
         <WorkCard href="/dashboard/projects/my-tasks" title="My Tasks" count={openTasks}
-          sub={openTasks === null ? 'Milestones and sub-tasks given to you' : openTasks ? `${openTasks} open milestone(s) / sub-task(s)` : 'No open tasks'} accent="#4f46e5" />
+          sub={openTasks == null ? 'Milestones and sub-tasks given to you' : openTasks ? `${openTasks} open milestone(s) / sub-task(s)` : 'No open tasks'} accent="#4f46e5" />
       </div>
+      )}
 
       <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', color: TEXT.muted, marginBottom: 14 }}>
         YOUR APPLICATIONS
@@ -317,6 +326,13 @@ export default function DashboardPage() {
         </defs>
       </svg>
 
+      {liveModules.length === 0 && upcomingModules.length === 0 && (
+        <div style={{ padding: '28px 20px', borderRadius: 16, textAlign: 'center', background: GLASS.card, border: `1px solid ${GLASS.border}`, maxWidth: 640 }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: TEXT.heading, margin: '0 0 4px' }}>No applications assigned to you yet</p>
+          <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Ask your administrator to give you a role in Organization › Users — the modules you can use will then appear here and in the sidebar.</p>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
         {liveModules.map((module, index) => (
           <ModuleCard key={module.title} {...module} index={index} />
@@ -325,28 +341,29 @@ export default function DashboardPage() {
 
       {upcomingModules.length > 0 && (
         <>
-          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', color: TEXT.muted, margin: '32px 0 14px' }}>
-            UPCOMING
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
+          <button type="button" aria-expanded={showUpcoming} onClick={() => setShowUpcoming((v) => !v)}
+            style={{ display: 'block', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 11, fontWeight: 600, letterSpacing: '.08em', color: '#475569', margin: '32px 0 14px' }}>
+            {showUpcoming ? '▾' : '▸'} COMING SOON ({upcomingModules.length})
+          </button>
+          {showUpcoming && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
             {upcomingModules.map((module, index) => (
               <ModuleCard key={module.title} {...module} index={liveModules.length + index} />
             ))}
-          </div>
+          </div>}
         </>
       )}
     </div>
   )
 }
 
-function WorkCard({ href, title, sub, count, accent }: { href: string; title: string; sub: string; count: number | null; accent: string }) {
+function WorkCard({ href, title, sub, count, accent }: { href: string; title: string; sub: string; count: number | null | undefined; accent: string }) {
   return (
     <Link href={href} style={{
       display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 16, textDecoration: 'none',
       background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(),
     }}>
       <span style={{ minWidth: 44, height: 44, padding: '0 8px', borderRadius: 12, background: `${accent}1a`, color: accent, fontSize: 18, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-        {count === null ? '…' : count}
+        {count === undefined ? '…' : count === null ? '—' : count}
       </span>
       <span style={{ minWidth: 0 }}>
         <span style={{ display: 'block', fontSize: 14.5, fontWeight: 700, color: TEXT.heading }}>{title}</span>

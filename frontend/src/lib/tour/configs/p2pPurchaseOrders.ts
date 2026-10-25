@@ -9,7 +9,7 @@ const config: TourConfig = {
       title: 'Purchase Orders',
       purpose: 'Everything about the PO in one place: create it, approve it, and track its delivery.',
     },
-    { target: 'po-view-create', title: 'Create PO', purpose: 'Requisitions whose RFQ is done. Emailed RFQs appear once lines are awarded on the quote comparison (green "Awarded" chip) — Create PO makes one draft PO per awarded vendor. Older RFQs: click Create PO and the PO goes to the L1 vendor, prices are pre-filled from that vendor\'s catalog where it lists the item, then you add tax, delivery and the PO document and click Save PO — saving sends it for approval. Terms & conditions come from Procurement → Settings and the vendor.' },
+    { target: 'po-view-create', title: 'Create PO', purpose: 'Requisitions whose RFQ is done. Emailed RFQs appear once lines are awarded on the quote comparison (green "Awarded" chip) — Create PO makes one draft PO per awarded vendor. Older RFQs: click Create PO and the PO goes to the lowest-price vendor, prices are pre-filled from that vendor\'s catalog where it lists the item, then you add tax, delivery and the PO document and click Save PO — saving sends it for approval. Terms & conditions come from Procurement → Settings and the vendor.' },
     { target: 'po-view-approvals', title: 'Approvals', purpose: 'POs waiting for approval — the PO approvers in Procurement → Settings approve first, then any one Partner gives the final approval.' },
     { target: 'po-view-tracking', title: 'Tracking', purpose: 'Every PO from draft to closed — a status strip you can click (overdue, due this week, with vendor, partly received, in approval, closed), search and filters, and a side detail with items, receipts, approval, document and timeline.' },
   ],

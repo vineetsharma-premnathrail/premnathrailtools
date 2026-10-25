@@ -6,7 +6,7 @@ const config: TourConfig = {
   steps: [
     {
       target: 'iq-add-btn',
-      title: '+ Add Inquiries & Tenders',
+      title: '+ New inquiry or tender',
       purpose: 'Creates a new Inquiry — this button always opens the Inquiry form, not a Tender.',
       after: 'Takes you to a separate Create Inquiry page — its own guided tour covers every field there.',
     },
@@ -29,12 +29,12 @@ const config: TourConfig = {
     {
       target: 'iq-clear-btn',
       title: 'Clear',
-      purpose: 'Resets the search box, the Type filter, and every column filter below, back to the full unfiltered list.',
+      purpose: 'A text button that resets the search box, the Show filter (back to All), and every column filter below, back to the full unfiltered list.',
     },
     {
       target: 'iq-col-type',
-      title: 'Show: Inquiry / Tender',
-      purpose: 'This list combines both Inquiries and Tenders into one table. Pick Inquiry or Tender to show only that kind. With neither picked (or after Clear) both are shown together.',
+      title: 'Show: All / Inquiry / Tender',
+      purpose: 'This list combines both Inquiries and Tenders into one table. All is the default and shows both together; pick Inquiry or Tender to show only that kind.',
     },
     {
       target: 'iq-col-product',
@@ -49,8 +49,8 @@ const config: TourConfig = {
     },
     {
       target: 'iq-col-created_at',
-      title: 'Created Date (sortable)',
-      purpose: 'Sorts by when the record was created — defaults to newest first.',
+      title: 'ID and Created Date (sortable)',
+      purpose: 'The list opens sorted by ID, lowest first. Click the ID or Created Date header to sort by it; click again to reverse.',
     },
     {
       target: 'iq-col-created_by_name',

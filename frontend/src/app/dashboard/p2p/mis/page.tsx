@@ -7,10 +7,12 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { p2pApi } from '@/lib/api'
 import { P2PMisSummary } from '@/types'
-import { TEXT, GLASS, SHADOWS, BORDER, BRAND } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import P2PNav from '@/components/p2p/P2PNav'
 import { extractErrorMessages } from '@/lib/validation'
 import DateField from '@/components/erp/DateField'
+import { formatDate } from '@/lib/format'
+import { primaryBtnStyle, segmentBtnStyle, RowCount } from '@/components/shared/ui'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend)
 
@@ -48,9 +50,11 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 }
 
 function fmtDate(iso: string): string {
-  const d = new Date(iso)
-  return isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  // DD/MM/YYYY like every other date in the app.
+  return formatDate(iso)
 }
+/** 'purchase_head' → 'Purchase head' (raw role keys are never shown as-is). */
+const roleLabel = (r: string | null | undefined) => (r ? r.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()) : '—')
 
 export default function P2PMisPage() {
   const { isAuthorized, isLoading } = useRequireApp('p2p')
@@ -115,9 +119,6 @@ export default function P2PMisPage() {
       <P2PNav />
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
         <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            Procurement Module
-          </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>M.I.S Report</h1>
           {summary && (
             <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '4px 0 0' }}>
@@ -130,26 +131,20 @@ export default function P2PMisPage() {
           onClick={handleExport}
           disabled={exporting || loading || !summary}
           style={{
-            padding: '10px 18px', borderRadius: 10, border: 'none', fontSize: 13, fontWeight: 700,
-            cursor: exporting || loading ? 'not-allowed' : 'pointer', color: '#fff',
-            background: BRAND.primary, opacity: exporting || loading || !summary ? 0.6 : 1,
+            ...primaryBtnStyle,
+            cursor: exporting || loading ? 'not-allowed' : 'pointer', opacity: exporting || loading || !summary ? 0.6 : 1,
           }}
         >
           {exporting ? 'Exporting…' : '⬇ Export Excel'}
         </button>}
       </div>
 
-      <div data-tour="p2p-mis-period-tabs" style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(0,0,0,0.05)', marginBottom: 20 }}>
+      <div data-tour="p2p-mis-period-tabs" style={{ display: 'inline-flex', gap: 4, marginBottom: 20 }}>
         {PERIODS.map((p) => (
           <button
             key={p.key}
             onClick={() => setPeriod(p.key)}
-            style={{
-              padding: '8px 16px', borderRadius: 8, border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-              background: period === p.key ? '#fff' : 'transparent',
-              color: period === p.key ? BRAND.primaryHover : '#78716c',
-              boxShadow: period === p.key ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
-            }}
+            style={segmentBtnStyle(period === p.key)}
           >
             {p.label}
           </button>
@@ -192,11 +187,11 @@ export default function P2PMisPage() {
             <KpiTile label="PO Pending Approval" value={String(k!.pos_pending_approval)} color={CATEGORICAL[3]} />
           </div>
 
-          <div data-tour="p2p-mis-charts" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16 }}>
+          <div data-tour="p2p-mis-charts" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(380px, 100%), 1fr))', gap: 16 }}>
             <ChartCard title="Trend — Created vs Approved vs PO Raised">
               <Bar
                 data={{
-                  labels: summary.trend.map((t) => t.date),
+                  labels: summary.trend.map((t) => (/^\d{4}-\d{2}-\d{2}/.test(t.date) ? formatDate(t.date).slice(0, 5) : t.date)),
                   datasets: [
                     { label: 'Created', data: summary.trend.map((t) => t.created), backgroundColor: CATEGORICAL[0], borderRadius: 4, maxBarThickness: 24 },
                     { label: 'Approved', data: summary.trend.map((t) => t.approved), backgroundColor: CATEGORICAL[2], borderRadius: 4, maxBarThickness: 24 },
@@ -238,18 +233,18 @@ export default function P2PMisPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 420 }}>
                 <thead>
                   <tr>
-                    <th style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '10px 14px', fontSize: 11.5, fontWeight: 700, color: TEXT.secondary }}>Approver</th>
+                    <th style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '10px 14px', fontSize: 11.5, fontWeight: 700, color: TEXT.secondary }}>Approver <RowCount count={summary.approver_pending.length} /></th>
                     <th style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '10px 14px', fontSize: 11.5, fontWeight: 700, color: TEXT.secondary }}>Role</th>
                     <th style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'right', padding: '10px 14px', fontSize: 11.5, fontWeight: 700, color: TEXT.secondary }}>Pending</th>
                   </tr>
                 </thead>
                 <tbody>
                   {summary.approver_pending.length === 0 ? (
-                    <tr><td colSpan={3} style={{ padding: 16, textAlign: 'center', fontSize: 12.5, color: TEXT.muted }}>Nothing pending right now.</td></tr>
+                    <tr><td colSpan={3} style={{ padding: 16, textAlign: 'center', fontSize: 12.5, color: TEXT.muted }}>Nothing is waiting for an approver in this period.</td></tr>
                   ) : summary.approver_pending.map((a, i) => (
                     <tr key={`${a.approver_id}-${a.role}`} style={{ background: i % 2 ? 'rgba(255,255,255,.4)' : 'transparent' }}>
                       <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body }}>{a.approver_name}</td>
-                      <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.muted }}>{a.role}</td>
+                      <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.muted }}>{roleLabel(a.role)}</td>
                       <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 700, color: TEXT.heading, textAlign: 'right' }}>{a.pending_count}</td>
                     </tr>
                   ))}

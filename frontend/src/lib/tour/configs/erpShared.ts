@@ -70,7 +70,7 @@ export function serviceRequestFormSteps(mode: 'create' | 'edit'): TourStep[] {
     },
     {
       target: 'erp-srf-request-date',
-      title: 'Request Date',
+      title: 'Request date',
       purpose: 'Today\'s date, filled in automatically. The SR\'s official open date is set by the system when it is saved.',
     },
     {
@@ -84,7 +84,7 @@ export function serviceRequestFormSteps(mode: 'create' | 'edit'): TourStep[] {
     {
       target: 'erp-srf-category',
       title: 'Issue Category',
-      purpose: 'Which system of the machine has the fault — Mechanical, Electrical, Hydraulic, Pneumatic, Engine, Software or Other.',
+      purpose: 'Optional, and available once a Service Type is chosen. Which system of the machine has the fault — Mechanical, Electrical, Hydraulic, Pneumatic, Engine, Software or Other.',
       why: 'Reports group faults by category, so you can see which system fails most and feed that back to Design.',
     },
     {
@@ -139,7 +139,7 @@ export function serviceRequestFormSteps(mode: 'create' | 'edit'): TourStep[] {
       target: 'erp-srf-priority',
       title: 'Priority Level',
       required: true,
-      purpose: 'Click one card to choose.',
+      purpose: 'Sits next to Service Type. Click Standard or Urgent to choose.',
       options: SR_PRIORITY_OPTIONS,
     },
     {

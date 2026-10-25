@@ -7,15 +7,9 @@ const config: TourConfig = {
   pageTitle: 'Users',
   steps: [
     {
-      target: 'org-roles-stats',
-      title: 'Summary cards',
-      purpose: 'Counts across ALL users (not just the filtered list): Total, Active, Inactive, and Admins.',
-      why: 'Keep the Admin count small — admins see and can change everything.',
-    },
-    {
       target: 'org-roles-status-tabs',
       title: 'All / Active / Inactive Users',
-      purpose: 'Filters the table by whether the account can currently sign in.',
+      purpose: 'Filters the table by whether the account can currently sign in. The number in brackets is how many users are in each tab, across ALL users.',
       options: [
         { value: 'All Users', meaning: 'Everyone.' },
         { value: 'Active Users', meaning: 'Can sign in.' },
@@ -30,10 +24,10 @@ const config: TourConfig = {
     },
     {
       target: 'org-roles-sync-btn',
-      title: 'Sync from Azure AD',
-      purpose: 'Pulls the latest users, names, emails, designations, and departments from Microsoft 365 (Azure AD), so new joiners appear here without typing them in.',
-      why: 'Azure AD is the master for identity data. A sync failure usually means the app is missing directory-read permission in Azure — the error message names the reason.',
-      after: 'New people appear with no module access until you give them a role on their profile.',
+      title: 'Sync from Microsoft (Entra ID)',
+      purpose: 'Pulls the latest users, names, emails, designations, and departments from Microsoft 365 (Entra ID), so new joiners appear here without typing them in.',
+      why: 'Entra ID is the master for identity data. A sync failure usually means the app is missing directory-read permission in Entra — the error message names the reason.',
+      after: 'A confirmation asks first. New people appear with no module access until you give them a role on their profile.',
     },
     {
       target: 'org-roles-table-rows',
@@ -43,7 +37,7 @@ const config: TourConfig = {
     {
       target: 'org-roles-role-badge',
       title: 'Role',
-      purpose: 'The person\'s portal-wide role.',
+      purpose: 'Admin, or the roles this person holds. No extra role means a plain user whose access comes only from what you grant on their profile.',
       options: [
         { value: 'admin', meaning: 'Full access to every module and to Organization settings.' },
         { value: 'user', meaning: 'Only what their roles (and any extra permissions) allow.' },

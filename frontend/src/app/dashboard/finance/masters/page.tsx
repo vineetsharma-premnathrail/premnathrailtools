@@ -26,6 +26,7 @@ import {
   inputStyle, sectionStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, useFinanceSubTabs, PageHeader, TableWrap, EmptyRow, ledgerOptions,
 } from '@/components/finance/financeUi'
+import { RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import {
   FormSheet, FormPage, SheetColumns, SheetSection, SheetIcon, SheetIconName, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint,
 } from '@/components/shared/FormSheet'
@@ -178,47 +179,49 @@ function CompanyFYSection() {
   return (
     <div data-tour="fin-masters-company">
       <ErrorBanner error={error} />
-      {setup?.warnings.map((w, i) => <InfoBanner key={i} tone="warning">{w}</InfoBanner>)}
-      <InfoBanner>
-        Indian books run on the financial year (1-Apr to 31-Mar): voucher numbers restart each year (JV/2026-27/0001) and nothing can be
-        posted outside an open year or on/before its lock date. Financial years and the company GSTIN are maintained in{' '}
-        <Link href="/dashboard/organization/info" style={{ fontWeight: 700, color: 'inherit' }}>Company Info</Link> (Financial Year and
-        Legal &amp; Registration tabs) — Finance only reads them, so there is one source of truth.
-      </InfoBanner>
-
-      <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <div data-tour="fin-masters-fy-card" style={{ ...sectionStyle, flex: '1 1 340px', maxWidth: 520 }}>
-          <SectionHeader title="Current financial year" />
-          {loading ? <p style={mutedText}>Loading…</p> : !fy ? <p style={mutedText}>No financial year covers today.</p> : (
-            <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', rowGap: 8, fontSize: 13, color: TEXT.body }}>
-              <span style={{ color: TEXT.secondary }}>Year</span><strong>{fy.code}</strong>
-              <span style={{ color: TEXT.secondary }}>Period</span><span>{dmy(fy.start_date)} to {dmy(fy.end_date)}</span>
-              <span style={{ color: TEXT.secondary }}>Status</span><span><StatusPill status={fy.status} colors={STATUS_HEX} labels={STATUS_LABELS} /></span>
-              <span style={{ color: TEXT.secondary }}>Lock date</span><span>{fy.lock_date ? `${dmy(fy.lock_date)} (no postings on/before)` : 'Not set'}</span>
-              <span style={{ color: TEXT.secondary }}>Source</span><span>{fy.is_defined ? 'Defined in Company Info' : 'Assumed (statutory Apr–Mar) — not defined yet'}</span>
-            </div>
-          )}
+      {!!setup?.warnings?.length && (
+        <div role="alert" data-tour="fin-masters-warnings" style={{ display: 'flex', gap: 14, alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', padding: '10px 14px', marginBottom: 12, borderRadius: 10, background: '#fef3c7', border: '1px solid #f59e0b', color: '#78350f', fontSize: 13, lineHeight: 1.5 }}>
+          <ul style={{ margin: 0, paddingLeft: 18, flex: '1 1 360px' }}>
+            {setup.warnings.map((w, i) => <li key={i}>{w.replace(/Company Info>/g, 'Company Info > ')}</li>)}
+          </ul>
+          <Link href="/dashboard/organization/info" style={{ ...secondaryBtnStyle, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', flex: 'none' }}>Open Company Info</Link>
         </div>
-        <div data-tour="fin-masters-gst-card" style={{ ...sectionStyle, flex: '1 1 300px', maxWidth: 460 }}>
-          <SectionHeader title="Company GST registration" />
-          {loading ? <p style={mutedText}>Loading…</p> : (
-            <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', rowGap: 8, fontSize: 13, color: TEXT.body }}>
-              <span style={{ color: TEXT.secondary }}>GSTIN</span><strong>{gst?.gstin || 'Not set'}</strong>
-              <span style={{ color: TEXT.secondary }}>State</span><span>{gst?.state_code ? `${gst.state_code} — ${gst.state_name || ''}` : 'Unknown'}</span>
-              <span style={{ ...mutedText, gridColumn: '1 / -1', marginTop: 4 }}>
-                Our state vs the party&apos;s state decides CGST + SGST (same state) or IGST (different state) on every invoice.
-              </span>
-            </div>
-          )}
-          <div style={{ marginTop: 14 }}>
-            <Link href="/dashboard/organization/info" data-tour="fin-masters-company-info-link" style={{ ...secondaryBtnStyle, textDecoration: 'none', display: 'inline-block' }}>Open Company Info →</Link>
-          </div>
+      )}
+      <DetailCard>
+        <DetailSummary
+          title={loading ? 'Loading…' : fy ? `Financial year ${fy.code}` : 'No financial year covers today'}
+          text="The year and GST registration every voucher, invoice and return in Finance is booked against. Nothing can be posted outside an open year."
+          meta={fy ? <>
+            <StatusPill status={fy.status} colors={STATUS_HEX} labels={STATUS_LABELS} />
+            <span>·</span><span>{dmy(fy.start_date)} to {dmy(fy.end_date)}</span>
+            <span>·</span><span>GSTIN {gst?.gstin || <Pill label="Missing" hex="#b45309" />}</span>
+          </> : undefined}
+          actions={<Link href="/dashboard/organization/info" data-tour="fin-masters-company-info-link" style={{ ...secondaryBtnStyle, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>Open Company Info →</Link>}
+        />
+        <div data-tour="fin-masters-fy-card">
+          <DetailGroup title="Current financial year">
+            {!loading && !fy ? <DetailRow label="Year">{null}</DetailRow> : <>
+              <DetailRow label="Year">{fy?.code}</DetailRow>
+              <DetailRow label="Period">{fy ? `${dmy(fy.start_date)} to ${dmy(fy.end_date)}` : null}</DetailRow>
+              <DetailRow label="Lock date">{fy ? (fy.lock_date ? `${dmy(fy.lock_date)} — no postings on or before this date` : 'Not set') : null}</DetailRow>
+              <DetailRow label="Source">{fy ? (fy.is_defined ? 'Defined in Company Info' : 'Using the standard April to March year until you set one') : null}</DetailRow>
+            </>}
+          </DetailGroup>
         </div>
-      </div>
+        <div data-tour="fin-masters-gst-card">
+          <DetailGroup title="Company GST registration" last>
+            <DetailRow label="GSTIN">{loading ? null : (gst?.gstin ? <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{gst.gstin}</span> : <Pill label="Missing" hex="#b45309" />)}</DetailRow>
+            <DetailRow label="State">{loading ? null : (gst?.state_code ? `${gst.state_code} — ${gst.state_name || ''}` : 'Unknown')}</DetailRow>
+            <p style={{ ...mutedText, margin: '4px 0 0' }}>
+              Our state vs the party&apos;s state decides CGST + SGST (same state) or IGST (different state) on every invoice.
+            </p>
+          </DetailGroup>
+        </div>
+      </DetailCard>
 
       <TableWrap minWidth={640} tour="fin-masters-fy-table">
         <thead>
-          <tr><th style={thStyle}>Financial year</th><th style={thStyle}>Start</th><th style={thStyle}>End</th><th style={thStyle}>Status</th><th style={thStyle}>Lock date</th></tr>
+          <tr><th style={thStyle}>Financial year <RowCount count={setup?.financial_years.length ?? 0} /></th><th style={thStyle}>Start</th><th style={thStyle}>End</th><th style={thStyle}>Status</th><th style={thStyle}>Lock date</th></tr>
         </thead>
         <tbody>
           {loading ? <EmptyRow colSpan={5} text="Loading…" /> : !setup?.financial_years.length ? <EmptyRow colSpan={5} text="No financial years defined in Company Info yet." /> :
@@ -393,12 +396,12 @@ function AccountGroupsSection() {
       <TableWrap minWidth={980} tour="fin-groups-table">
         <thead>
           <tr>
-            <th style={thStyle}>Group</th><th style={thStyle}>Nature</th><th style={thStyle}>Schedule III head</th>
+            <th style={thStyle}>Group <RowCount count={tree.length} /></th><th style={thStyle}>Nature</th><th style={thStyle}>Schedule III head</th>
             <th style={thStyle}>Gross profit</th><th style={numTh}>Ledgers</th><th style={thStyle}>Type</th><th style={thStyle}></th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <EmptyRow colSpan={7} text="Loading…" /> : tree.length === 0 ? <EmptyRow colSpan={7} text="No account groups yet." /> :
+          {loading ? <EmptyRow colSpan={7} text="Loading…" /> : tree.length === 0 ? <EmptyRow colSpan={7} text="No account groups yet — use + New Sub-group to add one under a primary group." /> :
             tree.map(({ group: g, depth }) => {
               const deletable = !g.is_system && g.ledger_count === 0 && !hasChildren.has(g.id)
               return (
@@ -650,12 +653,12 @@ function LedgersSection({ onGoOpening }: { onGoOpening: () => void }) {
       <TableWrap minWidth={900} tour="fin-ledgers-table">
         <thead>
           <tr>
-            <th style={thStyle}>Code</th><th style={thStyle}>Name</th><th style={thStyle}>Type</th><th style={thStyle}>Flags</th>
+            <th style={thStyle}>Code <RowCount count={visible.length} /></th><th style={thStyle}>Name</th><th style={thStyle}>Type</th><th style={thStyle}>Flags</th>
             <th style={thStyle}>Status</th><th style={thStyle}></th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <EmptyRow colSpan={6} text="Loading…" /> : visible.length === 0 ? <EmptyRow colSpan={6} text="No ledgers match." /> :
+          {loading ? <EmptyRow colSpan={6} text="Loading…" /> : visible.length === 0 ? <EmptyRow colSpan={6} text="No ledgers match the filters — clear the search or set Status to All." /> :
             visible.flatMap((a) => {
               const rows: React.ReactNode[] = []
               if (a.group_id !== lastGroup) {
@@ -736,7 +739,7 @@ function LedgerSettingsSection({ canManage }: { canManage: boolean }) {
 
       <TableWrap minWidth={900} tour="fin-ledger-settings-table">
         <thead>
-          <tr><th style={thStyle}>Role</th><th style={thStyle}>Current ledger</th><th style={thStyle}>Standard code</th><th style={thStyle}>Change to</th><th style={thStyle}></th></tr>
+          <tr><th style={thStyle}>Role <RowCount count={settings.length} /></th><th style={thStyle}>Current ledger</th><th style={thStyle}>Standard code</th><th style={thStyle}>Change to</th><th style={thStyle}></th></tr>
         </thead>
         <tbody>
           {loading ? <EmptyRow colSpan={5} text="Loading…" /> : settings.length === 0 ? <EmptyRow colSpan={5} text="No ledger roles defined." /> :
@@ -883,10 +886,10 @@ function GSTRatesSection({ canManage }: { canManage: boolean }) {
 
       <TableWrap minWidth={640} tour="fin-gst-table">
         <thead>
-          <tr><th style={numTh}>Rate</th><th style={thStyle}>Description</th><th style={thStyle}>Status</th><th style={thStyle}></th></tr>
+          <tr><th style={numTh}>Rate <RowCount count={rates.length} /></th><th style={thStyle}>Description</th><th style={thStyle}>Status</th><th style={thStyle}></th></tr>
         </thead>
         <tbody>
-          {loading ? <EmptyRow colSpan={4} text="Loading…" /> : rates.length === 0 ? <EmptyRow colSpan={4} text="No GST rates yet." /> :
+          {loading ? <EmptyRow colSpan={4} text="Loading…" /> : rates.length === 0 ? <EmptyRow colSpan={4} text="No GST rates yet — use + Add Rate." /> :
             rates.map((r) => (
               <tr key={r.id}>
                 <td style={{ ...numTd, fontWeight: 700, width: 90 }}>{r.rate}%</td>
@@ -1066,12 +1069,12 @@ function BankCashSection({ onGoOpening }: { onGoOpening: () => void }) {
       <TableWrap minWidth={1000} tour="fin-bank-table">
         <thead>
           <tr>
-            <th style={thStyle}>Kind</th><th style={thStyle}>Name</th><th style={thStyle}>Account no.</th><th style={thStyle}>IFSC / Branch</th>
+            <th style={thStyle}>Kind <RowCount count={accounts.length} /></th><th style={thStyle}>Name</th><th style={thStyle}>Account no.</th><th style={thStyle}>IFSC / Branch</th>
             <th style={thStyle}>Ledger</th><th style={numTh}>Balance per books (₹)</th><th style={thStyle}>Status</th><th style={thStyle}></th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <EmptyRow colSpan={8} text="Loading…" /> : accounts.length === 0 ? <EmptyRow colSpan={8} text="No bank or cash accounts yet." /> :
+          {loading ? <EmptyRow colSpan={8} text="Loading…" /> : accounts.length === 0 ? <EmptyRow colSpan={8} text="No bank or cash accounts yet — use + New Account to add your bank and cash-in-hand." /> :
             accounts.map((a) => (
               <tr key={a.id}>
                 <td style={{ ...tdStyle, textTransform: 'capitalize' }}>{a.account_kind}</td>
@@ -1236,7 +1239,7 @@ function VendorsSection() {
           onClose={() => { setError([]); close() }} onSubmit={submit} saving={saving} label={editingId ? 'Save Changes' : 'Create Vendor'}>
           <SheetColumns
             left={<>
-              <SheetSection icon="truck" title="Vendor">
+              <SheetSection icon="building" title="Vendor">
                 <div style={sheetRow}>
                   <SF label="Code" req style={fixedW(130)} tour="fin-vendors-code"><input style={sheetInput} value={form.code} onChange={set('code')} /></SF>
                   <SF label="Name" req style={growW(240, 380)} tour="fin-vendors-name"><input style={sheetInput} value={form.name} onChange={set('name')} /></SF>
@@ -1327,12 +1330,12 @@ function VendorsSection() {
       <TableWrap minWidth={1200} tour="fin-vendors-table">
         <thead>
           <tr>
-            <th style={thStyle}>Code</th><th style={thStyle}>Name</th><th style={thStyle}>GST type</th><th style={thStyle}>GSTIN</th>
+            <th style={thStyle}>Code <RowCount count={visible.length} /></th><th style={thStyle}>Name</th><th style={thStyle}>GST type</th><th style={thStyle}>GSTIN</th>
             <th style={thStyle}>City / State</th><th style={numTh}>Payment days</th><th style={thStyle}>Referred by</th><th style={thStyle}>Created by</th><th style={thStyle}>Status</th><th style={thStyle}></th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <EmptyRow colSpan={10} text="Loading…" /> : visible.length === 0 ? <EmptyRow colSpan={10} text={vendors.length ? 'No vendors match.' : 'No vendors yet.'} /> :
+          {loading ? <EmptyRow colSpan={10} text="Loading…" /> : visible.length === 0 ? <EmptyRow colSpan={10} text={vendors.length ? 'No vendors match the search — clear it to see all.' : 'No vendors yet — use + New Vendor.'} /> :
             visible.map((v) => (
               <tr key={v.id}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{v.code}</td>
@@ -1539,12 +1542,12 @@ function InternalOrdersSection() {
       <TableWrap minWidth={900} tour="fin-io-table">
         <thead>
           <tr>
-            <th style={thStyle}>Code</th><th style={thStyle}>Name</th><th style={thStyle}>Type</th><th style={thStyle}>Cost center</th>
+            <th style={thStyle}>Code <RowCount count={orders.length} /></th><th style={thStyle}>Name</th><th style={thStyle}>Type</th><th style={thStyle}>Cost center</th>
             <th style={thStyle}>Period</th><th style={numTh}>Budget (₹)</th><th style={thStyle}>Status</th><th style={thStyle}></th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <EmptyRow colSpan={8} text="Loading…" /> : orders.length === 0 ? <EmptyRow colSpan={8} text="No internal orders yet." /> :
+          {loading ? <EmptyRow colSpan={8} text="Loading…" /> : orders.length === 0 ? <EmptyRow colSpan={8} text="No internal orders yet — use + New Internal Order to track a job or campaign's cost." /> :
             orders.map((o) => (
               <tr key={o.id}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{o.code}</td>
@@ -1690,7 +1693,7 @@ function OpeningBalancesSection({ canManage }: { canManage: boolean }) {
             <SheetSection icon="list" title="Ledger balances" extra={<span style={{ ...mutedText, marginLeft: 'auto' }}>Assets, liabilities and capital — not party control accounts, income or expense</span>}>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
-                  <thead><tr><th style={headCell}>Ledger</th><th style={{ ...headCell, textAlign: 'right' }}>Debit (₹)</th><th style={{ ...headCell, textAlign: 'right' }}>Credit (₹)</th><th style={headCell}></th></tr></thead>
+                  <thead><tr><th style={headCell}>Ledger <RowCount count={ledgerRows.length} /></th><th style={{ ...headCell, textAlign: 'right' }}>Debit (₹)</th><th style={{ ...headCell, textAlign: 'right' }}>Credit (₹)</th><th style={headCell}></th></tr></thead>
                   <tbody>
                     {ledgerRows.map((r) => (
                       <tr key={r.key}>
@@ -1720,11 +1723,11 @@ function OpeningBalancesSection({ canManage }: { canManage: boolean }) {
           </div>
 
           <div data-tour="fin-ob-vendor-bills">
-            <SheetSection icon="truck" title="Vendor bills unpaid on the opening date (credit — we owe)" extra={<span style={{ ...mutedText, marginLeft: 'auto' }}>Total {inr(vendorTotal)}</span>}>
+            <SheetSection icon="rupee" title="Vendor bills unpaid on the opening date (credit — we owe)" extra={<span style={{ ...mutedText, marginLeft: 'auto' }}>Total {inr(vendorTotal)}</span>}>
               {vendorRows.length > 0 && (
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
-                    <thead><tr><th style={headCell}>Vendor</th><th style={headCell}>Bill no.</th><th style={headCell}>Bill date</th><th style={headCell}>Due date</th><th style={{ ...headCell, textAlign: 'right' }}>Amount due (₹)</th><th style={headCell}></th></tr></thead>
+                    <thead><tr><th style={headCell}>Vendor <RowCount count={vendorRows.length} /></th><th style={headCell}>Bill no.</th><th style={headCell}>Bill date</th><th style={headCell}>Due date</th><th style={{ ...headCell, textAlign: 'right' }}>Amount due (₹)</th><th style={headCell}></th></tr></thead>
                     <tbody>
                       {vendorRows.map((r) => (
                         <tr key={r.key}>
@@ -1750,7 +1753,7 @@ function OpeningBalancesSection({ canManage }: { canManage: boolean }) {
               {customerRows.length > 0 && (
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
-                    <thead><tr><th style={headCell}>Customer</th><th style={headCell}>Invoice no.</th><th style={headCell}>Invoice date</th><th style={headCell}>Due date</th><th style={{ ...headCell, textAlign: 'right' }}>Amount due (₹)</th><th style={headCell}></th></tr></thead>
+                    <thead><tr><th style={headCell}>Customer <RowCount count={customerRows.length} /></th><th style={headCell}>Invoice no.</th><th style={headCell}>Invoice date</th><th style={headCell}>Due date</th><th style={{ ...headCell, textAlign: 'right' }}>Amount due (₹)</th><th style={headCell}></th></tr></thead>
                     <tbody>
                       {customerRows.map((r) => (
                         <tr key={r.key}>

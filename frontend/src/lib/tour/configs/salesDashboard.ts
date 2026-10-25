@@ -23,14 +23,14 @@ const config: TourConfig = {
       why: 'LD (liquidated damages, typically ½% per week capped at 10%) can wipe out a vehicle’s margin. Seeing it before it happens lets you prioritise a build or ask for a DP extension.',
     },
     {
-      target: 'sales-dash-approvals',
-      title: 'Approvals waiting for me',
-      purpose: 'Orders whose next approval step is yours (Sales Head → Director → Partner, by value and non-standard terms — stages set in Organization › Approval Workflows). You never see orders you submitted yourself — four-eyes rule.',
-    },
-    {
       target: 'sales-dash-risk',
       title: 'Vehicles at risk or overdue',
       purpose: 'Each row is one vehicle. At risk = the build’s target handover is after the contractual date, or the date is close and the build hasn’t reached Final Inspection. Overdue = the date has passed.',
+    },
+    {
+      target: 'sales-dash-approvals',
+      title: 'Approvals waiting for me',
+      purpose: 'Orders whose next approval step is yours (Sales Head → Director → Partner, by value and non-standard terms — stages set in Organization › Approval Workflows). You never see orders you submitted yourself — four-eyes rule.',
     },
     {
       target: 'sales-dash-extensions',

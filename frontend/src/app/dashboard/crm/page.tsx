@@ -11,11 +11,15 @@ import { stripHtml } from '@/components/RichTextEditor'
 import { extractErrorMessages } from '@/lib/validation'
 import { getRecentVisits, RecentKind, RecentVisit } from '@/lib/crmShortcuts'
 import { recordPath } from '@/lib/recordRef'
+import { smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { useCan } from '@/lib/permissions'
+import { primaryBtnStyle } from '@/components/crm/ui'
 
 export default function CrmDashboardPage() {
   const { user } = useAuth()
   const { isAuthorized, isLoading } = useRequireApp('crm')
   const router = useRouter()
+  const { can } = useCan()
   const [data, setData] = useState<CrmDashboard | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string[]>([])
@@ -42,28 +46,37 @@ export default function CrmDashboardPage() {
   return (
     <div>
       <CrmNav />
-      <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>CRM Dashboard</h1>
-      <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 24px' }}>
-        Welcome back, {user?.name || 'there'}. Here is the state of your business development pipeline.
-      </p>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', margin: '0 0 24px' }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>CRM Dashboard</h1>
+          <p style={{ fontSize: 13, color: '#57534e', margin: 0 }}>
+            Welcome back, {user?.name || 'there'}. Here is the state of your business development pipeline.
+          </p>
+        </div>
+        {can('crm', 'inquiries_tenders', 'create') && (
+          <Link href="/dashboard/crm/inquiries/new" data-tour="dash-new-inquiry-btn" style={{ ...primaryBtnStyle, textDecoration: 'none', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> New inquiry
+          </Link>
+        )}
+      </div>
 
       {loadError.length > 0 ? (
         <div role="alert" style={{ padding: '14px 18px', borderRadius: 12, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div>{loadError.map((m, i) => <p key={i} style={{ fontSize: 13, color: '#b91c1c', margin: i ? '4px 0 0' : 0 }}>{m}</p>)}</div>
-          <button type="button" onClick={() => window.location.reload()} style={{ padding: '6px 14px', borderRadius: 999, border: '1px solid rgba(0,0,0,0.12)', background: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Reload</button>
+          <button type="button" onClick={() => window.location.reload()} style={smallSecondaryBtnStyle}>Reload</button>
         </div>
       ) : loading || !data ? (
         <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
       ) : (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 14, marginBottom: 20 }}>
-            <StatCard tourId="dash-stat-organizations" label="Customer Organizations" value={data.total_organizations} color="#3b82f6" href="/dashboard/crm/organizations" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gridAutoRows: '1fr', alignItems: 'stretch', gap: 14, marginBottom: 20 }}>
+            <StatCard tourId="dash-stat-organizations" label="Organizations" value={data.total_organizations} color="#3b82f6" href="/dashboard/crm/organizations" />
             <StatCard tourId="dash-stat-inquiries" label="Inquiries" value={data.total_inquiries} color="#FF7A45" href="/dashboard/crm/inquiries?type=inquiry" />
             <StatCard tourId="dash-stat-tenders" label="Tenders" value={data.total_tenders} color="#8b5cf6" href="/dashboard/crm/inquiries?type=tender" />
-            <StatCard tourId="dash-stat-open-followups" label="Open Follow-ups" value={data.open_followups} color="#10b981" href="/dashboard/crm/followups?bucket=open" />
-            <StatCard tourId="dash-stat-overdue-followups" label="Overdue Follow-ups" value={data.overdue_followups} color="#dc2626" href="/dashboard/crm/followups?bucket=overdue" />
-            <StatCard tourId="dash-stat-today-followups" label="Today's Follow-ups" value={data.today_activities} color="#06b6d4" href="/dashboard/crm/followups?bucket=today" />
-            <StatCard tourId="dash-stat-pending-tenders" label="Pending Tenders" value={data.pending_tenders} color="#eab308" href="/dashboard/crm/inquiries?type=tender" />
+            <StatCard tourId="dash-stat-open-followups" label="Open follow-ups" value={data.open_followups} color="#10b981" href="/dashboard/crm/followups?bucket=open" />
+            <StatCard tourId="dash-stat-overdue-followups" label="Overdue follow-ups" value={data.overdue_followups} color="#dc2626" href="/dashboard/crm/followups?bucket=overdue" />
+            <StatCard tourId="dash-stat-today-followups" label="Due today" value={data.today_activities} color="#06b6d4" href="/dashboard/crm/followups?bucket=today" />
+            <StatCard tourId="dash-stat-pending-tenders" label="Pending tenders" value={data.pending_tenders} color="#eab308" href="/dashboard/crm/inquiries?type=tender" />
           </div>
 
           <div className="grid-3" style={{ gap: 20, marginBottom: 20 }}>
@@ -93,7 +106,7 @@ export default function CrmDashboardPage() {
             />
           </div>
 
-          <div className="grid-2" style={{ gap: 20 }}>
+          <div style={{ gap: 20 }}>
             <RecentList
               tourId="dash-recent-followups"
               title="Recent Follow Ups"
@@ -122,12 +135,12 @@ export default function CrmDashboardPage() {
 const panelStyle: React.CSSProperties = { boxSizing: 'border-box', borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', padding: 16 }
 const rowStyle: React.CSSProperties = { padding: '10px 14px', borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer', marginBottom: 8 }
 const rowTitle: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }
-const rowSub: React.CSSProperties = { fontSize: 11.5, color: '#78716c', margin: 0 }
+const rowSub: React.CSSProperties = { fontSize: 12, color: '#57534e', margin: 0 }
 
 function StatCard({ label, value, color, href, tourId }: { label: string; value: number; color: string; href?: string; tourId?: string }) {
   const content = (
     <>
-      <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 6px' }}>{label}</p>
+      <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#57534e', margin: '0 0 6px', minHeight: 30, display: 'flex', alignItems: 'flex-end' }}>{label}</p>
       <p style={{ fontSize: 24, fontWeight: 700, color, margin: 0 }}>{value}</p>
     </>
   )
@@ -153,10 +166,10 @@ function RecentList<T>({ title, titleColor, viewAllHref, items, renderItem, tour
     <div data-tour={tourId} style={{ height: '100%', boxSizing: 'border-box', borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', padding: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h2 style={{ fontSize: 13.5, fontWeight: 600, color: titleColor || '#1f1108', margin: 0 }}>{title}</h2>
-        {viewAllHref && <Link href={viewAllHref} style={{ fontSize: 11.5, color: '#FF7A45', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>}
+        {viewAllHref && <Link href={viewAllHref} style={{ fontSize: 12, color: '#c2410c', textDecoration: 'none', fontWeight: 600, whiteSpace: 'nowrap' }}>View all →</Link>}
       </div>
       {items.length === 0 ? (
-        <p style={{ fontSize: 12.5, color: '#a8a29e', margin: 0 }}>No records yet.</p>
+        <p style={{ fontSize: 12.5, color: '#57534e', margin: 0 }}>No records yet.</p>
       ) : (
         items.map(renderItem)
       )}
@@ -179,7 +192,7 @@ function RecentlyViewed({ title, viewAllHref, visits, fallback, onOpen, tourId }
     <div data-tour={tourId} style={{ ...panelStyle, height: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h2 style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108', margin: 0 }}>{title}</h2>
-        <Link href={viewAllHref} style={{ fontSize: 11.5, color: '#FF7A45', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
+        <Link href={viewAllHref} style={{ fontSize: 12, color: '#c2410c', textDecoration: 'none', fontWeight: 600, whiteSpace: 'nowrap' }}>View all →</Link>
       </div>
       {visits.length > 0 ? (
         visits.slice(0, 5).map((v) => (
@@ -191,10 +204,10 @@ function RecentlyViewed({ title, viewAllHref, visits, fallback, onOpen, tourId }
           </div>
         ))
       ) : fallback.length === 0 ? (
-        <p style={{ fontSize: 12.5, color: '#a8a29e', margin: 0 }}>No records yet.</p>
+        <p style={{ fontSize: 12.5, color: '#57534e', margin: 0 }}>No records yet.</p>
       ) : (
         <>
-          <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '0 0 8px' }}>You haven&apos;t opened any yet — showing the newest.</p>
+          <p style={{ fontSize: 12, color: '#57534e', margin: '0 0 8px' }}>You haven&apos;t opened any yet — showing the newest.</p>
           {fallback.slice(0, 5).map((f) => (
             <div key={f.id} onClick={() => router.push(f.href)} style={rowStyle}>
               <p style={rowTitle}>{f.title}</p>

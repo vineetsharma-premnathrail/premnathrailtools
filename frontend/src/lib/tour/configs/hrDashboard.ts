@@ -85,24 +85,18 @@ const config: TourConfig = {
       title: 'Missing HR profiles warning',
       purpose: 'Shown when some people can log in but have no HR profile yet.',
       why: 'Without a profile their department, plant, shift and probation are not tracked, so their leave and attendance cannot be handled properly.',
-      after: 'Use the link to open Employees and create the missing profiles.',
+      after: 'Use the Create profiles button to open Employees and create the missing profiles.',
     },
     {
       target: 'hr-dash-kpis',
       title: 'Key numbers',
-      purpose: 'One tile per HR area. Colours draw attention: green is good news, amber needs attention soon, red needs action now, blue is for information.',
-      after: 'Most tiles are links. Click one to open the screen behind the number.',
+      purpose: 'The numbers that need action first: pending approvals, attendance today, expiring documents and probation ending. A tile is tinted only when its number needs action (amber soon, red now).',
+      after: 'Click a tile to open the screen behind the number.',
     },
     {
       target: 'hr-dash-tile-headcount',
       title: 'Headcount',
       purpose: 'Active employees who have not exited.',
-    },
-    {
-      target: 'hr-dash-tile-joiners',
-      title: 'Joiners / Exits this month',
-      purpose: 'People joining or leaving this calendar month, taken from Lifecycle events.',
-      why: 'Comparing joiners with exits over several months gives the attrition trend. Rising exits is an early warning sign.',
     },
     {
       target: 'hr-dash-tile-attendance',
@@ -114,11 +108,6 @@ const config: TourConfig = {
       target: 'hr-dash-tile-approvals',
       title: 'Pending approvals',
       purpose: 'All open leave, attendance-correction, travel and expense requests. "No manager, HR decides" counts requests from people without a reporting manager, which come to HR.',
-    },
-    {
-      target: 'hr-dash-tile-lifecycle',
-      title: 'Open lifecycle events',
-      purpose: 'Joining, confirmation, transfer, promotion and exit events still in progress, plus how many checklist tasks are open across them.',
     },
     {
       target: 'hr-dash-tile-documents',
@@ -133,14 +122,9 @@ const config: TourConfig = {
       why: 'Every probationer needs a decision on time: confirm them or extend probation. An overdue probation leaves the employee\'s status unclear.',
     },
     {
-      target: 'hr-dash-tile-claims',
-      title: 'Claims to pay',
-      purpose: 'Expense claims that are approved but not yet paid, with the total amount.',
-    },
-    {
-      target: 'hr-dash-tile-assets',
-      title: 'Assets / Visitors',
-      purpose: 'Assets currently issued (and how many are in stock or in repair), and visitors inside the premises right now.',
+      target: 'hr-dash-more-toggle',
+      title: 'More numbers',
+      purpose: 'Opens the less urgent numbers: joiners and exits this month, on leave today, open lifecycle tasks, assets issued, visitors inside and claims to pay.',
     },
     {
       target: 'hr-dash-card-approvals',

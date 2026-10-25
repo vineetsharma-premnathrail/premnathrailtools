@@ -11,8 +11,9 @@ import { Inquiry, Tender, Organization } from '@/types'
 import CrmNav from '@/components/crm/CrmNav'
 import InquiryDetailPanel from '@/components/crm/InquiryDetailPanel'
 import TenderDetailPanel from '@/components/crm/TenderDetailPanel'
-import { secondaryBtnStyle } from '@/components/crm/ui'
-import { BRAND, TEXT } from '@/lib/theme'
+import { secondaryBtnStyle, primaryBtnStyle, inputStyle } from '@/components/crm/ui'
+import { RowCount } from '@/components/shared/ui'
+import { CONTROL, BRAND, TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ExportDialog from '@/components/erp/ExportDialog'
@@ -112,8 +113,9 @@ export default function InquiriesPage() {
     setError('')
     try {
       const [inquiryData, tenderData, orgData] = await Promise.all([
-        crmApi.listInquiries({ search: search || undefined }),
-        crmApi.listTenders({ search: search || undefined }),
+        // Every record, not the API's default first 200 — this list (and its count) is the whole register.
+        crmApi.listInquiries({ search: search || undefined, limit: 10000 }),
+        crmApi.listTenders({ search: search || undefined, limit: 10000 }),
         crmApi.listOrganizations({ picker: true }),
       ])
       setInquiries(inquiryData)
@@ -180,7 +182,7 @@ export default function InquiriesPage() {
       product: t.tender_category || 'Not provided',
       stage: t.current_stage || 'Not provided',
       status: t.status || 'Not provided',
-      secondary: t.tender_value != null ? `${t.currency || ''} ${t.tender_value.toLocaleString()}` : 'Not provided',
+      secondary: t.tender_value != null ? `${t.currency || ''} ${t.tender_value.toLocaleString('en-IN')}` : 'Not provided',
       date: t.submission_date || 'Not provided',
       created_at: t.created_at || 'Not provided',
       created_by_name: t.created_by_name || 'Not provided',
@@ -209,8 +211,8 @@ export default function InquiriesPage() {
   }, [combined, colFilters])
 
   type SortKey = 'universal_id' | 'created_at'
-  const [sortKey, setSortKey] = useState<SortKey>('created_at')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [sortKey, setSortKey] = useState<SortKey>('universal_id')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -222,7 +224,7 @@ export default function InquiriesPage() {
   }
 
   const columns: { label: string; key: SortKey | ColFilterKey | 'kind' | 'org_name' | 'secondary' | 'product'; type: 'sort' | 'filter' | 'none'; sortLabels?: [string, string] }[] = [
-    { label: 'ID', key: 'universal_id', type: 'none' },
+    { label: 'ID', key: 'universal_id', type: 'sort' },
     { label: 'Customer Organization', key: 'org_name', type: 'none' },
     { label: 'Product', key: 'product', type: 'none' },
     { label: 'Stage', key: 'stage', type: 'filter' },
@@ -261,17 +263,44 @@ export default function InquiriesPage() {
 
   const header = (
     <>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Inquiries &amp; Tenders</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 14 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Inquiries &amp; Tenders</h1>
+          <p style={{ fontSize: 13, color: '#57534e', margin: '4px 0 0' }}>{loading ? 'Loading…' : `${sortedRows.length} found`}</p>
+        </div>
+        {/* One toolbar row: add, search + type filter, then export / import; wraps on narrow screens. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {can('crm', 'inquiries_tenders', 'create') && <Link
             href="/dashboard/crm/inquiries/new"
             data-tour="iq-add-btn"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14.5, fontWeight: 700, padding: '12px 24px', borderRadius: 10, background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`, color: TEXT.white, textDecoration: 'none', whiteSpace: 'nowrap', boxShadow: `0 4px 14px ${BRAND.primaryGlow}` }}
+            style={{ ...primaryBtnStyle, textDecoration: 'none', boxShadow: `0 4px 14px ${BRAND.primaryGlow}` }}
           >
-            <span style={{ fontSize: 17, lineHeight: 1 }}>+</span> Add Inquiries &amp; Tenders
+            <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> New inquiry or tender
           </Link>}
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <input
+            data-tour="iq-search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search ID, customer organization, product, owner, zone, stage..."
+            style={{ ...inputStyle, flex: '1 1 260px', minWidth: 200, width: 'auto' }}
+          />
+          <div data-tour="iq-col-type" role="radiogroup" aria-label="Show" style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto', height: CONTROL.height, boxSizing: 'border-box', padding: '0 12px', borderRadius: 10, border: '1px solid rgba(15,23,42,0.18)', background: '#fff' }}>
+            {([['all', 'All'], ['inquiry', 'Inquiry'], ['tender', 'Tender']] as const).map(([value, label]) => (
+              <label key={value} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 600, color: typeFilter === value ? '#c2410c' : '#57534e', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                <input
+                  type="radio"
+                  name="iq-type-filter"
+                  value={value}
+                  checked={typeFilter === value}
+                  onChange={() => setTypeFilter(value)}
+                  style={{ accentColor: '#FF7A45', margin: 0, cursor: 'pointer' }}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <button onClick={clearFilters} data-tour="iq-clear-btn" type="button" style={{ background: 'none', border: 'none', padding: '0 6px', height: CONTROL.height, fontSize: 13, fontWeight: 600, color: '#c2410c', cursor: 'pointer', textDecoration: 'underline' }}>Clear</button>
+          <div style={{ display: 'flex', gap: 8 }}>
             {can('crm', 'inquiries_tenders', 'export') && <button type="button" data-tour="iq-export-btn" onClick={() => setShowExport(true)} style={secondaryBtnStyle}>Export</button>}
             {user?.role === 'admin' && can('crm', 'organizations', 'import') && <button type="button" data-tour="iq-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>}
           </div>
@@ -304,47 +333,20 @@ export default function InquiriesPage() {
     </>
   )
 
-  const searchBar = (
-    <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 6, marginBottom: 10 }}>
-      <input
-        data-tour="iq-search"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search ID, customer organization, product, owner, zone, stage..."
-        style={{ flex: '1 1 auto', minWidth: 0, padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', fontSize: 12.5, outline: 'none' }}
-      />
-      <div data-tour="iq-col-type" role="radiogroup" aria-label="Show" style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto', padding: '0 10px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff' }}>
-        {([['inquiry', 'Inquiry'], ['tender', 'Tender']] as const).map(([value, label]) => (
-          <label key={value} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 600, color: typeFilter === value ? '#FF7A45' : '#57534e', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            <input
-              type="radio"
-              name="iq-type-filter"
-              value={value}
-              checked={typeFilter === value}
-              onChange={() => setTypeFilter(value)}
-              style={{ accentColor: '#FF7A45', margin: 0, cursor: 'pointer' }}
-            />
-            {label}
-          </label>
-        ))}
-      </div>
-      <button onClick={clearFilters} data-tour="iq-clear-btn" style={{ ...secondaryBtnStyle, flex: '0 0 auto', padding: '8px 10px', fontSize: 11.5 }}>Clear</button>
-    </div>
-  )
 
   const fullTable = (
     <>
       <div style={{ ...panelOuterStyle, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000, tableLayout: 'fixed' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100, tableLayout: 'fixed' }}>
           {/* Fixed widths so headers don't shift when the Inquiry/Tender filter changes the rows. */}
           <colgroup>
-            <col style={{ width: '14%' }} />
-            <col style={{ width: '25%' }} />
-            <col style={{ width: '17%' }} />
+            <col style={{ width: 190 }} />
+            <col style={{ width: '21%' }} />
             <col style={{ width: '16%' }} />
-            <col style={{ width: '14%' }} />
-            <col style={{ width: '14%' }} />
+            <col style={{ width: '22%' }} />
+            <col style={{ width: '13%' }} />
+            <col style={{ width: '13%' }} />
           </colgroup>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
@@ -352,7 +354,7 @@ export default function InquiriesPage() {
                 if (col.type === 'filter') {
                   const key = col.key as ColFilterKey
                   return (
-                    <th key={col.key} data-tour={`iq-col-${key}`} style={{ textAlign: 'left', padding: '5px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: colFilters[key] ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                    <th key={col.key} data-tour={`iq-col-${key}`} style={{ textAlign: 'left', padding: '5px 10px', fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: colFilters[key] ? '#c2410c' : '#57534e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                       <Select
                         value={colFilters[key]}
                         onChange={(e) => setColFilter(key, e.target.value)}
@@ -368,7 +370,7 @@ export default function InquiriesPage() {
                 }
                 if (col.type === 'none') {
                   return (
-                    <th key={col.key} data-tour={`iq-col-${col.key}`} style={{ textAlign: 'left', padding: '7px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                    <th key={col.key} data-tour={`iq-col-${col.key}`} style={{ textAlign: 'left', padding: '7px 16px', fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#57534e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                       {col.label}
                     </th>
                   )
@@ -378,7 +380,7 @@ export default function InquiriesPage() {
                     key={col.key}
                     onClick={() => toggleSort(col.key as SortKey)}
                     data-tour={`iq-col-${col.key}`}
-                    style={{ textAlign: 'left', padding: '7px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: sortKey === col.key ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, cursor: 'pointer', userSelect: 'none' }}
+                    style={{ textAlign: 'left', padding: '7px 16px', fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: sortKey === col.key ? '#c2410c' : '#57534e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, cursor: 'pointer', userSelect: 'none' }}
                   >
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                       {col.label}
@@ -390,6 +392,7 @@ export default function InquiriesPage() {
                       <CaretUp size={9}
                         style={{ opacity: sortKey === col.key ? 1 : 0.35, transform: sortKey === col.key && sortDir === 'desc' ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
                     </span>
+                    {col.key === 'universal_id' && <RowCount count={sortedRows.length} />}
                   </th>
                 )
               })}
@@ -402,7 +405,7 @@ export default function InquiriesPage() {
               const pinned = pinnedKeys.includes(r.key)
               return (
               <tr key={r.key} onClick={() => openRow(r)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
-                <td style={{ padding: '7px 16px' }}>
+                <td style={{ padding: '7px 16px', minWidth: 170, whiteSpace: 'nowrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button
                       onClick={(e) => togglePin(r.key, e)}
@@ -412,21 +415,14 @@ export default function InquiriesPage() {
                     >
                       <PushPin size={14} weight={pinned ? 'fill' : 'regular'} color={pinned ? '#FF7A45' : '#a8a29e'} />
                     </button>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45', whiteSpace: 'nowrap', lineHeight: 1.35 }}>
-                      {/* INQ-20260917- on line 1, the serial on line 2 */}
-                      {r.universal_id.includes('-') ? (
-                        <>
-                          {r.universal_id.slice(0, r.universal_id.lastIndexOf('-') + 1)}
-                          <br />
-                          {r.universal_id.slice(r.universal_id.lastIndexOf('-') + 1)}
-                        </>
-                      ) : r.universal_id}
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#c2410c', whiteSpace: 'nowrap', lineHeight: 1.35 }}>
+                      {r.universal_id}
                     </span>
                   </div>
                 </td>
                 <td style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: '#1f1108', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.35 }}>{orgById.get(r.org_id)?.name || 'Not provided'}</td>
                 <td title={r.product} style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.product}</td>
-                <td title={r.stage} style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.stage}</td>
+                <td title={r.stage} style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.35 }}>{r.stage}</td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.created_at === 'Not provided' ? r.created_at : formatDate(r.created_at)}</td>
                 <td title={r.created_by_name} style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.created_by_name}</td>
               </tr>
@@ -445,7 +441,6 @@ export default function InquiriesPage() {
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
         <CrmNav />
         {header}
-        {searchBar}
         {fullTable}
       </div>
     )

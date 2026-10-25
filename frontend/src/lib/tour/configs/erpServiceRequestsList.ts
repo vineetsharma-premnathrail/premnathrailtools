@@ -50,9 +50,14 @@ const config: TourConfig = {
       purpose: 'Resets search and every filter.',
     },
     {
+      target: 'erp-sr-columns-btn',
+      title: 'Columns',
+      purpose: 'Shows or hides the extra columns: Service Type, Opening Date, Closing Date, Resolution Time and Warranty. By default the list shows the essentials so Client and Site have room.',
+    },
+    {
       target: 'erp-sr-table',
       title: 'Service request rows',
-      purpose: 'SR number, machine, client & site, issue, service type, priority (red = Urgent), coloured status badge, opening/closing dates, age in days and warranty period. Click a row to open the SR; "Edit" appears only on SRs you created (or for admins).',
+      purpose: 'SR number, machine, client & site, issue, priority (red = Urgent), coloured status badge and SLA. Switch on more columns (service type, dates, age in days, warranty) with Columns. View / Edit stay pinned at the right edge. Click a row to open the SR; "Edit" appears only on SRs you created (or for admins).',
       why: 'Age counts days since the SR was opened — it is the customer\'s waiting time.',
     },
   ],

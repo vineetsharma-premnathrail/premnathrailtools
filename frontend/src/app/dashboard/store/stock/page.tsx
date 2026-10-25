@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { StoreItem, StoreLocation, StoreStockBalance } from '@/types'
 import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
-import { inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, secondaryBtnStyle, chipBtnStyle, RowCount } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -143,6 +144,9 @@ export default function StoreStockPage() {
     return Array.from(rows.values()).sort((a, b) => a.label.localeCompare(b.label))
   }, [filteredBalances])
   const inr = (n: number) => `₹ ${n.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+  // Quantities with Indian grouping (1,25,000.5) — never a raw float.
+  const qty = (n: number | null | undefined) => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 })
+  const NUM_COLS = new Set(['Items', 'Stock Value', 'Available Value', 'Low stock', 'In quality', 'Blocked', 'On Hand (Free)', 'Reserved', 'Available', 'Quality', 'With Vendor'])
   const clearFilters = () => {
     setSearch(''); setFilterLocation(''); setFilterCategory(''); setFilterSubcategory('')
   }
@@ -233,9 +237,6 @@ export default function StoreStockPage() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            Store &amp; Inventory
-          </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Stock</h1>
           {myPlants?.restricted && (
             <p data-tour="stock-plant-scope" style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 8px' }}>
@@ -247,7 +248,7 @@ export default function StoreStockPage() {
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {can('store', 'stock', 'export') && <button data-tour="stock-export-btn" onClick={exportExcel} disabled={exporting} style={{ ...secondaryBtnStyle, opacity: exporting ? 0.7 : 1 }}>{exporting ? 'Exporting…' : 'Export'}</button>}
-          {isAdmin && <button data-tour="stock-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Opening Stock Import</button>}
+          {isAdmin && <button data-tour="stock-import-btn" onClick={() => setShowImport(true)} style={{ background: 'none', border: 'none', padding: '0 4px', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#475569', textDecoration: 'underline' }}>Opening Stock Import</button>}
         </div>
       </div>
 
@@ -288,6 +289,12 @@ export default function StoreStockPage() {
         </FormSheet>
       )}
 
+      <div data-tour="stock-view-tabs" style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+        {([['overview', 'Store Overview'], ['matrix', 'Item × Store'], ['balances', 'All Balances'], ['asof', 'Stock on Date']] as const).filter(([v]) => v !== 'asof' || seeAsOf).map(([v, label]) => (
+          <button key={v} onClick={() => setView(v)} style={{ ...chipBtnStyle(view === v), minHeight: 38, padding: '0 16px', fontSize: 13 }}>{label}</button>
+        ))}
+      </div>
+
       <div data-tour="stock-filters" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 18 }}>
         <input
           data-tour="stock-search"
@@ -311,33 +318,23 @@ export default function StoreStockPage() {
         {hasFilters && <button onClick={clearFilters} style={secondaryBtnStyle}>Clear</button>}
       </div>
 
-      <div data-tour="stock-view-tabs" style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-        {([['overview', 'Store Overview'], ['matrix', 'Item × Store'], ['balances', 'All Balances'], ['asof', 'Stock on Date']] as const).filter(([v]) => v !== 'asof' || seeAsOf).map(([v, label]) => (
-          <button key={v} onClick={() => setView(v)} style={{
-            padding: '7px 14px', borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-            border: `1px solid ${view === v ? BRAND.primary : GLASS.border}`,
-            background: view === v ? BRAND.primary : '#fff', color: view === v ? '#fff' : TEXT.secondary,
-          }}>{label}</button>
-        ))}
-      </div>
-
       {view === 'asof' && seeAsOf && <StockAsOfPanel locationId={filterLocation} search={search} canExport={canFeature('store', 'stock', 'as_of', 'export')} />}
 
       {view === 'overview' && (
         <div data-tour="stock-overview">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 18 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gridAutoRows: '1fr', alignItems: 'stretch', gap: 12, marginBottom: 18 }}>
             {[
-              ...(seeValues ? [{ label: 'Stock Value', value: loading ? '…' : inr(totals.value), hint: totals.unpriced ? `${totals.unpriced} line(s) have no rate — set standard cost on the item` : 'At moving average / standard cost', color: TEXT.heading }] : []),
-              { label: 'Stores Holding Stock', value: loading ? '…' : String(storeSummary.length), hint: `${distinctItems} distinct item(s)`, color: TEXT.heading },
-              { label: 'At / Below Reorder', value: loading ? '…' : String(totals.low), hint: 'Available ≤ item reorder level', color: totals.low ? '#dc2626' : TEXT.heading },
-              { label: 'In Quality', value: loading ? '…' : String(totals.quality), hint: 'Waiting for inspection decision', color: totals.quality ? '#2563EB' : TEXT.heading },
-              { label: 'Blocked', value: loading ? '…' : String(totals.blocked), hint: 'Quarantined — cannot be issued', color: totals.blocked ? '#d97706' : TEXT.heading },
-              ...(inTransit != null ? [{ label: 'Transfers In Transit', value: String(inTransit), hint: "Dispatched, not yet received — on neither store's balance", color: inTransit ? '#7c3aed' : TEXT.heading }] : []),
+              ...(seeValues ? [{ label: 'Stock Value', value: loading ? '…' : inr(totals.value), hint: totals.unpriced ? <Link href="/dashboard/store" style={{ color: '#c2410c', fontWeight: 600 }}>{totals.unpriced} line{totals.unpriced === 1 ? '' : 's'} with no rate — set cost</Link> : 'At moving average / standard cost', color: TEXT.heading }] : []),
+              { label: 'Stores Holding Stock', value: loading ? '…' : storeSummary.length.toLocaleString('en-IN'), hint: `${distinctItems.toLocaleString('en-IN')} distinct item${distinctItems === 1 ? '' : 's'}`, color: TEXT.heading },
+              { label: 'At / Below Reorder', value: loading ? '…' : totals.low ? String(totals.low) : 'None', hint: 'Available ≤ item reorder level', color: totals.low ? '#dc2626' : TEXT.muted },
+              { label: 'In Quality', value: loading ? '…' : totals.quality ? String(totals.quality) : 'None', hint: 'Waiting for inspection decision', color: totals.quality ? '#2563EB' : TEXT.muted },
+              { label: 'Blocked', value: loading ? '…' : totals.blocked ? String(totals.blocked) : 'None', hint: 'Quarantined — cannot be issued', color: totals.blocked ? '#b45309' : TEXT.muted },
+              ...(inTransit != null ? [{ label: 'Transfers In Transit', value: inTransit ? String(inTransit) : 'None', hint: "Dispatched, not yet received — on neither store's balance", color: inTransit ? '#7c3aed' : TEXT.muted }] : []),
             ].map((k) => (
-              <div key={k.label} style={{ padding: 16, borderRadius: 16, background: GLASS.card, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass() }}>
+              <div key={k.label} style={{ padding: 16, height: '100%', boxSizing: 'border-box', borderRadius: 16, background: GLASS.card, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass() }}>
                 <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 6px' }}>{k.label}</p>
                 <p style={{ fontSize: 22, fontWeight: 700, color: k.color, margin: '0 0 4px' }}>{k.value}</p>
-                <p style={{ fontSize: 11.5, color: TEXT.muted, margin: 0 }}>{k.hint}</p>
+                <p style={{ fontSize: 11.5, color: '#475569', margin: 0 }}>{k.hint}</p>
               </div>
             ))}
           </div>
@@ -346,25 +343,25 @@ export default function StoreStockPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
               <thead>
                 <tr>
-                  {['Store', 'Items', ...(seeValues ? ['Stock Value', 'Available Value'] : []), 'At / Below Reorder', 'In Quality', 'Blocked'].map((h) => (
-                    <th key={h} style={{ background: '#fdf1e6', textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+                  {['Store', 'Items', ...(seeValues ? ['Stock Value', 'Available Value'] : []), 'Low stock', 'In quality', 'Blocked'].map((h, hi) => (
+                    <th key={h} style={{ background: '#fdf1e6', textAlign: NUM_COLS.has(h) ? 'right' : 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap' }}>{h}{hi === 0 && <RowCount count={storeSummary.length} />}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {loading && <tr><td colSpan={summaryCols} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
                 {!loading && storeSummary.length === 0 && (
-                  <tr><td colSpan={summaryCols} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No stock matches the filters.' : 'No stock recorded yet.'}</td></tr>
+                  <tr><td colSpan={summaryCols} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No stock matches the filters.' : 'No stock recorded yet — stock arrives through a GRN (or the admin Opening Stock Import at go-live).'}</td></tr>
                 )}
                 {!loading && storeSummary.map((s) => (
                   <tr key={s.id} title="Show this store's balances" onClick={() => { setFilterLocation(String(s.id)); setView('balances') }} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                     <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{s.name}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{s.items}</td>
-                    {seeValues && <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{inr(s.value)}</td>}
-                    {seeValues && <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: BRAND.primaryActive }}>{inr(s.available)}</td>}
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: s.low ? '#dc2626' : TEXT.muted }}>{s.low || '—'}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: s.quality ? '#2563EB' : TEXT.muted }}>{s.quality || '—'}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: s.blocked ? '#d97706' : TEXT.muted }}>{s.blocked || '—'}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: TEXT.secondary }}>{s.items.toLocaleString('en-IN')}</td>
+                    {seeValues && <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', fontWeight: 600, color: TEXT.body }}>{inr(s.value)}</td>}
+                    {seeValues && <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', fontWeight: 600, color: TEXT.body }}>{inr(s.available)}</td>}
+                    <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: s.low ? '#dc2626' : TEXT.muted }}>{s.low || '—'}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: s.quality ? '#2563EB' : TEXT.muted }}>{s.quality || '—'}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: s.blocked ? '#d97706' : TEXT.muted }}>{s.blocked || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -379,23 +376,23 @@ export default function StoreStockPage() {
             <thead>
               <tr>
                 {['Item (available qty)', ...matrixStores.map((s) => s.name), 'Total'].map((h, i) => (
-                  <th key={`${h}-${i}`} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: i === 0 ? 'left' : 'right', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+                  <th key={`${h}-${i}`} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: i === 0 ? 'left' : 'right', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap' }}>{h}{i === 0 && <RowCount count={matrixRows.length} />}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading && <tr><td colSpan={matrixStores.length + 2} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
               {!loading && matrixRows.length === 0 && (
-                <tr><td colSpan={matrixStores.length + 2} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No stock matches the filters.' : 'No stock recorded yet.'}</td></tr>
+                <tr><td colSpan={matrixStores.length + 2} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No stock matches the filters.' : 'No stock recorded yet — stock arrives through a GRN (or the admin Opening Stock Import at go-live).'}</td></tr>
               )}
               {!loading && matrixRows.map((r) => (
                 <tr key={r.item_id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                  <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{r.label}</td>
+                  <td title={r.label} style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</td>
                   {matrixStores.map((s) => {
                     const q = r.byStore.get(s.id)
-                    return <td key={s.id} style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', color: q ? TEXT.secondary : TEXT.muted, whiteSpace: 'nowrap' }}>{q != null ? `${q} ${r.uom}` : '—'}</td>
+                    return <td key={s.id} style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', color: q ? TEXT.secondary : TEXT.muted, whiteSpace: 'nowrap' }}>{q != null ? `${qty(q)} ${r.uom}` : '—'}</td>
                   })}
-                  <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, textAlign: 'right', color: BRAND.primaryActive, whiteSpace: 'nowrap' }}>{r.total} {r.uom}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, textAlign: 'right', color: BRAND.primaryActive, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{qty(r.total)} {r.uom}</td>
                 </tr>
               ))}
             </tbody>
@@ -409,36 +406,36 @@ export default function StoreStockPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead>
             <tr>
-              {['Item', 'Store', 'On Hand (Free)', 'Reserved', 'Available', 'Quality', 'Blocked', 'With Vendor'].map((h) => (
-                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+              {['Item', 'Store', 'On Hand (Free)', 'Reserved', 'Available', 'Quality', 'Blocked', 'With Vendor'].map((h, hi) => (
+                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: NUM_COLS.has(h) ? 'right' : 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap' }}>{h}{hi === 0 && <RowCount count={filteredBalances.length} />}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && filteredBalances.length === 0 && (
-              <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No balances match the filters.' : 'No stock recorded yet.'}</td></tr>
+              <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No balances match the filters.' : 'No stock recorded yet — stock arrives through a GRN (or the admin Opening Stock Import at go-live).'}</td></tr>
             )}
             {!loading && filteredBalances.map((b) => (
               <tr key={b.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{b.item_code} — {b.item_name}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{b.location_name}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{b.on_hand_qty} {b.uom}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{b.reserved_qty} {b.uom}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: BRAND.primaryActive }}>{b.available_qty} {b.uom}</td>
-                <td title="Received, waiting for a Quality inspection lot decision — can't be issued" style={{ padding: '12px 16px', fontSize: 13, color: (b.quality_qty || 0) > 0 ? '#2563EB' : TEXT.muted, whiteSpace: 'nowrap' }}>
-                  {(b.quality_qty || 0) > 0 ? `${b.quality_qty} ${b.uom || ''}` : '—'}
+                <td title={`${b.item_code || ''} — ${b.item_name || ''}`} style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.item_code || '—'} — {b.item_name || '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{b.location_name || '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: TEXT.secondary }}>{qty(b.on_hand_qty)} {b.uom || ''}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: TEXT.secondary }}>{qty(b.reserved_qty)} {b.uom || ''}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', fontWeight: 600, color: BRAND.primaryActive }}>{qty(b.available_qty)} {b.uom || ''}</td>
+                <td title="Received, waiting for a Quality inspection lot decision — can't be issued" style={{ padding: '12px 16px', fontSize: 13, color: (b.quality_qty || 0) > 0 ? '#2563EB' : TEXT.muted, whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                  {(b.quality_qty || 0) > 0 ? `${qty(b.quality_qty)} ${b.uom || ''}` : '—'}
                 </td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: b.quarantine_qty > 0 ? '#d97706' : TEXT.muted, whiteSpace: 'nowrap' }}>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: b.quarantine_qty > 0 ? '#d97706' : TEXT.muted, whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                   {b.quarantine_qty > 0 ? (
                     <>
-                      {b.quarantine_qty} {b.uom}
+                      {qty(b.quarantine_qty)} {b.uom || ''}
                       {canPost && <span onClick={() => openClear(b)} style={{ marginLeft: 10, color: '#FF6A2A', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Clear</span>}
                     </>
                   ) : '—'}
                 </td>
-                <td title="Sent to a job-work vendor on a challan — still ours and valued, not issuable (Store › Job Work)" style={{ padding: '12px 16px', fontSize: 13, color: (b.vendor_qty || 0) > 0 ? '#7c3aed' : TEXT.muted, whiteSpace: 'nowrap' }}>
-                  {(b.vendor_qty || 0) > 0 ? `${b.vendor_qty} ${b.uom || ''}` : '—'}
+                <td title="Sent to a job-work vendor on a challan — still ours and valued, not issuable (Store › Job Work)" style={{ padding: '12px 16px', fontSize: 13, color: (b.vendor_qty || 0) > 0 ? '#7c3aed' : TEXT.muted, whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                  {(b.vendor_qty || 0) > 0 ? `${qty(b.vendor_qty)} ${b.uom || ''}` : '—'}
                 </td>
               </tr>
             ))}

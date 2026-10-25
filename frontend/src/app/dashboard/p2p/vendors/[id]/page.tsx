@@ -7,12 +7,12 @@ import { useCan } from '@/lib/permissions'
 import { vendorsApi } from '@/lib/api'
 import { ProcurementVendor, VendorCatalogRow, VendorDocumentRow } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { inputStyle, primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
 import VendorFormDialog from '@/components/p2p/VendorFormDialog'
 import ImportDialog, { saveBlob } from '@/components/shared/ImportDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import { formatDateTime } from '@/lib/format'
+import { formatDate, formatDateTime } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -24,21 +24,16 @@ const card: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 16,
 }
 const h2: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }
-const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 2px' }
 const th: React.CSSProperties = { position: 'sticky', top: 0, background: '#fdf1e6', textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 700, color: TEXT.secondary, whiteSpace: 'nowrap' }
 const td: React.CSSProperties = { padding: '8px 10px', fontSize: 12.5, color: TEXT.body, borderTop: '1px solid rgba(0,0,0,0.05)', verticalAlign: 'top' }
 
 const EMPTY_ITEM = { item_name: '', part_code: '', make: '', unit: '', unit_price: '', currency: 'INR', dimensions: '', technical_spec: '', lead_time_days: '' }
 type ItemForm = typeof EMPTY_ITEM
 
-function Info({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <div style={{ flex: '1 1 200px' }}>
-      <p style={lbl}>{label}</p>
-      <p style={{ fontSize: 13, color: value ? TEXT.heading : TEXT.muted, margin: 0, whiteSpace: 'pre-wrap' }}>{value || '—'}</p>
-    </div>
-  )
-}
+const STATUS_LABEL: Record<string, string> = { active: 'Active', inactive: 'Inactive', blocked: 'Blocked' }
+const STATUS_HEX: Record<string, string> = { active: '#16a34a', inactive: '#78716c', blocked: '#dc2626' }
+const MSME_ACTIVITY: Record<string, string> = { manufacturing: 'Manufacturing', services: 'Services', trader: 'Trader' }
+const cap = (v: string) => `${v[0].toUpperCase()}${v.slice(1)}`
 
 export default function VendorDetailPage() {
   const { user, isLoading } = useAuth()
@@ -76,13 +71,15 @@ export default function VendorDetailPage() {
   useEffect(() => {
     if (!allowed || !id) return
     let cancelled = false
+    setError('')
     Promise.all([vendorsApi.get(id), seeDocs ? vendorsApi.documents(id) : Promise.resolve([]), seeCatalog ? vendorsApi.catalog(id) : Promise.resolve([]), vendorsApi.meta()])
       .then(([v, d, c, m]) => { if (!cancelled) { setVendor(v); setDocs(d); setItems(c); setDocTypes(m.doc_types) } })
       .catch((err) => { if (!cancelled) setError(extractErrorMessages(err, 'Could not load this vendor — reload the page.').join(' ')) })
     return () => { cancelled = true }
   }, [allowed, id, reload, seeDocs, seeCatalog])
 
-  if (isLoading || !allowed) return null
+  if (isLoading) return <div><P2PNav /><p role="status" style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p></div>
+  if (!allowed) return <div><P2PNav /><p role="alert" style={{ fontSize: 13, color: TEXT.muted }}>You don&apos;t have access to Vendors. Ask an admin to give you Procurement › Vendors › View.</p></div>
   if (linkError) return (<div><P2PNav /><InvalidRecordLink message={linkError} listHref="/dashboard/p2p/vendors" listLabel="Back to vendors" /></div>)
   const fail = (err: unknown, msg: string) => setError(extractErrorMessages(err, msg).join(' '))
 
@@ -131,39 +128,68 @@ export default function VendorDetailPage() {
     <div>
       <P2PNav />
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
-        <div>
-          <p style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45', margin: '0 0 4px' }}>{vendor?.code}</p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{vendor?.name || 'Vendor'}</h1>
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>{vendor?.code || 'Vendor'}</h1>
+          <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>Vendor master — contact, tax details, documents and the items this vendor sells.</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" style={secondaryBtnStyle} onClick={() => router.push('/dashboard/p2p/vendors')}>← Back</button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {vendor && canEditVendor && <button type="button" style={primaryBtnStyle} onClick={() => setEditing(true)}>Edit</button>}
+          <button type="button" style={secondaryBtnStyle} onClick={() => router.push('/dashboard/p2p/vendors')}>← Back</button>
         </div>
       </div>
 
-      {error && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{error}</div>}
-
-      {vendor && (
-        <div style={card}>
-          <h2 style={{ ...h2, marginBottom: 12 }}>Details</h2>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
-            <Info label="Contact person" value={vendor.contact_name} />
-            <Info label="Contact number" value={vendor.contact_phone} />
-            <Info label="Email" value={vendor.contact_email} />
-            <Info label="Address" value={[vendor.address, vendor.city, vendor.state, vendor.pin_code].filter(Boolean).join(', ')} />
-            <Info label="GSTIN" value={vendor.gstin} />
-            <Info label="Website" value={vendor.website} />
-            <Info label="Status" value={vendor.status} />
-            <Info label="Referred by" value={vendor.referred_by_label} />
-            <Info label="Created by" value={vendor.created_by_name ? `${vendor.created_by_name}${vendor.created_at ? ` · ${formatDateTime(vendor.created_at)}` : ''}` : null} />
-            {(() => {
-              const m = vendor as unknown as { msme_category?: string | null; udyam_number?: string | null; payment_days?: number | null }
-              return m.msme_category ? <Info label="MSME" value={`${m.msme_category[0].toUpperCase()}${m.msme_category.slice(1)} · ${m.udyam_number || '—'} · pay within ${Math.min(m.payment_days ?? 15, 45)} days`} /> : null
-            })()}
-          </div>
-          <div style={{ marginTop: 14 }}><Info label="Vendor's terms & conditions" value={vendor.terms_conditions} /></div>
+      {error && (
+        <div role="alert" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span>{error}</span>
+          {!vendor && <button type="button" onClick={() => setReload((x) => x + 1)} style={smallSecondaryBtnStyle}>Try again</button>}
         </div>
       )}
+      {!vendor && !error && <p role="status" style={{ fontSize: 13, color: TEXT.muted }}>Loading vendor…</p>}
+
+      {vendor && (() => {
+        const m = vendor as unknown as { msme_category?: string | null; udyam_number?: string | null; msme_activity?: string | null; payment_days?: number | null }
+        const place = [vendor.city, vendor.state].filter(Boolean).join(', ')
+        return (
+          <DetailCard>
+            <DetailSummary
+              title={vendor.name}
+              text={`Supplier${place ? ` in ${place}` : ''}${seeCatalog ? ` with ${vendor.catalog_count} catalog item${vendor.catalog_count === 1 ? '' : 's'}` : ''}${seeDocs ? `${seeCatalog ? ' and' : ' with'} ${vendor.document_count} document${vendor.document_count === 1 ? '' : 's'} on file` : ''}.`}
+              meta={<>
+                <Pill label={STATUS_LABEL[vendor.status] || vendor.status} hex={STATUS_HEX[vendor.status] || '#78716c'} />
+                {m.msme_category && <Pill label={`MSME · ${cap(m.msme_category)}`} hex="#0891b2" />}
+                {vendor.created_by_name && <span>Added by {vendor.created_by_name}{vendor.created_at ? ` on ${formatDate(vendor.created_at)}` : ''}</span>}
+              </>}
+            />
+            <DetailGroup title="Contact">
+              <DetailRow label="Contact person">{vendor.contact_name}</DetailRow>
+              <DetailRow label="Contact number">{vendor.contact_phone}</DetailRow>
+              <DetailRow label="Email">{vendor.contact_email}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="Address">
+              <DetailRow label="Address">{[vendor.address, vendor.city, vendor.state, vendor.pin_code].filter(Boolean).join(', ')}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="GST & website">
+              <DetailRow label="GSTIN">{vendor.gstin}</DetailRow>
+              <DetailRow label="Website">{vendor.website}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="MSME & payment">
+              <DetailRow label="MSME category">{m.msme_category ? cap(m.msme_category) : 'Not an MSME'}</DetailRow>
+              {m.msme_category && <DetailRow label="MSME activity">{m.msme_activity ? MSME_ACTIVITY[m.msme_activity] || m.msme_activity : null}</DetailRow>}
+              {m.msme_category && <DetailRow label="Udyam registration no.">{m.udyam_number}</DetailRow>}
+              <DetailRow label="Payment terms">{m.msme_category ? `Pay within ${Math.min(m.payment_days ?? 15, 45)} days` : m.payment_days != null ? `${m.payment_days} days` : null}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="Referral & record" last={!vendor.terms_conditions}>
+              <DetailRow label="Referred by">{vendor.referred_by_label}</DetailRow>
+              <DetailRow label="Added by">{vendor.created_by_name ? `${vendor.created_by_name}${vendor.created_at ? ` · ${formatDateTime(vendor.created_at)}` : ''}` : null}</DetailRow>
+            </DetailGroup>
+            {vendor.terms_conditions && (
+              <DetailGroup last>
+                <DetailRow label="Vendor's terms & conditions">{vendor.terms_conditions}</DetailRow>
+              </DetailGroup>
+            )}
+          </DetailCard>
+        )
+      })()}
 
       {seeDocs && (
       <div style={card}>
@@ -180,10 +206,10 @@ export default function VendorDetailPage() {
             </label>
           </div>}
         </div>
-        {docs.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No documents yet.</p> : (
+        {docs.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No documents yet{canEditVendor && canFeature('p2p', 'vendors', 'documents', 'create') ? ' — pick the document type and use Upload.' : '.'}</p> : (
           <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', minWidth: 560, borderCollapse: 'collapse' }}>
-            <thead><tr>{['File', 'Type', 'Uploaded by', 'On', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['File', 'Type', 'Uploaded by', 'On', ''].map((h, i) => <th key={h} style={th}>{h}{i === 0 && <RowCount count={docs.length} />}</th>)}</tr></thead>
             <tbody>
               {docs.map((d) => (
                 <tr key={d.id}>
@@ -192,7 +218,7 @@ export default function VendorDetailPage() {
                   <td style={td}>{d.uploaded_by_name || '—'}</td>
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>{formatDateTime(d.created_at)}</td>
                   {/* Company rule: 'Delete' on Vendors AND only a document you uploaded. */}
-                  <td style={td}>{canDelete('p2p', 'vendors', d.uploaded_by_id ?? null) && canFeature('p2p', 'vendors', 'documents', 'delete') && <button type="button" onClick={() => setConfirm({ kind: 'doc', id: d.id, name: d.file_name })} style={{ background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', fontSize: 12 }}>Delete</button>}</td>
+                  <td style={td}>{canDelete('p2p', 'vendors', d.uploaded_by_id ?? null) && canFeature('p2p', 'vendors', 'documents', 'delete') && <button type="button" onClick={() => setConfirm({ kind: 'doc', id: d.id, name: d.file_name })} style={smallDangerBtnStyle}>Delete</button>}</td>
                 </tr>
               ))}
             </tbody>
@@ -216,7 +242,7 @@ export default function VendorDetailPage() {
         {items.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No items yet — add them one by one or import the vendor&apos;s list.</p> : (
           <div style={{ overflow: 'auto', maxHeight: 460 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
-              <thead><tr>{['Item', 'Part code', 'Make', 'Unit', ...(seePrices ? ['Price'] : []), 'Dimensions', 'Technical spec', 'Lead time', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Item', 'Part code', 'Make', 'Unit', ...(seePrices ? ['Price'] : []), 'Dimensions', 'Technical spec', 'Lead time', ''].map((h, i) => <th key={h} style={h === 'Price' ? { ...th, textAlign: 'right' } : th}>{h}{i === 0 && <RowCount count={items.length} />}</th>)}</tr></thead>
               <tbody>
                 {items.map((c) => (
                   <tr key={c.id}>
@@ -224,13 +250,14 @@ export default function VendorDetailPage() {
                     <td style={td}>{c.part_code || '—'}</td>
                     <td style={td}>{c.make || '—'}</td>
                     <td style={td}>{c.unit || '—'}</td>
-                    {seePrices && <td style={{ ...td, whiteSpace: 'nowrap' }}>{c.unit_price != null ? `${c.currency} ${c.unit_price.toLocaleString()}` : '—'}</td>}
+                    {seePrices && <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right' }}>{c.unit_price != null ? `${c.currency} ${c.unit_price.toLocaleString('en-IN')}` : '—'}</td>}
                     <td style={td}>{c.dimensions || '—'}</td>
-                    <td style={{ ...td, maxWidth: 260 }}>{c.technical_spec || '—'}</td>
-                    <td style={td}>{c.lead_time_days != null ? `${c.lead_time_days} d` : '—'}</td>
+                    <td style={{ ...td, maxWidth: 260 }} title={c.technical_spec || undefined}><span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{c.technical_spec || '—'}</span></td>
+                    <td style={td}>{c.lead_time_days != null ? `${c.lead_time_days} days` : '—'}</td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', gap: 6 }}>
                       {/* A catalog line is part of the vendor: add / edit / remove all need 'Edit'. */}
-                      {canEditVendor && vendorFeature('catalog', 'edit') && <button type="button" style={{ ...secondaryBtnStyle, padding: '3px 10px', fontSize: 12 }} onClick={() => {
+                      {canEditVendor && vendorFeature('catalog', 'edit') && <button type="button" style={smallSecondaryBtnStyle} onClick={() => {
                         setEditItemId(c.id)
                         setItemError('')
                         setItemForm({
@@ -239,8 +266,9 @@ export default function VendorDetailPage() {
                           dimensions: c.dimensions || '', technical_spec: c.technical_spec || '',
                           lead_time_days: c.lead_time_days != null ? String(c.lead_time_days) : '',
                         })
-                      }}>Edit</button>}{' '}
-                      {canEditVendor && vendorFeature('catalog', 'delete') && <button type="button" style={{ ...dangerBtnStyle, padding: '3px 10px', fontSize: 12 }} onClick={() => setConfirm({ kind: 'item', id: c.id, name: c.item_name })}>Delete</button>}
+                      }}>Edit</button>}
+                      {canEditVendor && vendorFeature('catalog', 'delete') && <button type="button" style={smallDangerBtnStyle} onClick={() => setConfirm({ kind: 'item', id: c.id, name: c.item_name })}>Delete</button>}
+                      </div>
                     </td>
                   </tr>
                 ))}

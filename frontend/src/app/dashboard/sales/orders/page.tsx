@@ -1,13 +1,13 @@
 'use client'
 
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, segmentBtnStyle, smallSecondaryBtnStyle, numThStyle, numTdStyle, RowCount } from '@/components/shared/ui'
 import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { salesApi } from '@/lib/api'
 import { SalesOrder } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import SalesNav from '@/components/sales/SalesNav'
@@ -69,23 +69,20 @@ export default function SalesOrdersPage() {
           <option value="">All statuses</option>
           {Object.entries(SO_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </Select>
-        <input style={{ ...inputStyle, width: 150 }} placeholder="Due month YYYY-MM" value={month} onChange={(e) => setMonth(e.target.value)} />
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
-          <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Waiting for my approval
-        </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
-          <input type="checkbox" checked={atRisk} onChange={(e) => setAtRisk(e.target.checked)} /> At risk / overdue
-        </label>
+        <input type="month" aria-label="Due month" title="Show orders with a delivery due in this month" style={{ ...inputStyle, width: 170 }} value={month} onChange={(e) => setMonth(e.target.value)} />
+        <button type="button" aria-pressed={mine} onClick={() => setMine((v) => !v)} style={segmentBtnStyle(mine)}>Waiting for my approval</button>
+        <button type="button" aria-pressed={atRisk} onClick={() => setAtRisk((v) => !v)} style={segmentBtnStyle(atRisk)}>At risk / overdue</button>
+        <button type="button" onClick={() => { setSearch(''); setStatus(''); setMonth(''); setMine(false); setAtRisk(false) }} style={secondaryBtnStyle}>Clear</button>
       </div>
 
       <div data-tour="sales-orders-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1150 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
-            <tr>{['Order', 'Customer', 'Customer PO', 'Value (incl. GST)', 'Units', 'Next due', 'Risk', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+            <tr>{['Order', 'Customer', 'Customer PO', 'Value (incl. GST)', 'Units delivered', 'Next due', 'Risk', 'Status', 'Actions'].map((h, hi) => <th key={h} style={{ ...(hi === 3 || hi === 4 ? numThStyle : thStyle), ...(hi === 8 ? { position: 'sticky', right: 0, zIndex: 3, background: '#fdf1e6', boxShadow: '-6px 0 8px -6px rgba(15,23,42,.18)' } : {}), ...(hi === 1 ? { minWidth: 200 } : {}) }}>{h}{hi === 0 && <RowCount count={orders.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: '#57534e' }}>Loading…</td></tr>
             ) : orders.length === 0 ? (
               <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 {search || status || mine || atRisk || month ? 'No orders match these filters.' : 'No sales orders yet. Create one from a won inquiry or tender, or directly from a customer PO.'}
@@ -93,20 +90,20 @@ export default function SalesOrdersPage() {
             ) : orders.map((o) => (
               <tr key={o.id} onClick={() => router.push(recordPath('/dashboard/sales/orders', o))} style={{ cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{o.display_number}</td>
-                <td style={tdStyle}>{o.customer_name}</td>
+                <td style={{ ...tdStyle, minWidth: 200 }}>{o.customer_name}</td>
                 <td style={tdStyle}>{o.customer_po_number || '—'}{o.customer_po_date ? <span style={{ color: TEXT.muted }}> · {formatDate(o.customer_po_date)}</span> : null}</td>
-                <td style={tdStyle}>{formatINR(o.grand_total)}</td>
-                <td style={tdStyle}>{o.units_delivered}/{o.units_total}</td>
-                <td style={tdStyle}>{formatDate(o.next_due_date)}</td>
+                <td style={numTdStyle}>{formatINR(o.grand_total)}</td>
+                <td style={numTdStyle}>{o.units_delivered}/{o.units_total}</td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{o.next_due_date ? formatDate(o.next_due_date) : '—'}</td>
                 <td style={tdStyle}>
                   {o.units_overdue ? <Pill label={`${o.units_overdue} overdue`} hex="#DC2626" /> : o.units_at_risk ? <Pill label={`${o.units_at_risk} at risk`} hex="#F59E0B" /> : <span style={{ color: TEXT.muted }}>—</span>}
                 </td>
                 <td style={tdStyle}>
                   <Pill label={SO_STATUS_LABELS[o.status] || o.status} hex={SO_STATUS_HEX[o.status] || '#78716c'} />
-                  {(o.approval_stage || o.next_approval_level) && <div style={{ fontSize: 11, color: TEXT.muted, marginTop: 3 }}>with {o.approval_stage || LEVEL_LABELS[o.next_approval_level || '']}</div>}
+                  {(o.approval_stage || o.next_approval_level) && <div style={{ fontSize: 12, color: '#57534e', marginTop: 3 }}>with {o.approval_stage || LEVEL_LABELS[o.next_approval_level || '']}</div>}
                 </td>
-                <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
-                  <span onClick={() => router.push(recordPath('/dashboard/sales/orders', o))} style={{ color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>View</span>
+                <td style={{ ...tdStyle, position: 'sticky', right: 0, background: '#fff9f3', boxShadow: '-6px 0 8px -6px rgba(15,23,42,.18)' }} onClick={(e) => e.stopPropagation()}>
+                  <button type="button" onClick={() => router.push(recordPath('/dashboard/sales/orders', o))} style={smallSecondaryBtnStyle}>View</button>
                 </td>
               </tr>
             ))}

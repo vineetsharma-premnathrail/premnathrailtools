@@ -18,7 +18,7 @@ const config: TourConfig = {
         { value: 'Store stock refill', meaning: 'Common items Store keeps in stock. Nothing is charged now; the cost goes to whoever Store issues it to.' },
       ],
       why: 'Office and overhead costs are never tagged to a customer project. Finance spreads them over projects later; tagging them by hand makes project costs wrong.',
-      after: 'The purpose also narrows the Category and Requirement Type lists to what fits it and pre-fills them where there is a usual answer (e.g. Asset → Capital Equipment). A field with only one possible answer is filled in and shown as Fixed. What each purpose offers is set by an admin in Procurement › Settings › Purpose rules.',
+      after: 'The purpose also narrows the Category and Requirement Type lists to what fits it and pre-fills them where there is a usual answer (e.g. Asset → Capital Equipment). A field with only one possible answer is filled in and shown as a read-only "Fixed · Set by purpose" value. Until a purpose is chosen, Charged To, Category and Requirement Type are disabled ("Choose a purpose first"). What each purpose offers is set by an admin in Procurement › Settings › Purpose rules.',
     },
     {
       target: 'pr-new-project',
@@ -41,21 +41,31 @@ const config: TourConfig = {
       after: 'Must be selected before this requisition can be submitted.',
     },
     {
-      target: 'pr-new-required-date',
-      title: 'Required Date',
-      purpose: 'The date by which these items are needed — helps Purchase prioritize which RFQs to raise first.',
-      required: false,
-    },
-    {
       target: 'pr-new-requirement-type',
       title: 'Requirement Type',
       purpose: 'Further classifies the nature of this requirement (e.g. capital, consumable, service). Only the types the purpose allows are listed; with one allowed type (or when locked in Purpose rules) it is filled in and shown as Fixed.',
       required: false,
     },
     {
+      target: 'pr-new-required-date',
+      title: 'Required Date',
+      purpose: 'The date by which these items are needed — helps Purchase prioritize which RFQs to raise first.',
+      required: false,
+    },
+    {
+      target: 'pr-new-priority',
+      title: 'Priority',
+      purpose: 'How urgently this requisition needs to be actioned by Purchase.',
+      options: [
+        { value: 'low', meaning: 'No particular urgency.' },
+        { value: 'medium', meaning: 'Standard priority — the default.' },
+        { value: 'high', meaning: 'Needs urgent attention from the Purchase team.' },
+      ],
+    },
+    {
       target: 'pr-new-add-item',
       title: '+ Add Item',
-      purpose: 'Adds another blank row to the Item Details table below, for requisitions with more than one item.',
+      purpose: 'Adds another blank row to the Item Details table (directly under Purpose and Request Details), for requisitions with more than one item.',
     },
     {
       target: 'pr-new-item-name',
@@ -113,16 +123,6 @@ const config: TourConfig = {
       purpose: 'Removes this item row. Only shown when there is more than one row, so the requisition always keeps at least one item.',
     },
     {
-      target: 'pr-new-priority',
-      title: 'Priority',
-      purpose: 'How urgently this requisition needs to be actioned by Purchase.',
-      options: [
-        { value: 'low', meaning: 'No particular urgency.' },
-        { value: 'medium', meaning: 'Standard priority — the default.' },
-        { value: 'high', meaning: 'Needs urgent attention from the Purchase team.' },
-      ],
-    },
-    {
       target: 'pr-new-remarks',
       title: 'Remarks',
       purpose: 'Any additional context for whoever approves or actions this requisition.',
@@ -131,14 +131,14 @@ const config: TourConfig = {
     },
     {
       target: 'pr-new-supporting-docs',
-      title: 'Supporting Documents',
-      purpose: 'Any general supporting files for this requisition — quotes, approvals received offline, photos, etc.',
+      title: 'Supporting Documents (Attachments)',
+      purpose: 'Under Attachments, at the bottom: use Attach files (or drop files on the row) for general supporting files — quotes, approvals received offline, photos, etc.',
       required: false,
     },
     {
       target: 'pr-new-spec-docs',
       title: 'Specification / Reference File',
-      purpose: 'A technical spec sheet or reference document describing exactly what is being requisitioned.',
+      purpose: 'Second row under Attachments: a technical spec sheet or reference document describing exactly what is being requisitioned.',
       required: false,
     },
     {

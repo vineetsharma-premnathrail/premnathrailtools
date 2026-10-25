@@ -19,7 +19,7 @@ import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import FileUploadPreview from '@/components/FileUploadPreview'
 import CameraCapture from '@/components/CameraCapture'
 import Link from 'next/link'
-import { inputStyle, Field, Card, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallPrimaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
+import { inputStyle, Field, Card, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallPrimaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
@@ -79,6 +79,7 @@ export default function ServiceRequestDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [pendingStatus, setPendingStatus] = useState<string | null>(null)
   const [projectError, setProjectError] = useState('')
+  const [loadNotFound, setLoadNotFound] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -89,10 +90,12 @@ export default function ServiceRequestDetailPage() {
       setProjectError('')
       erpApi.getProject(data.project_id).then(setProject).catch((err) => {
         setProject(null)
-        setProjectError(extractErrorMessages(err, `Could not load machine #${data.project_id} — check your connection and reload the page.`).join(' '))
+        setProjectError(extractErrorMessages(err, 'Could not load this request’s machine — check your connection and reload the page.').join(' '))
       })
     } catch (err) {
-      setError(extractErrorMessages(err, 'Service request not found.').join(' '))
+      const status = (err as { response?: { status?: number } })?.response?.status
+      setLoadNotFound(status === 404)
+      setError(extractErrorMessages(err, status === 404 ? 'Service request not found.' : 'The service request could not be loaded — check your connection and try again.').join(' '))
     } finally {
       setLoading(false)
     }
@@ -144,7 +147,20 @@ export default function ServiceRequestDetailPage() {
   if (isLoading || !isAuthorized) return null
   if (linkError) return (<div><ErpNav /><InvalidRecordLink message={linkError} listHref="/dashboard/erp/service-requests" listLabel="Back to service requests" /></div>)
   if (loading) return <div><ErpNav /><p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p></div>
-  if (error && !sr) return <div><ErpNav /><p style={{ fontSize: 13, color: '#b91c1c' }}>{Array.isArray(error) ? error.join(' ') : error}</p></div>
+  if (error && !sr) return (
+    <div>
+      <ErpNav />
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+        <button onClick={() => router.push('/dashboard/erp/service-requests')} type="button" style={secondaryBtnStyle}>← Back</button>
+      </div>
+      <div role="alert" style={{ padding: '14px 18px', borderRadius: 12, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13.5 }}>
+        <p style={{ margin: '0 0 10px', fontWeight: 600 }}>
+          {loadNotFound ? 'Service request not found.' : 'This service request could not be opened.'} {Array.isArray(error) ? error.join(' ') : error}
+        </p>
+        {!loadNotFound && <button type="button" style={smallSecondaryBtnStyle} onClick={() => load()}>Try again</button>}
+      </div>
+    </div>
+  )
   if (!sr) return null
 
   return (
@@ -156,14 +172,11 @@ export default function ServiceRequestDetailPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{sr.issue_title}</h1>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <button onClick={() => router.push('/dashboard/erp/service-requests')} type="button" style={secondaryBtnStyle} data-tour="erp-srd-back-btn">
-            ← Back
-          </button>
           {canEdit && (
             <Link
               href={`/dashboard/erp/service-requests/${ref}/edit`}
               data-tour="erp-srd-edit-btn"
-              style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#57534e', textDecoration: 'none', whiteSpace: 'nowrap' }}
+              style={{ ...secondaryBtnStyle, textDecoration: 'none', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}
             >
               Edit
             </Link>
@@ -171,6 +184,9 @@ export default function ServiceRequestDetailPage() {
           {canDelete && (
             <button onClick={() => setShowDeleteConfirm(true)} style={{ ...dangerBtnStyle }} data-tour="erp-srd-delete-btn">Delete</button>
           )}
+          <button onClick={() => router.push('/dashboard/erp/service-requests')} type="button" style={secondaryBtnStyle} data-tour="erp-srd-back-btn">
+            ← Back
+          </button>
         </div>
       </div>
 
@@ -197,7 +213,7 @@ export default function ServiceRequestDetailPage() {
       )}
       <WorkflowSteps status={sr.status} canModify={canEdit && !sr.is_locked} onRequestChange={setPendingStatus} />
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
         {visibleTabs.map((t) => (
           <button
             key={t}
@@ -213,6 +229,7 @@ export default function ServiceRequestDetailPage() {
               fontWeight: 600,
               fontSize: 13,
               cursor: 'pointer',
+              whiteSpace: 'nowrap',
             }}
           >
             {t}
@@ -300,10 +317,14 @@ function WorkflowSteps({ status, canModify, onRequestChange }: { status: string;
         const labelColor = active ? '#FF7A45' : done ? '#16a34a' : '#a8a29e'
         return (
           <div key={step.key} style={{ display: 'flex', alignItems: 'center', flex: i < WORKFLOW_STEPS.length - 1 ? 1 : undefined }}>
-            <div
+            <button
+              type="button"
+              disabled={!clickable}
+              aria-current={active ? 'step' : undefined}
+              aria-label={`${step.label}${active ? ' (current status)' : done ? ' (done)' : ''}${clickable ? ' — set as status' : ''}`}
               onClick={clickable ? () => onRequestChange(step.key) : undefined}
               title={clickable ? `Set status to ${step.label}` : undefined}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: clickable ? 'pointer' : 'default', userSelect: 'none' }}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: clickable ? 'pointer' : 'default', userSelect: 'none', background: 'none', border: 'none', padding: 0, fontFamily: 'inherit' }}
             >
               <div
                 style={{
@@ -323,10 +344,10 @@ function WorkflowSteps({ status, canModify, onRequestChange }: { status: string;
               >
                 {done ? '✓' : i + 1}
               </div>
-              <span style={{ fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.02em', color: labelColor, whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.02em', color: labelColor, whiteSpace: 'nowrap' }}>
                 {step.label}
               </span>
-            </div>
+            </button>
             {i < WORKFLOW_STEPS.length - 1 && (
               <div style={{ flex: 1, height: 2, margin: '0 8px 16px', background: done ? '#4ade80' : 'rgba(0,0,0,0.08)' }} />
             )}
@@ -351,21 +372,51 @@ function OverviewTab({ sr, project, projectError, canModify, onPatch, onRequestS
   invoiceView: boolean
   invoiceCreate: boolean
 }) {
-  const initials = (sr.assigned_to_name || '?').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+  const d = (v?: string | null) => (v ? formatDate(v) : null)
+  const machineLabel = project ? `${project.serial_number}${project.model_name ? ` — ${project.model_name}` : ''}` : null
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Card title="Issue Details">
-          <InfoRow label="Category" value={sr.issue_category || 'Not provided'} />
-          <InfoRow label="Description" value={sr.issue_description || 'Not provided'} />
-        </Card>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <DetailCard style={{ marginBottom: 0 }}>
+        <DetailSummary
+          title={sr.issue_category ? `${sr.issue_category} issue` : 'Reported issue'}
+          text={sr.issue_description || 'No description was given when this request was raised.'}
+          meta={<>
+            <span>Reported {formatDate(sr.created_at)}{sr.reported_by_name ? ` by ${sr.reported_by_name}` : ''}</span>
+            <span>·</span>
+            <span>{sr.assigned_to_name ? `Engineer: ${sr.assigned_to_name}` : 'No engineer assigned yet'}</span>
+            {sr.is_locked && <><span>·</span><Pill label="Locked" hex="#64748b" /></>}
+          </>}
+        />
 
-        <Card title="Reported By">
-          <InfoRow label="Name" value={sr.reported_by_name || 'Not provided'} />
-          <InfoRow label="Phone" value={sr.reported_by_phone || 'Not provided'} />
-          <InfoRow label="Email" value={sr.reported_by_email || 'Not provided'} />
-        </Card>
+        <DetailGroup title="Machine & site">
+          <DetailRow label="Machine">
+            {project ? <Link href={recordPath('/dashboard/erp/projects', project)} style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'none' }}>{machineLabel}</Link>
+              : projectError ? <span style={{ color: '#b91c1c' }}>{projectError}</span> : 'Loading…'}
+          </DetailRow>
+          <DetailRow label="Customer">{project?.client_company}</DetailRow>
+          <DetailRow label="Site / location">{project ? [project.site_name, project.site_location].filter(Boolean).join(', ') : null}</DetailRow>
+        </DetailGroup>
 
+        <DetailGroup title="Reported by">
+          <DetailRow label="Name">{sr.reported_by_name}</DetailRow>
+          <DetailRow label="Phone">{sr.reported_by_phone}</DetailRow>
+          <DetailRow label="Email">{sr.reported_by_email}</DetailRow>
+        </DetailGroup>
+
+        <DetailGroup title="Assignment & dates">
+          <DetailRow label="Engineer">{sr.assigned_to_name}</DetailRow>
+          <DetailRow label="Opened">{d(sr.opened_at)}</DetailRow>
+          <DetailRow label="Expected to attend">{d(sr.expected_date_to_attend)}</DetailRow>
+          <DetailRow label="Expected to close">{d(sr.expected_completion_date)}</DetailRow>
+          <DetailRow label="Closed">{d(sr.closed_at)}</DetailRow>
+        </DetailGroup>
+
+        <DetailGroup title="Service notes" last>
+          <DetailRow label="Engineer's report">{sr.service_report_notes}</DetailRow>
+        </DetailGroup>
+      </DetailCard>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: 16, alignItems: 'start' }}>
         <Card title="Status, Type & Priority">
           <Field label="Status">
             <Select
@@ -411,34 +462,6 @@ function OverviewTab({ sr, project, projectError, canModify, onPatch, onRequestS
         <BillingCard key={sr.updated_at || sr.id} sr={sr} canModify={canModify && !sr.is_locked} onPatch={onPatch} showCharges={showCharges} />
         {invoiceView && <WarrantyInvoiceCard key={`wi-${sr.updated_at || sr.id}`} sr={sr} canModify={canModify && !sr.is_locked} onPatch={onPatch}
           canInvoiceFeature={invoiceCreate} showCharges={showCharges} />}
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Card title="Asset Context">
-          <InfoRow label="Machine" value={project ? `${project.serial_number}${project.model_name ? ` — ${project.model_name}` : ''}` : (projectError ? 'Could not load' : 'Loading…')} />
-          {projectError && <p style={{ fontSize: 12, color: '#b91c1c', margin: '4px 0 0' }}>{projectError}</p>}
-          <InfoRow label="Site / Location" value={project?.site_name || 'Not provided'} />
-          <InfoRow label="Request Date" value={sr.created_at ? formatDate(sr.created_at) : 'Not provided'} />
-        </Card>
-
-        <Card title="Assignment">
-          {sr.assigned_to_name && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-              <span style={{ width: 34, height: 34, borderRadius: '50%', flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1f1108', color: '#fff', fontSize: 13, fontWeight: 600 }}>
-                {initials}
-              </span>
-              <span style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108' }}>{sr.assigned_to_name}</span>
-            </div>
-          )}
-          <InfoRow label="Opened" value={sr.opened_at ? formatDate(sr.opened_at) : 'Not provided'} />
-          <InfoRow label="Expected Attend" value={sr.expected_date_to_attend || 'Not provided'} />
-          <InfoRow label="Expected Close" value={sr.expected_completion_date || 'Not provided'} />
-          <InfoRow label="Closed" value={sr.closed_at ? formatDate(sr.closed_at) : 'Not provided'} />
-        </Card>
-
-        <Card title="Service Notes">
-          <p style={{ fontSize: 13.5, color: '#1f1108', margin: 0 }}>{sr.service_report_notes || 'Not provided'}</p>
-        </Card>
       </div>
     </div>
   )
@@ -511,7 +534,7 @@ function WarrantyInvoiceCard({ sr, canModify, onPatch, canInvoiceFeature, showCh
       <Card title="Warranty">
         <InfoRow label="Machine cover (reported date)" value={WARRANTY_LABELS[sr.warranty_status || ''] || sr.warranty_status || 'Not checked'} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 12.5, color: '#78716c' }}>
-          Service billing &amp; invoice <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: 'rgba(255,122,69,0.15)', color: '#FF7A45' }}>Upcoming</span>
+          Service billing &amp; invoice <Pill label="Upcoming" hex="#FF7A45" />
         </div>
       </Card>
     )
@@ -520,9 +543,7 @@ function WarrantyInvoiceCard({ sr, canModify, onPatch, canInvoiceFeature, showCh
     <Card title="Warranty & Invoice">
       <InfoRow label="Machine cover (reported date)" value={WARRANTY_LABELS[sr.warranty_status || ''] || sr.warranty_status || 'Not checked'} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '8px 0', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${BILLING_HEX[status] || '#78716c'}1a`, color: BILLING_HEX[status] || '#78716c', whiteSpace: 'nowrap' }}>
-          {sr.is_chargeable ? 'Chargeable' : 'Free of charge'} · {BILLING_LABELS[status] || status}
-        </span>
+        <Pill label={`${sr.is_chargeable ? 'Chargeable' : 'Free of charge'} · ${BILLING_LABELS[status] || status}`} hex={BILLING_HEX[status] || '#78716c'} />
         {canModify && !sr.ar_transaction_id && sr.service_type !== 'warranty' && (
           <button type="button" style={secondaryBtnStyle} disabled={busy} onClick={() => setAskReason(!sr.is_chargeable)}>
             {sr.is_chargeable ? 'Make free of charge' : 'Make chargeable'}
@@ -532,12 +553,12 @@ function WarrantyInvoiceCard({ sr, canModify, onPatch, canInvoiceFeature, showCh
       {sr.chargeable_reason && <InfoRow label="Override reason" value={sr.chargeable_reason} />}
       {inv && (
         <>
-          <InfoRow label="Invoice" value={`${inv.invoice_number} · ${inv.status === 'pending' ? 'Draft — Finance approves & posts it' : inv.status}`} />
+          <InfoRow label="Invoice" value={`${inv.invoice_number} · ${inv.status === 'pending' ? 'Draft — Finance approves & posts it' : inv.status.replace(/_/g, ' ')}`} />
           {showCharges && <>
           <InfoRow label="Taxable value" value={inr(inv.taxable_amount)} />
           <InfoRow label={inv.is_interstate ? 'IGST' : 'CGST + SGST'} value={inv.is_interstate ? inr(inv.igst_amount) : `${inr(inv.cgst_amount)} + ${inr(inv.sgst_amount)}`} />
           <InfoRow label="Invoice total" value={inr(inv.total_amount)} />
-          <InfoRow label="Amount due" value={`${inr(inv.amount_due)} (${inv.collection_status})`} />
+          <InfoRow label="Amount due" value={`${inr(inv.amount_due)} (${inv.collection_status.replace(/_/g, ' ')})`} />
           </>}
         </>
       )}
@@ -665,7 +686,7 @@ function BillingCard({ sr, canModify, onPatch, showCharges }: { sr: ServiceReque
         </>
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: 12.5, color: '#78716c' }}>
-          Service charges, tax &amp; invoice <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: 'rgba(255,122,69,0.15)', color: '#FF7A45' }}>Upcoming</span>
+          Service charges, tax &amp; invoice <Pill label="Upcoming" hex="#FF7A45" />
         </div>
       )}
       {!canModify && sr.is_locked && <p style={{ fontSize: 12, color: '#78716c', margin: '6px 0 0' }}>This service request is locked — ask an admin to unlock it to change billing.</p>}
@@ -1034,8 +1055,8 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
               <table data-tour="erp-srd-pr-items" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                 <thead>
                   <tr>
-                    {['SL', 'Item (from Item Master) *', 'Qty *', 'In store', 'Will be', ''].map((h) => (
-                      <th key={h} style={{ textAlign: 'left', padding: '0 8px 8px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap' }}>{h}</th>
+                    {['SL', 'Item (from Item Master) *', 'Qty *', 'In store', 'Will be', ''].map((h, hi) => (
+                      <th key={h} style={{ textAlign: 'left', padding: '0 8px 8px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap' }}>{h}{hi === 0 && <RowCount count={lines.length} />}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1072,7 +1093,7 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
                       </td>
                       <td style={{ padding: '6px 8px' }}>
                         {lines.length > 1 && (
-                          <span onClick={() => setLines((prev) => prev.filter((_, i) => i !== idx))} style={{ fontSize: 11.5, fontWeight: 600, color: '#dc2626', cursor: 'pointer', whiteSpace: 'nowrap' }}>Remove</span>
+                          <button type="button" aria-label={`Remove material line ${idx + 1}`} onClick={() => setLines((prev) => prev.filter((_, i) => i !== idx))} style={{ fontSize: 11.5, fontWeight: 600, color: '#B91C1C', cursor: 'pointer', whiteSpace: 'nowrap', background: 'none', border: 'none', padding: '4px 2px', minHeight: 24, fontFamily: 'inherit' }}>Remove</button>
                         )}
                       </td>
                     </tr>
@@ -1132,8 +1153,8 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
         <table data-tour="erp-srd-materials-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1050 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-              {['Material', 'Photos', 'Part No.', 'Qty', 'Status', 'PR', 'Received', 'From Store', ''].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
+              {['Material', 'Photos', 'Part No.', 'Qty', 'Status', 'PR', 'Received', 'From Store', ''].map((h, hi) => (
+                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}{hi === 0 && <RowCount count={materials.length} />}</th>
               ))}
             </tr>
           </thead>
@@ -1157,7 +1178,7 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
                 <td style={{ padding: '10px 14px' }}>
                   <button
                     onClick={() => setExpandedId(isExpanded ? null : m.id)}
-                    style={{ border: 'none', background: 'rgba(0,0,0,0.04)', borderRadius: 6, padding: '4px 9px', fontSize: 11.5, fontWeight: 600, color: '#78716c', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}
+                    style={smallSecondaryBtnStyle}
                   >
                     Photos ({m.attachments?.length || 0}) {isExpanded ? '▴' : '▾'}
                   </button>
@@ -1358,6 +1379,7 @@ function MaterialPhotoGallery({ srId, material, canEdit, canDelete, onChanged }:
             <div key={a.id} style={{ position: 'relative', width: 64, height: 64, flex: 'none' }}>
               <MaterialPhotoThumb srId={srId} matId={material.id} attachment={a} />
               {canDelete && (
+                // ui-audit-ignore-next-line custom-button — 20px round delete badge overlaid on a photo thumbnail, not a pill
                 <button
                   onClick={() => setPendingPhoto({ id: a.id, filename: a.filename })}
                   aria-label={`Delete ${a.filename}`}

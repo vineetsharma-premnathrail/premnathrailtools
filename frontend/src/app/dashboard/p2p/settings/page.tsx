@@ -11,7 +11,8 @@ export default function ProcurementSettingsPage() {
   // Requesters hold `p2p`, the purchase team `purchase` — either may open Settings (read-only unless allowed to edit).
   const { user, isLoading } = useAuth()
   const allowed = !!user && (user.role === 'admin' || !!user.apps?.some((a) => a === 'p2p' || a === 'purchase'))
-  if (isLoading || !allowed) return null
+  if (isLoading) return <div><P2PNav /><p role="status" style={{ fontSize: 13 }}>Loading…</p></div>
+  if (!allowed) return <div><P2PNav /><p role="alert" style={{ fontSize: 13 }}>You don&apos;t have access to Procurement settings. Ask an admin to give you the Procurement app.</p></div>
   return (
     <ModuleSettingsPage title="Procurement settings" nav={<P2PNav />} backHref="/dashboard/p2p"
       load={p2pApi.getSettings} save={p2pApi.saveSettings} reset={p2pApi.resetSetting}

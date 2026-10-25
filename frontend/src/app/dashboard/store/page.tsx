@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { StoreItem, StoreItemCategory } from '@/types'
 import { TEXT, BRAND, GLASS, SHADOWS, SUCCESS } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle, inputStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, inputStyle, RowCount, Pill } from '@/components/shared/ui'
 import ItemImportDialog from '@/components/store/ItemImportDialog'
 import StoreNav from '@/components/store/StoreNav'
 import { recordPath } from '@/lib/recordRef'
@@ -113,9 +113,6 @@ export default function StoreItemsPage() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            Store &amp; Inventory
-          </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Item Master</h1>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -138,8 +135,8 @@ export default function StoreItemsPage() {
           data-tour="items-search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name, code or technical specification…"
-          style={{ ...inputStyle, flex: '1 1 240px', width: undefined, maxWidth: 300, background: 'rgba(255,255,255,.7)' }}
+          placeholder="Search code, name or specification"
+          style={{ ...inputStyle, flex: '1 1 360px', minWidth: 260, width: undefined, maxWidth: 520, background: 'rgba(255,255,255,.7)' }}
         />
         <Select
           data-tour="items-type-filter"
@@ -191,15 +188,15 @@ export default function StoreItemsPage() {
           </colgroup>
           <thead>
             <tr>
-              {['Code', 'Type', 'Category', 'Subcategory', 'Name', 'UOM', 'Technical Specification', 'Status'].map((h) => (
-                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', whiteSpace: 'nowrap', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+              {['Code', 'Type', 'Category', 'Subcategory', 'Name', 'UOM', 'Technical Specification', 'Status'].map((h, hi) => (
+                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', whiteSpace: 'nowrap', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}{hi === 0 && <RowCount count={items.length} />}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && items.length === 0 && (
-              <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No items match these filters.' : 'No items yet — add the first item to the master.'}</td></tr>
+              <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No items match these filters.' : 'No items yet — use + Add Item to create the first one.'}</td></tr>
             )}
             {items.map((item) => (
               <tr key={item.id} onClick={() => router.push(recordPath('/dashboard/store', item))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
@@ -207,13 +204,11 @@ export default function StoreItemsPage() {
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{(item.item_type && ITEM_TYPE_LABELS[item.item_type]) || item.item_type || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.category || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.subcategory || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.item_name}</td>
+                <td title={item.item_name} style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.item_name}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.uom || '—'}</td>
                 <td title={item.description || ''} style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description || '—'}</td>
                 <td style={{ padding: '12px 16px' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: item.status === 'active' ? `${SUCCESS.primary}1a` : 'rgba(100,116,139,0.12)', color: item.status === 'active' ? SUCCESS.hover : TEXT.muted, textTransform: 'capitalize' }}>
-                    {item.status}
-                  </span>
+                  <Pill label={item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1).replace(/_/g, ' ') : '—'} hex={item.status === 'active' ? SUCCESS.hover : TEXT.muted} />
                 </td>
               </tr>
             ))}

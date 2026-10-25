@@ -1,18 +1,19 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle, Shield, Users, XCircle } from '@phosphor-icons/react'
-import { useRouter, usePathname } from 'next/navigation'
+import { CaretRight } from '@phosphor-icons/react'
+import { useRouter } from 'next/navigation'
 import { recordPath } from '@/lib/recordRef'
-import TourButton from '@/components/tour/TourButton'
+import OrganizationNav from '@/components/organization/OrganizationNav'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { usersApi, modulesApi } from '@/lib/api'
 import { User, ModuleMeta } from '@/types'
 import { TEXT, BRAND, BORDER } from '@/lib/theme'
-import FeedbackBell from '@/components/FeedbackBell'
 import MessageDialog from '@/components/erp/MessageDialog'
+import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import { secondaryBtnStyle, smallSecondaryBtnStyle, RowCount } from '@/components/shared/ui'
 
 const STATUS_TABS = ['All Users', 'Active Users', 'Inactive Users'] as const
 
@@ -20,9 +21,6 @@ export default function UsersRolesPage() {
   const { isAuthorized, isLoading } = useRequireOrgTab('users')
   const { can } = useCan()
   const router = useRouter()
-  // Standalone /dashboard/users has no OrganizationNav (whose TourButton
-  // covers the embedded Role & Permissions tab), so show one here only then.
-  const pathname = usePathname()
   const [users, setUsers] = useState<User[]>([])
   // Assignable-apps checklist — driven by the modules registry (data change,
   // not a frontend code change, to add a new department). See
@@ -35,6 +33,7 @@ export default function UsersRolesPage() {
   const [search, setSearch] = useState('')
   const [statusTab, setStatusTab] = useState<typeof STATUS_TABS[number]>('All Users')
   const [syncing, setSyncing] = useState(false)
+  const [confirmSync, setConfirmSync] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -67,7 +66,6 @@ export default function UsersRolesPage() {
       total: users.length,
       active: users.filter((u) => u.is_active).length,
       inactive: users.filter((u) => !u.is_active).length,
-      admins: users.filter((u) => u.role === 'admin').length,
     }),
     [users]
   )
@@ -89,8 +87,8 @@ export default function UsersRolesPage() {
       const data = await usersApi.syncAzure()
       setUsers(data)
     } catch (err) {
-      setErrorTitle('Azure Sync Failed')
-      setError(extractErrorMessages(err, 'Azure sync failed.').join(' '))
+      setErrorTitle('Microsoft sync failed')
+      setError(extractErrorMessages(err, 'The Microsoft (Entra ID) sync failed — check the app has directory-read permission in Entra and try again.').join(' '))
     } finally {
       setSyncing(false)
     }
@@ -100,16 +98,13 @@ export default function UsersRolesPage() {
 
   return (
     <div>
+      <OrganizationNav />
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
         <div>
-          <h1 style={{ fontSize: 26, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Users &amp; Roles</h1>
+          <h1 style={{ fontSize: 26, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Users</h1>
           <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 24px' }}>
             Manage portal users, roles, and module access
           </p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {pathname === '/dashboard/users' && <TourButton variant="icon" />}
-          <FeedbackBell />
         </div>
       </div>
 
@@ -121,13 +116,15 @@ export default function UsersRolesPage() {
         onClose={() => setError('')}
       />
 
-      {/* Stat cards */}
-      <div data-tour="org-roles-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
-        <StatCard label="Total Users" value={stats.total} color="#3b82f6" icon={<UsersIcon />} />
-        <StatCard label="Active" value={stats.active} color="#10b981" icon={<CheckIcon />} />
-        <StatCard label="Inactive" value={stats.inactive} color="#ef4444" icon={<XIcon />} />
-        <StatCard label="Admins" value={stats.admins} color="#FF7A45" icon={<ShieldIcon />} />
-      </div>
+      <ConfirmDialog
+        open={confirmSync}
+        danger={false}
+        title="Sync users from Microsoft (Entra ID)?"
+        message="This pulls the latest names, emails, designations and departments from Microsoft Entra ID and adds new joiners. New people get no module access until you give them a role."
+        confirmLabel="Sync now"
+        onConfirm={() => { setConfirmSync(false); handleSyncAzure() }}
+        onCancel={() => setConfirmSync(false)}
+      />
 
       {/* Status tabs */}
       <div data-tour="org-roles-status-tabs" style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: `1px solid ${BORDER.normal}`, flexWrap: 'wrap' }}>
@@ -141,7 +138,7 @@ export default function UsersRolesPage() {
               color: statusTab === t ? BRAND.primary : TEXT.secondary, fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap',
             }}
           >
-            {t}
+            {t} ({t === 'All Users' ? stats.total : t === 'Active Users' ? stats.active : stats.inactive})
           </button>
         ))}
       </div>
@@ -164,22 +161,13 @@ export default function UsersRolesPage() {
           }}
         />
         {can('organization', 'users', 'create') && <button
-          onClick={handleSyncAzure}
+          type="button"
+          onClick={() => setConfirmSync(true)}
           disabled={syncing}
           data-tour="org-roles-sync-btn"
-          style={{
-            padding: '10px 18px',
-            borderRadius: 10,
-            border: 'none',
-            background: syncing ? '#fca87a' : '#FF7A45',
-            color: '#fff',
-            fontSize: 13.5,
-            fontWeight: 600,
-            cursor: syncing ? 'default' : 'pointer',
-            whiteSpace: 'nowrap',
-          }}
+          style={{ ...secondaryBtnStyle, cursor: syncing ? 'default' : 'pointer', opacity: syncing ? 0.6 : 1 }}
         >
-          {syncing ? 'Syncing…' : 'Sync from Azure AD'}
+          {syncing ? 'Syncing…' : 'Sync from Microsoft (Entra ID)'}
         </button>}
       </div>
 
@@ -189,17 +177,17 @@ export default function UsersRolesPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-              {['User', 'Email', 'Designation', 'Department', 'Office Location', 'Role', 'Apps', 'Status', 'Actions'].map((h) => (
+              {['User', 'Email', 'Designation', 'Department', 'Office Location', 'Role', 'Apps', 'Status', 'Actions'].map((h, hi) => (
                 <th
                   key={h}
                   style={{
                     textAlign: 'left',
                     padding: '12px 16px',
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: 600,
-                    letterSpacing: '.05em',
+                    letterSpacing: '.04em',
                     textTransform: 'uppercase',
-                    color: '#a8a29e',
+                    color: '#57534e',
                     whiteSpace: 'nowrap',
                     position: 'sticky',
                     top: 0,
@@ -207,7 +195,7 @@ export default function UsersRolesPage() {
                     zIndex: 1,
                   }}
                 >
-                  {h}
+                  {h}{hi === 0 && <RowCount count={filtered.length} />}
                 </th>
               ))}
             </tr>
@@ -270,27 +258,26 @@ export default function UsersRolesPage() {
                         fontWeight: 600,
                         padding: '4px 10px',
                         borderRadius: 8,
-                        textTransform: 'capitalize',
                         whiteSpace: 'nowrap',
                         background: 'rgba(59,130,246,0.08)',
-                        color: '#2563eb',
+                        color: u.role === 'admin' || (u.role_names && u.role_names.length) ? '#1d4ed8' : '#57534e',
                       }}
                     >
-                      {u.role.replace('_', ' ')}
+                      {u.role === 'admin' ? 'Admin' : (u.role_names && u.role_names.length ? u.role_names.join(', ') : 'No extra role')}
                     </span>
                   </td>
                   <td style={{ padding: '12px 16px' }} data-tour={idx === 0 ? 'org-roles-apps-cell' : undefined}>
                     {isAdminRole ? (
-                      <span style={{ fontSize: 12, color: '#a8a29e' }}>All</span>
+                      <span style={{ fontSize: 12, color: '#57534e' }}>All</span>
                     ) : u.apps.length === 0 ? (
-                      <span style={{ fontSize: 12, color: '#a8a29e' }}>None</span>
+                      <span style={{ fontSize: 12, color: '#57534e' }}>None</span>
                     ) : (
                       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                         {u.apps.map((a) => (
                           <span
                             key={a}
                             style={{
-                              fontSize: 10.5,
+                              fontSize: 12,
                               fontWeight: 600,
                               padding: '2px 8px',
                               borderRadius: 6,
@@ -324,19 +311,10 @@ export default function UsersRolesPage() {
                     <button
                       onClick={() => router.push(recordPath('/dashboard/users', u))}
                       data-tour={idx === 0 ? 'org-roles-edit-btn' : undefined}
-                      style={{
-                        fontSize: 12.5,
-                        fontWeight: 600,
-                        padding: '6px 16px',
-                        borderRadius: 8,
-                        border: 'none',
-                        background: 'linear-gradient(135deg,#3b82f6,#60a5fa)',
-                        color: '#fff',
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                      }}
+                      style={smallSecondaryBtnStyle}
                     >
                       {can('organization', 'users', 'edit') ? 'Edit' : 'View'}
+                      <CaretRight size={12} aria-hidden />
                     </button>
                   </td>
                 </tr>
@@ -349,31 +327,4 @@ export default function UsersRolesPage() {
 
     </div>
   )
-}
-
-function StatCard({ label, value, color, icon }: { label: string; value: number; color: string; icon: React.ReactNode }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-      <div style={{ width: 38, height: 38, borderRadius: 10, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${color}1a`, color }}>
-        {icon}
-      </div>
-      <div>
-        <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 2px' }}>{label}</p>
-        <p style={{ fontSize: 22, fontWeight: 700, color: '#1f1108', margin: 0 }}>{value}</p>
-      </div>
-    </div>
-  )
-}
-
-function UsersIcon() {
-  return <Users size={18} />
-}
-function CheckIcon() {
-  return <CheckCircle size={18} />
-}
-function XIcon() {
-  return <XCircle size={18} />
-}
-function ShieldIcon() {
-  return <Shield size={18} />
 }

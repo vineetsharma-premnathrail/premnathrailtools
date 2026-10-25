@@ -10,6 +10,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
 import { RndRequirement, RndTask } from '@/types'
+import { Pill } from '@/components/shared/ui'
 
 const STAGE_HEX: Record<string, string> = { initiation: '#78716c', research: '#2563EB', development: '#7C3AED', feasibility: '#F59E0B', handover: '#0891B2', closed: '#16A34A' }
 const STAGE_LABELS: Record<string, string> = { initiation: 'Initiation', research: 'Research', development: 'Development', feasibility: 'Feasibility', handover: 'Handover', closed: 'Closed' }
@@ -21,23 +22,18 @@ const cardStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20,
 }
 const rowStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10,
+  display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', minHeight: 44, boxSizing: 'border-box', borderRadius: 10,
   border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,.5)', textDecoration: 'none',
 }
+// Fixed slots on the right of a row so dates / names / badges line up in a
+// column down the list, and a row without a badge keeps the same layout.
+const slot = (width: number): React.CSSProperties => ({ flex: `0 0 ${width}px`, display: 'flex', justifyContent: 'flex-end', fontSize: 11.5, color: TEXT.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' })
 const ellipsis: React.CSSProperties = { flex: '1 1 auto', minWidth: 0, fontSize: 12.5, color: TEXT.body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
 
 interface RndDashboardData {
   projects: { total: number; active: number; ongoing: number; on_hold: number; cancelled: number }
   // Ongoing projects (active, not closed), most recently updated first.
   recent_projects: { id: number; project_number: string; title: string; stage: string; status: string; priority: string; lead_name?: string | null; target_end_date?: string | null }[]
-}
-
-function Pill({ label, hex }: { label: string; hex: string }) {
-  return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
-      {label}
-    </span>
-  )
 }
 
 function StatTile({ label, value, sub, hex, href }: { label: string; value: string | number; sub?: string; hex: string; href: string }) {
@@ -54,7 +50,7 @@ function CardHeader({ title, href }: { title: string; href: string }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
       <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{title}</h2>
-      <Link href={href} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', textDecoration: 'none' }}>View all</Link>
+      <Link href={href} style={{ fontSize: 13, fontWeight: 600, color: '#c2410c', textDecoration: 'none', padding: '8px 12px', margin: '-8px -12px', minHeight: 24, display: 'inline-flex', alignItems: 'center' }}>View all</Link>
     </div>
   )
 }
@@ -81,7 +77,9 @@ export default function RndDashboardPage() {
   if (isLoading || !isAuthorized) return null
 
   const awaiting = (requirements || []).filter((r) => r.rnd_request?.status === 'open').length
-  const today = new Date().toISOString().slice(0, 10)
+  // Local date (toISOString is UTC — yesterday before 05:30 IST).
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const overdue = (tasks || []).filter((t) => t.status === 'open' && t.due_date < today).length
 
   return (
@@ -90,9 +88,6 @@ export default function RndDashboardPage() {
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            R&amp;D Module
-          </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Research &amp; Development</h1>
           <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>
             Requirements from the business team, ongoing projects and your tasks at a glance.
@@ -106,17 +101,17 @@ export default function RndDashboardPage() {
         </div>
       )}
 
-      <div data-tour="rnd-dash-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14, marginBottom: 20 }}>
+      <div data-tour="rnd-dash-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 20 }}>
         {requirements && (
-          <StatTile label="Requirements" value={requirements.length} sub={`${awaiting} awaiting R&D response`} hex="#2563EB" href="/dashboard/rnd/requirements" />
+          <StatTile label="Requirements" value={requirements.length} sub={`${awaiting} awaiting R&D response`} hex={TEXT.heading} href="/dashboard/rnd/requirements" />
         )}
         {data && (
-          <StatTile label="Ongoing Projects" value={data.projects.ongoing} sub={`${data.projects.on_hold} on hold · ${data.projects.total} total`} hex="#FF6A2A" href="/dashboard/rnd/projects" />
+          <StatTile label="Ongoing Projects" value={data.projects.ongoing} sub={`${data.projects.on_hold} on hold · ${data.projects.total} total`} hex={TEXT.heading} href="/dashboard/rnd/projects" />
         )}
-        <StatTile label="My Open Tasks" value={tasks ? tasks.length : '…'} sub={overdue ? `${overdue} overdue` : 'None overdue'} hex={overdue ? '#DC2626' : '#16A34A'} href="/dashboard/rnd/tasks" />
+        <StatTile label="My Open Tasks" value={tasks ? tasks.length : '…'} sub={overdue ? `${overdue} overdue` : 'None overdue'} hex={overdue ? '#DC2626' : TEXT.heading} href="/dashboard/rnd/tasks" />
       </div>
 
-      <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 20, alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 20, alignItems: 'stretch' }}>
         {requirements && (
           <div data-tour="rnd-dash-requirements" style={{ ...cardStyle, flex: '1 1 420px' }}>
             <CardHeader title="Recently Received Requirements" href="/dashboard/rnd/requirements" />
@@ -128,10 +123,10 @@ export default function RndDashboardPage() {
                   const st = r.rnd_request?.status
                   return (
                     <Link key={`${r.source}-${r.record_id}`} href={recordPath(`/dashboard/rnd/requirements/${r.source}`, r, 'record_id')} style={rowStyle}>
-                      <span style={{ flex: '0 0 auto', fontSize: 12.5, fontWeight: 700, color: TEXT.heading }}>{r.universal_id}</span>
-                      <span style={ellipsis}>{[r.org_name, r.product].filter(Boolean).join(' · ') || '—'}</span>
-                      {r.last_sent_at && <span style={{ flex: 'none', fontSize: 11.5, color: TEXT.muted, whiteSpace: 'nowrap' }}>{formatDate(r.last_sent_at)}</span>}
-                      {st && <Pill label={REQ_STATUS_LABELS[st] || st} hex={REQ_STATUS_HEX[st] || '#78716c'} />}
+                      <span style={{ flex: '0 0 auto', fontSize: 12, fontWeight: 500, color: TEXT.muted }}>{r.universal_id}</span>
+                      <span style={{ ...ellipsis, fontWeight: 600, color: TEXT.heading }}>{[r.org_name, r.product].filter(Boolean).join(' · ') || '—'}</span>
+                      <span style={slot(78)}>{r.last_sent_at ? formatDate(r.last_sent_at) : '—'}</span>
+                      <span style={slot(104)}>{st ? <Pill label={REQ_STATUS_LABELS[st] || st} hex={REQ_STATUS_HEX[st] || '#78716c'} /> : <Pill label="Not sent to R&D" hex="#78716c" />}</span>
                     </Link>
                   )
                 })}
@@ -144,15 +139,15 @@ export default function RndDashboardPage() {
           <div data-tour="rnd-dash-recent" style={{ ...cardStyle, flex: '1 1 420px' }}>
             <CardHeader title="Ongoing Projects" href="/dashboard/rnd/projects" />
             {data.recent_projects.length === 0 ? (
-              <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No ongoing R&amp;D projects.</p>
+              <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No ongoing R&amp;D projects — start one from Projects › + New Project.</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {data.recent_projects.map((p) => (
                   <Link key={p.id} href={recordPath('/dashboard/rnd/projects', p)} style={rowStyle}>
-                    <span style={{ flex: '0 0 auto', fontSize: 12.5, fontWeight: 700, color: TEXT.heading }}>{p.project_number}</span>
+                    <span style={{ flex: '0 0 auto', fontSize: 12, fontWeight: 500, color: TEXT.muted }}>{p.project_number}</span>
                     <span style={ellipsis}>{p.title}</span>
-                    {p.lead_name && <span style={{ flex: 'none', fontSize: 11.5, color: TEXT.muted, whiteSpace: 'nowrap' }}>{p.lead_name}</span>}
-                    <Pill label={STAGE_LABELS[p.stage] || p.stage} hex={STAGE_HEX[p.stage] || '#78716c'} />
+                    <span style={slot(130)}>{p.lead_name || '—'}</span>
+                    <span style={slot(104)}><Pill label={STAGE_LABELS[p.stage] || p.stage} hex={STAGE_HEX[p.stage] || '#78716c'} /></span>
                   </Link>
                 ))}
               </div>

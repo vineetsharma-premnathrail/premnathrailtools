@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { CheckCircle } from '@phosphor-icons/react'
 import { useAuth } from '@/hooks/useAuth'
 import { approvalsApi, usersApi } from '@/lib/api'
 import { ApprovalDelegationInfo, ApprovalRequestInfo, ApprovalTransactionType, DirectoryUser } from '@/types'
 import { BORDER, GLASS, SHADOWS, TEXT } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, Pill } from '@/components/shared/ui'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import DelegationForm from '@/components/organization/DelegationForm'
@@ -90,7 +91,7 @@ export default function MyApprovalsPage() {
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
         {TABS.map(([k, l]) => (
           <button key={k} type="button" onClick={() => { if (k !== tab) { setTab(k); setOpen(null); setRows([]); setLoading(true) } }}
-            style={{ ...secondaryBtnStyle, ...(tab === k ? { borderColor: '#FF6A2A', color: '#FF6A2A' } : {}) }}>
+            style={{ ...secondaryBtnStyle, ...(tab === k ? { borderColor: '#c2410c', color: '#c2410c' } : {}) }}>
             {l}{k === 'inbox' && tab === 'inbox' && !loading ? ` (${rows.length})` : ''}
           </button>
         ))}
@@ -99,22 +100,28 @@ export default function MyApprovalsPage() {
 
       {tab !== 'delegations' && (
         <div style={cardStyle}>
-          {rows.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{loading ? 'Loading…' : error ? 'Could not load this list — see the message above.' : tab === 'inbox' ? 'Nothing is waiting for your approval.' : 'Nothing here yet.'}</p>}
+          {rows.length === 0 && (loading || error || tab !== 'inbox') && <p style={{ fontSize: 13, color: '#57534e', margin: 0 }}>{loading ? 'Loading…' : error ? 'Could not load this list — see the message above.' : 'Nothing here yet.'}</p>}
+          {rows.length === 0 && !loading && !error && tab === 'inbox' && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 8, padding: '40px 16px' }}>
+              <CheckCircle size={44} weight="duotone" color="#16A34A" aria-hidden />
+              <div style={{ fontSize: 16, fontWeight: 700, color: TEXT.heading }}>You are all caught up</div>
+              <p style={{ fontSize: 13, color: '#57534e', margin: 0, maxWidth: 360 }}>Approvals sent to you appear here.</p>
+              <button type="button" style={{ ...secondaryBtnStyle, marginTop: 6 }} onClick={() => { setTab('mine'); setOpen(null); setRows([]); setLoading(true) }}>See My submissions</button>
+            </div>
+          )}
           {rows.map((r) => (
             <div key={r.id} style={{ borderTop: `1px solid ${BORDER.light}`, padding: '10px 0' }}>
               <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 300px', minWidth: 0, cursor: 'pointer' }} onClick={() => setOpen(open === r.id ? null : r.id)}>
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{r.reference ? `${r.reference} — ` : ''}{r.title}</div>
-                  <div style={{ fontSize: 12, color: TEXT.muted }}>
+                  <div style={{ fontSize: 12, color: '#57534e' }}>
                     {r.type_label} · from {r.requester_name || '—'} · {fmtDate(r.submitted_at)}
                     {r.amount != null ? ` · ₹${r.amount.toLocaleString('en-IN')}` : ''}
                     {r.acting_for ? ` · on behalf of ${r.acting_for}` : ''}
                   </div>
                 </div>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${STATUS_HEX[r.status]}1a`, color: STATUS_HEX[r.status] }}>
-                  {STATUS_LABEL[r.status] || r.status}
-                </span>
-                {r.url && <span style={{ color: '#FF6A2A', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }} onClick={() => router.push(r.url!)}>Open document</span>}
+                <Pill label={STATUS_LABEL[r.status] || r.status} hex={STATUS_HEX[r.status] || '#78716c'} />
+                {r.url && <span style={{ color: '#c2410c', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }} onClick={() => router.push(r.url!)}>Open document</span>}
                 <span style={{ color: TEXT.secondary, fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }} onClick={() => setOpen(open === r.id ? null : r.id)}>
                   {open === r.id ? 'Hide' : tab === 'inbox' ? 'Decide' : 'Details'}
                 </span>
@@ -155,7 +162,7 @@ export default function MyApprovalsPage() {
                   {' '}· {fmtDate(d.start_date)} – {fmtDate(d.end_date)} · {d.workflow_label || (d.module_label ? `${d.module_label} (all)` : 'All approvals')}
                   {d.reason ? ` · ${d.reason}` : ''}
                 </div>
-                <span style={{ fontSize: 11, fontWeight: 700, color: d.state === 'active' ? '#16A34A' : d.state === 'upcoming' ? '#2563EB' : '#78716c' }}>{d.state}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: d.state === 'active' ? '#16A34A' : d.state === 'upcoming' ? '#2563EB' : '#78716c' }}>{d.state}</span>
                 {d.state !== 'ended' && d.delegator_id === user.id && (
                   <span style={{ color: '#DC2626', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }} onClick={() => endDelegation(d.id)}>End now</span>
                 )}

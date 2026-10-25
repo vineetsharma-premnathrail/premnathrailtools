@@ -13,7 +13,7 @@ const config: TourConfig = {
     {
       target: 'p2p-pot-status-filter',
       title: 'Status strip',
-      purpose: 'Every chip shows how many POs are in that status and is also the filter — click one to show only those POs, click it again to clear.',
+      purpose: 'Every chip shows how many POs are in that status and is also the filter — click one to show only those POs, click it again to clear. The strip scrolls sideways on one row; a chip with 0 POs is dimmed.',
       options: [
         { value: 'Overdue', meaning: 'Released POs whose expected delivery date has passed with goods still to come — your daily follow-up list.' },
         { value: 'Due in 7 days', meaning: 'Released POs with goods still to come, due today or within the next week.' },
@@ -37,7 +37,7 @@ const config: TourConfig = {
     {
       target: 'p2p-pot-table',
       title: 'PO list',
-      purpose: 'One row per purchase order — a requisition split across vendors shows each PO on its own row with its own vendor, stage, delivery date, delivered % and value. Search by PO number, vendor, item or requisition; filter by vendor, buyer, PO date and order project; click a column heading or use "Sort by" ("Most urgent first" puts the latest deliveries on top). The default order is PO number A to Z.',
+      purpose: 'One row per purchase order — a requisition split across vendors shows each PO on its own row with its own vendor, stage, delivery date, delivered % and value. Search by PO number, vendor, item or requisition; filter by vendor, buyer and order project; "More filters" holds the PO date range and "Sort by" ("Most urgent first" puts the latest deliveries on top); you can also click a column heading to sort. The default order is PO number A to Z.',
       after: 'Click a row to open its side detail: Items (ordered, delivered, open), Receipts (goods receipts), Approval, Documents (the Word PO) and Timeline. "Open requisition & this PO" opens the requisition page on exactly that PO.',
     },
     {
@@ -48,7 +48,7 @@ const config: TourConfig = {
     {
       target: 'p2p-pot-overdue-badge',
       title: 'Days to delivery',
-      purpose: 'Red "5d late" = days past the PO\'s expected delivery; amber = due today or within a week; grey = later. Only released POs with a balance get one — everything else shows a dash.',
+      purpose: 'Red "late by 5 days" = days past the PO\'s expected delivery; amber = due today or within a week; grey = later. Only released POs with a balance get one — everything else shows a dash.',
     },
   ],
 }

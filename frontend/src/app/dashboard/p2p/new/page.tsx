@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { p2pApi, storeApi } from '@/lib/api'
@@ -8,12 +8,13 @@ import { PRCategoryMeta, P2PPurposeMeta, P2PRequest, P2PRequestLineItemInput, St
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { accountAssignmentApi, ACCOUNT_ASSIGNMENTS } from '@/lib/mmLogisticsApi'
 import DateField from '@/components/erp/DateField'
-import { FormPage, SheetColumns, SheetSection, SheetIcon, FileDropZone, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import { FormPage, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import P2PNav from '@/components/p2p/P2PNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { RowCount, pillStyle } from '@/components/shared/ui'
 
 const PRIORITIES = ['low', 'medium', 'high']
 const STANDARD_ITEM_TYPES = ['material', 'service', 'asset', 'consumable', 'tool_equipment']
@@ -45,11 +46,40 @@ function emptyItem(): P2PRequestLineItemInput {
 const inputStyle = sheetInput
 
 // A value the purpose fixes (one option, or locked in Procurement › Settings › Purpose rules): read-only, with a "Fixed" tag.
-function FixedValue({ text }: { text: string }) {
+function FixedValue({ text, label }: { text: string; label: string }) {
   return (
-    <div title="Fixed by the purpose" style={{ ...sheetInput, display: 'flex', alignItems: 'center', gap: 8, background: SHEET.SOFT, fontWeight: 600 }}>
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</span>
-      <span style={{ marginLeft: 'auto', flex: 'none', fontSize: 10.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: SHEET.MUTED }}>Fixed</span>
+    <>
+      <div role="textbox" aria-readonly="true" aria-label={`${label} (fixed by the purpose)`} tabIndex={0} title="Fixed by the purpose" style={{ ...sheetInput, display: 'flex', alignItems: 'center', gap: 8, background: SHEET.SOFT, fontWeight: 600 }}>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</span>
+        <span style={{ ...pillStyle('#475569'), marginLeft: 'auto', flex: 'none' }}>Fixed · Set by purpose</span>
+      </div>
+    </>
+  )
+}
+// Shown while the Purpose is empty: the field exists (no layout shift) but cannot be used yet.
+function ChoosePurposeFirst({ label }: { label: string }) {
+  return <SearchableSelect value="" onChange={() => {}} ariaLabel={label} disabled placeholder="Choose a purpose first" options={[]} />
+}
+// Compact attach row: one line with the button and the picked files (replaces the 100px drop zones).
+function AttachRow({ label, files, onChange, tour }: { label: string; files: File[]; onChange: (f: File[]) => void; tour: string }) {
+  const ref = useRef<HTMLInputElement>(null)
+  return (
+    <div data-tour={tour} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, minHeight: 44, padding: '6px 10px', border: `1.5px dashed #cbd5e1`, borderRadius: 10, background: '#fff', marginBottom: 8 }}
+      onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); onChange([...files, ...Array.from(e.dataTransfer.files)].slice(0, 10)) }}>
+      <span style={{ fontSize: 13, fontWeight: 600, color: SHEET.INK, flex: '0 0 auto' }}>{label}</span>
+      <button type="button" onClick={() => ref.current?.click()} aria-label={`Attach files: ${label}`} style={{ ...sheetBtn('secondary', SHEET.INK), marginLeft: 'auto' }}><SheetIcon name="clip" size={14} />Attach files</button>
+      <input ref={ref} type="file" multiple hidden onChange={(e) => { onChange([...files, ...Array.from(e.target.files || [])].slice(0, 10)); e.target.value = '' }} />
+      {files.length > 0 && (
+        <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {files.map((f, i) => (
+            // ui-audit-ignore-next-line custom-pill — picked-file chip (name + remove), not a status badge
+            <span key={`${f.name}-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, padding: '4px 10px', borderRadius: 999, background: '#f1f5f9', color: SHEET.BODY, maxWidth: '100%' }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+              <button type="button" aria-label={`Remove ${f.name}`} onClick={() => onChange(files.filter((_, j) => j !== i))} style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', color: SHEET.MUTED, fontSize: 14, lineHeight: 1 }}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -67,6 +97,12 @@ export default function NewP2PRequestPage() {
   const { id: editId, error: editLinkError } = useRecordId(editRef)
   const [editing, setEditing] = useState<P2PRequest | null>(null)
 
+  const [metaError, setMetaError] = useState('')
+  const [metaLoaded, setMetaLoaded] = useState(false)
+  const [acctLoading, setAcctLoading] = useState(false)
+  const [acctError, setAcctError] = useState('')
+  // After a failed submit the message opens in a dialog; closing it puts focus on the field to fix.
+  const focusIdRef = useRef<string | null>(null)
   const [categories, setCategories] = useState<PRCategoryMeta[]>([])
   const [requirementTypes, setRequirementTypes] = useState<string[]>([])
   const [masterItems, setMasterItems] = useState<StoreItem[]>([])
@@ -171,9 +207,14 @@ export default function NewP2PRequestPage() {
   }, [])
 
   useEffect(() => {
-    if (!isAuthorized || !acctKind) { setAcctOptions([]); return }
-    accountAssignmentApi.options(acctKind).then((r) => setAcctOptions(r.options))
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to load the account assignment list.')))
+    setAcctError('')
+    if (!isAuthorized || !acctKind) { setAcctOptions([]); setAcctLoading(false); return }
+    let live = true
+    setAcctLoading(true); setAcctOptions([])
+    accountAssignmentApi.options(acctKind).then((r) => { if (live) setAcctOptions(r.options) })
+      .catch((err) => { if (live) setAcctError(extractErrorMessages(err, 'Failed to load the account assignment list.').join(' ')) })
+      .finally(() => { if (live) setAcctLoading(false) })
+    return () => { live = false }
   }, [isAuthorized, acctKind])
 
   useEffect(() => {
@@ -185,8 +226,9 @@ export default function NewP2PRequestPage() {
         setRequirementTypes(meta.requirement_types)
         setPurposes(meta.purposes || [])
         setProjects(projectList)
+        setMetaLoaded(true)
       } catch (err) {
-        setError(extractErrorMessages(err, 'Failed to load form options.'))
+        setMetaError(extractErrorMessages(err, 'Failed to load form options.').join(' '))
       }
     })()
   }, [isAuthorized])
@@ -284,11 +326,11 @@ export default function NewP2PRequestPage() {
     // A submitted requisition's category is fixed (it is in the number).
     // A locked (or single-option) field always takes the purpose's value.
     if (pm && (!editing || editing.status === 'draft')) {
-      setCategoryCode((cur) => (pm.category_locked ? pm.default_category || '' : pm.categories.includes(cur) ? cur : pm.default_category || ''))
+      setCategoryCode((cur) => (pm.category_locked ? pm.default_category || '' : pm.categories.includes(cur) ? cur : pm.default_category || (pm.categories.length === 1 ? pm.categories[0] : '')))
     }
     if (pm) {
       setRequirementType((cur) => (pm.requirement_type_locked ? pm.default_requirement_type || ''
-        : pm.default_requirement_type ? pm.default_requirement_type : pm.requirement_types.includes(cur) ? cur : ''))
+        : pm.default_requirement_type ? pm.default_requirement_type : pm.requirement_types.includes(cur) ? cur : pm.requirement_types.length === 1 ? pm.requirement_types[0] : ''))
     }
     // Each line's Item Type pick must be one the new purpose buys; the rest of
     // the filter is kept. Lines already holding an out-of-type item are only
@@ -316,31 +358,41 @@ export default function NewP2PRequestPage() {
 
   // asDraft: keep it as a private draft — only the category is needed, and
   // lines without an item picked yet are left out. Submit checks everything.
+  const fail = (msg: string | string[], focusId?: string) => { focusIdRef.current = focusId || null; setError(msg) }
+  const closeError = () => {
+    setError('')
+    const id = focusIdRef.current; focusIdRef.current = null
+    if (id) setTimeout(() => {
+      const el = document.getElementById(id)
+      const target = el && (el.matches('input,button,textarea,select,[tabindex]') ? el : el.querySelector<HTMLElement>('input,button,textarea,select,[tabindex]'))
+      ;(target as HTMLElement | null)?.focus()
+    }, 0)
+  }
   const handleSubmit = async (asDraft: boolean) => {
     setError('')
-    if (editRef && !editing) { setError('The requisition is still loading — try again in a moment.'); return }
+    if (editRef && !editing) { fail('The requisition is still loading — try again in a moment.'); return }
     if (asDraft) {
-      if (!categoryCode) { setError('Pick a Purchase Requisition category before saving the draft — it decides the requisition number.'); return }
+      if (!categoryCode) { fail(purposeMeta ? 'Pick a Purchase Requisition category before saving the draft — it decides the requisition number.' : 'Choose a purpose first — it sets the category, and the category is needed before saving the draft (it decides the requisition number).', purposeMeta ? 'pr-field-category' : 'pr-field-purpose'); return }
       const bad = items.findIndex((it) => it.store_item_id && !(Number(it.quantity) > 0))
-      if (bad >= 0) { setError(`Line ${bad + 1}: quantity must be more than 0.`); return }
+      if (bad >= 0) { fail(`Line ${bad + 1}: quantity must be more than 0.`, `pr-line-${bad + 1}-qty`); return }
     } else {
-    if (!rule) { setError('Choose the purpose of this requisition: what is it being bought for?'); return }
-    if (purpose === 'machine_project' && !projectId) { setError('Pick the machine project this requisition is for.'); return }
+    if (!rule) { fail('Choose the purpose of this requisition: what is it being bought for?', 'pr-field-purpose'); return }
+    if (purpose === 'machine_project' && !projectId) { fail('Pick the machine project this requisition is for.', 'pr-field-project'); return }
     if (acctKind && !acctId) {
-      setError(acctKind === 'internal_order'
-        ? "Pick the internal order this is charged to. If it isn't in the list, ask Finance to open one in Finance › Masters › Internal orders."
-        : `Pick the ${ACCOUNT_ASSIGNMENTS.find((a) => a.value === acctKind)?.label.toLowerCase()} this requisition is charged to.`)
+      fail(acctKind === 'internal_order'
+        ? "Pick the internal order this is charged to. If it isn't in the list, ask Finance to open one in Finance › Masters & Setup › Internal Orders."
+        : `Pick the ${ACCOUNT_ASSIGNMENTS.find((a) => a.value === acctKind)?.label.toLowerCase()} this requisition is charged to.`, 'pr-field-acct-id')
       return
     }
-    if (!categoryCode) { setError('Please select a Purchase Requisition category.'); return }
+    if (!categoryCode) { fail('Please select a Purchase Requisition category.', 'pr-field-category'); return }
     for (let i = 0; i < items.length; i++) {
       const m = items[i].store_item_id ? masterById.get(items[i].store_item_id!) : undefined
       if (!m) {
-        setError(`Line ${i + 1}: pick the item from the Item Master. If it's a new item, add it first in Store › Item Master, then click "refresh items".`)
+        fail(`Line ${i + 1}: pick the item from the Item Master. If it's a new item, add it first in Store › Item Master, then click "refresh items".`, `pr-line-${i + 1}-item`)
         return
       }
       if (!(Number(items[i].quantity) > 0)) {
-        setError(`Line ${i + 1} (${m.item_code} ${m.item_name}): quantity must be more than 0.`)
+        fail(`Line ${i + 1} (${m.item_code} ${m.item_name}): quantity must be more than 0.`, `pr-line-${i + 1}-qty`)
         return
       }
     }
@@ -440,7 +492,7 @@ export default function NewP2PRequestPage() {
           <SheetIcon name="send" size={16} />{submitting === 'submit' ? 'Submitting…' : editing && editing.status !== 'draft' ? 'Save & Submit for Approval' : 'Submit Purchase Requisition'}
         </button>
       </>}>
-      <MessageDialog open={!!error} variant="error" title="Cannot Save Request" message={error} onClose={() => setError('')} />
+      <MessageDialog open={!!error} variant="error" title="Cannot Save Request" message={error} onClose={closeError} />
       <MessageDialog
         open={!!uploadWarning}
         variant="warning"
@@ -458,113 +510,123 @@ export default function NewP2PRequestPage() {
         </div>
       )}
 
-      <SheetColumns
-        left={<>
+      <div className="sheet-columns" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 0 }}>
+        <div style={{ minWidth: 0, padding: '20px 24px', borderRight: `1px solid ${SHEET.LINE}` }}>
           <SheetSection icon="building" title="Purpose & Charging">
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-              <div data-tour="pr-new-purpose" style={{ flex: '0 1 250px', minWidth: 220 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div data-tour="pr-new-purpose" style={{ minWidth: 0 }}>
                 <label style={labelStyle}>Purpose <Req /></label>
-                <SearchableSelect value={purpose} onChange={pickPurpose} placeholder="What is this being bought for?"
-                  options={purposes.map((p) => ({ value: p.code, label: p.label }))} />
-              </div>
-              {purpose === 'machine_project' && (
-                <div data-tour="pr-new-project" style={{ flex: '1 1 220px', minWidth: 200 }}>
-                  <label style={labelStyle}>Machine Project <Req /></label>
-                  <SearchableSelect
-                    value={projectId}
-                    onChange={setProjectId}
-                    options={projects.map((p) => ({ value: String(p.id), label: p.label }))}
-                    placeholder="Search machine project…"
-                  />
+                <div id="pr-field-purpose">
+                  <SearchableSelect value={purpose} onChange={pickPurpose} ariaLabel="Purpose" disabled={!!metaError}
+                    placeholder={metaError ? 'Purposes could not be loaded' : metaLoaded ? 'What is this being bought for?' : 'Loading purposes…'}
+                    options={purposes.map((p) => ({ value: p.code, label: p.label }))} />
                 </div>
-              )}
-            </div>
-            {rule && <p data-tour="pr-new-purpose-hint" style={sheetHint}>{rule.hint}</p>}
-            {rule && rule.kinds.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
-              <div data-tour="pr-new-charged-to" style={{ flex: '0 1 190px', minWidth: 170 }}>
-                <label style={labelStyle}>Charged To{rule.required && <> <Req /></>}</label>
-                {rule.kinds.length === 1 && rule.required ? (
+              </div>
+              <div data-tour="pr-new-charged-to" style={{ minWidth: 0 }}>
+                <label style={labelStyle}>Charged To{rule?.required && <> <Req /></>}</label>
+                {!rule ? (
+                  <ChoosePurposeFirst label="Charged To" />
+                ) : rule.kinds.length === 0 ? (
+                  <FixedValue label="Charged To" text="Nothing charged now" />
+                ) : rule.kinds.length === 1 && rule.required ? (
                   // One required answer: a fixed value, not a dead dropdown.
-                  <div title="Fixed by the purpose" style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: 8, background: SHEET.SOFT, fontWeight: 600 }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {ACCOUNT_ASSIGNMENTS.find((a) => a.value === rule.kinds[0])?.label}
-                    </span>
-                    <span style={{ marginLeft: 'auto', flex: 'none', fontSize: 10.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: SHEET.MUTED }}>Fixed</span>
-                  </div>
+                  <FixedValue label="Charged To" text={ACCOUNT_ASSIGNMENTS.find((a) => a.value === rule.kinds[0])?.label || ''} />
                 ) : (
-                  <SearchableSelect value={acctKind} onChange={(v) => { setAcctKind(v); setAcctId('') }}
+                  <SearchableSelect value={acctKind} onChange={(v) => { setAcctKind(v); setAcctId('') }} ariaLabel="Charged To"
                     options={[...(rule.required ? [] : [{ value: '', label: 'Not charged' }]),
                       ...ACCOUNT_ASSIGNMENTS.filter((a) => rule.kinds.includes(a.value)).map((a) => ({ value: a.value, label: a.label }))]}
                     placeholder="Select…" />
                 )}
               </div>
+            </div>
+            {metaError && <p role="alert" style={{ ...sheetHint, color: '#B91C1C' }}>{metaError} Reload the page to try again.</p>}
+            {rule && <p data-tour="pr-new-purpose-hint" style={sheetHint}>{rule.hint}</p>}
+            {(purpose === 'machine_project' || (rule && rule.kinds.length > 0 && acctKind)) && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+              {purpose === 'machine_project' && (
+                <div data-tour="pr-new-project" style={{ minWidth: 0 }}>
+                  <label style={labelStyle}>Machine Project <Req /></label>
+                  <div id="pr-field-project">
+                    <SearchableSelect
+                      value={projectId}
+                      onChange={setProjectId}
+                      ariaLabel="Machine project"
+                      disabled={metaLoaded && projects.length === 0}
+                      options={projects.map((p) => ({ value: String(p.id), label: p.label }))}
+                      placeholder={!metaLoaded ? 'Loading machine projects…' : projects.length ? 'Search machine project…' : 'No machine projects yet'}
+                    />
+                  </div>
+                  {metaLoaded && projects.length === 0 && <p style={sheetHint}>No machine projects found. Reload the page; if the list stays empty, ask an admin which delivered machines are set up as projects.</p>}
+                </div>
+              )}
               {acctKind && (
-                <div style={{ flex: '1 1 220px', minWidth: 200, maxWidth: 340 }}>
+                <div style={{ minWidth: 0 }}>
                   <label style={labelStyle}>{ACCOUNT_ASSIGNMENTS.find((a) => a.value === acctKind)?.label} <Req /></label>
-                  <SearchableSelect value={acctId} onChange={setAcctId}
-                    options={acctOptions.map((o) => ({ value: String(o.id), label: o.label }))} placeholder="Search…" />
+                  <div id="pr-field-acct-id">
+                    <SearchableSelect value={acctId} onChange={setAcctId} ariaLabel={ACCOUNT_ASSIGNMENTS.find((a) => a.value === acctKind)?.label}
+                      disabled={acctLoading || !!acctError || acctOptions.length === 0}
+                      options={acctOptions.map((o) => ({ value: String(o.id), label: o.label }))}
+                      placeholder={acctLoading ? 'Loading…' : acctError ? 'Could not load the list' : acctOptions.length ? 'Search…' : 'Nothing to pick yet'} />
+                  </div>
+                  {acctError && <p role="alert" style={{ ...sheetHint, color: '#B91C1C' }}>{acctError} Pick the charge type again, or reload the page.</p>}
+                  {!acctLoading && !acctError && acctOptions.length === 0 && (
+                    <p style={sheetHint}>{acctKind === 'internal_order'
+                      ? 'No internal orders yet — ask Finance to open one in Finance › Masters & Setup › Internal Orders.'
+                      : `No ${ACCOUNT_ASSIGNMENTS.find((a) => a.value === acctKind)?.label.toLowerCase()} available yet — ask an admin to set one up, then reload the page.`}</p>
+                  )}
                 </div>
               )}
             </div>
             )}
           </SheetSection>
+        </div>
+        <div style={{ minWidth: 0, padding: '20px 24px', background: '#fcfcfd' }}>
           <SheetSection icon="list" title="Request Details">
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-              <div style={{ flex: '1 1 220px', minWidth: 200 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ minWidth: 0 }}>
                 <label style={labelStyle}>Purchase Requisition Category <Req /></label>
-                <div data-tour="pr-new-category">
-                  {purposeMeta?.category_locked && categoryCode === purposeMeta.default_category ? (
-                    <FixedValue text={`${categories.find((c) => c.code === categoryCode)?.label || categoryCode} (${categoryCode})`} />
+                <div id="pr-field-category" data-tour="pr-new-category">
+                  {!purposeMeta ? (
+                    <ChoosePurposeFirst label="Purchase Requisition Category" />
+                  ) : (purposeMeta.category_locked && categoryCode === purposeMeta.default_category) || (purposeMeta.categories.length === 1 && categoryCode === purposeMeta.categories[0]) ? (
+                    <FixedValue label="Purchase Requisition Category" text={`${categories.find((c) => c.code === categoryCode)?.label || categoryCode} (${categoryCode})`} />
                   ) : (
                     // Only the categories that fit the purpose, in its order (the current one stays visible on an older requisition).
-                    <SearchableSelect value={categoryCode} onChange={setCategoryCode} placeholder="Select category…"
-                      options={categories.filter((c) => !purposeMeta ? c.code !== 'OTH' : purposeMeta.categories.includes(c.code) || c.code === categoryCode)
-                        .sort((a, b) => (purposeMeta ? purposeMeta.categories.indexOf(a.code) - purposeMeta.categories.indexOf(b.code) : 0))
+                    <SearchableSelect value={categoryCode} onChange={setCategoryCode} ariaLabel="Purchase Requisition Category" placeholder="Select category…"
+                      options={categories.filter((c) => purposeMeta.categories.includes(c.code) || c.code === categoryCode)
+                        .sort((a, b) => purposeMeta.categories.indexOf(a.code) - purposeMeta.categories.indexOf(b.code))
                         .map((c) => ({ value: c.code, label: `${c.label} (${c.code})` }))} />
                   )}
                 </div>
               </div>
-              <div style={{ flex: '1 1 180px', minWidth: 160 }}>
+              <div style={{ minWidth: 0 }}>
                 <label style={labelStyle}>Requirement Type</label>
                 <div data-tour="pr-new-requirement-type">
-                  {purposeMeta?.requirement_type_locked && requirementType === purposeMeta.default_requirement_type ? (
-                    <FixedValue text={requirementType} />
+                  {!purposeMeta ? (
+                    <ChoosePurposeFirst label="Requirement Type" />
+                  ) : (purposeMeta.requirement_type_locked && requirementType === purposeMeta.default_requirement_type) || (purposeMeta.requirement_types.length === 1 && requirementType === purposeMeta.requirement_types[0]) ? (
+                    <FixedValue label="Requirement Type" text={requirementType} />
                   ) : (
-                    <SearchableSelect value={requirementType} onChange={setRequirementType} placeholder="Select type…"
-                      options={(purposeMeta ? requirementTypes.filter((t) => purposeMeta.requirement_types.includes(t) || t === requirementType) : requirementTypes).map((t) => ({ value: t, label: t }))} />
+                    <SearchableSelect value={requirementType} onChange={setRequirementType} ariaLabel="Requirement Type" placeholder="Select type…"
+                      options={requirementTypes.filter((t) => purposeMeta.requirement_types.includes(t) || t === requirementType).map((t) => ({ value: t, label: t }))} />
                   )}
                 </div>
               </div>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
-              <div style={{ flex: '0 1 170px', minWidth: 150 }}>
+              <div style={{ minWidth: 0 }}>
                 <label style={labelStyle}>Required Date</label>
                 <div data-tour="pr-new-required-date"><DateField value={requiredDate} onChange={setRequiredDate} /></div>
               </div>
-              <div style={{ flex: '0 1 150px', minWidth: 130 }}>
+              <div style={{ minWidth: 0 }}>
                 <label style={labelStyle}>Priority</label>
                 <div data-tour="pr-new-priority">
-                  <SearchableSelect value={priority} onChange={setPriority} placeholder="Priority"
+                  <SearchableSelect value={priority} onChange={setPriority} ariaLabel="Priority" placeholder="Priority"
                     options={PRIORITIES.map((p) => ({ value: p, label: p[0].toUpperCase() + p.slice(1) }))} />
                 </div>
               </div>
             </div>
           </SheetSection>
-        </>}
-        right={<>
-          <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
-            <textarea data-tour="pr-new-remarks" style={{ ...inputStyle, minHeight: 72, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)}
-              placeholder="Why it is needed, references, anything the buyer should know…" />
-          </SheetSection>
-          <SheetSection icon="clip" title="Documents" extra={<Optional />}>
-            <label style={labelStyle}>Supporting Documents</label>
-            <div data-tour="pr-new-supporting-docs"><FileDropZone files={supportingFiles} onChange={setSupportingFiles} /></div>
-            <label style={{ ...labelStyle, marginTop: 14 }}>Specification / Reference File</label>
-            <div data-tour="pr-new-spec-docs"><FileDropZone files={specFiles} onChange={setSpecFiles} /></div>
-          </SheetSection>
-        </>}
-      />
+        </div>
+      </div>
 
       <div style={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
         <SheetSection icon="box" title="Item Details" extra={
@@ -580,11 +642,11 @@ export default function NewP2PRequestPage() {
             </div>
           )}
           <div style={{ overflowX: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 10 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1250 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
               <thead>
                 <tr>
-                  {['SL', 'Item (from Item Master) *', 'Make', 'Part Code', 'UOM', 'Qty *', 'Category', 'Ship To', ''].map((h) => (
-                    <th key={h} style={th}>{h}</th>
+                  {['Actions', 'SL', 'Item (from Item Master) *', 'Make', 'Part Code', 'UOM', 'Qty *', 'Category', 'Ship To'].map((h, i) => (
+                    <th key={h} style={th}>{h === 'Actions' ? <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>Actions</span> : h}{i === 1 && <RowCount count={items.length} />}</th>
                   ))}
                 </tr>
               </thead>
@@ -600,11 +662,17 @@ export default function NewP2PRequestPage() {
                     || ((lineType ? i.item_type === lineType : typeFits(i.item_type)) && (!f.category || i.category === f.category)))
                   return (
                   <tr key={idx} style={{ borderTop: idx ? `1px solid ${SHEET.LINE}` : undefined }}>
+                    <td style={{ padding: '6px 8px', width: 70 }}>
+                      {items.length > 1 && (
+                        <button type="button" data-tour="pr-new-item-remove" aria-label={`Remove line ${idx + 1}`} onClick={() => removeItem(idx)} style={{ border: 'none', background: 'transparent', paddingBlock: 4, paddingInline: 2, minHeight: 24, fontSize: 11.5, fontWeight: 600, color: '#dc2626', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>Remove</button>
+                      )}
+                    </td>
                     <td style={{ padding: '6px 8px', fontSize: 12.5, fontWeight: 600, color: SHEET.MUTED }}>{idx + 1}</td>
-                    <td data-tour="pr-new-item-name" style={{ padding: '6px 8px', minWidth: 560 }}>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <div title="Item Type" style={{ flex: '0 0 140px' }}>
+                    <td data-tour="pr-new-item-name" style={{ padding: '6px 8px', minWidth: 300 }}>
+                      <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                        <div title="Item Type" style={{ flex: '1 1 0', minWidth: 0 }}>
                           <SearchableSelect
+                            ariaLabel={`Item type, line ${idx + 1}`}
                             value={lineType}
                             onChange={(type) => setLineFilter(idx, { type, category: categoriesForType(type).includes(f.category) ? f.category : '' })}
                             options={[...(itemTypeOptions.length === 1 ? [] : [{ value: '', label: purposeMeta ? 'All fitting types' : 'All types' }]),
@@ -612,16 +680,20 @@ export default function NewP2PRequestPage() {
                             placeholder="Item type"
                           />
                         </div>
-                        <div title="Category" style={{ flex: '0 0 150px' }}>
+                        <div title="Category" style={{ flex: '1 1 0', minWidth: 0 }}>
                           <SearchableSelect
+                            ariaLabel={`Category filter, line ${idx + 1}`}
                             value={f.category}
                             onChange={(category) => setLineFilter(idx, { category })}
                             options={[{ value: '', label: 'All categories' }, ...categoriesForType(lineType).map((c) => ({ value: c, label: c }))]}
                             placeholder="Category"
                           />
                         </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
+                      </div>
+                      <div id={`pr-line-${idx + 1}-item`}>
+                        <div style={{ minWidth: 0 }}>
                           <SearchableSelect
+                            ariaLabel={`Item, line ${idx + 1}`}
                             value={item.store_item_id ? String(item.store_item_id) : ''}
                             onChange={(v) => pickItem(idx, v)}
                             options={shown.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}${i.part_number ? ` · ${i.part_number}` : ''}` }))}
@@ -634,16 +706,11 @@ export default function NewP2PRequestPage() {
                     <td data-tour="pr-new-item-partcode" style={readCell}>{m?.part_number || m?.manufacturer_part_number || '—'}</td>
                     <td data-tour="pr-new-item-unit" style={readCell}>{m?.uom || '—'}</td>
                     <td style={{ padding: '6px 8px', minWidth: 70 }}>
-                      <input data-tour="pr-new-item-qty" type="number" style={inputStyle} value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} />
+                      <input data-tour="pr-new-item-qty" id={`pr-line-${idx + 1}-qty`} aria-label={`Quantity, line ${idx + 1}`} type="number" min={0} step="any" style={inputStyle} value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} />
                     </td>
                     <td data-tour="pr-new-item-category" style={readCell}>{m?.category || '—'}</td>
                     <td style={{ padding: '6px 8px', minWidth: 140 }}>
-                      <input data-tour="pr-new-item-shipto" style={inputStyle} value={item.ship_to} onChange={(e) => updateItem(idx, 'ship_to', e.target.value)} />
-                    </td>
-                    <td style={{ padding: '6px 8px' }}>
-                      {items.length > 1 && (
-                        <span data-tour="pr-new-item-remove" onClick={() => removeItem(idx)} style={{ fontSize: 11.5, fontWeight: 600, color: '#dc2626', cursor: 'pointer', whiteSpace: 'nowrap' }}>Remove</span>
-                      )}
+                      <input data-tour="pr-new-item-shipto" aria-label={`Ship to, line ${idx + 1}`} style={inputStyle} value={item.ship_to} onChange={(e) => updateItem(idx, 'ship_to', e.target.value)} />
                     </td>
                   </tr>
                   )
@@ -655,11 +722,27 @@ export default function NewP2PRequestPage() {
             Item not in the list? Add it in{' '}
             <a href="/dashboard/store/new" target="_blank" rel="noopener noreferrer" style={{ color: SHEET.BLUE, fontWeight: 600 }}>Store › Item Master</a>
             {' '}(opens in a new tab), then{' '}
+            {/* ui-audit-ignore-next-line adhoc-button — inline text link inside a sentence, not a button box */}
             <button type="button" onClick={loadMasterItems} disabled={loadingMaster} style={{ border: 'none', background: 'none', padding: 0, color: SHEET.BLUE, fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
               {loadingMaster ? 'refreshing…' : 'refresh items'}
             </button>.
           </p>
         </SheetSection>
+      </div>
+
+      <div className="sheet-columns" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', borderTop: `1px solid ${SHEET.LINE}` }}>
+        <div style={{ minWidth: 0, padding: '20px 24px', borderRight: `1px solid ${SHEET.LINE}` }}>
+          <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
+            <textarea data-tour="pr-new-remarks" aria-label="Remarks" style={{ ...inputStyle, minHeight: 72, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)}
+              placeholder="Why it is needed, references, anything the buyer should know…" />
+          </SheetSection>
+        </div>
+        <div style={{ minWidth: 0, padding: '20px 24px', background: '#fcfcfd' }}>
+          <SheetSection icon="clip" title="Attachments" extra={<Optional />}>
+            <AttachRow label="Supporting documents" files={supportingFiles} onChange={setSupportingFiles} tour="pr-new-supporting-docs" />
+            <AttachRow label="Specification / reference file" files={specFiles} onChange={setSpecFiles} tour="pr-new-spec-docs" />
+          </SheetSection>
+        </div>
       </div>
     </FormPage>
   )

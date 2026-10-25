@@ -1,7 +1,7 @@
 'use client'
 
 import Select from '@/components/shared/Select'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { hasErpPermission, useRequireApp } from '@/hooks/useAuth'
@@ -11,7 +11,7 @@ import { SLA_STATE_HEX, SLA_STATE_LABELS } from '@/lib/eamApi'
 import { formatDate } from '@/lib/format'
 import { Project, ServiceRequest, SRStatus } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
-import { inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, secondaryBtnStyle, RowCount, Pill, pillStyle } from '@/components/shared/ui'
 import Checkbox from '@/components/Checkbox'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
@@ -67,11 +67,15 @@ function resolutionDays(start?: string | null, end?: string | null) {
   return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)))
 }
 
+// Columns the user can switch on or off. SR Number, Client, Issue, Priority, Status, SLA and Actions always show.
+const OPTIONAL_COLS = ['Service Type', 'Opening Date', 'Closing Date', 'Resolution Time', 'Warranty'] as const
+const DEFAULT_HIDDEN: string[] = [...OPTIONAL_COLS]
+
 const dayText = (n: number) => (n === 0 ? 'Same day' : `${n} day${n === 1 ? '' : 's'}`)
 
 function warrantyLabel(project?: Project) {
   if (!project?.warranty_start_date || !project?.warranty_end_date) return 'No'
-  return `${project.warranty_start_date} → ${project.warranty_end_date}`
+  return `${formatDate(project.warranty_start_date)} → ${formatDate(project.warranty_end_date)}`
 }
 
 export default function ServiceRequestsPage() {
@@ -98,6 +102,23 @@ export default function ServiceRequestsPage() {
   const [slaFilter, setSlaFilter] = useState('all')
   const [showImport, setShowImport] = useState(false)
   const [showExport, setShowExport] = useState(false)
+  const [hiddenCols, setHiddenCols] = useState<string[]>(DEFAULT_HIDDEN)
+  const [showCols, setShowCols] = useState(false)
+  const colsRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!showCols) return
+    const onDown = (e: MouseEvent) => { if (!colsRef.current?.contains(e.target as Node)) setShowCols(false) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowCols(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [showCols])
+  const colOn = (name: string) => !hiddenCols.includes(name)
+  // Actions stick to the right edge only when extra columns are switched on (the table then scrolls);
+  // with the default columns it must never cover a data column.
+  const stickyActions = OPTIONAL_COLS.some((c) => colOn(c))
+  const toggleCol = (name: string) =>
+    setHiddenCols((h) => (h.includes(name) ? h.filter((x) => x !== name) : [...h, name]))
 
   const load = async () => {
     setLoading(true)
@@ -164,19 +185,12 @@ export default function ServiceRequestsPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <ErpNav />
-      <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 4px' }}>Service Operations</p>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Service Request Registry</h1>
           <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{filteredSrs.length} Service Requests Found</p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        {canExport && (
-          <button data-tour="erp-sr-export-btn" onClick={() => setShowExport(true)} style={secondaryBtnStyle}>Export</button>
-        )}
-        {canImport && (
-          <button data-tour="erp-sr-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>
-        )}
         {canCreate && (
           <Link
             href="/dashboard/erp/service-requests/new"
@@ -184,9 +198,10 @@ export default function ServiceRequestsPage() {
             style={{
               fontSize: 13.5,
               fontWeight: 600,
-              padding: '10px 20px',
+              padding: '10px 14px',
               borderRadius: 10,
-              background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)',
+              background: '#ea580c',
+              border: '1px solid #c2410c',
               color: '#fff',
               textDecoration: 'none',
               whiteSpace: 'nowrap',
@@ -194,6 +209,12 @@ export default function ServiceRequestsPage() {
           >
             + New Service Request
           </Link>
+        )}
+        {canExport && (
+          <button data-tour="erp-sr-export-btn" onClick={() => setShowExport(true)} style={secondaryBtnStyle}>Export</button>
+        )}
+        {canImport && (
+          <button data-tour="erp-sr-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>
         )}
         </div>
       </div>
@@ -260,26 +281,42 @@ export default function ServiceRequestsPage() {
           Overdue Only
         </span>
         <button onClick={clearFilters} style={secondaryBtnStyle} data-tour="erp-sr-clear-btn">Clear</button>
+        <div ref={colsRef} style={{ position: 'relative' }}>
+          <button type="button" onClick={() => setShowCols((v) => !v)} aria-expanded={showCols} style={secondaryBtnStyle} data-tour="erp-sr-columns-btn">Columns</button>
+          {showCols && (
+            <>
+              <div role="menu" style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 41, background: '#fff', border: '1px solid #e7e5e4', borderRadius: 12, boxShadow: '0 12px 28px rgba(15,23,42,.18)', padding: 12, minWidth: 200, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontSize: 12, color: '#57534e', fontWeight: 600 }}>Show columns</div>
+                {OPTIONAL_COLS.map((c) => (
+                  <label key={c} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#1f1108', cursor: 'pointer' }}>
+                    <Checkbox checked={colOn(c)} onChange={() => toggleCol(c)} />
+                    {c}
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       <div style={{ borderRadius: 18, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
-        <table data-tour="erp-sr-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1150 }}>
+        <table data-tour="erp-sr-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 0 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-              {['SR Number', 'Machine Serial', 'Client & Site', 'Issue Summary', 'Service Type', 'Priority', 'Status', 'Opening Date', 'Closing Date', 'Resolution Time', 'SLA', 'Warranty', 'Actions'].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+              {['SR Number', 'Machine Serial', 'Client & Site', 'Issue Summary', 'Service Type', 'Priority', 'Status', 'Opening Date', 'Closing Date', 'Resolution Time', 'SLA', 'Warranty', 'Actions'].filter((h) => colOn(h)).map((h, hi) => (
+                <th key={h} style={{ textAlign: 'left', padding: '12px 8px', fontSize: 12, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#57534e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: h === 'Actions' ? 3 : 1, ...(h === 'Actions' && stickyActions ? { right: 0, boxShadow: '-6px 0 8px -6px rgba(15,23,42,.18)' } : {}), ...(h === 'Client & Site' ? { minWidth: 130 } : {}), ...(h === 'Issue Summary' ? { minWidth: 100 } : {}), ...(h === 'Priority' ? { minWidth: 76, overflow: 'visible', textOverflow: 'clip' } : {}) }}>
+                  {h}{hi === 0 && <RowCount count={filteredSrs.length} />}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={13} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>
+              <tr><td colSpan={13 - hiddenCols.length} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>
             )}
             {!loading && pagedSrs.length === 0 && (
-              <tr><td colSpan={13} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No service requests found.</td></tr>
+              <tr><td colSpan={13 - hiddenCols.length} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No service requests found.</td></tr>
             )}
             {pagedSrs.map((sr) => {
               const statusStyle = STATUS_COLORS[sr.status] || STATUS_COLORS.open
@@ -291,56 +328,56 @@ export default function ServiceRequestsPage() {
                   onClick={() => router.push(recordPath('/dashboard/erp/service-requests', sr))}
                   style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
                 >
-                  <td style={{ padding: '12px 16px' }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45' }}>
+                  <td style={{ padding: '12px 8px', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#c2410c' }}>
                       {sr.request_number}
                     </span>
                   </td>
-                  <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.serial_number || '—'}</td>
-                  <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#57534e' }}>
+                  <td style={{ padding: '12px 8px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.serial_number || '—'}</td>
+                  <td style={{ padding: '12px 8px', fontSize: 12.5, color: '#57534e', minWidth: 130 }}>
                     <div>{project?.client_company || '—'}</div>
-                    <div style={{ color: '#a8a29e', fontSize: 11.5 }}>{project?.site_name || ''}</div>
+                    <div style={{ color: '#57534e', fontSize: 12 }}>{project?.site_name || ''}</div>
                   </td>
-                  <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e' }}>
-                    {/* One line, cut with "…" — the full text is on hover and on the SR page. */}
-                    <div title={sr.issue_title} style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sr.issue_title}</div>
+                  <td style={{ padding: '12px 8px', fontSize: 13, color: '#57534e', width: '100%', maxWidth: 0, minWidth: 100 }}>
+                    {/* One line, cut with "…" — takes the leftover width; full text on hover and on the SR page. */}
+                    <div title={sr.issue_title} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sr.issue_title}</div>
                   </td>
-                  <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{serviceTypeLabel(sr.service_type)}</td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: PRIORITY_COLORS[sr.priority] || '#64748b' }}>
+                  {colOn('Service Type') && <td style={{ padding: '12px 8px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{serviceTypeLabel(sr.service_type)}</td>}
+                  <td style={{ padding: '12px 8px', minWidth: 76, whiteSpace: 'nowrap', overflow: 'visible', textOverflow: 'clip' }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', whiteSpace: 'nowrap', color: PRIORITY_COLORS[sr.priority] || '#64748b' }}>
                       {sr.priority}
                     </span>
                   </td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <span style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: statusStyle.bg, color: statusStyle.fg, whiteSpace: 'nowrap' }}>
+                  <td style={{ padding: '12px 8px' }}>
+                    <span style={{ ...pillStyle(statusStyle.fg), background: statusStyle.bg }}>
                       {STATUS_LABELS[sr.status] || sr.status}
                     </span>
                   </td>
-                  <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>
+                  {colOn('Opening Date') && <td style={{ padding: '12px 8px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>
                     {formatDate(sr.opened_at)}
-                  </td>
-                  <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>
+                  </td>}
+                  {colOn('Closing Date') && <td style={{ padding: '12px 8px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>
                     {sr.closed_at ? formatDate(sr.closed_at) : 'Open'}
-                  </td>
-                  <td style={{ padding: '12px 16px', fontSize: 12.5, whiteSpace: 'nowrap' }}
+                  </td>}
+                  {colOn('Resolution Time') && <td style={{ padding: '12px 8px', fontSize: 12.5, whiteSpace: 'nowrap' }}
                     title={sr.closed_at ? 'Time taken from opening to closing' : 'Not closed yet — time since it was opened'}>
                     {tat === null ? '—' : sr.closed_at
                       ? <span style={{ color: '#1f1108', fontWeight: 600 }}>{dayText(tat)}</span>
                       : <span style={{ color: '#b45309' }}>Open · {dayText(tat)}</span>}
-                  </td>
-                  <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                  </td>}
+                  <td style={{ padding: '12px 8px', whiteSpace: 'nowrap' }}>
                     {(() => {
                       const st = [sr.sla_response_state, sr.sla_resolution_state].includes('breached') ? 'breached'
                         : [sr.sla_response_state, sr.sla_resolution_state].includes('at_risk') ? 'at_risk'
                         : sr.sla_resolution_state || sr.sla_response_state
-                      return st ? <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${SLA_STATE_HEX[st] || '#78716c'}1a`, color: SLA_STATE_HEX[st] || '#78716c' }}>{SLA_STATE_LABELS[st] || st}</span> : <span style={{ color: '#a8a29e' }}>—</span>
+                      return st ? <Pill label={SLA_STATE_LABELS[st] || st} hex={SLA_STATE_HEX[st] || '#78716c'} /> : <span style={{ color: '#a8a29e' }}>—</span>
                     })()}
                   </td>
-                  <td style={{ padding: '12px 16px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(project)}</td>
-                  <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                    <Link href={recordPath('/dashboard/erp/service-requests', sr)} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', marginRight: 10, textDecoration: 'none' }}>View</Link>
+                  {colOn('Warranty') && <td style={{ padding: '12px 8px', fontSize: 12, color: '#57534e', whiteSpace: 'nowrap' }}>{warrantyLabel(project)}</td>}
+                  <td style={{ padding: '12px 8px', whiteSpace: 'nowrap', ...(stickyActions ? { position: 'sticky', right: 0, background: '#fff9f3', boxShadow: '-6px 0 8px -6px rgba(15,23,42,.18)' } : {}) }} onClick={(e) => e.stopPropagation()}>
+                    <Link href={recordPath('/dashboard/erp/service-requests', sr)} style={{ fontSize: 12, fontWeight: 600, color: '#c2410c', marginRight: 10, textDecoration: 'none' }}>View</Link>
                     {canEditSr(sr) && (
-                      <Link href={`${recordPath('/dashboard/erp/service-requests', sr)}/edit`} style={{ fontSize: 11.5, fontWeight: 600, color: '#57534e', textDecoration: 'none' }}>Edit</Link>
+                      <Link href={`${recordPath('/dashboard/erp/service-requests', sr)}/edit`} style={{ fontSize: 12, fontWeight: 600, color: '#57534e', textDecoration: 'none' }}>Edit</Link>
                     )}
                   </td>
                 </tr>

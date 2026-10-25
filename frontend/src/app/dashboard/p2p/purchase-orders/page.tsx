@@ -6,7 +6,7 @@
 import { useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
-import { TEXT, GRADIENTS, SHADOWS } from '@/lib/theme'
+import { TEXT } from '@/lib/theme'
 import P2PNav from '@/components/p2p/P2PNav'
 import POReadyList from '@/components/p2p/POReadyList'
 import POApprovalQueue from '@/components/p2p/POApprovalQueue'
@@ -14,6 +14,7 @@ import POTrackingList from '@/components/p2p/POTrackingList'
 import POOpenItems from '@/components/p2p/POOpenItems'
 import CreatePODialog from '@/components/p2p/CreatePODialog'
 import { useP2PApproverFlags } from '@/components/p2p/useP2PApproverFlags'
+import { primaryBtnStyle } from '@/components/shared/ui'
 
 type View = 'create' | 'approvals' | 'tracking' | 'open_items'
 
@@ -53,12 +54,12 @@ export default function PurchaseOrdersPage() {
       <P2PNav />
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
         <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Procurement Module</p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Purchase Orders</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Purchase Orders</h1>
+          <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Create POs from finished RFQs, approve them, and follow each one until the goods arrive.</p>
         </div>
         {canCreatePo && (
           <button type="button" data-tour="po-create-btn" onClick={() => setCreateFor('new')}
-            style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}>
+            style={primaryBtnStyle}>
             + Create PO
           </button>
         )}

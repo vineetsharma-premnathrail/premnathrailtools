@@ -33,8 +33,13 @@ const config: TourConfig = {
       purpose: 'Alerts you when something needs your attention — a follow-up is due, a quotation status changed, a task was assigned to you.',
     },
     {
+      target: 'dash-new-inquiry-btn',
+      title: '+ New inquiry',
+      purpose: 'Top-right shortcut to the Create Inquiry form. Shown only if your role may create inquiries.',
+    },
+    {
       target: 'dash-stat-organizations',
-      title: 'Customer Organizations (count)',
+      title: 'Organizations (count)',
       purpose: 'Total customer organizations on record.',
       after: 'Click the card to jump straight to the Customer Organizations list.',
     },
@@ -52,22 +57,23 @@ const config: TourConfig = {
     },
     {
       target: 'dash-stat-open-followups',
-      title: 'Open Follow-ups',
+      title: 'Open follow-ups',
       purpose: 'Follow-up activities (calls, emails, site visits, etc.) that are logged but not yet marked done.',
     },
     {
       target: 'dash-stat-overdue-followups',
-      title: 'Overdue Follow-ups',
+      title: 'Overdue follow-ups',
       purpose: 'Follow-ups whose due date has already passed without being closed — these need attention first.',
+      after: 'Click the card to open the follow-up list already filtered to overdue ones.',
     },
     {
       target: 'dash-stat-today-followups',
-      title: "Today's Follow-ups",
+      title: 'Due today (follow-ups)',
       purpose: 'Follow-ups due today.',
     },
     {
       target: 'dash-stat-pending-tenders',
-      title: 'Pending Tenders',
+      title: 'Pending tenders',
       purpose: 'Tenders not yet in a closed or cancelled status — i.e. anything other than "Closed – Ordered", "Closed – Not Ordered", or "Tender Cancelled".',
       after: 'Click to jump to the Tenders list.',
     },

@@ -1,13 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { p2pApi } from '@/lib/api'
 import { P2PRequest } from '@/types'
-import { TEXT, SHADOWS, GRADIENTS } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT } from '@/lib/theme'
+import { secondaryBtnStyle, primaryBtnStyle, pillStyle } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
 import P2PRequestList from '@/components/p2p/P2PRequestList'
 import PRApprovalQueue from '@/components/p2p/PRApprovalQueue'
@@ -31,13 +31,27 @@ export default function P2PHomePage() {
   const [listKey, setListKey] = useState(0)
   const approverFlags = useP2PApproverFlags()
 
-  if (isLoading || !isAuthorized) return null
   const canApprove = approverFlags.is_pr_approver
+  // Count on the Approvals sub-tab: requisitions waiting for this user (same rule as the "Waiting for me" list).
+  const [pendingCount, setPendingCount] = useState<number | null>(null)
+  useEffect(() => {
+    if (!isAuthorized || !canApprove) return
+    let live = true
+    p2pApi.list({ limit: 1000, queue: 'pr-approval' }).then((rows: P2PRequest[]) => {
+      if (!live) return
+      setPendingCount(rows.filter((pr) => pr.status === 'submitted' && (user?.role === 'admin'
+        || (pr.engine_approval ? pr.engine_approval.status === 'pending' && pr.engine_approval.can_decide
+          : !!pr.approvals?.some((a) => a.approver_id === user?.id && !a.approved_at)))).length)
+    }).catch(() => { if (live) setPendingCount(null) })
+    return () => { live = false }
+  }, [isAuthorized, canApprove, user?.id, user?.role])
+
+  if (isLoading || !isAuthorized) return null
 
   const openExport = async () => {
     // Selective mode lists what this user can see (same scope as the export itself).
     const prs: P2PRequest[] = await p2pApi.list({ limit: 500 }).catch(() => [])
-    setExportItems(prs.map((p) => ({ id: p.id, label: `${p.p2p_number} — ${p.project_label || ''}`, sub: [p.status, p.requested_by_name].filter(Boolean).join(' · ') })))
+    setExportItems(prs.map((p) => ({ id: p.id, label: p.project_label ? `${p.p2p_number} — ${p.project_label}` : p.p2p_number, sub: [p.status.charAt(0).toUpperCase() + p.status.slice(1).replace(/_/g, ' '), p.requested_by_name].filter(Boolean).join(' · ') })))
   }
 
   return (
@@ -46,9 +60,6 @@ export default function P2PHomePage() {
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            Procurement Module
-          </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Purchase Requisitions</h1>
           <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>Raise requisitions and approve them here — approvers are set in Organization › Approval Workflows.</p>
         </div>
@@ -63,11 +74,7 @@ export default function P2PHomePage() {
           {can('p2p', 'purchase_requisitions', 'create') && (<button
             data-tour="p2p-new-btn"
             onClick={() => router.push('/dashboard/p2p/new')}
-            style={{
-              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-            }}
+            style={primaryBtnStyle}
           >
             + New Purchase Requisition
           </button>)}
@@ -83,6 +90,9 @@ export default function P2PHomePage() {
                 color: view === v ? '#FF7A45' : '#78716c', borderBottom: view === v ? '2px solid #FF7A45' : '2px solid transparent',
               }}>
               {label}
+              {v === 'approvals' && pendingCount != null && pendingCount > 0 && (
+                <span aria-label={`${pendingCount} waiting for you`} style={{ ...pillStyle('#dc2626'), marginLeft: 6 }}>{pendingCount}</span>
+              )}
             </button>
           ))}
         </div>

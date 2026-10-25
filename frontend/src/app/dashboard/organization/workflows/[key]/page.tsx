@@ -3,11 +3,12 @@
 import Select from '@/components/shared/Select'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { useCan } from '@/lib/permissions'
 import { approvalsApi, usersApi } from '@/lib/api'
 import { ApprovalStageDef, ApprovalTransactionType, ApprovalWorkflowCheck, ApprovalWorkflowDef, ApprovalWorkflowMeta, DirectoryUser } from '@/types'
-import { BORDER, BRAND, TEXT } from '@/lib/theme'
+import { BORDER, TEXT } from '@/lib/theme'
 import { FormPage, SheetSection, SheetIcon, SheetIconName, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import UserChipsPicker from '@/components/organization/UserChipsPicker'
@@ -16,6 +17,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDateTime } from '@/lib/format'
+import { chipBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 
 // Blocks inside the FormPage body (plain white cards — no glass inside the page sheet).
 const cardStyle: React.CSSProperties = {
@@ -24,7 +26,7 @@ const cardStyle: React.CSSProperties = {
 const hint: React.CSSProperties = { ...sheetHint, fontSize: 11.5, margin: '4px 0 0' }
 const inputStyle = sheetInput
 const subHead: React.CSSProperties = { fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '14px 0 6px' }
-const linkBtn = (color: string): React.CSSProperties => ({ fontSize: 12, fontWeight: 600, color, cursor: 'pointer', background: 'none', border: 'none', padding: 0 })
+const linkBtn = (color: string, disabled = false): React.CSSProperties => ({ fontSize: 12, fontWeight: 600, color: disabled ? '#94A3B8' : color, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1, background: 'none', border: 'none', padding: '3px 2px', minHeight: 24 })
 
 const LEVEL = {
   error: { label: 'Must fix', color: '#b91c1c', bg: 'rgba(220,38,38,0.08)', border: 'rgba(220,38,38,0.25)' },
@@ -115,18 +117,60 @@ export default function WorkflowEditorPage() {
   const [tplAmount, setTplAmount] = useState('1000000')
   const [askTemplate, setAskTemplate] = useState(false)
   const stageRefs = useRef<(HTMLDivElement | null)[]>([])
-
-  useEffect(() => {
-    if (!isAuthorized) return
-    Promise.all([approvalsApi.getWorkflow(key), approvalsApi.workflowMeta(), usersApi.directory()])
-      .then(([w, m, dir]) => { setType(w.type); setWf(w.workflow); setMeta(m); setUsers(dir) })
-      .catch((e) => setError(extractErrorMessages(e, 'Could not load this workflow.').join(' ')))
-  }, [isAuthorized, key])
+  const [loadError, setLoadError] = useState('')
+  const [reloadTick, setReloadTick] = useState(0)
+  // JSON snapshot of the workflow as last loaded / saved / reset; the screen is dirty when it differs.
+  const [baseline, setBaseline] = useState<string | null>(null)
+  const [leaveTo, setLeaveTo] = useState<string | null>(null)
+  const [removeStageAt, setRemoveStageAt] = useState<number | null>(null)
 
   const payloadOf = (w: ApprovalWorkflowDef) => ({
     stages: w.stages, is_active: w.is_active, allow_self_approval: w.allow_self_approval,
     distinct_approvers: w.distinct_approvers, require_permission: w.require_permission,
   })
+  const snapOf = (w: ApprovalWorkflowDef) => JSON.stringify(payloadOf(w))
+  const dirty = !!wf && baseline !== null && snapOf(wf) !== baseline
+
+  useEffect(() => {
+    if (!isAuthorized) return
+    let alive = true
+    setLoadError('')
+    Promise.all([approvalsApi.getWorkflow(key), approvalsApi.workflowMeta(), usersApi.directory()])
+      .then(([w, m, dir]) => {
+        if (!alive) return
+        setType(w.type); setWf(w.workflow); setBaseline(snapOf(w.workflow)); setMeta(m); setUsers(dir)
+      })
+      .catch((e) => { if (alive) setLoadError(extractErrorMessages(e, 'Check your connection and try again.').join(' ')) })
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthorized, key, reloadTick])
+
+  // Closing the tab or reloading while edits are unsaved.
+  useEffect(() => {
+    if (!dirty) return
+    const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', h)
+    return () => window.removeEventListener('beforeunload', h)
+  }, [dirty])
+
+  // Clicks on any in-app link (sidebar, Organization nav, ...) while edits are unsaved: ask first.
+  // Capture phase on document runs before Next's Link handler; the link is only stopped, not changed.
+  useEffect(() => {
+    if (!dirty) return
+    const h = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      const a = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null
+      if (!a || (a.target && a.target !== '_self') || a.hasAttribute('download')) return
+      const url = new URL(a.href, window.location.href)
+      if (url.origin !== window.location.origin) return
+      const here = window.location
+      if (url.pathname === here.pathname && url.search === here.search) return
+      e.preventDefault(); e.stopPropagation()
+      setLeaveTo(url.pathname + url.search + url.hash)
+    }
+    document.addEventListener('click', h, true)
+    return () => document.removeEventListener('click', h, true)
+  }, [dirty])
 
   // Re-check the setup as it is edited (debounced) — problems show before saving.
   useEffect(() => {
@@ -171,6 +215,7 @@ export default function WorkflowEditorPage() {
     try {
       const out = await approvalsApi.saveWorkflow(key, payloadOf(wf))
       setWf(out.workflow)
+      setBaseline(snapOf(out.workflow))
       setHistory(null)
       setPreview(null)
       setCheckError('')
@@ -217,10 +262,11 @@ export default function WorkflowEditorPage() {
     try {
       const out = await approvalsApi.resetWorkflow(key)
       setWf(out.workflow)
+      setBaseline(snapOf(out.workflow))
       setHistory(null)
       setPreview(null)
       setCheckError('')
-      setNotice('Workflow reset to the module default.')
+      setNotice('Workflow reset to the module default. It is live now for documents submitted from now on; documents already waiting keep their approvers.')
     } catch (e) {
       setError(extractErrorMessages(e, 'Could not reset the workflow.').join(' '))
     }
@@ -276,7 +322,9 @@ export default function WorkflowEditorPage() {
   // Permission codes in words — "Procurement › Purchase Requisitions — Approve".
   const permWords = (code?: string) => {
     const o = meta?.approval_permission_options?.find((x) => x.value === code)
-    return o ? `${o.module} › ${o.label}` : code || ''
+    if (o) return `${o.module} › ${o.label}`
+    // Not in the picker list: show the parts in words rather than the raw code.
+    return (code || '').split(':').map((x) => x.replace(/_/g, ' ')).join(' › ')
   }
   // Grouped picker options: this workflow's own module first, then the rest.
   const permGroups = () => {
@@ -297,7 +345,7 @@ export default function WorkflowEditorPage() {
     }).join(' and ')
 
   // The whole workflow as plain sentences — what an auditor or a new admin reads first.
-  const userName = (id: number) => users.find((u) => u.id === id)?.name || `user #${id}`
+  const userName = (id: number) => users.find((u) => u.id === id)?.name || 'a user who is no longer listed'
   const whoPlain = (s: ApprovalStageDef): { who: string; single: boolean } => {
     const cfg = s.rule_config
     switch (s.approver_rule) {
@@ -343,14 +391,17 @@ export default function WorkflowEditorPage() {
           ].filter(Boolean).join(' '),
         ]
 
+  const guardNav = (href: string) => { if (dirty) setLeaveTo(href); else router.push(href) }
+
   const subtitle = [type ?`${type.module_label} › ${type.subtab_label}` : 'Approval workflow', type?.description].filter(Boolean).join(' — ')
 
   return (
-    <FormPage nav={<OrganizationNav />} icon="flag" title={type?.label || key} subtitle={subtitle}
-      onBack={() => router.push('/dashboard/organization/workflows')} backTour="org-workflow-back"
+    <FormPage nav={<OrganizationNav />} icon="flag" title={type?.label || 'Approval workflow'} subtitle={subtitle}
+      onBack={() => guardNav('/dashboard/organization/workflows')} backTour="org-workflow-back"
       footer={readOnly ? (
         <span style={{ fontSize: 12.5, color: SHEET.MUTED, marginRight: 'auto' }}>You can view this workflow; changing it needs Organization › Approval Workflows › Edit.</span>
       ) : (<>
+        {dirty && <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: '#92400e', marginRight: 'auto' }}>Unsaved changes</span>}
         {mayReset && <button type="button" style={sheetBtn('secondary')} onClick={() => setAskReset(true)}><SheetIcon name="undo" size={15} />Reset to default</button>}
         <button type="button" style={sheetBtn('primary', SHEET.BLUE, saving || !wf)} disabled={saving || !wf} onClick={save}>
           <SheetIcon name="check" size={16} />{saving ? 'Saving…' : totalErrors ? `Save workflow (${totalErrors} to fix)` : 'Save workflow'}
@@ -361,9 +412,27 @@ export default function WorkflowEditorPage() {
       <ConfirmDialog open={askTemplate} danger={false} title="Apply template" confirmLabel="Replace stages"
         message={`Replace the ${wf?.stages.length || 0} stage(s) on screen with “${template?.label}”? Nothing is saved until you click Save workflow.`}
         onConfirm={applyTemplate} onCancel={() => setAskTemplate(false)} />
-      <ConfirmDialog open={askReset} danger={false} title="Reset to default" confirmLabel="Reset"
-        message="Replace these stages with the module's built-in default? Documents already waiting are not affected."
+      <ConfirmDialog open={askReset} title="Reset to default now?" confirmLabel="Reset now"
+        message="This replaces the saved workflow straight away for documents submitted from now on, and discards your unsaved edits. Documents already waiting keep their approvers."
         onConfirm={reset} onCancel={() => setAskReset(false)} />
+      <ConfirmDialog open={leaveTo !== null} danger={false} title="Leave without saving?" confirmLabel="Leave"
+        message="Your changes to this workflow have not been saved."
+        onConfirm={() => { const to = leaveTo; setLeaveTo(null); if (to) { setBaseline(null); router.push(to) } }} onCancel={() => setLeaveTo(null)} />
+      <ConfirmDialog open={removeStageAt !== null} title="Remove this stage?" confirmLabel="Remove stage"
+        message={`Stage ${(removeStageAt ?? 0) + 1}${wf?.stages[removeStageAt ?? -1]?.name ? ` “${wf.stages[removeStageAt ?? -1].name}”` : ''} will be taken out of the workflow on screen. Nothing is saved until you click Save workflow.`}
+        onConfirm={() => { const i = removeStageAt; setRemoveStageAt(null); if (wf && i !== null) setWf({ ...wf, stages: wf.stages.filter((_, j) => j !== i) }) }}
+        onCancel={() => setRemoveStageAt(null)} />
+
+      {!wf && (
+        <div style={{ padding: '20px 24px' }}>
+          {loadError ? (
+            <div role="alert" style={{ ...cardStyle, borderColor: 'rgba(220,38,38,0.35)', background: 'rgba(220,38,38,0.05)' }}>
+              <p style={{ margin: '0 0 10px', fontSize: 13.5, color: '#b91c1c', fontWeight: 600 }}>This workflow could not be opened: {loadError}</p>
+              <button type="button" style={smallSecondaryBtnStyle} onClick={() => setReloadTick((n) => n + 1)}>Try again</button>
+            </div>
+          ) : <p role="status" style={{ fontSize: 13, color: TEXT.muted }}>Loading workflow…</p>}
+        </div>
+      )}
       <MessageDialog open={blockers.length > 0} variant="error" title="Not saved — fix these first"
         message={[...blockers, 'Nothing was saved. Fix the stage(s) marked in section 3, then save again.']} onClose={() => setBlockers([])} />
       <ConfirmDialog open={!!saveConfirm} title={saveConfirm?.title || ''} confirmLabel={saveConfirm?.label || 'Save'}
@@ -410,22 +479,23 @@ export default function WorkflowEditorPage() {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 22 }}>
               {([
                 ['is_active', 'Approval required', 'Off = documents are approved as soon as they are submitted.'],
-                ['allow_self_approval', 'Requester may approve own document', 'Off = four-eyes: the requester is never their own approver. Recommended off.'],
-                ['distinct_approvers', 'Different person per stage', 'One person can approve only one stage of the same document (separation of duties).'],
-                ['require_permission', 'Approver also needs the Approve permission', `On (recommended) = the approver must also hold ${type.module_key}:${type.subtab_key}:approve, so losing the permission stops them approving. Off = being the stage's approver is enough — only where the person is the authority (e.g. a manager approving leave).`],
+                ['allow_self_approval', 'Requester may approve own document', 'Off = the person who raised it can never approve it (a second person must). Recommended off.'],
+                ['distinct_approvers', 'Different person per stage', 'One person can approve only one stage of the same document.'],
+                ['require_permission', 'Approver also needs the Approve permission', `On (recommended) = the approver must also have the Approve permission on ${type.module_label} › ${type.subtab_label}, so losing the permission stops them approving. Off = being the stage's approver is enough — only where the person is the authority (e.g. a manager approving leave).`],
               ] as const).map(([k, label, help]) => (
                 <div key={k} style={{ flex: '1 1 220px', maxWidth: 320 }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.heading, fontWeight: 600 }}>
-                    <Checkbox checked={!!wf[k]} disabled={readOnly || !isAdminUser} onChange={() => setWf({ ...wf, [k]: !wf[k] })} /> {label}
+                  <span role="group" aria-label={label} aria-describedby={!isAdminUser ? 'wf-admin-only' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.heading, fontWeight: 600 }}>
+                    <Checkbox asSwitch checked={!!wf[k]} disabled={readOnly || !isAdminUser} onChange={() => setWf({ ...wf, [k]: !wf[k] })} /> {label}
                   </span>
                   <p style={hint}>{help}</p>
                 </div>
               ))}
             </div>
-            {!readOnly && !isAdminUser && <p style={{ ...hint, marginTop: 14 }}>These switches remove approval controls, so only an admin can change them. You can edit the stages below.</p>}
+            {!isAdminUser && <p id="wf-admin-only" style={{ ...hint, marginTop: 14 }}>Only an administrator can change this.</p>}
             <p style={{ ...hint, marginTop: 14 }}>
               An approver going on leave sets a delegate in{' '}
-              <a href="/dashboard/organization/delegations" style={{ color: '#FF6A2A', fontWeight: 600 }}>Organization › Delegations</a>
+              <Link href="/dashboard/organization/delegations" style={{ color: '#C2410C', fontWeight: 600 }}
+                onClick={(e) => { if (dirty) { e.preventDefault(); setLeaveTo('/dashboard/organization/delegations') } }}>Organization › Delegations</Link>
               {' '}— their pending approvals reach the delegate for those dates. Every decision, delegation and escalation is kept on the document&apos;s approval history.
             </p>
           </div>
@@ -460,9 +530,10 @@ export default function WorkflowEditorPage() {
                 </span>
                 {!readOnly && (
                   <span style={{ display: 'flex', gap: 14 }}>
-                    <button type="button" style={linkBtn(TEXT.secondary)} onClick={() => moveStage(i, -1)} disabled={i === 0}>↑ Up</button>
-                    <button type="button" style={linkBtn(TEXT.secondary)} onClick={() => moveStage(i, 1)} disabled={i === wf.stages.length - 1}>↓ Down</button>
-                    <button type="button" style={linkBtn('#DC2626')} onClick={() => setWf({ ...wf, stages: wf.stages.filter((_, j) => j !== i) })}>Remove</button>
+                    <button type="button" aria-label={`Move stage ${i + 1} up`} style={linkBtn(TEXT.secondary, i === 0)} onClick={() => moveStage(i, -1)} disabled={i === 0}>↑ Up</button>
+                    <button type="button" aria-label={`Move stage ${i + 1} down`} style={linkBtn(TEXT.secondary, i === wf.stages.length - 1)} onClick={() => moveStage(i, 1)} disabled={i === wf.stages.length - 1}>↓ Down</button>
+                    <button type="button" aria-label={`Remove stage ${i + 1}`} style={linkBtn('#B91C1C')}
+                      onClick={() => { if (s.name.trim()) setRemoveStageAt(i); else setWf({ ...wf, stages: wf.stages.filter((_, j) => j !== i) }) }}>Remove</button>
                   </span>
                 )}
               </div>
@@ -505,7 +576,7 @@ export default function WorkflowEditorPage() {
                   <Field label="Permission">
                     <Select style={inputStyle} disabled={readOnly} value={s.rule_config.permission || ''} onChange={(e) => setStage(i, { rule_config: { ...s.rule_config, permission: e.target.value } })}>
                       <option value="">Pick a permission…</option>
-                      {meta.approval_permission_options ? permGroups() : meta.approval_permissions.map((p) => <option key={p} value={p}>{p}</option>)}
+                      {meta.approval_permission_options ? permGroups() : meta.approval_permissions.map((p) => <option key={p} value={p}>{permWords(p)}</option>)}
                     </Select>
                   </Field>
                 )}
@@ -530,12 +601,12 @@ export default function WorkflowEditorPage() {
                     <Select style={inputStyle} disabled={readOnly} value={s.rule_config.plus_permission || ''}
                       onChange={(e) => setStage(i, { rule_config: { ...s.rule_config, plus_permission: e.target.value || undefined } })}>
                       <option value="">Nobody else</option>
-                      {meta.approval_permission_options ? permGroups() : meta.approval_permissions.map((p) => <option key={p} value={p}>{p}</option>)}
+                      {meta.approval_permission_options ? permGroups() : meta.approval_permissions.map((p) => <option key={p} value={p}>{permWords(p)}</option>)}
                     </Select>
                   </Field>
                 </div>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: TEXT.heading, marginTop: 8 }}>
-                  <Checkbox checked={!!s.rule_config.same_plant} disabled={readOnly}
+                  <Checkbox asSwitch checked={!!s.rule_config.same_plant} disabled={readOnly}
                     onChange={() => setStage(i, { rule_config: { ...s.rule_config, same_plant: !s.rule_config.same_plant || undefined } })} />
                   Same plant only — keep approvers whose plant is the document&apos;s plant
                 </span>
@@ -575,8 +646,7 @@ export default function WorkflowEditorPage() {
                               return (
                                 <button key={ch} type="button" disabled={readOnly}
                                   onClick={() => setStage(i, { conditions: s.conditions.map((x, j) => (j === ci ? { ...x, value: on ? picked.filter((v) => v !== ch) : [...picked, ch] } : x)) })}
-                                  style={{ padding: '4px 10px', borderRadius: 999, fontSize: 12, cursor: readOnly ? 'default' : 'pointer',
-                                    border: `1px solid ${on ? BRAND.primary : '#E5E7EB'}`, background: on ? `${BRAND.primary}14` : '#fff', color: on ? BRAND.primary : TEXT.body }}>
+                                  style={{ ...chipBtnStyle(on), cursor: readOnly ? 'default' : 'pointer' }}>
                                   {on ? '✓ ' : ''}{f.choice_labels?.[ch] || ch}
                                 </button>
                               )
@@ -585,16 +655,16 @@ export default function WorkflowEditorPage() {
                         ) : (
                           <input style={{ ...inputStyle, width: 180 }} disabled={readOnly} value={Array.isArray(c.value) ? c.value.join(', ') : String(c.value ?? '')}
                             placeholder={c.op === 'in' || c.op === 'not_in' ? (f?.choices?.length ? f.choices.slice(0, 3).join(', ') : 'a, b, c') : f?.type === 'number' ? '500000' : 'value'}
-                            onChange={(e) => setStage(i, { conditions: s.conditions.map((x, j) => (j === ci ? { ...x, value: f?.type === 'number' && !['in', 'not_in'].includes(c.op) ? Number(e.target.value) : e.target.value } : x)) })} />
+                            onChange={(e) => setStage(i, { conditions: s.conditions.map((x, j) => (j === ci ? { ...x, value: f?.type === 'number' && !['in', 'not_in'].includes(c.op) ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value } : x)) })} />
                         )
                       )}
-                      {!readOnly && <button type="button" style={linkBtn('#DC2626')} onClick={() => setStage(i, { conditions: s.conditions.filter((_, j) => j !== ci) })}>×</button>}
+                      {!readOnly && <button type="button" aria-label={`Remove condition ${ci + 1}`} style={{ ...linkBtn('#B91C1C'), minWidth: 24 }} onClick={() => setStage(i, { conditions: s.conditions.filter((_, j) => j !== ci) })}>×</button>}
                     </div>
                   )
                 })}
                 {!readOnly && fields.length > 0 && (
                   <div style={{ marginTop: 6 }}>
-                    <button type="button" style={linkBtn('#FF6A2A')} onClick={() => {
+                    <button type="button" style={linkBtn('#C2410C')} onClick={() => {
                       const [fk, fd] = fields[0]
                       setStage(i, { conditions: [...s.conditions, { field: fk, op: fd.type === 'number' ? 'gt' : fd.type === 'bool' ? 'true' : 'eq', value: '' }] })
                     }}>+ Add condition</button>
@@ -606,7 +676,7 @@ export default function WorkflowEditorPage() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
                 <div style={{ maxWidth: 340 }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: TEXT.heading }}>
-                    <Checkbox checked={s.skip_if_no_approver} disabled={readOnly} onChange={() => setStage(i, { skip_if_no_approver: !s.skip_if_no_approver })} />
+                    <Checkbox asSwitch checked={s.skip_if_no_approver} disabled={readOnly} onChange={() => setStage(i, { skip_if_no_approver: !s.skip_if_no_approver })} />
                     Skip this stage if nobody matches
                   </span>
                   <p style={hint}>Off (recommended) = submission is refused with the reason, so the gap gets fixed. A document is never approved with every stage skipped.</p>
@@ -653,6 +723,7 @@ export default function WorkflowEditorPage() {
                 {checking ? 'Checking…' : check ? `Checked against ${check.checked_users} people who can raise this document` : ''}
               </span>
             </div>
+            <div role="status" aria-live="polite">
             {checkError && <p style={{ fontSize: 12.5, color: '#b91c1c', margin: '0 0 8px' }}>Can&apos;t check yet: {checkError}</p>}
             {check && check.issues.length === 0 && (
               <p style={{ fontSize: 13, color: '#15803d', margin: 0 }}>✓ No problems — everyone who can raise this document would find an approver at every stage.</p>
@@ -661,7 +732,7 @@ export default function WorkflowEditorPage() {
               {check?.issues.map((x, k) => {
                 const lv = LEVEL[x.level]
                 return (
-                  <div key={k} style={{ fontSize: 12.5, color: lv.color, background: lv.bg, border: `1px solid ${lv.border}`, borderRadius: 10, padding: '8px 12px' }}>
+                  <div key={k} role={x.blocking ? 'alert' : undefined} style={{ fontSize: 12.5, color: lv.color, background: lv.bg, border: `1px solid ${lv.border}`, borderRadius: 10, padding: '8px 12px' }}>
                     <b style={{ marginRight: 6 }}>{lv.label}:</b>{x.message}
                     {x.stage !== null && (
                       <button type="button" style={{ ...linkBtn(lv.color), marginLeft: 8, textDecoration: 'underline' }}
@@ -670,6 +741,7 @@ export default function WorkflowEditorPage() {
                   </div>
                 )
               })}
+            </div>
             </div>
 
             <h3 style={{ fontSize: 13.5, fontWeight: 700, color: TEXT.heading, margin: '18px 0 4px' }}>Try it</h3>
@@ -717,7 +789,7 @@ export default function WorkflowEditorPage() {
           {seeHistory && <Step n={4} icon="history" title="History" help="Changes apply to documents submitted after saving. Every save is recorded.">
           <div style={cardStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-              <button type="button" style={linkBtn(TEXT.secondary)} onClick={toggleHistory}>{showHistory ? '▾ Hide change history' : '▸ Show change history'}</button>
+              <button type="button" aria-expanded={showHistory} style={linkBtn(TEXT.secondary)} onClick={toggleHistory}>{showHistory ? '▾ Hide change history' : '▸ Show change history'}</button>
             </div>
             {showHistory && (
               <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -754,14 +826,15 @@ function FlowNode({ title, sub, foot, tone, badge, onClick }: {
     ok: { bg: 'rgba(34,197,94,0.08)', border: 'rgba(34,197,94,0.3)' },
     warn: { bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.35)' },
   }[tone]
+  const Tag = (onClick ? 'button' : 'div') as React.ElementType
   return (
-    <div onClick={onClick} role={onClick ? 'button' : undefined}
-      style={{ flex: '0 0 auto', minWidth: 150, maxWidth: 240, padding: '8px 12px', borderRadius: 12, background: colors.bg, border: `1px solid ${colors.border}`, cursor: onClick ? 'pointer' : 'default' }}>
+    <Tag {...(onClick ? { type: 'button' as const, onClick } : {})}
+      style={{ flex: '0 0 auto', minWidth: 150, maxWidth: 240, padding: '8px 12px', borderRadius: 12, background: colors.bg, border: `1px solid ${colors.border}`, cursor: onClick ? 'pointer' : 'default', textAlign: 'left', fontFamily: 'inherit' }}>
       <div style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.heading }}>
         {title}{badge && <span style={{ marginLeft: 6, fontSize: 10.5, color: '#b91c1c' }}>⚠ {badge}</span>}
       </div>
       <div style={{ fontSize: 11.5, color: TEXT.secondary, marginTop: 2 }}>{sub}</div>
       {foot && <div style={{ fontSize: 11, color: TEXT.muted, marginTop: 3 }}>{foot}</div>}
-    </div>
+    </Tag>
   )
 }

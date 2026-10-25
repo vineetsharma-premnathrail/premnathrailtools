@@ -2,12 +2,12 @@ import { TourConfig } from '../types'
 
 const config: TourConfig = {
   id: 'p2p-rfq-list',
-  pageTitle: 'R.F.Q',
+  pageTitle: 'Quotation requests (RFQ)',
   steps: [
     {
       target: 'rfq-awaiting-table',
-      title: 'Purchase Requests Awaiting RFQ',
-      purpose: 'Every approved Purchase Requisition that doesn\'t have an RFQ raised against it yet.',
+      title: 'Purchase requests waiting for quotations',
+      purpose: 'Every approved Purchase Requisition that doesn\'t have an RFQ raised against it yet. When none are waiting, the page says so and offers View requisitions; the quotation requests already sent are then shown first.',
     },
     {
       target: 'rfq-start-btn',
@@ -17,8 +17,8 @@ const config: TourConfig = {
     },
     {
       target: 'rfq-list-table',
-      title: 'RFQ Number / Purchase Requisition Number / Status / Single Quotation / Created',
-      purpose: 'Every RFQ raised so far, its linked requisition, whether it\'s still a Draft or Locked, and whether it was based on a single quotation.',
+      title: 'RFQ Number / Purchase Requisition Number / Status / Vendors / Created',
+      purpose: 'Every RFQ raised so far, its linked requisition, whether it is still a Draft or Closed (vendor chosen), and whether it went to several vendors or to one vendor only.',
     },
     {
       target: 'rfq-list-view',
