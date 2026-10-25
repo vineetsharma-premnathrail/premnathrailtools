@@ -98,7 +98,7 @@ async def list_vendors(
     if search:
         like = f"%{search}%"
         query = query.filter((Vendor.code.ilike(like)) | (Vendor.name.ilike(like)))
-    vendors = query.order_by(Vendor.name.asc()).all()
+    vendors = query.order_by(Vendor.code.asc(), Vendor.id.asc()).all()
     people = vendor_people(db, vendors)
     return [_to_response(v, db, user, people[v.id]) for v in vendors]
 

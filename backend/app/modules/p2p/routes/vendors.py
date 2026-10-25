@@ -233,7 +233,7 @@ def list_vendors(
         like = f"%{search.strip()}%"
         q = q.filter(or_(Vendor.name.ilike(like), Vendor.code.ilike(like), Vendor.gstin.ilike(like), Vendor.city.ilike(like),
                          Vendor.contact_name.ilike(like)))
-    vendors = q.order_by(Vendor.name).all()
+    vendors = q.order_by(Vendor.code.asc(), Vendor.id.asc()).all()
     docs, items = _counts(db, [v.id for v in vendors])
     people = vendor_people(db, vendors)
     return [_row(v, docs.get(v.id, 0), items.get(v.id, 0), people[v.id]) for v in vendors]

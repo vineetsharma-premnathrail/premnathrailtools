@@ -40,3 +40,4 @@ ERP for Premnath Rail Tools. Stack: Next.js 16 (App Router, React 19, TypeScript
 - Agent team: `.claude/agents/` (ba, architecture, uiux, frontend, backend, database, aiml, integration, security, qa, reviewer, accessibility, performance, compliance, documentation, whitehat, devops, monitoring).
 - Docs: `docs/README.md`; ADRs in `docs/11-decisions/`; per-requirement run records in `docs/agent-runs/`.
 - Personal rules (secrets, global git hygiene) live in the user's own `~/.claude/CLAUDE.md`; not repeated here.
+- UI changes get a live check in the real browser with Playwright (qa/reviewer/accessibility/uiux agents) on localhost only; the owner signs in and unlocks, never type or store passwords.
