@@ -6,10 +6,12 @@ import { Fragment, ReactNode, useEffect, useRef, useState } from 'react'
 import { User } from '@/types'
 import { requestAppLock } from '@/components/shared/AppLock'
 import { useAuthStore } from '@/store/authStore'
-import { BRAND, TEXT, GLASS, SHADOWS, GRADIENTS } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, GRADIENTS } from '@/lib/theme'
 import UpdatesButton from '@/components/UpdatesButton'
 import FeedbackButton from '@/components/FeedbackButton'
-import { House, Briefcase, Flask, Users, FileText, User as UserIcon, Storefront, Tray, Buildings, ShieldCheck, Factory, Package, ShoppingCart, Wrench, PenNib, Lightning, Drop, Kanban, IdentificationCard, CurrencyInr, CaretLeft, CaretUp, Envelope, SignOut } from '@phosphor-icons/react'
+import { House, Briefcase, Flask, Users, FileText, User as UserIcon, Storefront, Tray, Buildings, ShieldCheck, Factory, Package, ShoppingCart, Wrench, PenNib, Lightning, Drop, Kanban, IdentificationCard, CurrencyInr, CaretLeft, CaretUp, CaretDown, Envelope, SignOut } from '@phosphor-icons/react'
+import { secondaryBtnStyle, dangerBtnStyle, pillStyle } from '@/components/shared/ui'
+import AnchoredPopover from '@/components/shared/AnchoredPopover'
 
 const icons: Record<string, ReactNode> = {
   dashboard: <House size={15} />,
@@ -40,7 +42,10 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
   const logout = useAuthStore((state) => state.logout)
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  // "Upcoming" modules are folded away by default (opens itself when the current page is one of them).
+  const [upcomingOpen, setUpcomingOpen] = useState(false)
   const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const userBtnRef = useRef<HTMLButtonElement>(null)
   // Collapse is manual (toggle button), remembered per browser.
   useEffect(() => {
     try {
@@ -81,7 +86,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
     // My Approvals and My Tasks are cards on the Dashboard home (2026-10-19), not menu entries.
     { href: '/dashboard/erp', label: 'Service Module', icon: 'erp', visible: !!user?.apps?.includes('erp') },
     { href: '/dashboard/rnd', label: 'R&D', icon: 'rnd', visible: !!user?.apps?.includes('rnd') },
-    { href: '/dashboard/crm', label: 'CRM Module', icon: 'crm', visible: !!user?.apps?.includes('crm') },
+    { href: '/dashboard/crm', label: 'CRM', icon: 'crm', visible: !!user?.apps?.includes('crm') },
     // Product Management lives inside Sales (a Products tab in SalesNav); a
     // products-only user lands straight on the product master.
     {
@@ -117,6 +122,11 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
     { href: '/dashboard/design', label: 'Design', icon: 'design', upcoming: true, visible: !!user?.apps?.includes('design') },
   ].filter((link) => link.visible)
 
+  const upcomingCount = links.filter((l) => 'upcoming' in l && l.upcoming).length
+  // Folded by default; stays open when the sidebar is icon-only or the current page is an upcoming module.
+  const showUpcoming = upcomingOpen || collapsed
+    || links.some((l) => 'upcoming' in l && l.upcoming && (pathname === l.href || pathname.startsWith(`${l.href}/`)))
+
   return (
     <div
       style={{
@@ -147,7 +157,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        padding: collapsed ? '20px 12px' : '20px 14px',
+        padding: collapsed ? '14px 12px' : '14px 14px',
         background: GLASS.card,
         backdropFilter: GLASS.blur,
         WebkitBackdropFilter: GLASS.blur,
@@ -160,7 +170,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
       {/* Glass edge highlight — a faint top sheen so the panel reads as
           "glass" even when the blurred backdrop alone isn't obvious. */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg,transparent,${GLASS.highlight},transparent)`, pointerEvents: 'none' }} />
-      <div style={{ display: 'flex', flexDirection: collapsed ? 'column' : 'row', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: collapsed ? 8 : 10, padding: '0 6px', marginBottom: 22, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flexDirection: collapsed ? 'column' : 'row', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: collapsed ? 8 : 10, padding: '0 6px', marginBottom: 12, overflow: 'hidden' }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/logo.png"
@@ -175,6 +185,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
             transition: 'width .28s cubic-bezier(.4,0,.2,1)',
           }}
         />
+        {/* ui-audit-ignore-next-line custom-button — sidebar collapse/expand chevron (26px sidebar chrome), not an action pill */}
         <button
           type="button"
           onClick={toggleCollapsed}
@@ -226,6 +237,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
           border: '1px solid rgba(15,23,42,0.12)',
           overflow: 'hidden',
           display: 'flex',
+          position: 'relative',
         }}
       >
       <nav
@@ -247,22 +259,37 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
             <div key="upcoming-heading" style={{ flexShrink: 0, margin: '10px 0 4px', padding: collapsed ? 0 : '0 11px' }}>
               {collapsed
                 ? <div style={{ height: 1, background: 'rgba(15,23,42,0.12)', margin: '0 8px' }} />
-                : <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.08em', color: TEXT.muted, whiteSpace: 'nowrap' }}>UPCOMING</span>}
+                : (
+                  // ui-audit-ignore-next-line custom-button — sidebar group disclosure toggle (UPCOMING), not an action pill
+                  <button
+                    type="button"
+                    onClick={() => setUpcomingOpen((v) => !v)}
+                    aria-expanded={showUpcoming}
+                    title={showUpcoming ? 'Hide upcoming modules' : 'Show upcoming modules'}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, width: '100%', padding: 0, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, letterSpacing: '.08em', color: TEXT.muted, whiteSpace: 'nowrap' }}
+                  >
+                    <CaretDown size={11} style={{ transform: showUpcoming ? 'none' : 'rotate(-90deg)', transition: 'transform .15s', flex: 'none' }} />
+                    UPCOMING ({upcomingCount})
+                  </button>
+                )}
             </div>
           ) : null
           const matches = (href: string) => (href === '/dashboard'
             ? pathname === '/dashboard'
-            : pathname === href || pathname.startsWith(`${href}/`))
+            : pathname === href || pathname.startsWith(`${href}/`)
+              // The standalone Users pages are part of Organization.
+              || (href === '/dashboard/organization' && (pathname === '/dashboard/users' || pathname.startsWith('/dashboard/users/'))))
           // The most specific link wins (My Tasks sits inside /dashboard/projects).
           const isActive = matches(link.href)
             && !links.some((o) => o.visible && o.href.length > link.href.length && o.href.startsWith(`${link.href}/`) && matches(o.href))
+          const foldedAway = !!link.upcoming && !showUpcoming
           return (
             <Fragment key={link.href}>
             {upcomingHeading}
-            <Link
+            {!foldedAway && <Link
               href={link.href}
               onClick={onNavigate}
-              title={collapsed ? link.label : undefined}
+              title={link.label}
               className="sidebar-nav-link"
               style={{
                 display: 'flex',
@@ -272,7 +299,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                 height: 36,
                 flexShrink: 0,
                 boxSizing: 'border-box',
-                padding: collapsed ? '0 8px' : '0 11px',
+                padding: collapsed ? '0 8px' : '0 6px 0 10px',
                 borderRadius: 10,
                 textDecoration: 'none',
                 fontSize: 13,
@@ -296,31 +323,38 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                   whiteSpace: 'nowrap',
                   opacity: collapsed ? 0 : 1,
                   maxWidth: collapsed ? 0 : 200,
+                  minWidth: 0,
                   transition: 'opacity .18s, max-width .28s',
                   overflow: 'hidden',
+                  textOverflow: 'ellipsis',
                 }}
               >
                 {link.label}
               </span>
-            </Link>
+            </Link>}
             </Fragment>
           )
         })}
       </nav>
+      {/* Bottom fade: hints that the list scrolls. */}
+      <div aria-hidden style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 22, pointerEvents: 'none', background: 'linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.85))', borderRadius: '0 0 16px 16px' }} />
       </div>
 
       <div
         style={{
           opacity: collapsed ? 0 : 1,
-          maxHeight: collapsed ? 0 : 168,
+          maxHeight: collapsed ? 0 : 48,
           overflow: 'hidden',
           transition: 'opacity .18s, max-height .28s',
-          marginTop: 10,
-          marginBottom: 10,
-          padding: 6,
-          borderRadius: 16,
+          marginTop: 8,
+          marginBottom: 8,
+          padding: 4,
+          borderRadius: 14,
           border: '1px solid rgba(15,23,42,0.12)',
+          display: 'flex',
+          gap: 4,
         }}
+        className="sidebar-footer-row"
       >
         <FeedbackButton variant="row" />
         <UpdatesButton variant="row" />
@@ -328,21 +362,12 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
 
       {user && (
         <div style={{ position: 'relative' }} onMouseEnter={cancelMenuClose} onMouseLeave={scheduleMenuClose}>
-          {menuOpen && (
-            <div
-              style={{
-                position: 'absolute',
-                bottom: '100%',
-                left: 0,
-                right: 0,
-                marginBottom: 8,
-                background: '#fff',
-                borderRadius: 20,
-                border: 'none',
-                boxShadow: SHADOWS.glass(),
-                overflow: 'hidden',
-              }}
-            >
+          {/* Portaled + anchored to the profile row: the sidebar glass panel clips
+              anything positioned inside it, and when the sidebar is collapsed
+              (72px) an in-panel menu was squeezed to ~48px wide. */}
+          <AnchoredPopover anchorRef={userBtnRef} open={menuOpen && !!user} minWidth={260} maxHeight={600}
+            style={{ background: '#fff', borderRadius: 20, border: 'none', boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
+            <div style={{ width: 260 }} onMouseEnter={cancelMenuClose} onMouseLeave={scheduleMenuClose}>
               {/* header */}
               <div
                 style={{
@@ -376,18 +401,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                     <p style={{ fontSize: 14, fontWeight: 600, color: '#fff', margin: '0 0 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {user.name}
                     </p>
-                    <span
-                      style={{
-                        display: 'inline-block',
-                        fontSize: 10.5,
-                        fontWeight: 600,
-                        color: '#fff',
-                        background: 'rgba(255,255,255,0.18)',
-                        padding: '2px 10px',
-                        borderRadius: 9999,
-                        textTransform: 'capitalize',
-                      }}
-                    >
+                    <span style={{ ...pillStyle('#ffffff'), background: 'rgba(255,255,255,0.18)', fontWeight: 600, fontSize: 10.5, textTransform: 'capitalize' }}>
                       {user.role.replace(/_/g, ' ')}
                     </span>
                   </div>
@@ -420,12 +434,12 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
               </div>
 
               <div style={{ padding: '10px 14px 14px' }}>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                   {[['lock', 'Lock now'], ['change', 'Change app password']].map(([action, text]) => (
                     <button
                       key={action}
                       onClick={() => { setMenuOpen(false); requestAppLock(action as 'lock' | 'change') }}
-                      style={{ flex: 1, padding: '9px 8px', borderRadius: 12, border: `1px solid ${GLASS.border}`, background: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: '#57534e' }}
+                      style={{ ...secondaryBtnStyle, flex: '1 1 auto', whiteSpace: 'nowrap', border: `1px solid ${GLASS.border}`, background: 'rgba(255,255,255,0.6)' }}
                     >
                       {text}
                     </button>
@@ -433,30 +447,19 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                 </div>
                 <button
                   onClick={handleLogout}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8,
-                    padding: '11px 14px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(220,38,38,0.25)',
-                    background: 'rgba(220,38,38,0.08)',
-                    cursor: 'pointer',
-                    fontSize: 13.5,
-                    fontWeight: 600,
-                    color: '#dc2626',
-                  }}
+                  style={{ ...dangerBtnStyle, width: '100%' }}
                 >
                   <SignOut size={15} />
                   Sign out
                 </button>
               </div>
             </div>
-          )}
+          </AnchoredPopover>
 
+          {/* ui-audit-ignore-next-line custom-button — sidebar user/profile row that opens the account menu, not an action pill */}
           <button
+            ref={userBtnRef}
+            title={collapsed ? `${user.name} — account menu` : undefined}
             onClick={() => setMenuOpen((v) => !v)}
             style={{
               width: '100%',

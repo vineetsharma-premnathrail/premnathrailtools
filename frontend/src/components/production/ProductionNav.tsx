@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { navScrollRef } from '@/components/shared/navScroll'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { filterTabsByAccess } from '@/lib/tabAccess'
@@ -45,7 +46,7 @@ export default function ProductionNav() {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-      <div style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'wrap' }}>
+      <div className="nav-tabs-scroll" ref={navScrollRef} style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'nowrap', overflowX: 'auto' }}>
         {visibleTabs.map((tab) => {
           const isActive = tab.href === '/dashboard/production' ? pathname === tab.href : pathname.startsWith(tab.href)
           return (
@@ -76,7 +77,7 @@ export default function ProductionNav() {
           )
         })}
       </div>
-      <div style={{ paddingBottom: 8, flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div className="nav-cluster" style={{ paddingBottom: 8, flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
         <TourButton variant="icon" />
         <div data-tour="production-nav-bell">
           <NotificationBell />

@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { navScrollRef } from '@/components/shared/navScroll'
 import { usePathname } from 'next/navigation'
 import TourButton from '@/components/tour/TourButton'
 import NotificationBell from '@/components/erp/NotificationBell'
@@ -61,7 +62,7 @@ export default function FinanceNav() {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-      <div style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'wrap' }}>
+      <div className="nav-tabs-scroll" ref={navScrollRef} style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'nowrap', overflowX: 'auto' }}>
         {tabs.map((tab) => {
           const isActive = isTabActive(tab.href)
           return (
@@ -92,7 +93,7 @@ export default function FinanceNav() {
           )
         })}
       </div>
-      <div style={{ paddingBottom: 8, flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div className="nav-cluster" style={{ paddingBottom: 8, flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
         {settingsTab && (
           <NavSettingsGear href={settingsTab.href} active={isTabActive(settingsTab.href)} label="Finance settings" tour="finance-nav-settings" />
         )}

@@ -13,7 +13,7 @@ import SplitPoDialog from '@/components/p2p/SplitPoDialog'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordHref } from '@/lib/recordRef'
-import { smallPrimaryBtnStyle } from '@/components/shared/ui'
+import { RowCount, smallSecondaryBtnStyle, Pill } from '@/components/shared/ui'
 
 const READY = new Set(['vendor_quotations', 'technical_evaluation', 'commercial_evaluation', 'vendor_selected', 'po_drafted'])
 const th: React.CSSProperties = { position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap' }
@@ -29,7 +29,7 @@ export default function POReadyList({ onCreate }: { onCreate?: (rfqId: number) =
 
   useEffect(() => {
     let cancelled = false
-    rfqApi.list({ limit: 500 })
+    rfqApi.list({ limit: 1000 })
       .then((list: RFQ[]) => { if (!cancelled) setRfqs(list.filter((r) => r.status === 'locked' && READY.has(r.p2p_status || '') && (!isInvite(r) || (r.awarded_line_count || 0) > 0))) })
       .catch((err) => { if (!cancelled) setError(extractErrorMessages(err, 'Could not load the requisitions ready for a PO — reload the page.').join(' ')) })
       .finally(() => { if (!cancelled) setLoading(false) })
@@ -39,15 +39,15 @@ export default function POReadyList({ onCreate }: { onCreate?: (rfqId: number) =
   return (
     <div>
       <p style={{ fontSize: 13, color: TEXT.muted, margin: '0 0 14px' }}>
-        Requisitions whose RFQ is complete — L1 vendor chosen (old RFQs) or lines awarded on the comparison (emailed RFQs). Create the PO(s), price them and send for approval.
+        Requisitions whose quotations are done. Create the PO, price it and send it for approval.
       </p>
       {error && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{error}</div>}
       <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 360px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
-          <thead><tr>{['Requisition', 'RFQ', 'L1 Vendor', 'Other quotes', 'Stage', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <thead><tr>{['PR No.', 'RFQ No.', 'Lowest-price vendor', 'Other quotes received', 'Stage', ''].map((h, i) => <th key={h} style={th}>{h}{i === 0 && <RowCount count={rfqs.length} />}</th>)}</tr></thead>
           <tbody>
             {loading && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: '#a8a29e' }}>Loading…</td></tr>}
-            {!loading && rfqs.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: '#a8a29e' }}>Nothing is waiting for a PO. A requisition appears here once its RFQ is submitted.</td></tr>}
+            {!loading && rfqs.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: '#a8a29e' }}>Nothing is waiting for a PO. A purchase request appears here once its quotation request is closed with a vendor chosen, or its lines are awarded on the quote comparison.</td></tr>}
             {rfqs.map((r) => {
               // Awarded on the comparison (emailed RFQs, or an old RFQ awarded there) → one PO per awarded vendor.
               const invite = isInvite(r) || (r.awarded_line_count || 0) > 0
@@ -72,17 +72,13 @@ export default function POReadyList({ onCreate }: { onCreate?: (rfqId: number) =
                   </td>
                   <td style={{ ...td, fontSize: 12 }}>{others.join(', ') || '—'}</td>
                   <td style={td}>
-                    {invite && (
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: '#16a34a1a', color: '#15803d', whiteSpace: 'nowrap', marginRight: 6 }}>
-                        Awarded — {r.awarded_line_count} line(s)
-                      </span>
-                    )}
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: drafted ? '#f59e0b1a' : '#2563eb1a', color: drafted ? '#b45309' : '#2563eb', whiteSpace: 'nowrap' }}>
-                      {drafted ? 'PO in draft' : 'Ready for PO'}
-                    </span>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {invite && <Pill label={`Awarded — ${r.awarded_line_count} line${r.awarded_line_count === 1 ? '' : 's'}`} hex="#15803d" />}
+                      <Pill label={drafted ? 'Draft PO started' : 'Ready for PO'} hex={drafted ? '#b45309' : '#2563eb'} />
+                    </div>
                   </td>
-                  <td style={td} onClick={(e) => e.stopPropagation()}>
-                    <button type="button" onClick={open} style={{ ...smallPrimaryBtnStyle, background: '#1f1108', border: 'none', color: '#fff', whiteSpace: 'nowrap' }}>
+                  <td style={{ ...td, textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
+                    <button type="button" onClick={open} style={{ ...smallSecondaryBtnStyle, whiteSpace: 'nowrap' }}>
                       {drafted ? 'Continue PO' : 'Create PO'}
                     </button>
                   </td>

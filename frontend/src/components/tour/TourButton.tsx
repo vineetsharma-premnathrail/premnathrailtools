@@ -12,6 +12,7 @@ export default function TourButton({ variant = 'icon' }: { variant?: 'icon' | 'r
 
   if (variant === 'row') {
     return (
+      // ui-audit-ignore-next-line custom-button — sidebar navigation row ("Take a Tour" launcher), not an action pill
       <button
         onClick={start}
         className={`sidebar-flat-btn${hasContent ? ' tour-glow' : ''}`}
@@ -41,20 +42,22 @@ export default function TourButton({ variant = 'icon' }: { variant?: 'icon' | 'r
   return (
     <button
       onClick={start}
-      className={`tour-icon-btn${hasContent ? ' tour-glow' : ''}`}
+      className="tour-icon-btn nav-help-btn"
+      data-has-tour={hasContent ? 'true' : undefined}
       style={{
-        width: 36,
-        height: 36,
+        width: 34,
+        height: 34,
+        flex: 'none',
         borderRadius: '50%',
-        border: hasContent ? '1px solid rgba(255,122,69,0.5)' : '1px solid rgba(0,0,0,0.1)',
-        background: hasContent ? 'rgba(255,122,69,0.08)' : '#fff',
+        border: '1px solid rgba(0,0,0,0.1)',
+        background: 'rgba(255,255,255,.7)',
         boxShadow: 'none',
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        color: hasContent ? '#FF7A45' : '#57534e',
-        ['--tour-icon-color' as string]: hasContent ? '#FF7A45' : '#57534e',
+        color: '#78716c',
+        ['--tour-icon-color' as string]: '#78716c',
       } as React.CSSProperties}
       aria-label="Take a Tour"
       title="Take a Tour"

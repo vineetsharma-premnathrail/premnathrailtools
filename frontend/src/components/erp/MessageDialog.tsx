@@ -1,8 +1,11 @@
 'use client'
 
+import { useId, useRef } from 'react'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
+import { useFocusTrap } from '@/components/shared/useFocusTrap'
 import { Check, Warning, WarningCircle } from '@phosphor-icons/react'
 import { createPortal } from 'react-dom'
+import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 
 const VARIANT_COLOR: Record<'success' | 'error' | 'warning', string> = {
   success: '#16a34a',
@@ -32,6 +35,9 @@ export default function MessageDialog({
   onAction?: () => void
 }) {
   useEscapeKey(open, onClose)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const uid = useId()
+  useFocusTrap(open, panelRef, { initial: '[data-dialog-close]', firstField: false, fallback: '[data-dialog-title]' })
   if (!open) return null
   const color = VARIANT_COLOR[variant]
   const messages = Array.isArray(message) ? message : [message]
@@ -55,6 +61,11 @@ export default function MessageDialog({
       }}
     >
       <div
+        ref={panelRef}
+        role={variant === 'error' ? 'alertdialog' : 'dialog'}
+        aria-modal="true"
+        aria-labelledby={`${uid}-t`}
+        aria-describedby={`${uid}-d`}
         onClick={(e) => e.stopPropagation()}
         className="dialog-panel"
         style={{
@@ -86,7 +97,8 @@ export default function MessageDialog({
             <WarningCircle size={20} color={color} />
           )}
         </div>
-        <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 8px' }}>{title}</p>
+        <p id={`${uid}-t`} data-dialog-title tabIndex={-1} style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 8px', outline: 'none' }}>{title}</p>
+        <div id={`${uid}-d`}>
         {messages.length === 1 ? (
           <p style={{ fontSize: 13.5, color: '#78716c', margin: '0 0 22px', lineHeight: 1.6 }}>{messages[0]}</p>
         ) : (
@@ -94,36 +106,20 @@ export default function MessageDialog({
             {messages.map((m, i) => <li key={i}>{m}</li>)}
           </ul>
         )}
+        </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           {actionLabel && onAction && (
             <button
               onClick={onAction}
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                padding: '9px 18px',
-                borderRadius: 10,
-                border: `1px solid ${color}`,
-                background: '#fff',
-                color,
-                cursor: 'pointer',
-              }}
+              style={{ ...secondaryBtnStyle, border: `1px solid ${color}`, color }}
             >
               {actionLabel}
             </button>
           )}
           <button
+            data-dialog-close
             onClick={onClose}
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              padding: '9px 18px',
-              borderRadius: 10,
-              border: 'none',
-              background: color,
-              color: '#fff',
-              cursor: 'pointer',
-            }}
+            style={{ ...primaryBtnStyle, background: color }}
           >
             {closeLabel}
           </button>

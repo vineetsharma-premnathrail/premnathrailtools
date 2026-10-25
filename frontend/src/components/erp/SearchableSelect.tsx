@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { inputStyle } from '@/components/shared/ui'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
@@ -17,7 +17,7 @@ export interface SearchableOption {
 /** Lists this long or shorter skip the search box — it only gets in the way. */
 const SEARCH_THRESHOLD = 8
 const LIST_MAX_HEIGHT = 280
-const MIN_LIST_WIDTH = 200
+const MIN_LIST_WIDTH = 240
 const GAP = 6
 
 export default function SearchableSelect({
@@ -71,7 +71,6 @@ export default function SearchableSelect({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(-1)
-  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number; width: number; maxHeight: number }>({ left: 0, width: 0, maxHeight: LIST_MAX_HEIGHT })
   const wrapperRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -111,35 +110,67 @@ export default function SearchableSelect({
   const shownPlaceholder = selected && selected.value === '' ? selected.label : placeholder
   const showSearch = !!onSearch || (searchable ?? options.length > SEARCH_THRESHOLD)
 
-  // Portaled to <body> with position:fixed, like DateField, so glass cards
-  // (backdrop-filter / overflow / transform) never clip it. It opens upward
-  // when there's more room above, and is clamped inside the viewport sideways.
-  const reposition = () => {
-    const rect = wrapperRef.current?.getBoundingClientRect()
-    if (!rect) return
-    const vw = window.innerWidth
-    const vh = window.innerHeight
-    const width = Math.min(Math.max(rect.width, MIN_LIST_WIDTH), vw - 16)
-    const left = Math.max(8, Math.min(rect.left, vw - width - 8))
-    const below = vh - rect.bottom - GAP - 8
-    const above = rect.top - GAP - 8
-    if (below < Math.min(LIST_MAX_HEIGHT, 200) && above > below) {
-      setPos({ bottom: vh - rect.top + GAP, left, width, maxHeight: Math.min(LIST_MAX_HEIGHT, above) })
-    } else {
-      setPos({ top: rect.bottom + GAP, left, width, maxHeight: Math.max(120, Math.min(LIST_MAX_HEIGHT, below)) })
+  // Portaled to <body> with position:fixed so glass cards (backdrop-filter /
+  // overflow / transform) never clip it. While open, a requestAnimationFrame loop
+  // re-reads the field's rect every frame and writes the list's top/bottom/left/
+  // width/maxHeight straight onto its style (no React state, so it never lags a
+  // scrolling container, a sticky header or a growing form). It opens upward when
+  // there is more room above, is clamped inside the viewport sideways, and closes
+  // when the field is scrolled mostly out of view.
+  const closeRef = useRef(close)
+  closeRef.current = close
+  useLayoutEffect(() => {
+    if (!open || disabled) return
+    const wrapper = wrapperRef.current
+    if (!wrapper) return
+    // Scroll containers that can clip the field.
+    const clippers: HTMLElement[] = []
+    for (let el = wrapper.parentElement; el && el !== document.body; el = el.parentElement) {
+      const cs = getComputedStyle(el)
+      if (/(auto|scroll|hidden|clip)/.test(cs.overflow + cs.overflowY)) clippers.push(el)
     }
-  }
-
-  useEffect(() => {
-    if (!open) return
-    reposition()
-    window.addEventListener('resize', reposition)
-    window.addEventListener('scroll', reposition, true)
-    return () => {
-      window.removeEventListener('resize', reposition)
-      window.removeEventListener('scroll', reposition, true)
+    let raf = 0
+    let last = ''
+    const tick = () => {
+      raf = requestAnimationFrame(tick)
+      const rect = wrapper.getBoundingClientRect()
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      // Visible part of the field after clipping by the viewport and every scroll container.
+      let top = Math.max(0, rect.top)
+      let bottom = Math.min(vh, rect.bottom)
+      for (const c of clippers) {
+        const r = c.getBoundingClientRect()
+        top = Math.max(top, r.top)
+        bottom = Math.min(bottom, r.bottom)
+      }
+      if (rect.height > 0 && (rect.bottom < 0 || rect.top > vh || bottom - top < rect.height / 2)) {
+        cancelAnimationFrame(raf)
+        closeRef.current()
+        return
+      }
+      const box = dropdownRef.current
+      if (!box) return
+      const width = Math.min(Math.max(rect.width, MIN_LIST_WIDTH), vw - 16)
+      const left = Math.max(8, Math.min(rect.left, vw - width - 8))
+      const below = vh - rect.bottom - GAP - 8
+      const above = rect.top - GAP - 8
+      const up = below < Math.min(LIST_MAX_HEIGHT, 200) && above > below
+      const maxHeight = up ? Math.min(LIST_MAX_HEIGHT, above) : Math.max(120, Math.min(LIST_MAX_HEIGHT, below))
+      const key = `${up}|${up ? vh - rect.top + GAP : rect.bottom + GAP}|${left}|${width}|${maxHeight}`
+      if (key === last) return
+      last = key
+      const st = box.style
+      st.top = up ? 'auto' : `${rect.bottom + GAP}px`
+      st.bottom = up ? `${vh - rect.top + GAP}px` : 'auto'
+      st.left = `${left}px`
+      st.width = `${width}px`
+      st.maxHeight = `${maxHeight}px`
+      st.visibility = 'visible'
     }
-  }, [open])
+    tick()
+    return () => cancelAnimationFrame(raf)
+  }, [open, disabled])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -179,12 +210,18 @@ export default function SearchableSelect({
     fn()
   }
 
+  // The "+ Add new" row is the last stop of the arrow-key walk (index = filtered.length).
+  const total = filtered.length + (onAdd ? 1 : 0)
+  const optionId = (i: number) => `${listId}-o${i}`
+  const activeId = open && active >= 0 && active < total ? optionId(active) : undefined
+  const runAdd = () => { const q = query; closeThen(() => onAdd?.(q)) }
+
   const step = (dir: 1 | -1) => {
-    if (!filtered.length) return
+    if (!total) return
     let i = active
-    for (let n = 0; n < filtered.length; n++) {
-      i = (i + dir + filtered.length) % filtered.length
-      if (!filtered[i].disabled) break
+    for (let n = 0; n < total; n++) {
+      i = (i + dir + total) % total
+      if (i >= filtered.length || !filtered[i].disabled) break
     }
     setActive(i)
   }
@@ -202,6 +239,7 @@ export default function SearchableSelect({
     else if (e.key === 'ArrowUp') { e.preventDefault(); step(-1) }
     else if (e.key === 'Enter') {
       e.preventDefault()
+      if (onAdd && active === filtered.length) { runAdd(); return }
       const o = filtered[active]
       if (o) pick(o)
     } else if (e.key === 'Tab') close()
@@ -216,12 +254,13 @@ export default function SearchableSelect({
         role="combobox"
         tabIndex={disabled ? -1 : 0}
         aria-expanded={open}
-        aria-controls={listId}
+        aria-controls={open ? listId : undefined}
+        aria-activedescendant={showSearch ? undefined : activeId}
         aria-haspopup="listbox"
         aria-disabled={disabled || undefined}
         aria-required={required || undefined}
         aria-label={ariaLabel}
-        title={title}
+        title={title || selectedLabel || (shownPlaceholder !== 'Select...' ? shownPlaceholder : undefined)}
         data-name={name}
         data-value={value}
         className="ui-select-trigger"
@@ -240,11 +279,11 @@ export default function SearchableSelect({
           ...triggerStyle,
         }}
       >
-        <span style={{ flex: 1, minWidth: 0, color: disabled ? '#78716c' : selectedLabel ? '#1f1108' : '#a8a29e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ flex: 1, minWidth: 0, color: disabled ? '#78716c' : selectedLabel ? '#1f1108' : '#78716c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {selectedLabel || shownPlaceholder}
         </span>
         {!disabled && (
-          <CaretDown size={14} color="#a8a29e" style={{ flex: 'none', transition: 'transform .15s ease', transform: open ? 'rotate(180deg)' : 'none' }} />
+          <CaretDown size={14} color="#78716c" aria-hidden="true" style={{ flex: 'none', transition: 'transform .15s ease', transform: open ? 'rotate(180deg)' : 'none' }} />
         )}
       </div>
 
@@ -254,11 +293,10 @@ export default function SearchableSelect({
           className="ui-select-list"
           style={{
             position: 'fixed',
-            top: pos.top,
-            bottom: pos.bottom,
-            left: pos.left,
-            width: pos.width,
-            maxHeight: pos.maxHeight,
+            // top/bottom/left/width/maxHeight are written every frame by the effect above.
+            top: -9999,
+            left: 0,
+            visibility: 'hidden',
             zIndex: 3000,
             background: '#fff',
             borderRadius: 12,
@@ -273,6 +311,12 @@ export default function SearchableSelect({
             <div style={{ padding: 8, borderBottom: '1px solid rgba(0,0,0,0.06)', flex: 'none' }}>
               <input
                 autoFocus
+                role="combobox"
+                aria-expanded="true"
+                aria-controls={listId}
+                aria-activedescendant={activeId}
+                aria-autocomplete="list"
+                aria-label={ariaLabel ? `Search ${ariaLabel}` : title ? `Search ${title}` : 'Search options'}
                 value={query}
                 onKeyDown={onKeyDown}
                 onChange={(e) => { setQuery(e.target.value); queryRef.current = e.target.value; setActive(0); onSearch?.(e.target.value) }}
@@ -281,9 +325,9 @@ export default function SearchableSelect({
               />
             </div>
           )}
-          <div ref={listRef} id={listId} role="listbox" style={{ overflowY: 'auto', flex: '1 1 auto', minHeight: 0 }}>
+          <div ref={listRef} id={listId} role="listbox" aria-label={ariaLabel || title || placeholder} style={{ overflowY: 'auto', flex: '1 1 auto', minHeight: 0 }}>
             {filtered.length === 0 ? (
-              <p style={{ fontSize: 12.5, color: '#a8a29e', padding: '10px 14px', margin: 0 }}>
+              <p style={{ fontSize: 12.5, color: '#78716c', padding: '10px 14px', margin: 0 }}>
                 {options.length === 0 ? 'Nothing to pick yet.' : 'No matches — try another word.'}
               </p>
             ) : (
@@ -294,10 +338,11 @@ export default function SearchableSelect({
                 return (
                   <div key={`${o.group || ''}|${o.value}`}>
                     {header && (
-                      <p style={{ margin: 0, padding: '8px 14px 4px', fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e' }}>{o.group}</p>
+                      <p style={{ margin: 0, padding: '8px 14px 4px', fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c' }}>{o.group}</p>
                     )}
                     <div
                       data-idx={i}
+                      id={optionId(i)}
                       role="option"
                       aria-selected={isSel}
                       aria-disabled={o.disabled || undefined}
@@ -314,7 +359,7 @@ export default function SearchableSelect({
                         cursor: o.disabled ? 'not-allowed' : 'pointer',
                         opacity: o.disabled ? 0.45 : 1,
                         background: isSel ? 'rgba(244,113,59,0.08)' : isActive ? '#faf9f7' : 'transparent',
-                        color: isSel ? '#FF7A45' : '#1f1108',
+                        color: isSel ? '#C2410C' : '#1f1108',
                         fontWeight: isSel ? 700 : 500,
                       }}
                     >
@@ -322,13 +367,14 @@ export default function SearchableSelect({
                       {onEdit && (
                         <button
                           type="button"
-                          title={`Edit ${o.value}`}
+                          title={`Edit ${o.label}`}
+                          aria-label={`Edit ${o.label}`}
                           onClick={(e) => { e.stopPropagation(); closeThen(() => onEdit(o.value)) }}
-                          style={{ flex: 'none', background: 'none', border: 'none', boxShadow: 'none', padding: 2, cursor: 'pointer', color: '#a8a29e', display: 'flex' }}
-                          onMouseEnter={(e) => { e.currentTarget.style.color = '#FF7A45' }}
-                          onMouseLeave={(e) => { e.currentTarget.style.color = '#a8a29e' }}
+                          style={{ flex: 'none', background: 'none', border: 'none', boxShadow: 'none', padding: 2, cursor: 'pointer', color: '#78716c', display: 'flex' }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = '#C2410C' }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = '#78716c' }}
                         >
-                          <PencilSimple size={13} />
+                          <PencilSimple size={13} aria-hidden="true" />
                         </button>
                       )}
                     </div>
@@ -336,17 +382,20 @@ export default function SearchableSelect({
                 )
               })
             )}
+            {/* "+ Add new": last option of the list (kept visible at the bottom), reachable with the arrow keys, Enter adds. */}
+            {onAdd && (
+              <div
+                id={optionId(filtered.length)}
+                role="option"
+                aria-selected={false}
+                onClick={runAdd}
+                onMouseEnter={() => setActive(filtered.length)}
+                style={{ position: 'sticky', bottom: 0, padding: '10px 14px', fontSize: 13, fontWeight: 700, color: '#C2410C', cursor: 'pointer', borderTop: '1px solid rgba(0,0,0,0.06)', background: active === filtered.length ? '#faf9f7' : '#fff' }}
+              >
+                {addLabel}{query.trim() ? ` "${query.trim()}"` : ''}
+              </div>
+            )}
           </div>
-          {onAdd && (
-            <div
-              onClick={() => { const q = query; closeThen(() => onAdd(q)) }}
-              style={{ padding: '10px 14px', fontSize: 13, fontWeight: 700, color: '#FF7A45', cursor: 'pointer', borderTop: '1px solid rgba(0,0,0,0.06)', flex: 'none' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = '#faf9f7' }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
-            >
-              {addLabel}{query.trim() ? ` "${query.trim()}"` : ''}
-            </div>
-          )}
         </div>,
         document.body
       )}

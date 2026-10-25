@@ -14,7 +14,9 @@ import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, VALIDATION_MESSAGES } from '@/lib/validation'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, Optional, Req, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
+import { formatDate } from '@/lib/format'
 import { SERVICE_TYPES } from './serviceTypes'
+import { pillStyle } from '@/components/shared/ui'
 
 const PRIORITIES = [
   { value: 'standard', label: 'Standard', sub: 'Normal service request', color: '#2563eb', bg: 'rgba(37,99,235,0.1)', icon: 'minus' },
@@ -135,12 +137,21 @@ export default function ServiceRequestForm({
     { value: '', label: '— Not assigned yet —' },
     ...people.filter((o) => allowEngineer(Number(o.value)) || o.value === String(user?.id ?? '') || o.value === engineerId),
   ]
+  const [peopleHint, setPeopleHint] = useState('')
+  const [machinesError, setMachinesError] = useState('')
+  const [warrantyHint, setWarrantyHint] = useState('')
+  const [focusedPriority, setFocusedPriority] = useState('')
   useEffect(() => {
-    usersApi.directory().then((list) => setPeople(list.map((u) => ({ value: String(u.id), label: u.name || u.email })))).catch(() => setPeople([]))
+    usersApi.directory().then((list) => setPeople(list.map((u) => ({ value: String(u.id), label: u.name || u.email }))))
+      .catch((e) => {
+        setPeople([])
+        setPeopleHint(`Could not load engineers: ${extractErrorMessages(e, 'check your connection').join(' ')}. Save without one and assign later.`)
+      })
   }, [])
 
   useEffect(() => {
-    erpApi.listProjects({ limit: 5000 }).then(setProjects).catch(() => setError('Failed to load machines'))
+    erpApi.listProjects({ limit: 5000 }).then(setProjects)
+      .catch((e) => setMachinesError(`Machines could not be loaded: ${extractErrorMessages(e, 'check your connection').join(' ')}. Reload the page to try again.`))
   }, [])
 
   // Warranty check (create only): the machine's cover today decides whether
@@ -150,8 +161,16 @@ export default function ServiceRequestForm({
   const [chargeReason, setChargeReason] = useState('')
   useEffect(() => {
     if (initial || !form.project_id) { const t = setTimeout(() => setWarranty(null), 0); return () => clearTimeout(t) }
+    let alive = true
+    setWarrantyHint('')
     erpApi.srWarrantyCheck(Number(form.project_id), form.service_type || undefined)
-      .then(setWarranty).catch(() => setWarranty(null))
+      .then((w) => { if (alive) setWarranty(w) })
+      .catch((e) => {
+        if (!alive) return
+        setWarranty(null)
+        setWarrantyHint(`Warranty cover could not be checked (${extractErrorMessages(e, 'check your connection').join(' ')}). Chargeability will be decided when you save.`)
+      })
+    return () => { alive = false }
   }, [initial, form.project_id, form.service_type])
 
   const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
@@ -256,13 +275,16 @@ export default function ServiceRequestForm({
                 <b>Cannot save the service request:</b> {errorText}
               </div>
             )}
+            {machinesError && (
+              <div role="alert" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{machinesError}</div>
+            )}
             <SheetSection icon="truck" title="Machine">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div data-tour="erp-srf-asset" style={{ flex: '1 1 280px', maxWidth: 440 }}>
                   <label style={sheetLabel}>Asset / Vehicle <Req /></label>
                   {lockProject ? (
                     <p style={{ fontSize: 13, color: SHEET.BODY, margin: '10px 0 0' }}>
-                      {projects.find((p) => String(p.id) === form.project_id)?.serial_number || `Project #${form.project_id}`} (can&apos;t be changed after creation)
+                      {projects.find((p) => String(p.id) === form.project_id)?.serial_number || 'this machine'} (can&apos;t be changed after creation)
                     </p>
                   ) : (
                     <SearchableSelect
@@ -276,9 +298,13 @@ export default function ServiceRequestForm({
                     />
                   )}
                 </div>
-                <div data-tour="erp-srf-request-date" style={{ flex: '0 1 170px', minWidth: 150 }}>
-                  <label style={sheetLabel}>Request Date</label>
-                  <DateField value={requestDate} onChange={() => {}} />
+                <div data-tour="erp-srf-request-date" style={{ flex: '0 1 190px', minWidth: 170 }}>
+                  <label style={sheetLabel}>{initial ? 'Request date' : 'Request date'}</label>
+                  <div aria-readonly="true" style={{ ...sheetInput, display: 'flex', alignItems: 'center', background: SHEET.SOFT, color: SHEET.BODY }}>
+                    {initial
+                      ? (initial.created_at ? formatDate(initial.created_at).replace(/\//g, '-') : '—')
+                      : `${requestDate.split('-').reverse().join('-')} (today)`}
+                  </div>
                 </div>
               </div>
               <label style={{ ...sheetLabel, marginTop: 14 }}>Site / Location <Optional /></label>
@@ -286,8 +312,8 @@ export default function ServiceRequestForm({
             </SheetSection>
 
             <SheetSection icon="alert" title="Issue Information">
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-                <div style={{ flex: '1 1 200px', maxWidth: 280 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                <div>
                   <label style={sheetLabel}>Service Type <Req /></label>
                   <Select value={form.service_type} onChange={(e) => set('service_type', e.target.value)} style={sheetInput} data-tour="erp-srf-service-type">
                     <option value="">Select Service Type</option>
@@ -296,19 +322,33 @@ export default function ServiceRequestForm({
                     ))}
                   </Select>
                 </div>
-                <div style={{ flex: '1 1 180px', maxWidth: 240 }}>
-                  <label style={sheetLabel}>Issue Category</label>
-                  <Select value={form.issue_category} onChange={(e) => set('issue_category', e.target.value)} style={sheetInput} data-tour="erp-srf-category">
-                    <option value="">Select Category</option>
-                    {['Mechanical', 'Electrical', 'Hydraulic', 'Pneumatic', 'Engine', 'Software', 'Other'].map((c) => (
-                      <option key={c} value={c}>{c}</option>
+                <div>
+                  <div style={sheetLabel}>Priority Level <Req /></div>
+                  <div data-tour="erp-srf-priority" role="radiogroup" aria-label="Priority" style={{ display: 'flex', gap: 8 }}>
+                    {PRIORITIES.map((p) => (
+                      <label
+                        key={p.value}
+                        title={p.sub}
+                        style={{
+                          position: 'relative', flex: '1 1 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '0 10px', minHeight: 38, borderRadius: 10, cursor: 'pointer',
+                          border: `1px solid ${form.priority === p.value ? p.color : SHEET.LINE}`, background: form.priority === p.value ? p.bg : '#fff',
+                          boxShadow: focusedPriority === p.value ? `0 0 0 3px ${p.color}55` : undefined,
+                        }}
+                      >
+                        <input type="radio" name="priority" value={p.value} checked={form.priority === p.value} onChange={() => set('priority', p.value)}
+                          onFocus={() => setFocusedPriority(p.value)} onBlur={() => setFocusedPriority('')}
+                          style={{ position: 'absolute', opacity: 0, width: 1, height: 1, margin: 0, pointerEvents: 'none' }} />
+                        <span style={{ color: p.color, display: 'inline-flex' }}><PriorityIcon name={p.icon} /></span>
+                        <span style={{ fontSize: 13.5, fontWeight: 600, color: SHEET.INK }}>{p.label}</span>
+                      </label>
                     ))}
-                  </Select>
+                  </div>
                 </div>
               </div>
               {form.service_type && (
                 <p style={sheetHint}>{SERVICE_TYPES.find((t) => t.value === form.service_type)?.hint}</p>
               )}
+              {!initial && warrantyHint && <p role="status" style={sheetHint}>{warrantyHint}</p>}
               {!initial && warranty && form.service_type && (
                 <div style={{ margin: '10px 0 0', padding: '10px 12px', borderRadius: 10, background: SHEET.SOFT, border: `1px solid ${SHEET.LINE}`, fontSize: 12.5, color: SHEET.BODY }}>
                   <div>
@@ -338,26 +378,16 @@ export default function ServiceRequestForm({
               <input value={form.issue_title} onChange={(e) => set('issue_title', e.target.value)} placeholder="Brief summary of the fault..." style={sheetInput} data-tour="erp-srf-title" />
               <label style={{ ...sheetLabel, marginTop: 14 }}>Detailed Description <Req /></label>
               <textarea value={form.issue_description} onChange={(e) => set('issue_description', e.target.value)} rows={4} placeholder="Describe symptoms, context, and impact..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-srf-description" />
-              <label style={{ ...sheetLabel, marginTop: 14 }}>Priority Level <Req /></label>
-              <div data-tour="erp-srf-priority" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                {PRIORITIES.map((p) => (
-                  <label
-                    key={p.value}
-                    style={{
-                      flex: '1 1 200px', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 12, cursor: 'pointer',
-                      border: `1px solid ${form.priority === p.value ? p.color : SHEET.LINE}`, background: form.priority === p.value ? p.bg : '#fff',
-                    }}
-                  >
-                    <input type="radio" name="priority" value={p.value} checked={form.priority === p.value} onChange={() => set('priority', p.value)} style={{ display: 'none' }} />
-                    <span style={{ width: 32, height: 32, borderRadius: 10, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: p.bg, color: p.color }}>
-                      <PriorityIcon name={p.icon} />
-                    </span>
-                    <span>
-                      <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: SHEET.INK }}>{p.label}</span>
-                      <span style={{ display: 'block', fontSize: 11.5, color: SHEET.MUTED }}>{p.sub}</span>
-                    </span>
-                  </label>
-                ))}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginTop: 14 }}>
+                <div>
+                  <label style={sheetLabel}>Issue Category <Optional /></label>
+                  <Select value={form.issue_category} onChange={(e) => set('issue_category', e.target.value)} disabled={!form.service_type} style={sheetInput} data-tour="erp-srf-category">
+                    <option value="">{form.service_type ? 'Select Category' : 'Choose a service type first'}</option>
+                    {['Mechanical', 'Electrical', 'Hydraulic', 'Pneumatic', 'Engine', 'Software', 'Other'].map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </Select>
+                </div>
               </div>
             </SheetSection>
 
@@ -377,6 +407,7 @@ export default function ServiceRequestForm({
                 </div>
               </div>
             </SheetSection>
+            <div aria-hidden style={{ height: 28 }} />
           </>}
           right={<>
             <SheetSection icon="calendar" title="Assignment & Schedule">
@@ -384,6 +415,7 @@ export default function ServiceRequestForm({
               <div data-tour="erp-srf-assignee">
                 <SearchableSelect value={engineerId} onChange={setEngineerId} options={engineerOpts} placeholder="Pick an engineer" />
               </div>
+              {peopleHint && <p role="status" style={{ ...sheetHint, color: '#b45309' }}>{peopleHint}</p>}
               <p style={sheetHint}>The engineer is told about the job and can then plan visits, record the root cause, spares and files on it.</p>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
                 <div data-tour="erp-srf-attend-date" style={{ flex: '1 1 140px' }}>
@@ -427,7 +459,7 @@ export default function ServiceRequestForm({
               {queuedFiles.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                   {queuedFiles.map((f, i) => (
-                    <span key={`${f.name}-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, padding: '4px 10px', borderRadius: 999, background: '#f1f5f9', color: SHEET.BODY, maxWidth: '100%' }}>
+                    <span key={`${f.name}-${i}`} style={{ ...pillStyle(SHEET.BODY), background: '#f1f5f9', gap: 4, fontSize: 12, fontWeight: 500, padding: '4px 10px', maxWidth: '100%', whiteSpace: 'normal' }}>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
                       <button type="button" aria-label={`Remove ${f.name}`} onClick={() => setQueuedFiles((prev) => prev.filter((_, idx) => idx !== i))} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, color: SHEET.MUTED, display: 'inline-flex' }}><SheetIcon name="x" size={12} /></button>
                     </span>
@@ -435,6 +467,7 @@ export default function ServiceRequestForm({
                 </div>
               )}
             </SheetSection>
+            <div aria-hidden style={{ height: 28 }} />
           </>}
         />
       </FormPage>

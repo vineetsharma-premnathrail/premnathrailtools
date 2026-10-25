@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
+import { useFocusTrap } from '@/components/shared/useFocusTrap'
+import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 
 export default function PromptDialog({
   open,
@@ -35,6 +37,9 @@ export default function PromptDialog({
     if (open) setValue('')
   }, [open])
   useEscapeKey(open, onCancel)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const uid = useId()
+  useFocusTrap(open, panelRef, { fallback: '[data-dialog-title]' })
 
   if (!open || typeof document === 'undefined') return null
 
@@ -56,6 +61,11 @@ export default function PromptDialog({
       }}
     >
       <div
+        ref={panelRef}
+        role={danger ? 'alertdialog' : 'dialog'}
+        aria-modal="true"
+        aria-labelledby={`${uid}-t`}
+        aria-describedby={message ? `${uid}-d` : undefined}
         onClick={(e) => e.stopPropagation()}
         className="dialog-panel"
         style={{
@@ -67,10 +77,12 @@ export default function PromptDialog({
           boxShadow: '0 24px 60px rgba(0,0,0,0.25)',
         }}
       >
-        <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 8px' }}>{title}</p>
-        {message && <p style={{ fontSize: 13.5, color: '#78716c', margin: '0 0 14px', lineHeight: 1.6 }}>{message}</p>}
+        <p id={`${uid}-t`} data-dialog-title tabIndex={-1} style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 8px', outline: 'none' }}>{title}</p>
+        {message && <p id={`${uid}-d`} style={{ fontSize: 13.5, color: '#78716c', margin: '0 0 14px', lineHeight: 1.6 }}>{message}</p>}
         <textarea
           autoFocus
+          aria-label={title}
+          aria-required={requireValue || undefined}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={placeholder}
@@ -90,16 +102,7 @@ export default function PromptDialog({
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button
             onClick={onCancel}
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              padding: '9px 18px',
-              borderRadius: 10,
-              border: '1px solid rgba(0,0,0,0.12)',
-              background: '#fff',
-              color: '#57534e',
-              cursor: 'pointer',
-            }}
+            style={secondaryBtnStyle}
           >
             {cancelLabel}
           </button>
@@ -107,13 +110,8 @@ export default function PromptDialog({
             disabled={confirmDisabled}
             onClick={() => onConfirm(value.trim() || '')}
             style={{
-              fontSize: 13,
-              fontWeight: 600,
-              padding: '9px 18px',
-              borderRadius: 10,
-              border: 'none',
-              background: danger ? '#dc2626' : 'linear-gradient(140deg,#FF7A45,#ffe3d0)',
-              color: '#fff',
+              ...primaryBtnStyle,
+              ...(danger ? { background: '#dc2626' } : {}),
               cursor: confirmDisabled ? 'not-allowed' : 'pointer',
               opacity: confirmDisabled ? 0.55 : 1,
             }}

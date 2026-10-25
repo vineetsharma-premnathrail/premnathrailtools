@@ -10,8 +10,8 @@ import { crmQuotationStatusApi, QuotationAction } from '@/lib/sdApi'
 import { extractErrorMessages } from '@/lib/validation'
 import { QuotationItem, QuotationStatusView } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/crm/ui'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
+import { pillStyle, smallPrimaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Draft', submitted: 'Awaiting approval', approved: 'Approved', sent: 'Sent to customer',
@@ -20,7 +20,6 @@ const STATUS_LABELS: Record<string, string> = {
 const STATUS_HEX: Record<string, string> = {
   draft: '#64748B', submitted: '#D97706', approved: '#2563EB', sent: '#7C3AED', accepted: '#16A34A', lost: '#DC2626', expired: '#DC2626',
 }
-const small: React.CSSProperties = { padding: '5px 11px', fontSize: 11.5 }
 
 type Prompt = { action: QuotationAction; title: string; message: string; placeholder: string; label: string; required: boolean; danger: boolean; icon?: 'undo' | 'check' | 'x' }
 
@@ -45,9 +44,17 @@ export default function QuotationStatusBar({ inquiryId, quot, canModify, canSubm
   const [confirm, setConfirm] = useState<{ action: QuotationAction; title: string; message: string; label: string } | null>(null)
   const status = (quot.status || 'draft') as string
 
+  const [viewError, setViewError] = useState(false)
+  const [viewTick, setViewTick] = useState(0)
+
   useEffect(() => {
-    crmQuotationStatusApi.status(inquiryId, quot.id).then(setView).catch(() => setView(null))
-  }, [inquiryId, quot.id, quot.status, quot.revision_number])
+    let alive = true
+    setViewError(false)
+    crmQuotationStatusApi.status(inquiryId, quot.id)
+      .then((v) => { if (alive) setView(v) })
+      .catch(() => { if (alive) { setView(null); setViewError(true) } })
+    return () => { alive = false }
+  }, [inquiryId, quot.id, quot.status, quot.revision_number, viewTick])
 
   // Returns the error (if any) so a reason popup can show it in place.
   const run = async (action: QuotationAction, comment?: string, inPopup = false) => {
@@ -77,14 +84,15 @@ export default function QuotationStatusBar({ inquiryId, quot, canModify, canSubm
   // Server rule (_ensure_actor): quotation creator, inquiry owner / BD owner or admin, plus the Edit permission.
   const mayWork = canWork && view?.can_work !== false
   const hex = STATUS_HEX[status] || '#64748B'
-  const btn = (label: string, onClick: () => void, style: React.CSSProperties = secondaryBtnStyle, tourId?: string) => (
-    <button type="button" disabled={busy} onClick={onClick} data-tour={tour ? tourId : undefined} style={{ ...style, ...small, opacity: busy ? 0.6 : 1 }}>{label}</button>
+  const btn = (label: string, onClick: () => void, style: React.CSSProperties = smallSecondaryBtnStyle, tourId?: string) => (
+    <button type="button" disabled={busy} onClick={onClick} data-tour={tour ? tourId : undefined}
+      aria-label={`${label} — quotation ${quot.quot_number || ''}`.trim()} style={{ ...style, opacity: busy ? 0.6 : 1 }}>{label}</button>
   )
 
   return (
     <div data-tour={tour ? 'quot-status-bar' : undefined} style={{ marginTop: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
+        <span style={pillStyle(hex)}>
           {STATUS_LABELS[status] || status}
         </span>
         {quot.customer_response === 'Negotiating' && status === 'sent' && <span style={{ fontSize: 11.5, color: '#7C3AED' }}>Customer negotiating</span>}
@@ -101,27 +109,33 @@ export default function QuotationStatusBar({ inquiryId, quot, canModify, canSubm
         )}
         <span style={{ flex: 1 }} />
         {/* No approval needed → submitting approves it at once, so say that instead of "for approval". */}
-        {canSubmit && status === 'draft' && btn(view?.approval_rank === 0 ? 'Finalise quotation' : 'Submit for approval', () => run('submit'), primaryBtnStyle, 'quot-submit-btn')}
+        {canSubmit && status === 'draft' && btn(view?.approval_rank === 0 ? 'Finalise quotation' : 'Submit for approval', () => run('submit'), smallPrimaryBtnStyle, 'quot-submit-btn')}
         {canSubmit && status === 'submitted' && btn('Withdraw', () => setConfirm({ action: 'withdraw', title: 'Withdraw from approval?', message: 'The quotation goes back to draft so you can change it.', label: 'Withdraw' }))}
         {view?.can_decide && status === 'submitted' && (
           <>
-            {btn('Approve', () => run('approve'), primaryBtnStyle, 'quot-approve-btn')}
+            {btn('Approve', () => setConfirm({ action: 'approve', title: 'Approve this quotation?', message: `Quotation ${quot.quot_number || ''} is approved and can then be sent to the customer.`, label: 'Approve' }), smallPrimaryBtnStyle, 'quot-approve-btn')}
             {btn('Return', () => openPrompt({ action: 'return', title: 'Return for changes', message: 'Tell the creator what to change.', placeholder: 'e.g. Discount too high — max 8%', label: 'Return', required: true, danger: false }))}
-            {btn('Reject', () => openPrompt({ action: 'reject', title: 'Reject this quotation', message: 'The quotation goes back to draft with your reason.', placeholder: 'Reason', label: 'Reject', required: true, danger: true }), dangerBtnStyle)}
+            {btn('Reject', () => openPrompt({ action: 'reject', title: 'Reject this quotation', message: 'The quotation goes back to draft with your reason.', placeholder: 'Reason', label: 'Reject', required: true, danger: true }), smallDangerBtnStyle)}
           </>
         )}
-        {mayWork && status === 'approved' && btn('Mark as sent to customer', () => run('send'), primaryBtnStyle, 'quot-send-btn')}
-        {mayWork && status === 'sent' && btn('Customer accepted', () => openPrompt({ action: 'accept', title: 'Customer accepted this quotation', message: 'Any remarks from the customer (optional).', placeholder: 'e.g. PO to follow by Friday', label: 'Record acceptance', required: false, danger: false, icon: 'check' }), primaryBtnStyle, 'quot-accept-btn')}
-        {mayWork && (status === 'approved' || status === 'sent') && btn('Customer rejected / lost', () => openPrompt({ action: 'lost', title: 'Customer did not take this quotation', message: "Why didn't the customer take it?", placeholder: 'e.g. Price high — competitor quoted less', label: 'Mark as lost', required: true, danger: true }), dangerBtnStyle, 'quot-lost-btn')}
-        {view?.can_reopen && canWork && (status === 'accepted' || status === 'lost') && btn('Reopen', () => openPrompt({ action: 'reopen', title: 'Reopen this quotation', message: 'Why is the recorded outcome being corrected? The quotation goes back to Sent.', placeholder: 'Reason', label: 'Reopen', required: true, danger: false }), secondaryBtnStyle, 'quot-reopen-btn')}
+        {mayWork && status === 'approved' && btn('Mark as sent to customer', () => run('send'), smallPrimaryBtnStyle, 'quot-send-btn')}
+        {mayWork && status === 'sent' && btn('Customer accepted', () => openPrompt({ action: 'accept', title: 'Customer accepted this quotation', message: 'Any remarks from the customer (optional).', placeholder: 'e.g. PO to follow by Friday', label: 'Record acceptance', required: false, danger: false, icon: 'check' }), smallPrimaryBtnStyle, 'quot-accept-btn')}
+        {mayWork && (status === 'approved' || status === 'sent') && btn('Customer rejected / lost', () => openPrompt({ action: 'lost', title: 'Customer did not take this quotation', message: "Why didn't the customer take it?", placeholder: 'e.g. Price high — competitor quoted less', label: 'Mark as lost', required: true, danger: true }), smallDangerBtnStyle, 'quot-lost-btn')}
+        {view?.can_reopen && canWork && (status === 'accepted' || status === 'lost') && btn('Reopen', () => openPrompt({ action: 'reopen', title: 'Reopen this quotation', message: 'Why is the recorded outcome being corrected? The quotation goes back to Sent.', placeholder: 'Reason', label: 'Reopen', required: true, danger: false }), smallSecondaryBtnStyle, 'quot-reopen-btn')}
       </div>
       {quot.status_comment && ['draft', 'lost', 'accepted'].includes(status) && (
         <div style={{ fontSize: 11.5, color: '#57534e', marginTop: 4 }}>{quot.status_comment}</div>
       )}
       {status === 'approved' && !mayWork && <div style={{ fontSize: 11.5, color: '#78716c', marginTop: 4 }}>Approved — the quotation&apos;s creator or the inquiry owner marks it as sent to the customer.</div>}
       {status === 'expired' && <div style={{ fontSize: 11.5, color: '#78716c', marginTop: 4 }}>Validity ended without a decision — use &quot;Create revision from this quotation&quot; to offer it again (a finalised quotation can&apos;t be edited).</div>}
+      {viewError && (
+        <div role="alert" style={{ padding: '10px 14px', marginTop: 8, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span>Approval details could not be loaded — reload the inquiry; if it persists check your connection.</span>
+          <button type="button" onClick={() => setViewTick((n) => n + 1)} style={smallSecondaryBtnStyle}>Try again</button>
+        </div>
+      )}
       {error && (
-        <div style={{ padding: '10px 14px', marginTop: 8, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+        <div role="alert" style={{ padding: '10px 14px', marginTop: 8, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
           {Array.isArray(error) ? error.map((m, i) => <div key={i}>{m}</div>) : error}
         </div>
       )}

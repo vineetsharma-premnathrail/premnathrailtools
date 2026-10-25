@@ -30,14 +30,14 @@ export default function ApprovalFlowCard({ compact = false, refreshKey = 0 }: { 
   if (error) return null
   const steps: { title: string; who: string; rule: string; warn: boolean }[] = []
   if (flow) {
-    for (const [label, wf] of [['PR', flow.pr], ['PO', flow.po]] as const) {
+    for (const [label, wf] of [['Purchase requisitions', flow.pr], ['Purchase orders', flow.po]] as const) {
       if (!wf.is_active) {
-        steps.push({ title: `${label} approval`, who: 'Workflow switched off — approved automatically', rule: '', warn: false })
+        steps.push({ title: `${label}: approval`, who: 'Workflow switched off — approved automatically', rule: '', warn: false })
         continue
       }
       wf.stages.forEach((s) => {
         const t = stageText(s)
-        steps.push({ title: `${label} · ${s.name}`, who: t.who, rule: s.approval_mode === 'all' ? 'all must approve' : 'any one approves', warn: t.warn })
+        steps.push({ title: `${label}: ${s.approval_mode === 'all' ? 'all of these must approve' : 'any one of these approves'}${wf.stages.length > 1 ? ` (${s.name})` : ''}`, who: t.who, rule: '', warn: t.warn })
       })
     }
   }
@@ -51,7 +51,7 @@ export default function ApprovalFlowCard({ compact = false, refreshKey = 0 }: { 
         {!flow && <div style={{ fontSize: 13, color: TEXT.muted }}>…</div>}
         {steps.map((s, i) => (
           <div key={`${s.title}-${i}`} style={{ flex: '1 1 220px', padding: '10px 12px', borderRadius: 12, background: s.warn ? 'rgba(220,38,38,0.06)' : 'rgba(255,255,255,.7)', border: `1px solid ${s.warn ? 'rgba(220,38,38,0.25)' : 'rgba(0,0,0,0.06)'}` }}>
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: TEXT.secondary, textTransform: 'uppercase', letterSpacing: '.04em' }}>{s.title}{s.rule ? ` · ${s.rule}` : ''}</div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.secondary }}>{s.title}{s.rule ? ` · ${s.rule}` : ''}</div>
             <div style={{ fontSize: 13, color: s.warn ? '#b91c1c' : TEXT.body, marginTop: 4 }}>{s.who}</div>
           </div>
         ))}

@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { navScrollRef } from '@/components/shared/navScroll'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { filterTabsByAccess } from '@/lib/tabAccess'
@@ -9,6 +10,7 @@ import TourButton from '@/components/tour/TourButton'
 import NavSettingsGear from '@/components/shared/NavSettingsGear'
 import { SERVICE_CONTRACTS_ENABLED } from '@/lib/features'
 import { ChartBar, FileText, Gear, ShieldCheck, SquaresFour, Trash, Truck, Users, type Icon } from '@phosphor-icons/react'
+import { pillStyle } from '@/components/shared/ui'
 
 const TABS = [
   { href: '/dashboard/erp', label: 'Dashboard', icon: 'grid', subtabKey: 'dashboard' },
@@ -48,7 +50,7 @@ export default function ErpNav() {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-    <div style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'wrap' }}>
+    <div className="nav-tabs-scroll" ref={navScrollRef} style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'nowrap', overflowX: 'auto' }}>
       {visibleTabs.map((tab) => {
         const isActive = tab.href === '/dashboard/erp' ? pathname === tab.href : pathname.startsWith(tab.href)
         if (tab.subtabKey === 'service_contracts' && !SERVICE_CONTRACTS_ENABLED) {
@@ -58,7 +60,7 @@ export default function ErpNav() {
                 letterSpacing: '.02em', textTransform: 'uppercase', color: '#a8a29e', borderBottom: '2px solid transparent', whiteSpace: 'nowrap', cursor: 'not-allowed' }}>
               <TabIcon name={tab.icon} />
               <span className="nav-tab-label">{tab.label}</span>
-              <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: 'rgba(255,122,69,0.15)', color: '#FF7A45' }}>Upcoming</span>
+              <span style={{ ...pillStyle('#FF7A45'), fontSize: 9.5, padding: '1px 6px' }}>Upcoming</span>
             </span>
           )
         }
@@ -90,7 +92,7 @@ export default function ErpNav() {
         )
       })}
     </div>
-      <div style={{ paddingBottom: 8, flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div className="nav-cluster" style={{ paddingBottom: 8, flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
         {settingsTab && (
           <NavSettingsGear href={settingsTab.href} active={pathname.startsWith(settingsTab.href)} label="ERP settings" tour="erp-nav-settings" />
         )}

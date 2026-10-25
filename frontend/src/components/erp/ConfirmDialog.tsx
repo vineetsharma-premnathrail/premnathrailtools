@@ -1,8 +1,11 @@
 'use client'
 
+import { useId, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
+import { useFocusTrap } from '@/components/shared/useFocusTrap'
 import { Warning } from '@phosphor-icons/react'
+import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 
 export default function ConfirmDialog({
   open,
@@ -24,6 +27,10 @@ export default function ConfirmDialog({
   onCancel: () => void
 }) {
   useEscapeKey(open, onCancel)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const uid = useId()
+  // Danger: Cancel is focused first so Enter never confirms a delete by accident.
+  useFocusTrap(open, panelRef, { initial: danger ? '[data-dialog-cancel]' : undefined, firstField: false, fallback: '[data-dialog-title]' })
   if (!open || typeof document === 'undefined') return null
 
   // Portal to <body>: a glass card (backdrop-filter) would otherwise trap the
@@ -44,6 +51,11 @@ export default function ConfirmDialog({
       }}
     >
       <div
+        ref={panelRef}
+        role={danger ? 'alertdialog' : 'dialog'}
+        aria-modal="true"
+        aria-labelledby={`${uid}-t`}
+        aria-describedby={`${uid}-d`}
         onClick={(e) => e.stopPropagation()}
         className="dialog-panel"
         style={{
@@ -67,38 +79,21 @@ export default function ConfirmDialog({
             marginBottom: 16,
           }}
         >
-          <Warning size={20} color={danger ? '#dc2626' : '#FF7A45'} />
+          <Warning size={20} color={danger ? '#dc2626' : '#C2410C'} aria-hidden="true" />
         </div>
-        <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 8px' }}>{title}</p>
-        <p style={{ fontSize: 13.5, color: '#78716c', margin: '0 0 22px', lineHeight: 1.6 }}>{message}</p>
+        <p id={`${uid}-t`} data-dialog-title tabIndex={-1} style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 8px', outline: 'none' }}>{title}</p>
+        <p id={`${uid}-d`} style={{ fontSize: 13.5, color: '#78716c', margin: '0 0 22px', lineHeight: 1.6 }}>{message}</p>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button
+            data-dialog-cancel
             onClick={onCancel}
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              padding: '9px 18px',
-              borderRadius: 10,
-              border: '1px solid rgba(0,0,0,0.12)',
-              background: '#fff',
-              color: '#57534e',
-              cursor: 'pointer',
-            }}
+            style={secondaryBtnStyle}
           >
             {cancelLabel}
           </button>
           <button
             onClick={onConfirm}
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              padding: '9px 18px',
-              borderRadius: 10,
-              border: 'none',
-              background: danger ? '#dc2626' : 'linear-gradient(140deg,#FF7A45,#ffe3d0)',
-              color: '#fff',
-              cursor: 'pointer',
-            }}
+            style={danger ? { ...primaryBtnStyle, background: '#dc2626' } : primaryBtnStyle}
           >
             {confirmLabel}
           </button>

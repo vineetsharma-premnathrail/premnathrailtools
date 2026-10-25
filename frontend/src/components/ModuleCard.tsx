@@ -176,7 +176,7 @@ export default function ModuleCard({ title, description, icon, href, iconBg, ico
 
         .module-card-head {
           display: flex;
-          justify-content: space-between;
+          justify-content: flex-start;
           align-items: center;
           gap: 8px;
           margin-bottom: 6px;
@@ -188,15 +188,21 @@ export default function ModuleCard({ title, description, icon, href, iconBg, ico
           font-weight: 700;
           color: #000;
           margin: 0;
-          text-align: right;
+          text-align: left;
+          flex: 1;
+          min-width: 0;
         }
 
         .module-card-desc {
           position: relative;
-          font-size: 11px;
-          color: ${TEXT.muted};
+          font-size: 12px;
+          color: #475569;
           margin: 0 0 6px;
           line-height: 1.4;
+          display: -webkit-box;
+          -webkit-line-clamp: 3;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
         }
 
         .module-card-arrow {

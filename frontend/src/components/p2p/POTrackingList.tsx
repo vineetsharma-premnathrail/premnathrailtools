@@ -10,7 +10,7 @@ import { poReportsApi } from '@/lib/api'
 import { BORDER, GLASS, SHADOWS, TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
-import { inputStyle, pageBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, pageBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, chipBtnStyle, RowCount, Pill, pillStyle } from '@/components/shared/ui'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
@@ -56,12 +56,9 @@ function useNarrow(limit = 1180) {
 function Chip({ label, count, hex, active, hint, onClick, tour }: { label: string; count: number; hex: string; active: boolean; hint?: string; onClick: () => void; tour?: string }) {
   return (
     <button type="button" onClick={onClick} title={hint} data-tour={tour} aria-pressed={active}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderRadius: 9999, cursor: 'pointer', fontSize: 13, fontWeight: 600,
-        border: `1px solid ${active ? hex : BORDER.normal}`, background: active ? `${hex}1f` : 'rgba(255,255,255,.7)', color: active ? hex : TEXT.body,
-      }}>
+      style={{ ...chipBtnStyle(active), flex: 'none', whiteSpace: 'nowrap', borderColor: active ? hex : BORDER.normal, background: active ? `${hex}1f` : '#fff', color: active ? hex : TEXT.body, opacity: count === 0 && !active && label !== 'All' ? 0.5 : 1 }}>
       {label}
-      <span style={{ fontSize: 12, fontWeight: 700, padding: '1px 8px', borderRadius: 9999, background: count > 0 ? `${hex}22` : 'rgba(0,0,0,.05)', color: count > 0 ? hex : TEXT.muted }}>{count}</span>
+      <span style={pillStyle(count > 0 ? hex : '#78716c')}>{count.toLocaleString('en-IN')}</span>
     </button>
   )
 }
@@ -88,6 +85,7 @@ export default function POTrackingList() {
   const [data, setData] = useState<Data | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [filtersError, setFiltersError] = useState('')
   const [vendors, setVendors] = useState<{ id: number; name: string }[]>([])
   const [buyers, setBuyers] = useState<{ id: number; name: string }[]>([])
 
@@ -107,13 +105,16 @@ export default function POTrackingList() {
   const [sort, setSort] = useState<SortKey>('code')
   const [desc, setDesc] = useState(false)
   const [skip, setSkip] = useState(0)
+  const [moreOpen, setMoreOpen] = useState(false)
   const [selected, setSelected] = useState<TrackRow | null>(null)
   const reqId = useRef(0)
 
-  useEffect(() => {
+  const loadFilters = useCallback(() => {
+    setFiltersError('')
     poReportsApi.trackingFilters().then((o) => { setVendors(o.vendors); setBuyers(o.buyers) })
-      .catch((err) => setError(extractErrorMessages(err, 'Could not load the vendor and buyer lists.').join(' ')))
+      .catch((err) => setFiltersError(extractErrorMessages(err, 'Could not load the vendor and buyer lists.').join(' ')))
   }, [])
+  useEffect(() => { loadFilters() }, [loadFilters])
 
   useEffect(() => {
     const t = setTimeout(() => { setQuery(search.trim()); setSkip(0) }, 300)
@@ -159,6 +160,12 @@ export default function POTrackingList() {
         Every purchase order and where it stands. Click a status to filter; click a row for its items, receipts, approval, document and timeline.
       </p>
 
+      {filtersError && (
+        <div role="alert" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13, display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>{filtersError} The Vendor and Buyer filters are empty until it loads.</span>
+          <button type="button" onClick={loadFilters} style={smallSecondaryBtnStyle}>Try again</button>
+        </div>
+      )}
       {error && (
         <div role="alert" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13, display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
           <span>{error}</span>
@@ -167,54 +174,61 @@ export default function POTrackingList() {
       )}
 
       {/* Summary strip: clickable counts — they are the stage filter. */}
-      <div data-tour="p2p-pot-status-filter" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+      <div className="hide-scrollbar" data-tour="p2p-pot-status-filter" role="group" aria-label="Filter by status" style={{ display: 'flex', flexWrap: 'nowrap', gap: 8, alignItems: 'center', marginBottom: 12, overflowX: 'auto', paddingBottom: 4 }}>
         <Chip label="All" count={data?.all ?? 0} hex="#475569" active={!stage && !overdueOnly && !dueSoonOnly} onClick={() => { setStage(''); setOverdueOnly(false); setDueSoonOnly(false); setSkip(0) }} hint="Every purchase order that matches the filters below." />
         <Chip label="Overdue" count={data?.overdue ?? 0} hex="#dc2626" active={overdueOnly} tour="p2p-pot-overdue-filter" hint="Released POs whose expected delivery date has passed with goods still to come." onClick={() => { setOverdueOnly(!overdueOnly); setDueSoonOnly(false); setSkip(0) }} />
         <Chip label={`Due in ${data?.due_soon_days ?? 7} days`} count={data?.due_soon ?? 0} hex="#d97706" active={dueSoonOnly} hint="Released POs with goods still to come, due today or within the next week." onClick={() => { setDueSoonOnly(!dueSoonOnly); setOverdueOnly(false); setSkip(0) }} />
-        <span aria-hidden style={{ width: 1, alignSelf: 'stretch', background: BORDER.normal, margin: '0 4px' }} />
+        <span aria-hidden style={{ flex: 'none', width: 1, alignSelf: 'stretch', background: BORDER.normal, margin: '0 4px' }} />
         {STAGE_ORDER.map((s) => (
-          <Chip key={s} label={s === 'with_vendor' ? 'With vendor' : s.charAt(0).toUpperCase() + s.slice(1).replace('_', ' ')} count={counts[s] ?? 0} hex={STAGE_HEX[s]}
+          <Chip key={s} label={s === 'with_vendor' ? 'With vendor' : s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ')} count={counts[s] ?? 0} hex={STAGE_HEX[s]}
             active={stage === s} hint={STAGE_HINT[s]} onClick={() => { setStage(stage === s ? '' : s); setSkip(0) }} />
         ))}
         {data?.open_value != null && (
-          <span style={{ marginLeft: 'auto', fontSize: 13, color: TEXT.secondary }} title="Value still awaited from vendors: released POs, balance only. Short-closed and closed POs are not counted.">
+          <span style={{ marginLeft: 'auto', flex: 'none', whiteSpace: 'nowrap', fontSize: 13, color: TEXT.secondary }} title="Value still awaited from vendors: released POs, balance only. Short-closed and closed POs are not counted.">
             Open value <strong style={{ color: TEXT.heading }}>{money(data.open_value)}</strong>
           </span>
         )}
       </div>
 
       {/* Filters — labelled, one height. */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', marginBottom: 14 }}>
-        <div style={{ flex: '1 1 230px', maxWidth: 320 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, alignItems: 'end', marginBottom: moreOpen ? 10 : 14 }}>
+        <div style={{ minWidth: 0 }}>
           <label style={labelStyle} htmlFor="pot-search">Search</label>
           <input id="pot-search" style={inputStyle} placeholder="PO no., vendor, item, requisition…" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-        <div style={{ flex: '0 1 200px', minWidth: 160 }}>
-          <span style={labelStyle}>Vendor</span>
-          <SearchableSelect value={vendorId} onChange={pick(setVendorId)} options={vendorOptions} placeholder="All vendors" />
+        <div style={{ minWidth: 0 }}>
+          <label style={labelStyle} htmlFor="pot-vendor">Vendor</label>
+          <SearchableSelect id="pot-vendor" ariaLabel="Vendor" value={vendorId} onChange={pick(setVendorId)} options={vendorOptions} placeholder="All vendors" />
         </div>
-        <div style={{ flex: '0 1 190px', minWidth: 150 }}>
-          <span style={labelStyle}>Buyer</span>
-          <SearchableSelect value={buyerId} onChange={pick(setBuyerId)} options={buyerOptions} placeholder="All buyers" />
+        <div style={{ minWidth: 0 }}>
+          <label style={labelStyle} htmlFor="pot-buyer">Buyer</label>
+          <SearchableSelect id="pot-buyer" ariaLabel="Buyer" value={buyerId} onChange={pick(setBuyerId)} options={buyerOptions} placeholder="All buyers" />
         </div>
-        <div style={{ flex: '0 1 150px', minWidth: 130 }}>
-          <span style={labelStyle}>PO date from</span>
-          <DateField value={dateFrom} onChange={pick(setDateFrom)} />
-        </div>
-        <div style={{ flex: '0 1 150px', minWidth: 130 }}>
-          <span style={labelStyle}>PO date to</span>
-          <DateField value={dateTo} onChange={pick(setDateTo)} />
-        </div>
-        <div aria-label="Filter by order project" style={{ flex: '0 1 260px', minWidth: 210 }}>
+        <div role="group" aria-label="Filter by order project" style={{ minWidth: 0 }}>
           <span style={labelStyle}>Order project</span>
           <OrderProjectPicker value={opFilter} onChange={(v) => pick(setOpFilter)(v)} requireElement={false} placeholder="All order projects" />
         </div>
-        <div style={{ flex: '0 1 200px', minWidth: 170 }}>
-          <span style={labelStyle}>Sort by</span>
-          <SearchableSelect value={sort} onChange={(v) => { setSort(v as SortKey); setDesc(false); setSkip(0) }} options={sortOptions} placeholder="Sort by" />
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" onClick={() => setMoreOpen(!moreOpen)} aria-expanded={moreOpen} style={secondaryBtnStyle}>{moreOpen ? 'Fewer filters' : `More filters${dateFrom || dateTo ? ' (dates set)' : ''}`}</button>
+          {filtered && <button type="button" onClick={reset} style={secondaryBtnStyle}>Clear filters</button>}
         </div>
-        {filtered && <button type="button" onClick={reset} style={secondaryBtnStyle}>Clear filters</button>}
       </div>
+      {moreOpen && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, alignItems: 'end', marginBottom: 14 }}>
+          <div style={{ minWidth: 0 }}>
+            <span id="pot-from-label" style={labelStyle}>PO date from</span>
+            <div role="group" aria-labelledby="pot-from-label"><DateField value={dateFrom} onChange={pick(setDateFrom)} /></div>
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <span id="pot-to-label" style={labelStyle}>PO date to</span>
+            <div role="group" aria-labelledby="pot-to-label"><DateField value={dateTo} onChange={pick(setDateTo)} /></div>
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <label style={labelStyle} htmlFor="pot-sort">Sort by</label>
+            <SearchableSelect id="pot-sort" ariaLabel="Sort by" value={sort} onChange={(v) => { setSort(v as SortKey); setDesc(false); setSkip(0) }} options={sortOptions} placeholder="Sort by" />
+          </div>
+        </div>
+      )}
 
       <div className="ui-cols" style={{ display: 'grid', gridTemplateColumns: split ? 'minmax(0, 1fr) minmax(400px, 460px)' : 'minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
         <div>
@@ -222,32 +236,40 @@ export default function POTrackingList() {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: split ? 760 : 1060 }}>
               <thead>
                 <tr>
-                  {columns.map((c) => (
-                    <th key={c.label} style={{ ...th, cursor: c.sort ? 'pointer' : 'default' }} aria-sort={c.sort && sort === c.sort ? (desc ? 'descending' : 'ascending') : undefined}
-                      onClick={() => c.sort && sortBy(c.sort)}>
-                      {c.label}{c.sort && sort === c.sort ? (desc ? ' ↓' : ' ↑') : ''}
+                  {columns.map((c, i) => (
+                    <th key={c.label} style={{ ...th, textAlign: c.label === 'Value' ? 'right' : 'left' }} aria-sort={c.sort && sort === c.sort ? (desc ? 'descending' : 'ascending') : undefined}>
+                      {c.sort
+                        ? <button type="button" onClick={() => sortBy(c.sort as SortKey)} title={c.label === 'Delivery' ? 'Sort by Delivery — expected delivery date; the chip shows days left or how late' : `Sort by ${c.label}`}
+                            style={{ background: 'none', border: 'none', padding: 0, margin: 0, font: 'inherit', color: 'inherit', textTransform: 'inherit', letterSpacing: 'inherit', cursor: 'pointer', textAlign: 'inherit' }}>
+                            {c.label}{sort === c.sort ? (desc ? ' ↓' : ' ↑') : ''}
+                          </button>
+                        : c.label}
+                      {i === 0 && <RowCount count={data?.total ?? rows.length} />}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {loading && !data && <tr><td colSpan={columns.length} style={{ ...td, textAlign: 'center', padding: 28 }}>Loading…</td></tr>}
+                {loading && !data && <tr><td colSpan={columns.length} role="status" style={{ ...td, textAlign: 'center', padding: 28 }}>Loading…</td></tr>}
                 {!loading && !error && rows.length === 0 && (
                   <tr><td colSpan={columns.length} style={{ ...td, textAlign: 'center', padding: 28 }}>
                     {filtered ? 'No purchase order matches these filters. ' : 'No purchase orders yet — they appear here once a PO is drafted from an approved requisition. '}
-                    {filtered && <span onClick={reset} style={{ color: '#c2410c', fontWeight: 600, cursor: 'pointer' }}>Clear filters</span>}
+                    {filtered && <button type="button" onClick={reset} style={{ background: 'none', border: 'none', paddingBlock: 0, paddingInline: 0, font: 'inherit', color: '#c2410c', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}>Clear filters</button>}
                   </td></tr>
                 )}
                 {rows.map((r) => {
                   const active = selected?.po_id === r.po_id
                   const edge = r.is_overdue ? '#dc2626' : r.is_due_soon ? '#d97706' : 'transparent'
                   return (
-                    <tr key={r.po_id} tabIndex={0} onClick={() => setSelected(r)} onKeyDown={(e) => { if (e.key === 'Enter') setSelected(r) }}
+                    <tr key={r.po_id} onClick={() => setSelected(r)}
                       style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer', opacity: loading ? 0.6 : 1,
                         background: active ? 'rgba(255,122,69,0.10)' : r.is_overdue ? 'rgba(220,38,38,0.045)' : undefined, boxShadow: `inset 3px 0 0 ${edge}` }}>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                        <div style={{ fontWeight: 700, color: TEXT.heading }}>{r.po_number}{r.amendment_no > 0 && <span title={`Amended ${r.amendment_no} time(s) after release`} style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 9999, background: 'rgba(0,0,0,.06)', color: TEXT.muted }}>Rev {r.amendment_no}</span>}</div>
-                        <div style={{ fontSize: 11.5, color: TEXT.muted }}>{formatDate(r.po_date)}</div>
+                        <div style={{ fontWeight: 700, color: TEXT.heading }}>
+                          <button type="button" aria-label={`Open purchase order ${r.po_number}`} aria-pressed={active} onClick={(e) => { e.stopPropagation(); setSelected(r) }}
+                            style={{ background: 'none', border: 'none', margin: 0, paddingBlock: 0, paddingInline: 0, font: 'inherit', color: 'inherit', cursor: 'pointer', textAlign: 'left' }}>{r.po_number}</button>
+                          {r.amendment_no > 0 && <span style={{ marginLeft: 6 }}><Pill label={`Rev ${r.amendment_no}`} hex="#78716c" title={`Amended ${r.amendment_no} time(s) after release`} /></span>}</div>
+                        <div style={{ fontSize: 11.5, color: TEXT.muted }}>dated {formatDate(r.po_date)}</div>
                       </td>
                       <td style={td}><StageBadge stage={r.stage} label={r.stage_label} /></td>
                       <td style={{ ...td, minWidth: 140 }}>{r.vendor_name || '—'}</td>
@@ -262,7 +284,7 @@ export default function POTrackingList() {
                       </td>
                       <td style={td}><Progress row={r} /></td>
                       {!split && (
-                        <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                        <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                           {r.total_value != null ? <><div>{money(r.total_value)}</div>{(r.open_value ?? 0) > 0 && <div style={{ fontSize: 11.5, color: '#d97706' }}>{money(r.open_value)} open</div>}</> : '—'}
                         </td>
                       )}
@@ -275,7 +297,7 @@ export default function POTrackingList() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginTop: 10, fontSize: 12.5, color: TEXT.muted }}>
-            <span>{data && data.total > 0 ? `Showing ${data.skip + 1}–${to} of ${data.total} purchase orders` : ''}</span>
+            <span aria-live="polite">{data && data.total > 0 ? `Showing ${data.skip + 1}–${to} of ${data.total} purchase orders` : ''}</span>
             <span style={{ display: 'flex', gap: 8 }}>
               <button type="button" style={pageBtnStyle(skip === 0)} disabled={skip === 0} onClick={() => setSkip(Math.max(0, skip - PAGE))}>← Previous</button>
               <button type="button" style={pageBtnStyle(!data || to >= data.total)} disabled={!data || to >= data.total} onClick={() => setSkip(skip + PAGE)}>Next →</button>

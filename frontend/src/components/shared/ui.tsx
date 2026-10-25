@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { Fragment, cloneElement, isValidElement, useId, useMemo } from 'react'
 import { COLORS, RADII, BORDER, BORDERS, CONTROL, GLASS, SHADOWS, TEXT } from '@/lib/theme'
 import { CrmActivityAttachment } from '@/types'
 import { crmApi } from '@/lib/api'
@@ -14,7 +14,7 @@ import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentB
 
 export const inputStyle: React.CSSProperties = {
   width: '100%',
-  padding: `10px ${CONTROL.padX}px`,
+  padding: `${CONTROL.padY}px ${CONTROL.padX}px`,
   borderRadius: CONTROL.radius,
   border: `1px solid ${BORDER.normal}`,
   background: COLORS.surface,
@@ -36,7 +36,7 @@ export const btnBase: React.CSSProperties = {
   fontSize: CONTROL.fontSize,
   fontWeight: 600,
   lineHeight: CONTROL.lineHeight,
-  padding: '10px 18px',
+  padding: `${CONTROL.padY}px ${CONTROL.padX}px`,
   minHeight: CONTROL.height,
   borderRadius: CONTROL.radius,
   whiteSpace: 'nowrap',
@@ -68,7 +68,7 @@ export const dangerBtnStyle: React.CSSProperties = {
 
 /** 30px variant for row actions inside tables, chips and toolbars. */
 export const smallBtnSize: React.CSSProperties = {
-  padding: '6px 12px',
+  padding: `${CONTROL.padYSm}px 10px`,
   minHeight: CONTROL.heightSm,
   fontSize: CONTROL.fontSizeSm,
   gap: 4,
@@ -76,6 +76,32 @@ export const smallBtnSize: React.CSSProperties = {
 export const smallPrimaryBtnStyle: React.CSSProperties = { ...primaryBtnStyle, ...smallBtnSize }
 export const smallSecondaryBtnStyle: React.CSSProperties = { ...secondaryBtnStyle, ...smallBtnSize }
 export const smallDangerBtnStyle: React.CSSProperties = { ...dangerBtnStyle, ...smallBtnSize }
+
+/** Filter chip / pill toggle (30px): "All · Open · Closed", quick ranges, tag pickers.
+ * Active = filled brand colour. Use for choices, not for actions. */
+export function chipBtnStyle(active = false): React.CSSProperties {
+  return {
+    ...btnBase,
+    ...smallBtnSize,
+    borderRadius: 999,
+    border: `1px solid ${active ? 'transparent' : BORDER.normal}`,
+    // Active fill is the darker brand shade: white on #FF7A45 is only 2.6:1, on #C2410C 5.2:1.
+    background: active ? '#C2410C' : COLORS.surface,
+    color: active ? '#fff' : '#57534e',
+  }
+}
+
+/** One option of a segmented control (2–4 fixed choices side by side, 38px),
+ * e.g. Project / Inhouse. Wrap the options in a flex row with gap 0 or 4. */
+export function segmentBtnStyle(active = false): React.CSSProperties {
+  return {
+    ...btnBase,
+    padding: `${CONTROL.padY}px ${CONTROL.padX}px`,
+    border: `1px solid ${active ? COLORS.brand : BORDER.normal}`,
+    background: active ? COLORS.brandLight : COLORS.surface,
+    color: active ? COLORS.brandDark : '#57534e',
+  }
+}
 
 /** Square icon-only button, same height as an input (pairs with a field in one row). */
 export const iconBtnStyle: React.CSSProperties = {
@@ -123,6 +149,27 @@ export const tdStyle: React.CSSProperties = {
 export const numThStyle: React.CSSProperties = { ...thStyle, textAlign: 'right' }
 export const numTdStyle: React.CSSProperties = { ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }
 
+/** Row count shown next to a table's first header (ID / No. / Code), app-wide:
+ * `<th>ID <RowCount count={rows.length} /></th>`. Pass the rows left after
+ * search + filters (for a server-paged list, the server's total for the current
+ * filters — not the page size), so the number always matches what the user is
+ * looking at. */
+export function RowCount({ count, title }: { count: number; title?: string }) {
+  return (
+    <span
+      data-row-count={count}
+      title={title ?? `${count.toLocaleString('en-IN')} ${count === 1 ? 'record' : 'records'} found with the current search and filters`}
+      style={{
+        display: 'inline-block', marginLeft: 6, padding: '1px 7px', borderRadius: 999,
+        background: 'rgba(255,122,69,0.12)', color: COLORS.brandDark, fontSize: 10.5, fontWeight: 700,
+        letterSpacing: 0, lineHeight: '16px', verticalAlign: 'middle', textTransform: 'none',
+      }}
+    >
+      {count.toLocaleString('en-IN')} found
+    </span>
+  )
+}
+
 /** Wraps a <table> in the shared scroll box. `maxHeight="none"` for short tables
  * inside a page that already scrolls. */
 export function TableScroll({ children, maxHeight, style, minWidth }: { children: React.ReactNode; maxHeight?: number | string; style?: React.CSSProperties; minWidth?: number }) {
@@ -140,10 +187,18 @@ export function Toolbar({ children, style }: { children: React.ReactNode; style?
 }
 
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  // Bind the label to its control: a single element child gets the generated id
+  // (an id it already has is kept). Several children / text: label stays unbound as before.
+  const uid = useId()
+  const only = isValidElement(children) ? (children as React.ReactElement<{ id?: string }>) : null
+  // Skip plain wrappers (div, span, Fragment): a label cannot point at those.
+  const bindable = !!only && only.type !== Fragment && (typeof only.type !== 'string' || ['input', 'select', 'textarea', 'button'].includes(only.type))
+  const id = bindable ? (only!.props.id || `f${uid}`) : undefined
+  const control = bindable ? cloneElement(only!, { id }) : children
   return (
     <div>
-      <label className="field-label" style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: COLORS.textFaint2, marginBottom: 6 }}>{label}</label>
-      {children}
+      <label htmlFor={id} className="field-label" style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: COLORS.textFaint2, marginBottom: 6 }}>{label}</label>
+      {control}
     </div>
   )
 }
@@ -226,4 +281,97 @@ export function pageBtnStyle(disabled: boolean): React.CSSProperties {
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.5 : 1,
   }
+}
+
+// ---- Status pills --------------------------------------------------------------
+/** The one status / priority / type pill: tinted background, coloured text, one
+ * line. Use `<Pill label hex />` (or `pillStyle(hex)` on your own span) instead of
+ * a hand-made `borderRadius: 9999` span. */
+// Text on the 10% tint must reach 4.5:1 (WCAG AA). The fill/tint keeps the status
+// colour; only the TEXT colour is darkened. Known colours map to fixed readable
+// shades; any other 6-digit hex is darkened step by step until it passes.
+const PILL_TEXT: Record<string, string> = {
+  '#16a34a': '#166534', '#22c55e': '#166534', '#10b981': '#166534',
+  '#d97706': '#92400e', '#f59e0b': '#92400e', '#eab308': '#854d0e',
+  '#94a3b8': '#475569', '#64748b': '#475569',
+  '#2563eb': '#1d4ed8', '#3b82f6': '#1d4ed8',
+  '#ff7a45': '#c2410c', '#f4713b': '#c2410c',
+}
+function lum(rgb: number[]): number {
+  const [r, g, b] = rgb.map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4 })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+function ratio(a: number[], b: number[]): number {
+  const x = lum(a), y = lum(b)
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
+}
+export function readableOnTint(hex: string): string {
+  const mapped = PILL_TEXT[hex.toLowerCase()]
+  if (mapped) return mapped
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return hex
+  const base = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+  const tint = base.map((v) => Math.round(v * 0.1 + 255 * 0.9))
+  let c = base
+  for (let k = 1; k <= 20 && ratio(c, tint) < 4.5; k++) c = base.map((v) => Math.round(v * (1 - k * 0.05)))
+  return '#' + c.map((v) => v.toString(16).padStart(2, '0')).join('')
+}
+export function pillStyle(hex: string): React.CSSProperties {
+  return {
+    display: 'inline-flex', alignItems: 'center', fontSize: 11, fontWeight: 700, lineHeight: '16px',
+    padding: '2px 10px', borderRadius: 9999, background: `${hex}1a`, color: readableOnTint(hex), whiteSpace: 'nowrap', flex: 'none',
+  }
+}
+export function Pill({ label, hex = '#78716c', title }: { label: React.ReactNode; hex?: string; title?: string }) {
+  return <span title={title} style={pillStyle(hex)}>{label}</span>
+}
+
+// ---- Detail / overview layout (read-only record views) ---------------------
+// The pattern of R&D › Prototype › Overview, which the owner found clear: one card,
+// a summary on top (what the record is, its key facts on one line), then every
+// detail as a label–value list grouped by thin dividers. Use it for any record's
+// read-only view instead of a grid of separate glass cards.
+
+/** One card holding a whole record view. */
+export function DetailCard({ children, style, tour }: { children: React.ReactNode; style?: React.CSSProperties; tour?: string }) {
+  return (
+    <div data-tour={tour} style={{ borderRadius: 18, background: '#fff', border: '1px solid #e2e8f0', boxShadow: '0 4px 16px rgba(15,23,42,0.06)', padding: '22px 26px', marginBottom: 20, ...style }}>
+      {children}
+    </div>
+  )
+}
+
+/** Top of a DetailCard: the record's name, one plain sentence of what it is /
+ * why it exists, and its key facts (status, dates, owner) on one line. */
+export function DetailSummary({ title, text, meta, actions }: { title: React.ReactNode; text?: React.ReactNode; meta?: React.ReactNode; actions?: React.ReactNode }) {
+  return (
+    <div style={{ paddingBottom: 16, borderBottom: '1px solid #e2e8f0', display: 'flex', gap: 16, alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+      <div style={{ minWidth: 0, flex: '1 1 320px' }}>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0f172a', margin: '0 0 6px', overflowWrap: 'anywhere' }}>{title}</h2>
+        {text && <p style={{ fontSize: 14, lineHeight: '21px', color: '#334155', margin: '0 0 10px', whiteSpace: 'pre-wrap' }}>{text}</p>}
+        {meta && <div style={{ fontSize: 13, color: '#64748b', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>{meta}</div>}
+      </div>
+      {actions && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{actions}</div>}
+    </div>
+  )
+}
+
+/** A group of DetailRows, separated from the next group by a thin line. */
+export function DetailGroup({ title, children, last }: { title?: string; children: React.ReactNode; last?: boolean }) {
+  return (
+    <div style={{ padding: '8px 0', borderBottom: last ? 'none' : '1px solid #e2e8f0' }}>
+      {title && <p style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#64748b', margin: '8px 0 2px' }}>{title}</p>}
+      {children}
+    </div>
+  )
+}
+
+/** One line: fixed-width label left, value right ("—" when empty). Wraps on a phone. */
+export function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  const empty = children === null || children === undefined || children === '' || children === false
+  return (
+    <div style={{ display: 'flex', gap: 16, padding: '8px 0', alignItems: 'baseline', flexWrap: 'wrap' }}>
+      <div style={{ flex: '0 0 190px', fontSize: 13, color: '#64748b' }}>{label}</div>
+      <div style={{ flex: '1 1 260px', minWidth: 0, fontSize: 13.5, lineHeight: '20px', color: empty ? '#64748b' : '#0f172a', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{empty ? '—' : children}</div>
+    </div>
+  )
 }

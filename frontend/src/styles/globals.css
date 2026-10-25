@@ -52,7 +52,7 @@ button {
   button:not(:disabled):hover {
     background-color: #ff7a45;
     border-color: #ff7a45;
-    box-shadow: 0 0 0 5px rgba(255, 122, 69, 0.37);
+    box-shadow: 0 0 0 2px rgba(255, 122, 69, 0.22);
     color: #fff;
   }
   /* The tour's plain-text "Skip" link isn't a pill button like the rest of
@@ -74,6 +74,28 @@ button {
   }
 }
 
+/* Buttons that set their own transparent background are tabs, text links and
+   icon buttons — not pills. The default look above (shadow, 8px radius) and
+   the hover glow ring / lift made every tab look like a separate floating chip
+   and lit a hovered tab with an orange ring; they also bent a tab's underline
+   at the ends. Inline styles still win (a link that sets its own radius keeps it). */
+button[style*="background: transparent"],
+button[style*="background: none"],
+button[style*="background-color: transparent"] {
+  box-shadow: none;
+  border-radius: 0;
+}
+@media (hover: hover) and (pointer: fine) {
+  button[style*="background: transparent"]:not(:disabled):hover,
+  button[style*="background: none"]:not(:disabled):hover,
+  button[style*="background-color: transparent"]:not(:disabled):hover {
+    box-shadow: none;
+    transform: none;
+    color: inherit;
+    opacity: 0.85;
+  }
+}
+
 /* iOS-style checkbox (Checkbox.tsx). Colors use the brand orange family
    instead of the source snippet's blue, to match the rest of the palette;
    the "red" modifier is kept as-is for destructive/danger checkboxes. */
@@ -89,8 +111,20 @@ button {
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
+/* Visually hidden but still focusable / operable by keyboard and screen readers
+   (display:none removed the switch from the tab order entirely). */
 .ios-checkbox input {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  border: 0;
+  opacity: 0;
+  white-space: nowrap;
 }
 .checkbox-wrapper {
   position: relative;
@@ -141,9 +175,10 @@ button {
   transform: scale(0.95);
 }
 .ios-checkbox input:focus-visible + .checkbox-wrapper .checkbox-bg {
-  box-shadow: 0 0 0 4px var(--checkbox-bg);
-}
-.ios-checkbox.red {
+  box-shadow: 0 0 0 3px var(--checkbox-bg);
+  outline: 2px solid #c2410c;
+  outline-offset: 2px;
+}.ios-checkbox.red {
   --checkbox-color: #ef4444;
   --checkbox-bg: #fee2e2;
   --checkbox-border: #fca5a5;
@@ -254,7 +289,7 @@ textarea {
   select:hover:not(:disabled),
   textarea:hover:not(:disabled) {
     border-color: #ffc3a8 !important;
-    box-shadow: 0 0 0 4px rgba(255, 122, 69, 0.14);
+    box-shadow: 0 0 0 2px rgba(255, 122, 69, 0.10);
   }
 }
 input:not([type='checkbox']):not([type='radio']):not([type='range']):focus,
@@ -262,7 +297,23 @@ select:focus,
 textarea:focus {
   outline: none;
   border-color: #ff7a45 !important;
-  box-shadow: 0 0 0 4px rgba(255, 122, 69, 0.20);
+  box-shadow: 0 0 0 2px rgba(255, 122, 69, 0.18);
+}
+/* Clear keyboard focus ring (the faint shadow alone fails 3:1). !important beats
+   the inline `outline: 'none'` of sheetInput / PromptDialog; outline takes no layout space. */
+input:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #c2410c !important;
+  outline-offset: 1px;
+  box-shadow: none; /* one ring only: the outline replaces the :focus glow */
+}
+button:focus-visible,
+a:focus-visible,
+[role='button']:focus-visible,
+[role='option']:focus-visible {
+  outline: 2px solid #c2410c;
+  outline-offset: 2px;
 }
 
 /* Glass Section/Card containers (shared/ui.tsx, crm/ui.tsx) — a subtle lift
@@ -276,8 +327,8 @@ textarea:focus {
     transition: box-shadow .2s ease, border-color .2s ease;
   }
   .glass-section:hover {
-    border-color: rgba(255, 122, 69, 0.35) !important;
-    box-shadow: 0 16px 40px rgba(255, 122, 69, 0.12), 0 2px 6px rgba(15,23,42,.08);
+    border-color: rgba(255, 122, 69, 0.22) !important;
+    box-shadow: 0 8px 22px rgba(255, 122, 69, 0.07), 0 2px 6px rgba(15,23,42,.06);
   }
 }
 
@@ -431,10 +482,14 @@ input[type='number'] {
   background-clip: padding-box;
 }
 
-/* Firefox: same thin, quiet scrollbar as the WebKit rules above. */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
+/* Firefox only: thin, quiet scrollbar like the WebKit rules above. Never set
+   scrollbar-width / scrollbar-color for Chrome — Chrome 121+ then drops the
+   ::-webkit-scrollbar styling and draws its native arrowed bars everywhere. */
+@-moz-document url-prefix() {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
+  }
 }
 
 /* Prevent any single element (image, table, wide inline-style block) from
@@ -454,7 +509,7 @@ button, input, select, textarea { font-family: inherit; }
 select:not([multiple]) {
   appearance: none;
   -webkit-appearance: none;
-  min-height: 38px;
+  min-height: 34px;
   line-height: 16px;
   padding-right: 32px !important;
   border-radius: 10px;
@@ -468,14 +523,15 @@ select:not([multiple]) {
 
 /* Keyboard focus ring for the app's own dropdown trigger (Select / SearchableSelect). */
 .ui-select-trigger:focus-visible {
-  outline: none;
+  outline: 2px solid #c2410c !important;
+  outline-offset: 1px;
   border-color: #ff7a45 !important;
-  box-shadow: 0 0 0 4px rgba(255, 122, 69, 0.20);
+  box-shadow: 0 0 0 2px rgba(255, 122, 69, 0.18);
 }
 @media (hover: hover) and (pointer: fine) {
   .ui-select-trigger:not([aria-disabled='true']):hover {
     border-color: #ffc3a8 !important;
-    box-shadow: 0 0 0 4px rgba(255, 122, 69, 0.14);
+    box-shadow: 0 0 0 2px rgba(255, 122, 69, 0.10);
   }
 }
 
@@ -850,3 +906,44 @@ td { vertical-align: middle; }
     overflow-y: auto;
   }
 }
+
+/* Module tab bars (Design Fix, shell): one row, scrolls sideways instead of
+   wrapping to 2-3 rows. The gear/help/bell cluster (.nav-cluster) stays fixed
+   at the right with the same width in every module. */
+.nav-tabs-scroll {
+  scrollbar-width: none;
+  margin-bottom: -1px;
+  --nav-fade-l: 0px;
+  --nav-fade-r: 0px;
+  scroll-padding-inline: 36px;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--nav-fade-l), #000 calc(100% - var(--nav-fade-r)), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--nav-fade-l), #000 calc(100% - var(--nav-fade-r)), transparent 100%);
+}
+/* Cross-browser edge cue: navScrollRef sets these only while the row can still scroll. */
+.nav-tabs-scroll[data-more-left] { --nav-fade-l: 36px; }
+.nav-tabs-scroll[data-more-right] { --nav-fade-r: 36px; }
+.nav-tabs-scroll::-webkit-scrollbar { display: none; }
+.nav-tabs-scroll > * { flex: none; margin-bottom: 0 !important; }
+.nav-cluster { min-width: 122px; justify-content: flex-end; }
+@media (min-width: 641px) and (max-width: 1399px) {
+  .nav-tabs-scroll .nav-tab-link svg { display: none; }
+}
+/* Help "?" button: neutral like the gear and bell; orange ring only for keyboard focus. */
+button.nav-help-btn:focus-visible {
+  outline: 2px solid #FF7A45;
+  outline-offset: 2px;
+}
+
+/* Sidebar: Feedback + What's New share one compact row. */
+.sidebar-footer-row > button {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto !important;
+  margin-bottom: 0 !important;
+  padding: 7px 8px !important;
+  gap: 6px !important;
+  font-size: 12.5px !important;
+  justify-content: center;
+  white-space: nowrap;
+}
+.sidebar-footer-row > button > span:last-child:not(:first-child) { margin-left: 0 !important; }

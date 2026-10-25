@@ -2,6 +2,7 @@
 
 // Shared by PO Tracking's list and its side detail: row type, stage colours and small cells.
 import { TEXT } from '@/lib/theme'
+import { pillStyle } from '@/components/shared/ui'
 
 /** One row of GET /p2p/po-reports/tracking — one purchase order (a split requisition has several). */
 export type TrackRow = {
@@ -39,7 +40,7 @@ export function StageBadge({ stage, label }: { stage: string; label: string }) {
   const hex = STAGE_HEX[stage] || '#64748b'
   return (
     <span title={STAGE_HINT[stage]} data-tour="p2p-pot-status-badge"
-      style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
+      style={pillStyle(hex)}>
       {label}
     </span>
   )
@@ -49,9 +50,9 @@ export function StageBadge({ stage, label }: { stage: string; label: string }) {
 export function DueChip({ row }: { row: TrackRow }) {
   if (row.days_to_due == null) return <span style={{ color: TEXT.muted, fontSize: 12.5 }}>—</span>
   const d = row.days_to_due
-  const [text, hex] = d < 0 ? [`${-d}d late`, '#dc2626'] : d === 0 ? ['Due today', '#d97706'] : d <= 7 ? [`In ${d}d`, '#d97706'] : [`In ${d}d`, '#64748b']
+  const [text, hex] = d < 0 ? [`late by ${-d} ${d === -1 ? 'day' : 'days'}`, '#dc2626'] : d === 0 ? ['Due today', '#d97706'] : [`In ${d} ${d === 1 ? 'day' : 'days'}`, d <= 7 ? '#d97706' : '#64748b']
   return (
-    <span data-tour="p2p-pot-overdue-badge" style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
+    <span data-tour="p2p-pot-overdue-badge" style={pillStyle(hex)}>
       {text}
     </span>
   )

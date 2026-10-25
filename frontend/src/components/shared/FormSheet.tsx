@@ -4,12 +4,13 @@
 // Milestone" sheet, shared so other modules' create forms (R&D tasks) match it.
 // Rendered through a portal to <body> (glass cards clip fixed overlays).
 
-import { useEffect, useRef, useState } from 'react'
+import { cloneElement, isValidElement, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { secondaryBtnStyle } from '@/components/shared/ui'
+import { useFocusTrap } from '@/components/shared/useFocusTrap'
 import { CONTROL } from '@/lib/theme'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
-import { Check, Plus, X, ListChecks, User, Calendar, Paperclip, PencilSimple, Clock, ChatCircle, ShieldCheck, ArrowCounterClockwise, MagnifyingGlass, CaretLeft, CaretRight, ClockCounterClockwise, WarningCircle, Flag, Tag, Package, Truck, Gear, Star, Trash, Link as LinkIcon, FileText, CurrencyInr, Buildings, Users, ShoppingCart, Wrench, UploadSimple, PaperPlaneRight } from '@phosphor-icons/react'
+import { Check, Plus, X, ListChecks, User, Calendar, Paperclip, PencilSimple, Clock, ChatCircle, ShieldCheck, ArrowCounterClockwise, MagnifyingGlass, CaretLeft, CaretRight, ClockCounterClockwise, WarningCircle, Flag, Tag, Package, Truck, Gear, Star, Trash, Link as LinkIcon, FileText, CurrencyInr, Buildings, Users, ShoppingCart, Wrench, UploadSimple, PaperPlaneRight, MapPin, IdentificationCard, AddressBook } from '@phosphor-icons/react'
 import type { Icon as PhosphorIcon } from '@phosphor-icons/react'
 
 export const SHEET = {
@@ -22,10 +23,40 @@ export const SHEET = {
 }
 const { INK, BODY, MUTED, LINE, BLUE } = SHEET
 
-export const sheetInput: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${LINE}`, fontSize: 13.5, lineHeight: CONTROL.lineHeight, minHeight: CONTROL.height, color: INK, background: '#fff', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }
+export const sheetInput: React.CSSProperties = { width: '100%', padding: `${CONTROL.padY}px ${CONTROL.padX}px`, borderRadius: 10, border: `1px solid ${LINE}`, fontSize: 13.5, lineHeight: CONTROL.lineHeight, minHeight: CONTROL.height, color: INK, background: '#fff', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }
 export const sheetLabel: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 600, color: BODY, marginBottom: 6 }
 export const sheetHint: React.CSSProperties = { fontSize: 12, color: MUTED, margin: '6px 0 0' }
-export const Req = () => <span style={{ color: '#e11d48' }}>*</span>
+/** Visually hidden, still read by screen readers. */
+export const srOnly: React.CSSProperties = { position: 'absolute', width: 1, height: 1, margin: -1, padding: 0, overflow: 'hidden', clip: 'rect(0 0 0 0)', clipPath: 'inset(50%)', border: 0, whiteSpace: 'nowrap' }
+/** Required marker: red star for sighted users (hidden from screen readers) + " (required)" for them. */
+export const Req = () => <><span aria-hidden="true" style={{ color: '#be123c' }}>*</span><span style={srOnly}> (required)</span></>
+
+/** A labelled field with the label bound to its control (htmlFor/id), plus
+ * aria-required / aria-invalid / aria-describedby (hint and error). Pass ONE
+ * control as the child (input, textarea, select, SearchableSelect with no own id…).
+ * An id already set on the child is kept. Same look as the plain label + control. */
+export function SheetField({ label, required, error, hint, children, style }: {
+  label: React.ReactNode; required?: boolean; error?: string | null; hint?: React.ReactNode
+  children: React.ReactElement<Record<string, unknown>>; style?: React.CSSProperties
+}) {
+  const uid = useId()
+  const childProps = (isValidElement(children) ? children.props : {}) as Record<string, unknown>
+  const id = (childProps.id as string | undefined) || `f${uid}`
+  const hintId = hint ? `${id}-hint` : undefined
+  const errId = error ? `${id}-err` : undefined
+  const describedBy = [childProps['aria-describedby'] as string | undefined, hintId, errId].filter(Boolean).join(' ') || undefined
+  const control = isValidElement(children)
+    ? cloneElement(children, { id, ...(required ? { 'aria-required': true } : {}), ...(error ? { 'aria-invalid': true } : {}), ...(describedBy ? { 'aria-describedby': describedBy } : {}) })
+    : children
+  return (
+    <div style={style}>
+      <label htmlFor={id} style={sheetLabel}>{label}{required && <> <Req /></>}</label>
+      {control}
+      {hint && <p id={hintId} style={sheetHint}>{hint}</p>}
+      {error && <p id={errId} role="alert" style={{ fontSize: 12, color: '#b91c1c', margin: '6px 0 0' }}>{error}</p>}
+    </div>
+  )
+}
 
 export function sheetBtn(kind: 'primary' | 'secondary' | 'ghost' | 'danger', color = BLUE, disabled = false): React.CSSProperties {
   // Same 38px scale as inputs and the shared buttons (CONTROL), so a footer or
@@ -41,6 +72,7 @@ export function sheetBtn(kind: 'primary' | 'secondary' | 'ghost' | 'danger', col
 export type SheetIconName = 'check' | 'plus' | 'x' | 'list' | 'user' | 'calendar' | 'clip' | 'edit'
   | 'clock' | 'chat' | 'shield' | 'undo' | 'search' | 'left' | 'right' | 'history' | 'alert' | 'flag' | 'tag'
   | 'box' | 'truck' | 'gear' | 'star' | 'trash' | 'link' | 'doc' | 'rupee' | 'building' | 'users' | 'cart' | 'tool' | 'upload' | 'send'
+  | 'location' | 'idcard' | 'contact'
 export function SheetIcon({ name, size = 16, color = 'currentColor' }: { name: SheetIconName; size?: number; color?: string }) {
   const p: Record<SheetIconName, PhosphorIcon> = {
     check: Check,
@@ -76,6 +108,12 @@ export function SheetIcon({ name, size = 16, color = 'currentColor' }: { name: S
     tool: Wrench,
     upload: UploadSimple,
     send: PaperPlaneRight,
+    // Meaning-first: 'location' for addresses / sites, 'idcard' for registration
+    // & tax IDs (GST, PAN), 'contact' for phone / email blocks. 'truck' is for
+    // dispatch / vehicles and 'rupee' for money only.
+    location: MapPin,
+    idcard: IdentificationCard,
+    contact: AddressBook,
   }
   const Glyph = p[name]
   return <Glyph size={size} color={color} aria-hidden style={{ flexShrink: 0 }} />
@@ -122,26 +160,33 @@ export function FormSheet({ icon, iconColor = BLUE, title, subtitle, onClose, bu
 }) {
   // Escape closes it (only the top-most dialog reacts when several are open); not while saving.
   useEscapeKey(true, () => { if (!busy) onClose() })
+  // Focus moves into the popup (first field, else the title), Tab stays inside, focus returns to the opener on close.
+  const panelRef = useRef<HTMLDivElement>(null)
+  const titleId = useId()
+  useFocusTrap(true, panelRef, { fallback: '[data-sheet-title]' })
   if (typeof document === 'undefined') return null
   return createPortal(
-    <div onClick={() => !busy && onClose()} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 150, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '5vh 16px', overflowY: 'auto' }}>
-      <div data-tour={tour} data-form-sheet role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: width, background: '#fff', borderRadius: 18, boxShadow: '0 24px 60px rgba(15,23,42,0.25)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '20px 24px', borderBottom: `1px solid ${LINE}` }}>
+    <div onClick={() => !busy && onClose()} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 150, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '24px 16px', overflowY: 'auto' }}>
+      <div ref={panelRef} data-tour={tour} data-form-sheet role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: width, maxHeight: 'calc(100vh - 48px)', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 18, boxShadow: '0 24px 60px rgba(15,23,42,0.25)' }}>
+        <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 14, padding: '20px 24px', borderBottom: `1px solid ${LINE}` }}>
           <span style={{ width: 42, height: 42, borderRadius: 12, background: iconColor, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><SheetIcon name={icon} size={22} color="#fff" /></span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h3 style={{ fontSize: 20, fontWeight: 700, color: INK, margin: 0 }}>{title}</h3>
+            <h3 id={titleId} data-sheet-title tabIndex={-1} style={{ fontSize: 20, fontWeight: 700, color: INK, margin: 0 }}>{title}</h3>
             <p style={{ fontSize: 13, color: MUTED, margin: '2px 0 0', wordBreak: 'break-word' }}>{subtitle}</p>
           </div>
           <button type="button" aria-label="Close" onClick={() => !busy && onClose()} style={sheetBtn('ghost', MUTED)}><SheetIcon name="x" size={20} /></button>
         </div>
         {(() => {
+          // The body scrolls inside the panel (which is capped to the window height);
+          // the footer buttons stay visible below it.
+          const colStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 }
           const body = <>
-            {children}
-            {footer && <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '16px 24px', borderTop: `1px solid ${LINE}`, flexWrap: 'wrap' }}>{footer}</div>}
+            <div style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>{children}</div>
+            {footer && <div style={{ flex: 'none', display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '16px 24px', borderTop: `1px solid ${LINE}`, flexWrap: 'wrap', background: '#fff', borderBottomLeftRadius: 18, borderBottomRightRadius: 18 }}>{footer}</div>}
           </>
           return onSubmit
-            ? <form noValidate onSubmit={(e) => { e.preventDefault(); if (!busy) onSubmit() }}>{body}</form>
-            : body
+            ? <form noValidate style={colStyle} onSubmit={(e) => { e.preventDefault(); if (!busy) onSubmit() }}>{body}</form>
+            : <div style={colStyle}>{body}</div>
         })()}
       </div>
     </div>,
@@ -182,7 +227,7 @@ export function FormPage({ icon, iconColor = BLUE, title, titleExtra, subtitle, 
         </div>
         {/* The body scrolls (each column on its own on wide screens — globals.css
             .form-page-body); the header and the footer stay put. */}
-        <div className="form-page-body" style={{ flex: '1 1 auto', minHeight: 0, overflowY: maxHeight ? 'auto' : undefined, display: 'flex', flexDirection: 'column' }}>{children}</div>
+        <div className="form-page-body" style={{ flex: '1 1 auto', minHeight: 0, overflowY: maxHeight ? 'auto' : undefined, display: 'flex', flexDirection: 'column', paddingBottom: maxHeight ? 96 : undefined }}>{children}</div>
         <div style={{ flex: 'none', display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '16px 24px', borderTop: `1px solid ${LINE}`, flexWrap: 'wrap', background: '#fff', borderBottomLeftRadius: 18, borderBottomRightRadius: 18 }}>{footer}</div>
       </div>
     </div>
@@ -254,13 +299,17 @@ export function FileDropZone({ files, onChange, accept, max = 10, hint, tour }: 
         onDrop={(e) => { e.preventDefault(); setOver(false); add(e.dataTransfer.files) }}
         style={{ border: `1.5px dashed ${over ? BLUE : '#cbd5e1'}`, borderRadius: 12, padding: '18px 12px', textAlign: 'center', cursor: 'pointer', background: over ? '#eff6ff' : '#fff' }}>
         <SheetIcon name="clip" size={22} color={BLUE} />
-        <div style={{ fontSize: 13, color: BODY, marginTop: 6 }}>Drag and drop files here, or <span style={{ color: BLUE, fontWeight: 600 }}>click to browse</span></div>
+        <div style={{ fontSize: 13, color: BODY, marginTop: 6 }}>Drag and drop files here, or{' '}
+          {/* Real button: keyboard-reachable; the click also bubbles to the zone, so stop it to open the picker once. */}
+          <button type="button" aria-label={max === 1 ? 'Click to browse for a file' : 'Click to browse for files'} onClick={(e) => { e.stopPropagation(); ref.current?.click() }}
+            style={{ border: 'none', background: 'none', padding: 0, font: 'inherit', color: BLUE, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}>click to browse</button></div>
         <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>{hint || `${accept ? accept.replace(/,/g, ' ') : 'Any type'} · ${max === 1 ? 'one file' : `up to ${max} files`}`}</div>
         <input ref={ref} type="file" multiple={max !== 1} accept={accept} hidden onChange={(e) => { add(e.target.files); e.target.value = '' }} />
       </div>
       {files.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
           {files.map((f, i) => (
+            // ui-audit-ignore-next-line custom-pill — picked-file chip (name + remove ×, ellipsis), not a status badge
             <span key={`${f.name}-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, padding: '4px 10px', borderRadius: 999, background: '#f1f5f9', color: BODY, maxWidth: '100%' }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
               <button type="button" aria-label={`Remove ${f.name}`} onClick={() => onChange(files.filter((_, j) => j !== i))} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, color: MUTED, display: 'inline-flex' }}><SheetIcon name="x" size={12} /></button>

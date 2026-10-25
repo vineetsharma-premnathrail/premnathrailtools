@@ -3,17 +3,19 @@
 // Side detail of one purchase order in PO Tracking: Items · Receipts · Approval · Documents · Timeline.
 // Reuses what already exists — the PO itself, its history report, the GRN list, the central
 // ApprovalPanel and the managed Word document — nothing is stored or computed twice here.
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { approvalsApi, goodsReceiptsApi, p2pApi, poReportsApi, purchaseOrdersApi } from '@/lib/api'
 import { P2PGoodsReceipt, P2PPurchaseOrder } from '@/types'
-import { BORDER, GLASS, SHADOWS, TEXT } from '@/lib/theme'
+import { BORDER, GLASS, SHADOWS, TEXT, Z } from '@/lib/theme'
+import { useEscapeKey } from '@/hooks/useEscapeKey'
+import { useFocusTrap } from '@/components/shared/useFocusTrap'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { recordPath } from '@/lib/recordRef'
-import { smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { RowCount, smallSecondaryBtnStyle, Pill } from '@/components/shared/ui'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import { StageBadge, TrackRow, money } from '@/components/p2p/POTrackingShared'
@@ -28,6 +30,10 @@ const td: React.CSSProperties = { padding: '8px 10px', fontSize: 12.5, color: TE
 const note: React.CSSProperties = { fontSize: 12.5, color: TEXT.muted, margin: 0 }
 const errBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 12, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
 const GRN_HEX: Record<string, string> = { draft: '#f59e0b', completed: '#16a34a', reversed: '#94a3b8' }
+const GRN_LABEL: Record<string, string> = { draft: 'In inspection', completed: 'Completed', reversed: 'Reversed' }
+const NUM_COLS = new Set(['Ordered', 'Delivered', 'Open', 'Line total', 'Received', 'Accepted'])
+const thFor = (h: string): React.CSSProperties => (NUM_COLS.has(h) ? { ...th, textAlign: 'right' } : th)
+const num: React.CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }
 const EVENT_HEX: Record<string, string> = { grn: '#2563eb', rtv: '#dc2626', invoice: '#16a34a', service_entry: '#7c3aed' }
 
 const msg = (err: unknown, fallback: string) => extractErrorMessages(err, fallback).join(' ')
@@ -42,6 +48,9 @@ export default function POTrackingDetail({ row, narrow, onClose }: { row: TrackR
   const [historyError, setHistoryError] = useState('')
   const [grns, setGrns] = useState<P2PGoodsReceipt[] | null>(null)
   const [grnError, setGrnError] = useState('')
+  const [grnTry, setGrnTry] = useState(0)
+  // Approval steps of this PO (to tell "approved before the workflow existed" from "steps shown above").
+  const [hasSteps, setHasSteps] = useState<boolean | null>(null)
   const [events, setEvents] = useState<Ev[] | null>(null)
   const [eventsNote, setEventsNote] = useState('')
   const seeDocument = canFeature('p2p', 'purchase_orders', 'po_document', 'view')
@@ -54,11 +63,27 @@ export default function POTrackingDetail({ row, narrow, onClose }: { row: TrackR
     return () => { live = false }
   }, [row.po_id, row.po_number])
 
+  useEscapeKey(narrow, onClose)
+  // Drawer: shared focus trap (focuses Close on open, keeps Tab inside, returns focus to the opener).
+  const drawerRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(narrow, drawerRef, { initial: '[data-po-close]' })
+
   useEffect(() => {
     if (tab !== 'receipts' || grns !== null) return
+    setGrnError('')
     goodsReceiptsApi.list({ purchase_order_id: row.po_id }).then(setGrns)
       .catch((e) => setGrnError(msg(e, 'Could not load the goods receipts of this PO.')))
-  }, [tab, grns, row.po_id])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, grns, row.po_id, grnTry])
+
+  useEffect(() => {
+    if (tab !== 'approval' || row.stage === 'draft' || hasSteps !== null) return
+    let live = true
+    approvalsApi.entity('p2p_purchase_order', row.po_id)
+      .then((a) => { if (live) setHasSteps([...a.history, ...(a.current ? [a.current] : [])].some((r) => r.steps.length > 0)) })
+      .catch(() => { if (live) setHasSteps(true) }) // unknown: don't claim the PO predates the workflow
+    return () => { live = false }
+  }, [tab, row.po_id, row.stage, hasSteps])
 
   useEffect(() => {
     if (tab !== 'timeline' || events !== null || !po || (!history && !historyError)) return
@@ -87,7 +112,7 @@ export default function POTrackingDetail({ row, narrow, onClose }: { row: TrackR
           }
         } else notes.push(msg(audit.reason, 'The requisition history could not be loaded.'))
         for (const l of history?.lines || []) for (const e of l.events) if (e.date) {
-          out.push({ at: e.date, label: `${e.label} ${e.document_number}`, detail: `${l.item_name}: ${e.quantity}${l.unit ? ` ${l.unit}` : ''}${e.status ? ` · ${e.status}` : ''}`, hex: EVENT_HEX[e.type] || '#6b7280' })
+          out.push({ at: e.date, label: `${e.label} ${e.document_number}`, detail: `${l.item_name}: ${e.quantity}${l.unit ? ` ${l.unit}` : ''}${e.status ? ` · ${e.type === 'grn' ? GRN_LABEL[e.status] || e.status : e.status}` : ''}`, hex: EVENT_HEX[e.type] || '#6b7280' })
         }
         out.sort((x, y) => new Date(x.at).getTime() - new Date(y.at).getTime())
         setEvents(out)
@@ -127,41 +152,41 @@ export default function POTrackingDetail({ row, narrow, onClose }: { row: TrackR
               </p>
             )}
           </div>
-          <button type="button" onClick={onClose} style={{ ...smallSecondaryBtnStyle, flex: 'none' }}>Close</button>
+          <button type="button" data-po-close onClick={onClose} style={{ ...smallSecondaryBtnStyle, flex: 'none' }}>Close</button>
         </div>
         <div style={{ display: 'flex', gap: 8, margin: '12px 0 4px', flexWrap: 'wrap' }}>
           {reqHref && <button type="button" style={smallSecondaryBtnStyle} onClick={() => router.push(reqHref)}>Open requisition &amp; this PO</button>}
         </div>
-        <div style={{ display: 'flex', gap: 2, borderBottom: `1px solid ${BORDER.light}`, overflowX: 'auto' }}>
+        <div role="tablist" aria-label="Purchase order details" style={{ display: 'flex', flexWrap: 'wrap', gap: 2, borderBottom: `1px solid ${BORDER.light}` }}>
           {tabs.map((t) => (
-            <button key={t.key} type="button" onClick={() => setTab(t.key)}
+            <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}
               style={{ padding: '8px 12px', marginBottom: -1, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
-                color: tab === t.key ? '#FF7A45' : '#78716c', borderBottom: tab === t.key ? '2px solid #FF7A45' : '2px solid transparent' }}>{t.label}</button>
+                color: tab === t.key ? '#C2410C' : '#78716c', borderBottom: tab === t.key ? '2px solid #FF7A45' : '2px solid transparent' }}>{t.label}</button>
           ))}
         </div>
       </div>
 
       <div style={{ padding: '14px 18px 18px', overflow: 'auto', flex: 1, minHeight: 0 }}>
-        {poError && <div style={errBox}>{poError}</div>}
+        {poError && <div role="alert" style={errBox}>{poError}</div>}
         {tab === 'items' && (
           <>
             {historyError && <p style={{ ...note, marginBottom: 10 }}>Delivered / open quantities are not shown: {historyError}</p>}
-            {!po && !poError && <p style={note}>Loading…</p>}
+            {!po && !poError && <p role="status" style={note}>Loading…</p>}
             {po && po.items.length === 0 && <p style={note}>This purchase order has no lines.</p>}
             {po && po.items.length > 0 && (
               <div style={{ overflow: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 420 }}>
-                  <thead><tr>{['Item', 'Ordered', ...(history ? ['Delivered', 'Open'] : []), ...(showPrices ? ['Line total'] : [])].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Item', 'Ordered', ...(history ? ['Delivered', 'Open'] : []), ...(showPrices ? ['Line total'] : [])].map((h, i) => <th key={h} style={thFor(h)}>{h}{i === 0 && <RowCount count={po.items.length} />}</th>)}</tr></thead>
                   <tbody>
                     {po.items.map((it) => {
                       const s = summaryByItem.get(it.id)
                       return (
                         <tr key={it.id}>
                           <td style={{ ...td, color: TEXT.body }}>{it.item_code ? <strong style={{ color: TEXT.heading }}>{it.item_code} — </strong> : null}{it.item_name}</td>
-                          <td style={td}>{it.quantity} {it.unit || ''}</td>
-                          {history && <td style={td}>{s ? s.delivered_qty : '—'}</td>}
-                          {history && <td style={{ ...td, fontWeight: 700, color: s && s.open_qty > 0 && row.stage !== 'short_closed' ? '#d97706' : '#16a34a' }}>{s ? (row.stage === 'short_closed' ? `${s.open_qty} written off` : s.open_qty) : '—'}</td>}
-                          {showPrices && <td style={td}>{it.line_total != null ? money(it.line_total) : '—'}</td>}
+                          <td style={num}>{it.quantity.toLocaleString('en-IN')} {it.unit || ''}</td>
+                          {history && <td style={num}>{s ? s.delivered_qty.toLocaleString('en-IN') : '—'}</td>}
+                          {history && <td style={{ ...num, fontWeight: 700, color: s && s.open_qty > 0 && row.stage !== 'short_closed' ? '#d97706' : '#16a34a' }}>{s ? (row.stage === 'short_closed' ? `${s.open_qty} written off` : s.open_qty) : '—'}</td>}
+                          {showPrices && <td style={num}>{it.line_total != null ? money(it.line_total) : '—'}</td>}
                         </tr>
                       )
                     })}
@@ -174,21 +199,26 @@ export default function POTrackingDetail({ row, narrow, onClose }: { row: TrackR
 
         {tab === 'receipts' && (
           <>
-            {grnError && <div style={errBox}>{grnError}</div>}
-            {!grns && !grnError && <p style={note}>Loading…</p>}
+            {grnError && (
+              <div role="alert" style={{ ...errBox, display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>{grnError}</span>
+                <button type="button" style={smallSecondaryBtnStyle} onClick={() => { setGrnError(''); setGrnTry((x) => x + 1) }}>Try again</button>
+              </div>
+            )}
+            {!grns && !grnError && <p role="status" style={note}>Loading…</p>}
             {grns && grns.length === 0 && <p style={note}>Nothing has been received against this PO yet.</p>}
             {grns && grns.length > 0 && (
               <div style={{ overflow: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 420 }}>
-                  <thead><tr>{['GRN', 'Date', 'Status', 'Received', 'Accepted', 'Vendor invoice'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Goods receipt', 'Date', 'Status', 'Received', 'Accepted', 'Vendor invoice'].map((h, i) => <th key={h} style={thFor(h)}>{h}{i === 0 && <RowCount count={grns.length} />}</th>)}</tr></thead>
                   <tbody>
                     {grns.map((g) => (
                       <tr key={g.id}>
-                        <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{g.grn_number}</td>
-                        <td style={td}>{formatDate(g.received_date)}</td>
-                        <td style={td}><span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${GRN_HEX[g.status] || '#64748b'}1a`, color: GRN_HEX[g.status] || '#64748b', textTransform: 'capitalize' }}>{g.status === 'draft' ? 'In inspection' : g.status}</span></td>
-                        <td style={td}>{g.items.reduce((a, i) => a + (i.received_quantity || 0), 0)}</td>
-                        <td style={td}>{g.status === 'draft' ? '—' : g.items.reduce((a, i) => a + (i.accepted_quantity || 0), 0)}</td>
+                        <td style={{ ...td, fontWeight: 600, color: TEXT.body, whiteSpace: 'nowrap' }}>{g.grn_number}</td>
+                        <td style={{ ...td, whiteSpace: 'nowrap' }}>{formatDate(g.received_date)}</td>
+                        <td style={td}><Pill label={GRN_LABEL[g.status] || g.status} hex={GRN_HEX[g.status] || '#64748b'} /></td>
+                        <td style={num}>{g.items.reduce((a, i) => a + (i.received_quantity || 0), 0).toLocaleString('en-IN')}</td>
+                        <td style={num}>{g.status === 'draft' ? '—' : g.items.reduce((a, i) => a + (i.accepted_quantity || 0), 0).toLocaleString('en-IN')}</td>
                         <td style={td}>{g.vendor_invoice_number || '—'}</td>
                       </tr>
                     ))}
@@ -204,7 +234,7 @@ export default function POTrackingDetail({ row, narrow, onClose }: { row: TrackR
             ? <p style={note}>This PO is still a draft — it has not been sent for approval.</p>
             : <>
                 <ApprovalPanel entityType="p2p_purchase_order" entityId={row.po_id} title={`Approval of ${row.po_number}`} />
-                <p style={note}>If no approval steps are listed, this PO was approved before the approval workflow was introduced.</p>
+                {hasSteps === false && <p style={note}>No approval steps are recorded: this PO was approved before the approval workflow was introduced.</p>}
               </>
         )}
 
@@ -218,11 +248,11 @@ export default function POTrackingDetail({ row, narrow, onClose }: { row: TrackR
         {tab === 'timeline' && (
           <>
             {eventsNote && <p style={{ ...note, marginBottom: 10 }}>Some steps are missing: {eventsNote}</p>}
-            {!events && !poError && <p style={note}>Loading…</p>}
+            {!events && !poError && <p role="status" style={note}>Loading…</p>}
             {events && events.length === 0 && <p style={note}>Nothing has happened on this PO yet.</p>}
             {events && events.map((e, i) => (
               <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 9999, background: e.hex, marginTop: 5, flex: 'none' }} />
+                <span style={{ width: 10, height: 10, borderRadius: '50%', background: e.hex, marginTop: 5, flex: 'none' }} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading }}>{e.label} <span style={{ fontWeight: 400, color: TEXT.muted }}>· {formatDate(e.at)}</span></div>
                   {e.detail && <div style={{ fontSize: 12.5, color: TEXT.secondary, overflowWrap: 'anywhere' }}>{e.detail}</div>}
@@ -239,8 +269,8 @@ export default function POTrackingDetail({ row, narrow, onClose }: { row: TrackR
     if (typeof document === 'undefined') return null
     // Phones / small laptops: a drawer over the page (portaled — the glass cards would clip a fixed overlay).
     return createPortal(
-      <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(28,25,23,0.35)', display: 'flex', justifyContent: 'flex-end' }} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-        <div style={{ width: 'min(520px, 100vw)', height: '100%', background: '#fffaf5', boxShadow: '-12px 0 40px rgba(0,0,0,.18)' }}>{body}</div>
+      <div role="dialog" aria-modal="true" aria-label={`Purchase order ${row.po_number}`} style={{ position: 'fixed', inset: 0, zIndex: Z.sheet, background: 'rgba(28,25,23,0.35)', display: 'flex', justifyContent: 'flex-end' }} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+        <div ref={drawerRef} style={{ width: 'min(520px, 100vw)', height: '100%', background: '#fffaf5', boxShadow: '-12px 0 40px rgba(0,0,0,.18)' }}>{body}</div>
       </div>,
       document.body,
     )

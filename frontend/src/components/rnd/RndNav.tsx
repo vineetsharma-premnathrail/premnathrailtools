@@ -3,6 +3,7 @@
 import { CaretDoubleRight, ClipboardText, ClockCounterClockwise, Disc, Drop, Flask, Gear, GearFine, Lightning, ListChecks, Pulse, Scales, SquaresFour, Wrench } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
 import Link from 'next/link'
+import { navScrollRef } from '@/components/shared/navScroll'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { filterTabsByAccess } from '@/lib/tabAccess'
@@ -76,7 +77,7 @@ export default function RndNav() {
   return (
     <div style={{ marginBottom: 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-        <div style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'wrap' }}>
+        <div className="nav-tabs-scroll" ref={navScrollRef} style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'nowrap', overflowX: 'auto' }}>
           {visibleTabs.map((tab) => {
             const active = isActive(tab.href)
             return (
@@ -107,7 +108,7 @@ export default function RndNav() {
             )
           })}
         </div>
-        <div style={{ paddingBottom: 8, flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div className="nav-cluster" style={{ paddingBottom: 8, flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
           {settingsTab && (
             <Link href={settingsTab.href} data-tour="rnd-nav-settings" title="R&D settings" aria-label="R&D settings"
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 999, color: isActive(settingsTab.href) ? '#FF7A45' : '#78716c', border: `1px solid ${isActive(settingsTab.href) ? '#FF7A45' : 'rgba(0,0,0,0.1)'}`, background: 'rgba(255,255,255,.7)' }}>

@@ -9,6 +9,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { usersApi } from '@/lib/api'
+import { extractErrorMessages } from '@/lib/validation'
 import type { DirectoryUser } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { SheetSection, Req, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
@@ -45,29 +46,36 @@ export function referralPayload(r: ReferralValue): Record<string, unknown> {
   return { referral_type: 'employee', referred_by_user_id: Number(r.choice.slice(2)), referred_by_name: null, referred_by_phone: null }
 }
 
-export default function VendorReferralSection({ value, onChange, required, tour, current }: {
+export default function VendorReferralSection({ value, onChange, required, tour, current, bare }: {
   value: ReferralValue
   onChange: (v: ReferralValue) => void
   required?: boolean
   tour?: string
+  /** Render just the field (no "Referred by" section card) so it can sit in a grid next to another field. */
+  bare?: boolean
   /** The vendor's saved employee referrer, kept pickable even if they've left the directory. */
   current?: { id: number; name: string } | null
 }) {
   const [people, setPeople] = useState<DirectoryUser[]>([])
-  useEffect(() => { usersApi.directory().then(setPeople).catch(() => setPeople([])) }, [])
+  const [peopleError, setPeopleError] = useState('')
+  useEffect(() => {
+    usersApi.directory().then(setPeople)
+      .catch((err) => { setPeople([]); setPeopleError(extractErrorMessages(err, 'Could not load the employee list.').join(' ')) })
+  }, [])
   const options = useMemo(() => {
     const emp = [...people].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }))
       .map((p) => ({ value: `u:${p.id}`, label: p.department ? `${p.name} — ${p.department}` : p.name }))
     if (current && !emp.some((o) => o.value === `u:${current.id}`)) emp.unshift({ value: `u:${current.id}`, label: `${current.name} (inactive)` })
     return [{ value: 'direct', label: 'Direct (no referral)' }, { value: 'external', label: 'External / other person or company' }, ...emp]
   }, [people, current])
-  return (
-    <SheetSection icon="user" title="Referred by" extra={required ? <Req /> : undefined}>
+  const body = (
+    <>
       <div data-tour={tour}>
-        <label style={sheetLabel}>Who referred this vendor?</label>
-        <SearchableSelect value={value.choice} onChange={(v: string) => onChange({ choice: v, name: v === 'external' ? value.name : '', phone: v === 'external' ? value.phone : '' })}
+        <label style={sheetLabel}>Who referred this vendor?{required && <> <Req /></>}</label>
+        <SearchableSelect ariaLabel="Who referred this vendor" value={value.choice} onChange={(v: string) => onChange({ choice: v, name: v === 'external' ? value.name : '', phone: v === 'external' ? value.phone : '' })}
           options={options} placeholder="Search an employee, or pick External / Direct" />
       </div>
+      {peopleError && <p role="alert" style={{ ...sheetHint, color: '#B91C1C' }}>{peopleError} Reload the page, or choose External and type the name.</p>}
       {value.choice === 'external' && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
           <div style={{ flex: '1 1 200px', maxWidth: 320 }}>
@@ -81,6 +89,7 @@ export default function VendorReferralSection({ value, onChange, required, tour,
         </div>
       )}
       <p style={sheetHint}>Recorded for vendor-onboarding control. Who added the vendor is captured automatically.</p>
-    </SheetSection>
+    </>
   )
+  return bare ? <div style={{ minWidth: 0 }}>{body}</div> : <SheetSection icon="user" title="Referred by">{body}</SheetSection>
 }

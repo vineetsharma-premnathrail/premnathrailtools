@@ -5,6 +5,10 @@ import { createPortal } from 'react-dom'
 import { inputStyle } from '@/components/shared/ui'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { CalendarBlank } from '@phosphor-icons/react'
+import { CONTROL, Z } from '@/lib/theme'
+import { placePopover } from '@/lib/popover'
+
+const CAL_WIDTH = 280
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -28,13 +32,14 @@ export default function DateField({ value, onChange, style, placeholder = 'DD-MM
   const reposition = () => {
     const rect = wrapperRef.current?.getBoundingClientRect()
     if (!rect) return
-    const calHeight = calendarRef.current?.offsetHeight || 340
-    const spaceBelow = window.innerHeight - rect.bottom
-    const openUpward = spaceBelow < calHeight + 12 && rect.top > calHeight + 12
-    setCoords({
-      top: openUpward ? rect.top - calHeight - 6 : rect.bottom + 6,
-      left: rect.left,
+    // Flips above near the bottom, lines up with the field's right edge near the
+    // right of the screen, never leaves the screen (lib/popover).
+    if (rect.bottom < 0 || rect.top > window.innerHeight) { setOpen(false); return }
+    const next = placePopover(rect, {
+      width: calendarRef.current?.offsetWidth || CAL_WIDTH,
+      height: calendarRef.current?.offsetHeight || 340,
     })
+    setCoords((c) => (c.top === next.top && c.left === next.left ? c : next))
   }
 
   useEffect(() => {
@@ -55,12 +60,9 @@ export default function DateField({ value, onChange, style, placeholder = 'DD-MM
   useEffect(() => {
     if (!open) return
     reposition()
-    window.addEventListener('resize', reposition)
-    window.addEventListener('scroll', reposition, true)
-    return () => {
-      window.removeEventListener('resize', reposition)
-      window.removeEventListener('scroll', reposition, true)
-    }
+    // Re-measure every frame so the calendar never lags a scrolling container.
+    let raf = requestAnimationFrame(function tick() { reposition(); raf = requestAnimationFrame(tick) })
+    return () => cancelAnimationFrame(raf)
   }, [open])
 
   const displayValue = selected
@@ -197,16 +199,17 @@ export default function DateField({ value, onChange, style, placeholder = 'DD-MM
         value={draft}
         onChange={handleTextChange}
         onFocus={openCalendar}
+        data-no-autofocus="true"
         onBlur={handleBlur}
         onKeyDown={(e) => { if (e.key === 'Tab') setOpen(false) }}
         placeholder={placeholder}
         inputMode="numeric"
-        style={{ ...inputStyle, padding: '10px 36px 10px 14px', ...style }}
+        style={{ ...inputStyle, padding: `${CONTROL.padY}px 30px ${CONTROL.padY}px ${CONTROL.padX}px`, ...style }}
       />
       <CalendarBlank
         onClick={openCalendar}
         size={15} color="#FF7A45"
-        style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer' }}
+        style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer' }}
       />
 
       {open && createPortal(
@@ -216,13 +219,15 @@ export default function DateField({ value, onChange, style, placeholder = 'DD-MM
             position: 'fixed',
             top: coords.top,
             left: coords.left,
-            zIndex: 1000,
+            zIndex: Z.popover,
             background: '#fff',
             borderRadius: 12,
             border: '1px solid rgba(0,0,0,0.08)',
             boxShadow: '0 16px 36px rgba(0,0,0,0.14)',
             padding: 14,
-            width: 280,
+            width: CAL_WIDTH,
+            maxWidth: 'calc(100vw - 16px)',
+            boxSizing: 'border-box',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>

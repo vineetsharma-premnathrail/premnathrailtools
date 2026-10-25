@@ -3,11 +3,13 @@
 import { BookOpenText, Certificate, ChartBar, ChatCircle, CheckCircle, ClipboardText, Database, FileText, Gear, GearSix, SquaresFour, Target, Tray, Truck, Warning, Wrench, XCircle } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
 import Link from 'next/link'
+import { navScrollRef } from '@/components/shared/navScroll'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { filterTabsByAccess } from '@/lib/tabAccess'
 import NotificationBell from '@/components/erp/NotificationBell'
 import NavSettingsGear from '@/components/shared/NavSettingsGear'
+import TourButton from '@/components/tour/TourButton'
 
 const TABS = [
   { href: '/dashboard/quality', label: 'Dashboard', icon: 'dashboard', subtabKey: 'dashboard' },
@@ -65,7 +67,7 @@ export default function QualityNav() {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-      <div style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'wrap' }}>
+      <div className="nav-tabs-scroll" ref={navScrollRef} style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'nowrap', overflowX: 'auto' }}>
         {visibleTabs.map((tab) => {
           const isActive = tab.href === '/dashboard/quality' ? pathname === tab.href : pathname.startsWith(tab.href)
           return (
@@ -96,10 +98,11 @@ export default function QualityNav() {
           )
         })}
       </div>
-      <div style={{ paddingBottom: 8, flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div className="nav-cluster" style={{ paddingBottom: 8, flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
         {settingsTab && (
           <NavSettingsGear href={settingsTab.href} active={pathname.startsWith(settingsTab.href)} label="Quality settings" tour="quality-nav-settings" />
         )}
+        <TourButton variant="icon" />
         <div data-tour="quality-nav-bell">
           <NotificationBell />
         </div>

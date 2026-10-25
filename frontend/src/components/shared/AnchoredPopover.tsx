@@ -75,8 +75,8 @@ export default function AnchoredPopover({
       setPos((p) => (p && p.top === top && p.left === left && p.width === width && p.maxHeight === mh ? p : { top, left, width, maxHeight: mh }))
     }
     place()
-    // Second pass once the box has rendered and has a real height/width.
-    const raf = requestAnimationFrame(place)
+    // Re-measure every frame (also covers the first render) so it never lags a scrolling container.
+    let raf = requestAnimationFrame(function tick() { place(); raf = requestAnimationFrame(tick) })
     window.addEventListener('scroll', place, true)
     window.addEventListener('resize', place)
     return () => {
