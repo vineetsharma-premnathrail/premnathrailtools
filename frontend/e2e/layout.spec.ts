@@ -1,9 +1,36 @@
 import { test, expect, type Page } from '@playwright/test'
 import { readdirSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
+import { checkDialogs, checkFormCards, checkPageOverflow, checkTables, openSomeDialogs, saveShot } from './layout-checks'
 
-// Runtime layout checks on every static dashboard page, at a laptop (1366px)
-// and a phone (390px) width — see playwright.config.ts for how to run.
+// Runtime layout checks on every static dashboard page, at a laptop (1366x768)
+// and a phone (390x844) width — see playwright.config.ts for how to run.
+//
+// HOW TO RUN (the owner runs this; it needs the owner's saved login)
+//   1. Frontend on :3000 and backend on :8000 already running.
+//   2. Once, or when the session expires:  npm run test:ui:login
+//      (a browser opens, the owner signs in; saved to e2e/.auth/state.json)
+//   3. npm run test:ui:layout                      every dashboard page, both sizes
+//      UI_ROUTES=/dashboard/crm,/dashboard/store npm run test:ui:layout   a few pages
+//      UI_SHOTS=D:\shots npm run test:ui:layout    also save one viewport
+//        screenshot per page and size to D:\shots\laptop\ and \phone\ — the
+//        "visual gate": a UI reviewer LOOKS at these before a screen is passed.
+//   Every failure names the page, the screen size and the reason.
+//
+// Checks added after the 96px dead band above every form footer (layout-checks.ts):
+//   page-overflow       the page / main area is not wider than the screen.
+//   form-body-padding   .form-page-body bottom padding <= 32px.
+//   form-dead-band      empty space between the last field and the footer
+//                       <= 160px (> 240px is reported as severe).
+//   footer-offscreen / footer-covered   the form footer is fully on screen
+//                       and nothing sits on top of it.
+//   dialog-offscreen / dialog-footer-hidden / dialog-footer-covered
+//                       any open popup (and the first two "New/Add/Create"
+//                       popups, opened then closed - nothing is saved) fits the
+//                       screen with its footer visible.
+//   cell-overlap        text of one table cell does not run into the next cell.
+//   clipped-text        a table cell (or a box inside it) with overflow hidden
+//                       and no ellipsis does not cut its text off.
 //
 //   overflow        nothing sticks out past the right/left edge of the screen
 //                   unless it sits inside its own scroll box (html/body hide
@@ -165,14 +192,26 @@ async function checkDropdowns(page: Page): Promise<Problem[]> {
 }
 
 for (const route of ROUTES) {
-  test(`layout ${route}`, async ({ page }) => {
+  test(`layout ${route}`, async ({ page }, testInfo) => {
     const res = await page.goto(route)
     expect(res?.status() ?? 200, `${route} failed to load`).toBeLessThan(500)
     await settle(page)
     if (/\/login/.test(page.url())) throw new Error('Not signed in — run `npm run test:ui:login` first.')
     if (!page.url().includes(route)) test.skip(true, `redirected to ${page.url()} (no access)`)
 
-    const problems = [...(await inspect(page)), ...(await checkDropdowns(page))]
-    for (const p of problems) expect.soft(p, `${p.rule}: ${p.detail}`).toBeUndefined()
+    const vp = page.viewportSize()!
+    const where = `${route} @ ${vp.width}x${vp.height}`
+    const problems = [
+      ...(await inspect(page)),
+      ...(await checkPageOverflow(page)),
+      ...(await checkTables(page)),
+      ...(await checkFormCards(page)),
+      ...(await checkDialogs(page)),
+      ...(await checkDropdowns(page)),
+    ]
+    // screenshot before popups are opened below, so it shows the page itself
+    await saveShot(page, process.env.UI_SHOTS, testInfo.project.name, route)
+    problems.push(...(await openSomeDialogs(page, route)))
+    for (const p of problems) expect.soft(p, `[${where}] ${p.rule}: ${p.detail}`).toBeUndefined()
   })
 }

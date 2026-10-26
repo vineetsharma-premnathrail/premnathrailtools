@@ -65,3 +65,7 @@ Run at 1366px unless stated. Sign in as the named role.
 **K. Colours** - status pills/chips and the selected dropdown text are clearly readable (>= 4.5:1).
 
 Also eyeball: one R&D calculator page (buttons/dropdowns, shared CSS changed), vendor dropdowns elsewhere (now code order), and that the PO drawer sits below date/select popovers.
+
+## Post-incident note (2026-10-26)
+The owner found a big empty band above the footer on full-page forms (Create Service Request). Cause: `paddingBottom: 96` added to `.form-page-body` in components/shared/FormSheet.tsx by the shell fix round, based on an inferred 'footer overlaps the last field' problem that was never seen live (the footer is a flex sibling and never overlapped). It passed tsc, test:ui, reviewer and QA because none of them looked at the rendered page. Fixed by removing the padding. Process fix: 'Visual gate' added to the requirement-pipeline skill and a feedback memory.
+

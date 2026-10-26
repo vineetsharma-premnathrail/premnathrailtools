@@ -227,7 +227,7 @@ export function FormPage({ icon, iconColor = BLUE, title, titleExtra, subtitle, 
         </div>
         {/* The body scrolls (each column on its own on wide screens — globals.css
             .form-page-body); the header and the footer stay put. */}
-        <div className="form-page-body" style={{ flex: '1 1 auto', minHeight: 0, overflowY: maxHeight ? 'auto' : undefined, display: 'flex', flexDirection: 'column', paddingBottom: maxHeight ? 96 : undefined }}>{children}</div>
+        <div className="form-page-body" style={{ flex: '1 1 auto', minHeight: 0, overflowY: maxHeight ? 'auto' : undefined, display: 'flex', flexDirection: 'column' }}>{children}</div>
         <div style={{ flex: 'none', display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '16px 24px', borderTop: `1px solid ${LINE}`, flexWrap: 'wrap', background: '#fff', borderBottomLeftRadius: 18, borderBottomRightRadius: 18 }}>{footer}</div>
       </div>
     </div>

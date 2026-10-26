@@ -14,6 +14,9 @@
 //   table-scroll     a <table> in a file with no scroll box (TableScroll,
 //                    tableWrapStyle, .table-scroll or overflow auto/scroll) — a
 //                    wide table then widens the whole page.
+//   footer-clearance-hack  paddingBottom/marginBottom >= 64 (even inside a ternary)
+//                    on a scrolling or form-body element — a dead band above the footer.
+//   empty-spacer     an empty <div style={{ height: N }} /> with N >= 64.
 // Warns (shown with --warn, never fails):
 //   adhoc-button     a <button> with its own inline padding and no shared button
 //                    style spread — sizes drift from the 38px / 30px scale.
@@ -204,6 +207,70 @@ for (const abs of files) {
     const obj = balanced(src, m.index + m[0].length - 1)
     if (!/\bpadding\s*:/.test(obj) || SHARED_SPREAD.test(obj) || NOT_A_PILL.test(obj)) continue
     flag(m.index, `local button style "${m[1]}" builds its own box — spread a shared button style (shared/ui) instead`)
+  }
+}
+
+// ---- footer-clearance-hack / empty-spacer (error) ------------------------------
+// Born from the 96px dead band: `paddingBottom: maxHeight ? 96 : undefined` was
+// put on the scrolling form body "so the footer never covers the last field" —
+// but the footer is a flex sibling and covers nothing, so every full-page form
+// got a big empty band above its footer.
+//   footer-clearance-hack  paddingBottom / marginBottom with a number >= 64
+//                          (also inside a ternary / calc / template) on a style
+//                          object that scrolls (overflowY auto|scroll) or on the
+//                          form body / sheet body. Fix the layout (flex sibling,
+//                          minHeight: 0), never pad the bottom.
+//   empty-spacer           a self-closing / empty <div style={{ height|minHeight:
+//                          N }} /> with N >= 64 — a spacer div, not layout.
+// Escape hatch: `ui-audit-ignore footer-clearance-hack` / `empty-spacer` (+ the
+// -next-line form) with a reason.
+const CLEARANCE_MIN = 64
+function enclosingObject(src, idx) {
+  // the `{ … }` object literal that contains index idx
+  let depth = 0
+  let start = -1
+  for (let k = idx; k >= 0; k--) {
+    if (src[k] === '}') depth++
+    else if (src[k] === '{') { if (depth === 0) { start = k; break } depth-- }
+  }
+  return start < 0 ? '' : balanced(src, start)
+}
+for (const abs of files) {
+  const file = relative(ROOT, abs).split(sep).join('/')
+  if (FROZEN.test(file)) continue
+  const src = readFileSync(abs, 'utf8')
+  const lines = src.split('\n')
+  const lineOf = (idx) => src.slice(0, idx).split('\n').length
+  const ignored = (rule, ln) =>
+    new RegExp(`ui-audit-ignore\\s+[^\\n]*\\b${rule}\\b`).test(src) ||
+    new RegExp(`ui-audit-ignore-next-line\\s+[^\\n]*\\b${rule}\\b`).test(lines[ln - 2] || '')
+
+  const padRe = /\b(padding|margin)Bottom\s*:\s*([^,}\n]*(?:\([^)\n]*\)[^,}\n]*)*)/g
+  let m
+  while ((m = padRe.exec(src))) {
+    const nums = (m[2].match(/\b\d+(?:\.\d+)?(?:px)?\b/g) || []).map((n) => parseFloat(n))
+    const big = nums.find((n) => n >= CLEARANCE_MIN)
+    if (big === undefined) continue
+    const obj = enclosingObject(src, m.index)
+    const around = lines.slice(Math.max(0, lineOf(m.index) - 4), lineOf(m.index) + 1).join(' ')
+    const scrolls = /overflowY?\s*:\s*[^,}]*['"`](auto|scroll)['"`]/.test(obj)
+    const formBody = /form-page-body|sheet-body|sheetBody|data-form-sheet/.test(around + obj)
+    if (!scrolls && !formBody) continue
+    const ln = lineOf(m.index)
+    if (ignored('footer-clearance-hack', ln)) continue
+    add('error', 'footer-clearance-hack', file, ln,
+      `${m[1]}Bottom ${big} on a scrolling/form body leaves a dead band above the footer — the footer is a flex sibling and covers nothing; remove the padding`)
+  }
+
+  const spRe = /<div\b[^>]*style=\{\{([^}]*)\}\}\s*(?:\/>|>\s*<\/div>)/g
+  while ((m = spRe.exec(src))) {
+    const h = m[1].match(/\b(?:min)?[Hh]eight\s*:\s*(\d+)\s*(?:,|$)/)
+    if (!h || Number(h[1]) < CLEARANCE_MIN) continue
+    // absolutely/fixed positioned or painted divs are decoration (background blobs), not spacers
+    if (/\b(position|background|backgroundColor|border|borderRadius)\s*:/.test(m[1])) continue
+    const ln = lineOf(m.index)
+    if (ignored('empty-spacer', ln)) continue
+    add('error', 'empty-spacer', file, ln, `empty <div> spacer ${h[1]}px tall — a dead band, not layout; use gap/margin from the scale (<= 32px) or remove`)
   }
 }
 
