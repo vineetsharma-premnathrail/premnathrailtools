@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react'
 import { organizationApi, usersApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import { DirectoryUser } from '@/types'
-import { TEXT, BRAND, BORDER } from '@/lib/theme'
+import { TEXT, BORDER } from '@/lib/theme'
 import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import TeamMemberPicker from '@/components/rnd/TeamMemberPicker'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, Pill } from '@/components/shared/ui'
 import { useCan } from '@/lib/permissions'
 
 type Partner = { id: number; name: string; email: string; designation?: string | null; is_active: boolean }
@@ -103,14 +103,13 @@ export default function CompanyPartnersPanel({ sectionStyle }: { sectionStyle: R
       {loading ? (
         <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>
       ) : partners.length === 0 ? (
-        <p style={{ fontSize: 13, color: TEXT.muted }}>No partners set yet.</p>
+        <p style={{ fontSize: 13, color: TEXT.muted }}>No partners set yet{canFeature('organization', 'info', 'partners', 'edit') ? ' — use “+ Add partners” to pick them from the user list.' : '.'}</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ borderTop: `1px solid ${BORDER.normal}` }}>
           {partners.map((p) => (
-            <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 12, background: 'rgba(255,255,255,.5)', border: `1px solid ${BORDER.normal}`, flexWrap: 'wrap' }}>
+            <div key={p.id} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '10px 0', borderBottom: `1px solid ${BORDER.normal}`, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{p.name}</span>
-              <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: BRAND.primary }}>PARTNER</span>
-              {!p.is_active && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(220,38,38,0.1)', color: '#b91c1c' }}>INACTIVE</span>}
+              {!p.is_active && <Pill label="Inactive" hex="#b91c1c" />}
               <span style={{ fontSize: 12.5, color: TEXT.secondary }}>{[p.designation, p.email].filter(Boolean).join(' · ')}</span>
             </div>
           ))}

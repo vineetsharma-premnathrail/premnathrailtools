@@ -1,6 +1,7 @@
 'use client'
 
 import Select from '@/components/shared/Select'
+import { RowCount, inputStyle as sharedInputStyle, Pill } from '@/components/shared/ui'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -15,10 +16,8 @@ import { recordPath } from '@/lib/recordRef'
 
 const PRIORITY_HEX: Record<string, string> = { Urgent: '#DC2626', High: '#EA580C', Medium: '#2563EB', Low: '#78716c' }
 
-const inputStyle: React.CSSProperties = {
-  padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
-}
+// Shared 34px control scale; list filters keep their own width.
+const inputStyle: React.CSSProperties = { ...sharedInputStyle, width: 'auto', background: 'rgba(255,255,255,.7)' }
 const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
 
 // Inbox of CRM requirements sent to R&D via "Send Technical Requirement to R&D".
@@ -127,9 +126,9 @@ export default function RndRequirementsPage() {
         <table data-tour="rnd-req-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1140 }}>
           <thead>
             <tr>
-              {['TOR No.', 'Source', 'Customer', 'Product / Tender', 'Qty', 'Priority', 'R&D Response', 'BD Owner', 'Last Sent', 'Sends', ''].map((h) => (
+              {['TOR No.', 'Source', 'Customer', 'Product / Tender', 'Qty', 'Priority', 'R&D Response', 'BD Owner', 'Last Sent', 'Sends', ''].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={rows.length} />}
                 </th>
               ))}
             </tr>
@@ -139,7 +138,7 @@ export default function RndRequirementsPage() {
               <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
               <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
-                {search || source || mine ? 'No requirements match your filters.' : 'No requirements have been sent from CRM yet.'}
+                {search || source || mine ? 'No requirements match your filters.' : 'No requirements yet — they arrive here when the business team sends a Technical Offer Request from CRM.'}
               </td></tr>
             ) : (
               rows.map((r) => {
@@ -167,7 +166,7 @@ export default function RndRequirementsPage() {
                     <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.quantity || '—'}</td>
                     <td style={cellStyle}>
                       {r.priority ? (
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${prioHex}1a`, color: prioHex, whiteSpace: 'nowrap' }}>{r.priority}</span>
+                        <Pill label={r.priority} hex={prioHex} />
                       ) : '—'}
                     </td>
                     <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
@@ -175,7 +174,7 @@ export default function RndRequirementsPage() {
                         const b = rndRequestBadge(r.rnd_request)
                         return (
                           <>
-                            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${b.hex}1a`, color: b.hex }}>{b.label}</span>
+                            <Pill label={b.label} hex={b.hex} />
                             <div style={{ fontSize: 11.5, color: TEXT.muted, marginTop: 4 }}>
                               {r.rnd_request.assigned_to_id == null ? 'R&D team' : r.rnd_request.assigned_to_id === user?.id ? 'You' : r.rnd_request.assigned_to} · due {formatDate(r.rnd_request.due_date)}
                             </div>

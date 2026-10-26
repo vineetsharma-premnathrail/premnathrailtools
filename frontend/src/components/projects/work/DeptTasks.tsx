@@ -17,6 +17,7 @@ import {
   ErrorBanner, FlagPill, Pill, ProgressBar, TASK_HEX, TASK_LABELS, linkBtn, sectionStyle, tdStyle, thStyle, todayIso, usePmFeature,
 } from './pmUi'
 import { FileDropZone, FormSheet, Optional, Req, SHEET, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import { RowCount } from '@/components/shared/ui'
 
 type Person = { id: number; name: string; designation?: string | null; department?: string | null }
 type SubForm = { task: PmDeptTask; title: string; assignee_id: string; due_date: string; remark: string; files: File[] }
@@ -205,7 +206,7 @@ export function DeptTaskTable({ tasks, onChanged, mode, onEdit, onDelete, layout
     return (
       <>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', fontSize: 12.5, color: TEXT.secondary, margin: '8px 0' }}>
-                          <span>Given by <b style={{ color: TEXT.body }}>{t.created_by_name || '—'}</b>{t.created_at ? ` on ${formatDate(t.created_at.slice(0, 10))}` : ''}</span>
+                          <span>Given by <b style={{ color: TEXT.body }}>{t.created_by_name || '—'}</b>{t.created_at ? ` on ${formatDate(t.created_at)}` : ''}</span>
                           <span>Responsible <b style={{ color: TEXT.body }}>{t.assignee_name || '—'}</b>{t.department_name ? ` (${t.department_name})` : ''}</span>
                           {t.project_code && <span>Project <b style={{ color: TEXT.body }}>{t.project_code}</b> {t.project_name}</span>}
                           <span>Expected by <b style={{ color: t.is_overdue ? '#dc2626' : TEXT.body }}>{formatDate(t.due_date)}</b></span>
@@ -358,7 +359,7 @@ export function DeptTaskTable({ tasks, onChanged, mode, onEdit, onDelete, layout
       <ErrorBanner error={error} />
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-          <thead><tr>{cols.map((c, i) => <th key={i} style={{ ...thStyle, ...(i === 0 ? { width: 28, padding: '10px 4px 10px 12px' } : {}) }}>{c}</th>)}</tr></thead>
+          <thead><tr>{cols.map((c, i) => <th key={i} style={{ ...thStyle, ...(i === 0 ? { width: 28, padding: '10px 4px 10px 12px' } : {}) }}>{c}{i === 1 && <RowCount count={tasks.length} />}</th>)}</tr></thead>
           <tbody>
             {tasks.map((t) => {
               const isOpen = expanded.has(t.id)

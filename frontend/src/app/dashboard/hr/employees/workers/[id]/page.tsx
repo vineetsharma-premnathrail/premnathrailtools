@@ -9,7 +9,7 @@ import { HrEmployeeProfile, HrFormRules } from '@/types'
 import { TEXT } from '@/lib/theme'
 import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import HrNav from '@/components/hr/HrNav'
-import EmployeeProfileView from '@/components/hr/employee/EmployeeProfileView'
+import EmployeeProfileView, { EmployeeHeaderSummary } from '@/components/hr/employee/EmployeeProfileView'
 import { extractErrorMessages } from '@/lib/validation'
 import {
   sectionStyle, ErrorBanner, Avatar, StatusPill, EMPLOYMENT_STATUS_LABELS, EMPLOYMENT_STATUS_HEX, WORKER_TYPE_LABELS, WORKER_TYPE_HEX,
@@ -49,7 +49,6 @@ export default function HrWorkerDetailPage() {
 
   const statusKey = emp?.employment_status || ''
   const wt = emp?.worker_type || 'factory'
-  const subtitle = emp ? [emp.designation_name, emp.department_name, emp.branch_name].filter(Boolean).join(' · ') : ''
 
   return (
     <div>
@@ -60,16 +59,14 @@ export default function HrWorkerDetailPage() {
           {emp && <Avatar name={emp.name} url={null} id={emp.profile_id ?? undefined} size={52} />}
           <div style={{ minWidth: 0 }}>
             <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-              HR &amp; Administration · Employee{emp?.employee_code ? ` · ${emp.employee_code}` : ''}
+              HR &amp; Administration · Employee
             </p>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               {emp?.name || (loading ? 'Loading…' : 'Employee')}
               {emp && <StatusPill label={EMPLOYMENT_STATUS_LABELS[statusKey] || statusKey} hex={EMPLOYMENT_STATUS_HEX[statusKey] || '#64748B'} />}
               {emp && <StatusPill label={WORKER_TYPE_LABELS[wt] || wt} hex={WORKER_TYPE_HEX[wt] || '#64748B'} />}
             </h1>
-            <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>
-              {emp ? `${subtitle || 'No department or designation set'} · No portal login${emp.contractor_name ? ` · via ${emp.contractor_name}` : ''}` : ''}
-            </p>
+            {emp && <EmployeeHeaderSummary p={emp} extra={`No portal login${emp.contractor_name ? ` · via ${emp.contractor_name}` : ''}`} />}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>

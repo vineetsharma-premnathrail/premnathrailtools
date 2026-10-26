@@ -63,7 +63,7 @@ export default function TaskActivity({ taskId, subtaskId, onCounts, compact = fa
   if (!data) return error ? <ErrorBanner error={error} /> : <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '6px 0' }}>Loading remarks and files…</p>
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: seeRemarks && seeFiles ? 'repeat(auto-fit, minmax(280px, 1fr))' : '1fr', gap: 16, marginTop: compact ? 4 : 10 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: seeRemarks && seeFiles ? 'repeat(auto-fit, minmax(min(280px, 100%), 1fr))' : '1fr', gap: 16, marginTop: compact ? 4 : 10 }}>
       {seeRemarks && <div style={{ minWidth: 0 }}>
         <p style={heading}>Remarks ({data.remarks.length})</p>
         {data.remarks.length === 0 && <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 8px' }}>No remarks yet.</p>}

@@ -12,6 +12,7 @@ import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
+import { RowCount, Pill } from '@/components/shared/ui'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -75,7 +76,7 @@ export default function WipReportSection() {
 
       <div style={{ overflow: 'auto', maxHeight: 420 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
-          <thead><tr>{['Work Order', 'Product', 'RRV Build', 'Built / Planned', 'Material', 'Labour', 'Received to Stock', 'WIP', 'Status'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Work Order', 'Product', 'RRV Build', 'Built / Planned', 'Material', 'Labour', 'Received to Stock', 'WIP', 'Status'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={report?.rows.length ?? 0} />}</th>)}</tr></thead>
           <tbody>
             {loading ? (
               <tr><td colSpan={9} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
@@ -92,9 +93,7 @@ export default function WipReportSection() {
                 <td style={tdStyle}>{inr(r.cost_relieved)}</td>
                 <td style={{ ...tdStyle, fontWeight: 700, color: TEXT.heading }}>{inr(r.wip_value)}</td>
                 <td style={tdStyle}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[r.status] || '#78716c'}1a`, color: STATUS_HEX[r.status] || '#78716c', whiteSpace: 'nowrap' }}>
-                    {STATUS_LABELS[r.status] || r.status}
-                  </span>
+                  <Pill label={STATUS_LABELS[r.status] || r.status} hex={STATUS_HEX[r.status] || '#78716c'} />
                 </td>
               </tr>
             ))}

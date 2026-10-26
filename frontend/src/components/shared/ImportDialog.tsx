@@ -5,7 +5,7 @@
 // its API's result into `summary` lines + `errors`.
 
 import { useRef, useState } from 'react'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { TEXT, GLASS, BRAND } from '@/lib/theme'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { extractErrorMessages } from '@/lib/validation'
@@ -93,7 +93,7 @@ export default function ImportDialog({ title, intro, templateName, getTemplate, 
               <div style={{ maxHeight: 240, overflow: 'auto', border: `1px solid ${BRAND.primary}22`, borderRadius: 10 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr style={{ background: `${BRAND.primary}0d` }}>
-                    <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, color: TEXT.muted }}>Where</th>
+                    <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, color: TEXT.muted }}>Where <RowCount count={result.errors.length} /></th>
                     <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, color: TEXT.muted }}>Why it was skipped</th>
                   </tr></thead>
                   <tbody>

@@ -6,6 +6,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { TEXT } from '@/lib/theme'
 import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn } from '@/components/shared/FormSheet'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
+import { RowCount } from '@/components/shared/ui'
 
 interface ImportResult {
   created: { row: number; item_code: string; item_name: string; item_type: string; category: string | null }[]
@@ -13,7 +14,7 @@ interface ImportResult {
   errors: { row: number; item_name: string; reason: string }[]
 }
 
-const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0 }
+const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, whiteSpace: 'nowrap' }
 const td: React.CSSProperties = { padding: '8px 10px', fontSize: 12.5, color: TEXT.body, borderTop: '1px solid rgba(0,0,0,0.05)' }
 
 function Block({ title, color, count, children }: { title: string; color: string; count: number; children: React.ReactNode }) {
@@ -116,14 +117,14 @@ export default function ItemImportDialog({ open, onClose, onImported }: { open: 
             </p>
 
             <Block title="New items saved" color="#15803d" count={result.created.length}>
-              <thead><tr><th style={th}>Row</th><th style={th}>Item Code</th><th style={th}>Name</th><th style={th}>Type</th><th style={th}>Category</th></tr></thead>
+              <thead><tr><th style={th}>Row <RowCount count={result.created.length} /></th><th style={th}>Item Code</th><th style={th}>Name</th><th style={th}>Type</th><th style={th}>Category</th></tr></thead>
               <tbody>{result.created.map((r) => (
-                <tr key={r.row}><td style={td}>{r.row}</td><td style={{ ...td, fontWeight: 700 }}>{r.item_code}</td><td style={td}>{r.item_name}</td><td style={td}>{r.item_type}</td><td style={td}>{r.category || '—'}</td></tr>
+                <tr key={r.row}><td style={td}>{r.row}</td><td style={{ ...td, fontWeight: 700 }}>{r.item_code}</td><td style={td}>{r.item_name}</td><td style={td}>{r.item_type ? r.item_type.charAt(0).toUpperCase() + r.item_type.slice(1).replace(/_/g, ' ') : '—'}</td><td style={td}>{r.category || '—'}</td></tr>
               ))}</tbody>
             </Block>
 
             <Block title="Already exist — not saved" color="#b45309" count={result.existing.length}>
-              <thead><tr><th style={th}>Row</th><th style={th}>Name in file</th><th style={th}>Existing Item</th><th style={th}>Why</th></tr></thead>
+              <thead><tr><th style={th}>Row <RowCount count={result.existing.length} /></th><th style={th}>Name in file</th><th style={th}>Existing Item</th><th style={th}>Why</th></tr></thead>
               <tbody>{result.existing.map((r) => (
                 <tr key={r.row}><td style={td}>{r.row}</td><td style={td}>{r.item_name}</td>
                   <td style={td}>{r.existing_code ? <><b>{r.existing_code}</b> {r.existing_name}</> : '—'}</td><td style={td}>{r.reason}</td></tr>
@@ -132,7 +133,7 @@ export default function ItemImportDialog({ open, onClose, onImported }: { open: 
 
             {result.errors.length > 0 && (
               <Block title="Problems — not saved" color="#dc2626" count={result.errors.length}>
-                <thead><tr><th style={th}>Row</th><th style={th}>Name</th><th style={th}>Fix</th></tr></thead>
+                <thead><tr><th style={th}>Row <RowCount count={result.errors.length} /></th><th style={th}>Name</th><th style={th}>Fix</th></tr></thead>
                 <tbody>{result.errors.map((r) => (
                   <tr key={r.row}><td style={td}>{r.row}</td><td style={td}>{r.item_name || '—'}</td><td style={td}>{r.reason}</td></tr>
                 ))}</tbody>

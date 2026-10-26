@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { maintenanceApi } from '@/lib/api'
 import { MaintenanceLookups, MaintenancePmCalendarEntry, MaintenancePmPlan } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, segmentBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
@@ -30,10 +31,6 @@ const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, col
 const glassBox: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(),
-}
-
-function Pill({ hex, label }: { hex: string; label: string }) {
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
 }
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -123,11 +120,7 @@ export default function MaintenanceSchedulePage() {
   if (isLoading || !isAuthorized) return null
 
   const toggleBtn = (key: 'plans' | 'upcoming', label: string) => (
-    <button data-tour={`maint-pm-view-${key}`} type="button" onClick={() => setView(key)} style={{
-      padding: '8px 16px', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, borderRadius: 9,
-      background: view === key ? '#fff' : 'transparent', color: view === key ? '#FF6A2A' : TEXT.secondary,
-      boxShadow: view === key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
-    }}>{label}</button>
+    <button data-tour={`maint-pm-view-${key}`} type="button" onClick={() => setView(key)} style={segmentBtnStyle(view === key)}>{label}</button>
   )
 
   return (
@@ -147,11 +140,7 @@ export default function MaintenanceSchedulePage() {
         {can('maintenance', 'schedule', 'create') && <button
           data-tour="maint-pm-new-btn"
           onClick={() => router.push('/dashboard/maintenance/schedule/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
+          style={primaryBtnStyle}
         >
           + New PM Plan
         </button>}
@@ -202,9 +191,9 @@ export default function MaintenanceSchedulePage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1150 }}>
             <thead>
               <tr>
-                {['Plan', 'Asset', 'Title', 'Type', 'Frequency', 'Next Due', 'Last Done', 'Technician', 'Current Job', 'Status', ''].map((h) => (
+                {['Plan', 'Asset', 'Title', 'Type', 'Frequency', 'Next Due', 'Last Done', 'Technician', 'Current Job', 'Status', ''].map((h, hi) => (
                   <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                    {h}
+                    {h}{hi === 0 && <RowCount count={plans.length} />}
                   </th>
                 ))}
               </tr>

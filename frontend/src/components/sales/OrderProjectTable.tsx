@@ -8,6 +8,7 @@ import { TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import type { OrderProjectCell, OrderProjectDepartment, OrderProjectElement } from '@/types'
 import { thStyle, tdStyle, Pill } from '@/components/sales/SalesUi'
+import { RowCount } from '@/components/shared/ui'
 
 export const OP_STATUS_LABELS: Record<string, string> = {
   active: 'Active', on_hold: 'On hold', delivered: 'Delivered', closed: 'Closed', cancelled: 'Cancelled',
@@ -53,7 +54,7 @@ export default function OrderProjectTable({ elements }: { elements: OrderProject
   // overflow:auto box with a max height, so the sticky header scrolls with the page body.
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1250 }}>
-      <thead><tr>{cols.map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+      <thead><tr>{cols.map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={elements.length} />}</th>)}</tr></thead>
       <tbody>
         {elements.length === 0 ? (
           <tr><td colSpan={cols.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>

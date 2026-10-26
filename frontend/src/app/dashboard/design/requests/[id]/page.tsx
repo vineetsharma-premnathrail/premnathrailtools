@@ -7,12 +7,12 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { designApi } from '@/lib/api'
 import { DesignLookupOption, DesignRequestDetail } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, primaryBtnStyle, smallSecondaryBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { PRIORITY_LABELS, REQUEST_SOURCE_LABELS, REQUEST_STATUS_LABELS, toOptions } from '@/components/design/designMeta'
 import { useDesignFeature } from '@/components/design/useDesignFeature'
 import { useDesignMe } from '@/components/design/useDesignMe'
@@ -67,7 +67,7 @@ const hintStyle: React.CSSProperties = { fontSize: 12, color: TEXT.muted, margin
 
 function badge(label: string, hex: string) {
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
+    <Pill label={label} hex={hex} />
   )
 }
 
@@ -276,20 +276,11 @@ export default function DesignRequestDetailPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            {req ? `Design Request · ${REQUEST_SOURCE_LABELS[req.source] || req.source}` : 'Design Request'}
+            Design · Design Request
           </p>
-          <h1 data-tour="design-req-header" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {req ? <>{req.request_number} <span style={{ fontWeight: 500, color: TEXT.secondary }}>— {req.title}</span> {badge(REQUEST_STATUS_LABELS[req.status] || req.status, STATUS_HEX[req.status] || '#78716c')}</> : 'Request'}
+          <h1 data-tour="design-req-header" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>
+            {req ? req.request_number : 'Request'}
           </h1>
-          {req && (
-            <p data-tour="design-req-subline" style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              {badge(PRIORITY_LABELS[req.priority] || req.priority, PRIORITY_HEX[req.priority] || '#78716c')}
-              <span style={{ color: req.is_overdue ? '#DC2626' : TEXT.muted, fontWeight: req.is_overdue ? 700 : 400 }}>
-                Due {req.due_date ? formatDate(req.due_date) : '—'}{req.is_overdue ? ' · overdue' : ''}
-              </span>
-              {active && <span>· Waiting on <strong style={{ color: req.waiting_on === 'design' ? '#2563EB' : '#b45309' }}>{req.waiting_on === 'design' ? 'Design' : (req.requested_by_name || 'the requester')}</strong>{req.waiting_note ? ` — ${req.waiting_note}` : ''}</span>}
-            </p>
-          )}
         </div>
         <button data-tour="design-req-back-btn" onClick={() => router.push('/dashboard/design/project-work')} type="button" style={secondaryBtnStyle}>← Back</button>
       </div>
@@ -307,6 +298,43 @@ export default function DesignRequestDetailPage() {
 
       {req && (
         <>
+          {/* What was asked, by whom, and where it stands: summary on top, then the request's details. */}
+          <DetailCard tour="design-req-details">
+            <DetailSummary
+              title={req.title}
+              meta={<span data-tour="design-req-subline" style={{ display: 'contents' }}>
+                {badge(REQUEST_STATUS_LABELS[req.status] || req.status, STATUS_HEX[req.status] || '#78716c')}
+                {badge(PRIORITY_LABELS[req.priority] || req.priority, PRIORITY_HEX[req.priority] || '#78716c')}
+                <span style={{ color: req.is_overdue ? '#DC2626' : undefined, fontWeight: req.is_overdue ? 700 : 400 }}>
+                  · Due {req.due_date ? formatDate(req.due_date) : 'not set'}{req.is_overdue ? ' · overdue' : ''}
+                </span>
+                {active && <span>· Waiting on <strong style={{ color: req.waiting_on === 'design' ? '#2563EB' : '#b45309' }}>{req.waiting_on === 'design' ? 'Design' : (req.requested_by_name || 'the requester')}</strong>{req.waiting_note ? ` — ${req.waiting_note}` : ''}</span>}
+                <span>· Lead designer <strong style={{ color: TEXT.heading }}>{req.lead_designer_name || 'not assigned'}</strong></span>
+              </span>}
+              actions={can('edit') ? (
+                <button type="button" data-tour="design-req-edit-btn" style={smallSecondaryBtnStyle} onClick={startEdit}>Edit details</button>
+              ) : undefined}
+            />
+            <DetailGroup title="Request">
+              <DetailRow label="Source">{REQUEST_SOURCE_LABELS[req.source] || req.source}</DetailRow>
+              {req.crm_reference && <DetailRow label="CRM reference">{req.crm_reference}</DetailRow>}
+              <DetailRow label="Raised by">{`${req.requested_by_name || '—'} · ${formatDate(req.created_at)}`}</DetailRow>
+              {req.closed_at && <DetailRow label={req.status === 'cancelled' ? 'Cancelled' : 'Completed'}>{formatDateTime(req.closed_at)}</DetailRow>}
+            </DetailGroup>
+            <DetailGroup title="Linked to" last>
+              {req.order_project_number && (
+                <DetailRow label="Order project">
+                  <OrderProjectChip opNumber={req.order_project_number} elementNo={req.order_project_element_no} label={req.order_project_element_label}
+                    onClick={() => router.push(recordPath('/dashboard/projects/order-projects', req, 'order_project_id'))} />
+                </DetailRow>
+              )}
+              <DetailRow label="Customer">{req.customer_name}</DetailRow>
+              <DetailRow label="Project">{req.pm_project_label}</DetailRow>
+              <DetailRow label="WBS">{req.pm_milestone_label}</DetailRow>
+              {req.erp_project_label && <DetailRow label="Machine">{req.erp_project_label}</DetailRow>}
+            </DetailGroup>
+          </DetailCard>
+
           {req.changed_since_review && (
             <div style={{ padding: '12px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.25)', color: '#991b1b', fontSize: 13, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ flex: '1 1 320px' }}>
@@ -503,7 +531,7 @@ export default function DesignRequestDetailPage() {
                 ) : (
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
-                      <thead><tr>{['Type', 'Number', 'Title', 'Released rev', 'Status'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                      <thead><tr>{['Type', 'Number', 'Title', 'Released rev', 'Status'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={req.deliverables.length} />}</th>)}</tr></thead>
                       <tbody>
                         {req.deliverables.map((d) => (
                           <tr key={`${d.kind}-${d.id}`} onClick={() => router.push(d.kind === 'bom' ? recordPath('/dashboard/design/boms', d) : recordPath('/dashboard/design/documents', d))} style={{ cursor: 'pointer' }}>
@@ -523,33 +551,6 @@ export default function DesignRequestDetailPage() {
 
             {/* Right: details + timeline */}
             <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-              <div data-tour="design-req-details" style={sectionStyle}>
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
-                  <p style={{ ...sectionTitle, margin: 0, flex: 1 }}>Details</p>
-                  {can('edit') && (
-                    <button type="button" data-tour="design-req-edit-btn" style={{ ...smallSecondaryBtnStyle }} onClick={startEdit}>Edit</button>
-                  )}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <InfoRow label="Source" value={REQUEST_SOURCE_LABELS[req.source] || req.source} />
-                    {req.crm_reference && <InfoRow label="CRM reference" value={req.crm_reference} />}
-                    {req.order_project_number && (
-                      <div>
-                        <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Order project</p>
-                        <OrderProjectChip opNumber={req.order_project_number} elementNo={req.order_project_element_no} label={req.order_project_element_label}
-                          onClick={() => router.push(recordPath('/dashboard/projects/order-projects', req, 'order_project_id'))} />
-                      </div>
-                    )}
-                    <InfoRow label="Customer" value={req.customer_name || '—'} />
-                    <InfoRow label="Project" value={req.pm_project_label || '—'} />
-                    <InfoRow label="WBS" value={req.pm_milestone_label || '—'} />
-                    {req.erp_project_label && <InfoRow label="Machine" value={req.erp_project_label} />}
-                    <InfoRow label="Lead designer" value={req.lead_designer_name || 'Not assigned'} />
-                    <InfoRow label="Raised by" value={`${req.requested_by_name || '—'} · ${formatDate(req.created_at)}`} />
-                    {req.closed_at && <InfoRow label={req.status === 'cancelled' ? 'Cancelled' : 'Completed'} value={formatDateTime(req.closed_at)} />}
-                </div>
-              </div>
-
               {seeTimeline && (<div data-tour="design-req-timeline" style={sectionStyle}>
                 <p style={sectionTitle}>Timeline</p>
                 {can('comment') && (
@@ -565,7 +566,7 @@ export default function DesignRequestDetailPage() {
                       : e.action === 'bom_created' && e.bom_id ? recordPath('/dashboard/design/boms', e, 'bom_id') : null
                     return (
                       <div key={e.id} style={{ display: 'flex', gap: 10, padding: '8px 0', borderTop: `1px solid ${BORDER.light}` }}>
-                        <span style={{ width: 8, height: 8, borderRadius: 9999, marginTop: 6, flex: 'none', background: EVENT_HEX[e.action] || '#a8a29e' }} />
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 6, flex: 'none', background: EVENT_HEX[e.action] || '#a8a29e' }} />
                         <div style={{ minWidth: 0 }}>
                           <p style={{ fontSize: 12.5, color: TEXT.body, margin: 0 }}>
                             <strong>{e.actor_name || 'System'}</strong> {EVENT_LABELS[e.action] || e.action.replace(/_/g, ' ')}

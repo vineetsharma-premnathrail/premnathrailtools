@@ -7,7 +7,7 @@ import { storeApi } from '@/lib/api'
 import { StoreStockTransfer } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { formatDate, formatDateTime } from '@/lib/format'
-import { Row, InfoRow, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, RowCount, Pill, TableScroll, thStyle, tdStyle, numThStyle, numTdStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRecordId } from '@/lib/recordRef'
@@ -126,10 +126,7 @@ export default function StoreStockTransferDetailPage() {
               <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
                 Store &amp; Inventory · Stock Transfer
               </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{transfer.transfer_number}</h1>
-                <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999, color: '#fff', background: TRANSFER_STATUS_HEX[status] || '#78716c' }}>{transfer.status_label || status}</span>
-              </div>
+              <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{transfer.transfer_number}</h1>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {transfer.can_dispatch && <button data-tour="transfer-dispatch-btn" onClick={() => { setActionError(''); setDispatchOpen(true) }} disabled={!!busy} style={primaryBtnStyle}>Dispatch</button>}
@@ -159,50 +156,56 @@ export default function StoreStockTransferDetailPage() {
             </div>
           )}
 
-          <div data-tour="transfer-detail-summary" style={card}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <Row>
-                <InfoRow label="From Store" value={transfer.from_location_name || '—'} />
-                <InfoRow label="To Store" value={transfer.to_location_name || '—'} />
-                <InfoRow label="Transfer Date" value={formatDate(transfer.transfer_date)} />
-              </Row>
-              <Row>
-                <InfoRow label="Reason" value={transfer.reason || '—'} />
-                <InfoRow label="Raised By" value={transfer.transferred_by_name || '—'} />
-                <InfoRow label="Approved By" value={transfer.approved_by_name && status !== 'rejected' ? `${transfer.approved_by_name}, ${formatDateTime(transfer.decided_at)}` : '—'} />
-              </Row>
-              {(transfer.dispatched_at || status === 'in_transit' || status === 'received') && (
-                <Row>
-                  <InfoRow label="Dispatched" value={transfer.dispatched_at ? `${transfer.dispatched_by_name || '—'}, ${formatDateTime(transfer.dispatched_at)}` : '—'} />
-                  <InfoRow label="Vehicle / Transporter" value={[transfer.vehicle_number, transfer.transporter_name].filter(Boolean).join(' · ') || '—'} />
-                  <InfoRow label="Driver / E-way Bill" value={[transfer.driver_name, transfer.driver_phone, transfer.eway_bill_number && `EWB ${transfer.eway_bill_number}`].filter(Boolean).join(' · ') || '—'} />
-                </Row>
-              )}
-              {(() => {
-                // GST between plants (backend store/services/transfer_gst.py).
-                const g = transfer as typeof transfer & { document_type?: string | null; inter_state?: boolean; tax_invoice_number?: string | null;
-                  from_gstin?: string | null; to_gstin?: string | null; taxable_value?: number | null; cgst_amount?: number | null; sgst_amount?: number | null; igst_amount?: number | null }
-                if (!g.document_type) return null
-                const inr = (n?: number | null) => `₹${(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                return (
-                  <Row>
-                    <InfoRow label="GST document" value={g.document_type === 'tax_invoice' ? `Tax invoice ${g.tax_invoice_number || ''}${g.inter_state ? ' (inter-state)' : ''}` : 'Delivery challan (same GSTIN)'} />
-                    <InfoRow label="GSTIN from → to" value={`${g.from_gstin || '—'} → ${g.to_gstin || '—'}`} />
-                    {g.document_type === 'tax_invoice' && (
-                      <InfoRow label="Taxable / GST" value={`${inr(g.taxable_value)} + ${g.inter_state ? `IGST ${inr(g.igst_amount)}` : `CGST ${inr(g.cgst_amount)} + SGST ${inr(g.sgst_amount)}`}`} />
-                    )}
-                  </Row>
-                )
-              })()}
-              {transfer.received_at && (
-                <Row>
-                  <InfoRow label="Received" value={`${transfer.received_by_name || '—'}, ${formatDateTime(transfer.received_at)}`} />
-                  <InfoRow label="Receipt Remarks" value={transfer.receipt_remarks || '—'} />
-                </Row>
-              )}
-              <InfoRow label="Remarks" value={transfer.remarks || '—'} />
-            </div>
-          </div>
+          {/* One record view: what moves where, then every fact as label–value rows. */}
+          <DetailCard tour="transfer-detail-summary">
+            <DetailSummary
+              title={transfer.transfer_number}
+              text={`Moves ${transfer.items.length} item line${transfer.items.length === 1 ? '' : 's'} from ${transfer.from_location_name || '—'} to ${transfer.to_location_name || '—'}${transfer.reason ? ` — ${transfer.reason}` : ''}.`}
+              meta={<>
+                <Pill label={transfer.status_label || status} hex={TRANSFER_STATUS_HEX[status] || '#78716c'} />
+                <span>· {formatDate(transfer.transfer_date)}</span>
+                {transfer.transferred_by_name && <span>· Raised by <strong style={{ color: TEXT.heading }}>{transfer.transferred_by_name}</strong></span>}
+              </>}
+            />
+            <DetailGroup title="Transfer">
+              <DetailRow label="From Store">{transfer.from_location_name}</DetailRow>
+              <DetailRow label="To Store">{transfer.to_location_name}</DetailRow>
+              <DetailRow label="Reason">{transfer.reason}</DetailRow>
+              <DetailRow label="Approved By">{transfer.approved_by_name && status !== 'rejected' ? `${transfer.approved_by_name}, ${formatDateTime(transfer.decided_at)}` : null}</DetailRow>
+            </DetailGroup>
+            {(transfer.dispatched_at || status === 'in_transit' || status === 'received') && (
+              <DetailGroup title="Dispatch">
+                <DetailRow label="Dispatched">{transfer.dispatched_at ? `${transfer.dispatched_by_name || '—'}, ${formatDateTime(transfer.dispatched_at)}` : null}</DetailRow>
+                <DetailRow label="Vehicle / Transporter">{[transfer.vehicle_number, transfer.transporter_name].filter(Boolean).join(' · ') || null}</DetailRow>
+                <DetailRow label="Driver / E-way Bill">{[transfer.driver_name, transfer.driver_phone, transfer.eway_bill_number && `EWB ${transfer.eway_bill_number}`].filter(Boolean).join(' · ') || null}</DetailRow>
+              </DetailGroup>
+            )}
+            {(() => {
+              // GST between plants (backend store/services/transfer_gst.py).
+              const g = transfer as typeof transfer & { document_type?: string | null; inter_state?: boolean; tax_invoice_number?: string | null;
+                from_gstin?: string | null; to_gstin?: string | null; taxable_value?: number | null; cgst_amount?: number | null; sgst_amount?: number | null; igst_amount?: number | null }
+              if (!g.document_type) return null
+              const inr = (n?: number | null) => `₹${(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              return (
+                <DetailGroup title="GST">
+                  <DetailRow label="GST document">{g.document_type === 'tax_invoice' ? `Tax invoice ${g.tax_invoice_number || ''}${g.inter_state ? ' (inter-state)' : ''}` : 'Delivery challan (same GSTIN)'}</DetailRow>
+                  <DetailRow label="GSTIN from → to">{`${g.from_gstin || '—'} → ${g.to_gstin || '—'}`}</DetailRow>
+                  {g.document_type === 'tax_invoice' && (
+                    <DetailRow label="Taxable / GST">{`${inr(g.taxable_value)} + ${g.inter_state ? `IGST ${inr(g.igst_amount)}` : `CGST ${inr(g.cgst_amount)} + SGST ${inr(g.sgst_amount)}`}`}</DetailRow>
+                  )}
+                </DetailGroup>
+              )
+            })()}
+            {transfer.received_at && (
+              <DetailGroup title="Receipt">
+                <DetailRow label="Received">{`${transfer.received_by_name || '—'}, ${formatDateTime(transfer.received_at)}`}</DetailRow>
+                <DetailRow label="Receipt Remarks">{transfer.receipt_remarks}</DetailRow>
+              </DetailGroup>
+            )}
+            <DetailGroup last>
+              <DetailRow label="Remarks">{transfer.remarks}</DetailRow>
+            </DetailGroup>
+          </DetailCard>
 
           {status === 'pending_approval' || (closed && status !== 'cancelled') ? (
             <div style={{ marginBottom: 20 }}>
@@ -211,26 +214,29 @@ export default function StoreStockTransferDetailPage() {
           ) : null}
 
           <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 10px' }}>Items</p>
-          <div data-tour="transfer-detail-items" style={{ ...card, padding: 0, overflow: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
-              <thead>
-                <tr>
-                  {['Item', 'Quantity', 'Batch', 'Remarks'].map((h) => (
-                    <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {transfer.items.map((line) => (
-                  <tr key={line.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{line.item_code} — {line.item_name}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{line.quantity} {line.uom}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{line.batch_number || '—'}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{line.remarks || '—'}</td>
+          <div data-tour="transfer-detail-items" style={{ marginBottom: 20 }}>
+            <TableScroll maxHeight="none" minWidth={520}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Item <RowCount count={transfer.items.length} /></th>
+                    <th style={numThStyle}>Quantity</th>
+                    <th style={thStyle}>Batch</th>
+                    <th style={thStyle}>Remarks</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {transfer.items.map((line) => (
+                    <tr key={line.id}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{line.item_code} — {line.item_name}</td>
+                      <td style={numTdStyle}>{line.quantity.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {line.uom}</td>
+                      <td style={tdStyle}>{line.batch_number || '—'}</td>
+                      <td style={tdStyle}>{line.remarks || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableScroll>
           </div>
 
           {/* Stock Transfer Note — Word primary, PDF secondary */}

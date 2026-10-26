@@ -10,7 +10,7 @@ import type { HrAsset, HrBranchLookup, DirectoryUser } from '@/types'
 import HrNav from '@/components/hr/HrNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, RowCount, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import {
   AssetFormDialog, IssueAssetDialog, ReturnAssetDialog, ASSET_CATEGORY_LABELS, ASSET_CONDITION_LABELS,
 } from '@/components/hr/admin/AssetDialogs'
@@ -129,8 +129,7 @@ export default function HrAssetDetailPage() {
       <HrNav />
 
       <PageHeader
-        title={asset ? `${asset.asset_code} — ${asset.name}` : 'Asset'}
-        subtitle={asset ? [ASSET_CATEGORY_LABELS[asset.category] || asset.category, asset.make, asset.model].filter(Boolean).join(' · ') : undefined}
+        title={asset ? `Asset ${asset.asset_code}` : 'Asset'}
         actions={<button data-tour="hr-asset-back-btn" onClick={() => router.push('/dashboard/hr/assets')} type="button" style={secondaryBtnStyle}>← Back</button>}
       />
 
@@ -141,67 +140,65 @@ export default function HrAssetDetailPage() {
         <div style={sectionStyle}><p style={{ margin: 0, fontSize: 13, color: TEXT.muted }}>Loading…</p></div>
       ) : asset ? (
         <>
-          <div data-tour="hr-asset-status-bar" style={{ ...sectionStyle, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <Pill hex={STATUS_HEX[asset.status] || '#64748B'} label={STATUS_LABELS[asset.status] || asset.status} />
-            <span style={{ fontSize: 13.5, color: TEXT.body, flex: '1 1 260px' }}>
-              {asset.status === 'issued'
-                ? <>With <b>{asset.current_holder_name}</b> since {fmtDate(asset.issued_on)}{asset.expected_return_on ? `, due back ${fmtDate(asset.expected_return_on)}` : ''}.</>
-                : asset.status === 'in_stock' ? 'Available to issue.' : `Not available to issue while ${STATUS_LABELS[asset.status]?.toLowerCase()}.`}
-            </span>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {canEdit && asset.status === 'in_stock' && <button type="button" data-tour="hr-asset-issue-btn" style={primaryActionStyle} onClick={() => setIssueOpen(true)}>Issue to employee</button>}
-              {canEdit && asset.status === 'issued' && <button type="button" data-tour="hr-asset-return-btn" style={primaryActionStyle} onClick={() => setReturnOpen(true)}>Record return</button>}
-              {canEdit && statusActions.map((s) => (
-                <button key={s.status + s.label} type="button" data-tour="hr-asset-status-action" style={s.danger ? dangerBtnStyle : secondaryBtnStyle} onClick={() => setStatusAction(s)} disabled={busy}>{s.label}</button>
-              ))}
-              {canEdit && <button type="button" data-tour="hr-asset-edit-btn" style={secondaryBtnStyle} onClick={() => setEditOpen(true)}>Edit</button>}
-              {asset.status !== 'issued' && canDelete('hr', 'assets', asset.created_by_id ?? null) && <button type="button" data-tour="hr-asset-delete-btn" style={dangerBtnStyle} onClick={() => setDeleteOpen(true)}>Delete</button>}
+          {/* One record card: what the asset is and where it is now, then its details. */}
+          <DetailCard>
+            <div data-tour="hr-asset-status-bar">
+              <DetailSummary
+                title={asset.name}
+                text={asset.status === 'issued'
+                  ? <>With <b>{asset.current_holder_name}</b> since {fmtDate(asset.issued_on)}{asset.expected_return_on ? `, due back ${fmtDate(asset.expected_return_on)}` : ''}.</>
+                  : asset.status === 'in_stock' ? 'In stock and available to issue.' : `Not available to issue while ${STATUS_LABELS[asset.status]?.toLowerCase()}.`}
+                meta={<>
+                  <Pill hex={STATUS_HEX[asset.status] || '#64748B'} label={STATUS_LABELS[asset.status] || asset.status} />
+                  {[ASSET_CATEGORY_LABELS[asset.category] || asset.category, [asset.make, asset.model].filter(Boolean).join(' '), asset.branch_name].filter(Boolean).map((x) => (
+                    <span key={x}>· {x}</span>
+                  ))}
+                </>}
+                actions={<>
+                  {canEdit && asset.status === 'in_stock' && <button type="button" data-tour="hr-asset-issue-btn" style={primaryActionStyle} onClick={() => setIssueOpen(true)}>Issue to employee</button>}
+                  {canEdit && asset.status === 'issued' && <button type="button" data-tour="hr-asset-return-btn" style={primaryActionStyle} onClick={() => setReturnOpen(true)}>Record return</button>}
+                  {canEdit && statusActions.map((s) => (
+                    <button key={s.status + s.label} type="button" data-tour="hr-asset-status-action" style={s.danger ? dangerBtnStyle : secondaryBtnStyle} onClick={() => setStatusAction(s)} disabled={busy}>{s.label}</button>
+                  ))}
+                  {canEdit && <button type="button" data-tour="hr-asset-edit-btn" style={secondaryBtnStyle} onClick={() => setEditOpen(true)}>Edit</button>}
+                  {asset.status !== 'issued' && canDelete('hr', 'assets', asset.created_by_id ?? null) && <button type="button" data-tour="hr-asset-delete-btn" style={dangerBtnStyle} onClick={() => setDeleteOpen(true)}>Delete</button>}
+                </>}
+              />
             </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-            <div style={{ flex: '1 1 380px', display: 'flex', flexDirection: 'column' }}>
-              <div data-tour="hr-asset-details" style={sectionStyle}>
-                <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }}>Details</p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14 }}>
-                  <InfoRow label="Asset code" value={asset.asset_code} />
-                  <InfoRow label="Category" value={ASSET_CATEGORY_LABELS[asset.category] || asset.category} />
-                  <InfoRow label="Serial / IMEI" value={asset.serial_number || '—'} />
-                  <InfoRow label="Condition" value={asset.condition ? ASSET_CONDITION_LABELS[asset.condition] || asset.condition : '—'} />
-                  <InfoRow label="Plant" value={asset.branch_name || '—'} />
-                  <InfoRow label="Added by" value={asset.created_by_name || '—'} />
-                </div>
-              </div>
+            <div data-tour="hr-asset-details">
+              <DetailGroup title="Details">
+                <DetailRow label="Serial / IMEI">{asset.serial_number}</DetailRow>
+                <DetailRow label="Condition">{asset.condition ? ASSET_CONDITION_LABELS[asset.condition] || asset.condition : null}</DetailRow>
+                <DetailRow label="Plant">{asset.branch_name}</DetailRow>
+                <DetailRow label="Added by">{asset.created_by_name}</DetailRow>
+              </DetailGroup>
             </div>
-            <div style={{ flex: '1 1 320px', display: 'flex', flexDirection: 'column' }}>
-              <div data-tour="hr-asset-purchase" style={sectionStyle}>
-                <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }}>Purchase</p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 14 }}>
-                  <InfoRow label="Purchase date" value={fmtDate(asset.purchase_date)} />
-                  <InfoRow label="Cost" value={fmtINR(asset.purchase_cost)} />
-                  <InfoRow label="Vendor" value={asset.vendor_name || '—'} />
-                  <InfoRow label="Invoice no." value={asset.invoice_no || '—'} />
-                  <InfoRow label="Warranty until" value={fmtDate(asset.warranty_until)} />
-                </div>
-              </div>
+            <div data-tour="hr-asset-purchase">
+              <DetailGroup title="Purchase" last={!asset.remarks}>
+                <DetailRow label="Purchase date">{asset.purchase_date ? fmtDate(asset.purchase_date) : null}</DetailRow>
+                <DetailRow label="Cost">{asset.purchase_cost != null ? fmtINR(asset.purchase_cost) : null}</DetailRow>
+                <DetailRow label="Vendor">{asset.vendor_name}</DetailRow>
+                <DetailRow label="Invoice no.">{asset.invoice_no}</DetailRow>
+                <DetailRow label="Warranty until">{asset.warranty_until ? fmtDate(asset.warranty_until) : null}</DetailRow>
+              </DetailGroup>
             </div>
-          </div>
-
-          {asset.remarks && (
-            <div style={sectionStyle}>
-              <InfoRow label="Remarks" value={asset.remarks} />
-            </div>
-          )}
+            {asset.remarks && (
+              <DetailGroup last>
+                <DetailRow label="Remarks">{asset.remarks}</DetailRow>
+              </DetailGroup>
+            )}
+            <p style={{ fontSize: 12, color: TEXT.muted, margin: '10px 0 0' }}>Last updated {fmtDateTime(asset.updated_at)}</p>
+          </DetailCard>
 
           <div data-tour="hr-asset-history" style={{ ...sectionStyle, padding: 0, overflow: 'auto' }}>
             <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: 0, padding: '18px 20px 12px' }}>Assignment history</p>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
               <thead>
-                <tr>{['Employee', 'Issued', 'Issued by', 'Expected back', 'Returned', 'Received by', 'Condition (out → in)', 'Remarks'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                <tr>{['Employee', 'Issued', 'Issued by', 'Expected back', 'Returned', 'Received by', 'Condition (out → in)', 'Remarks'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={asset.assignments?.length ?? 0} />}</th>)}</tr>
               </thead>
               <tbody>
                 {!asset.assignments?.length ? (
-                  <EmptyRow colSpan={8} text="Never issued." />
+                  <EmptyRow colSpan={8} text="Never issued yet — use Issue to employee above." />
                 ) : asset.assignments.map((r) => (
                   <tr key={r.id}>
                     <td style={{ ...tdStyle, fontWeight: 600 }}>{r.user_name || `User #${r.user_id}`}</td>
@@ -221,7 +218,6 @@ export default function HrAssetDetailPage() {
               </tbody>
             </table>
           </div>
-          <p style={{ fontSize: 12, color: TEXT.muted, margin: '-8px 0 0' }}>Last updated {fmtDateTime(asset.updated_at)}</p>
         </>
       ) : null}
 

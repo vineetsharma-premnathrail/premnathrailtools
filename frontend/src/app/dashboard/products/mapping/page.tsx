@@ -13,7 +13,7 @@ import { productMappingApi, MappingGroup } from '@/lib/sdServiceApi'
 import { extractErrorMessages } from '@/lib/validation'
 import ProductsNav from '@/components/products/ProductsNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
-import { Section, secondaryBtnStyle } from '@/components/shared/ui'
+import { Section, secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { ErrorBanner, PageHeader, tableWrapStyle, tdStyle, thStyle } from '@/components/products/ProductBits'
 import { TEXT } from '@/lib/theme'
 
@@ -85,7 +85,7 @@ export default function ProductMappingPage() {
         <Section key={k} title={`${sources[k] || k} — ${data[k].length} unmapped`} style={{ marginBottom: 16 }}>
           <div style={{ ...tableWrapStyle, maxHeight: 420 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-              <thead><tr>{['Text as typed', 'Model', 'Rows', 'Map to product'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Text as typed', 'Model', 'Rows', 'Map to product'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={data[k].length} />}</th>)}</tr></thead>
               <tbody>
                 {data[k].map((g, i) => (
                   <tr key={`${k}-${i}`}>

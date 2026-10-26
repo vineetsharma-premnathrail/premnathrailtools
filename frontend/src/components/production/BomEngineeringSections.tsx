@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { productionEngineeringApi } from '@/lib/productionEngineeringApi'
 import { ProductionBom, ProductionDisciplineSource, ProductionExplosion } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER, DANGER } from '@/lib/theme'
-import { secondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallDangerBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
@@ -77,7 +77,7 @@ export function ExplosionSection({ bom, showCosts = true }: { bom: ProductionBom
               </p>
               <div style={{ overflow: 'auto', maxHeight: 520 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
-                  <thead><tr>{['Level', 'Item', 'Category', 'Qty / parent', 'Total qty', 'UOM', 'Make / Buy', 'Sub-BOM', ...(showCosts ? ['Ext. cost'] : [])].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Level', 'Item', 'Category', 'Qty / parent', 'Total qty', 'UOM', 'Make / Buy', 'Sub-BOM', ...(showCosts ? ['Ext. cost'] : [])].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={data.rows.length} />}</th>)}</tr></thead>
                   <tbody>
                     {data.rows.length === 0 ? (
                       <tr><td colSpan={9} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No components.</td></tr>
@@ -90,9 +90,7 @@ export function ExplosionSection({ bom, showCosts = true }: { bom: ProductionBom
                           {r.source_tag && <span style={{ color: TEXT.muted, fontSize: 11, marginLeft: 6 }}>{r.source_tag}</span>}
                         </td>
                         <td style={tdStyle}>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${CATEGORY_HEX[r.item_category]}1a`, color: CATEGORY_HEX[r.item_category] }}>
-                            {CATEGORY_LABELS[r.item_category] || r.item_category}
-                          </span>
+                          <Pill label={CATEGORY_LABELS[r.item_category] || r.item_category} hex={CATEGORY_HEX[r.item_category]} />
                         </td>
                         <td style={tdStyle}>{r.item_category === 'text' ? '—' : r.quantity_per}</td>
                         <td style={tdStyle}>{r.item_category === 'text' || r.item_category === 'document' ? '—' : r.total_quantity}</td>
@@ -179,7 +177,7 @@ export function DisciplineMergeSection({ bom, canEdit, canRemove = canEdit, onCh
       {merges.length > 0 && (
         <div style={{ overflowX: 'auto', marginBottom: 12 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
-            <thead><tr>{['Source', 'Items', 'Merged', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Source', 'Items', 'Merged', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={merges.length} />}</th>)}</tr></thead>
             <tbody>
               {merges.map((m) => (
                 <tr key={m.id}>

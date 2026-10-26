@@ -12,6 +12,7 @@ import {
   Pill, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtQty, fmtDate,
   INSPECTION_TYPE_LABELS, LOT_STATUS_LABELS, LOT_STATUS_HEX, DECISION_LABELS,
 } from '@/components/quality/QualityBits'
+import { RowCount } from '@/components/shared/ui'
 
 /** Inspection lot table — the Inspection Lots register (all lots, filters)
  *  and My Inspections (`mine`: open lots assigned to me or unassigned). */
@@ -67,7 +68,7 @@ export default function LotList({ mine = false, initialType = '' }: { mine?: boo
       </div>
       <div style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-          <thead><tr>{cols.map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{cols.map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={lots.length} />}</th>)}</tr></thead>
           <tbody>
             {loading ? (
               <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>

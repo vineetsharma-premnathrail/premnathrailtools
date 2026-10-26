@@ -23,6 +23,7 @@ import {
   thStyle, tdStyle, numTd, numTh, inr, dmy, todayIso, Field, ErrorBanner, InfoBanner, StatusPill, TableWrap, EmptyRow, StatCard,
   ApprovalBadge, ledgerOptions,
 } from '@/components/finance/financeUi'
+import { RowCount, DetailGroup, DetailRow } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Draft', submitted: 'Awaiting approval', approved: 'Approved — apply to bank', active: 'Active', released: 'Released', invoked: 'Invoked', cancelled: 'Cancelled',
@@ -82,8 +83,8 @@ export default function GuaranteesTab({ initialId }: { initialId?: number | null
       </InfoBanner>
       <ErrorBanner error={error} />
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 16 }}>
-        <StatCard label="Issued & Active" value={inr(issuedTotal)} />
-        <StatCard label="Margin / Deposits Blocked" value={inr(margin)} />
+        <StatCard label="Issued & Active" value={`₹ ${inr(issuedTotal)}`} />
+        <StatCard label="Margin / Deposits Blocked" value={`₹ ${inr(margin)}`} />
         <StatCard label="Expiring ≤ 30 Days" value={String(expiring)} tone={expiring ? '#d97706' : undefined} />
       </div>
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12 }}>
@@ -102,7 +103,7 @@ export default function GuaranteesTab({ initialId }: { initialId?: number | null
       <TableWrap minWidth={1180}>
         <thead>
           <tr>
-            <th style={thStyle}>BG No.</th><th style={thStyle}>Type</th><th style={thStyle}>Beneficiary / Applicant</th><th style={thStyle}>Linked To</th>
+            <th style={thStyle}>BG No. <RowCount count={rows.length} /></th><th style={thStyle}>Type</th><th style={thStyle}>Beneficiary / Applicant</th><th style={thStyle}>Linked To</th>
             <th style={thStyle}>Bank / Instrument No.</th><th style={numTh}>Amount (₹)</th><th style={thStyle}>Expiry</th><th style={thStyle}>Claim Until</th>
             <th style={thStyle}>Margin</th><th style={thStyle}>Status</th><th style={thStyle}></th>
           </tr>
@@ -332,36 +333,48 @@ function Detail({ id, onClose, onChanged }: { id: number; onClose: () => void; o
                 onClick={() => (b.a === 'submit' ? submit() : setAction(b.a as Action))}>{b.label}</button>
             ))}
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, fontSize: 12.5, marginBottom: 14 }}>
-            <Info label={issued ? 'Beneficiary' : 'Applicant'} value={bg.customer_name || bg.vendor_name || bg.counterparty_name} sub={bg.customer_name || bg.vendor_name ? bg.counterparty_name : null} />
-            <Info label="Amount" value={inr(bg.amount)} />
-            <Info label="Bank" value={bg.bank_account_label || bg.issuing_bank_name} sub={bg.instrument_number} />
-            <Info label="Issued" value={dmy(bg.issue_date)} />
-            <Info label="Expiry" value={dmy(bg.expiry_date)} sub={bg.claim_expiry_date ? `Claims until ${dmy(bg.claim_expiry_date)}` : null} />
-            <Info label={bg.instrument_form === 'deposit' ? 'Deposit' : 'Margin'} value={bg.margin_amount ? `${inr(bg.margin_amount)}${bg.margin_percent != null && bg.instrument_form !== 'deposit' ? ` (${bg.margin_percent}%)` : ''}` : '—'} sub={MARGIN_LABELS[bg.margin_status]} />
-            {bg.commission_total > 0 && <Info label="Commission Paid" value={inr(bg.commission_total)} />}
-            <Info label="Linked To" value={[bg.sales_order_number, bg.tender_label, bg.purchase_order_number].filter(Boolean).join(' · ') || '—'} />
-            {bg.purpose && <Info label="Purpose" value={bg.purpose} />}
-            {bg.closure_reason && <Info label={bg.status === 'invoked' ? `Invoked (${inr(bg.invoked_amount)})` : 'Closure'} value={bg.closure_reason} sub={dmy(bg.closed_on)} />}
+          <div style={{ marginBottom: 14 }}>
+            <DetailGroup title="Party & bank">
+              <DetailRow label={issued ? 'Beneficiary' : 'Applicant'}>{bg.customer_name || bg.vendor_name || bg.counterparty_name || null}</DetailRow>
+              {(bg.customer_name || bg.vendor_name) && bg.counterparty_name && <DetailRow label="Name on the instrument">{bg.counterparty_name}</DetailRow>}
+              <DetailRow label="Bank">{bg.bank_account_label || bg.issuing_bank_name || null}</DetailRow>
+              <DetailRow label="Instrument no.">{bg.instrument_number || null}</DetailRow>
+              <DetailRow label="Linked to">{[bg.sales_order_number, bg.tender_label, bg.purchase_order_number].filter(Boolean).join(' · ') || null}</DetailRow>
+              {bg.purpose && <DetailRow label="Purpose">{bg.purpose}</DetailRow>}
+            </DetailGroup>
+            <DetailGroup title="Amount & dates">
+              <DetailRow label="Amount">₹ {inr(bg.amount)}</DetailRow>
+              <DetailRow label={bg.instrument_form === 'deposit' ? 'Deposit' : 'Margin money'}>
+                {bg.margin_amount ? `₹ ${inr(bg.margin_amount)}${bg.margin_percent != null && bg.instrument_form !== 'deposit' ? ` (${bg.margin_percent}%)` : ''}${MARGIN_LABELS[bg.margin_status] ? ` · ${MARGIN_LABELS[bg.margin_status]}` : ''}` : null}
+              </DetailRow>
+              {bg.commission_total > 0 && <DetailRow label="Commission paid">₹ {inr(bg.commission_total)}</DetailRow>}
+              <DetailRow label="Issued on">{bg.issue_date ? dmy(bg.issue_date) : null}</DetailRow>
+              <DetailRow label="Expires on">{bg.expiry_date ? `${dmy(bg.expiry_date)}${bg.claim_expiry_date ? ` · claims until ${dmy(bg.claim_expiry_date)}` : ''}` : null}</DetailRow>
+              {bg.closure_reason && <DetailRow label={bg.status === 'invoked' ? `Invoked (₹ ${inr(bg.invoked_amount)})` : 'Closed because'}>{`${bg.closure_reason}${bg.closed_on ? ` · ${dmy(bg.closed_on)}` : ''}`}</DetailRow>}
+            </DetailGroup>
+            {seeCopy && (
+              <DetailGroup title="Instrument copy" last>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', flexWrap: 'wrap' }}>
+                  {bg.document_name ? <button type="button" style={linkBtnStyle} onClick={openDoc}>{bg.document_name}</button> : <span style={{ fontSize: 13, color: TEXT.muted }}>Not uploaded yet</span>}
+                  {uploadCopy && !['cancelled'].includes(bg.status) && <input type="file" accept=".pdf,image/*" style={{ ...sheetInput, maxWidth: 280 }} onChange={(e) => upload(e.target.files?.[0])} />}
+                </div>
+              </DetailGroup>
+            )}
           </div>
-          {seeCopy && <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary }}>Instrument copy:</span>
-            {bg.document_name ? <button type="button" style={linkBtnStyle} onClick={openDoc}>{bg.document_name}</button> : <span style={{ fontSize: 12, color: TEXT.muted }}>not uploaded</span>}
-            {uploadCopy && !['cancelled'].includes(bg.status) && <input type="file" accept=".pdf,image/*" style={{ ...sheetInput, maxWidth: 280 }} onChange={(e) => upload(e.target.files?.[0])} />}
-          </div>}
           <TableWrap minWidth={720} maxHeight="300px">
-            <thead><tr><th style={thStyle}>Date</th><th style={thStyle}>Event</th><th style={numTh}>Amount (₹)</th><th style={thStyle}>Voucher</th><th style={thStyle}>Details</th><th style={thStyle}>By</th></tr></thead>
+            <thead><tr><th style={thStyle}>Date <RowCount count={bg.events.length} /></th><th style={thStyle}>Event</th><th style={numTh}>Amount (₹)</th><th style={thStyle}>Voucher</th><th style={thStyle}>Details</th><th style={thStyle}>By</th></tr></thead>
             <tbody>
+              {bg.events.length === 0 && <EmptyRow colSpan={6} text="Nothing has happened on this instrument yet." />}
               {bg.events.map((e) => (
                 <tr key={e.id}>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(e.event_date)}</td>
                   <td style={{ ...tdStyle, fontWeight: 600 }}>{EVENT_LABELS[e.event_type] || e.event_type}</td>
-                  <td style={numTd}>{e.amount != null ? inr(e.amount) : ''}</td>
-                  <td style={tdStyle}>{e.voucher_number || ''}</td>
+                  <td style={numTd}>{e.amount != null ? inr(e.amount) : '—'}</td>
+                  <td style={tdStyle}>{e.voucher_number || '—'}</td>
                   <td style={{ ...tdStyle, color: TEXT.secondary }}>
-                    {e.event_type === 'extended' ? `${dmy(e.old_expiry_date)} → ${dmy(e.new_expiry_date)}. ` : ''}{e.notes || ''}
+                    {e.event_type === 'extended' ? `${dmy(e.old_expiry_date)} → ${dmy(e.new_expiry_date)}. ` : ''}{e.notes || (e.event_type === 'extended' ? '' : '—')}
                   </td>
-                  <td style={tdStyle}>{e.created_by_name || ''}</td>
+                  <td style={tdStyle}>{e.created_by_name || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -370,16 +383,6 @@ function Detail({ id, onClose, onChanged }: { id: number; onClose: () => void; o
         </>
       )}
     </Modal>
-  )
-}
-
-function Info({ label, value, sub }: { label: string; value?: string | null; sub?: string | null }) {
-  return (
-    <div style={{ minWidth: 140, maxWidth: 260 }}>
-      <div style={{ fontSize: 10.5, fontWeight: 700, color: TEXT.secondary, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
-      <div style={{ color: TEXT.heading, fontWeight: 600, marginTop: 2 }}>{value || '—'}</div>
-      {sub && <div style={{ color: TEXT.muted, fontSize: 11.5 }}>{sub}</div>}
-    </div>
   )
 }
 

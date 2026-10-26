@@ -29,8 +29,7 @@ export default function HrClaimDetailPage() {
       <HrNav />
 
       <PageHeader
-        title={claim ? `${claim.claim_no} — ${claim.title}` : 'Expense claim'}
-        subtitle={claim ? `Claimed by ${claim.user_name || 'employee'}${claim.user_department ? ` · ${claim.user_department}` : ''}` : undefined}
+        title={claim ? `Expense claim ${claim.claim_no}` : 'Expense claim'}
         actions={<button onClick={() => router.push('/dashboard/hr/travel?tab=claims')} type="button" style={secondaryBtnStyle}>← Back</button>}
       />
 

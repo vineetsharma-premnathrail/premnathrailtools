@@ -10,6 +10,7 @@ import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetH
 import { BRAND, TEXT, GLASS } from '@/lib/theme'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { extractErrorMessages } from '@/lib/validation'
+import { RowCount } from '@/components/shared/ui'
 
 interface ImportResult {
   total_rows: number
@@ -108,7 +109,7 @@ export default function CrmImportDialog({ onClose, onImported }: { onClose: () =
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ background: `${BRAND.primary}0d` }}>
-                        <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, fontWeight: 700, color: TEXT.muted }}>Row</th>
+                        <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, fontWeight: 700, color: TEXT.muted }}>Row <RowCount count={result.errors.length} /></th>
                         <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, fontWeight: 700, color: TEXT.muted }}>Reason skipped</th>
                       </tr>
                     </thead>

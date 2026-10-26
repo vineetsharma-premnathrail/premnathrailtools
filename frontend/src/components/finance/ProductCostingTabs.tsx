@@ -23,6 +23,7 @@ import {
   inr, dmy, todayIso, inputStyle, sectionStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, thStyle, tdStyle,
   numTd, numTh, ErrorBanner, InfoBanner, StatusPill, TableWrap, EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
+import { RowCount } from '@/components/shared/ui'
 
 const EST_LABELS: Record<string, string> = { draft: 'Draft', marked: 'Marked', released: 'Released', superseded: 'Superseded', cancelled: 'Cancelled' }
 const EST_HEX: Record<string, string> = { draft: '#64748b', marked: '#b45309', released: '#16a34a', superseded: '#0369a1', cancelled: '#64748b' }
@@ -191,13 +192,13 @@ export function CostEstimatesTab() {
       <TableWrap minWidth={1100} maxHeight="calc(100vh - 420px)" tour="costing-list">
         <thead>
           <tr>
-            <th style={thStyle}>Estimate</th><th style={thStyle}>Item</th><th style={thStyle}>BOM</th><th style={thStyle}>Costing date</th>
+            <th style={thStyle}>Estimate <RowCount count={rows.length} /></th><th style={thStyle}>Item</th><th style={thStyle}>BOM</th><th style={thStyle}>Costing date</th>
             <th style={numTh}>Lot</th><th style={numTh}>Material</th><th style={numTh}>Job work</th><th style={numTh}>Labour</th>
             <th style={numTh}>Overhead</th><th style={numTh}>Unit cost</th><th style={thStyle}>Status</th><th style={thStyle}>Valid</th><th style={thStyle}></th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <EmptyRow colSpan={13} text="Loading…" /> : rows.length === 0 ? <EmptyRow colSpan={13} text="No cost estimates yet." /> : rows.map((r) => (
+          {loading ? <EmptyRow colSpan={13} text="Loading…" /> : rows.length === 0 ? <EmptyRow colSpan={13} text="No cost estimates yet — use + Run cost estimate." /> : rows.map((r) => (
             <tr key={r.id} onClick={() => open(r.id)} style={{ cursor: 'pointer', background: selected?.id === r.id ? 'rgba(15,118,110,.06)' : undefined }}>
               <td style={{ ...tdStyle, fontWeight: 600 }}>{r.estimate_number}</td>
               <td style={tdStyle}>{r.item_code} — {r.item_name}</td>
@@ -287,12 +288,12 @@ function EstimateDetail({ est, history, actions }: { est: CostEstimate; history:
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>{actions}</div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 14 }}>
-        <StatCard label="Material" value={inr(est.material_cost)} />
-        <StatCard label="Job work" value={inr(est.job_work_cost)} />
-        <StatCard label="Labour" value={inr(est.labour_cost)} />
-        <StatCard label={`Overhead (${est.material_overhead_pct}% / ${est.labour_overhead_pct}%)`} value={inr(est.overhead_cost)} />
-        <StatCard label="Total (lot)" value={inr(est.total_cost)} />
-        <StatCard label="Unit cost" value={inr(est.unit_cost)} tone="#0f766e" />
+        <StatCard label="Material" value={`₹ ${inr(est.material_cost)}`} />
+        <StatCard label="Job work" value={`₹ ${inr(est.job_work_cost)}`} />
+        <StatCard label="Labour" value={`₹ ${inr(est.labour_cost)}`} />
+        <StatCard label={`Overhead (${est.material_overhead_pct}% / ${est.labour_overhead_pct}%)`} value={`₹ ${inr(est.overhead_cost)}`} />
+        <StatCard label="Total (lot)" value={`₹ ${inr(est.total_cost)}`} />
+        <StatCard label="Unit cost" value={`₹ ${inr(est.unit_cost)}`} tone="#0f766e" />
         <StatCard label="Current standard" value={est.current_standard_cost == null ? '—' : inr(est.current_standard_cost)} />
       </div>
       {est.warnings.length > 0 && (
@@ -301,7 +302,7 @@ function EstimateDetail({ est, history, actions }: { est: CostEstimate; history:
       <TableWrap minWidth={1150} maxHeight="calc(100vh - 300px)">
         <thead>
           <tr>
-            <th style={thStyle}>Lvl</th><th style={thStyle}>Line</th><th style={numTh}>Qty</th><th style={thStyle}>UoM</th><th style={numTh}>Unit (₹)</th>
+            <th style={thStyle}>Lvl <RowCount count={lines.filter((l) => !hidden(l)).length} /></th><th style={thStyle}>Line</th><th style={numTh}>Qty</th><th style={thStyle}>UoM</th><th style={numTh}>Unit (₹)</th>
             <th style={numTh}>Material</th><th style={numTh}>Job work</th><th style={numTh}>Labour</th><th style={numTh}>Overhead</th>
             <th style={numTh}>Amount</th><th style={thStyle}>Source</th>
           </tr>
@@ -331,7 +332,7 @@ function EstimateDetail({ est, history, actions }: { est: CostEstimate; history:
       {history && <>
       <div style={{ fontSize: 13.5, fontWeight: 700, color: TEXT.heading, margin: '6px 0 8px' }}>Standard price history — {est.item_code}</div>
       <TableWrap minWidth={800} maxHeight="260px">
-        <thead><tr><th style={thStyle}>Valid from</th><th style={thStyle}>Valid to</th><th style={numTh}>Standard price</th><th style={numTh}>Previous</th><th style={thStyle}>Source</th><th style={thStyle}>Estimate</th><th style={thStyle}>Released by</th></tr></thead>
+        <thead><tr><th style={thStyle}>Valid from <RowCount count={history.length} /></th><th style={thStyle}>Valid to</th><th style={numTh}>Standard price</th><th style={numTh}>Previous</th><th style={thStyle}>Source</th><th style={thStyle}>Estimate</th><th style={thStyle}>Released by</th></tr></thead>
         <tbody>
           {history.length === 0 ? <EmptyRow colSpan={7} text="No standard price released from an estimate yet." /> : history.map((h) => (
             <tr key={h.id}>
@@ -389,7 +390,7 @@ export function OrderVarianceTab() {
       </div>
       <TableWrap minWidth={1050} maxHeight="calc(100vh - 420px)" tour="order-variance-list">
         <thead><tr>
-          <th style={thStyle}>Work order</th><th style={thStyle}>Product</th><th style={thStyle}>Status</th><th style={numTh}>Planned</th><th style={numTh}>Done</th>
+          <th style={thStyle}>Work order <RowCount count={rows.length} /></th><th style={thStyle}>Product</th><th style={thStyle}>Status</th><th style={numTh}>Planned</th><th style={numTh}>Done</th>
           <th style={thStyle}>Plan from</th><th style={numTh}>Plan</th><th style={numTh}>Target</th><th style={numTh}>Actual</th><th style={numTh}>Variance</th><th style={thStyle}></th>
         </tr></thead>
         <tbody>
@@ -425,19 +426,19 @@ function OrderVarianceDetail({ v, onClose }: { v: OrderVariance; onClose: () => 
       </div>
       {v.plan_message && <InfoBanner tone="warning">{v.plan_message}</InfoBanner>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 14 }}>
-        <StatCard label="Target" value={inr(v.target_total)} />
-        <StatCard label="Actual" value={inr(v.actual_total)} />
+        <StatCard label="Target" value={`₹ ${inr(v.target_total)}`} />
+        <StatCard label="Actual" value={`₹ ${inr(v.actual_total)}`} />
         <StatCard label="Variance" value={`${inr(v.total_variance)}${v.total_variance_pct != null ? ` (${v.total_variance_pct}%)` : ''}`} tone={varColor(v.total_variance)} />
-        <StatCard label="Input quantity var." value={inr(v.variance_split.input_quantity)} tone={varColor(v.variance_split.input_quantity)} />
-        <StatCard label="Input price var." value={inr(v.variance_split.input_price)} tone={varColor(v.variance_split.input_price)} />
-        <StatCard label="Resource usage var." value={inr(v.variance_split.resource_usage)} tone={varColor(v.variance_split.resource_usage)} />
-        <StatCard label="Labour rate var." value={inr(v.variance_split.rate)} tone={varColor(v.variance_split.rate)} />
-        <StatCard label="Scrap (at plan)" value={inr(v.scrap_variance)} />
-        <StatCard label="Received to stock" value={inr(v.relieved_to_stock)} />
-        <StatCard label="Open WIP" value={inr(v.open_wip)} />
+        <StatCard label="Input quantity var." value={`₹ ${inr(v.variance_split.input_quantity)}`} tone={varColor(v.variance_split.input_quantity)} />
+        <StatCard label="Input price var." value={`₹ ${inr(v.variance_split.input_price)}`} tone={varColor(v.variance_split.input_price)} />
+        <StatCard label="Resource usage var." value={`₹ ${inr(v.variance_split.resource_usage)}`} tone={varColor(v.variance_split.resource_usage)} />
+        <StatCard label="Labour rate var." value={`₹ ${inr(v.variance_split.rate)}`} tone={varColor(v.variance_split.rate)} />
+        <StatCard label="Scrap (at plan)" value={`₹ ${inr(v.scrap_variance)}`} />
+        <StatCard label="Received to stock" value={`₹ ${inr(v.relieved_to_stock)}`} />
+        <StatCard label="Open WIP" value={`₹ ${inr(v.open_wip)}`} />
       </div>
       <TableWrap minWidth={700} maxHeight="260px">
-        <thead><tr><th style={thStyle}>Cost component</th><th style={numTh}>Plan</th><th style={numTh}>Target</th><th style={numTh}>Actual</th><th style={numTh}>Variance</th><th style={numTh}>%</th></tr></thead>
+        <thead><tr><th style={thStyle}>Cost component <RowCount count={v.components.length} /></th><th style={numTh}>Plan</th><th style={numTh}>Target</th><th style={numTh}>Actual</th><th style={numTh}>Variance</th><th style={numTh}>%</th></tr></thead>
         <tbody>{v.components.map((c) => (
           <tr key={c.component}><td style={tdStyle}>{COMPONENT_LABELS[c.component]}</td><td style={numTd}>{inr(c.plan)}</td><td style={numTd}>{inr(c.target)}</td>
             <td style={numTd}>{inr(c.actual)}</td><td style={{ ...numTd, color: varColor(c.variance), fontWeight: 700 }}>{inr(c.variance)}</td><td style={numTd}>{c.variance_pct ?? '—'}</td></tr>
@@ -446,7 +447,7 @@ function OrderVarianceDetail({ v, onClose }: { v: OrderVariance; onClose: () => 
       <div style={{ fontSize: 13.5, fontWeight: 700, color: TEXT.heading, margin: '6px 0 8px' }}>Material</div>
       <TableWrap minWidth={1150} maxHeight="320px">
         <thead><tr>
-          <th style={thStyle}>Item</th><th style={numTh}>Target qty</th><th style={numTh}>Actual qty</th><th style={numTh}>Plan rate</th><th style={numTh}>Target</th>
+          <th style={thStyle}>Item <RowCount count={v.materials.length} /></th><th style={numTh}>Target qty</th><th style={numTh}>Actual qty</th><th style={numTh}>Plan rate</th><th style={numTh}>Target</th>
           <th style={numTh}>Actual</th><th style={numTh}>Qty var.</th><th style={numTh}>Price var.</th><th style={numTh}>Total var.</th>
         </tr></thead>
         <tbody>{v.materials.length === 0 ? <EmptyRow colSpan={9} text="No material planned or issued." /> : v.materials.map((m) => (
@@ -463,7 +464,7 @@ function OrderVarianceDetail({ v, onClose }: { v: OrderVariance; onClose: () => 
       <div style={{ fontSize: 13.5, fontWeight: 700, color: TEXT.heading, margin: '6px 0 8px' }}>Labour by work centre</div>
       <TableWrap minWidth={1050} maxHeight="260px">
         <thead><tr>
-          <th style={thStyle}>Work centre</th><th style={numTh}>Target h</th><th style={numTh}>Actual h</th><th style={numTh}>Plan rate</th><th style={numTh}>Target</th>
+          <th style={thStyle}>Work centre <RowCount count={v.labour.length} /></th><th style={numTh}>Target h</th><th style={numTh}>Actual h</th><th style={numTh}>Plan rate</th><th style={numTh}>Target</th>
           <th style={numTh}>Actual</th><th style={numTh}>Usage var.</th><th style={numTh}>Rate var.</th><th style={numTh}>Total var.</th>
         </tr></thead>
         <tbody>{v.labour.length === 0 ? <EmptyRow colSpan={9} text="No routing hours planned or booked." /> : v.labour.map((l) => (

@@ -12,6 +12,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
+import { CONTROL } from '@/lib/theme'
 
 interface Line { itemId: string; quantity: string; condition: string; batchNumber: string }
 
@@ -234,7 +235,7 @@ export default function NewMaterialReturnPage() {
                 <input {...(idx === 0 ? { 'data-tour': 'return-batch' } : {})} style={sheetInput} value={line.batchNumber} onChange={(e) => updateLine(idx, { batchNumber: e.target.value })} />
               </div>
               <button type="button" aria-label="Remove line" {...(idx === 0 ? { 'data-tour': 'return-remove-line-btn' } : {})} onClick={() => removeLine(idx)} disabled={lines.length === 1}
-                style={{ ...sheetBtn('secondary', SHEET.INK, lines.length === 1), padding: 0, width: 38, height: 38, justifyContent: 'center', flex: 'none' }}><SheetIcon name="trash" size={15} /></button>
+                style={{ ...sheetBtn('secondary', SHEET.INK, lines.length === 1), padding: 0, width: CONTROL.height, height: CONTROL.height, justifyContent: 'center', flex: 'none' }}><SheetIcon name="trash" size={15} /></button>
             </div>
           ))}
           <button type="button" data-tour="return-add-item-btn" onClick={addLine} style={sheetBtn('ghost', SHEET.BLUE)}><SheetIcon name="plus" size={15} />Add Item</button>

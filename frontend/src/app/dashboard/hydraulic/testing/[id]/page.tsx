@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
 import { HydTest } from '@/types'
 import { TEXT, DANGER, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle, InfoRow, primaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
@@ -39,7 +39,6 @@ const errorBanner: React.CSSProperties = {
   padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)',
   border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13,
 }
-const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
 const disabledStyle = (disabled: boolean): React.CSSProperties => (disabled ? { opacity: 0.5, cursor: 'not-allowed' } : {})
 
 const limitText = (min?: number | null, max?: number | null) => {
@@ -163,6 +162,16 @@ export default function HydTestDetailPage() {
   const approvalRequestId = (test as (HydTest & { approval_request_id?: number | null }) | null)?.approval_request_id ?? null
   const canFinish = underReview ? (canSignOff && !approvalRequestId) : (canSignOff || canSubmitResult)
   const finishLabel = canSignOff ? 'Complete Test' : 'Submit Result for Sign-off'
+  // Read-only view (completed / awaiting sign-off / no edit right): one DetailCard holds the record.
+  const readOnlyView = !!test && (completed || underReview || !canEditTest)
+  const dash = (v: string) => (v === '—' ? null : v)
+  const badges = test ? (
+    <>
+      <Pill label={STATUS_LABELS[test.status] || test.status} hex={STATUS_HEX[test.status] || '#78716c'} />
+      <Pill label={RESULT_LABELS[test.result] || test.result} hex={RESULT_HEX[test.result] || '#78716c'} />
+      <span style={{ fontSize: 13, color: TEXT.secondary }}>{TEST_TYPE_LABELS[test.test_type] || test.test_type} · {SYSTEM_TYPE_LABELS[test.system_type] || test.system_type}</span>
+    </>
+  ) : null
   const subject = test ? [
     test.system_number ? `${test.system_number}${test.system_name ? ` — ${test.system_name}` : ''}` : null,
     test.component_code ? `${test.component_code}${test.component_name ? ` — ${test.component_name}` : ''}` : null,
@@ -177,12 +186,12 @@ export default function HydTestDetailPage() {
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
             Hydraulic &amp; Pneumatic · Test
           </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>{test ? `${test.test_number} — ${test.title}` : 'Test'}</h1>
-          {test && (
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: readOnlyView ? '0 0 20px' : '0 0 8px' }}>
+            {test ? (readOnlyView ? test.test_number : `${test.test_number} — ${test.title}`) : 'Test'}
+          </h1>
+          {test && !readOnlyView && (
             <div data-tour="hyd-testd-badges" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 20 }}>
-              <span style={pill(STATUS_HEX[test.status])}>{STATUS_LABELS[test.status] || test.status}</span>
-              <span style={pill(RESULT_HEX[test.result])}>{RESULT_LABELS[test.result] || test.result}</span>
-              <span style={{ fontSize: 13, color: TEXT.secondary }}>{TEST_TYPE_LABELS[test.test_type] || test.test_type} · {SYSTEM_TYPE_LABELS[test.system_type] || test.system_type}</span>
+              {badges}
             </div>
           )}
         </div>
@@ -296,29 +305,38 @@ export default function HydTestDetailPage() {
         />
       )}
 
-      {test && (completed || underReview || !canEditTest) && (
+      {test && readOnlyView && (
         <>
-          <div data-tour="hyd-testd-record" style={cardStyle}>
-            <p style={sectionTitle}>Test Record</p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 28px' }}>
-              {([
-                ['Subject', subject || '—'],
-                ['Component Serial No.', test.component_serial || '—'],
-                ['Test Date', formatDate(test.test_date)],
-                ['Test Standard', test.test_standard || '—'],
-                ['Test Pressure', withUnit(test.test_pressure_bar, 'bar')],
-                ['Hold Time', withUnit(test.hold_time_min, 'min')],
-                ['Test Medium', test.test_medium || '—'],
-                ['Ambient / Fluid', `${withUnit(test.ambient_temp_c, '°C')} / ${withUnit(test.fluid_temp_c, '°C')}`],
-                ['Tested By', test.tested_by_name || '—'],
-                ['Witnessed By', test.witnessed_by || '—'],
-                ['Completed By', test.completed_by_name || '—'],
-                ['Completed At', formatDateTime(test.completed_at)],
-              ] as [string, string][]).map(([label, value]) => (
-                <div key={label} style={{ flex: '0 1 220px', minWidth: 180 }}><InfoRow label={label} value={value} /></div>
-              ))}
-            </div>
-          </div>
+          <DetailCard tour="hyd-testd-record">
+            <DetailSummary
+              title={test.title}
+              text={subject ? `Test on ${subject}.` : undefined}
+              meta={<span data-tour="hyd-testd-badges" style={{ display: 'inline-flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>{badges}<span>· {formatDate(test.test_date)}</span></span>}
+            />
+            <DetailGroup title="What was tested">
+              <DetailRow label="Component serial no.">{test.component_serial}</DetailRow>
+              <DetailRow label="Test standard">{test.test_standard}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="Test conditions">
+              <DetailRow label="Test pressure">{dash(withUnit(test.test_pressure_bar, 'bar'))}</DetailRow>
+              <DetailRow label="Hold time">{dash(withUnit(test.hold_time_min, 'min'))}</DetailRow>
+              <DetailRow label="Test medium">{test.test_medium}</DetailRow>
+              <DetailRow label="Ambient / fluid temp.">
+                {test.ambient_temp_c == null && test.fluid_temp_c == null ? null : `${withUnit(test.ambient_temp_c, '°C')} / ${withUnit(test.fluid_temp_c, '°C')}`}
+              </DetailRow>
+            </DetailGroup>
+            <DetailGroup title="People" last={!test.observations && !test.remarks}>
+              <DetailRow label="Tested by">{test.tested_by_name}</DetailRow>
+              <DetailRow label="Witnessed by">{test.witnessed_by}</DetailRow>
+              <DetailRow label="Completed by">{test.completed_by_name ? `${test.completed_by_name}${test.completed_at ? ` · ${formatDateTime(test.completed_at)}` : ''}` : null}</DetailRow>
+            </DetailGroup>
+            {(test.observations || test.remarks) && (
+              <DetailGroup title="Notes" last>
+                {test.observations && <DetailRow label="Observations">{test.observations}</DetailRow>}
+                {test.remarks && <DetailRow label="Remarks">{test.remarks}</DetailRow>}
+              </DetailGroup>
+            )}
+          </DetailCard>
 
           <div data-tour="hyd-testd-readings" style={{ ...cardStyle, padding: 0, overflow: 'auto' }}>
             <p style={{ ...sectionTitle, padding: '20px 20px 0' }}>
@@ -327,7 +345,7 @@ export default function HydTestDetailPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
               <thead>
                 <tr>
-                  {['Parameter', 'Specification', 'Limits', 'Measured', 'Result', 'Remarks'].map((h) => <th key={h} style={thStyle}>{h}</th>)}
+                  {['Parameter', 'Specification', 'Limits', 'Measured', 'Result', 'Remarks'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={test.readings.length} />}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -343,7 +361,7 @@ export default function HydTestDetailPage() {
                       {r.measured_value != null && r.measured_text ? ' · ' : ''}
                       {r.measured_text || (r.measured_value == null ? '—' : '')}
                     </td>
-                    <td style={tdStyle}><span style={pill(READING_HEX[r.result])}>{READING_LABELS[r.result] || r.result}</span></td>
+                    <td style={tdStyle}><Pill label={READING_LABELS[r.result] || r.result} hex={READING_HEX[r.result] || '#78716c'} /></td>
                     <td style={tdStyle}>{r.remarks || '—'}</td>
                   </tr>
                 ))}
@@ -351,15 +369,6 @@ export default function HydTestDetailPage() {
             </table>
           </div>
 
-          {(test.observations || test.remarks) && (
-            <div style={cardStyle}>
-              <p style={sectionTitle}>Notes</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 28px' }}>
-                {test.observations && <div style={{ flex: '1 1 300px' }}><InfoRow label="Observations" value={test.observations} /></div>}
-                {test.remarks && <div style={{ flex: '1 1 300px' }}><InfoRow label="Remarks" value={test.remarks} /></div>}
-              </div>
-            </div>
-          )}
         </>
       )}
 

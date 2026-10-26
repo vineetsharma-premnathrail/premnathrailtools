@@ -1,12 +1,12 @@
 'use client'
 
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { designApi } from '@/lib/api'
 import { DesignDashboard, DesignTaskItem } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import { TEAM_ROLE_LABELS } from '@/components/design/designMeta'
 import { extractErrorMessages } from '@/lib/validation'
@@ -75,7 +75,7 @@ function TaskRows({ rows, empty }: { rows: DesignTaskItem[]; empty: string }) {
           <span style={{ fontSize: 11, color: t.days_waiting >= 7 ? '#DC2626' : TEXT.muted, whiteSpace: 'nowrap' }}>
             {t.days_waiting === 0 ? 'today' : `${t.days_waiting}d`}
           </span>
-          <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${TASK_HEX[t.kind] || '#78716c'}1a`, color: TASK_HEX[t.kind] || '#78716c', whiteSpace: 'nowrap' }}>
+          <span style={pillStyle(TASK_HEX[t.kind] || '#78716c')}>
             {TASK_LABELS[t.kind] || t.kind.replace(/_/g, ' ')}
           </span>
         </div>
@@ -217,7 +217,7 @@ export default function DesignDashboardPage() {
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
                   <thead>
-                    <tr>{['Person', 'Role', 'Open PM tasks', 'Overdue', 'Draft revisions', 'Drawings to check'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                    <tr>{['Person', 'Role', 'Open PM tasks', 'Overdue', 'Draft revisions', 'Drawings to check'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={data.workload.length} />}</th>)}</tr>
                   </thead>
                   <tbody>
                     {data.workload.map((w) => (

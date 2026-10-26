@@ -13,7 +13,7 @@ import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
 import ErpNav from '@/components/erp/ErpNav'
 import { CONTRACT_TYPE_LABELS, FREQUENCY_LABELS } from '@/components/erp/ServiceContractForm'
-import { inputStyle, primaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import { GLASS, SHADOWS } from '@/lib/theme'
 import { formatINR } from '@/components/sales/labels'
 
@@ -73,7 +73,7 @@ export default function ServiceContractsPage() {
       {error && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{error}</div>}
       <div style={{ borderRadius: 16, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
-          <thead><tr>{['Contract', 'Type', 'Customer', 'Period', 'Machines', 'Visits', 'Value', 'Billing', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Contract', 'Type', 'Customer', 'Period', 'Machines', 'Visits', 'Value', 'Billing', 'Status', ''].map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
             {loading && <tr><td colSpan={10} style={{ ...td, color: '#a8a29e' }}>Loading…</td></tr>}
             {!loading && rows.length === 0 && <tr><td colSpan={10} style={{ ...td, color: '#a8a29e' }}>No service contracts.</td></tr>}
@@ -88,7 +88,7 @@ export default function ServiceContractsPage() {
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>{formatINR(c.contract_value)}</td>
                 <td style={td}>{FREQUENCY_LABELS[c.billing_frequency] || c.billing_frequency}</td>
                 <td style={td}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[c.status] || '#78716c'}1a`, color: STATUS_HEX[c.status] || '#78716c', whiteSpace: 'nowrap' }}>{STATUS_LABELS[c.status] || c.status}</span>
+                  <Pill label={STATUS_LABELS[c.status] || c.status} hex={STATUS_HEX[c.status] || '#78716c'} />
                 </td>
                 <td style={td} onClick={(e) => e.stopPropagation()}><span onClick={() => open(c)} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>View</span></td>
               </tr>

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { hrApi, hrRosterApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
 import { extractErrorMessages } from '@/lib/validation'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import DateField from '@/components/erp/DateField'
 import { TEXT } from '@/lib/theme'
 import { SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
@@ -125,7 +125,7 @@ export default function RosterPanel() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr>
-              <th style={th}>Employee</th>
+              <th style={th}>Employee <RowCount count={rows.length} /></th>
               {days.map((d) => <th key={d} style={{ ...th, textAlign: 'center' }}>{dmy(d).slice(0, 5)}<br />{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][(new Date(`${d}T00:00:00`).getDay() + 6) % 7]}</th>)}
             </tr>
           </thead>

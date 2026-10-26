@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { serviceContractsApi } from '@/lib/sdServiceApi'
 import { SERVICE_CONTRACTS_ENABLED } from '@/lib/features'
+import { formatDate } from '@/lib/format'
 
 type Entitlement = {
   contract_id: number; contract_number: string; contract_type?: string; covered: boolean; reason?: string
@@ -30,7 +31,7 @@ export default function ContractChip({ projectId }: { projectId: number }) {
     (ent.sla_response_hours || ent.sla_resolution_hours) ? `SLA ${ent.sla_response_hours ?? '—'}h / ${ent.sla_resolution_hours ?? '—'}h` : null,
   ].filter(Boolean) : [ent.reason || `${ent.contract_number}: not covering this visit`]
   return (
-    <span title={ent.covered && ent.end_date ? `Valid till ${ent.end_date}` : undefined}
+    <span title={ent.covered && ent.end_date ? `Valid till ${formatDate(ent.end_date)}` : undefined}
       style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap', display: 'inline-block' }}>
       {parts.join(' · ')}
     </span>

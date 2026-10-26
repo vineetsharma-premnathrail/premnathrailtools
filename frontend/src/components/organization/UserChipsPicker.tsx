@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react'
 import { DirectoryUser } from '@/types'
 import { BORDER, TEXT } from '@/lib/theme'
-import { inputStyle } from '@/components/shared/ui'
+import { inputStyle, pillStyle } from '@/components/shared/ui'
 import AnchoredPopover from '@/components/shared/AnchoredPopover'
 
 /** Multi-select users by search, shown as removable chips (same UX as the P2P approver picker). */
@@ -29,7 +29,7 @@ export default function UserChipsPicker({ users, value, onChange, disabled, plac
           {value.map((id) => {
             const u = users.find((x) => x.id === id)
             return (
-              <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, padding: '4px 10px', borderRadius: 9999, background: 'rgba(255,106,42,0.1)', color: '#c2410c', fontWeight: 600 }}>
+              <span key={id} style={{ ...pillStyle('#c2410c'), gap: 6, fontSize: 12.5, padding: '4px 10px', fontWeight: 600 }}>
                 {u ? u.name : `User #${id}`}
                 {!disabled && <span style={{ cursor: 'pointer', fontWeight: 700 }} onClick={() => onChange(value.filter((x) => x !== id))}>×</span>}
               </span>

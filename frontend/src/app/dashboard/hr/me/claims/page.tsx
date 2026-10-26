@@ -17,6 +17,7 @@ import {
 } from '@/components/hr/admin/adminUi'
 import { TEXT } from '@/lib/theme'
 import { recordPath } from '@/lib/recordRef'
+import { RowCount } from '@/components/shared/ui'
 
 export default function MyClaimsPage() {
   // Self-service: any logged-in user.
@@ -81,7 +82,7 @@ export default function MyClaimsPage() {
       <div data-tour="hr-myclaims-table" style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
           <thead>
-            <tr>{['Claim', 'Title', 'Date', 'Trip', 'Lines', 'Amount', 'Status', ''].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}</th>)}</tr>
+            <tr>{['Claim', 'Title', 'Date', 'Trip', 'Lines', 'Amount', 'Status', ''].map((h, hi) => <th key={h} style={{ ...thStyle, textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {loading ? <EmptyRow colSpan={8} text="Loading…" /> : rows.length === 0 ? (

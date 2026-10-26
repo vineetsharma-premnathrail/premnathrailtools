@@ -5,7 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeBatchesApi } from '@/lib/api'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { Row, InfoRow, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
+import { formatDate } from '@/lib/format'
 import StoreNav from '@/components/store/StoreNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -43,7 +44,13 @@ const card: React.CSSProperties = { borderRadius: 18, background: GLASS.card, ba
 const th: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap' }
 const td: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.secondary, borderTop: '1px solid rgba(0,0,0,0.05)' }
 const heading: React.CSSProperties = { fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 10px' }
-const fmtDate = (d?: string | null) => (d ? d.split('-').reverse().join('-') : '—')
+const thNum: React.CSSProperties = { ...th, textAlign: 'right' }
+const tdNum: React.CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }
+const fmtDate = (d?: string | null) => (d ? formatDate(d) : '—')
+const fmtQty = (n?: number | null) => (n == null ? '—' : n.toLocaleString('en-IN', { maximumFractionDigits: 3 }))
+// "in_progress" → "In progress" for any status / type key the server sends.
+const humanize = (v?: string | null) => (v ? v.charAt(0).toUpperCase() + v.slice(1).replace(/_/g, ' ') : '—')
+const NUM_COLS = new Set(['Qty', 'Free', 'Quality', 'Blocked', 'With vendor'])
 
 export default function StoreBatchTracePage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
@@ -97,29 +104,23 @@ export default function StoreBatchTracePage() {
         <div>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Store &amp; Inventory · Batch trace</p>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{t ? `${t.batch_number}${t.heat_number ? ` · heat ${t.heat_number}` : ''}` : 'Batch'}</h1>
-          {t && <p style={{ fontSize: 13, color: TEXT.secondary, margin: '4px 0 0' }}>{t.item_code} — {t.item_name}</p>}
         </div>
         <button type="button" onClick={() => router.push('/dashboard/store/batches')} style={secondaryBtnStyle}>← Back</button>
       </div>
 
       {!t ? <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p> : (
         <>
-          <div style={{ ...card, padding: 20 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <Row>
-                <InfoRow label="Vendor" value={t.vendor_name || '—'} />
-                <InfoRow label="GRN" value={t.grn_number || '—'} />
-                <InfoRow label="Received" value={`${t.received_qty} ${t.uom || ''} on ${fmtDate(t.received_date)}`} />
-                {t.accepted_qty != null && <InfoRow label="Accepted" value={`${t.accepted_qty} ${t.uom || ''}`} />}
-                {t.expiry_date && <InfoRow label="Expiry" value={fmtDate(t.expiry_date)} />}
-                <InfoRow label="Status" value={t.status === 'blocked' ? `Blocked${t.remarks ? ` — ${t.remarks}` : ''}` : 'Active'} />
-              </Row>
-              <Row>
-                <InfoRow label="Mill TC no." value={t.tc_number || '—'} />
-                <InfoRow label="Stock now" value={`Free ${t.total.free} · Quality ${t.total.quality} · Blocked ${t.total.blocked} · With vendor ${t.total.vendor}`} />
-              </Row>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                {t.has_tc_document && <button type="button" onClick={openTc} style={secondaryBtnStyle}>Open mill TC ({t.tc_file_name})</button>}
+          <DetailCard>
+            <DetailSummary
+              title={<>{t.item_name || '—'}{t.item_code && <span style={{ fontSize: 14, fontWeight: 600, color: TEXT.muted, marginLeft: 8 }}>{t.item_code}</span>}</>}
+              text={`Batch received from ${t.vendor_name || 'an unknown vendor'}${t.grn_number ? ` on GRN ${t.grn_number}` : ''}. Below: where it went, what is left and every movement.`}
+              meta={<>
+                <Pill label={t.status === 'blocked' ? 'Blocked' : 'Active'} hex={t.status === 'blocked' ? '#dc2626' : '#16a34a'} />
+                <span>· Received {fmtDate(t.received_date)}</span>
+                <span>· Free stock <strong style={{ color: TEXT.heading }}>{fmtQty(t.total.free)} {t.uom || ''}</strong></span>
+              </>}
+              actions={<>
+                {t.has_tc_document && <button type="button" onClick={openTc} style={secondaryBtnStyle} title={t.tc_file_name || undefined}>Open mill TC</button>}
                 {canFeature('store', 'grn', 'mill_tc', 'create') && (
                   <>
                     <input ref={fileRef} type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={(e) => uploadTc(e.target.files?.[0])} />
@@ -129,20 +130,44 @@ export default function StoreBatchTracePage() {
                 {canFeature('store', 'adjustments', 'batch_status', 'edit') && (t.status === 'blocked'
                   ? <button type="button" disabled={busy} onClick={() => setStatus('active', 'Released for use')} style={primaryBtnStyle}>Release batch</button>
                   : <button type="button" disabled={busy} onClick={() => setBlocking(true)} style={{ ...secondaryBtnStyle, color: '#b91c1c' }}>Block batch</button>)}
-              </div>
-            </div>
-          </div>
+              </>}
+            />
+            <DetailGroup title="Receipt">
+              <DetailRow label="Vendor">{t.vendor_name}</DetailRow>
+              <DetailRow label="GRN">{t.grn_number}</DetailRow>
+              <DetailRow label="Heat no.">{t.heat_number}</DetailRow>
+              <DetailRow label="Received">{`${fmtQty(t.received_qty)} ${t.uom || ''} on ${fmtDate(t.received_date)}`}</DetailRow>
+              {t.accepted_qty != null && <DetailRow label="Accepted">{`${fmtQty(t.accepted_qty)} ${t.uom || ''}`}</DetailRow>}
+              {t.mfg_date && <DetailRow label="Manufactured on">{fmtDate(t.mfg_date)}</DetailRow>}
+              {t.expiry_date && <DetailRow label="Expires on">{fmtDate(t.expiry_date)}</DetailRow>}
+            </DetailGroup>
+            <DetailGroup title="Mill test certificate">
+              <DetailRow label="TC no.">{t.tc_number}</DetailRow>
+              <DetailRow label="TC document">{t.has_tc_document ? (t.tc_file_name || 'Attached') : 'Not attached'}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="Stock now" last={t.status !== 'blocked'}>
+              <DetailRow label="Free">{`${fmtQty(t.total.free)} ${t.uom || ''}`}</DetailRow>
+              <DetailRow label="In quality">{`${fmtQty(t.total.quality)} ${t.uom || ''}`}</DetailRow>
+              <DetailRow label="Blocked">{`${fmtQty(t.total.blocked)} ${t.uom || ''}`}</DetailRow>
+              <DetailRow label="With vendor">{`${fmtQty(t.total.vendor)} ${t.uom || ''}`}</DetailRow>
+            </DetailGroup>
+            {t.status === 'blocked' && (
+              <DetailGroup last>
+                <DetailRow label="Why it is blocked">{t.remarks}</DetailRow>
+              </DetailGroup>
+            )}
+          </DetailCard>
 
           <p style={heading}>Where it went — issues</p>
           <div style={card}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
-              <thead><tr>{['Issue', 'Date', 'Type', 'Qty', 'Work order', 'Machine / project', 'Job worker'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Issue', 'Date', 'Type', 'Qty', 'Work order', 'Machine / project', 'Job worker'].map((h, hi) => <th key={h} style={NUM_COLS.has(h) ? thNum : th}>{h}{hi === 0 && <RowCount count={t.issues.length} />}</th>)}</tr></thead>
               <tbody>
                 {t.issues.length === 0 && <tr><td colSpan={7} style={{ ...td, textAlign: 'center' }}>Nothing issued from this batch yet.</td></tr>}
                 {t.issues.map((i, n) => (
                   <tr key={n} onClick={() => router.push(recordPath('/dashboard/store/issues', i, 'issue_id'))} style={{ cursor: 'pointer' }}>
-                    <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{i.issue_number}</td><td style={td}>{fmtDate(i.issue_date)}</td>
-                    <td style={td}>{(i.issue_type || '—').replace('_', ' ')}</td><td style={td}>{i.quantity} {t.uom}</td>
+                    <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{i.issue_number}</td><td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtDate(i.issue_date)}</td>
+                    <td style={td}>{humanize(i.issue_type)}</td><td style={tdNum}>{fmtQty(i.quantity)} {t.uom || ''}</td>
                     <td style={td}>{i.work_order || '—'}</td><td style={td}>{i.project || '—'}</td>
                     <td style={td}>{i.vendor_name ? `${i.vendor_name}${i.challan_number ? ` (${i.challan_number})` : ''}` : '—'}</td>
                   </tr>
@@ -176,10 +201,10 @@ export default function StoreBatchTracePage() {
               <div style={{ ...card, padding: 16 }}>
                 {t.inspection_lots.map((l) => (
                   <div key={l.id} style={{ fontSize: 13, color: TEXT.secondary, marginBottom: 4 }}>
-                    Lot <b>{l.lot_number}</b> — {l.status.replace('_', ' ')}{l.decision ? ` · ${l.decision.replace(/_/g, ' ')}` : ''}{l.accepted_qty != null ? ` · accepted ${l.accepted_qty}, rejected ${l.rejected_qty ?? 0}` : ''}
+                    Lot <b>{l.lot_number}</b> — {humanize(l.status)}{l.decision ? ` · ${humanize(l.decision)}` : ''}{l.accepted_qty != null ? ` · accepted ${fmtQty(l.accepted_qty)}, rejected ${fmtQty(l.rejected_qty ?? 0)}` : ''}
                   </div>
                 ))}
-                {t.ncrs.map((n) => <div key={n.id} style={{ fontSize: 13, color: '#b91c1c', marginBottom: 4 }}>NCR <b>{n.ncr_number}</b> — {n.status}</div>)}
+                {t.ncrs.map((n) => <div key={n.id} style={{ fontSize: 13, color: '#b91c1c', marginBottom: 4 }}>NCR <b>{n.ncr_number}</b> — {humanize(n.status)}</div>)}
               </div>
             </>
           )}
@@ -187,11 +212,11 @@ export default function StoreBatchTracePage() {
           <p style={heading}>Stock by store</p>
           <div style={card}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
-              <thead><tr>{['Store', 'Free', 'Quality', 'Blocked', 'With vendor'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Store', 'Free', 'Quality', 'Blocked', 'With vendor'].map((h, hi) => <th key={h} style={NUM_COLS.has(h) ? thNum : th}>{h}{hi === 0 && <RowCount count={t.stock.length} />}</th>)}</tr></thead>
               <tbody>
                 {t.stock.length === 0 && <tr><td colSpan={5} style={{ ...td, textAlign: 'center' }}>No stock of this batch left.</td></tr>}
                 {t.stock.map((s) => (
-                  <tr key={s.location_id}><td style={{ ...td, fontWeight: 600 }}>{s.location_name}</td><td style={td}>{s.free}</td><td style={td}>{s.quality}</td><td style={td}>{s.blocked}</td><td style={td}>{s.vendor}</td></tr>
+                  <tr key={s.location_id}><td style={{ ...td, fontWeight: 600 }}>{s.location_name || '—'}</td><td style={tdNum}>{fmtQty(s.free)}</td><td style={tdNum}>{fmtQty(s.quality)}</td><td style={tdNum}>{fmtQty(s.blocked)}</td><td style={tdNum}>{fmtQty(s.vendor)}</td></tr>
                 ))}
               </tbody>
             </table>
@@ -200,12 +225,13 @@ export default function StoreBatchTracePage() {
           <p style={heading}>All movements</p>
           <div style={card}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
-              <thead><tr>{['Date', 'Movement', 'Qty', 'Store', 'Document', 'Remarks'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Date', 'Movement', 'Qty', 'Store', 'Document', 'Remarks'].map((h, hi) => <th key={h} style={NUM_COLS.has(h) ? thNum : th}>{h}{hi === 0 && <RowCount count={t.movements.length} />}</th>)}</tr></thead>
               <tbody>
+                {t.movements.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center' }}>No movements recorded for this batch yet.</td></tr>}
                 {t.movements.map((m) => (
                   <tr key={m.id}>
-                    <td style={td}>{fmtDate(m.date)}</td><td style={td}>{TXN_LABELS[m.transaction_type] || m.transaction_type}</td>
-                    <td style={td}>{m.quantity} {t.uom}</td><td style={td}>{m.location_name}</td>
+                    <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtDate(m.date)}</td><td style={td}>{TXN_LABELS[m.transaction_type] || humanize(m.transaction_type)}</td>
+                    <td style={tdNum}>{fmtQty(m.quantity)} {t.uom || ''}</td><td style={td}>{m.location_name || '—'}</td>
                     <td style={td}>{m.reference_number || '—'}</td><td style={td}>{m.remarks || '—'}</td>
                   </tr>
                 ))}

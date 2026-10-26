@@ -8,6 +8,7 @@ import {
   ElectricalTest, ElectricalTestPhase, ElectricalTestResult,
 } from '@/types'
 import { TEXT, BORDER } from '@/lib/theme'
+import { chipBtnStyle, RowCount } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import DateField from '@/components/erp/DateField'
@@ -47,16 +48,11 @@ const emptyForm = (phase: ElectricalTestPhase): TestForm => ({
 
 const PHASES: ElectricalTestPhase[] = ['factory', 'commissioning']
 
-const phaseBtn = (active: boolean): React.CSSProperties => ({
-  padding: '7px 14px', borderRadius: 9999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-  border: `1px solid ${active ? '#FF6A2A' : BORDER.normal}`,
-  background: active ? 'rgba(255,106,42,0.10)' : 'rgba(255,255,255,.7)',
-  color: active ? '#c2410c' : TEXT.secondary,
-})
+const phaseBtn = (active: boolean): React.CSSProperties => chipBtnStyle(active)
 
 const resultBtn = (active: boolean, hex: string): React.CSSProperties => ({
-  padding: '8px 18px', borderRadius: 9999, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-  border: `1px solid ${active ? hex : BORDER.normal}`,
+  ...chipBtnStyle(false),
+  borderColor: active ? hex : BORDER.normal,
   background: active ? `${hex}1a` : 'rgba(255,255,255,.7)',
   color: active ? hex : TEXT.secondary,
 })
@@ -271,8 +267,7 @@ export default function TestsTab({ job, meta, canEdit, onChanged }: { job: Elect
         </div>
 
         <p data-tour="elec-tests-summary" style={{ ...mutedText, marginBottom: 4 }}>
-          <strong style={{ color: TEXT.body }}>{visible.length}</strong> {visible.length === 1 ? 'test' : 'tests'}
-          {' · '}<strong style={{ color: '#16A34A' }}>{passed}</strong> passed
+          <strong style={{ color: '#16A34A' }}>{passed}</strong> passed
           {' · '}<strong style={{ color: openFailures ? '#DC2626' : TEXT.body }}>{openFailures}</strong> open {openFailures === 1 ? 'failure' : 'failures'}
         </p>
         <p style={{ ...smallMuted, margin: '0 0 12px' }}>
@@ -286,7 +281,7 @@ export default function TestsTab({ job, meta, canEdit, onChanged }: { job: Elect
             <thead>
               <tr>
                 {['Test No.', 'Type', 'Circuit / Panel / Cable', 'Instrument', 'Expected', 'Measured', 'Result', 'Date', 'Tested by', ...(canEdit ? [''] : [])].map((h, i) => (
-                  <th key={`${h}-${i}`} style={thStyle}>{h}</th>
+                  <th key={`${h}-${i}`} style={thStyle}>{h}{i === 0 && <RowCount count={visible.length} />}</th>
                 ))}
               </tr>
             </thead>

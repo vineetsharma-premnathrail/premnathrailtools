@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { hrPunchApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import DateField from '@/components/erp/DateField'
 import { Banner, ErrorRows, Pill, addDays, dmy, downloadBlob, h3, hint, inputStyle, labelStyle, localIso, sectionStyle, tableWrap, td, th } from '@/components/hr/hcmUi'
 
@@ -62,7 +62,7 @@ export default function PunchImportPanel() {
       <h3 style={h3}>Exceptions ({list.length})</h3>
       <div style={tableWrap}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-          <thead><tr><th style={th}>Employee</th><th style={th}>Date</th><th style={th}>Result</th><th style={th}>Exception</th></tr></thead>
+          <thead><tr><th style={th}>Employee <RowCount count={list.length} /></th><th style={th}>Date</th><th style={th}>Result</th><th style={th}>Exception</th></tr></thead>
           <tbody>
             {!list.length && <tr><td style={td} colSpan={4}>No exceptions — every evaluated day had a clean IN and OUT.</td></tr>}
             {list.map((d, i) => (

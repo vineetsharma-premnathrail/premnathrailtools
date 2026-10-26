@@ -44,13 +44,13 @@ def test_settings_rules(client, db):
     no_rnd = make_user(db, "s.crm@premnathrail.com")
     make_rnd_head(db, head)
     url = f"{RND}/settings"
-    resp = client.put(url, json={"creator_ids": [no_rnd.id]}, headers=auth(head))
-    assert resp.status_code == 400 and "no access to the R&D module" in resp.json()["detail"]
-    # Not a head → can't change who creates or sees Technical Offers.
-    resp = client.put(url, json={"creator_ids": [member.id]}, headers=auth(member))
-    assert resp.status_code == 403 and "Only the R&D head" in resp.json()["detail"]
+    # Read-only now: the Technical Offer team is a permission (Role & Permissions), not a list here.
+    assert client.put(url, json={"creator_ids": [member.id]}, headers=auth(head)).status_code == 405
     body = client.get(url, headers=auth(head)).json()
     assert [h["user_id"] for h in body["heads"]] == [head.id] and body["can_edit"] is True
+    assert "creators" not in body and "viewers" not in body
+    assert client.get(url, headers=auth(member)).json()["can_create_technical_offer"] is False
+    assert no_rnd.id
 
 
 def test_new_requirement_goes_to_head_only(client, db, tor_env):

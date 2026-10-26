@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { ReactNode } from 'react'
 import { ArrowLeft } from '@phosphor-icons/react'
+import { secondaryBtnStyle } from '@/components/shared/ui'
 
 export default function LegalPageShell({ title, updatedDate, children }: { title: string; updatedDate: string; children: ReactNode }) {
   const router = useRouter()
@@ -21,19 +22,11 @@ export default function LegalPageShell({ title, updatedDate, children }: { title
         <button
           onClick={() => router.back()}
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '9px 16px',
+            ...secondaryBtnStyle,
             marginBottom: 20,
-            borderRadius: 10,
             border: '1px solid rgba(180,120,80,.3)',
             background: 'rgba(255,255,255,.6)',
             color: '#8a6547',
-            fontSize: 13.5,
-            fontWeight: 600,
-            fontFamily: 'inherit',
-            cursor: 'pointer',
           }}
         >
           <ArrowLeft size={15} />

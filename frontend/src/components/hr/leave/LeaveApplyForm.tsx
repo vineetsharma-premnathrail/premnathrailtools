@@ -1,5 +1,6 @@
 'use client'
 
+import { pillStyle } from '@/components/shared/ui'
 import Select from '@/components/shared/Select'
 import { useEffect, useRef, useState } from 'react'
 import { hrApi } from '@/lib/api'
@@ -14,7 +15,7 @@ function fmtDays(v: string | number | null | undefined) {
 }
 
 function ddmmyyyy(iso: string) {
-  return iso ? `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}` : ''
+  return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : ''
 }
 
 // Apply-for-leave form with a live day count from the server (weekly offs and
@@ -191,7 +192,7 @@ export default function LeaveApplyForm({
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                       <span style={{ fontSize: 12, color: SHEET.MUTED }}>Not counted:</span>
                       {skipped.map((d) => (
-                        <span key={d.date} style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 9999, background: d.kind === 'holiday' ? '#0EA5E91a' : '#94A3B81a', color: d.kind === 'holiday' ? '#0369A1' : '#475569' }}>
+                        <span key={d.date} style={pillStyle(d.kind === 'holiday' ? '#0369A1' : '#475569')}>
                           {ddmmyyyy(d.date)} {d.kind === 'holiday' ? d.holiday_name : 'weekly off'}
                         </span>
                       ))}

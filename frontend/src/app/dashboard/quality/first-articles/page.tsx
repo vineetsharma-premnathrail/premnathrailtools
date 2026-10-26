@@ -9,7 +9,7 @@ import { qualityApi } from '@/lib/api'
 import { QualityFirstArticle } from '@/types'
 import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import {
   Pill, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtDate, LOT_STATUS_LABELS,
 } from '@/components/quality/QualityBits'
@@ -69,12 +69,12 @@ export default function FirstArticlesPage() {
       </div>
       <div style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1050 }}>
-          <thead><tr>{cols.map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{cols.map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
             {loading ? (
               <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No first article inspections found.</td></tr>
+              <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No first article inspections found — they are raised automatically for new items, revisions and vendors, or use + New FAI.</td></tr>
             ) : rows.map((f) => (
               <tr key={f.id} onClick={() => router.push(recordPath('/dashboard/quality/first-articles', f))} style={{ cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{f.fai_number}</td>

@@ -10,7 +10,7 @@ import { productsApi } from '@/lib/api'
 import { FinishedProduct, ProductApplication } from '@/types'
 import { TEXT } from '@/lib/theme'
 import ProductsNav from '@/components/products/ProductsNav'
-import { inputStyle, primaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import {
   ErrorBanner, PageHeader, Pill, PRODUCT_STATUS_HEX, PRODUCT_STATUS_LABELS, PRODUCT_TYPE_LABELS, tableWrapStyle, tdStyle, thStyle,
 } from '@/components/products/ProductBits'
@@ -76,7 +76,7 @@ export default function ProductsPage() {
 
       <div style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-          <thead><tr>{['Code', 'Name', 'Type', 'Model', 'Applications', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Code', 'Name', 'Type', 'Model', 'Applications', 'Status', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
             {loading && rows.length === 0 && <tr><td colSpan={7} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>}
             {!loading && rows.length === 0 && (

@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation'
 import { productionEngineeringApi, productionEngineeringLookups } from '@/lib/productionEngineeringApi'
 import { ProductionDependentOrder, ProductionLookupOption, ProductionWorkOrder, ProductionWorkOrderOperation } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle, InfoRow } from '@/components/shared/ui'
+import { secondaryBtnStyle, RowCount, Pill, DetailRow } from '@/components/shared/ui'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { FormSheet, SheetSection, SheetIcon, SHEET, Req, sheetBtn, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import ReasonSheet from '@/components/shared/ReasonSheet'
@@ -27,6 +27,7 @@ const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, lette
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }
 const tdStyle: React.CSSProperties = { padding: '8px 12px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
 const errorBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 12, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
+const linkBtn: React.CSSProperties = { padding: 0, border: 'none', background: 'none', color: '#2563EB', fontWeight: 600, fontSize: 13.5, cursor: 'pointer', textAlign: 'left' }
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', released: 'Released', in_progress: 'In Progress', completed: 'Completed', closed: 'Closed', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { draft: '#F59E0B', released: '#2563eb', in_progress: '#9333ea', completed: '#16A34A', closed: '#78716c', cancelled: '#78716c' }
 
@@ -75,26 +76,28 @@ export function ChangeFlagBanner({ wo, canEdit, onChanged }: { wo: ProductionWor
   )
 }
 
+/** Linked records of a work order as label–value rows (for its DetailCard). */
 export function WorkOrderLinks({ wo }: { wo: ProductionWorkOrder }) {
   const router = useRouter()
   const { can } = useCan()
   if (!wo.sales_order_label && !wo.parent_work_order_id && !wo.order_project_number) return null
   return (
-    <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 16, alignItems: 'flex-start' }}>
+    <>
       {wo.order_project_number && wo.order_project_id && (
-        <div>
-          <p className="info-row-label" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Order Project</p>
+        <DetailRow label="Order Project">
           <OrderProjectChip opNumber={wo.order_project_number} elementNo={wo.order_project_element_no} label={wo.order_project_element_label}
             onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', wo, 'order_project_id')) : undefined} />
-        </div>
+        </DetailRow>
       )}
-      {wo.sales_order_label && <InfoRow label="Sales Order" value={wo.sales_order_label} />}
+      {wo.sales_order_label && <DetailRow label="Sales Order">{wo.sales_order_label}</DetailRow>}
       {wo.parent_work_order_id && (
-        <div style={{ cursor: 'pointer' }} onClick={() => router.push(recordPath('/dashboard/production/work-orders', { id: wo.parent_work_order_id as number }))}>
-          <InfoRow label="Parent Work Order" value={`${wo.parent_wo_number || `#${wo.parent_work_order_id}`} →`} />
-        </div>
+        <DetailRow label="Parent Work Order">
+          <button type="button" onClick={() => router.push(recordPath('/dashboard/production/work-orders', { id: wo.parent_work_order_id as number }))} style={linkBtn}>
+            {wo.parent_wo_number || `#${wo.parent_work_order_id}`} →
+          </button>
+        </DetailRow>
       )}
-    </div>
+    </>
   )
 }
 
@@ -144,7 +147,7 @@ export function DependentOrdersSection({ wo, canCreate, onChanged }: { wo: Produ
       {rows.length > 0 && (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
-            <thead><tr>{['Level', 'Work Order', 'Product', 'Qty', 'Status'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Level', 'Work Order', 'Product', 'Qty', 'Status'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => router.push(recordPath('/dashboard/production/work-orders', r))}>
@@ -153,9 +156,7 @@ export function DependentOrdersSection({ wo, canCreate, onChanged }: { wo: Produ
                   <td style={tdStyle}>{r.product_code} — {r.product_name}</td>
                   <td style={tdStyle}>{r.quantity_planned}</td>
                   <td style={tdStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[r.status] || '#78716c'}1a`, color: STATUS_HEX[r.status] || '#78716c', whiteSpace: 'nowrap' }}>
-                      {STATUS_LABELS[r.status] || r.status}
-                    </span>
+                    <Pill label={STATUS_LABELS[r.status] || r.status} hex={STATUS_HEX[r.status] || '#78716c'} />
                   </td>
                 </tr>
               ))}

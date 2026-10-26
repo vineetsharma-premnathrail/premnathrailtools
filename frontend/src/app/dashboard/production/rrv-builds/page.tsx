@@ -5,9 +5,9 @@ import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rrvApi } from '@/lib/api'
 import { ProductionRrvBuild } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import ProductionNav from '@/components/production/ProductionNav'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, chipBtnStyle, primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
@@ -77,7 +77,7 @@ export default function RrvBuildsPage() {
           {can('production', 'rrv_builds', 'create') && <button
             data-tour="production-rrv-new-btn"
             onClick={() => router.push('/dashboard/production/rrv-builds/new')}
-            style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}
+            style={primaryBtnStyle}
           >
             + New RRV Build
           </button>}
@@ -94,11 +94,7 @@ export default function RrvBuildsPage() {
         {STATUS_TABS.map((t) => {
           const active = statusTab === t.key
           return (
-            <button key={t.label} type="button" onClick={() => setStatusTab(t.key)} style={{
-              padding: '6px 14px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              border: `1px solid ${active ? '#FF6A2A' : BORDER.normal}`, background: active ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,.6)',
-              color: active ? '#FF6A2A' : TEXT.secondary,
-            }}>
+            <button key={t.label} type="button" onClick={() => setStatusTab(t.key)} style={chipBtnStyle(active)}>
               {t.label}
             </button>
           )
@@ -118,9 +114,9 @@ export default function RrvBuildsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1120 }}>
           <thead>
             <tr>
-              {['Build', 'Model / Customer', 'Serial · Chassis', 'Progress', 'Current Stage', 'Rework', 'Target Handover', 'Status', ''].map((h) => (
+              {['Build', 'Model / Customer', 'Serial · Chassis', 'Progress', 'Current Stage', 'Rework', 'Target Handover', 'Status', ''].map((h, i) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{i === 0 && <RowCount count={builds.length} />}
                 </th>
               ))}
             </tr>
@@ -161,9 +157,7 @@ export default function RrvBuildsPage() {
                       {formatDate(b.target_handover_date)}{b.is_overdue ? ' · overdue' : ''}
                     </td>
                     <td style={cellStyle}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[b.status]}1a`, color: STATUS_HEX[b.status], whiteSpace: 'nowrap' }}>
-                        {STATUS_LABELS[b.status] || b.status}
-                      </span>
+                      <Pill label={STATUS_LABELS[b.status] || b.status} hex={STATUS_HEX[b.status]} />
                     </td>
                     <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
                       <span onClick={() => router.push(recordPath('/dashboard/production/rrv-builds', b))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>

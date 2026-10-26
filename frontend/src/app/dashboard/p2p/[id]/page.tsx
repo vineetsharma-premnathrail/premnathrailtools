@@ -11,13 +11,13 @@ import { formatDate, formatDateTime } from '@/lib/format'
 import { P2PRequest, RFQ, P2PPurchaseOrder, P2PRequestItemStockCheck, StoreItem } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import Select from '@/components/shared/Select'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { userPoRoles, p2pRoleLabel } from '@/lib/p2pRoles'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle, dangerBtnStyle, smallPrimaryBtnStyle, smallSecondaryBtnStyle, RowCount, inputStyle as sharedInputStyle, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow, thStyle, numThStyle, tdStyle, numTdStyle, chipBtnStyle } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import ServiceEntriesPanel from '@/components/p2p/ServiceEntriesPanel'
@@ -89,31 +89,32 @@ const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
-}
+const inputStyle: React.CSSProperties = sharedInputStyle
 const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 20px', borderRadius: 10, border: 'none', cursor: 'pointer',
-  background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600,
-}
+const primaryBtn = primaryBtnStyle
 const STOCK_LABELS: Record<string, string> = { in_stock: 'In Stock', partial: 'Partial', not_in_stock: 'Not in Stock', no_match: 'Not linked to Item Master' }
 const STOCK_HEX: Record<string, string> = { in_stock: '#16a34a', partial: '#f59e0b', not_in_stock: '#dc2626', no_match: '#94a3b8' }
 
 const sheetErr: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
 type PromptKind = 'cancel' | 'reject' | 'approve' | 'approve-po' | 'short-close' | 'issue'
 
-const dangerBtn: React.CSSProperties = {
-  fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10,
-  border: '1px solid rgba(220,38,38,0.25)', background: 'rgba(220,38,38,0.06)', color: '#b91c1c', cursor: 'pointer',
-}
+const dangerBtn = dangerBtnStyle
 
 // Purpose of the requisition (backend P2P_PURPOSES), shown in the header.
 const PURPOSE_LABELS: Record<string, string> = {
   customer_order: 'Production (customer order)', machine_project: 'Service (delivered machine)', development: 'New development',
   department: 'Department running cost', capital: 'Asset / capital purchase', stock: 'Store stock refill',
 }
+const PRIORITY_LABELS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High' }
+const PRIORITY_HEX: Record<string, string> = { low: '#64748b', medium: '#d97706', high: '#dc2626' }
+const PO_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft', issued: 'Issued', acknowledged: 'Acknowledged by vendor', partially_fulfilled: 'Partially received', fulfilled: 'Fully received', cancelled: 'Cancelled',
+}
+const PO_STATUS_HEX: Record<string, string> = {
+  draft: '#64748b', issued: '#3b82f6', acknowledged: '#0ea5e9', partially_fulfilled: '#d97706', fulfilled: '#16a34a', cancelled: '#94a3b8',
+}
+// One approver's state on the approval grids — a Pill instead of a hand-made badge.
+const PILL_HEX = { Approved: '#16a34a', Pending: '#64748b', Rejected: '#dc2626', Cancelled: '#64748b' } as const
 
 export default function MyP2PRequestDetailPage() {
   // Deliberately NOT useRequireApp('p2p'): PR approvers are picked from the
@@ -485,19 +486,11 @@ export default function MyP2PRequestDetailPage() {
       <P2PNav />
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{pr.p2p_number}</h1>
-            <span data-tour="pr-detail-status" style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: `${statusColor}1a`, color: statusColor }}>
-              {status.label}
-            </span>
-          </div>
-          <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>{pr.category_label || pr.category_code}{pr.purpose && PURPOSE_LABELS[pr.purpose] ? ` · ${PURPOSE_LABELS[pr.purpose]}` : ''} · {pr.project_label || 'No project specified'}</p>
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>{pr.p2p_number}</h1>
+          <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>Purchase requisition — what is needed, who approves it, and how it is being bought.</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button data-tour="pr-detail-back" onClick={() => router.push(backHref)} type="button" style={secondaryBtnStyle}>
-            ← Back
-          </button>
           {canApproveReject && (
             <button data-tour="pr-detail-approve" disabled={busy} onClick={approve} style={primaryBtn}>Approve</button>
           )}
@@ -530,6 +523,9 @@ export default function MyP2PRequestDetailPage() {
           {canCancel && (
             <button data-tour="pr-detail-cancel" type="button" disabled={busy} onClick={() => openPrompt('cancel')} style={dangerBtn}>Cancel Requisition</button>
           )}
+          <button data-tour="pr-detail-back" onClick={() => router.push(backHref)} type="button" style={secondaryBtnStyle}>
+            ← Back
+          </button>
         </div>
       </div>
 
@@ -589,229 +585,36 @@ export default function MyP2PRequestDetailPage() {
         </FormSheet>
       )}
 
-      <div data-tour="pr-detail-request-info" style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Request Details</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14 }}>
-          <InfoRow label="Department" value={pr.department || '—'} />
-          <InfoRow label="Requested By" value={pr.requested_by_name || '—'} />
-          <InfoRow label="Request Date" value={formatDate(pr.request_date)} />
-          <InfoRow label="Required Date" value={formatDate(pr.required_date)} />
-          <InfoRow label="Requirement Type" value={pr.requirement_type || '—'} />
-          <InfoRow label="Priority" value={pr.priority} />
-          <InfoRow label="Buyer" value={pr.assigned_buyer_name || '—'} />
-        </div>
-        {pr.remarks && <div style={{ marginTop: 10 }}><InfoRow label="Remarks" value={pr.remarks} /></div>}
-      </div>
-
-      {po && seePoBlock && (
-        <div data-tour="pr-detail-po-info" style={sectionStyle}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Purchase Order</h2>
-          {allPos.length > 1 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 14 }}>
-              <span style={{ fontSize: 12, color: TEXT.muted }}>This requisition has {allPos.length} purchase orders:</span>
-              {allPos.map((x) => (
-                <button key={x.id} type="button" onClick={() => setPickedPoId(x.id)}
-                  style={{ ...secondaryBtnStyle, padding: '5px 12px', fontSize: 12, background: x.id === po.id ? 'rgba(255,122,69,0.12)' : undefined, color: x.id === po.id ? '#c2410c' : undefined }}>
-                  {x.po_number}{x.vendor_name ? ` · ${x.vendor_name}` : ''}
-                </button>
-              ))}
-            </div>
-          )}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 14 }}>
-            <InfoRow label="PO Number" value={po.po_number} />
-            <InfoRow label="Vendor" value={po.vendor_name || '—'} />
-            <InfoRow label="PO Date" value={formatDate(po.po_date)} />
-            <InfoRow label="Expected Delivery" value={formatDate(po.expected_delivery)} />
-            {seePrices && <InfoRow label="PO Value (incl. tax)" value={money(poLinesTotal)} />}
-          </div>
-          {poLines.length > 0 && (
-            <div style={{ overflow: 'auto', marginBottom: 14 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
-                <thead>
-                  <tr>
-                    {(seePrices ? ['SL', 'Item', 'Qty', 'Unit Price', 'Tax %', 'Line Total'] : ['SL', 'Item', 'Qty', 'Tax %']).map((h) => (
-                      <th key={h} style={{ textAlign: h === 'SL' || h === 'Item' ? 'left' : 'right', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {poLines.map((l, idx) => (
-                    <tr key={l.id} style={{ borderTop: `1px solid ${BORDER.light}` }}>
-                      <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{idx + 1}</td>
-                      <td style={{ padding: '8px 10px', fontSize: 13 }}>
-                        {l.item_code && <span style={{ fontWeight: 700, color: TEXT.heading }}>{l.item_code} — </span>}
-                        {l.item_name}{l.make ? <span style={{ color: TEXT.muted }}> · {l.make}</span> : null}
-                        {l.category && l.category !== 'stock' && (
-                          <span title={l.category === 'service' ? 'Service — confirmed on a service entry, never store stock' : 'Asset — received on the GRN, capitalised by Finance, never store stock'}
-                            style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 9999, background: `${l.category === 'service' ? '#7c3aed' : '#0891b2'}1a`, color: l.category === 'service' ? '#7c3aed' : '#0891b2' }}>
-                            {l.category === 'service' ? 'Service' : 'Asset'}
-                          </span>
-                        )}
-                        {!l.store_item_id && (
-                          <div data-tour="pr-detail-po-link-item" style={{ marginTop: 6 }}>
-                            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 9999, background: '#f59e0b1a', color: '#b45309' }}>Not linked to Item Master</span>
-                            {canLinkPoLines && (
-                              <button type="button" onClick={() => startLink(l.id)} style={{ marginLeft: 8, border: 'none', background: 'none', padding: 0, fontSize: 12, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>Link to Item Master</button>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: '8px 10px', fontSize: 13, textAlign: 'right' }}>{l.quantity} {l.unit || ''}</td>
-                      {seePrices && <td style={{ padding: '8px 10px', fontSize: 13, textAlign: 'right' }}>{money(l.unit_price)}</td>}
-                      <td style={{ padding: '8px 10px', fontSize: 13, textAlign: 'right' }}>{l.tax_rate != null ? `${l.tax_rate}%` : '—'}</td>
-                      {seePrices && <td style={{ padding: '8px 10px', fontSize: 13, textAlign: 'right', fontWeight: 600 }}>{money(l.line_total)}</td>}
-                    </tr>
-                  ))}
-                  {seePrices && (
-                  <tr style={{ borderTop: `1px solid ${BORDER.normal}` }}>
-                    <td colSpan={5} style={{ padding: '8px 10px', fontSize: 13, fontWeight: 700, textAlign: 'right', color: TEXT.heading }}>Total</td>
-                    <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 700, textAlign: 'right', color: TEXT.heading }}>{money(poLinesTotal)}</td>
-                  </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {canFeature('p2p', 'purchase_orders', 'po_document', 'view') && (
-          <div>
-            <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>PO Document</p>
-            {po.document_filename && rfq ? (
-              <a
-                href="#"
-                onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => rfqApi.getPoDocumentBlob(rfq.id, po.id), po.document_filename!) }}
-                style={{ fontSize: 13.5, color: '#2563eb', textDecoration: 'none' }}
-              >
-                {po.document_filename}
-              </a>
-            ) : (
-              <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>No document attached.</p>
-            )}
-          </div>
-          )}
-        </div>
-      )}
-
-      {po && po.status !== 'cancelled' && canFeature('p2p', 'purchase_orders', 'delivery_costs', 'view') && poLines.some((l) => (l.category || 'stock') === 'stock') && (
-        <PoDeliveryCostsPanel poId={po.id} onChanged={load} />
-      )}
-
-      {po && canFeature('p2p', 'purchase_orders', 'service_entries', 'view') && poLines.some((l) => l.category === 'service') && (
-        <ServiceEntriesPanel poId={po.id} poOpen={['issued', 'acknowledged', 'partially_fulfilled'].includes(po.status)} onChanged={load} />
-      )}
-
-      {rfq && rfq.attachments.length > 0 && canFeature('p2p', 'rfq', 'vendor_quotes', 'view') && (
-        <div data-tour="pr-detail-vendor-quotations" style={sectionStyle}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Vendor Quotations</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
-            {rfq.attachments.map((a) => (
-              <div key={a.id} style={{ borderRadius: 12, border: `1px solid ${BORDER.normal}`, padding: 12 }}>
-                <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 6px' }}>{a.vendor_tier}</p>
-                <p style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 2px' }}>{a.vendor_name || '—'}</p>
-                <a
-                  href="#"
-                  onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => rfqApi.getAttachmentBlob(rfq.id, a.id), a.filename) }}
-                  style={{ fontSize: 12.5, color: '#2563eb', textDecoration: 'none' }}
-                >
-                  {a.filename}
-                </a>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {poViaEngine && engine?.po_id ? (
-        <div data-tour="pr-detail-po-approval">
-          <ApprovalPanel entityType="p2p_purchase_order" entityId={engine.po_id} onChanged={load} title="PO Approval" />
-        </div>
-      ) : showPoApproval && (pr.approval_scheme === 'engine' && !poRaised ? (
-        <div data-tour="pr-detail-po-approval" style={sectionStyle}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>PO Approval</h2>
-          <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>— PO not sent for approval yet. It goes through the &ldquo;Purchase order&rdquo; workflow (Organization › Approval Workflows).</p>
-        </div>
-      ) : (
-      <div data-tour="pr-detail-po-approval" style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>PO Approval</h2>
-        {isMatrixPr ? (
-          !poRaised ? (
-            <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>— PO not raised yet. It will go to {(pr.po_approval_role_labels || []).join(', ')}; all of them must approve (any one Director).</p>
-          ) : (
-            <div>
-              <p style={{ fontSize: 13.5, color: TEXT.body, margin: '0 0 12px' }}>All of these must approve the PO (any one Director).</p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
-                {(pr.po_approval_panel || []).map((a) => {
-                  const rejectedHere = pr.status === 'rejected' && rejectedByRole === a.role
-                  const pill = rejectedHere
-                    ? { text: 'Rejected', bg: 'rgba(220,38,38,0.1)', color: '#dc2626' }
-                    : a.approved_at
-                    ? { text: 'Approved', bg: 'rgba(34,197,94,0.12)', color: '#16a34a' }
-                    : { text: 'Pending', bg: 'rgba(148,163,184,0.15)', color: '#64748b' }
-                  const actor = rejectedHere ? pr.rejected_by_name : a.approved_by_name
-                  const note = rejectedHere ? pr.rejected_reason : a.comment
-                  return (
-                    <div key={a.role}>
-                      <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{a.role_label}</p>
-                      {actor ? (
-                        <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
-                          {actor}
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: pill.bg, color: pill.color }}>{pill.text}</span>
-                        </p>
-                      ) : a.people.length ? (
-                        <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body, flexWrap: 'wrap' }}>
-                          {a.people.map((p) => p.name || `User #${p.id}`).join(a.role === 'director' ? ' / ' : ', ')}
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: pill.bg, color: pill.color }}>{pill.text}</span>
-                        </p>
-                      ) : (
-                        <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>— nobody holds this role</p>
-                      )}
-                      {note && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{note}&quot;</p>}
-                    </div>
-                  )
-                })}
-                {pr.status === 'rejected' && !(pr.po_approval_panel || []).some((a) => a.role === rejectedByRole) && (
-                  <div>
-                    <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>Rejected</p>
-                    <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
-                      {pr.rejected_by_name || '—'}
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(220,38,38,0.1)', color: '#dc2626' }}>
-                        Rejected{pr.rejected_by_role ? ` as ${p2pRoleLabel(pr.rejected_by_role)}` : ''}
-                      </span>
-                    </p>
-                    {pr.rejected_reason && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{pr.rejected_reason}&quot;</p>}
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
-          {poApprovalRoles.map((r) => {
-            const pill = rowPill(r.role, r.approvedAt)
-            const note = rejectedByRole === r.role ? pr.rejected_reason || r.comment : r.comment
-            const actor = rejectedByRole === r.role ? pr.rejected_by_name : r.name
-            return (
-              <div key={r.role}>
-                <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{r.label}</p>
-                {!poRaised ? (
-                  <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>— PO not raised yet</p>
-                ) : (
-                  <>
-                    <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
-                      {actor || '—'}
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: pill.bg, color: pill.color }}>
-                        {pill.text}
-                      </span>
-                    </p>
-                    {note && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{note}&quot;</p>}
-                  </>
-                )}
-              </div>
-            )
-          })}
-        </div>
+      <DetailCard tour="pr-detail-request-info">
+        <DetailSummary
+          title={(pr.purpose && PURPOSE_LABELS[pr.purpose]) || pr.category_label || pr.category_code}
+          text={`${pr.requested_by_name || 'Someone'}${pr.department ? ` (${pr.department})` : ''} asked for ${pr.items.length} item${pr.items.length === 1 ? '' : 's'}${pr.project_label ? ` for ${pr.project_label}` : ''}${pr.required_date ? `, needed by ${formatDate(pr.required_date)}` : ''}.`}
+          meta={<>
+            <span data-tour="pr-detail-status"><Pill label={status.label} hex={statusColor} /></span>
+            {pr.priority && <Pill label={`${PRIORITY_LABELS[pr.priority] || pr.priority} priority`} hex={PRIORITY_HEX[pr.priority] || '#64748b'} />}
+            <span>Raised {formatDate(pr.request_date)}</span>
+            {pr.assigned_buyer_name && <span>· Buyer {pr.assigned_buyer_name}</span>}
+          </>}
+        />
+        <DetailGroup title="What it is for">
+          <DetailRow label="Purpose">{pr.purpose ? PURPOSE_LABELS[pr.purpose] || pr.purpose : null}</DetailRow>
+          <DetailRow label="Category">{pr.category_label || pr.category_code}</DetailRow>
+          <DetailRow label="Charged to">{pr.project_label || null}</DetailRow>
+          {pr.order_project_number && <DetailRow label="Order project">{pr.order_project_number}</DetailRow>}
+          <DetailRow label="Requirement type">{pr.requirement_type || null}</DetailRow>
+        </DetailGroup>
+        <DetailGroup title="People & dates" last={!pr.remarks}>
+          <DetailRow label="Requested by">{pr.requested_by_name ? `${pr.requested_by_name}${pr.department ? ` · ${pr.department}` : ''}` : null}</DetailRow>
+          <DetailRow label="Buyer">{pr.assigned_buyer_name || null}</DetailRow>
+          <DetailRow label="Request date">{formatDate(pr.request_date)}</DetailRow>
+          <DetailRow label="Required by">{pr.required_date ? formatDate(pr.required_date) : null}</DetailRow>
+        </DetailGroup>
+        {pr.remarks && (
+          <DetailGroup last>
+            <DetailRow label="Remarks">{pr.remarks}</DetailRow>
+          </DetailGroup>
         )}
-      </div>
-      ))}
+      </DetailCard>
 
       {prViaEngine ? (
         <div data-tour="pr-detail-approval">
@@ -833,9 +636,7 @@ export default function MyP2PRequestDetailPage() {
                   <>
                     <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
                       {(rejectedByRole === r.role ? pr.rejected_by_name : null) || r.name || '—'}
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: pill.bg, color: pill.color }}>
-                        {pill.text}
-                      </span>
+                      <Pill label={pill.text} hex={pill.color} />
                     </p>
                     {note && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{note}&quot;</p>}
                   </>
@@ -848,9 +649,7 @@ export default function MyP2PRequestDetailPage() {
               <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{terminalNote.label}</p>
               <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
                 {terminalNote.name || '—'}
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: terminalNote.bg, color: terminalNote.color }}>
-                  {terminalNote.label}
-                </span>
+                <Pill label={terminalNote.label} hex={terminalNote.color} />
               </p>
               {terminalNote.reason && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{terminalNote.reason}&quot;</p>}
             </div>
@@ -872,8 +671,8 @@ export default function MyP2PRequestDetailPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
           <thead>
             <tr>
-              {['SL', 'Item Description', 'Make', 'Part Code', 'UOM', 'Qty', 'Project/Inhouse', 'Category', 'Ship To', 'Stock', 'Attachments', 'Fulfillment'].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+              {['SL', 'Item Description', 'Make', 'Part Code', 'UOM', 'Qty', 'Project / Inhouse', 'Category', 'Ship To', 'Stock', 'Attachments', 'Fulfillment'].map((h, i) => (
+                <th key={h} style={h === 'Qty' ? numThStyle : thStyle}>{h}{i === 0 && <RowCount count={pr.items.length} />}</th>
               ))}
             </tr>
           </thead>
@@ -884,14 +683,14 @@ export default function MyP2PRequestDetailPage() {
               const showActions = canManageStock && it.fulfillment_status === 'pending'
               return (
               <Fragment key={it.id}>
-                <tr style={{ borderTop: `1px solid ${BORDER.light}` }}>
-                <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{idx + 1}</td>
-                <td style={{ padding: '8px 10px', fontSize: 13 }}>{it.item_code && <span style={{ fontWeight: 700, color: TEXT.heading }}>{it.item_code} — </span>}{it.item_name}</td>
-                <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{it.make || '—'}</td>
-                <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{it.part_code || '—'}</td>
-                <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{it.unit || '—'}</td>
-                <td style={{ padding: '8px 10px', fontSize: 13 }}>{it.quantity}</td>
-                <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>
+                <tr>
+                <td style={{ ...tdStyle, color: TEXT.secondary }}>{idx + 1}</td>
+                <td style={{ ...tdStyle, minWidth: 200 }}>{it.item_code && <span style={{ fontWeight: 700, color: TEXT.heading }}>{it.item_code} — </span>}{it.item_name}</td>
+                <td style={{ ...tdStyle, color: TEXT.secondary }}>{it.make || '—'}</td>
+                <td style={{ ...tdStyle, color: TEXT.secondary }}>{it.part_code || '—'}</td>
+                <td style={{ ...tdStyle, color: TEXT.secondary }}>{it.unit || '—'}</td>
+                <td style={numTdStyle}>{it.quantity.toLocaleString('en-IN')}</td>
+                <td style={{ ...tdStyle, color: TEXT.secondary }}>
                   {it.project_inhouse || '—'}
                   {it.order_project_number && (
                     <div style={{ marginTop: 4 }}>
@@ -901,14 +700,12 @@ export default function MyP2PRequestDetailPage() {
                     </div>
                   )}
                 </td>
-                <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{it.category || '—'}</td>
-                <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{it.ship_to || '—'}</td>
-                <td style={{ padding: '8px 10px', fontSize: 12.5 }}>
+                <td style={{ ...tdStyle, color: TEXT.secondary }}>{it.category || '—'}</td>
+                <td style={{ ...tdStyle, color: TEXT.secondary }}>{it.ship_to || '—'}</td>
+                <td style={{ ...tdStyle, fontSize: 12.5 }}>
                   {it.stock_status ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${STOCK_HEX[it.stock_status]}1a`, color: STOCK_HEX[it.stock_status], whiteSpace: 'nowrap' }}>
-                        {STOCK_LABELS[it.stock_status] || it.stock_status}
-                      </span>
+                      <Pill label={STOCK_LABELS[it.stock_status] || it.stock_status} hex={STOCK_HEX[it.stock_status] || '#64748b'} />
                       {it.stock_status === 'partial' && it.stock_available_qty != null && (
                         <span style={{ fontSize: 11, color: TEXT.muted }}>{it.stock_available_qty} of {it.quantity} available</span>
                       )}
@@ -917,7 +714,7 @@ export default function MyP2PRequestDetailPage() {
                     <span style={{ color: TEXT.muted }}>—</span>
                   )}
                 </td>
-                <td style={{ padding: '8px 10px', fontSize: 12.5 }}>
+                <td style={{ ...tdStyle, fontSize: 12.5 }}>
                   {(it.attachments.length === 0 || !seeAttachments) && <span style={{ color: TEXT.muted }}>—</span>}
                   {seeAttachments && it.attachments.map((a) => (
                     <a
@@ -930,11 +727,9 @@ export default function MyP2PRequestDetailPage() {
                     </a>
                   ))}
                 </td>
-                <td style={{ padding: '8px 10px', fontSize: 12.5 }}>
+                <td style={{ ...tdStyle, fontSize: 12.5 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${fulfillmentHex}1a`, color: fulfillmentHex, whiteSpace: 'nowrap' }}>
-                      {FULFILLMENT_LABELS[it.fulfillment_status] || it.fulfillment_status}
-                    </span>
+                    <Pill label={FULFILLMENT_LABELS[it.fulfillment_status] || it.fulfillment_status} hex={fulfillmentHex} />
                     {it.fulfillment_status === 'sent_to_procurement' && (it.issued_qty || 0) > 0 && (
                       <span style={{ fontSize: 11, color: TEXT.muted }}>{it.issued_qty} issued from stock · buying {it.quantity - (it.issued_qty || 0)}</span>
                     )}
@@ -945,8 +740,8 @@ export default function MyP2PRequestDetailPage() {
                 </td>
                 </tr>
                 {showActions && (
-                  <tr key={`${it.id}-stock`} style={{ borderTop: `1px solid ${BORDER.light}` }}>
-                    <td colSpan={12} style={{ padding: '10px 14px', background: 'rgba(148,163,184,0.06)' }}>
+                  <tr key={`${it.id}-stock`}>
+                    <td colSpan={12} style={{ ...tdStyle, padding: '10px 14px', background: 'rgba(148,163,184,0.06)' }}>
                       {stockCheckLoading[it.id] ? (
                         <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>Checking store stock…</p>
                       ) : stockCheckErrors[it.id] ? (
@@ -1012,7 +807,7 @@ export default function MyP2PRequestDetailPage() {
                                         max={maxIssue}
                                         value={issueQtyByItem[it.id] ?? String(maxIssue)}
                                         onChange={(e) => setIssueQtyByItem((prev) => ({ ...prev, [it.id]: e.target.value }))}
-                                        style={{ ...inputStyle, width: 90, padding: '7px 10px' }}
+                                        style={{ ...inputStyle, width: 90 }}
                                       />
                                     </div>
                                   </>
@@ -1027,7 +822,7 @@ export default function MyP2PRequestDetailPage() {
                                       type="button"
                                       disabled={busy}
                                       onClick={() => { setIssuePrompt({ itemId: it.id, locationId: selectedLocId, qty: issueQty }); openPrompt('issue') }}
-                                      style={{ ...primaryBtn, padding: '8px 14px', fontSize: 12.5 }}
+                                      style={smallPrimaryBtnStyle}
                                     >
                                       {buyQty > 0 ? `Issue ${issueQty} & Buy ${buyQty}` : 'Issue from Stock'}
                                     </button>
@@ -1038,7 +833,7 @@ export default function MyP2PRequestDetailPage() {
                                       type="button"
                                       disabled={busy}
                                       onClick={() => setConfirmProcurementItemId(it.id)}
-                                      style={{ fontSize: 12.5, fontWeight: 600, padding: '8px 14px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.7)', color: TEXT.heading, cursor: 'pointer' }}
+                                      style={smallSecondaryBtnStyle}
                                     >
                                       Send to Procurement
                                     </button>
@@ -1061,6 +856,216 @@ export default function MyP2PRequestDetailPage() {
       </div>
 
 
+
+      {rfq && rfq.attachments.length > 0 && canFeature('p2p', 'rfq', 'vendor_quotes', 'view') && (
+        <div data-tour="pr-detail-vendor-quotations" style={sectionStyle}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Vendor Quotations</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+            {rfq.attachments.map((a) => (
+              <div key={a.id} style={{ borderRadius: 12, border: `1px solid ${BORDER.normal}`, padding: 12 }}>
+                <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 6px' }}>{a.vendor_tier}</p>
+                <p style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 2px' }}>{a.vendor_name || '—'}</p>
+                <a
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => rfqApi.getAttachmentBlob(rfq.id, a.id), a.filename) }}
+                  style={{ fontSize: 12.5, color: '#2563eb', textDecoration: 'none' }}
+                >
+                  {a.filename}
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {po && seePoBlock && (
+        <DetailCard tour="pr-detail-po-info">
+          {allPos.length > 1 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+              <span style={{ fontSize: 12, color: TEXT.muted }}>This requisition was split into {allPos.length} purchase orders — pick one:</span>
+              {allPos.map((x) => (
+                <button key={x.id} type="button" onClick={() => setPickedPoId(x.id)} style={chipBtnStyle(x.id === po.id)}>
+                  {x.po_number}{x.vendor_name ? ` · ${x.vendor_name}` : ''}
+                </button>
+              ))}
+            </div>
+          )}
+          <DetailSummary
+            title={`Purchase Order ${po.po_number}`}
+            text={`Order placed with ${po.vendor_name || 'the vendor'} for ${poLines.length || 'the'} line${poLines.length === 1 ? '' : 's'} of this requisition.`}
+            meta={<>
+              <Pill label={PO_STATUS_LABELS[po.status] || po.status} hex={PO_STATUS_HEX[po.status] || '#64748b'} />
+              <span>PO date {formatDate(po.po_date)}</span>
+              {po.expected_delivery && <span>· Delivery by {formatDate(po.expected_delivery)}</span>}
+            </>}
+          />
+          <DetailGroup>
+            <DetailRow label="Vendor">{po.vendor_name || null}</DetailRow>
+            <DetailRow label="Expected delivery">{po.expected_delivery ? formatDate(po.expected_delivery) : null}</DetailRow>
+            {seePrices && <DetailRow label="PO value (incl. tax)">{poLinesTotal != null ? money(poLinesTotal) : null}</DetailRow>}
+            {canFeature('p2p', 'purchase_orders', 'po_document', 'view') && (
+              <DetailRow label="PO document">
+                {po.document_filename && rfq ? (
+                  <a
+                    href="#"
+                    onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => rfqApi.getPoDocumentBlob(rfq.id, po.id), po.document_filename!) }}
+                    style={{ color: '#2563eb', textDecoration: 'none' }}
+                  >
+                    {po.document_filename}
+                  </a>
+                ) : <span style={{ color: TEXT.muted }}>No document attached yet</span>}
+              </DetailRow>
+            )}
+          </DetailGroup>
+          {poLines.length > 0 && (
+            <div style={{ overflow: 'auto', marginTop: 14 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+                <thead>
+                  <tr>
+                    {(seePrices ? ['SL', 'Item', 'Qty', 'Unit Price', 'Tax %', 'Line Total'] : ['SL', 'Item', 'Qty', 'Tax %']).map((h, i) => (
+                      <th key={h} style={h === 'SL' || h === 'Item' ? thStyle : numThStyle}>{h}{i === 0 && <RowCount count={poLines.length} />}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {poLines.map((l, idx) => (
+                    <tr key={l.id}>
+                      <td style={{ ...tdStyle, color: TEXT.secondary }}>{idx + 1}</td>
+                      <td style={tdStyle}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span>
+                            {l.item_code && <span style={{ fontWeight: 700, color: TEXT.heading }}>{l.item_code} — </span>}
+                            {l.item_name}{l.make ? <span style={{ color: TEXT.muted }}> · {l.make}</span> : null}
+                          </span>
+                          {l.category && l.category !== 'stock' && (
+                            <Pill label={l.category === 'service' ? 'Service' : 'Asset'} hex={l.category === 'service' ? '#7c3aed' : '#0891b2'}
+                              title={l.category === 'service' ? 'Service — confirmed on a service entry, never store stock' : 'Asset — received on the GRN, capitalised by Finance, never store stock'} />
+                          )}
+                        </div>
+                        {!l.store_item_id && (
+                          <div data-tour="pr-detail-po-link-item" style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <Pill label="Not linked to Item Master" hex="#b45309" />
+                            {canLinkPoLines && (
+                              <button type="button" onClick={() => startLink(l.id)} style={smallSecondaryBtnStyle}>Link to Item Master</button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td style={numTdStyle}>{l.quantity.toLocaleString('en-IN')} {l.unit || ''}</td>
+                      {seePrices && <td style={numTdStyle}>{money(l.unit_price)}</td>}
+                      <td style={numTdStyle}>{l.tax_rate != null ? `${l.tax_rate}%` : '—'}</td>
+                      {seePrices && <td style={{ ...numTdStyle, fontWeight: 600 }}>{money(l.line_total)}</td>}
+                    </tr>
+                  ))}
+                  {seePrices && (
+                  <tr>
+                    <td colSpan={5} style={{ ...numTdStyle, fontWeight: 700, color: TEXT.heading, borderTop: `1px solid ${BORDER.normal}` }}>Total</td>
+                    <td style={{ ...numTdStyle, fontWeight: 700, color: TEXT.heading, borderTop: `1px solid ${BORDER.normal}` }}>{money(poLinesTotal)}</td>
+                  </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </DetailCard>
+      )}
+
+      {poViaEngine && engine?.po_id ? (
+        <div data-tour="pr-detail-po-approval">
+          <ApprovalPanel entityType="p2p_purchase_order" entityId={engine.po_id} onChanged={load} title="PO Approval" />
+        </div>
+      ) : showPoApproval && (pr.approval_scheme === 'engine' && !poRaised ? (
+        <div data-tour="pr-detail-po-approval" style={sectionStyle}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>PO Approval</h2>
+          <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>PO not sent for approval yet. It goes through the &ldquo;Purchase order&rdquo; workflow (Organization › Approval Workflows).</p>
+        </div>
+      ) : (
+      <div data-tour="pr-detail-po-approval" style={sectionStyle}>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>PO Approval</h2>
+        {isMatrixPr ? (
+          !poRaised ? (
+            <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>PO not raised yet. It will go to {(pr.po_approval_role_labels || []).join(', ')}; all of them must approve (any one Director).</p>
+          ) : (
+            <div>
+              <p style={{ fontSize: 13.5, color: TEXT.body, margin: '0 0 12px' }}>All of these must approve the PO (any one Director).</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+                {(pr.po_approval_panel || []).map((a) => {
+                  const rejectedHere = pr.status === 'rejected' && rejectedByRole === a.role
+                  const pill = rejectedHere
+                    ? { text: 'Rejected', bg: 'rgba(220,38,38,0.1)', color: '#dc2626' }
+                    : a.approved_at
+                    ? { text: 'Approved', bg: 'rgba(34,197,94,0.12)', color: '#16a34a' }
+                    : { text: 'Pending', bg: 'rgba(148,163,184,0.15)', color: '#64748b' }
+                  const actor = rejectedHere ? pr.rejected_by_name : a.approved_by_name
+                  const note = rejectedHere ? pr.rejected_reason : a.comment
+                  return (
+                    <div key={a.role}>
+                      <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{a.role_label}</p>
+                      {actor ? (
+                        <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
+                          {actor}
+                          <Pill label={pill.text} hex={pill.color} />
+                        </p>
+                      ) : a.people.length ? (
+                        <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body, flexWrap: 'wrap' }}>
+                          {a.people.map((p) => p.name || `User #${p.id}`).join(a.role === 'director' ? ' / ' : ', ')}
+                          <Pill label={pill.text} hex={pill.color} />
+                        </p>
+                      ) : (
+                        <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>— nobody holds this role</p>
+                      )}
+                      {note && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{note}&quot;</p>}
+                    </div>
+                  )
+                })}
+                {pr.status === 'rejected' && !(pr.po_approval_panel || []).some((a) => a.role === rejectedByRole) && (
+                  <div>
+                    <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>Rejected</p>
+                    <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
+                      {pr.rejected_by_name || '—'}
+                      <Pill label={`Rejected${pr.rejected_by_role ? ` as ${p2pRoleLabel(pr.rejected_by_role)}` : ''}`} hex="#dc2626" />
+                    </p>
+                    {pr.rejected_reason && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{pr.rejected_reason}&quot;</p>}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
+          {poApprovalRoles.map((r) => {
+            const pill = rowPill(r.role, r.approvedAt)
+            const note = rejectedByRole === r.role ? pr.rejected_reason || r.comment : r.comment
+            const actor = rejectedByRole === r.role ? pr.rejected_by_name : r.name
+            return (
+              <div key={r.role}>
+                <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{r.label}</p>
+                {!poRaised ? (
+                  <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>— PO not raised yet</p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
+                      {actor || '—'}
+                      <Pill label={pill.text} hex={pill.color} />
+                    </p>
+                    {note && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{note}&quot;</p>}
+                  </>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        )}
+      </div>
+      ))}
+
+      {po && po.status !== 'cancelled' && canFeature('p2p', 'purchase_orders', 'delivery_costs', 'view') && poLines.some((l) => (l.category || 'stock') === 'stock') && (
+        <PoDeliveryCostsPanel poId={po.id} onChanged={load} />
+      )}
+
+      {po && canFeature('p2p', 'purchase_orders', 'service_entries', 'view') && poLines.some((l) => l.category === 'service') && (
+        <ServiceEntriesPanel poId={po.id} poOpen={['issued', 'acknowledged', 'partially_fulfilled'].includes(po.status)} onChanged={load} />
+      )}
 
       {pr.attachments.length > 0 && seeAttachments && (
         <div data-tour="pr-detail-attachments" style={sectionStyle}>
@@ -1136,15 +1141,6 @@ export default function MyP2PRequestDetailPage() {
         onConfirm={() => confirmProcurementItemId != null && sendToProcurement(confirmProcurementItemId)}
         onCancel={() => setConfirmProcurementItemId(null)}
       />
-    </div>
-  )
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{label}</p>
-      <p style={{ fontSize: 13.5, color: TEXT.body, margin: 0 }}>{value}</p>
     </div>
   )
 }

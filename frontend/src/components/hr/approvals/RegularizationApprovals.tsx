@@ -5,7 +5,7 @@ import { hrApi } from '@/lib/api'
 import { HrAttendanceRegularization } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import PromptDialog from '@/components/erp/PromptDialog'
-import { smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { smallSecondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 
 const ATT_LABELS: Record<string, string> = {
@@ -20,7 +20,7 @@ const actionBtn = (color: string): React.CSSProperties => ({
 })
 
 function dmy(iso: string | null) {
-  return iso ? `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}` : '—'
+  return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—'
 }
 
 // Attendance corrections waiting for the signed-in user's decision.
@@ -82,8 +82,8 @@ export default function RegularizationApprovals() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
             <thead>
               <tr>
-                {['Employee', 'Date', 'Currently', 'Asked for', 'Times', 'Reason', ''].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
+                {['Employee', 'Date', 'Currently', 'Asked for', 'Times', 'Reason', ''].map((h, hi) => (
+                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}{hi === 0 && <RowCount count={items.length} />}</th>
                 ))}
               </tr>
             </thead>

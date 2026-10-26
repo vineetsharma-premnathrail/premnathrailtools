@@ -3,16 +3,13 @@
 import Select from '@/components/shared/Select'
 import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState } from 'react'
-import { useAuth } from '@/hooks/useAuth'
-import { useCan } from '@/lib/permissions'
-import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
-import { crmApi, usersApi } from '@/lib/api'
+import { crmApi } from '@/lib/api'
 import { formatDate } from '@/lib/format'
-import { Inquiry, InquiryLineItem, Organization, OrgContact, Tender, DirectoryUser } from '@/types'
+import { Inquiry, InquiryLineItem, Organization, OrgContact, Tender } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import PhoneField, { isPhoneValid } from '@/components/erp/PhoneField'
-import { RAILWAY_ZONES, LEAD_SOURCES, inquiryStatusOptions, priorityOptions, priorityLabel } from './constants'
+import { RAILWAY_ZONES, leadSourceOptions, inquiryStatusOptions, priorityOptions, priorityLabel } from './constants'
 import { Row, ComboBox, handleEnterAsTab, InfoRow, XIcon } from './ui'
 import { AddMoreButton, RemoveValueButton, ValueRow, canAddMore } from '@/components/shared/MoreValuesButtons'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
@@ -110,31 +107,18 @@ export default function InquiryForm({
   /** Shows the "← Back" pill in the header. */
   onBack?: () => void
 }) {
-  // Inquiries & Tenders › Prices & margins: without it the value is hidden (and the server ignores it on save).
-  const seePrices = useCan().canFeature('crm', 'inquiries_tenders', 'prices', 'view')
-  const { user } = useAuth()
-  const isAdmin = user?.role === 'admin'
-  const bdOwnerName = initial?.bd_owner || user?.name || ''
   const orgLocked = !!defaultOrgId
   const [form, setForm] = useState<FormState>(() => toFormState(initial, defaultOrgId))
+  // Client first: the inquiry is about a customer, so its other fields open only
+  // once the client company and a saved contact person are chosen.
+  const clientChosen = !!form.org_id && !!form.org_contact_id && form.org_contact_id !== '__new__'
+  const gatedStyle: React.CSSProperties = clientChosen ? {} : { opacity: 0.45, pointerEvents: 'none', userSelect: 'none' }
   // Secondary requirement fields stay folded unless the record already has one filled.
   const [showMore, setShowMore] = useState(() => !!(initial?.delivery_location || initial?.inspection_req || initial?.warranty_req))
-  const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([])
-
-  useEffect(() => {
-    // Owner / sales engineer pickers (users, not free text).
-    usersApi.directory().then((data) => setDirectoryUsers(Array.isArray(data) ? data : [])).catch(() => {})
-  }, [])
-  // The role's "Assign to" rules narrow both pickers; whoever is set today stays listed (and owning it yourself is always allowed).
-  const allowBdOwner = useAssigneeFilter('crm:inquiries_tenders.bd_owner')
-  const allowEngineer = useAssigneeFilter('crm:inquiries_tenders.sales_engineer')
-  const bdOwnerUsers = directoryUsers.filter((u) => allowBdOwner(u.id) || u.id === user?.id || u.id === initial?.bd_owner_id)
-  const engineerUsers = directoryUsers.filter((u) => allowEngineer(u.id) || u.id === initial?.sales_engineer_id)
   const [railwayZoneCustom] = useState(
     initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? initial.railway_zone : ''
   )
   const [organizations, setOrganizations] = useState<Organization[]>([])
-  const [productCategories, setProductCategories] = useState<{ id: number; name: string }[]>([])
   const [products, setProducts] = useState<{ id: number; name: string; category?: string | null }[]>([])
   const [contacts, setContacts] = useState<OrgContact[]>([])
   const emptyNewContact = () => ({ name: '', designation: '', mobile: '', email: '', additionalMobiles: [] as string[], additionalEmails: [] as string[] })
@@ -241,22 +225,12 @@ export default function InquiryForm({
 
   useEffect(() => {
     crmApi.listOrganizations({ picker: true }).then(setOrganizations)
-    crmApi.listProductCategories().then(setProductCategories).catch(() => {})
     crmApi.listProducts().then(setProducts).catch(() => {})
   }, [])
 
-  // Typing a brand-new category/product persists it to the shared catalog
-  // (crm_product_categories / crm_products) so it shows up as a real option
-  // for every future inquiry, instead of a one-off "Other" value that only
-  // applied to this single inquiry.
-  const createCategory = async (query: string) => {
-    const name = query.trim()
-    if (!name) return
-    const created = await crmApi.createProductCategory({ name })
-    setProductCategories((list) => (list.some((c) => c.id === created.id) ? list : [...list, created]))
-    set('product_category', created.name)
-  }
-
+  // Typing a brand-new product persists it to the shared catalog (crm_products)
+  // so it shows up as a real option for every future inquiry, instead of a
+  // one-off value that only applied to this single inquiry.
   const createProduct = async (query: string) => {
     const name = query.trim()
     if (!name) return
@@ -357,10 +331,9 @@ export default function InquiryForm({
         org_contact_id: Number(form.org_contact_id),
         railway_zone: form.railway_zone === 'Other' ? railwayZoneCustom : form.railway_zone,
         product_category: form.product_category,
-        bd_owner: isAdmin ? (form.bd_owner || bdOwnerName) : bdOwnerName,
-        // The owner is a user (the name above follows it on the server). A non-admin
-        // creating an inquiry owns it; editing keeps the recorded owner.
-        bd_owner_id: isAdmin ? (form.bd_owner_id ? Number(form.bd_owner_id) : (initial ? undefined : user?.id)) : (initial ? undefined : user?.id),
+        // BD owner = whoever logs the inquiry, set by the server; never sent from the form.
+        bd_owner: undefined,
+        bd_owner_id: undefined,
         sales_engineer_id: form.sales_engineer_id ? Number(form.sales_engineer_id) : (initial?.sales_engineer_id ? null : undefined),
         expected_value: form.expected_value ? Number(form.expected_value) : undefined,
         probability: form.probability ? Number(form.probability) : undefined,
@@ -406,9 +379,98 @@ export default function InquiryForm({
 
       <SheetColumns
         left={<>
+      <SheetSection icon="building" title="Company Information">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <F label={<>Client Company <Req /></>} tourId="inq-org">
+            <SearchableSelect
+              value={form.org_id}
+              onChange={(v) => set('org_id', v)}
+              options={organizations.map((o) => ({ value: String(o.id), label: o.name }))}
+              placeholder="Search existing customer organization…"
+              disabled={orgLocked}
+            />
+          </F>
+          <F label={<>Contact Person <Req /></>} tourId="inq-contact">
+            <Select value={form.org_contact_id} onChange={(e) => set('org_contact_id', e.target.value)} disabled={!form.org_id} style={inputStyle}>
+              <option value="">-- Select Contact --</option>
+              {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <option value="__new__">+ Add New Contact</option>
+            </Select>
+          </F>
+        </div>
+        {selectedContact && (
+          <div style={{ padding: 14, borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 12 }}>
+            <InfoRow label="Name" value={selectedContact.name} />
+            <InfoRow label="Designation" value={selectedContact.designation || '—'} />
+            <InfoRow label="Mobile" value={[selectedContact.mobile, ...(selectedContact.additional_mobiles || [])].filter(Boolean).join(', ') || '—'} />
+            <InfoRow label="Email" value={[selectedContact.email, ...(selectedContact.additional_emails || [])].filter(Boolean).join(', ') || '—'} />
+          </div>
+        )}
+
+        {form.org_contact_id === '__new__' && (
+          <div style={{ padding: 14, borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
+            <Row>
+              <F label={<>Name <Req /></>}><input value={newContact.name} onChange={(e) => setNewContact((c) => ({ ...c, name: e.target.value }))} placeholder="Rajesh Kumar" style={{ ...inputStyle, ...(nameMatch ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }} /></F>
+              <F label="Designation"><input value={newContact.designation} onChange={(e) => setNewContact((c) => ({ ...c, designation: e.target.value }))} placeholder="Purchase Head / DGM" style={inputStyle} /></F>
+            </Row>
+            <Row>
+              <F label="Mobile">
+                <ValueRow button={<AddMoreButton onClick={addNewContactMobile} label="Add another mobile" extras={newContact.additionalMobiles} primary={newContact.mobile} />}>
+                  <PhoneField value={newContact.mobile} onChange={(v) => setNewContact((c) => ({ ...c, mobile: v }))} style={{ ...inputStyle, ...(mobileMatch ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }} />
+                </ValueRow>
+                {newContact.additionalMobiles.map((m, i) => (
+                  <div key={i} style={{ marginTop: 6 }}>
+                    <ValueRow button={<RemoveValueButton onClick={() => removeNewContactMobile(i)} label="Remove this mobile" />}>
+                      <PhoneField value={m} onChange={(v) => setNewContactMobile(i, v)} style={inputStyle} />
+                    </ValueRow>
+                  </div>
+                ))}
+              </F>
+              <F label="Email">
+                <ValueRow button={<AddMoreButton onClick={addNewContactEmail} label="Add another email" extras={newContact.additionalEmails} primary={newContact.email} />}>
+                  <ValidatedInput type="email" value={newContact.email} onChange={(v) => setNewContact((c) => ({ ...c, email: v }))} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="email@company.com" style={{ ...inputStyle, ...(emailMatch ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }} />
+                </ValueRow>
+                {newContact.additionalEmails.map((em, i) => (
+                  <div key={i} style={{ marginTop: 6 }}>
+                    <ValueRow button={<RemoveValueButton onClick={() => removeNewContactEmail(i)} label="Remove this email" />}>
+                      <input type="email" value={em} onChange={(e) => setNewContactEmail(i, e.target.value)} placeholder="email@company.com" style={inputStyle} />
+                    </ValueRow>
+                  </div>
+                ))}
+              </F>
+            </Row>
+            {matchedContact && (
+              <div style={{ padding: '9px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', color: '#b45309', fontSize: 12 }}>
+                ⚠ This matches the existing contact &quot;{matchedContact.name}&quot;
+                {mobileMatch ? ' (same mobile number)' : emailMatch ? ' (same email address)' : ''}.
+                Saving will link to that existing contact instead of creating a new one.
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button type="button" onClick={() => { setNewContact(emptyNewContact()); set('org_contact_id', '') }} style={sheetBtn('secondary', SHEET.INK)}>Cancel</button>
+              <button type="button" onClick={saveNewContact} disabled={savingContact} style={sheetBtn('primary', SHEET.BLUE, savingContact)}>
+                {savingContact ? 'Saving…' : 'Save Contact'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {duplicateWarning && (
+          <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', color: '#a16207', fontSize: 12.5, display: 'flex', gap: 8, marginTop: 12 }}>
+            <span>⚠</span>
+            <span>{duplicateWarning}</span>
+          </div>
+        )}
+      </SheetSection>
+      {!clientChosen && (
+        <p style={{ margin: '0 0 12px', padding: '10px 14px', borderRadius: 10, background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', fontSize: 12.5 }}>
+          Pick the <b>Client Company</b> and <b>Contact Person</b> first — the rest of the inquiry opens once the client is chosen.
+        </p>
+      )}
+      <div inert={!clientChosen} style={gatedStyle}>
       <SheetSection icon="list" title="Basic Information">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '1 1 130px', minWidth: 130 }}>
+          <div style={{ flex: '1 1 160px', minWidth: 160 }}>
             <F label="Inquiry Number" tourId="inq-number">
               <input
                 value={initial?.universal_id || previewNumber || 'Auto-generated on save'}
@@ -426,11 +488,11 @@ export default function InquiryForm({
               />
             </F>
           </div>
-          <div style={{ flex: '1 1 130px', minWidth: 130 }}>
+          <div style={{ flex: '1 1 160px', minWidth: 160 }}>
             <F label={<>Lead Source <Req /></>} tourId="inq-lead-source">
               <Select value={form.lead_source} onChange={(e) => set('lead_source', e.target.value)} style={inputStyle}>
                 <option value="">-- Select Source --</option>
-                {LEAD_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+                {leadSourceOptions(form.lead_source).map((s) => <option key={s} value={s}>{s}</option>)}
               </Select>
             </F>
           </div>
@@ -441,25 +503,11 @@ export default function InquiryForm({
               </Select>
             </F>
           </div>
-          <div style={{ flex: '1 1 130px', minWidth: 130 }}>
+          <div style={{ flex: '1 1 200px', minWidth: 190 }}>
             <F label={<>Status <Req /></>} tourId="inq-status">
               <Select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
                 {inquiryStatusOptions(form.status).map((s) => <option key={s} value={s}>{s}</option>)}
               </Select>
-            </F>
-          </div>
-          <div style={{ flex: '1 1 110px', minWidth: 110 }}>
-            <F label="BD Owner" tourId="inq-bd-owner">
-              {isAdmin ? (
-                <SearchableSelect
-                  value={form.bd_owner_id || String(directoryUsers.find((u) => u.name === (form.bd_owner || bdOwnerName))?.id || '')}
-                  onChange={(v) => { set('bd_owner_id', v); set('bd_owner', directoryUsers.find((u) => String(u.id) === v)?.name || '') }}
-                  options={bdOwnerUsers.map((u) => ({ value: String(u.id), label: u.name }))}
-                  placeholder="Select BD Owner..."
-                />
-              ) : (
-                <input value={bdOwnerName} disabled style={{ ...inputStyle, background: SHEET.SOFT, color: SHEET.MUTED }} />
-              )}
             </F>
           </div>
         </div>
@@ -469,25 +517,10 @@ export default function InquiryForm({
         </F>
         </div>
       </SheetSection>
-      <SheetSection icon="rupee" title="Opportunity">
-        <div data-tour="inq-opportunity" style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          {seePrices && <div style={{ flex: '0 1 150px', minWidth: 130 }}>
-            <F label="Expected Value (₹)"><input type="number" min={0} value={form.expected_value} onChange={(e) => set('expected_value', e.target.value)} style={inputStyle} /></F>
-          </div>}
-          <div style={{ flex: '0 1 110px', minWidth: 100 }}>
-            <F label="Win Probability %"><input type="number" min={0} max={100} value={form.probability} onChange={(e) => set('probability', e.target.value)} style={inputStyle} /></F>
-          </div>
-          <div style={{ flex: '0 1 170px', minWidth: 160 }}>
-            <F label="Expected Order Date"><DateField value={form.expected_order_date} onChange={(v) => set('expected_order_date', v)} /></F>
-          </div>
-          <div style={{ flex: '1 1 180px', maxWidth: 300 }}>
-            <F label="Sales Engineer">
-              <SearchableSelect value={form.sales_engineer_id} onChange={(v) => set('sales_engineer_id', v)}
-                options={[{ value: '', label: '— None —' }, ...engineerUsers.map((u) => ({ value: String(u.id), label: u.name }))]} placeholder="Select sales engineer..." />
-            </F>
-          </div>
-        </div>
-      </SheetSection>
+      </div>
+        </>}
+        right={<>
+      <div inert={!clientChosen} style={gatedStyle}>
       <SheetSection
         icon="box"
         title="Product Requirement"
@@ -499,19 +532,6 @@ export default function InquiryForm({
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '0 1 200px', minWidth: 170 }}>
-            <F label="Category" tourId="inq-product-category">
-              <ComboBox
-                value={form.product_category}
-                onChange={(v) => set('product_category', v)}
-                onPick={(o) => set('product_category', o.label)}
-                onCreateNew={createCategory}
-                createLabel="New Category"
-                options={productCategories.map((c) => ({ key: String(c.id), label: c.name }))}
-                placeholder="Select or type a category"
-              />
-            </F>
-          </div>
           <div style={{ flex: '1 1 180px', minWidth: 160 }}>
             <F label={<>Product <Req /></>} tourId="inq-product">
               <ComboBox
@@ -545,19 +565,6 @@ export default function InquiryForm({
               return (
                 <div key={i} style={{ padding: 12, borderRadius: 10, background: 'rgba(0,0,0,0.02)', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start' }}>
-                    <div style={{ flex: '0 1 200px', minWidth: 170 }}>
-                      <F label="Category">
-                        <ComboBox
-                          value={row.product_category}
-                          onChange={(v) => setExtraProduct(i, 'product_category', v)}
-                          onPick={(o) => setExtraProduct(i, 'product_category', o.label)}
-                          onCreateNew={createCategory}
-                          createLabel="New Category"
-                          options={productCategories.map((c) => ({ key: String(c.id), label: c.name }))}
-                          placeholder="Select or type a category"
-                        />
-                      </F>
-                    </div>
                     <div style={{ flex: '1 1 180px', minWidth: 160 }}>
                       <F label="Product">
                         <ComboBox
@@ -600,91 +607,7 @@ export default function InquiryForm({
         <F label="Project Details" tourId="inq-project-details"><textarea value={form.project_details} onChange={(e) => set('project_details', e.target.value)} rows={3} placeholder="Project background, scope, timeline..." style={{ ...inputStyle, resize: 'vertical' }} /></F>
         </div>
       </SheetSection>
-        </>}
-        right={<>
-      <SheetSection icon="building" title="Company Information">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <F label={<>Client Company <Req /></>} tourId="inq-org">
-            <SearchableSelect
-              value={form.org_id}
-              onChange={(v) => set('org_id', v)}
-              options={organizations.map((o) => ({ value: String(o.id), label: o.name }))}
-              placeholder="Search existing customer organization…"
-              disabled={orgLocked}
-            />
-          </F>
-          <F label={<>Contact Person <Req /></>} tourId="inq-contact">
-            <Select value={form.org_contact_id} onChange={(e) => set('org_contact_id', e.target.value)} disabled={!form.org_id} style={inputStyle}>
-              <option value="">-- Select Contact --</option>
-              {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              <option value="__new__">+ Add New Contact</option>
-            </Select>
-          </F>
-        </div>
-        {selectedContact && (
-          <div style={{ padding: 14, borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 12 }}>
-            <InfoRow label="Name" value={selectedContact.name} />
-            <InfoRow label="Designation" value={selectedContact.designation || '—'} />
-            <InfoRow label="Mobile" value={[selectedContact.mobile, ...(selectedContact.additional_mobiles || [])].filter(Boolean).join(', ') || '—'} />
-            <InfoRow label="Email" value={[selectedContact.email, ...(selectedContact.additional_emails || [])].filter(Boolean).join(', ') || '—'} />
-          </div>
-        )}
-
-        {form.org_contact_id === '__new__' && (
-          <div style={{ padding: 14, borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
-            <Row>
-              <F label={<>Name <Req /></>}><input value={newContact.name} onChange={(e) => setNewContact((c) => ({ ...c, name: e.target.value }))} placeholder="Rajesh Kumar" style={{ ...inputStyle, ...(nameMatch ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }} /></F>
-              <F label="Designation"><input value={newContact.designation} onChange={(e) => setNewContact((c) => ({ ...c, designation: e.target.value }))} placeholder="Purchase Head / DGM" style={inputStyle} /></F>
-            </Row>
-            <Row>
-              <F label="Mobile">
-                <ValueRow button={<AddMoreButton onClick={addNewContactMobile} label="Add another mobile" extras={newContact.additionalMobiles} />}>
-                  <PhoneField value={newContact.mobile} onChange={(v) => setNewContact((c) => ({ ...c, mobile: v }))} style={{ ...inputStyle, ...(mobileMatch ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }} />
-                </ValueRow>
-                {newContact.additionalMobiles.map((m, i) => (
-                  <div key={i} style={{ marginTop: 6 }}>
-                    <ValueRow button={<RemoveValueButton onClick={() => removeNewContactMobile(i)} label="Remove this mobile" />}>
-                      <PhoneField value={m} onChange={(v) => setNewContactMobile(i, v)} style={inputStyle} />
-                    </ValueRow>
-                  </div>
-                ))}
-              </F>
-              <F label="Email">
-                <ValueRow button={<AddMoreButton onClick={addNewContactEmail} label="Add another email" extras={newContact.additionalEmails} />}>
-                  <ValidatedInput type="email" value={newContact.email} onChange={(v) => setNewContact((c) => ({ ...c, email: v }))} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="email@company.com" style={{ ...inputStyle, ...(emailMatch ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }} />
-                </ValueRow>
-                {newContact.additionalEmails.map((em, i) => (
-                  <div key={i} style={{ marginTop: 6 }}>
-                    <ValueRow button={<RemoveValueButton onClick={() => removeNewContactEmail(i)} label="Remove this email" />}>
-                      <input type="email" value={em} onChange={(e) => setNewContactEmail(i, e.target.value)} placeholder="email@company.com" style={inputStyle} />
-                    </ValueRow>
-                  </div>
-                ))}
-              </F>
-            </Row>
-            {matchedContact && (
-              <div style={{ padding: '9px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', color: '#b45309', fontSize: 12 }}>
-                ⚠ This matches the existing contact &quot;{matchedContact.name}&quot;
-                {mobileMatch ? ' (same mobile number)' : emailMatch ? ' (same email address)' : ''}.
-                Saving will link to that existing contact instead of creating a new one.
-              </div>
-            )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button type="button" onClick={() => { setNewContact(emptyNewContact()); set('org_contact_id', '') }} style={sheetBtn('secondary', SHEET.INK)}>Cancel</button>
-              <button type="button" onClick={saveNewContact} disabled={savingContact} style={sheetBtn('primary', SHEET.BLUE, savingContact)}>
-                {savingContact ? 'Saving…' : 'Save Contact'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {duplicateWarning && (
-          <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', color: '#a16207', fontSize: 12.5, display: 'flex', gap: 8, marginTop: 12 }}>
-            <span>⚠</span>
-            <span>{duplicateWarning}</span>
-          </div>
-        )}
-      </SheetSection>
+      </div>
         </>}
       />
     </form>

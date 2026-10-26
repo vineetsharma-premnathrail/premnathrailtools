@@ -8,23 +8,17 @@ import { useCan } from '@/lib/permissions'
 import { electricalApi } from '@/lib/api'
 import { recordPath } from '@/lib/recordRef'
 import { ElectricalJob } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
+import { primaryBtnStyle, smallSecondaryBtnStyle, segmentBtnStyle, thStyle, tdStyle, Pill, RowCount } from '@/components/shared/ui'
+import { inputStyle, JOB_STATUS_LABELS as STATUS_LABELS, JOB_STATUS_HEX as STATUS_HEX, PRIORITY_LABELS, PRIORITY_HEX } from '@/components/electrical/shared'
 import ElectricalNav from '@/components/electrical/ElectricalNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 
-const STATUS_LABELS: Record<string, string> = { draft: 'Draft', in_progress: 'In Progress', on_hold: 'On Hold', handed_over: 'Handed Over', closed: 'Closed', cancelled: 'Cancelled' }
-const STATUS_HEX: Record<string, string> = { draft: '#78716c', in_progress: '#F59E0B', on_hold: '#9333EA', handed_over: '#2563EB', closed: '#16A34A', cancelled: '#a8a29e' }
-const PRIORITY_LABELS: Record<string, string> = { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' }
-const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
 const PHASE_LABELS: Record<string, string> = { design: 'Design', procurement: 'Procurement', build: 'Assembly', test_qc: 'Testing & QC', handover: 'Handover' }
 
-const inputStyle: React.CSSProperties = {
-  padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
-}
-const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
-const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
+const cellStyle: React.CSSProperties = tdStyle
+const COLS = ['Job No.', 'Title / RRV', 'Customer', 'Lead Engineer', 'Current Stage', 'Progress', 'Target Handover', 'Priority', 'Status', '']
 
 export default function ElectricalJobsPage() {
   const { isAuthorized, isLoading } = useRequireApp('electrical')
@@ -64,16 +58,15 @@ export default function ElectricalJobsPage() {
             Electrical Module
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>RRV Electrical Jobs</h1>
+          <p style={{ fontSize: 13, color: TEXT.muted, margin: '6px 0 0' }}>
+            One job per RRV whose electrical system is being built — open a job to work its stages, BOM, drawings and tests.
+          </p>
         </div>
         {can('electrical', 'jobs', 'create') && (
           <button
             data-tour="elec-jobs-new-btn"
             onClick={() => router.push('/dashboard/electrical/jobs/new')}
-            style={{
-              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-            }}
+            style={primaryBtnStyle}
           >
             + New Job
           </button>
@@ -87,19 +80,19 @@ export default function ElectricalJobsPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input data-tour="elec-jobs-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200, maxWidth: 420 }} placeholder="Search job no., title, model, vehicle, customer…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <Select data-tour="elec-jobs-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <input data-tour="elec-jobs-search" style={{ ...inputStyle, width: 'auto', flex: '1 1 240px', minWidth: 200, maxWidth: 420 }} placeholder="Search job no., title, model, vehicle, customer…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Select data-tour="elec-jobs-status-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 220px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="open">Open (draft / active / hold)</option>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </Select>
-        <Select data-tour="elec-jobs-phase-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={phaseFilter} onChange={(e) => setPhaseFilter(e.target.value)}>
+        <Select data-tour="elec-jobs-phase-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 170px' }} value={phaseFilter} onChange={(e) => setPhaseFilter(e.target.value)}>
           <option value="">Any phase</option>
           {Object.entries(PHASE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </Select>
-        <label data-tour="elec-jobs-mine" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
-          <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> My jobs
-        </label>
+        <button data-tour="elec-jobs-mine" type="button" aria-pressed={mine} onClick={() => setMine((v) => !v)} style={segmentBtnStyle(mine)}>
+          {mine ? '✓ ' : ''}My jobs
+        </button>
       </div>
 
       <div data-tour="elec-jobs-table" style={{
@@ -109,9 +102,9 @@ export default function ElectricalJobsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1050 }}>
           <thead>
             <tr>
-              {['Job No.', 'Title / RRV', 'Customer', 'Lead Engineer', 'Current Stage', 'Progress', 'Target Handover', 'Priority', 'Status', ''].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+              {COLS.map((h, hi) => (
+                <th key={`${h}-${hi}`} style={thStyle}>
+                  {h}{hi === 0 && <RowCount count={jobs.length} />}
                 </th>
               ))}
             </tr>
@@ -120,13 +113,17 @@ export default function ElectricalJobsPage() {
             {loading ? (
               <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : jobs.length === 0 ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No electrical jobs match. Create one for each RRV whose electrical system you&apos;re building.</td></tr>
+              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+                {search.trim() || phaseFilter || mine || statusFilter !== 'open'
+                  ? 'No electrical jobs match these filters — clear the search or pick another status.'
+                  : `No open electrical jobs.${can('electrical', 'jobs', 'create') ? ' Use "+ New Job" for each RRV whose electrical system you’re building.' : ''}`}
+              </td></tr>
             ) : (
               jobs.map((j) => (
                 <tr key={j.id} onClick={() => router.push(recordPath('/dashboard/electrical/jobs', j))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{j.job_number}</td>
-                  <td style={cellStyle}>
-                    <div style={{ fontWeight: 600, color: TEXT.heading }}>{j.title}</div>
+                  <td style={{ ...cellStyle, maxWidth: 280 }} title={j.title}>
+                    <div style={{ fontWeight: 600, color: TEXT.heading, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.title}</div>
                     <div style={{ fontSize: 12, color: TEXT.muted }}>{[j.rrv_model, j.vehicle_number].filter(Boolean).join(' · ') || '—'}</div>
                   </td>
                   <td style={cellStyle}>{j.customer_name || '—'}</td>
@@ -150,10 +147,10 @@ export default function ElectricalJobsPage() {
                   <td style={{ ...cellStyle, color: j.is_overdue ? '#DC2626' : TEXT.body, fontWeight: j.is_overdue ? 600 : 400, whiteSpace: 'nowrap' }}>
                     {j.target_handover_date ? formatDate(j.target_handover_date) : '—'}
                   </td>
-                  <td style={cellStyle}><span style={pill(PRIORITY_HEX[j.priority])}>{PRIORITY_LABELS[j.priority] || j.priority}</span></td>
-                  <td style={cellStyle}><span style={pill(STATUS_HEX[j.status])}>{STATUS_LABELS[j.status] || j.status}</span></td>
+                  <td style={cellStyle}><Pill label={PRIORITY_LABELS[j.priority] || j.priority} hex={PRIORITY_HEX[j.priority]} /></td>
+                  <td style={cellStyle}><Pill label={STATUS_LABELS[j.status] || j.status} hex={STATUS_HEX[j.status]} /></td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/electrical/jobs', j))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <button type="button" onClick={() => router.push(recordPath('/dashboard/electrical/jobs', j))} style={smallSecondaryBtnStyle}>View</button>
                   </td>
                 </tr>
               ))

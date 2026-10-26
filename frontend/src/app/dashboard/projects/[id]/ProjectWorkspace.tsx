@@ -87,7 +87,7 @@ export default function ProjectWorkspace({ project, onProjectUpdate, onDeleted }
   // Projects that got WBS elements before auto-release existed still sit in
   // Planning — only they get a Release button.
   const legacyRelease: ActionDef[] = project.status === 'planning' && project.milestones_total > 0
-    ? [{ action: 'activate', label: 'Release project', kind: 'primary', confirm: 'Release the project? Every department WBS is sent to its department head, who can then create and assign tasks.' }]
+    ? [{ action: 'activate', label: 'Release project', kind: 'primary', confirm: 'Release the project? Every department milestone is sent to its department head, who can then create and assign tasks.' }]
     : []
   const actions = project.can_manage && can('projects', 'overview', 'edit') ? [...legacyRelease, ...(ACTIONS[project.status] || [])] : []
   const mayDelete = project.can_manage && canDelete('projects', 'all_projects', project.created_by_id ?? null)
@@ -98,15 +98,19 @@ export default function ProjectWorkspace({ project, onProjectUpdate, onDeleted }
       <div style={sectionStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
           <div style={{ minWidth: 0 }}>
-            <p style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, margin: '0 0 4px', letterSpacing: '.04em' }}>{project.project_code}</p>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>{project.name}</h1>
-            <div data-tour="pm-proj-badges" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Project Management</p>
+            <div data-tour="pm-proj-badges" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{project.project_code}</h1>
               {/* Planning only means "open" — nobody chose it, so no badge. */}
               {project.status !== 'planning' && <Pill value={project.status} labels={PROJECT_LABELS} hex={PROJECT_HEX} />}
-              <span style={{ fontSize: 12.5, color: TEXT.secondary }}>
-                {project.client_name} · PM {project.project_manager_name || '—'} · Handover {formatDate(project.target_handover_date)}
-              </span>
             </div>
+            {/* Overview shows the name, client, dates and PM in its summary; the other
+                tabs keep one line of context here. */}
+            {tab !== 'Overview' && (
+              <p style={{ fontSize: 13, color: TEXT.secondary, margin: '6px 0 0', overflowWrap: 'anywhere' }}>
+                {project.name}{project.client_name ? ` · ${project.client_name}` : ''} · Closing {formatDate(project.target_handover_date)}
+              </p>
+            )}
           </div>
           <button data-tour="pm-proj-back" type="button" onClick={() => router.push('/dashboard/projects/all')} style={secondaryBtnStyle}>← Back</button>
         </div>
@@ -123,7 +127,7 @@ export default function ProjectWorkspace({ project, onProjectUpdate, onDeleted }
         {project.status === 'technically_complete' && (
           <div style={{ marginTop: 12 }}>
             <Notice tone="info">
-              Every WBS is accepted. {project.can_manage ? 'Finish the closure checklist and the Final Project Report' : 'The project manager is closing the project'} — see Project closure on the{' '}
+              Every milestone is achieved. {project.can_manage ? 'Finish the closure checklist and the Final Project Report' : 'The project manager is closing the project'} — see Project closure on the{' '}
               <button type="button" onClick={() => setTab('Overview')} style={{ border: 'none', background: 'none', padding: 0, color: '#4f46e5', fontWeight: 600, cursor: 'pointer', fontSize: 'inherit' }}>Overview</button> tab.
             </Notice>
           </div>
@@ -133,10 +137,10 @@ export default function ProjectWorkspace({ project, onProjectUpdate, onDeleted }
         <ErrorBanner error={error} />
       </div>
 
-      <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 16, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
         {visibleTabs.map((t) => (
           <button key={t} data-tour={`pm-proj-tab-${t.toLowerCase().replace(' ', '-')}`} type="button" onClick={() => setTab(t)} style={{
-            padding: '10px 16px', marginBottom: -1, border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+            padding: '10px 16px', marginBottom: -1, border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
             color: tab === t ? '#6366f1' : '#78716c', borderBottom: tab === t ? '2px solid #6366f1' : '2px solid transparent',
           }}>{t}</button>
         ))}
@@ -170,7 +174,7 @@ export default function ProjectWorkspace({ project, onProjectUpdate, onDeleted }
       <ConfirmDialog
         open={confirmDelete}
         title="Delete this project?"
-        message={`Delete ${project.project_code}? It has no WBS elements yet, so nothing else is lost.`}
+        message={`Delete ${project.project_code}? It has no milestones yet, so nothing else is lost.`}
         confirmLabel="Delete"
         onConfirm={remove}
         onCancel={() => setConfirmDelete(false)}

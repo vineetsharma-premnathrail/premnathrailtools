@@ -6,8 +6,8 @@ import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { HrAttendanceDay, HrAttendanceMonth, HrAttendanceRegularization, HrAttendanceToday } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, secondaryBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import HrNav from '@/components/hr/HrNav'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import MyHrTabs from '@/components/hr/MyHrTabs'
@@ -32,7 +32,7 @@ const td: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEX
 const primaryBtn: React.CSSProperties = { ...primaryBtnStyle, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }
 
 function dmy(iso: string | null) {
-  return iso ? `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}` : '—'
+  return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—'
 }
 
 export default function MyAttendancePage() {
@@ -184,7 +184,7 @@ export default function MyAttendancePage() {
                 <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 2px' }}>Check-in</p>
                 <p style={{ fontSize: 20, fontWeight: 800, color: TEXT.heading, margin: 0 }}>{td0.check_in_time || '--:--'}</p>
                 {td0.late_minutes != null && td0.check_in_time && (
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 9999, background: td0.late_minutes > 0 ? '#DC26261a' : '#16A34A1a', color: td0.late_minutes > 0 ? '#DC2626' : '#16A34A' }}>
+                  <span style={pillStyle(td0.late_minutes > 0 ? '#DC2626' : '#16A34A')}>
                     {td0.late_minutes > 0 ? `Late by ${td0.late_minutes} min` : 'On time'}
                   </span>
                 )}
@@ -283,8 +283,8 @@ export default function MyAttendancePage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
           <thead>
             <tr>
-              {['Request', 'Date', 'Asked for', 'Times', 'Reason', 'Status', ''].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
+              {['Request', 'Date', 'Asked for', 'Times', 'Reason', 'Status', ''].map((h, hi) => (
+                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}{hi === 0 && <RowCount count={regs.length} />}</th>
               ))}
             </tr>
           </thead>
@@ -292,7 +292,7 @@ export default function MyAttendancePage() {
             {loading ? (
               <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : regs.length === 0 ? (
-              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No correction requests yet.</td></tr>
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No correction requests yet — click a past day in the calendar above, or use Request correction.</td></tr>
             ) : regs.map((r) => (
               <tr key={r.id}>
                 <td style={{ ...td, fontWeight: 600, color: TEXT.heading }}>{r.request_no}</td>
@@ -301,7 +301,7 @@ export default function MyAttendancePage() {
                 <td style={td}>{r.check_in_time || '--'} – {r.check_out_time || '--'}</td>
                 <td style={{ ...td, maxWidth: 260 }}>{r.reason}</td>
                 <td style={td}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[r.status]}1a`, color: STATUS_HEX[r.status], whiteSpace: 'nowrap' }}>
+                  <span style={pillStyle(STATUS_HEX[r.status])}>
                     {STATUS_LABELS[r.status] || r.status}
                   </span>
                   {r.decision_remarks && <div style={{ fontSize: 12, color: TEXT.muted, marginTop: 4 }}>“{r.decision_remarks}”</div>}

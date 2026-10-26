@@ -25,11 +25,12 @@ import SalesOrderHandoff from '@/components/crm/SalesOrderHandoff'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import QuotationStatusBar from '@/components/crm/QuotationStatusBar'
 import LostReasonDialog, { LOST_STAGE, LOST_STATUS } from '@/components/crm/LostReasonDialog'
-import { INQ_STAGES, inquiryStatusOptions, priorityOptions, priorityLabel, QUOTE_CONDITIONS, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
-import { Card, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos, RevisionSelector, SpecInfoRow, SpecRevision, ComboBox, handleEnterAsTab, StageProgress, smallDangerBtnStyle, smallSecondaryBtnStyle, AnchoredMenu } from '@/components/crm/ui'
+import { INQ_STAGES, inquiryStatusOptions, inquiryStatusColor, priorityOptions, priorityLabel, QUOTE_CONDITIONS, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
+import { inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos, RevisionSelector, SpecDetailRow, SpecRevision, ComboBox, handleEnterAsTab, StageProgress, smallDangerBtnStyle, smallSecondaryBtnStyle, AnchoredMenu } from '@/components/crm/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { refOf } from '@/lib/recordRef'
+import { segmentBtnStyle, RowCount, Pill, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 
 // ?tab=discussion (from a @mention notification) opens the Discussion tab;
 // ?tab=quotations (quotation approval link) opens the Quotations tab.
@@ -114,7 +115,10 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
 
   // Creator-or-admin (backend rule) AND Inquiries & Tenders › Edit in the Permission Matrix.
   const canModify = !!inquiry && !!user && (user.role === 'admin' || inquiry.created_by_id === user.id) && can('crm', 'inquiries_tenders', 'edit')
-  const canDeleteRecord = !!inquiry && canDelete('crm', 'inquiries_tenders', inquiry.created_by_id ?? null)
+  // Sent to Sales (a live sales order exists): the inquiry is read-only for everyone.
+  const lockedBySales = !!inquiry?.sales_order_number
+  const canEditRecord = canModify && !lockedBySales
+  const canDeleteRecord = !!inquiry && !lockedBySales && canDelete('crm', 'inquiries_tenders', inquiry.created_by_id ?? null)
   const isAdmin = user?.role === 'admin'
   const movingBack = !!pendingStage && !!inquiry && INQ_STAGES.indexOf(pendingStage) < INQ_STAGES.indexOf(inquiry.current_stage)
 
@@ -203,14 +207,10 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45' }}>{inquiry.universal_id}</span>
             {inquiry.created_at && (
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#a8a29e' }}>{new Date(inquiry.created_at).toLocaleDateString('en-GB')}</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#a8a29e' }}>{formatDate(inquiry.created_at)}</span>
             )}
-            <span style={{ fontSize: 11, color: '#d6d3d1' }}>·</span>
-            <span title={`Status: ${inquiry.status}`} style={{ fontSize: 11, fontWeight: 600, color: '#78716c' }}>{inquiry.status}</span>
-            <span style={{ fontSize: 11, color: '#d6d3d1' }}>·</span>
-            <span title={`Priority: ${inquiry.priority}`} style={{ fontSize: 11, fontWeight: 600, color: '#78716c' }}>{inquiry.priority}</span>
-            <span style={{ fontSize: 11, color: '#d6d3d1' }}>·</span>
-            <span title={`Stage: ${inquiry.current_stage}`} style={{ fontSize: 11, fontWeight: 600, color: '#78716c' }}>{inquiry.current_stage}</span>
+            {/* Stage is shown by the stage bar below; priority sits in the Info tab. */}
+            <Pill label={inquiry.status} hex={inquiryStatusColor(inquiry.status).text} title={`Status: ${inquiry.status}`} />
           </div>
           <h1 style={{ fontSize: 18, fontWeight: 700, color: '#1f1108', margin: 0 }}>{org?.name || 'Inquiry'}</h1>
         </div>
@@ -221,7 +221,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
                 ← Back
               </button>
               {/* Sending needs Inquiries & Tenders › Send Technical Requirement (TOR) to R&D › Create. */}
-              {canSendTor && <button
+              {canSendTor && !lockedBySales && <button
                 onClick={openTorPicker}
                 disabled={!torActive || sendingTOR}
                 data-tour="inq-tor-btn"
@@ -237,9 +237,14 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
                 {sendingTOR ? 'Sending…' : 'Send Technical Requirement to R&D'}
               </button>}
               <SalesOrderHandoff source="inquiry" record={inquiry} tourId="inq-create-so-btn" />
-              {canModify && <button onClick={() => { setEditing(true); setTab('Info') }} data-tour="inq-edit-btn" style={secondaryBtnStyle}>Edit</button>}
+              {canEditRecord && <button onClick={() => { setEditing(true); setTab('Info') }} data-tour="inq-edit-btn" style={secondaryBtnStyle}>Edit</button>}
               {canDeleteRecord && <button onClick={() => setShowDeleteConfirm(true)} data-tour="inq-delete-btn" style={dangerBtnStyle}>Delete</button>}
             </div>
+            {lockedBySales && (
+              <span data-tour="inq-sales-lock" style={{ fontSize: 11.5, fontWeight: 600, color: '#15803d', background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.25)', borderRadius: 8, padding: '4px 10px', maxWidth: 420, textAlign: 'right' }}>
+                🔒 Sent to Sales as {inquiry.sales_order_number} — this inquiry can no longer be edited. Cancel the order in Sales to change it.
+              </span>
+            )}
             {inquiry.technical_offer_number && (
               <span style={{ fontSize: 11, color: '#78716c' }}>
                 {torActive ? 'Previously sent as ' : 'Sent as '}<strong>{inquiry.technical_offer_number}</strong>
@@ -250,9 +255,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
         )}
         {editing && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 999, background: 'rgba(255,122,69,0.12)', color: '#FF7A45' }}>
-              ✎ Editing Inquiry
-            </span>
+            <Pill label="✎ Editing Inquiry" hex="#FF7A45" />
             <button onClick={() => setEditing(false)} type="button" style={secondaryBtnStyle}>Cancel</button>
           </div>
         )}
@@ -261,26 +264,20 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       <MessageDialog open={!!torError} variant="error" title="Send Technical Requirement Failed" message={torError} onClose={() => setTorError('')} />
       <MessageDialog open={!!error} variant="error" title="Inquiry Action Failed" message={error} onClose={() => setError('')} />
 
-      <StageProgress stage={inquiry.current_stage} stages={INQ_STAGES} canModify={canModify && canMoveStage} allowBackward={isAdmin} onRequestChange={setPendingStage} tourId="inq-stage-progress" />
+      <StageProgress stage={inquiry.current_stage} stages={INQ_STAGES} canModify={canEditRecord && canMoveStage} allowBackward={isAdmin} onRequestChange={setPendingStage} tourId="inq-stage-progress" />
 
 
-      <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, padding: 4, borderRadius: 999, background: 'rgba(0,0,0,0.05)', overflowX: 'auto', overflowY: 'visible' }}>
+      <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, overflowX: 'auto', overflowY: 'visible' }}>
         {TABS.filter((t) => (t !== 'Discussion' || !!inquiry.technical_offer_sent_at) && seeTab(t)).map((t) => (
           <div key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             <button
               onClick={() => setTab(t)}
               data-tour={`inquiry-tab-${t}`}
-              style={{
-                padding: '9px 16px', border: 'none', borderRadius: 999, whiteSpace: 'nowrap',
-                background: tab === t ? '#fff' : 'transparent',
-                boxShadow: tab === t ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
-                color: tab === t ? '#FF7A45' : '#78716c', fontWeight: 600, fontSize: 13, cursor: 'pointer',
-                display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'background .15s, box-shadow .15s, color .15s',
-              }}
+              style={{ ...segmentBtnStyle(tab === t), transition: 'background .15s, color .15s' }}
             >
               {t}
               {t === 'Info' && tab === t && revisions.length > 0 && (
-                <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: 'rgba(255,122,69,0.15)', color: '#FF7A45' }}>
+                <span title={`${revisions.length} revision(s) of the requirement`} style={{ ...pillStyle('#FF7A45'), fontSize: 10.5, padding: '1px 6px' }}>
                   {revisions.length}
                 </span>
               )}
@@ -304,7 +301,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
         />
       )}
       {(tab === 'Info' || !seeTab(tab)) && !editing && (
-        <InfoTab inquiry={inquiry} org={org} contact={contact} revisions={revisions} selectedRevId={selectedRevId} canModify={canModify}
+        <InfoTab inquiry={inquiry} org={org} contact={contact} revisions={revisions} selectedRevId={selectedRevId} canModify={canEditRecord}
           onChangeLeadInfo={(p) => (p.status === LOST_STATUS && !inquiry.lost_reason_code ? setLostStatusPending(true) : patchLeadInfo(p))} />
       )}
       {tab === 'Quotations' && seeQuotations && <QuotationsTab inquiryId={inquiry.id} org={org} contact={contact} inquiry={inquiry} />}
@@ -368,8 +365,6 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
   )
 }
 
-const infoGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px 16px' }
-const leadLabel: React.CSSProperties = { fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 4px' }
 
 const LOST_REASON_LABELS: Record<string, string> = {
   price: 'Price too high', technical: 'Technical / specification', delivery: 'Delivery period', budget_dropped: 'Budget dropped',
@@ -383,10 +378,19 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
   const seeCustomer = canFeature('crm', 'inquiries_tenders', 'customer_contact', 'view')
   const seePrices = canFeature('crm', 'inquiries_tenders', 'prices', 'view')
 
+  const qty = inquiry.quantity != null ? ` × ${inquiry.quantity}` : ''
+  const lostReason = inquiry.lost_reason_code
+    ? `${LOST_REASON_LABELS[inquiry.lost_reason_code] || inquiry.lost_reason_code}${inquiry.lost_to_competitor ? ` — ${inquiry.lost_to_competitor}` : ''}${inquiry.lost_remarks ? ` (${inquiry.lost_remarks})` : ''}`
+    : null
+  const join = (...v: (string | null | undefined)[]) => v.filter(Boolean).join(', ') || null
+  const dot = <span style={{ color: '#cbd5e1' }}>·</span>
+
+  // One card, same order as the inquiry form: what is asked for (summary), the
+  // customer, the lead, then the product requirement.
   return (
-    <div data-tour="inq-info-view" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div data-tour="inq-info-view">
       {selectedRev && (
-        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(244,113,59,0.06)', border: '1px solid rgba(244,113,59,0.18)' }}>
+        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(244,113,59,0.06)', border: '1px solid rgba(244,113,59,0.18)' }}>
           <p style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.03em', textTransform: 'uppercase', color: '#FF7A45', margin: '0 0 6px' }}>
             What changed in this revision
           </p>
@@ -400,90 +404,76 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
           )}
         </div>
       )}
-      <Card title="Current Status">
-        <p data-tour="inq-info-current-status" style={{ fontSize: 13, color: '#1f1108', margin: 0, whiteSpace: 'pre-wrap' }}>{inquiry.current_status_note || 'Not provided'}</p>
-      </Card>
-      {/* Organization (wide) + Lead Info (narrow) side by side, same height;
-          fields sit on a grid so the columns line up row to row. */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'stretch' }}>
-        {seeCustomer && <div style={{ display: 'flex', flexDirection: 'column', flex: '2 1 480px', minWidth: 0 }}>
-          <Card title="Customer Organization" style={{ flex: 1 }}>
-            <InfoRow label="Name" value={org?.name || 'Not provided'} />
-            <div style={infoGrid}>
-              <InfoRow label="GST Number" value={org?.gst_number || 'Not provided'} />
-              <InfoRow label="Type" value={org?.org_type || 'Not provided'} />
-              <InfoRow label="City" value={org?.city || 'Not provided'} />
-              <InfoRow label="State" value={org?.state || 'Not provided'} />
-            </div>
-            <InfoRow label="Address" value={org?.address || 'Not provided'} />
-            <div style={{ paddingTop: 12, marginTop: 2, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
-              <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#1f1108', margin: '0 0 10px' }}>Contact Person</p>
-              <div style={infoGrid}>
-                <InfoRow label="Name" value={contact?.name || 'Not provided'} />
-                <InfoRow label="Mobile" value={contact?.mobile || 'Not provided'} />
-                <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}><InfoRow label="Email" value={contact?.email || 'Not provided'} /></div>
-                <InfoRow label="Department" value={contact?.department || 'Not provided'} />
-              </div>
-            </div>
-          </Card>
-        </div>}
-        <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 300px', minWidth: 0 }}>
-          <Card title="Lead Info" style={{ flex: 1 }}>
-            <div>
-              <p style={leadLabel}>Status</p>
-              {canModify ? (
-                <Select data-tour="inq-info-status" value={inquiry.status} onChange={(e) => onChangeLeadInfo({ status: e.target.value })} style={{ ...inputStyle, padding: '6px 10px', fontSize: 12.5, width: '100%' }}>
+      <DetailCard>
+        <DetailSummary
+          title={inquiry.product ? `${inquiry.product}${qty}` : 'Product not filled in yet'}
+          text={<span data-tour="inq-info-current-status">{inquiry.current_status_note || <span style={{ color: '#64748b' }}>No current status written yet — use Edit to add where this inquiry stands.</span>}</span>}
+          meta={<>
+            <span>Inquiry of {inquiry.created_at ? formatDate(inquiry.created_at) : '—'}</span>
+            {dot}<span>Lead source: <strong style={{ color: '#0f172a' }}>{inquiry.lead_source || '—'}</strong></span>
+            {dot}<span>BD Owner: <strong style={{ color: '#0f172a' }}>{inquiry.bd_owner || '—'}</strong></span>
+            {inquiry.created_by_name && <>{dot}<span>Created by {inquiry.created_by_name}</span></>}
+          </>}
+        />
+
+        {seeCustomer && (
+          <DetailGroup title="Customer">
+            <DetailRow label="Client company">{org ? join(org.name, org.org_type) : null}</DetailRow>
+            <DetailRow label="GST number">{org?.gst_number}</DetailRow>
+            <DetailRow label="Address">{org ? join(org.address, org.city, org.state) : null}</DetailRow>
+            <DetailRow label="Contact person">{contact ? join(contact.name, contact.designation, contact.department) : null}</DetailRow>
+            <DetailRow label="Mobile">{contact ? join(contact.mobile, ...(contact.additional_mobiles || [])) : null}</DetailRow>
+            <DetailRow label="Email">{contact ? join(contact.email, ...(contact.additional_emails || [])) : null}</DetailRow>
+          </DetailGroup>
+        )}
+
+        <DetailGroup title="Lead">
+          <DetailRow label="Status">
+            {canModify ? (
+              <div style={{ maxWidth: 320 }}>
+                <Select data-tour="inq-info-status" value={inquiry.status} onChange={(e) => onChangeLeadInfo({ status: e.target.value })} style={{ ...inputStyle, width: '100%' }}>
                   {inquiryStatusOptions(inquiry.status).map((s) => <option key={s} value={s}>{s}</option>)}
                 </Select>
-              ) : <p style={{ fontSize: 13, color: '#1f1108', margin: 0 }}>{inquiry.status || 'Not provided'}</p>}
-            </div>
-            <div>
-              <p style={leadLabel}>Customer Requirement Priority</p>
-              {canModify ? (
-                <Select data-tour="inq-info-priority" value={inquiry.priority} onChange={(e) => onChangeLeadInfo({ priority: e.target.value })} style={{ ...inputStyle, padding: '6px 10px', fontSize: 12.5, width: '100%' }}>
+              </div>
+            ) : <Pill label={inquiry.status} hex={inquiryStatusColor(inquiry.status).text} />}
+          </DetailRow>
+          <DetailRow label="Customer requirement priority">
+            {canModify ? (
+              <div style={{ maxWidth: 320 }}>
+                <Select data-tour="inq-info-priority" value={inquiry.priority} onChange={(e) => onChangeLeadInfo({ priority: e.target.value })} style={{ ...inputStyle, width: '100%' }}>
                   {priorityOptions(inquiry.priority).map((p) => <option key={p} value={p}>{priorityLabel(p)}</option>)}
                 </Select>
-              ) : <p style={{ fontSize: 13, color: '#1f1108', margin: 0 }}>{inquiry.priority || 'Not provided'}</p>}
-            </div>
-            <div style={{ ...infoGrid, gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', paddingTop: 10, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
-              <InfoRow label="Lead Source" value={inquiry.lead_source || 'Not provided'} />
-              <InfoRow label="BD Owner" value={inquiry.bd_owner || 'Not provided'} />
-              {seePrices && <InfoRow label="Expected Value" value={inquiry.expected_value != null ? `₹${Number(inquiry.expected_value).toLocaleString('en-IN')}` : 'Not provided'} />}
-              <InfoRow label="Win Probability" value={inquiry.probability != null ? `${inquiry.probability}%` : 'Not provided'} />
-              <InfoRow label="Expected Order" value={inquiry.expected_order_date ? formatDate(inquiry.expected_order_date) : 'Not provided'} />
-              {inquiry.lost_reason_code && <InfoRow label="Lost Reason" value={`${LOST_REASON_LABELS[inquiry.lost_reason_code] || inquiry.lost_reason_code}${inquiry.lost_to_competitor ? ` — ${inquiry.lost_to_competitor}` : ''}${inquiry.lost_remarks ? ` (${inquiry.lost_remarks})` : ''}`} />}
-              <InfoRow label="Created On" value={inquiry.created_at ? formatDate(inquiry.created_at) : 'Not provided'} />
-            </div>
-          </Card>
-        </div>
-      </div>
-      <Card title="Product Requirement">
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-          <div style={{ flex: '1 1 180px', minWidth: 160, maxWidth: 280 }}><SpecInfoRow label="Product" value={inquiry.product || 'Not provided'} change={changeFor('product')} /></div>
-          <div style={{ flex: '0 1 150px', minWidth: 120 }}><SpecInfoRow label="Category" value={inquiry.product_category || 'Not provided'} change={changeFor('product_category')} /></div>
-          <div style={{ flex: '0 1 90px', minWidth: 80 }}><SpecInfoRow label="Quantity" value={inquiry.quantity != null ? String(inquiry.quantity) : 'Not provided'} change={changeFor('quantity')} /></div>
-          <div style={{ flex: '0 1 140px', minWidth: 120 }}><SpecInfoRow label="Required Delivery" value={inquiry.required_delivery_date || 'Not provided'} change={changeFor('required_delivery_date')} /></div>
-          <div style={{ flex: '1 1 160px', minWidth: 140, maxWidth: 260 }}><SpecInfoRow label="Delivery Location" value={inquiry.delivery_location || 'Not provided'} change={changeFor('delivery_location')} /></div>
-          <div style={{ flex: '0 1 130px', minWidth: 110 }}><SpecInfoRow label="Inspection Req." value={inquiry.inspection_req || 'Not provided'} change={changeFor('inspection_req')} /></div>
-          <div style={{ flex: '0 1 130px', minWidth: 110 }}><SpecInfoRow label="Warranty Req." value={inquiry.warranty_req || 'Not provided'} change={changeFor('warranty_req')} /></div>
-        </div>
-        <SpecInfoRow label="Specification" value={inquiry.product_spec || 'Not provided'} change={changeFor('product_spec')} />
-        {(inquiry.additional_items || []).length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', margin: 0 }}>Additional Products</p>
-            {inquiry.additional_items!.map((it) => (
-              <div key={it.id} style={{ padding: '8px 12px', borderRadius: 10, background: 'rgba(0,0,0,0.02)', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-                <div style={{ flex: '1 1 150px', minWidth: 130, maxWidth: 260 }}><InfoRow label="Product" value={it.product || 'Not provided'} /></div>
-                <div style={{ flex: '0 1 140px', minWidth: 110 }}><InfoRow label="Category" value={it.product_category || 'Not provided'} /></div>
-                <div style={{ flex: '0 1 90px', minWidth: 80 }}><InfoRow label="Quantity" value={it.quantity != null ? String(it.quantity) : 'Not provided'} /></div>
-                {it.product_spec && <div style={{ flex: '2 1 200px', minWidth: 160 }}><InfoRow label="Specification" value={it.product_spec} /></div>}
               </div>
-            ))}
-          </div>
-        )}
-        <SpecInfoRow label="Requirement Summary" value={inquiry.requirement_desc || 'Not provided'} change={changeFor('requirement_desc')} />
-        <SpecInfoRow label="Project Details" value={inquiry.project_details || 'Not provided'} change={changeFor('project_details')} />
-      </Card>
+            ) : (inquiry.priority ? priorityLabel(inquiry.priority) : null)}
+          </DetailRow>
+          {/* Older inquiries may still carry these (the form no longer asks for them). */}
+          {seePrices && inquiry.expected_value != null && <DetailRow label="Expected value">₹{Number(inquiry.expected_value).toLocaleString('en-IN')}</DetailRow>}
+          {inquiry.probability != null && <DetailRow label="Win probability">{inquiry.probability}%</DetailRow>}
+          {inquiry.expected_order_date && <DetailRow label="Expected order">{formatDate(inquiry.expected_order_date)}</DetailRow>}
+          {lostReason && <DetailRow label="Lost reason">{lostReason}</DetailRow>}
+        </DetailGroup>
+
+        <DetailGroup title="Product Requirement" last>
+          <SpecDetailRow label="Product" value={inquiry.product} change={changeFor('product')} />
+          {(inquiry.product_category || changeFor('product_category')) && <SpecDetailRow label="Category" value={inquiry.product_category} change={changeFor('product_category')} />}
+          <SpecDetailRow label="Quantity" value={inquiry.quantity != null ? String(inquiry.quantity) : null} change={changeFor('quantity')} />
+          <SpecDetailRow label="Required delivery" value={inquiry.required_delivery_date ? formatDate(inquiry.required_delivery_date) : null} change={changeFor('required_delivery_date')} />
+          <SpecDetailRow label="Specification" value={inquiry.product_spec} change={changeFor('product_spec')} />
+          <SpecDetailRow label="Requirement description" value={inquiry.requirement_desc} change={changeFor('requirement_desc')} />
+          {(inquiry.additional_items || []).map((it, i) => (
+            <DetailRow key={it.id} label={`Additional product ${i + 1}`}>
+              <strong style={{ fontWeight: 600 }}>{it.product || '—'}</strong>
+              {it.quantity != null && ` × ${it.quantity}`}
+              {it.product_category && <span style={{ color: '#64748b' }}> · {it.product_category}</span>}
+              {it.product_spec && <span style={{ display: 'block', color: '#334155' }}>{it.product_spec}</span>}
+            </DetailRow>
+          ))}
+          <SpecDetailRow label="Delivery location" value={inquiry.delivery_location} change={changeFor('delivery_location')} />
+          <SpecDetailRow label="Inspection requirement" value={inquiry.inspection_req} change={changeFor('inspection_req')} />
+          <SpecDetailRow label="Warranty requirement" value={inquiry.warranty_req} change={changeFor('warranty_req')} />
+          <SpecDetailRow label="Project details" value={inquiry.project_details} change={changeFor('project_details')} />
+        </DetailGroup>
+      </DetailCard>
     </div>
   )
 }
@@ -1091,7 +1081,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
               </div>
               </SheetSection>
 
-              <SheetSection icon="truck" title="Terms">
+              <SheetSection icon="doc" title="Terms">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
                 <SF label={<>Delivery Time <Req /></>} tourId="quot-delivery-time">
@@ -1181,7 +1171,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
               })()}
               <p style={{ fontSize: 12.5, color: '#57534e', margin: 0, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                 {q.client_name || '—'} · {q.delivery_time || '—'}
-                {q.valid_until && ` · Valid: ${q.valid_until}`}{q.submitted_date && ` · Submitted: ${q.submitted_date}`}
+                {q.valid_until && ` · Valid till: ${formatDate(q.valid_until)}`}{q.submitted_date && ` · Submitted: ${formatDate(q.submitted_date)}`}
                 {seeQuotePrices && q.discount != null && ` · Discount: ${q.discount_type === 'flat' ? (q.quotation_type === 'Export' ? 'USD ' : 'INR ') : ''}${q.discount}${q.discount_type === 'flat' ? '' : '%'}`}
               </p>
               <QuotationStatusBar inquiryId={inquiryId} quot={q} canModify={canModify} canSubmit={ownerOrAdmin && canFeature('crm', 'inquiries_tenders', 'quotations', 'submit')} canWork={canFeature('crm', 'inquiries_tenders', 'quotations', 'edit')} onChanged={load} tour={qIdx === 0} />
@@ -1208,7 +1198,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                   <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
                     <thead>
                       <tr style={{ color: '#78716c' }}>
-                        <th style={{ textAlign: 'left', padding: '2px 10px 2px 0' }}>Description</th>
+                        <th style={{ textAlign: 'left', padding: '2px 10px 2px 0' }}>Description <RowCount count={q.items.length} /></th>
                         <th style={{ textAlign: 'left', padding: '2px 10px' }}>Model No.</th>
                         <th style={{ textAlign: 'right', padding: '2px 10px' }}>Qty</th>
                         {seeQuotePrices && <th style={{ textAlign: 'right', padding: '2px 10px' }}>Price/Unit</th>}
@@ -1478,7 +1468,7 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
                       <span style={{ fontWeight: 600, color: '#a8a29e' }}>{i + 1}.</span> {item.observation || '—'}
                       {item.action_plan && <span> · Action Plan: {item.action_plan}</span>}
                       <span> · Responsibility: {item.responsibility || '—'}</span>
-                      <span> · Target: {item.target_date || '—'}</span>
+                      <span> · Target: {item.target_date ? formatDate(item.target_date) : '—'}</span>
                     </div>
                   ))}
                 </div>
@@ -1700,7 +1690,7 @@ function TimelineTab({ inquiryId }: { inquiryId: number }) {
           kind: 'quotation' as const,
           title: `Quotation ${q.quot_number || `Rev ${q.revision_number}`} generated`,
           // q.price is blanked by the server for a user without quotation prices.
-          detail: q.price != null ? `₹${q.price.toLocaleString()}${q.delivery_time ? ` · Delivery: ${q.delivery_time}` : ''}` : undefined,
+          detail: q.price != null ? `₹${q.price.toLocaleString('en-IN')}${q.delivery_time ? ` · Delivery: ${q.delivery_time}` : ''}` : undefined,
           date: q.submitted_date || q.created_at || null,
         })),
       ]

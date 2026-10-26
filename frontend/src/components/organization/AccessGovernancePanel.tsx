@@ -7,6 +7,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { BORDER, GLASS, SHADOWS, TEXT } from '@/lib/theme'
 import { FormSheet, SheetSection, SheetIcon, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { usePermissionWords } from '@/lib/permissionWords'
+import { RowCount, Pill } from '@/components/shared/ui'
 
 // Users › one user: validity dates (PFUD) on each role / extra grant, and the
 // denied-access trace (SU53) — what this user was refused, and which roles
@@ -102,7 +103,7 @@ export default function AccessGovernancePanel({ userId, roles, extras, canEdit, 
         {items.length === 0 ? <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>No roles or extra grants assigned yet — save roles first.</p> : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-              <thead><tr><th style={th}>Access</th><th style={th}>Valid from</th><th style={th}>Valid to</th><th style={th}>Reason</th><th style={th}>State</th><th style={th}></th></tr></thead>
+              <thead><tr><th style={th}>Access <RowCount count={items.length} /></th><th style={th}>Valid from</th><th style={th}>Valid to</th><th style={th}>Reason</th><th style={th}>State</th><th style={th}></th></tr></thead>
               <tbody>
                 {items.map((i) => {
                   const v = valueOf(i)
@@ -115,7 +116,7 @@ export default function AccessGovernancePanel({ userId, roles, extras, canEdit, 
                       <td style={{ ...td, minWidth: 180 }}>{v.reason || '—'}</td>
                       <td style={td}>
                         {!r ? <span style={{ color: TEXT.muted }}>Permanent</span>
-                          : <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${r.active ? '#16A34A' : '#F59E0B'}1a`, color: r.active ? '#16A34A' : '#F59E0B' }}>{r.active ? 'Active' : 'Not active today'}</span>}
+                          : <Pill label={r.active ? 'Active' : 'Not active today'} hex={r.active ? '#16A34A' : '#B45309'} />}
                       </td>
                       <td style={td}>{canEdit && <button type="button" style={sheetBtn('secondary', SHEET.INK)} onClick={() => openEdit(i)}><SheetIcon name="calendar" size={14} />Set dates</button>}</td>
                     </tr>
@@ -168,7 +169,7 @@ export default function AccessGovernancePanel({ userId, roles, extras, canEdit, 
           {denials.length === 0 ? <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Nothing was refused in the last 30 days.</p> : (
             <div style={{ overflowX: 'auto', maxHeight: 360, overflowY: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-                <thead><tr><th style={th}>When</th><th style={th}>Missing permission</th><th style={th}>Request</th><th style={th}>Times</th><th style={th}>Granted by role</th></tr></thead>
+                <thead><tr><th style={th}>When <RowCount count={denials.length} /></th><th style={th}>Missing permission</th><th style={th}>Request</th><th style={th}>Times</th><th style={th}>Granted by role</th></tr></thead>
                 <tbody>
                   {denials.map((d) => (
                     <tr key={d.id}>

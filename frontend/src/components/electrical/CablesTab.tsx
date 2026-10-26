@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { electricalApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import { TEXT } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { SheetColumns, SheetSection, sheetInput, Optional } from '@/components/shared/FormSheet'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { ElectricalCable, ElectricalJobDetail, ElectricalMeta } from '@/types'
@@ -204,7 +204,7 @@ export default function CablesTab({ job, canEdit, onChanged }: { job: Electrical
     return ''
   }
 
-  const headers = [...(canEdit ? ['__check__'] : []), 'Tag', 'Circuit', 'From → To', 'Cable', 'Length m', 'Harness', 'Colour', 'Status', ...(canEdit ? [''] : [])]
+  const headers = [...(canEdit ? ['__check__'] : []), 'Tag', 'Circuit', 'From → To', 'Cable', 'Length (m)', 'Harness', 'Colour', 'Status', ...(canEdit ? [''] : [])]
   const filtered = !!(search.trim() || statusFilter || harnessFilter)
 
   return (
@@ -246,8 +246,7 @@ export default function CablesTab({ job, canEdit, onChanged }: { job: Electrical
           <button type="button" style={secondaryBtnStyle} onClick={() => { setSearch(''); setStatusFilter(''); setHarnessFilter('') }}>Clear</button>
         )}
         <span data-tour="elec-cables-totals" style={{ fontSize: 12, color: TEXT.muted, marginLeft: 'auto', paddingBottom: 10 }}>
-          {filtered ? `${visible.length} of ${cables.length} cables` : `${cables.length} cable${cables.length === 1 ? '' : 's'}`}
-          {' · '}Total length <strong style={{ color: TEXT.heading }}>{fmtNum(visibleLength)} m</strong>
+          {filtered ? `Filtered from ${cables.length} · ` : ''}Total length <strong style={{ color: TEXT.heading }}>{fmtNum(visibleLength)} m</strong>
         </span>
       </div>
 
@@ -274,7 +273,7 @@ export default function CablesTab({ job, canEdit, onChanged }: { job: Electrical
                   <input data-tour="elec-cables-select-all" type="checkbox" aria-label="Select all visible cables" checked={allVisibleSelected}
                     disabled={!visible.length} onChange={toggleAllVisible} />
                 </th>
-              ) : <th key={`${h}-${idx}`} style={thStyle}>{h}</th>)}
+              ) : <th key={`${h}-${idx}`} style={h === 'Length (m)' ? { ...thStyle, textAlign: 'right' } : thStyle}>{h}{h === 'Tag' && <RowCount count={visible.length} />}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -306,7 +305,7 @@ export default function CablesTab({ job, canEdit, onChanged }: { job: Electrical
                     </>
                   ) : <span style={{ color: TEXT.muted }}>—</span>}
                 </td>
-                <td style={tdStyle}>{c.length_m != null ? fmtNum(c.length_m) : <span style={{ color: TEXT.muted }}>—</span>}</td>
+                <td style={{ ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{c.length_m != null ? fmtNum(c.length_m) : <span style={{ color: TEXT.muted }}>—</span>}</td>
                 <td style={tdStyle}>{c.harness_ref || <span style={{ color: TEXT.muted }}>—</span>}</td>
                 <td style={tdStyle}>{c.color_code || <span style={{ color: TEXT.muted }}>—</span>}</td>
                 <td style={tdStyle}><Pill value={c.status} labels={CABLE_STATUS_LABELS} hex={CABLE_STATUS_HEX} /></td>

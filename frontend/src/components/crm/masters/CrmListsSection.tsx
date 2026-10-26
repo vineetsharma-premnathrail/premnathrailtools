@@ -5,11 +5,12 @@
 // the list to open (old Masters links redirect here with it).
 
 import { useState } from 'react'
-import { TEXT, GLASS, SHADOWS, BRAND } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import ProductsManager from './ProductsManager'
 import ProductCategoriesManager from './ProductCategoriesManager'
 import PaymentTermsManager from './PaymentTermsManager'
 import DocumentCategoriesManager from './DocumentCategoriesManager'
+import { chipBtnStyle } from '@/components/shared/ui'
 
 const SECTIONS = [
   { key: 'products', label: 'Products' },
@@ -41,10 +42,7 @@ export default function CrmListsSection() {
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
         {SECTIONS.map((s) => (
           <button key={s.key} type="button" onClick={() => setSection(s.key)} data-tour={`crm-settings-${s.key}`}
-            style={{
-              padding: '7px 14px', borderRadius: 999, border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-              color: section === s.key ? '#fff' : '#57534e', background: section === s.key ? BRAND.primary : 'rgba(0,0,0,0.05)',
-            }}>
+            style={chipBtnStyle(section === s.key)}>
             {s.label}
           </button>
         ))}

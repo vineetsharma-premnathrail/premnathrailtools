@@ -6,7 +6,7 @@ import { qualityGaugeApi } from '@/lib/productionEngineeringApi'
 import { QualityGauge } from '@/types'
 import { TEXT, BORDER } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
-import { inputStyle, primaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { Pill, PageHeader, ErrorBanner, ActionSheet, sheetGap, tableWrapStyle, thStyle, tdStyle, fmtDate } from '@/components/quality/QualityBits'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 import DateField from '@/components/erp/DateField'
@@ -121,7 +121,7 @@ export default function QualityGaugesPage() {
       <div style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
           <thead>
-            <tr>{['Code', 'Name', 'Type', 'Location', 'Last calibrated', 'Next due', 'Calibration', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+            <tr>{['Code', 'Name', 'Type', 'Location', 'Last calibrated', 'Next due', 'Calibration', 'Status', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
@@ -228,7 +228,7 @@ export default function QualityGaugesPage() {
           <div style={{ padding: '20px 24px', overflowX: 'auto' }}>
             {history.blocked_reason && <p style={{ fontSize: 12.5, color: '#b91c1c', margin: '0 0 10px' }}>{history.blocked_reason}</p>}
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr>{['Date', 'Result', 'Next due', 'Agency', 'Certificate', 'Remarks'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Date', 'Result', 'Next due', 'Agency', 'Certificate', 'Remarks'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={history.calibrations.length} />}</th>)}</tr></thead>
               <tbody>
                 {history.calibrations.length === 0 ? (
                   <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No calibrations recorded.</td></tr>

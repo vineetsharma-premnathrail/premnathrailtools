@@ -15,12 +15,14 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import { RowCount } from '@/components/shared/ui'
 
 type Opt = { value: string; label: string }
 const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', whiteSpace: 'nowrap' }
 const td: React.CSSProperties = { padding: '7px 10px', fontSize: 12.5, borderTop: `1px solid ${SHEET.LINE}`, verticalAlign: 'middle' }
 const numTh: React.CSSProperties = { ...th, textAlign: 'right' }
 const numTd: React.CSSProperties = { ...td, textAlign: 'right', whiteSpace: 'nowrap' }
+const PO_STATUS: Record<string, string> = { draft: 'draft', issued: 'issued', acknowledged: 'acknowledged', partially_fulfilled: 'partly received', fulfilled: 'fully received', cancelled: 'cancelled' }
 const errBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
 const money = (v: number | null | undefined) => (v == null ? '—' : v.toLocaleString('en-IN', { maximumFractionDigits: 2 }))
 
@@ -79,7 +81,7 @@ export default function SplitPoDialog({ rfq, onClose, onDone }: { rfq: RFQ; onCl
             <div style={{ flex: '1 1 220px', maxWidth: 300 }}><label style={sheetLabel}>Ship-to store</label><SearchableSelect value={shipTo} onChange={setShipTo} options={locations} placeholder="Pick the store…" /></div>
           </div>
         </SheetSection>
-        <SheetSection icon="truck" title="POs by vendor">
+        <SheetSection icon="building" title="POs by vendor">
           {!prop && !error && <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>Loading…</p>}
           {prop && prop.groups.length === 0 && <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>No awarded lines are left to order. Award lines on the RFQ&apos;s quote comparison first.</p>}
           {prop?.groups.map((g) => (
@@ -87,7 +89,7 @@ export default function SplitPoDialog({ rfq, onClose, onDone }: { rfq: RFQ; onCl
               <div style={{ fontSize: 14, fontWeight: 700, color: SHEET.INK, marginBottom: 6 }}>{g.vendor_name}</div>
               <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', minWidth: 560, borderCollapse: 'collapse' }}>
-                <thead><tr>{['Item', 'Qty', 'Rate', 'GST %', 'Delivery date'].map((h, i) => <th key={h} style={i >= 1 && i <= 3 ? numTh : th}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Item', 'Qty', 'Rate', 'GST %', 'Delivery date'].map((h, i) => <th key={h} style={i >= 1 && i <= 3 ? numTh : th}>{h}{i === 0 && <RowCount count={g.lines.length} />}</th>)}</tr></thead>
                 <tbody>
                   {g.lines.map((l) => (
                     <tr key={l.pr_item_id}>
@@ -107,7 +109,7 @@ export default function SplitPoDialog({ rfq, onClose, onDone }: { rfq: RFQ; onCl
             <p style={{ fontSize: 12.5, color: '#b45309', margin: '6px 0 0' }}>Not awarded yet (stay open for a later PO): {prop.unawarded.map((u) => `${u.item_name} (${u.quantity})`).join(', ')}</p>
           )}
           {prop && prop.existing_pos.length > 0 && (
-            <p style={sheetHint}>Existing POs on {prop.p2p_number}: {prop.existing_pos.map((p) => `${p.po_number} (${p.vendor_name}, ${p.status})`).join(', ')}</p>
+            <p style={sheetHint}>Existing POs on {prop.p2p_number}: {prop.existing_pos.map((p) => `${p.po_number} (${p.vendor_name || 'no vendor'}, ${PO_STATUS[p.status] || p.status.replace(/_/g, ' ')})`).join(', ')}</p>
           )}
         </SheetSection>
       </div>

@@ -5,17 +5,15 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { goodsReceiptsApi } from '@/lib/api'
 import { P2PGoodsReceipt, P2PReceivablePurchaseOrder } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import StoreNav from '@/components/store/StoreNav'
 import { recordHref, recordPath } from '@/lib/recordRef'
+import { primaryBtnStyle, segmentBtnStyle, smallSecondaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 18px', borderRadius: 10, border: 'none', cursor: 'pointer',
-  background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600,
-}
+const primaryBtn = primaryBtnStyle
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Pending Inspection', completed: 'Completed', reversed: 'Reversed' }
 const STATUS_HEX: Record<string, string> = { draft: '#d97706', completed: '#16a34a', reversed: '#dc2626' }
@@ -26,10 +24,10 @@ const PO_STATUS_HEX: Record<string, string> = { issued: '#2563eb', acknowledged:
 // exists for the outstanding quantity, so it's a list of POs, not GRNs.
 type Bucket = 'upcoming' | 'pending' | 'completed' | 'all'
 const BUCKETS: { key: Bucket; label: string; status?: string; emptyLabel: string }[] = [
-  { key: 'upcoming', label: 'Upcoming', emptyLabel: 'No approved purchase orders are awaiting delivery.' },
+  { key: 'upcoming', label: 'Upcoming', emptyLabel: 'No approved purchase orders are awaiting delivery — issued POs appear here until their goods arrive.' },
   { key: 'pending', label: 'Pending Inspection', status: 'draft', emptyLabel: 'No goods receipts are waiting for inspection.' },
   { key: 'completed', label: 'Completed', status: 'completed', emptyLabel: 'No completed goods receipts yet.' },
-  { key: 'all', label: 'All', emptyLabel: 'No goods receipts recorded yet.' },
+  { key: 'all', label: 'All', emptyLabel: 'No goods receipts recorded yet — receive a delivery from the Upcoming tab or + New Goods Receipt.' },
 ]
 
 const thStyle: React.CSSProperties = {
@@ -37,14 +35,6 @@ const thStyle: React.CSSProperties = {
   fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, borderBottom: `1px solid ${BORDER.normal}`,
 }
 const tdStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }
-
-function Badge({ label, hex }: { label: string; hex: string }) {
-  return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
-      {label}
-    </span>
-  )
-}
 
 export default function StoreGrnPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('store')
@@ -95,21 +85,17 @@ export default function StoreGrnPage() {
             Store & Inventory Module
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Goods Receipt (GRN) & Inspection</h1>
+          <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>Record goods that arrive against a purchase order, then inspect them into Free stock.</p>
         </div>
         {isPurchaseTeam && can('store', 'grn', 'create') && <button data-tour="store-grn-new-btn" onClick={() => router.push('/dashboard/store/grn/new')} style={primaryBtn}>+ New Goods Receipt</button>}
       </div>
 
-      <div data-tour="store-grn-buckets" style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(0,0,0,0.05)', marginBottom: 16 }}>
+      <div data-tour="store-grn-buckets" style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4, marginBottom: 16 }}>
         {buckets.map((b) => (
           <button
             key={b.key}
             onClick={() => router.push(`/dashboard/store/grn?bucket=${b.key}`)}
-            style={{
-              padding: '8px 16px', borderRadius: 8, border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-              background: bucket === b.key ? '#fff' : 'transparent',
-              color: bucket === b.key ? '#FF7A45' : '#78716c',
-              boxShadow: bucket === b.key ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
-            }}
+            style={segmentBtnStyle(bucket === b.key)}
           >
             {b.label}{!loading && ` (${counts[b.key]})`}
           </button>
@@ -123,7 +109,7 @@ export default function StoreGrnPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
             <thead>
               <tr>
-                {['PO Number', 'PR Number', 'PO Date', 'Vendor', 'Expected Delivery', 'Pending from Vendor', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}
+                {['PO Number', 'PR Number', 'PO Date', 'Vendor', 'Expected Delivery', 'Pending from Vendor', 'Status', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={upcoming.length} />}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -142,17 +128,17 @@ export default function StoreGrnPage() {
                     <td style={{ ...tdStyle, fontSize: 12.5 }}>
                       {po.items.filter((it) => it.pending_quantity > 0).map((it) => (
                         <div key={it.id} style={{ whiteSpace: 'nowrap' }}>
-                          {it.item_name}: <strong style={{ color: '#d97706' }}>{it.pending_quantity}</strong> of {it.quantity} {it.unit || ''}
+                          {it.item_name}: <strong style={{ color: '#d97706' }}>{it.pending_quantity.toLocaleString('en-IN')}</strong> of {it.quantity.toLocaleString('en-IN')} {it.unit || ''}
                         </div>
                       ))}
                     </td>
                     <td style={tdStyle}>
-                      <Badge label={PO_STATUS_LABELS[po.status] || po.status} hex={PO_STATUS_HEX[po.status] || '#64748b'} />
+                      <Pill label={PO_STATUS_LABELS[po.status] || po.status} hex={PO_STATUS_HEX[po.status] || '#64748b'} />
                     </td>
                     <td style={tdStyle}>
-                      <span onClick={() => router.push(recordHref('/dashboard/store/grn/new', po, 'id', undefined, 'po_id'))} style={{ fontSize: 12.5, fontWeight: 600, color: '#c2410c', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      <button type="button" onClick={() => router.push(recordHref('/dashboard/store/grn/new', po, 'id', undefined, 'po_id'))} style={smallSecondaryBtnStyle}>
                         Receive →
-                      </span>
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -163,7 +149,7 @@ export default function StoreGrnPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
             <thead>
               <tr>
-                {['GRN Number', 'PO Number', 'PO Date', 'Vendor', 'Received Date', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}
+                {['GRN Number', 'PO Number', 'PO Date', 'Vendor', 'Received Date', 'Status', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -180,10 +166,10 @@ export default function StoreGrnPage() {
                     <td style={tdStyle}>{g.vendor_name || '—'}</td>
                     <td style={tdStyle}>{formatDate(g.received_date)}</td>
                     <td style={tdStyle}>
-                      <Badge label={STATUS_LABELS[g.status] || g.status} hex={STATUS_HEX[g.status] || '#64748b'} />
+                      <Pill label={STATUS_LABELS[g.status] || g.status} hex={STATUS_HEX[g.status] || '#64748b'} />
                     </td>
                     <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                      <span onClick={() => router.push(recordPath('/dashboard/store/grn', g))} style={{ fontSize: 12.5, fontWeight: 600, color: '#c2410c', cursor: 'pointer' }}>View</span>
+                      <button type="button" onClick={() => router.push(recordPath('/dashboard/store/grn', g))} style={smallSecondaryBtnStyle}>View</button>
                     </td>
                   </tr>
                 ))

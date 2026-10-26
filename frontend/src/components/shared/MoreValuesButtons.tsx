@@ -2,29 +2,33 @@
 
 import { SHEET, SheetIcon } from '@/components/shared/FormSheet'
 import { XIcon } from '@/components/crm/ui'
+import { CONTROL } from '@/lib/theme'
 
 /**
  * Extra phones / emails on one field: a square "+" in the field's own row adds
  * another (a "+ Add phone" link under the field pushed the row out of line),
  * and a matching "×" removes an added one. Both are the input's size and stay
  * top-aligned, so a validation message under an input never stretches them.
- * Up to MAX_EXTRA more per field, and only once the last added one is filled.
+ * Up to MAX_EXTRA more per field, and only once the field itself (`primary`)
+ * and every added one are filled — never a second empty box under an empty one.
  */
 
 export const MAX_EXTRA = 3
 
 /** The square button style shared by every icon button that sits in a field's row. */
 export const squareBtn = (color: string, disabled = false): React.CSSProperties => ({
-  flex: 'none', width: 38, height: 38, alignSelf: 'flex-start', boxSizing: 'border-box',
+  flex: 'none', width: CONTROL.height, height: CONTROL.height, alignSelf: 'flex-start', boxSizing: 'border-box',
   display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 10,
   border: `1px solid ${SHEET.LINE}`, background: '#fff', color, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.4 : 1,
 })
 
-/** Whether another value may be added after `extras`. Use it in the add handler too. */
-export const canAddMore = (extras: string[]) => extras.length < MAX_EXTRA && !extras.some((x) => !x.trim())
+/** Whether another value may be added after `extras` (and the field's own value
+ * `primary`, when given). Use it in the add handler too. */
+export const canAddMore = (extras: string[], primary?: string | null) =>
+  extras.length < MAX_EXTRA && !extras.some((x) => !x.trim()) && (primary === undefined || !!(primary || '').trim())
 
-export function AddMoreButton({ onClick, label, extras }: { onClick: () => void; label: string; extras: string[] }) {
-  const ok = canAddMore(extras)
+export function AddMoreButton({ onClick, label, extras, primary }: { onClick: () => void; label: string; extras: string[]; primary?: string | null }) {
+  const ok = canAddMore(extras, primary)
   const tip = ok ? label : extras.length >= MAX_EXTRA ? `Up to ${MAX_EXTRA + 1} in total — remove one to add another.` : 'Fill in the empty one first.'
   return (
     <button type="button" onClick={ok ? onClick : undefined} disabled={!ok} title={tip} aria-label={tip} style={squareBtn(SHEET.BLUE, !ok)}>

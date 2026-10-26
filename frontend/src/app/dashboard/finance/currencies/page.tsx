@@ -14,6 +14,7 @@ import {
   inputStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, currentPeriod, Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, useFinanceSubTabs, PageHeader, TableWrap, EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
+import { RowCount } from '@/components/shared/ui'
 import { fxApi, Currency, ExchangeRate, FxRevaluation, FxRevaluationPreview } from '@/lib/financeAssetsFxApi'
 import Select from '@/components/shared/Select'
 
@@ -87,9 +88,9 @@ function RatesTab({ canCreate, canAddRate, canEdit }: { canCreate: boolean; canA
         <div style={{ flex: '1 1 380px', display: 'flex', flexDirection: 'column' }}>
           {canCreate && <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}><button style={secondaryBtnStyle} onClick={() => open('currency')}>+ Add currency</button></div>}
           <TableWrap minWidth={420} maxHeight="none">
-            <thead><tr><th style={thStyle}>Code</th><th style={thStyle}>Name</th><th style={numTh}>Latest bank rate</th><th style={thStyle}>From</th><th style={thStyle}></th></tr></thead>
+            <thead><tr><th style={thStyle}>Code <RowCount count={currencies.length} /></th><th style={thStyle}>Name</th><th style={numTh}>Latest bank rate</th><th style={thStyle}>From</th><th style={thStyle}></th></tr></thead>
             <tbody>
-              {currencies.length === 0 ? <EmptyRow colSpan={5} text="No foreign currency yet." /> : currencies.map((c) => (
+              {currencies.length === 0 ? <EmptyRow colSpan={5} text="No foreign currency yet — use + Add currency." /> : currencies.map((c) => (
                 <tr key={c.id}>
                   <td style={tdStyle}>{c.code} {c.symbol}</td><td style={tdStyle}>{c.name}{!c.is_active && <span style={{ color: TEXT.muted }}> (inactive)</span>}</td>
                   <td style={numTd}>{c.latest_rate ?? '—'}</td><td style={tdStyle}>{dmy(c.latest_rate_date)}</td>
@@ -102,7 +103,7 @@ function RatesTab({ canCreate, canAddRate, canEdit }: { canCreate: boolean; canA
         <div style={{ flex: '1 1 420px', display: 'flex', flexDirection: 'column' }}>
           {canAddRate && <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}><button style={primaryBtnStyle} onClick={() => open('rate')}>+ Add rate</button></div>}
           <TableWrap minWidth={480} maxHeight="calc(100vh - 380px)">
-            <thead><tr><th style={thStyle}>Date</th><th style={thStyle}>Currency</th><th style={thStyle}>Type</th><th style={numTh}>Rate (₹)</th><th style={thStyle}>Source</th></tr></thead>
+            <thead><tr><th style={thStyle}>Date <RowCount count={rates.length} /></th><th style={thStyle}>Currency</th><th style={thStyle}>Type</th><th style={numTh}>Rate (₹)</th><th style={thStyle}>Source</th></tr></thead>
             <tbody>
               {rates.length === 0 ? <EmptyRow colSpan={5} text="No rates entered yet." /> : rates.map((r) => (
                 <tr key={r.id}><td style={tdStyle}>{dmy(r.rate_date)}</td><td style={tdStyle}>{r.currency}</td><td style={tdStyle}>{r.rate_type}</td><td style={numTd}>{r.rate}</td><td style={tdStyle}>{r.source || '—'}</td></tr>
@@ -201,8 +202,8 @@ function RevaluationTab({ canRun, canCancel }: { canRun: boolean; canCancel: boo
       <ErrorBanner error={error} />
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 14 }}>
         <Field label="Month (YYYY-MM)" style={{ flex: '0 1 140px', minWidth: 130 }}><input style={inputStyle} value={period} onChange={(e) => setPeriod(e.target.value.trim())} /></Field>
-        {preview && <StatCard label="Unrealised gain" value={inr(preview.total_gain)} tone="#15803d" />}
-        {preview && <StatCard label="Unrealised loss" value={inr(preview.total_loss)} tone="#b91c1c" />}
+        {preview && <StatCard label="Unrealised gain" value={`₹ ${inr(preview.total_gain)}`} tone="#15803d" />}
+        {preview && <StatCard label="Unrealised loss" value={`₹ ${inr(preview.total_loss)}`} tone="#b91c1c" />}
         {canRun && <button style={primaryBtnStyle} disabled={busy || !preview || preview.items.length === 0} onClick={() => { setRunError(null); setShowRun(true) }}>Post revaluation…</button>}
       </div>
       {canRun && showRun && preview && (
@@ -228,7 +229,7 @@ function RevaluationTab({ canRun, canCancel }: { canRun: boolean; canCancel: boo
         </FormSheet>
       )}
       <TableWrap minWidth={1100} maxHeight="none">
-        <thead><tr><th style={thStyle}>Document</th><th style={thStyle}>Party</th><th style={thStyle}>Currency</th><th style={numTh}>Open (FC)</th><th style={numTh}>Booking rate</th>
+        <thead><tr><th style={thStyle}>Document <RowCount count={preview?.items.length ?? 0} /></th><th style={thStyle}>Party</th><th style={thStyle}>Currency</th><th style={numTh}>Open (FC)</th><th style={numTh}>Booking rate</th>
           <th style={numTh}>Book value</th><th style={numTh}>Closing rate</th><th style={numTh}>Revalued</th><th style={numTh}>Gain / (loss)</th></tr></thead>
         <tbody>
           {!preview ? <EmptyRow colSpan={9} text="Pick a month." /> : preview.items.length === 0 ? <EmptyRow colSpan={9} text="No open foreign-currency document at that month end." /> : preview.items.map((i) => (
@@ -243,7 +244,7 @@ function RevaluationTab({ canRun, canCancel }: { canRun: boolean; canCancel: boo
       </TableWrap>
       <h3 style={{ fontSize: 14, fontWeight: 800, color: TEXT.heading, margin: '6px 0 10px' }}>Posted revaluations</h3>
       <TableWrap minWidth={760} maxHeight="none">
-        <thead><tr><th style={thStyle}>Month</th><th style={thStyle}>Journal</th><th style={numTh}>Gain</th><th style={numTh}>Loss</th><th style={thStyle}>Status</th><th style={thStyle}></th></tr></thead>
+        <thead><tr><th style={thStyle}>Month <RowCount count={runs.length} /></th><th style={thStyle}>Journal</th><th style={numTh}>Gain</th><th style={numTh}>Loss</th><th style={thStyle}>Status</th><th style={thStyle}></th></tr></thead>
         <tbody>
           {runs.length === 0 ? <EmptyRow colSpan={6} text="No revaluation posted yet." /> : runs.map((r) => (
             <tr key={r.id}>

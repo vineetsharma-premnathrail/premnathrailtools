@@ -65,12 +65,13 @@ def number_for(base: str, revision: int) -> str:
 
 def ensure_creator(db: Session, user: User) -> None:
     """Preparing a Technical Offer is R&D's formal answer: R&D heads, and the
-    people a head picked under "Can create Technical Offers" (R&D › Settings)."""
+    people with R&D › Requirements › Technical Offer team › Create."""
     if not ra.is_rnd_side(user):
         raise HTTPException(status_code=403, detail="Only R&D prepares the Technical Offer. Design / Electrical / Hydraulic & Pneumatic give their input through tasks and documents.")
     if not ra.can_create_technical_offer(db, user):
-        raise HTTPException(status_code=403, detail=f"You can't create Technical Offers. Ask the R&D head ({ra._head_names(db)}) to "
-                                                    "add you under 'Can create Technical Offers' in R&D › Settings.")
+        raise HTTPException(status_code=403, detail=f"You can't create Technical Offers. Ask an admin to tick R&D › Requirements › "
+                                                    f"'Technical Offer team (every requirement)' › Create for you (or your role) in Organization › "
+                                                    f"Role & Permissions. R&D head: {ra._head_names(db)}.")
 
 
 def ensure_can_prepare(db: Session, user: User, source: str, record_id: int) -> dict:

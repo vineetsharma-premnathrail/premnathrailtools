@@ -6,7 +6,8 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { maintenanceApi } from '@/lib/api'
 import { MaintenanceDashboard, MaintenanceLookups } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, Pill } from '@/components/shared/ui'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
@@ -32,12 +33,6 @@ function Kpi({ label, value, sub, hex, onClick }: { label: string; value: string
       <p style={{ fontSize: 26, fontWeight: 700, margin: 0, color: hex || TEXT.heading }}>{value}</p>
       {sub && <p style={{ fontSize: 12, color: TEXT.muted, margin: '4px 0 0' }}>{sub}</p>}
     </div>
-  )
-}
-
-function Pill({ text, hex }: { text: string; hex: string }) {
-  return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{text}</span>
   )
 }
 
@@ -98,11 +93,7 @@ export default function MaintenanceDashboardPage() {
           <button
             data-tour="maint-dash-report-btn"
             onClick={() => router.push('/dashboard/maintenance/requests/new')}
-            style={{
-              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-            }}
+            style={primaryBtnStyle}
           >
             + Report Breakdown
           </button>
@@ -153,7 +144,7 @@ export default function MaintenanceDashboardPage() {
               ) : data.machines_down.map((d) => (
                 <div key={d.asset_id} style={rowStyle}
                   onClick={() => router.push(d.work_order_id ? recordPath('/dashboard/maintenance/work-orders', d, 'work_order_id') : recordPath('/dashboard/maintenance/assets', d, 'asset_id'))}>
-                  <Pill text={d.criticality} hex={CRIT_HEX[d.criticality] || '#78716c'} />
+                  <Pill label={d.criticality} hex={CRIT_HEX[d.criticality] || '#78716c'} />
                   <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, minWidth: 90 }}>{d.asset_code}</span>
                   <span style={{ fontSize: 13, color: TEXT.body, flex: '1 1 140px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
                   <span style={{ fontSize: 12, color: TEXT.muted }}>{d.wo_number || 'No work order yet'}</span>
@@ -171,8 +162,8 @@ export default function MaintenanceDashboardPage() {
                   <span style={{ fontSize: 13, color: TEXT.body, flex: '1 1 160px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.problem_description}>
                     {r.asset_code} — {r.problem_description}
                   </span>
-                  {r.machine_down && <Pill text="Machine down" hex="#DC2626" />}
-                  <Pill text={PRIORITY_LABELS[r.priority] || r.priority} hex={PRIORITY_HEX[r.priority] || '#78716c'} />
+                  {r.machine_down && <Pill label="Machine down" hex="#DC2626" />}
+                  <Pill label={PRIORITY_LABELS[r.priority] || r.priority} hex={PRIORITY_HEX[r.priority] || '#78716c'} />
                   <span style={{ fontSize: 12, color: TEXT.muted }}>{formatDateTime(r.reported_at)}</span>
                 </div>
               ))}
@@ -188,8 +179,8 @@ export default function MaintenanceDashboardPage() {
                 <div key={w.id} style={rowStyle} onClick={() => router.push(recordPath('/dashboard/maintenance/work-orders', w))}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, minWidth: 120 }}>{w.wo_number}</span>
                   <span style={{ fontSize: 13, color: TEXT.body, flex: '1 1 160px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.asset_code} — {w.title}</span>
-                  <Pill text={PRIORITY_LABELS[w.priority] || w.priority} hex={PRIORITY_HEX[w.priority] || '#78716c'} />
-                  <Pill text={WO_STATUS_LABELS[w.status] || w.status} hex={WO_STATUS_HEX[w.status] || '#78716c'} />
+                  <Pill label={PRIORITY_LABELS[w.priority] || w.priority} hex={PRIORITY_HEX[w.priority] || '#78716c'} />
+                  <Pill label={WO_STATUS_LABELS[w.status] || w.status} hex={WO_STATUS_HEX[w.status] || '#78716c'} />
                   {w.planned_start && <span style={{ fontSize: 12, color: TEXT.muted }}>{formatDate(w.planned_start)}</span>}
                 </div>
               ))}
@@ -203,8 +194,8 @@ export default function MaintenanceDashboardPage() {
                   <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, minWidth: 120 }}>{w.wo_number}</span>
                   <span style={{ fontSize: 13, color: TEXT.body, flex: '1 1 160px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.asset_code} — {w.title}</span>
                   {w.awaiting_confirmation
-                    ? <Pill text="Waiting for requester" hex="#F59E0B" />
-                    : <Pill text="Ready to close" hex="#16A34A" />}
+                    ? <Pill label="Waiting for requester" hex="#F59E0B" />
+                    : <Pill label="Ready to close" hex="#16A34A" />}
                 </div>
               ))}
             </div>
@@ -225,7 +216,7 @@ export default function MaintenanceDashboardPage() {
                       <div key={`o${w.id}`} style={rowStyle} onClick={() => router.push(recordPath('/dashboard/maintenance/work-orders', w))}>
                         <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, minWidth: 120 }}>{w.wo_number}</span>
                         <span style={{ fontSize: 13, color: TEXT.body, flex: '1 1 160px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.asset_code} — {w.title}</span>
-                        <Pill text={`${w.days_overdue}d overdue`} hex="#DC2626" />
+                        <Pill label={`${w.days_overdue}d overdue`} hex="#DC2626" />
                         <span style={{ fontSize: 12, color: TEXT.muted }}>Due {formatDate(w.due_date)}</span>
                       </div>
                     ))}
@@ -234,7 +225,7 @@ export default function MaintenanceDashboardPage() {
                         onClick={() => router.push(recordPath(p.kind === 'work_order' ? '/dashboard/maintenance/work-orders' : '/dashboard/maintenance/schedule', p))}>
                         <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, minWidth: 120 }}>{p.number}</span>
                         <span style={{ fontSize: 13, color: TEXT.body, flex: '1 1 160px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.asset_code} — {p.title}</span>
-                        {p.kind === 'plan' ? <Pill text="Job not generated yet" hex="#78716c" /> : <Pill text={WO_STATUS_LABELS[p.status] || p.status} hex={WO_STATUS_HEX[p.status] || '#78716c'} />}
+                        {p.kind === 'plan' ? <Pill label="Job not generated yet" hex="#78716c" /> : <Pill label={WO_STATUS_LABELS[p.status] || p.status} hex={WO_STATUS_HEX[p.status] || '#78716c'} />}
                         <span style={{ fontSize: 12, color: TEXT.muted }}>Due {formatDate(p.due_date)}</span>
                       </div>
                     ))}

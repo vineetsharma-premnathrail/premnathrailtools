@@ -5,12 +5,12 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { maintenanceApi } from '@/lib/api'
 import { MaintenanceAsset, MaintenanceLookups } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { ASSET_CATEGORY_LABELS, ASSET_STATUS_LABELS } from '@/components/maintenance/labels'
 import AssetImportDialog from '@/components/maintenance/AssetImportDialog'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import { recordPath, refOf } from '@/lib/recordRef'
 import { useCan } from '@/lib/permissions'
 import Select from '@/components/shared/Select'
@@ -105,11 +105,7 @@ export default function MaintenanceAssetsPage() {
         {can('maintenance', 'assets', 'create') && <button
           data-tour="maint-asset-new-btn"
           onClick={() => router.push('/dashboard/maintenance/assets/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
+          style={primaryBtnStyle}
         >
           + New Asset
         </button>}
@@ -176,9 +172,9 @@ export default function MaintenanceAssetsPage() {
               <th style={{ width: 36, padding: '10px 0 10px 14px', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                 <input type="checkbox" aria-label="Select all assets on this page" checked={allOnPageSelected} onChange={toggleAllOnPage} disabled={pageIds.length === 0} />
               </th>
-              {['Code', 'Name', 'Category', 'Plant', 'Location', 'Crit.', 'Open WOs', 'Status', ''].map((h) => (
+              {['Code', 'Name', 'Category', 'Plant', 'Location', 'Crit.', 'Open WOs', 'Status', ''].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={assets.length} />}
                 </th>
               ))}
             </tr>
@@ -207,13 +203,11 @@ export default function MaintenanceAssetsPage() {
                   <td style={cellStyle}>{a.branch_name || '—'}</td>
                   <td style={cellStyle}>{a.location_text || '—'}</td>
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${CRIT_HEX[a.criticality]}1a`, color: CRIT_HEX[a.criticality] }}>{a.criticality}</span>
+                    <Pill label={a.criticality} hex={CRIT_HEX[a.criticality]} />
                   </td>
                   <td style={cellStyle}>{a.open_work_orders || '—'}</td>
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[a.status]}1a`, color: STATUS_HEX[a.status], whiteSpace: 'nowrap' }}>
-                      {ASSET_STATUS_LABELS[a.status] || a.status}
-                    </span>
+                    <Pill label={ASSET_STATUS_LABELS[a.status] || a.status} hex={STATUS_HEX[a.status]} />
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
                     <span onClick={() => router.push(recordPath('/dashboard/maintenance/assets', a))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>

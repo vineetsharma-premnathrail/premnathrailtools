@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { costCentersApi, hrApi, hrOrgApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
 import { extractErrorMessages } from '@/lib/validation'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount, smallSecondaryBtnStyle } from '@/components/shared/ui'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -92,13 +92,13 @@ export default function EmployeeAssignmentTab({ userId }: { userId: number }) {
       </div>
       <div style={tableWrap}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
-          <thead><tr>{['Valid from', 'Valid to', 'Department', 'Designation', 'Grade', 'Plant', 'Cost center', 'Manager', 'Source', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Valid from', 'Valid to', 'Department', 'Designation', 'Grade', 'Plant', 'Cost center', 'Manager', 'Source', ''].map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={items.length} />}</th>)}</tr></thead>
           <tbody>
-            {!items.length && <tr><td style={td} colSpan={10}>No history yet — it starts with the next change.</td></tr>}
+            {!items.length && <tr><td style={td} colSpan={10}>No assignment history yet — it starts with the next change (use Change from a date).</td></tr>}
             {items.map((s) => (
               <tr key={s.id}>
-                <td style={td}>{dmy(s.valid_from)} {s.current && <Pill label="Current" hex="#16A34A" />}{s.pending && <Pill label="Scheduled" hex="#F59E0B" />}</td>
-                <td style={td}>{s.valid_to ? dmy(s.valid_to) : 'open'}</td>
+                <td style={{ ...td, whiteSpace: 'nowrap' }}>{dmy(s.valid_from)} {s.current && <Pill label="Current" hex="#16A34A" />}{s.pending && <Pill label="Scheduled" hex="#F59E0B" />}</td>
+                <td style={{ ...td, whiteSpace: 'nowrap' }}>{s.valid_to ? dmy(s.valid_to) : 'Ongoing'}</td>
                 <td style={td}>{s.department_name || '—'}</td>
                 <td style={td}>{s.designation_name || '—'}</td>
                 <td style={td}>{s.grade_code || '—'}</td>
@@ -106,7 +106,7 @@ export default function EmployeeAssignmentTab({ userId }: { userId: number }) {
                 <td style={td}>{s.cost_center_name || '—'}</td>
                 <td style={td}>{s.reporting_manager_name || '—'}</td>
                 <td style={td} title={s.reason || ''}>{SOURCE_LABELS[s.source] || s.source}{s.created_by_name ? ` · ${s.created_by_name}` : ''}</td>
-                <td style={td}>{s.pending && canWithdraw && <button type="button" style={secondaryBtnStyle} onClick={() => setWithdraw(s)}>Withdraw</button>}</td>
+                <td style={td}>{s.pending && canWithdraw && <button type="button" style={smallSecondaryBtnStyle} onClick={() => setWithdraw(s)}>Withdraw</button>}</td>
               </tr>
             ))}
           </tbody>

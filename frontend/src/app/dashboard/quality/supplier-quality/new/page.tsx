@@ -52,7 +52,7 @@ export default function NewAvlPage() {
       <SheetColumns
         left={<>
           <ErrorBanner error={error} />
-          <SheetSection icon="truck" title="Vendor">
+          <SheetSection icon="building" title="Vendor">
             <label style={sheetLabel}>Item <Req /></label>
             <SearchableSelect value={form.item_id} onChange={(v) => setForm({ ...form, item_id: v })} placeholder="Select item"
               options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />

@@ -2,42 +2,38 @@
 
 import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi, usersApi } from '@/lib/api'
-import { DirectoryUser, RndProjectDetail, RndProjectPriority } from '@/types'
-import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
+import { DirectoryUser, RndDocument, RndProjectDetail, RndProjectPriority } from '@/types'
+import { TEXT } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallSecondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
 import { formatDate } from '@/lib/format'
 import RndNav from '@/components/rnd/RndNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import TeamMemberPicker from '@/components/rnd/TeamMemberPicker'
 import RndDocumentsPanel from '@/components/rnd/RndDocumentsPanel'
-import TasksBoard, { TaskApi, TaskLabels } from '@/components/rnd/TasksBoard'
+import { TaskApi, TaskLabels } from '@/components/rnd/TasksBoard'
+import RndMilestonePlan from '@/components/rnd/RndMilestonePlan'
+import RndProjectHistory from '@/components/rnd/RndProjectHistory'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
-import ProjectOriginFields, { EMPTY_ORIGIN, KIND_LABELS, ORIGIN_HEX, OriginDraft, originError, originFromProject, originPayload } from '@/components/rnd/ProjectOriginFields'
-import { FormSheet, SheetColumns, SheetSection, SheetIcon, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import ProjectOriginFields, { EMPTY_ORIGIN, KIND_LABELS, OriginDraft, originError, originFromProject, originPayload } from '@/components/rnd/ProjectOriginFields'
+import { FormPage, SheetColumns, SheetSection, SheetIcon, FileDropZone, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
 const inputStyle = sheetInput
 const labelStyle = sheetLabel
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
-
 const PRIORITY_LABELS: Record<string, string> = {
   high: 'High — Important requirement',
   medium: 'Medium — Normal requirement',
   low: 'Low — Can be handled later',
   critical: 'Critical',
 }
-const PRIORITY_HEX: Record<string, string> = { high: '#DC2626', medium: '#F59E0B', low: '#16A34A', critical: '#991B1B' }
 
 const TASK_LABELS: TaskLabels = {
   manager: 'project lead',
@@ -45,6 +41,17 @@ const TASK_LABELS: TaskLabels = {
   assignPlaceholder: 'Select team member…',
   emptyManager: 'No tasks yet — use “+ New task” to hand work to a team member. Only people under Team Members can be assigned.',
   emptyOther: 'You have no tasks on this project.',
+}
+
+// Same layout as a Project Management project: Overview · Milestones · Documents · History.
+const TABS = ['Overview', 'Milestones', 'Documents', 'History'] as const
+type Tab = typeof TABS[number]
+function tabBtnStyle(active: boolean): React.CSSProperties {
+  return {
+    padding: '10px 16px', marginBottom: -1, borderTop: '0', borderLeft: '0', borderRight: '0', borderRadius: 0, background: 'none', boxShadow: 'none',
+    cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', fontFamily: 'inherit',
+    color: active ? '#6366f1' : '#78716c', borderBottom: active ? '2px solid #6366f1' : '2px solid transparent',
+  }
 }
 
 function ErrorBanner({ error }: { error: string | string[] }) {
@@ -61,6 +68,59 @@ function ErrorBanner({ error }: { error: string | string[] }) {
 // default; Edit (header) switches the details to the form, same pattern as
 // the HR lifecycle / P2P vendor detail pages. Stage / status / budget /
 // feasibility / handover are not shown.
+// One line of the Overview list: fixed-width label on the left, value on the
+// right (wraps under itself), "—" when empty. Stacks on a phone.
+function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  const empty = children === null || children === undefined || children === ''
+  return (
+    <div className="rnd-detail-row" style={{ display: 'flex', gap: 16, padding: '9px 0', alignItems: 'baseline', flexWrap: 'wrap' }}>
+      <div style={{ flex: '0 0 190px', fontSize: 13, color: SHEET.MUTED }}>{label}</div>
+      <div style={{ flex: '1 1 260px', minWidth: 0, fontSize: 13.5, lineHeight: '20px', color: empty ? SHEET.MUTED : SHEET.INK, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{empty ? '—' : children}</div>
+    </div>
+  )
+}
+
+// Overview › Attachments: the files on the project (what the New Project form's
+// Attachments uploaded, plus later ones). Open a file here; add / remove in Documents.
+function OverviewAttachments({ projectId }: { projectId: number }) {
+  const [docs, setDocs] = useState<RndDocument[] | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let cancelled = false
+    rndApi.listDocuments({ project_id: projectId })
+      .then((d) => { if (!cancelled) setDocs(Array.isArray(d) ? d : []) })
+      .catch((err) => { if (!cancelled) { setDocs([]); setError([extractErrorMessages(err, 'Could not load the attachments.')].flat().join(' ')) } })
+    return () => { cancelled = true }
+  }, [projectId])
+  const open = async (d: RndDocument) => {
+    try {
+      const blob = await rndApi.getDocumentContent(d.id)
+      window.open(URL.createObjectURL(blob), '_blank')
+    } catch (err) {
+      setError([extractErrorMessages(err, `Unable to open "${d.file_name}".`)].flat().join(' '))
+    }
+  }
+  return (
+    <>
+      {error && <p style={{ fontSize: 12.5, color: '#b91c1c', margin: '0 0 8px' }}>{error}</p>}
+      {docs === null ? (
+        <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>Loading…</p>
+      ) : docs.length === 0 ? (
+        <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>No attachments.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {docs.map((d) => (
+            <button key={d.id} type="button" onClick={() => open(d)} title="Open file"
+              style={{ padding: 0, border: 'none', background: 'none', color: '#2563EB', fontSize: 13.5, fontWeight: 500, cursor: 'pointer', textAlign: 'left' }}>
+              {d.title && d.title !== d.file_name ? `${d.title} — ${d.file_name}` : d.file_name}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
 export default function RndProjectDetailPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('rnd')
   const { can, canDelete, canFeature } = useCan()
@@ -89,6 +149,7 @@ export default function RndProjectDetailPage() {
   const [targetEndDate, setTargetEndDate] = useState('')
   const [remarks, setRemarks] = useState('')
   const [origin, setOrigin] = useState<OriginDraft>(EMPTY_ORIGIN)
+  const [files, setFiles] = useState<File[]>([])
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -97,6 +158,14 @@ export default function RndProjectDetailPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   // Project lead / admin — hands out tasks and is the only one who may delete files.
   const [isManager, setIsManager] = useState(false)
+  // ?tab=milestones (or the old #tasks link from My Tasks) opens that tab.
+  const search = useSearchParams()
+  const [chosenTab, setTab] = useState<Tab>(() => {
+    const asked = (search.get('tab') || '').toLowerCase()
+    const hit = TABS.find((t) => t.toLowerCase() === asked)
+    if (hit) return hit
+    return typeof window !== 'undefined' && window.location.hash === '#tasks' ? 'Milestones' : 'Overview'
+  })
   useEscapeKey(editing && !saving, () => { setError(''); setEditing(false) })
 
   const taskApi = useMemo<TaskApi>(() => ({
@@ -169,10 +238,12 @@ export default function RndProjectDetailPage() {
   }
 
   const canEdit = can('rnd', 'projects', 'edit')
+  const visibleTabs = TABS.filter((t) => t !== 'Milestones' || canFeature('rnd', 'projects', 'milestones', 'view'))
+  const tab: Tab = visibleTabs.includes(chosenTab) ? chosenTab : 'Overview'
   const canDeleteProject = canDelete('rnd', 'projects', project.created_by_id ?? null)
 
   const startEdit = () => { setError(''); setSaved(false); applyProject(project); setEditing(true) }
-  const discardEdit = () => { setError(''); applyProject(project); setEditing(false) }
+  const discardEdit = () => { setError(''); setFiles([]); applyProject(project); setEditing(false) }
 
   const handleSave = async () => {
     setError('')
@@ -201,10 +272,33 @@ export default function RndProjectDetailPage() {
         target_end_date: targetEndDate || null,
         remarks: remarks.trim() || null,
       })
+      // New attachments go to the project's Documents; a failed file never undoes the save.
+      const failed: string[] = []
+      for (const f of files) {
+        const fd = new FormData()
+        fd.append('project_id', String(projectId))
+        fd.append('doc_type', 'other')
+        fd.append('title', f.name)
+        fd.append('files', f)
+        try {
+          await rndApi.uploadDocuments(fd)
+        } catch (err) {
+          failed.push(`${f.name}: ${[extractErrorMessages(err, 'upload failed')].flat().join(' ')}`)
+        }
+      }
+      setFiles([])
       applyProject(await rndApi.getProject(projectId))
       setIsManager((await rndApi.projectTaskAccess(projectId)).can_manage)
       setEditing(false)
-      setSaved(true)
+      if (failed.length) {
+        setError([
+          `Changes were saved, but ${failed.length} attachment(s) didn't upload —`,
+          ...failed,
+          '— upload them again from the Documents section below.',
+        ])
+      } else {
+        setSaved(true)
+      }
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save R&D project.'))
     } finally {
@@ -225,142 +319,40 @@ export default function RndProjectDetailPage() {
     }
   }
 
-  return (
-    <div style={{ width: '100%' }}>
-      <RndNav />
-
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div data-tour="rnd-pd-badges">
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            R&amp;D Module
-          </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 20px' }}>
-            <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{project.project_number}</h1>
-            <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PRIORITY_HEX[project.priority] || '#78716c'}1a`, color: PRIORITY_HEX[project.priority] || '#78716c', whiteSpace: 'nowrap' }}>
-              {PRIORITY_LABELS[project.priority] || project.priority}
-            </span>
-          </div>
-          {(project.linked_requirements || []).length > 0 && (
-            <div data-tour="rnd-pd-requirements" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', margin: '-12px 0 20px' }}>
-              <span style={{ fontSize: 12, color: TEXT.muted }}>For requirement:</span>
-              {(project.linked_requirements || []).map((r) => (
-                <button key={`${r.source}-${r.record_id}`} type="button" onClick={() => router.push(recordPath(`/dashboard/rnd/requirements/${r.source}`, r, 'record_id'))}
-                  title={r.title || undefined}
-                  style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 9999, border: '1px solid rgba(255,106,42,0.3)', background: 'rgba(255,106,42,0.08)', color: '#c2410c', cursor: 'pointer' }}>
-                  {r.ref}{r.title ? ` · ${r.title}` : ''}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          {!editing && canEdit && (
-            <button data-tour="rnd-pd-edit-btn" type="button" onClick={startEdit} style={secondaryBtnStyle}>Edit</button>
-          )}
-          {!editing && canDeleteProject && (
-            <button data-tour="rnd-pd-delete-btn" type="button" onClick={() => setConfirmOpen(true)} disabled={deleting} style={{ ...dangerBtnStyle, opacity: deleting ? 0.6 : 1 }}>
-              {deleting ? 'Deleting…' : 'Delete'}
-            </button>
-          )}
-          <button data-tour="rnd-pd-back-btn" onClick={() => router.push('/dashboard/rnd/projects')} type="button" style={secondaryBtnStyle}>← Back</button>
-        </div>
-      </div>
-
-      {!editing && <ErrorBanner error={error} />}
-      {saved && !editing && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', color: '#15803d', fontSize: 13 }}>
-          Changes saved.
-        </div>
-      )}
-
-      <div data-tour="rnd-pd-source" style={sectionStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 14px' }}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Source</h2>
-          {project.origin ? (
-            <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${ORIGIN_HEX[project.origin] || '#78716c'}1a`, color: ORIGIN_HEX[project.origin] || '#78716c', whiteSpace: 'nowrap' }}>
-              {project.origin_label || project.origin}
-            </span>
-          ) : (
-            <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: '#78716c1a', color: '#78716c', whiteSpace: 'nowrap' }}>Origin not recorded</span>
-          )}
-        </div>
-        {project.origin ? (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 32px' }}>
-            {project.source_kind && (
-              <div>
-                <p style={{ fontSize: 11.5, fontWeight: 600, color: TEXT.muted, margin: '0 0 3px' }}>{KIND_LABELS[project.source_kind]}</p>
-                {project.source_path && project.source_exists ? (
-                  <button type="button" onClick={() => router.push(recordPath(project.source_path as string, project, 'source_id'))}
-                    style={{ padding: 0, border: 'none', background: 'none', color: '#2563EB', fontWeight: 600, fontSize: 13.5, cursor: 'pointer', textAlign: 'left' }}>
-                    {project.source_ref || `#${project.source_id}`}
-                  </button>
-                ) : (
-                  <p style={{ fontSize: 13.5, color: TEXT.body, margin: 0 }}>
-                    {project.source_ref || `#${project.source_id}`} <span style={{ fontSize: 12, color: TEXT.muted }}>(record no longer exists)</span>
-                  </p>
-                )}
-              </div>
-            )}
-            {project.product_name && <InfoRow label={project.origin === 'product_improvement' ? 'Product being improved' : 'Product'} value={project.product_name} />}
-            {project.improvement_reason_label && <InfoRow label="Reason" value={project.improvement_reason_label} />}
-            {project.origin_note && <div style={{ flexBasis: '100%' }}><InfoRow label="Who proposed it and why" value={project.origin_note} /></div>}
-          </div>
-        ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>
-              This project was created before its origin was recorded — nobody can tell why it exists or what it belongs to.
-              {canEdit && isManager ? ' Set it now.' : ' A project lead or admin can set it.'}
-            </p>
-            {canEdit && isManager && !editing && (
-              <button data-tour="rnd-pd-set-origin-btn" type="button" onClick={startEdit} style={secondaryBtnStyle}>Set origin</button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {(
-        <>
-          <div data-tour="rnd-pd-details" style={sectionStyle}>
-            <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Project Initiation</h2>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 32px', marginBottom: 18 }}>
-              <InfoRow label="Project Title" value={project.title} />
-              <InfoRow label="Start Date" value={formatDate(project.start_date)} />
-              <InfoRow label="Target End Date" value={project.target_end_date ? formatDate(project.target_end_date) : 'Not decided'} />
-              <InfoRow label="Created" value={formatDate(project.created_at)} />
-            </div>
-            <div style={{ marginBottom: 14 }}><InfoRow label="Objective" value={project.objective || '—'} /></div>
-            <InfoRow label="Scope" value={project.scope || '—'} />
-          </div>
-
-          <div style={sectionStyle}>
-            <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Project Members</h2>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 32px', marginBottom: 14 }}>
-              <InfoRow label="Project Leads" value={project.leads?.map((m) => m.name).join(', ') || project.lead_name || '—'} />
-              <InfoRow label="Team Members" value={project.team_members?.map((m) => m.name).join(', ') || '—'} />
-            </div>
-            <InfoRow label="Remarks" value={project.remarks || '—'} />
-          </div>
-        </>
-      )}
-
-      {editing && (
-        <FormSheet tour="rnd-pd-edit-form" icon="edit" title="Edit R&D Project" subtitle={`${project.project_number} — changes are saved to the project record.`}
-          onClose={discardEdit} busy={saving}
+  // Edit opens the same full-page form as New Project — same sections, same order.
+  if (editing) {
+    return (
+      <div style={{ width: '100%' }}>
+        <FormPage
+          tour="rnd-pd-edit-form"
+          nav={<RndNav />}
+          icon="edit"
+          title="Edit R&D Project"
+          subtitle={`${project.project_number} — changes are saved to the project record.`}
+          onBack={discardEdit}
           footer={<>
             <button data-tour="rnd-pd-discard-btn" type="button" onClick={discardEdit} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Discard</button>
             <button data-tour="rnd-pd-save-btn" type="button" onClick={handleSave} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
-              <SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save changes'}
+              <SheetIcon name="check" size={16} />{saving ? (files.length ? 'Saving & uploading…' : 'Saving…') : 'Save changes'}
             </button>
-          </>}>
+          </>}
+        >
+          {error && (
+            <div style={{ padding: '16px 24px 0' }}>
+              <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+                {Array.isArray(error) ? error.join(' ') : error}
+              </div>
+            </div>
+          )}
+
           <SheetColumns
             left={<>
-              <ErrorBanner error={error} />
-              <SheetSection icon="flag" title="Project Origin">
+              <SheetSection icon="flag" title="Project Origin" extra={<span style={{ fontSize: 12, color: SHEET.MUTED }}>Why does this project exist? <Req /></span>}>
                 <ProjectOriginFields value={origin} onChange={setOrigin} />
               </SheetSection>
               <SheetSection icon="list" title="Project Initiation">
                 <label style={labelStyle}>Project Title <Req /></label>
-                <input style={inputStyle} value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
+                <input style={inputStyle} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Lightweight bogie frame for track machines" autoFocus />
                 <label style={{ ...labelStyle, marginTop: 14 }}>Objective <Req /></label>
                 <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={objective} onChange={(e) => setObjective(e.target.value)} placeholder="What should this project achieve, and why?" />
                 <label style={{ ...labelStyle, marginTop: 14 }}>Scope</label>
@@ -392,42 +384,151 @@ export default function RndProjectDetailPage() {
             right={<>
               <SheetSection icon="users" title="Project Members">
                 <label style={labelStyle}>Project Leads</label>
-                <TeamMemberPicker users={pickable} value={leadIds} onChange={setLeadIds} excludeIds={teamIds} selfId={user?.id} placeholder="Search name or email to add a project lead…" />
+                <TeamMemberPicker users={pickable} value={leadIds} onChange={setLeadIds} excludeIds={teamIds} placeholder="Search name or email to add a project lead…" />
                 <label style={{ ...labelStyle, marginTop: 14 }}>Team Members</label>
-                <TeamMemberPicker users={pickable} value={teamIds} onChange={setTeamIds} excludeIds={leadIds} selfId={user?.id} />
+                <TeamMemberPicker users={pickable} value={teamIds} onChange={setTeamIds} excludeIds={leadIds} />
               </SheetSection>
               <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
                 <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
               </SheetSection>
+              <SheetSection icon="clip" title="Attachments" extra={<Optional />}>
+                <FileDropZone
+                  files={files}
+                  onChange={(next) => setFiles(next.filter((f, i) => next.findIndex((p) => p.name === f.name && p.size === f.size) === i))}
+                />
+                <p style={sheetHint}>Add more specs, drawings, photos or proof — saved to the project&apos;s Documents along with the files already there.</p>
+              </SheetSection>
             </>}
           />
-        </FormSheet>
+        </FormPage>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ width: '100%' }}>
+      <RndNav />
+
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div data-tour="rnd-pd-badges">
+          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
+            R&amp;D Module
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 20px' }}>
+            <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{project.project_number}</h1>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          {!editing && canEdit && (
+            <button data-tour="rnd-pd-edit-btn" type="button" onClick={startEdit} style={secondaryBtnStyle}>Edit</button>
+          )}
+          {!editing && canDeleteProject && (
+            <button data-tour="rnd-pd-delete-btn" type="button" onClick={() => setConfirmOpen(true)} disabled={deleting} style={{ ...dangerBtnStyle, opacity: deleting ? 0.6 : 1 }}>
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          )}
+          <button data-tour="rnd-pd-back-btn" onClick={() => router.push('/dashboard/rnd/projects')} type="button" style={secondaryBtnStyle}>← Back</button>
+        </div>
+      </div>
+
+      {!editing && <ErrorBanner error={error} />}
+      {saved && !editing && (
+        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', color: '#15803d', fontSize: 13 }}>
+          Changes saved.
+        </div>
       )}
 
-      {canFeature('rnd', 'projects', 'tasks', 'view') && <div id="tasks" data-tour="rnd-pd-tasks" style={{ ...sectionStyle, scrollMarginTop: 16 }}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Tasks</h2>
-        <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 14px' }}>
-          Project leads hand work to team members. Whoever a task is assigned to can split it into sub-tasks; whoever creates a task can edit it and checks it when it&apos;s marked done.
-        </p>
-        {user && (
-          <TasksBoard api={taskApi} userId={user.id} canManage={isManager} labels={TASK_LABELS}
-            canCreate={isManager && canFeature('rnd', 'projects', 'tasks', 'create')}
-            rights={{
-              create: canFeature('rnd', 'projects', 'tasks', 'create'), edit: canFeature('rnd', 'projects', 'tasks', 'edit'),
-              approve: canFeature('rnd', 'projects', 'tasks', 'approve'), cancel: canFeature('rnd', 'projects', 'tasks', 'cancel'),
-            }}
-            reloadKey={`${project.id}-${project.updated_at || ''}`} />
-        )}
-      </div>}
+      <div data-tour="rnd-pd-tabs" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 16, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+        {visibleTabs.map((t) => (
+          <button key={t} data-tour={`rnd-pd-tab-${t.toLowerCase()}`} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} style={tabBtnStyle(tab === t)}>{t}</button>
+        ))}
+      </div>
 
-      <RndDocumentsPanel
-        key={project.id}
-        projectId={project.id}
-        title="Attachments"
-        currentUserId={user?.id}
-        isAdmin={user?.role === 'admin'}
-        canManageFiles={isManager}
-      />
+      {tab === 'Overview' && (() => {
+        const leads = (project.leads?.map((m) => m.name) || (project.lead_name ? [project.lead_name] : [])).join(', ')
+        const team = (project.team_members?.map((m) => m.name) || []).join(', ')
+        const schedule = `${project.start_date ? formatDate(project.start_date) : '—'} → ${project.target_end_date ? formatDate(project.target_end_date) : 'Not decided'}`
+        return (
+          // Summary on top (what the project is), then every detail as one label–value list.
+          <div data-tour="rnd-pd-overview" style={{ borderRadius: 18, background: '#fff', border: `1px solid ${SHEET.LINE}`, boxShadow: '0 4px 16px rgba(15,23,42,0.06)', padding: '22px 26px', marginBottom: 20 }}>
+            <div data-tour="rnd-pd-details" style={{ paddingBottom: 18, borderBottom: `1px solid ${SHEET.LINE}` }}>
+              <h2 style={{ fontSize: 20, fontWeight: 700, color: SHEET.INK, margin: '0 0 6px' }}>{project.title}</h2>
+              <p style={{ fontSize: 14, lineHeight: '21px', color: SHEET.BODY, margin: '0 0 12px', whiteSpace: 'pre-wrap' }}>{project.objective || '—'}</p>
+              <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>
+                <strong style={{ color: SHEET.INK }}>{PRIORITY_LABELS[project.priority] || project.priority}</strong>
+                {' · '}{schedule}
+                {' · '}Lead: <strong style={{ color: SHEET.INK }}>{leads || '—'}</strong>
+              </p>
+            </div>
+
+            <div data-tour="rnd-pd-source" style={{ padding: '6px 0', borderBottom: `1px solid ${SHEET.LINE}` }}>
+              {project.origin ? (
+                <>
+                  <DetailRow label="Why it exists">{project.origin_label || project.origin}</DetailRow>
+                  {project.source_kind && (
+                    <DetailRow label={KIND_LABELS[project.source_kind]}>
+                      {project.source_path && project.source_exists ? (
+                        <button type="button" onClick={() => router.push(recordPath(project.source_path as string, project, 'source_id'))}
+                          style={{ padding: 0, border: 'none', background: 'none', color: '#2563EB', fontWeight: 600, fontSize: 13.5, cursor: 'pointer', textAlign: 'left' }}>
+                          {project.source_ref || `#${project.source_id}`}
+                        </button>
+                      ) : (
+                        <>{project.source_ref || `#${project.source_id}`} <span style={{ fontSize: 12, color: SHEET.MUTED }}>(record no longer exists)</span></>
+                      )}
+                    </DetailRow>
+                  )}
+                  {project.product_name && <DetailRow label={project.origin === 'product_improvement' ? 'Product being improved' : 'Product'}>{project.product_name}</DetailRow>}
+                  {project.improvement_reason_label && <DetailRow label="Reason">{project.improvement_reason_label}</DetailRow>}
+                  {project.origin_note && <DetailRow label="Who proposed it and why">{project.origin_note}</DetailRow>}
+                </>
+              ) : (
+                <DetailRow label="Why it exists">
+                  <span style={{ color: SHEET.MUTED }}>Not recorded{canEdit && isManager ? '' : ' — a project lead or admin can set it.'}</span>
+                  {canEdit && isManager && !editing && (
+                    <button data-tour="rnd-pd-set-origin-btn" type="button" onClick={startEdit} style={{ ...smallSecondaryBtnStyle, marginLeft: 10 }}>Set origin</button>
+                  )}
+                </DetailRow>
+              )}
+              <DetailRow label="Scope">{project.scope}</DetailRow>
+            </div>
+
+            <div data-tour="rnd-pd-members" style={{ padding: '6px 0', borderBottom: `1px solid ${SHEET.LINE}` }}>
+              <DetailRow label="Team Members">{team || null}</DetailRow>
+              <DetailRow label="Remarks">{project.remarks}</DetailRow>
+            </div>
+
+            <div data-tour="rnd-pd-attachments" style={{ padding: '6px 0' }}>
+              <DetailRow label="Attachments">
+                <OverviewAttachments projectId={project.id} />
+                {visibleTabs.includes('Documents') && (
+                  <button type="button" onClick={() => setTab('Documents')} style={{ ...smallSecondaryBtnStyle, marginTop: 8 }}>Manage in Documents</button>
+                )}
+              </DetailRow>
+            </div>
+
+            <p style={{ fontSize: 12, color: SHEET.MUTED, margin: '10px 0 0' }}>Created {formatDate(project.created_at)}</p>
+          </div>
+        )
+      })()}
+
+      {tab === 'Milestones' && user && (
+        <div id="tasks" data-tour="rnd-pd-tasks" style={{ scrollMarginTop: 16 }}>
+          <RndMilestonePlan key={`${project.id}-${project.updated_at || ''}`} project={project} userId={user.id} isManager={isManager} taskApi={taskApi} labels={TASK_LABELS} />
+        </div>
+      )}
+
+      {tab === 'Documents' && (
+        <RndDocumentsPanel
+          key={project.id}
+          projectId={project.id}
+          title="Attachments"
+          currentUserId={user?.id}
+          isAdmin={user?.role === 'admin'}
+          canManageFiles={isManager}
+        />
+      )}
+
+      {tab === 'History' && <RndProjectHistory projectId={project.id} />}
 
       <ConfirmDialog
         open={confirmOpen}

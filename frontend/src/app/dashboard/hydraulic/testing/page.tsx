@@ -8,7 +8,8 @@ import { useCan } from '@/lib/permissions'
 import { hydraulicApi } from '@/lib/api'
 import { recordPath } from '@/lib/recordRef'
 import { HydTest } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, DANGER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER, DANGER } from '@/lib/theme'
+import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import { TEST_TYPE_LABELS, withUnit } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
@@ -71,11 +72,7 @@ export default function HydTestsPage() {
           <button
             data-tour="hyd-test-new-btn"
             onClick={() => router.push('/dashboard/hydraulic/testing/new')}
-            style={{
-              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-            }}
+            style={primaryBtnStyle}
           >
             + New Test
           </button>
@@ -116,9 +113,9 @@ export default function HydTestsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr>
-              {['Test No.', 'Title', 'Test Type', 'Subject', 'Date', 'Test Pressure', 'Failed Readings', 'Status', 'Result', ''].map((h) => (
+              {['Test No.', 'Title', 'Test Type', 'Subject', 'Date', 'Test Pressure', 'Failed Readings', 'Status', 'Result', ''].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={tests.length} />}
                 </th>
               ))}
             </tr>

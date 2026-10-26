@@ -11,7 +11,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import HrNav from '@/components/hr/HrNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { MonthPicker } from '@/components/hr/attendance/AttendanceCalendar'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, chipBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import TimeDaysTable from '@/components/hr/time/TimeDaysTable'
 import { OvertimeRequest, TimeEmployeeMonth, TimeMonthItem, TimeRulesInfo, downloadBlob, hhmm } from '@/components/hr/safety/types'
 
@@ -28,7 +28,7 @@ const wrap: React.CSSProperties = {
 }
 const th: React.CSSProperties = { textAlign: 'left', padding: '10px 12px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }
 const td: React.CSSProperties = { padding: '9px 12px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, whiteSpace: 'nowrap' }
-const dmy = (iso: string) => `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}`
+const dmy = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`
 
 export default function TimeEvaluationPage() {
   const { isAuthorized, isLoading } = useRequireApp('hr')
@@ -124,7 +124,7 @@ export default function TimeEvaluationPage() {
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         {(['month', 'overtime'] as const).map((t) => (
-          <button key={t} type="button" onClick={() => { setTab(t); setDetail(null); setNotice('') }} style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 14px', borderRadius: 9999, cursor: 'pointer', border: tab === t ? '1px solid #FF6A2A' : '1px solid rgba(0,0,0,0.1)', background: tab === t ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,0.7)', color: tab === t ? '#e0521a' : '#57534e' }}>
+          <button key={t} type="button" onClick={() => { setTab(t); setDetail(null); setNotice('') }} style={chipBtnStyle(tab === t)}>
             {t === 'month' ? 'Monthly evaluation' : 'Overtime requests'}
           </button>
         ))}
@@ -166,7 +166,7 @@ export default function TimeEvaluationPage() {
       {tab === 'month' ? (
         <div style={wrap}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
-            <thead><tr>{['Employee', 'Plant', 'Present', 'Absent', 'Worked', 'Planned', 'Short', 'Late', 'Early', 'OT worked', 'OT approved', 'OT pending', 'Not claimed', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Employee', 'Plant', 'Present', 'Absent', 'Worked', 'Planned', 'Short', 'Late', 'Early', 'OT worked', 'OT approved', 'OT pending', 'Not claimed', ''].map((h, i) => <th key={h} style={th}>{h}{i === 0 && <RowCount count={items.length} />}</th>)}</tr></thead>
             <tbody>
               {loading ? <tr><td colSpan={14} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
                 : items.length === 0 ? <tr><td colSpan={14} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>No employees match.</td></tr>
@@ -194,7 +194,7 @@ export default function TimeEvaluationPage() {
       ) : (
         <div style={wrap}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-            <thead><tr>{['Request', 'Employee', 'Date', 'Claimed', 'Approved', 'Now computed', 'Approver', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Request', 'Employee', 'Date', 'Claimed', 'Approved', 'Now computed', 'Approver', 'Status', ''].map((h, i) => <th key={h} style={th}>{h}{i === 0 && <RowCount count={ots.length} />}</th>)}</tr></thead>
             <tbody>
               {loading ? <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
                 : ots.length === 0 ? <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>No overtime requests for this month.</td></tr>
@@ -207,7 +207,7 @@ export default function TimeEvaluationPage() {
                       <td style={td}>{o.approved_minutes != null && o.status === 'approved' ? hhmm(o.approved_minutes) : '—'}</td>
                       <td style={{ ...td, color: o.current_ot_minutes !== o.claimed_minutes ? '#B45309' : TEXT.body }}>{o.current_ot_minutes != null ? hhmm(o.current_ot_minutes) : '—'}</td>
                       <td style={td}>{o.decided_by_name || o.approver_name || '—'}</td>
-                      <td style={td}><span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${OT_STATUS_HEX[o.status]}1a`, color: OT_STATUS_HEX[o.status] }}>{OT_STATUS_LABELS[o.status] || o.status}</span>{o.decision_remarks && <div style={{ fontSize: 11, color: TEXT.muted, whiteSpace: 'normal', maxWidth: 200 }}>{o.decision_remarks}</div>}</td>
+                      <td style={td}><span style={pillStyle(OT_STATUS_HEX[o.status])}>{OT_STATUS_LABELS[o.status] || o.status}</span>{o.decision_remarks && <div style={{ fontSize: 11, color: TEXT.muted, whiteSpace: 'normal', maxWidth: 200 }}>{o.decision_remarks}</div>}</td>
                       <td style={td}>{o.can_cancel && <span onClick={() => cancelOt(o)} style={{ fontSize: 12, fontWeight: 600, color: '#DC2626', cursor: 'pointer' }}>Cancel</span>}</td>
                     </tr>
                   ))}

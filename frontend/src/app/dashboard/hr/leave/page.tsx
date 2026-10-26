@@ -6,8 +6,8 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { HrAttendanceLookups, HrLeaveAllotSummary, HrLeaveBalance, HrLeaveRequest, HrLeaveType } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { secondaryBtnStyle, chipBtnStyle, primaryBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import HrNav from '@/components/hr/HrNav'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import LeaveApplyForm from '@/components/hr/leave/LeaveApplyForm'
@@ -35,7 +35,7 @@ function num(v: string | number | null | undefined) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1)
 }
 function dmy(iso: string | null) {
-  return iso ? `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}` : '—'
+  return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—'
 }
 
 function Banner({ errors, ok }: { errors?: string[]; ok?: string }) {
@@ -103,7 +103,8 @@ export default function HrLeavePage() {
 
   const loadRequests = useCallback(() => {
     setReqLoading(true)
-    const params: Record<string, unknown> = {}
+    // The list API returns 500 rows by default — ask for its maximum (2000) so the list and its count aren't cut short.
+    const params: Record<string, unknown> = { limit: 2000 }
     if (status) params.status = status
     if (typeFilter) params.leave_type_id = Number(typeFilter)
     if (search.trim()) params.search = search.trim()
@@ -229,13 +230,13 @@ export default function HrLeavePage() {
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {tab === 'requests' ? (can('hr', 'leave', 'create') &&
-            <button type="button" data-tour="hr-leave-apply-behalf-btn" onClick={() => { setShowApply(true); setNotice('') }} style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}>
+            <button type="button" data-tour="hr-leave-apply-behalf-btn" onClick={() => { setShowApply(true); setNotice('') }} style={primaryBtnStyle}>
               + Apply on behalf
             </button>
           ) : canBalance && (
             <>
               {canAdjust && <button type="button" data-tour="hr-leave-adjust-btn" style={secondaryBtnStyle} onClick={() => { setModalErrors([]); setAdjust({ user_id: '', leave_type_id: activeTypes[0] ? String(activeTypes[0].id) : '', year, delta: '', reason: '' }) }}>Adjust balance</button>}
-              {canAllot && <button type="button" data-tour="hr-leave-allot-btn" onClick={() => { setModalErrors([]); setAllotResult(null); setAllotYear(year); setAllotTypes([]); setAllotOpen(true) }} style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}>
+              {canAllot && <button type="button" data-tour="hr-leave-allot-btn" onClick={() => { setModalErrors([]); setAllotResult(null); setAllotYear(year); setAllotTypes([]); setAllotOpen(true) }} style={primaryBtnStyle}>
                 Allot year
               </button>}
             </>
@@ -247,7 +248,7 @@ export default function HrLeavePage() {
         {TABS.map((t) => {
           const active = t.key === tab
           return (
-            <button key={t.key} type="button" data-tour={`hr-leave-tab-${t.key}`} onClick={() => setTab(t.key)} style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 14px', borderRadius: 9999, cursor: 'pointer', border: active ? '1px solid #FF6A2A' : '1px solid rgba(0,0,0,0.1)', background: active ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,0.7)', color: active ? '#e0521a' : '#57534e' }}>
+            <button key={t.key} type="button" data-tour={`hr-leave-tab-${t.key}`} onClick={() => setTab(t.key)} style={chipBtnStyle(active)}>
               {t.label}
             </button>
           )
@@ -302,7 +303,7 @@ export default function HrLeavePage() {
           <div data-tour="hr-leave-requests-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1040 }}>
               <thead>
-                <tr>{['Request', 'Employee', 'Leave', 'Dates', 'Days', 'Status', 'Approver / decision', ''].map((h) => <th key={h} style={h === 'Days' ? { ...th, textAlign: 'right' } : th}>{h}</th>)}</tr>
+                <tr>{['Request', 'Employee', 'Leave', 'Dates', 'Days', 'Status', 'Approver / decision', ''].map((h, hi) => <th key={h} style={h === 'Days' ? { ...th, textAlign: 'right' } : th}>{h}{hi === 0 && <RowCount count={requests.length} />}</th>)}</tr>
               </thead>
               <tbody>
                 {reqLoading ? (
@@ -329,7 +330,7 @@ export default function HrLeavePage() {
                     </td>
                     <td style={{ ...td, fontWeight: 700, textAlign: 'right' }}>{num(r.days)}</td>
                     <td style={td}>
-                      <span data-tour="hr-leave-status-badge" style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[r.status]}1a`, color: STATUS_HEX[r.status], whiteSpace: 'nowrap' }}>{STATUS_LABELS[r.status] || r.status}</span>
+                      <span data-tour="hr-leave-status-badge" style={pillStyle(STATUS_HEX[r.status])}>{STATUS_LABELS[r.status] || r.status}</span>
                     </td>
                     <td style={{ ...td, fontSize: 12.5 }}>
                       {r.status === 'pending' ? (r.approver_name || <span style={{ color: '#B45309' }}>HR (no manager)</span>) : (r.decided_by_name || '—')}
@@ -365,7 +366,7 @@ export default function HrLeavePage() {
           <div data-tour="hr-leave-balances-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
               <thead>
-                <tr>{['Employee', 'Leave type', 'Carried', 'Allotted', 'Adjusted', 'Used', 'Pending', 'Available', ''].map((h) => <th key={h} style={['Carried', 'Allotted', 'Adjusted', 'Used', 'Pending', 'Available'].includes(h) ? { ...th, textAlign: 'right' } : th}>{h}</th>)}</tr>
+                <tr>{['Employee', 'Leave type', 'Carried', 'Allotted', 'Adjusted', 'Used', 'Pending', 'Available', ''].map((h, hi) => <th key={h} style={['Carried', 'Allotted', 'Adjusted', 'Used', 'Pending', 'Available'].includes(h) ? { ...th, textAlign: 'right' } : th}>{h}{hi === 0 && <RowCount count={balances.length} />}</th>)}</tr>
               </thead>
               <tbody>
                 {balLoading ? (
@@ -455,7 +456,7 @@ export default function HrLeavePage() {
                     {activeTypes.map((t) => {
                       const on = allotTypes.includes(t.id)
                       return (
-                        <button key={t.id} type="button" onClick={() => setAllotTypes(on ? allotTypes.filter((x) => x !== t.id) : [...allotTypes, t.id])} style={{ fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 9999, cursor: 'pointer', border: on ? `1px solid ${SHEET.BLUE}` : `1px solid ${SHEET.LINE}`, background: on ? '#eff6ff' : '#fff', color: on ? SHEET.BLUE : SHEET.BODY }}>
+                        <button key={t.id} type="button" onClick={() => setAllotTypes(on ? allotTypes.filter((x) => x !== t.id) : [...allotTypes, t.id])} style={chipBtnStyle(on)}>
                           {t.code} · {t.is_paid ? `${num(t.annual_quota)}/yr` : 'unpaid'}{t.carry_forward ? ` · carry ≤ ${num(t.max_carry_forward)}` : ''}
                         </button>
                       )

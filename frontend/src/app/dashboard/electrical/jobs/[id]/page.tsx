@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { electricalApi } from '@/lib/api'
 import { ElectricalJobDetail, ElectricalLookupOption, ElectricalMeta } from '@/types'
 import { TEXT, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle, InfoRow } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallSecondaryBtnStyle, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 import ElectricalNav from '@/components/electrical/ElectricalNav'
@@ -23,7 +23,7 @@ import DocumentsTab from '@/components/electrical/DocumentsTab'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
 import {
-  sectionStyle, sectionTitle, primaryBtn, dangerBtn, ErrorBanner, useLookupErrors, NoticeBanner, pill, useJobFeatures,
+  sectionStyle, primaryBtn, dangerBtn, ErrorBanner, useLookupErrors, NoticeBanner, useJobFeatures,
   JOB_STATUS_LABELS, JOB_STATUS_HEX, PRIORITY_LABELS, PRIORITY_HEX, PHASE_LABELS, PHASE_HEX,
 } from '@/components/electrical/shared'
 import { useCan } from '@/lib/permissions'
@@ -181,9 +181,9 @@ function JobDetailView() {
           </p>
           <div data-tour="elec-job-header-badges" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 4px', flexWrap: 'wrap' }}>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{job?.job_number || 'Electrical Job'}</h1>
-            {job && <span style={pill(JOB_STATUS_HEX[job.status])}>{JOB_STATUS_LABELS[job.status] || job.status}</span>}
-            {job && <span style={pill(PRIORITY_HEX[job.priority])}>{PRIORITY_LABELS[job.priority]}</span>}
-            {job?.is_overdue && <span style={pill('#DC2626')}>Overdue</span>}
+            {job && <Pill label={JOB_STATUS_LABELS[job.status] || job.status} hex={JOB_STATUS_HEX[job.status]} />}
+            {job && <Pill label={`${PRIORITY_LABELS[job.priority] || job.priority} priority`} hex={PRIORITY_HEX[job.priority]} />}
+            {job?.is_overdue && <Pill label="Overdue" hex="#DC2626" />}
           </div>
           {job && (
             <p style={{ fontSize: 14, color: TEXT.body, margin: '0 0 20px' }}>
@@ -212,13 +212,13 @@ function JobDetailView() {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+          {(canHoldClose || canCancelJob || job.status === 'draft') && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
             {canHoldClose && job.status === 'handed_over' && <button data-tour="elec-job-close-btn" type="button" disabled={busy} style={primaryBtn} onClick={() => setConfirm('close')}>Close Job</button>}
             {canHoldClose && job.status === 'on_hold' && <button data-tour="elec-job-resume-btn" type="button" disabled={busy} style={primaryBtn} onClick={() => setConfirm('resume')}>Resume Job</button>}
             {canHoldClose && ['draft', 'in_progress'].includes(job.status) && <button data-tour="elec-job-hold-btn" type="button" disabled={busy} style={secondaryBtnStyle} onClick={() => setReasonFor('hold')}>Put On Hold</button>}
             {canCancelJob && ['draft', 'in_progress', 'on_hold'].includes(job.status) && <button data-tour="elec-job-cancel-btn" type="button" disabled={busy} style={dangerBtn} onClick={() => setReasonFor('cancel')}>Cancel Job</button>}
             {job.status === 'draft' && job.done_stages === 0 && canDelete('electrical', 'jobs', job.created_by_id ?? null) && <button data-tour="elec-job-delete-btn" type="button" disabled={busy} style={dangerBtn} onClick={() => setConfirm('delete')}>Delete Draft</button>}
-          </div>
+          </div>}
 
           {/* Phase tracker */}
           <div data-tour="elec-job-phase-tracker" style={{ ...sectionStyle, padding: 16 }}>
@@ -228,7 +228,7 @@ function JobDetailView() {
               </span>
               <span style={{ fontSize: 12.5, color: TEXT.muted }}>
                 {job.current_stage_label ? <>Next up: <strong style={{ color: TEXT.body }}>{job.current_stage_label}</strong></> : 'Every stage is done.'}
-                {job.target_handover_date && <> · Target handover {formatDate(job.target_handover_date)}</>}
+                {job.target_handover_date ? <> · Target handover {formatDate(job.target_handover_date)}</> : <> · Target handover not set</>}
               </span>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -252,7 +252,7 @@ function JobDetailView() {
           </div>
 
           {/* Tabs */}
-          <div style={{ display: 'flex', gap: 2, borderBottom: `1px solid ${BORDER.light}`, marginBottom: 18, overflowX: 'auto' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, borderBottom: `1px solid ${BORDER.light}`, marginBottom: 18 }}>
             {visibleTabs.map((t) => (
               <button key={t} data-tour={`elec-job-tab-${t}`} type="button" onClick={() => goToTab(t)} style={{
                 padding: '10px 14px', marginBottom: -1, background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
@@ -281,51 +281,56 @@ function JobDetailView() {
                 }}
               />
             ) : (
-              <>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
-                  <div data-tour="elec-job-details-rrv" style={{ ...sectionStyle, flex: '1 1 360px', marginBottom: 0 }}>
-                    <p style={sectionTitle}>RRV & Job</p>
+              // One record view (as R&D › Overview): the job's key facts on top, then
+              // every detail as label–value rows in the same order as the job form.
+              <DetailCard>
+                <DetailSummary
+                  title={job.title}
+                  meta={<>
+                    <span>Lead: <strong style={{ color: TEXT.heading }}>{job.lead_engineer_name || 'Not assigned'}</strong></span>
+                    <span>·</span>
+                    {/* Target handover is already on the progress bar above. */}
+                    <span>{job.planned_start_date ? `Planned start ${formatDate(job.planned_start_date)}` : 'Start not planned'}</span>
+                    {job.started_at && <><span>·</span><span>Started {formatDate(job.started_at)}</span></>}
+                  </>}
+                  actions={jobsEdit && !['closed', 'cancelled'].includes(job.status)
+                    ? <button data-tour="elec-job-edit-btn" type="button" style={smallSecondaryBtnStyle} onClick={() => setEditing(true)}>Edit Details & Requirement</button>
+                    : undefined}
+                />
+                <div data-tour="elec-job-details-rrv">
+                  <DetailGroup title="RRV & Job">
                     {job.order_project_number && (
-                      <div style={{ marginBottom: 10 }}>
-                        <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Order project</p>
+                      <DetailRow label="Order Project / Vehicle">
                         <OrderProjectChip opNumber={job.order_project_number} elementNo={job.order_project_element_no} label={job.order_project_element_label}
                           onClick={() => router.push(recordPath('/dashboard/projects/order-projects', job, 'order_project_id'))} />
-                      </div>
+                      </DetailRow>
                     )}
-                    <InfoRow label="RRV / Machine (ERP)" value={job.project_label || '—'} />
-                    <InfoRow label="RRV Model" value={job.rrv_model || '—'} />
-                    <InfoRow label="Vehicle / Serial No." value={job.vehicle_number || '—'} />
-                    <InfoRow label="Customer" value={job.customer_name || '—'} />
-                    <InfoRow label="Plant" value={job.branch_name || '—'} />
-                    <InfoRow label="Lead Engineer" value={job.lead_engineer_name || '—'} />
-                    <InfoRow label="Planned Start" value={job.planned_start_date ? formatDate(job.planned_start_date) : '—'} />
-                    <InfoRow label="Target Handover" value={job.target_handover_date ? formatDate(job.target_handover_date) : '—'} />
-                    <InfoRow label="Started" value={job.started_at ? formatDateTime(job.started_at) : '—'} />
-                    <InfoRow label="Created by" value={`${job.created_by_name || '—'}${job.created_at ? ` · ${formatDateTime(job.created_at)}` : ''}`} />
-                  </div>
-                  {seeRequirement && <div data-tour="elec-job-details-requirement" style={{ ...sectionStyle, flex: '1 1 360px', marginBottom: 0 }}>
-                    <p style={sectionTitle}>Electrical Requirement</p>
-                    <InfoRow label="System Voltage" value={job.system_voltage || '—'} />
-                    <InfoRow label="Battery" value={job.battery_spec || '—'} />
-                    <InfoRow label="Alternator / Charger" value={job.alternator_spec || '—'} />
-                    <InfoRow label="Applicable Standards" value={job.applicable_standards || '—'} />
-                    <InfoRow label="Customer Spec Ref." value={job.customer_spec_ref || '—'} />
-                    <p style={{ fontSize: 12, fontWeight: 600, color: TEXT.secondary, margin: '12px 0 4px' }}>Requirement</p>
-                    <p style={{ fontSize: 13, color: job.requirement_notes ? TEXT.body : TEXT.muted, margin: 0, whiteSpace: 'pre-wrap' }}>{job.requirement_notes || 'Not written down yet.'}</p>
-                    {job.remarks && (
-                      <>
-                        <p style={{ fontSize: 12, fontWeight: 600, color: TEXT.secondary, margin: '12px 0 4px' }}>Remarks</p>
-                        <p style={{ fontSize: 13, color: TEXT.body, margin: 0, whiteSpace: 'pre-wrap' }}>{job.remarks}</p>
-                      </>
-                    )}
-                  </div>}
+                    <DetailRow label="RRV / Machine (ERP)">{job.project_label}</DetailRow>
+                    <DetailRow label="RRV Model">{job.rrv_model}</DetailRow>
+                    <DetailRow label="Vehicle / Serial No.">{job.vehicle_number}</DetailRow>
+                    <DetailRow label="Customer">{job.customer_name}</DetailRow>
+                    <DetailRow label="Plant">{job.branch_name}</DetailRow>
+                  </DetailGroup>
                 </div>
-                {jobsEdit && !['closed', 'cancelled'].includes(job.status) && (
-                  <div style={{ marginTop: 16 }}>
-                    <button data-tour="elec-job-edit-btn" type="button" style={secondaryBtnStyle} onClick={() => setEditing(true)}>Edit Details & Requirement</button>
+                {seeRequirement && (
+                  <div data-tour="elec-job-details-requirement">
+                    <DetailGroup title="Electrical Requirement">
+                      <DetailRow label="System Voltage">{job.system_voltage}</DetailRow>
+                      <DetailRow label="Battery">{job.battery_spec}</DetailRow>
+                      <DetailRow label="Alternator / Charger">{job.alternator_spec}</DetailRow>
+                      <DetailRow label="Applicable Standards">{job.applicable_standards}</DetailRow>
+                      <DetailRow label="Customer Spec Ref.">{job.customer_spec_ref}</DetailRow>
+                      <DetailRow label="Requirement">{job.requirement_notes || <span style={{ color: TEXT.muted }}>Not written down yet.</span>}</DetailRow>
+                    </DetailGroup>
                   </div>
                 )}
-              </>
+                <DetailGroup last>
+                  <DetailRow label="Remarks">{job.remarks}</DetailRow>
+                </DetailGroup>
+                <p style={{ fontSize: 12, color: TEXT.muted, margin: '10px 0 0' }}>
+                  Created by {job.created_by_name || '—'}{job.created_at ? ` on ${formatDateTime(job.created_at)}` : ''}
+                </p>
+              </DetailCard>
             )
           )}
 

@@ -13,6 +13,8 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import { placePopover } from '@/lib/popover'
+import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 
 export default function OrganizationDepartmentPage() {
   const { isAuthorized, isLoading } = useRequireOrgTab('department')
@@ -50,7 +52,7 @@ export default function OrganizationDepartmentPage() {
   // position:absolute dropdown.
   const openBranchDropdown = () => {
     const rect = branchHeaderRef.current?.getBoundingClientRect()
-    if (rect) setBranchDropdownCoords({ top: rect.bottom + 6, left: rect.left })
+    if (rect) setBranchDropdownCoords(placePopover(rect, { width: 200, height: 260 }))
     setBranchDropdownOpen((v) => !v)
   }
 
@@ -222,12 +224,7 @@ export default function OrganizationDepartmentPage() {
         {canCreate && <button
           data-tour="org-dept-add-btn"
           onClick={openAddModal}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 20px', borderRadius: 10, border: 'none',
-            background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`,
-            color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer',
-            boxShadow: `0 4px 14px ${BRAND.primaryGlow}`,
-          }}
+          style={primaryBtnStyle}
         >
           <span style={{ fontSize: 17, lineHeight: 1 }}>+</span> Add Department
         </button>}
@@ -385,7 +382,7 @@ export default function OrganizationDepartmentPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
           <thead>
             <tr style={{ background: `${BRAND.primary}0d` }}>
-              {['Name', 'Code', 'Branch', 'Head'].map((h) =>
+              {['Name', 'Code', 'Branch', 'Head'].map((h, hi) =>
                 h === 'Branch' ? (
                   <th
                     key={h}
@@ -430,7 +427,7 @@ export default function OrganizationDepartmentPage() {
                     )}
                   </th>
                 ) : (
-                  <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+                  <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap' }}>{h}{hi === 0 && <RowCount count={visibleDepartments.length} />}</th>
                 )
               )}
             </tr>

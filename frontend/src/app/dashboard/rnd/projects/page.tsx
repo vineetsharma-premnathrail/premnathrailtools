@@ -6,11 +6,13 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import { RndProject } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, RowCount, inputStyle as sharedInputStyle, pillStyle } from '@/components/shared/ui'
 import RndNav from '@/components/rnd/RndNav'
 import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import { formatDate } from '@/lib/format'
 
 const STAGE_LABELS: Record<string, string> = { initiation: 'Initiation', research: 'Research', development: 'Development', feasibility: 'Feasibility', handover: 'Handover', closed: 'Closed' }
 const STATUS_LABELS: Record<string, string> = { active: 'Active', on_hold: 'On Hold', cancelled: 'Cancelled' }
@@ -26,10 +28,8 @@ const ORIGIN_HEX: Record<string, string> = {
   customer_requirement: '#2563EB', product_improvement: '#D97706', new_development: '#7C3AED', process_research: '#0D9488', not_recorded: '#78716c',
 }
 
-const inputStyle: React.CSSProperties = {
-  padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
-}
+// Shared 34px control scale; list filters keep their own width.
+const inputStyle: React.CSSProperties = { ...sharedInputStyle, width: 'auto', background: 'rgba(255,255,255,.7)' }
 const tdStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
 
 
@@ -87,7 +87,7 @@ function RndProjectList() {
           <button
             data-tour="rnd-proj-new-btn"
             onClick={() => router.push('/dashboard/rnd/projects/new')}
-            style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}
+            style={primaryBtnStyle}
           >
             + New Project
           </button>
@@ -133,9 +133,9 @@ function RndProjectList() {
         <table data-tour="rnd-proj-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
           <thead>
             <tr>
-              {['Project No.', 'Title', 'Origin', 'Priority', 'Status', 'Lead', 'Target End', ''].map((h) => (
+              {['ID', 'Title', 'Origin', 'Priority', 'Status', 'Lead', 'Target End', ''].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={projects.length} />}
                 </th>
               ))}
             </tr>
@@ -152,22 +152,22 @@ function RndProjectList() {
                     <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{p.project_number}</td>
                     <td style={tdStyle}>{p.title}</td>
                     <td style={tdStyle} title={p.source_ref || undefined}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${ORIGIN_HEX[p.origin || 'not_recorded']}1a`, color: ORIGIN_HEX[p.origin || 'not_recorded'], whiteSpace: 'nowrap' }}>
+                      <span style={pillStyle(ORIGIN_HEX[p.origin || 'not_recorded'])}>
                         {ORIGIN_LABELS[p.origin || 'not_recorded'] || p.origin}
                       </span>
                     </td>
                     <td style={tdStyle}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PRIORITY_HEX[p.priority]}1a`, color: PRIORITY_HEX[p.priority], whiteSpace: 'nowrap' }}>
+                      <span style={pillStyle(PRIORITY_HEX[p.priority])}>
                         {PRIORITY_LABELS[p.priority] || p.priority}
                       </span>
                     </td>
                     <td style={tdStyle}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[p.status]}1a`, color: STATUS_HEX[p.status], whiteSpace: 'nowrap' }}>
+                      <span style={pillStyle(STATUS_HEX[p.status])}>
                         {STATUS_LABELS[p.status] || p.status}
                       </span>
                     </td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{p.lead_name || '—'}</td>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{p.target_end_date || 'Not decided'}</td>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{p.target_end_date ? formatDate(p.target_end_date) : 'Not decided'}</td>
                     <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
                       <span onClick={() => router.push(recordPath('/dashboard/rnd/projects', p))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                     </td>

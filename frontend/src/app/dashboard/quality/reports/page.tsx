@@ -8,7 +8,7 @@ import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { Field, Section, inputStyle } from '@/components/shared/ui'
+import { Field, Section, inputStyle, RowCount } from '@/components/shared/ui'
 import { PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, fmtMoney, INSPECTION_TYPE_LABELS } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
@@ -93,7 +93,7 @@ export default function QualityReportsPage() {
         </p>
         <div style={tableWrapStyle}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
-            <thead><tr>{['Defect code', 'Category', 'Count', '', '%', 'Cumulative %', 'Quantity', f.basis === 'ncr' ? 'Cost' : ''].map((h, i) => <th key={i} style={thStyle}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Defect code', 'Category', 'Count', '', '%', 'Cumulative %', 'Quantity', f.basis === 'ncr' ? 'Cost' : ''].map((h, i) => <th key={i} style={thStyle}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
             <tbody>
               {loading ? (
                 <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>

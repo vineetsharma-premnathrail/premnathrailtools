@@ -7,13 +7,14 @@
 import { useEffect, useState } from 'react'
 import { crmApi } from '@/lib/api'
 import { CrmDocumentCategory } from '@/types'
-import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallDangerBtnStyle, smallSecondaryBtnStyle } from '@/components/crm/ui'
+import { primaryBtnStyle, smallDangerBtnStyle, smallSecondaryBtnStyle } from '@/components/crm/ui'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import { RowCount } from '@/components/shared/ui'
 
 export default function DocumentCategoriesManager() {
   const { can } = useCan()
@@ -142,8 +143,8 @@ export default function DocumentCategoriesManager() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
             <thead>
               <tr>
-                {['Category', 'Documents', ''].map((h) => (
-                  <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '10px 14px', fontSize: 12, fontWeight: 700, color: TEXT.secondary }}>{h}</th>
+                {['Category', 'Documents', ''].map((h, hi) => (
+                  <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '10px 14px', fontSize: 12, fontWeight: 700, color: TEXT.secondary }}>{h}{hi === 0 && <RowCount count={categories.length} />}</th>
                 ))}
               </tr>
             </thead>

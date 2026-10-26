@@ -14,6 +14,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { pmWorkApi, rndApi } from '@/lib/api'
 import { PmProjectTask, RndTask } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { chipBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import { formatDate } from '@/lib/format'
 import RndNav from '@/components/rnd/RndNav'
 import { recordPath } from '@/lib/recordRef'
@@ -57,7 +58,7 @@ const thStyle: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', 
 const tdStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
 
 function pill(label: string, hex: string) {
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
+  return <span style={pillStyle(hex)}>{label}</span>
 }
 
 function fromPm(t: PmProjectTask): Row {
@@ -142,8 +143,7 @@ export default function RndMyTasksPage() {
         <div data-tour="rnd-mytasks-filter" className="hide-scrollbar" style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 999, background: 'rgba(0,0,0,0.05)', overflowX: 'auto', maxWidth: '100%' }}>
           {FILTERS.map((f) => (
             <button key={f.key || 'all'} type="button" onClick={() => setFilter(f.key)}
-              style={{ padding: '8px 14px', border: 'none', borderRadius: 999, whiteSpace: 'nowrap', cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                background: filter === f.key ? '#fff' : 'transparent', boxShadow: filter === f.key ? '0 2px 8px rgba(0,0,0,0.1)' : 'none', color: filter === f.key ? '#FF7A45' : '#78716c' }}>
+              style={chipBtnStyle(filter === f.key)}>
               {f.label}{rows ? ` (${count(f.key)})` : ''}
             </button>
           ))}
@@ -174,7 +174,7 @@ export default function RndMyTasksPage() {
       <div data-tour="rnd-mytasks-table" style={tableWrap}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 920 }}>
           <thead>
-            <tr>{['Category', 'Task', 'Project / Requirement', 'Assigned', 'Due', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+            <tr>{['Category', 'Task', 'Project / Requirement', 'Assigned', 'Due', 'Status', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={list.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {rows === null ? (

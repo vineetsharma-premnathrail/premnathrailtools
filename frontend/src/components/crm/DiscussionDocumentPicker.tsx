@@ -10,6 +10,7 @@ import { CrmDocument } from '@/types'
 import { formatDateTime } from '@/lib/format'
 import { TEXT, BORDER } from '@/lib/theme'
 import { FormSheet, SheetIcon, SHEET, sheetBtn, sheetInput } from '@/components/shared/FormSheet'
+import { chipBtnStyle, pillStyle } from '@/components/shared/ui'
 
 const FOLDERS = [['all', 'All'], ['client', 'From client'], ['internal', 'Internal']] as const
 type Folder = typeof FOLDERS[number][0]
@@ -65,11 +66,10 @@ export default function DiscussionDocumentPicker({ source, docs, picked, maxFile
           <span style={{ position: 'absolute', left: 11, top: 11, color: SHEET.MUTED, display: 'inline-flex' }}><SheetIcon name="search" size={16} /></span>
           <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by file name, category or uploaded by…" style={{ ...sheetInput, paddingLeft: 34 }} />
         </div>
-        <div style={{ display: 'flex', gap: 4, marginTop: 10, padding: 3, borderRadius: 999, background: SHEET.SOFT, border: `1px solid ${SHEET.LINE}`, width: 'fit-content' }}>
+        <div style={{ display: 'flex', gap: 4, marginTop: 10, width: 'fit-content' }}>
           {FOLDERS.map(([f, label]) => (
             <button key={f} type="button" onClick={() => setFolder(f)}
-              style={{ padding: '6px 14px', border: 'none', borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-                background: folder === f ? '#fff' : 'transparent', color: folder === f ? SHEET.BLUE : SHEET.MUTED, boxShadow: folder === f ? '0 2px 6px rgba(0,0,0,0.08)' : 'none' }}>
+              style={chipBtnStyle(folder === f)}>
               {label} ({count(f)})
             </button>
           ))}
@@ -100,8 +100,7 @@ export default function DiscussionDocumentPicker({ source, docs, picked, maxFile
                     {[d.doc_category, d.uploaded_by_name && `by ${d.uploaded_by_name}`, d.created_at && formatDateTime(d.created_at), fmtSize(d.file_size)].filter(Boolean).join(' · ')}
                   </span>
                 </span>
-                <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, whiteSpace: 'nowrap',
-                  background: d.folder_type === 'client' ? 'rgba(37,99,235,0.1)' : 'rgba(124,58,237,0.1)', color: d.folder_type === 'client' ? '#2563eb' : '#7c3aed' }}>
+                <span style={{ ...pillStyle(d.folder_type === 'client' ? '#2563eb' : '#7c3aed'), fontSize: 10.5, padding: '2px 8px' }}>
                   {d.folder_type === 'client' ? 'Client' : 'Internal'}
                 </span>
               </label>

@@ -11,7 +11,7 @@ import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 import { useCan } from '@/lib/permissions'
 import {
@@ -118,7 +118,7 @@ export default function SupplierQualityPage() {
       {tab === 'vendors' && (
         <div style={tableWrapStyle}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-            <thead><tr>{['Vendor', 'Items', 'Trial', 'Approved', 'On watch', 'Blocked', 'Waiting for Partner', 'Last score', 'Vendor CAPA'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Vendor', 'Items', 'Trial', 'Approved', 'On watch', 'Blocked', 'Waiting for Partner', 'Last score', 'Vendor CAPA'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={vendors.length} />}</th>)}</tr></thead>
             <tbody>
               {vendors.length === 0 ? (
                 <tr><td colSpan={9} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No vendors yet — vendors are added automatically when they first supply an inspection-controlled item.</td></tr>
@@ -154,7 +154,7 @@ export default function SupplierQualityPage() {
           </div>
           <div style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-              <thead><tr>{['Vendor', 'Item', 'Status', 'Sampling', 'Accepted in a row', 'Last score', 'Valid until', 'Pending', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Vendor', 'Item', 'Status', 'Sampling', 'Accepted in a row', 'Last score', 'Valid until', 'Pending', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={avl.length} />}</th>)}</tr></thead>
               <tbody>
                 {avl.length === 0 ? (
                   <tr><td colSpan={9} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Nothing on the list for this filter.</td></tr>
@@ -191,7 +191,7 @@ export default function SupplierQualityPage() {
           </div>
           <div style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-              <thead><tr>{['Vendor', 'Period', 'Lots', 'Received', 'Accepted', 'Quality', 'NCRs (mi/ma/cr)', 'NCR score', 'On-time', 'Delivery', 'Score', 'Band'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Vendor', 'Period', 'Lots', 'Received', 'Accepted', 'Quality', 'NCRs (mi/ma/cr)', 'NCR score', 'On-time', 'Delivery', 'Score', 'Band'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={ratings.length} />}</th>)}</tr></thead>
               <tbody>
                 {ratings.length === 0 ? (
                   <tr><td colSpan={12} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No rating for this month yet.</td></tr>
@@ -219,7 +219,7 @@ export default function SupplierQualityPage() {
         <>
           <div style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-              <thead><tr>{['Audit', 'Vendor', 'Planned', 'Auditor', 'Status', 'Score', 'Result', 'Findings', 'CAPA', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Audit', 'Vendor', 'Planned', 'Auditor', 'Status', 'Score', 'Result', 'Findings', 'CAPA', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={audits.length} />}</th>)}</tr></thead>
               <tbody>
                 {audits.length === 0 ? (
                   <tr><td colSpan={10} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No vendor audits yet.</td></tr>

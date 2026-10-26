@@ -9,7 +9,7 @@ import { qualityApi } from '@/lib/api'
 import { QualityCapa } from '@/types'
 import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import {
   Pill, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtDate,
   CAPA_STATUS_LABELS, CAPA_STATUS_HEX, CAPA_TRIGGER_LABELS, SEVERITY_HEX,
@@ -83,12 +83,12 @@ export default function QualityCapaListPage() {
 
       <div style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-          <thead><tr>{cols.map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{cols.map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={capas.length} />}</th>)}</tr></thead>
           <tbody>
             {loading ? (
               <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
             ) : capas.length === 0 ? (
-              <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No CAPAs found.</td></tr>
+              <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No CAPAs found — use + New CAPA to open one.</td></tr>
             ) : capas.map((c) => (
               <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/quality/capa', c))} style={{ cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{c.capa_number}</td>

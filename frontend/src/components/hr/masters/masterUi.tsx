@@ -4,9 +4,9 @@
 // Shifts) and the employee screens, so the three near-identical master
 // tables stay visually consistent. Styles are built from theme tokens, same
 // as every other module's local consts.
-import { TEXT, GLASS, SHADOWS, BORDER, BRAND } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BRAND } from '@/lib/theme'
 import { FormSheet, SheetIconName } from '@/components/shared/FormSheet'
-import { primaryBtnStyle, inputStyle as sharedInput } from '@/components/shared/ui'
+import { primaryBtnStyle, inputStyle as sharedInput, pillStyle } from '@/components/shared/ui'
 
 export const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -47,9 +47,7 @@ export function ErrorBanner({ errors }: { errors: string[] | string }) {
 
 export function ActiveBadge({ active }: { active: boolean }) {
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, whiteSpace: 'nowrap', background: active ? '#16A34A1a' : 'rgba(100,116,139,0.12)', color: active ? '#16A34A' : TEXT.muted }}>
-      {active ? 'Active' : 'Inactive'}
-    </span>
+    <span style={pillStyle(active ? '#16A34A' : '#64748B')}>{active ? 'Active' : 'Inactive'}</span>
   )
 }
 
@@ -90,7 +88,7 @@ export function MasterToolbar({ search, onSearch, showInactive, onToggleInactive
 export function formatDate(iso?: string | null): string {
   if (!iso) return '—'
   const [y, m, d] = iso.slice(0, 10).split('-')
-  return y && m && d ? `${d}-${m}-${y}` : iso
+  return y && m && d ? `${d}/${m}/${y}` : iso
 }
 
 export function titleCase(s?: string | null): string {
@@ -152,6 +150,6 @@ export const EMPLOYMENT_TYPE_LABELS: Record<string, string> = {
 
 export function StatusPill({ label, hex }: { label: string; hex: string }) {
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
+    <span style={pillStyle(hex)}>{label}</span>
   )
 }

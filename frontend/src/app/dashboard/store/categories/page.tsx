@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { StoreItemCategory } from '@/types'
 import { TEXT, BRAND, GLASS, SHADOWS, SUCCESS } from '@/lib/theme'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import StoreSettingsNav from '@/components/store/StoreSettingsNav'
@@ -236,15 +236,15 @@ export default function StoreCategoriesPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead>
             <tr>
-              {['Name', 'Code', 'Item Type', 'Parent', 'Purchase Ledger', 'Status', ''].map((h) => (
-                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+              {['Name', 'Code', 'Item Type', 'Parent', 'Purchase Ledger', 'Status', ''].map((h, hi) => (
+                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap' }}>{h}{hi === 0 && <RowCount count={categories.length} />}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && categories.length === 0 && (
-              <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No categories yet.</td></tr>
+              <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No categories yet — use + Add Category to create the first one.</td></tr>
             )}
             {categories.map((c) => (
               <tr key={c.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
@@ -254,11 +254,9 @@ export default function StoreCategoriesPage() {
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{c.code}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{c.item_type ? ITEM_TYPE_LABELS[c.item_type] || c.item_type : 'All types'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{c.parent_name || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{c.parent_id ? '' : c.purchase_gl_account_name || 'Finance default'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{c.parent_id ? <span title="A subcategory books to its parent category's ledger">Same as parent</span> : c.purchase_gl_account_name || 'Finance default'}</td>
                 <td style={{ padding: '12px 16px' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: c.is_active ? `${SUCCESS.primary}1a` : 'rgba(100,116,139,0.12)', color: c.is_active ? SUCCESS.hover : TEXT.muted }}>
-                    {c.is_active ? 'Active' : 'Inactive'}
-                  </span>
+                  <Pill label={c.is_active ? 'Active' : 'Inactive'} hex={c.is_active ? SUCCESS.hover : TEXT.muted} />
                 </td>
                 <td style={{ padding: '0 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                   {can('store', 'categories', 'edit') && <span onClick={() => openEdit(c)} style={{ color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', marginRight: 14 }}>Edit</span>}

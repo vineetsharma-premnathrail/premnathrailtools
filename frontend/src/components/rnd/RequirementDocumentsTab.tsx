@@ -18,6 +18,7 @@ import { useEffect, useState } from 'react'
 import { rndApi } from '@/lib/api'
 import { RndMyAccess, RndWorkDepartment, RndWorkDocument } from '@/types'
 import { TEXT, BORDER, GLASS, SHADOWS } from '@/lib/theme'
+import { chipBtnStyle, smallSecondaryBtnStyle, inputStyle as sharedInputStyle, pillStyle } from '@/components/shared/ui'
 import { formatDateTime } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
@@ -27,10 +28,8 @@ const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 16,
 }
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
-}
+// Shared 34px control scale; list filters keep their own width.
+const inputStyle: React.CSSProperties = { ...sharedInputStyle, background: 'rgba(255,255,255,.7)' }
 
 type Group = 'all' | 'crm' | 'task' | 'discussion' | 'rnd' | 'dept'
 const GROUP_LABELS: Record<string, string> = { crm: 'Business team (CRM)', task: 'Tasks', discussion: 'Discussion', rnd: 'R&D', dept: 'Departments' }
@@ -136,11 +135,7 @@ export default function RequirementDocumentsTab({ source, recordId, access }: { 
                 key={g}
                 type="button"
                 onClick={() => setGroup(g)}
-                style={{
-                  padding: '6px 12px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
-                  color: active ? '#fff' : '#78716c', background: active ? '#FF7A45' : 'rgba(255,255,255,.55)',
-                  border: `1px solid ${active ? '#FF7A45' : 'rgba(0,0,0,0.08)'}`,
-                }}
+                style={chipBtnStyle(active)}
               >
                 {g === 'all' ? 'All' : GROUP_LABELS[g]} ({count(g)})
               </button>
@@ -161,7 +156,7 @@ export default function RequirementDocumentsTab({ source, recordId, access }: { 
             const hex = GROUP_HEX[d.group || 'rnd']
             return (
               <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,0.55)', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap', flex: 'none' }}>
+                <span style={pillStyle(hex)}>
                   {d.group ? GROUP_LABELS[d.group] : 'R&D'}
                 </span>
                 <div style={{ flex: '1 1 260px', minWidth: 0 }}>
@@ -178,8 +173,7 @@ export default function RequirementDocumentsTab({ source, recordId, access }: { 
                 {d.can_change_visibility && (
                   <button type="button" disabled={changing === d.id} onClick={() => toggleVisibility(d)}
                     title={d.shared_with_all ? `Hide this file from the other departments — only ${d.department_label} will see it` : 'Let every department working on this requirement see this file'}
-                    style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, cursor: 'pointer', whiteSpace: 'nowrap',
-                      border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,0.8)', color: '#57534e', opacity: changing === d.id ? 0.5 : 1 }}>
+                    style={{ ...smallSecondaryBtnStyle, opacity: changing === d.id ? 0.5 : 1 }}>
                     {d.shared_with_all ? `Keep to ${d.department_label} only` : 'Show to all departments'}
                   </button>
                 )}

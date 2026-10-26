@@ -14,7 +14,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import DateField from '@/components/erp/DateField'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
-import { smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { smallSecondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { sectionStyle, h2Style, thStyle, tdStyle, Pill, ErrorBanner } from '@/components/sales/SalesUi'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { FormSheet, SheetSection, SheetIcon, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
@@ -79,7 +79,7 @@ export default function DeliveryConfirmPanel({ order, onChange }: { order: Sales
       <ErrorBanner error={error} />
       <div style={{ overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
-          <thead><tr>{['Vehicle / lot', 'Dispatched', 'Delivered (POD)', 'Commissioned', 'Warranty', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Vehicle / lot', 'Dispatched', 'Delivered (POD)', 'Commissioned', 'Warranty', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => {
               const spares = lineType(r) !== 'rrv'
@@ -116,7 +116,7 @@ export default function DeliveryConfirmPanel({ order, onChange }: { order: Sales
       {events.length > 0 && (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['Date', 'Event', 'Vehicle / lot', 'Qty', 'Reference', 'Recorded by', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Date', 'Event', 'Vehicle / lot', 'Qty', 'Reference', 'Recorded by', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={events.length} />}</th>)}</tr></thead>
             <tbody>
               {events.map((e) => (
                 <tr key={e.id} style={{ opacity: e.reversed_at ? 0.55 : 1 }}>

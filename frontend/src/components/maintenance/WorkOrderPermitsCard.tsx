@@ -6,7 +6,7 @@ import { useCan } from '@/lib/permissions'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDateTime } from '@/lib/format'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { smallSecondaryBtnStyle, Pill } from '@/components/shared/ui'
 import PortalFormDialog from '@/components/maintenance/PortalFormDialog'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { SHEET, SheetSection, Optional, Req, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
@@ -111,9 +111,7 @@ export default function WorkOrderPermitsCard({ woId, woStatus, permitRequired, a
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontWeight: 700, fontSize: 13, color: TEXT.body }}>{p.permit_number}</span>
               <span style={{ fontSize: 12.5, color: TEXT.secondary }}>{p.permit_type_label}</span>
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[p.expired ? 'cancelled' : p.status]}1a`, color: STATUS_HEX[p.expired ? 'cancelled' : p.status], whiteSpace: 'nowrap' }}>
-                {p.expired ? 'Expired' : (STATUS_LABELS[p.status] || p.status)}
-              </span>
+              <Pill label={p.expired ? 'Expired' : (STATUS_LABELS[p.status] || p.status)} hex={STATUS_HEX[p.expired ? 'cancelled' : p.status]} />
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {p.status === 'issued' && canAccept && (assignedToId === user?.id || canEdit) && (

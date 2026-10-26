@@ -192,11 +192,11 @@ export default function NewRndProjectPage() {
             <SheetSection icon="users" title="Project Members">
               <div data-tour="rnd-pf-lead">
                 <label style={labelStyle}>Project Leads</label>
-                <TeamMemberPicker users={pickable} value={leadIds} onChange={setLeadChoice} excludeIds={teamIds} selfId={user?.id} placeholder="Search name or email to add a project lead…" />
+                <TeamMemberPicker users={pickable} value={leadIds} onChange={setLeadChoice} excludeIds={teamIds} placeholder="Search name or email to add a project lead…" />
               </div>
               <div data-tour="rnd-pf-team" style={{ marginTop: 14 }}>
                 <label style={labelStyle}>Team Members</label>
-                <TeamMemberPicker users={pickable} value={teamIds} onChange={setTeamIds} excludeIds={leadIds} selfId={user?.id} />
+                <TeamMemberPicker users={pickable} value={teamIds} onChange={setTeamIds} excludeIds={leadIds} />
               </div>
             </SheetSection>
             <SheetSection icon="chat" title="Remarks" extra={<Optional />}>

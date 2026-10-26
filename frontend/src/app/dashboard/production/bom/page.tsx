@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { productionApi } from '@/lib/api'
 import { ProductionBom } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import ProductionNav from '@/components/production/ProductionNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 import { useCan } from '@/lib/permissions'
 import { DesignSourcesPanel } from '@/components/production/DesignBomLink'
 import Select from '@/components/shared/Select'
+import { primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', active: 'Active', obsolete: 'Obsolete' }
 const STATUS_HEX: Record<string, string> = { draft: '#F59E0B', active: '#16A34A', obsolete: '#78716c' }
@@ -67,11 +68,7 @@ export default function ProductionBomListPage() {
         {can('production', 'bom', 'create') && <button
           data-tour="production-bom-new-btn"
           onClick={() => router.push('/dashboard/production/bom/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
+          style={primaryBtnStyle}
         >
           + New BOM
         </button>}
@@ -100,9 +97,9 @@ export default function ProductionBomListPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 950 }}>
           <thead>
             <tr>
-              {['BOM Number', 'Product', 'Version', 'Components', 'Operations', ...(seeCosts ? ['Std Cost / Unit'] : []), 'Work Orders', 'Status', ''].map((h) => (
+              {['BOM Number', 'Product', 'Version', 'Components', 'Operations', ...(seeCosts ? ['Std Cost / Unit'] : []), 'Work Orders', 'Status', ''].map((h, i) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{i === 0 && <RowCount count={boms.length} />}
                 </th>
               ))}
             </tr>
@@ -111,7 +108,7 @@ export default function ProductionBomListPage() {
             {loading ? (
               <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : boms.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No BOMs found.</td></tr>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No BOMs match this view — change the filters, or use “+ New BOM” to set up a product’s material list and routing.</td></tr>
             ) : (
               boms.map((b) => (
                 <tr key={b.id} onClick={() => router.push(recordPath('/dashboard/production/bom', b))} style={{ cursor: 'pointer' }}>
@@ -130,9 +127,7 @@ export default function ProductionBomListPage() {
                   {seeCosts && <td style={cellStyle}>{inr(((b.standard_material_cost ?? 0) + (b.standard_labour_cost ?? 0)) / (b.base_quantity || 1))}</td>}
                   <td style={cellStyle}>{b.work_order_count}</td>
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[b.status]}1a`, color: STATUS_HEX[b.status], whiteSpace: 'nowrap' }}>
-                      {STATUS_LABELS[b.status] || b.status}
-                    </span>
+                    <Pill label={STATUS_LABELS[b.status] || b.status} hex={STATUS_HEX[b.status]} />
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
                     <span onClick={() => router.push(recordPath('/dashboard/production/bom', b))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>

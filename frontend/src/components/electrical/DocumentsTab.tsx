@@ -17,6 +17,7 @@ import {
   inputStyle, sectionStyle, sectionTitle, thStyle, tdStyle, primaryBtn, smallDangerBtn, linkStyle,
   tableWrap, mutedText, ErrorBanner, NoticeBanner, Modal, ModalFooter, F, rowStyle, fmtBytes, openBlob, useJobFeatures,
 } from '@/components/electrical/shared'
+import { RowCount } from '@/components/shared/ui'
 
 const defaultCategory = (cats: Record<string, string>) => ('other' in cats ? 'other' : Object.keys(cats)[0] || 'other')
 
@@ -140,7 +141,7 @@ export default function DocumentsTab({ job, meta, canEdit, onChanged }: { job: E
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
             <thead>
               <tr>
-                {['Title', 'Category', 'Stage', 'File', 'Uploaded', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}
+                {['Title', 'Category', 'Stage', 'File', 'Uploaded', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={docs.length} />}</th>)}
               </tr>
             </thead>
             <tbody>

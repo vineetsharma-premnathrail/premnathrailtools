@@ -6,7 +6,7 @@ import { hrApi } from '@/lib/api'
 import { HrChecklistTemplate, HrLifecycleEventType, HrLifecycleMeta } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
-import { primaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, smallSecondaryBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -179,7 +179,7 @@ export default function ChecklistTemplatesMaster() {
       <div data-tour="hr-mst-cl-table" style={{ borderRadius: 14, border: `1px solid ${BORDER.light}`, overflow: 'auto', maxHeight: 'calc(100vh - 380px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead>
-            <tr>{['#', 'Category', 'Item', 'Default owner', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
+            <tr>{['#', 'Category', 'Item', 'Default owner', 'Status', ''].map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {loading ? (
@@ -190,7 +190,7 @@ export default function ChecklistTemplatesMaster() {
               <tr key={t.id} style={{ opacity: t.is_active ? 1 : 0.55 }}>
                 <td style={{ ...td, width: 50, color: TEXT.muted }}>{t.sort_order}</td>
                 <td style={td}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${CATEGORY_HEX[t.category] || '#78716C'}1a`, color: CATEGORY_HEX[t.category] || '#78716C' }}>
+                  <span style={pillStyle(CATEGORY_HEX[t.category] || '#78716C')}>
                     {CATEGORY_LABELS[t.category] || t.category}
                   </span>
                 </td>
@@ -200,7 +200,7 @@ export default function ChecklistTemplatesMaster() {
                 </td>
                 <td style={td}>{t.default_owner_name || <span style={{ color: TEXT.muted }}>{t.category === 'manager' ? "Employee's manager" : '—'}</span>}</td>
                 <td style={td}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: t.is_active ? '#16A34A1a' : '#78716C1a', color: t.is_active ? '#16A34A' : '#78716C' }}>
+                  <span style={pillStyle(t.is_active ? '#16A34A' : '#78716C')}>
                     {t.is_active ? 'Active' : 'Inactive'}
                   </span>
                 </td>

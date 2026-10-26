@@ -21,6 +21,7 @@ import PromptDialog from '@/components/erp/PromptDialog'
 import TourButton from '@/components/tour/TourButton'
 import ApprovesInPanel from '@/components/organization/ApprovesInPanel'
 import AnchoredPopover from '@/components/shared/AnchoredPopover'
+import RoleMemberAccess, { MemberTab } from '@/components/organization/RoleMemberAccess'
 import { extractErrorMessages } from '@/lib/validation'
 
 // One role: its name/flags, its Permission Matrix (module › tab › action) and
@@ -53,6 +54,9 @@ export default function RoleDetailPage() {
   const [roleOptions, setRoleOptions] = useState<{ id: number; label: string }[]>([])
   const [eventCatalog, setEventCatalog] = useState<NotificationEventCatalog | null>(null)
   const [tab, setTab] = useState<Tab>('Permissions')
+  // "Settings for": '' = the role (all holders), else one holder's id — that
+  // user's own access on the Permissions / Data access / Notifications / Approves in tabs.
+  const [forUser, setForUser] = useState('')
   const [directory, setDirectory] = useState<DirectoryUser[]>([])
   const [memberIds, setMemberIds] = useState<number[]>([])
   const [memberSearch, setMemberSearch] = useState('')
@@ -211,6 +215,9 @@ export default function RoleDetailPage() {
       : t === 'Users' ? canFeature('organization', 'roles', 'members', 'view')
         : t === 'Approves in' ? !isNew : true)
   const view: Tab = seeRoleTab(tab) ? tab : 'Permissions'
+  // Holders as saved (unsaved Users-tab changes aren't holders yet).
+  const holders = role && !role.is_default ? (role.users || []) : []
+  const picked = forUser && view !== 'Users' ? holders.find((u) => String(u.id) === forUser) || null : null
   const locked = readOnly || !canSave
   const saveLabel = saving ? 'Saving…' : isNew ? 'Create Role' : 'Save Role'
   const tabBtn = (t: Tab): React.CSSProperties => ({
@@ -237,7 +244,7 @@ export default function RoleDetailPage() {
             <SheetIcon name="users" size={16} />{saving ? 'Saving…' : 'Save Users'}
           </button>
         )}
-        {(view !== 'Users' || isNew) && !readOnly && canSave && (
+        {(view !== 'Users' || isNew) && !picked && !readOnly && canSave && (
           <button type="button" onClick={() => save()} disabled={saving} data-tour="org-role-save" style={sheetBtn('primary', SHEET.BLUE, saving)}>
             <SheetIcon name="check" size={16} />{saveLabel}
           </button>
@@ -308,7 +315,24 @@ export default function RoleDetailPage() {
           <TourButton variant="icon" />
         </div>
 
-        {view === 'Permissions' && catalog && (
+        {view !== 'Users' && !isNew && holders.length > 0 && (
+          <div data-tour="org-role-for-user" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 16, padding: '10px 14px', borderRadius: 12, background: picked ? 'rgba(37,99,235,0.06)' : SHEET.SOFT, border: `1px solid ${picked ? 'rgba(37,99,235,0.25)' : SHEET.LINE}` }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: SHEET.INK }}>Settings for</span>
+            <Select value={forUser} onChange={(e) => setForUser(e.target.value)} style={{ ...sheetInput, width: 300, maxWidth: '100%' }}>
+              <option value="">{`This role — all ${holders.length} holder${holders.length === 1 ? '' : 's'}`}</option>
+              {holders.map((u) => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
+            </Select>
+            <span style={{ fontSize: 12, color: SHEET.MUTED }}>
+              {picked ? <>Showing <b>{picked.name}</b>&apos;s real access. Changes here apply to <b>{picked.name} only</b> — not to the role.</> : 'Pick a holder to see exactly what they get, or give them something different.'}
+            </span>
+          </div>
+        )}
+
+        {picked && catalog && (
+          <RoleMemberAccess key={`${picked.id}`} tab={view as MemberTab} user={{ id: picked.id, name: picked.name }} catalog={catalog} eventCatalog={eventCatalog} />
+        )}
+
+        {!picked && view === 'Permissions' && catalog && (
           <div data-tour="org-role-matrix">
             <SheetSection icon="list" title="Permission matrix">
               <p style={{ ...sheetHint, margin: '0 0 12px' }}>
@@ -322,7 +346,7 @@ export default function RoleDetailPage() {
           </div>
         )}
 
-        {view === 'Data access' && catalog && (
+        {!picked && view === 'Data access' && catalog && (
           <div data-tour="org-role-scopes">
             <SheetSection icon="building" title="Data access">
               <p style={{ ...sheetHint, margin: '0 0 12px' }}>
@@ -356,7 +380,7 @@ export default function RoleDetailPage() {
           </div>
         )}
 
-        {view === 'Notifications' && catalog && (
+        {!picked && view === 'Notifications' && catalog && (
           <div>
             <SheetSection icon="send" title="Notifications">
               <p style={{ ...sheetHint, margin: '0 0 12px' }}>
@@ -372,7 +396,7 @@ export default function RoleDetailPage() {
           </div>
         )}
 
-        {view === 'Approves in' && role && (
+        {!picked && view === 'Approves in' && role && (
           <div data-tour="org-role-approves-in">
             <SheetSection icon="flag" title="Approves in">
               <p style={{ ...sheetHint, margin: '0 0 12px' }}>

@@ -10,7 +10,7 @@ import { useRouter } from 'next/navigation'
 import { productionApi } from '@/lib/api'
 import { ProductionBom, ProductionBomDesignDiff, ProductionDesignSource } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDateTime } from '@/lib/format'
@@ -42,9 +42,7 @@ const errorBox = (error: string | string[]) => (
     {Array.isArray(error) ? error.join(' ') : error}
   </div>
 )
-const pill = (label: string, hex: string) => (
-  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
-)
+const pill = (label: string, hex: string) => <Pill label={label} hex={hex} />
 
 /** Released Design BOMs and where Production stands on each — the to-do
  *  list of eBOMs still to be taken into production. */
@@ -104,7 +102,7 @@ export function DesignSourcesPanel({ canTransfer }: { canTransfer: boolean }) {
 
       <div style={{ overflow: 'auto', maxHeight: 320 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
-          <thead><tr>{['Design BOM', 'Product', 'Released', 'Lines', 'Production BOM', 'State', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Design BOM', 'Product', 'Released', 'Lines', 'Production BOM', 'State', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={visible.length} />}</th>)}</tr></thead>
           <tbody>
             {loading ? (
               <tr><td colSpan={7} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
@@ -231,7 +229,7 @@ export function DesignDiffSection({ bom, canTransfer, onChanged }: { bom: Produc
           {rows.length > 0 && (
             <div style={{ overflow: 'auto', maxHeight: 320 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
-                <thead><tr>{['Item', 'Design qty / unit', 'Production qty / unit', 'Make / Buy', 'Difference'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Item', 'Design qty / unit', 'Production qty / unit', 'Make / Buy', 'Difference'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
                 <tbody>
                   {rows.map((r) => (
                     <tr key={r.item_id}>

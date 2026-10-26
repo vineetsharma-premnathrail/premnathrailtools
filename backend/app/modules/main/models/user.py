@@ -118,6 +118,11 @@ class User(Base, TimestampMixin):
     # Personal data-scope overrides, module_key -> level; beats whatever the
     # user's roles give for that module (core/data_scope.py user_scope).
     data_access_scopes: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    # Personal notification overrides, "<module>.<event>" -> channels
+    # (bell / email / teams). An entry replaces what the user's roles give for
+    # that event; an empty list switches it off for this user only. No entry =
+    # follow the roles (core/notification_events.notify_event).
+    notification_overrides: Mapped[dict[str, list[str]]] = mapped_column(JSON, default=dict)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # App password (app lock, services/app_lock.py): asked after every
     # Microsoft sign-in and after idle time, because shared laptops share the

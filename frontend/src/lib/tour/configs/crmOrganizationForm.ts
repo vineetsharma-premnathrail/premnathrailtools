@@ -60,6 +60,7 @@ const config: TourConfig = {
     {
       target: 'org-state',
       title: 'State / UT',
+      whatToEnter: 'Country India: pick the State / UT from the list. Country Other: type the state or province.',
       validExample: 'Delhi, Maharashtra, Tamil Nadu',
     },
     {

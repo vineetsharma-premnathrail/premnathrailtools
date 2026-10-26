@@ -13,6 +13,7 @@ import FileUploadField from '@/components/shared/FileUploadField'
 import { FormPage, SheetSection, SheetIcon, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import { formatDate } from '@/lib/format'
 
 const { INK, BODY, MUTED, LINE, SOFT, BLUE } = SHEET
 
@@ -781,7 +782,7 @@ function FinancialYearsEditor({ financialYears, onRefresh }: { financialYears: C
                     <span style={{ fontSize: 13.5, fontWeight: 600, color: INK }}>{fy.name}</span>
                     <span style={{ ...pill(fy.status === 'open' ? 'rgba(16,185,129,0.12)' : 'rgba(220,38,38,0.1)', fy.status === 'open' ? '#047857' : '#b91c1c'), textTransform: 'uppercase' }}>{fy.status}</span>
                   </div>
-                  <p style={{ fontSize: 12.5, color: MUTED, margin: 0 }}>{fy.start_date} → {fy.end_date}{fy.fiscal_year_code ? ` · ${fy.fiscal_year_code}` : ''}</p>
+                  <p style={{ fontSize: 12.5, color: MUTED, margin: 0 }}>{formatDate(fy.start_date)} → {formatDate(fy.end_date)}{fy.fiscal_year_code ? ` · ${fy.fiscal_year_code}` : ''}</p>
                 </div>
                 <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
                   <button type="button" style={linkBtnStyle} onClick={() => startEdit(fy)}>Edit</button>
@@ -911,7 +912,7 @@ function DocumentsEditor({ documents, onRefresh }: { documents: CompanyDocument[
                     {d.confidentiality && <span style={pill('rgba(0,0,0,0.05)', MUTED)}>{d.confidentiality}</span>}
                   </div>
                   <p style={{ fontSize: 12.5, color: MUTED, margin: 0 }}>
-                    {d.filename}{d.expiry_date ? ` · Expires ${d.expiry_date}` : ''}{d.issuing_authority ? ` · ${d.issuing_authority}` : ''}
+                    {d.filename}{d.expiry_date ? ` · Expires ${formatDate(d.expiry_date)}` : ''}{d.issuing_authority ? ` · ${d.issuing_authority}` : ''}
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>

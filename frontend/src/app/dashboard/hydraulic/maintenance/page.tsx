@@ -1,6 +1,7 @@
 'use client'
 
 import Select from '@/components/shared/Select'
+import { RowCount, Pill } from '@/components/shared/ui'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -138,7 +139,7 @@ export default function HydMaintenancePlansPage() {
             <tr>
               {['Plan No.', 'Title', 'System', 'Type', 'Frequency', 'Last Done', 'Next Due', 'Assigned To', 'Due', 'Job', ''].map((h, i) => (
                 <th key={`${h}-${i}`} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{i === 0 && <RowCount count={plans.length} />}
                 </th>
               ))}
             </tr>
@@ -166,9 +167,7 @@ export default function HydMaintenancePlansPage() {
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}><NextDue p={p} /></td>
                   <td style={cellStyle}>{p.assigned_to_name || '—'}</td>
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${DUE_HEX[p.due_status]}1a`, color: DUE_HEX[p.due_status], whiteSpace: 'nowrap' }}>
-                      {DUE_LABELS[p.due_status] || p.due_status}
-                    </span>
+                    <Pill label={DUE_LABELS[p.due_status] || p.due_status} hex={DUE_HEX[p.due_status] || '#78716c'} />
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
                     {p.open_service_record_id ? (

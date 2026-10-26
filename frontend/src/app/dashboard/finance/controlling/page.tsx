@@ -32,6 +32,7 @@ import {
   inr, dmy, currentPeriod, Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, PageHeader, TableWrap, EmptyRow, StatCard,
   useFinanceSubTabs,
 } from '@/components/finance/financeUi'
+import { RowCount, pillStyle } from '@/components/shared/ui'
 
 const TABS = ['Planning', 'Plan vs Actual', 'Activity Rates', 'Allocations', 'Overhead'] as const
 type Tab = typeof TABS[number]
@@ -249,7 +250,7 @@ function PlanningTab() {
           <TableWrap minWidth={1700} maxHeight="calc(100vh - 360px)">
             <thead>
               <tr>
-                <th style={thStyle}>Cost centre</th><th style={thStyle}>Ledger</th>
+                <th style={thStyle}>Cost centre <RowCount count={rows.length} /></th><th style={thStyle}>Ledger</th>
                 {grid.period_labels.map((l) => <th key={l} style={numTh}>{l}</th>)}
                 <th style={numTh}>Total (₹)</th>{editable && <th style={thStyle}></th>}
               </tr>
@@ -384,13 +385,13 @@ function PlanVsActualTab() {
         <Field label="Cost centre (with sub-centres)" style={{ flex: '1 1 240px', maxWidth: 320 }}><SearchableSelect value={cc} onChange={setCc} options={[{ value: '', label: 'All cost centres' }, ...ccOptions]} placeholder="All cost centres" /></Field>
       </div>
       {data && <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-        <StatCard label="Plan" value={inr(data.total_plan)} />
-        <StatCard label="Actual" value={inr(data.total_actual)} />
-        <StatCard label="Variance" value={inr(data.total_variance)} tone={data.total_variance > 0 ? RED : '#15803d'} />
+        <StatCard label="Plan" value={`₹ ${inr(data.total_plan)}`} />
+        <StatCard label="Actual" value={`₹ ${inr(data.total_actual)}`} />
+        <StatCard label="Variance" value={`₹ ${inr(data.total_variance)}`} tone={data.total_variance > 0 ? RED : '#15803d'} />
         <StatCard label="Variance %" value={data.total_variance_pct == null ? '—' : `${data.total_variance_pct}%`} />
       </div>}
       <TableWrap minWidth={1000}>
-        <thead><tr><th style={thStyle}>Cost centre</th><th style={thStyle}>Ledger</th><th style={numTh}>Plan (₹)</th><th style={numTh}>Actual (₹)</th><th style={numTh}>Variance (₹)</th><th style={numTh}>Var. %</th></tr></thead>
+        <thead><tr><th style={thStyle}>Cost centre <RowCount count={data?.rows.length ?? 0} /></th><th style={thStyle}>Ledger</th><th style={numTh}>Plan (₹)</th><th style={numTh}>Actual (₹)</th><th style={numTh}>Variance (₹)</th><th style={numTh}>Var. %</th></tr></thead>
         <tbody>
           {!data ? <EmptyRow colSpan={6} text={loading ? 'Loading…' : 'Pick a plan version.'} />
             : data.rows.length === 0 ? <EmptyRow colSpan={6} text="No plan or actuals for this selection." />
@@ -455,7 +456,7 @@ function ActivityRatesTab() {
         <button style={primaryBtnStyle} onClick={() => { setForm({ ...EMPTY_RATE }); setFormError(null) }}>+ Add rate</button>
       </div>}
       <TableWrap minWidth={1100}>
-        <thead><tr><th style={thStyle}>Activity</th><th style={thStyle}>Workstation / cost centre</th><th style={thStyle}>FY</th><th style={thStyle}>Valid</th>
+        <thead><tr><th style={thStyle}>Activity <RowCount count={rows.length} /></th><th style={thStyle}>Workstation / cost centre</th><th style={thStyle}>FY</th><th style={thStyle}>Valid</th>
           <th style={numTh}>Fixed (₹/h)</th><th style={numTh}>Variable (₹/h)</th><th style={numTh}>Rate (₹/h)</th><th style={numTh}>Fixed %</th><th style={thStyle}></th></tr></thead>
         <tbody>
           {rows.length === 0 ? <EmptyRow colSpan={9} text="No activity rates yet — production uses each workstation's flat hourly rate until you add some." />
@@ -576,9 +577,9 @@ function AllocationsTab() {
         {can('accounts', 'allocations', 'create') && <button style={{ ...primaryBtnStyle, marginLeft: 'auto' }} onClick={() => { setFormError(null); setForm({ id: 0, code: '', name: '', method: 'distribution', assessment_gl_account_id: '', valid_from: '', valid_to: '', status: 'active', notes: '', segments: [newSegment()] }) }}>+ New cycle</button>}
       </div>
       <TableWrap minWidth={1000}>
-        <thead><tr><th style={thStyle}>Cycle</th><th style={thStyle}>Method</th><th style={thStyle}>Segments</th><th style={thStyle}>Last posted</th><th style={thStyle}>Status</th><th style={thStyle}></th></tr></thead>
+        <thead><tr><th style={thStyle}>Cycle <RowCount count={cycles.length} /></th><th style={thStyle}>Method</th><th style={thStyle}>Segments</th><th style={thStyle}>Last posted</th><th style={thStyle}>Status</th><th style={thStyle}></th></tr></thead>
         <tbody>
-          {cycles.length === 0 ? <EmptyRow colSpan={6} text="No cycles yet." /> : cycles.map((c) => (
+          {cycles.length === 0 ? <EmptyRow colSpan={6} text="No allocation cycles yet — use + New cycle to share a cost centre's costs out to others." /> : cycles.map((c) => (
             <tr key={c.id}>
               <td style={tdStyle}><b>{c.code}</b> — {c.name}</td>
               <td style={tdStyle}>{c.method_label}{c.assessment_gl_label ? ` · ${c.assessment_gl_label}` : ''}</td>
@@ -611,7 +612,7 @@ function AllocationsTab() {
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>{s.name}: {s.sender_label} sends ₹{inr(s.allocated)} of ₹{inr(s.sender_amount)} ({BASIS_LABELS[s.basis]})</div>
               <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr><th style={thStyle}>Receiver</th><th style={numTh}>Basis</th><th style={numTh}>Share %</th><th style={numTh}>Amount (₹)</th></tr></thead>
+                <thead><tr><th style={thStyle}>Receiver <RowCount count={s.receivers.length} /></th><th style={numTh}>Basis</th><th style={numTh}>Share %</th><th style={numTh}>Amount (₹)</th></tr></thead>
                 <tbody>{s.receivers.map((r) => <tr key={r.cost_center_id}><td style={tdStyle}>{r.label}</td><td style={numTd}>{r.basis_value}</td><td style={numTd}>{r.share_pct.toFixed(2)}</td><td style={numTd}>{inr(r.amount)}</td></tr>)}</tbody>
               </table>
               </div>
@@ -622,7 +623,7 @@ function AllocationsTab() {
 
       <h3 style={{ fontSize: 14, fontWeight: 800, color: TEXT.heading }}>Runs</h3>
       <TableWrap minWidth={900}>
-        <thead><tr><th style={thStyle}>Period</th><th style={thStyle}>Cycle</th><th style={numTh}>Amount (₹)</th><th style={thStyle}>Journal</th><th style={thStyle}>Status</th><th style={thStyle}></th></tr></thead>
+        <thead><tr><th style={thStyle}>Period <RowCount count={runs.length} /></th><th style={thStyle}>Cycle</th><th style={numTh}>Amount (₹)</th><th style={thStyle}>Journal</th><th style={thStyle}>Status</th><th style={thStyle}></th></tr></thead>
         <tbody>
           {runs.length === 0 ? <EmptyRow colSpan={6} text="No runs posted yet." /> : runs.map((r) => (
             <tr key={r.id}>
@@ -668,7 +669,7 @@ function AllocationsTab() {
                 </SRow>
                 <SField label="Sender ledgers" hint="Blank = every expense ledger." style={{ marginBottom: 10 }}>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
-                    {s.sender_gl_account_ids.map((g) => <span key={g} style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 9999, background: '#0f766e1a', color: '#0f766e' }}>{expenseOptions.find((o) => o.value === String(g))?.label || g} <span style={{ cursor: 'pointer' }} onClick={() => setSeg(i, { sender_gl_account_ids: s.sender_gl_account_ids.filter((x) => x !== g) })}>×</span></span>)}
+                    {s.sender_gl_account_ids.map((g) => <span key={g} style={{ ...pillStyle('#0f766e'), gap: 4, fontWeight: 600 }}>{expenseOptions.find((o) => o.value === String(g))?.label || g} <span style={{ cursor: 'pointer' }} onClick={() => setSeg(i, { sender_gl_account_ids: s.sender_gl_account_ids.filter((x) => x !== g) })}>×</span></span>)}
                   </div>
                   <div style={{ maxWidth: 340 }}><SearchableSelect value="" onChange={(v) => v && !s.sender_gl_account_ids.includes(Number(v)) && setSeg(i, { sender_gl_account_ids: [...s.sender_gl_account_ids, Number(v)] })} options={expenseOptions} placeholder="+ Add ledger" /></div>
                 </SField>
@@ -748,7 +749,7 @@ function OverheadTab() {
         {can('accounts', 'overhead', 'create') && <button style={secondaryBtnStyle} onClick={() => { setFormError(null); setForm({ ...EMPTY_SHEET }) }}>+ Add row</button>}
       </div>
       <TableWrap minWidth={800}>
-        <thead><tr><th style={thStyle}>Plant</th><th style={thStyle}>Valid</th><th style={numTh}>Material overhead %</th><th style={numTh}>Labour overhead %</th><th style={thStyle}>Notes</th><th style={thStyle}></th></tr></thead>
+        <thead><tr><th style={thStyle}>Plant <RowCount count={sheet.length} /></th><th style={thStyle}>Valid</th><th style={numTh}>Material overhead %</th><th style={numTh}>Labour overhead %</th><th style={thStyle}>Notes</th><th style={thStyle}></th></tr></thead>
         <tbody>
           {sheet.length === 0 ? <EmptyRow colSpan={6} text="No costing-sheet rows — work orders carry no overhead." /> : sheet.map((r) => (
             <tr key={r.id}>
@@ -770,7 +771,7 @@ function OverheadTab() {
         {preview.already_posted_run_id && <InfoBanner tone="warning">Overhead is already applied for {preview.period}. Reverse that run below to apply it again.</InfoBanner>}
         {preview.messages.map((m) => <InfoBanner key={m} tone="warning">{m}</InfoBanner>)}
         <TableWrap minWidth={1000}>
-          <thead><tr><th style={thStyle}>Work order</th><th style={numTh}>Material (₹)</th><th style={numTh}>Mat. %</th><th style={numTh}>Labour (₹)</th><th style={numTh}>Lab. %</th><th style={numTh}>Overhead (₹)</th></tr></thead>
+          <thead><tr><th style={thStyle}>Work order <RowCount count={preview.rows.length} /></th><th style={numTh}>Material (₹)</th><th style={numTh}>Mat. %</th><th style={numTh}>Labour (₹)</th><th style={numTh}>Lab. %</th><th style={numTh}>Overhead (₹)</th></tr></thead>
           <tbody>
             {preview.rows.length === 0 ? <EmptyRow colSpan={6} text={`No work order gets overhead for ${preview.period}.`} /> : preview.rows.map((r) => (
               <tr key={r.work_order_id}><td style={tdStyle}>{r.wo_number}</td><td style={numTd}>{inr(r.material_base)}</td><td style={numTd}>{r.material_overhead_pct}%</td>
@@ -783,7 +784,7 @@ function OverheadTab() {
 
       <h3 style={{ fontSize: 14, fontWeight: 800, color: TEXT.heading }}>Overhead runs</h3>
       <TableWrap minWidth={700}>
-        <thead><tr><th style={thStyle}>Period</th><th style={numTh}>Orders</th><th style={numTh}>Overhead (₹)</th><th style={thStyle}>Status</th><th style={thStyle}></th></tr></thead>
+        <thead><tr><th style={thStyle}>Period <RowCount count={runs.length} /></th><th style={numTh}>Orders</th><th style={numTh}>Overhead (₹)</th><th style={thStyle}>Status</th><th style={thStyle}></th></tr></thead>
         <tbody>
           {runs.length === 0 ? <EmptyRow colSpan={5} text="No overhead runs yet." /> : runs.map((r) => (
             <tr key={r.id}><td style={tdStyle}>{r.accounting_period}</td><td style={numTd}>{r.order_count}</td><td style={numTd}>{inr(r.total_overhead)}</td>

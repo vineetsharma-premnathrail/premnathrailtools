@@ -20,8 +20,9 @@ import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import {
   inputStyle, labelStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle,
   thStyle, tdStyle, numTd, numTh, inr, dmy, todayIso, Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, useFinanceSubTabs, PageHeader,
-  TableWrap, EmptyRow, TaxLinesEditor, EditableTaxLine, newTaxLine, toLinePayload, useCostObjectOptions, previewTax, ApprovalBadge, submitAfterSave,
+  TableWrap, EmptyRow, TaxLinesEditor, EditableTaxLine, newTaxLine, toLinePayload, useCostObjectOptions, previewTax, ApprovalBadge, submitAfterSave, RecordFacts,
 } from '@/components/finance/financeUi'
+import { RowCount, pillStyle, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { recordHref } from '@/lib/recordRef'
 import { useDocCurrency } from '@/components/finance/DocCurrencyFields'
 import FinanceAttachments, { ProofPicker, PickedProof, uploadPickedProof, useProofCounts, ProofClip, useProofRules } from '@/components/finance/FinanceAttachments'
@@ -84,7 +85,7 @@ function toEditableLines(lines: TaxLine[]): EditableTaxLine[] {
 }
 
 function Badge({ label, hex }: { label: string; hex: string }) {
-  return <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
+  return <span style={pillStyle(hex)}>{label}</span>
 }
 
 function LinesTable({ lines, interstate }: { lines: TaxLine[]; interstate: boolean }) {
@@ -96,7 +97,7 @@ function LinesTable({ lines, interstate }: { lines: TaxLine[]; interstate: boole
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead>
         <tr>
-          <th style={th}>#</th><th style={th}>Description</th><th style={th}>HSN/SAC</th>
+          <th style={th}># <RowCount count={lines.length} /></th><th style={th}>Description</th><th style={th}>HSN/SAC</th>
           <th style={{ ...th, textAlign: 'right' }}>Qty</th><th style={{ ...th, textAlign: 'right' }}>Rate</th>
           <th style={{ ...th, textAlign: 'right' }}>Discount</th><th style={{ ...th, textAlign: 'right' }}>Taxable</th>
           <th style={{ ...th, textAlign: 'right' }}>GST %</th>
@@ -291,7 +292,7 @@ function InvoicesTab(ctx: Ctx) {
       <TableWrap minWidth={1350} tour="fin-pinv-table">
         <thead>
           <tr>
-            <th style={thStyle}>Bill no.</th><th style={thStyle}>Date</th><th style={thStyle}>Due</th><th style={thStyle}>Vendor</th>
+            <th style={thStyle}>Bill no. <RowCount count={loading ? 0 : rows.length} /></th><th style={thStyle}>Date</th><th style={thStyle}>Due</th><th style={thStyle}>Vendor</th>
             <th style={thStyle}>Type</th><th style={numTh}>Taxable (₹)</th><th style={numTh}>GST (₹)</th><th style={numTh}>Total (₹)</th>
             <th style={numTh}>Due (₹)</th><th style={thStyle}>Match</th><th style={thStyle}>Status</th><th style={thStyle}>Journal</th><th style={thStyle}></th>
           </tr>
@@ -357,23 +358,30 @@ function InvoicesTab(ctx: Ctx) {
                     <td colSpan={COLS} style={{ padding: '12px 18px', background: 'rgba(148,163,184,0.06)', borderTop: `1px solid ${BORDER.normal}` }}>
                       <ApprovalPanel entityType="accounts_vendor_invoice" entityId={inv.id} onChanged={() => load()} />
                       <LinesTable lines={inv.lines} interstate={inv.is_interstate} />
-                      <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', marginTop: 12, fontSize: 12, color: TEXT.secondary }}>
-                        <div style={{ lineHeight: 1.7 }}>
-                          <div>Vendor GSTIN: <b>{inv.vendor_gstin || '—'}</b> · Place of supply: <b>{inv.place_of_supply_state_code || '—'}</b>{inv.is_reverse_charge && ' · Reverse charge (we pay the GST)'}</div>
-                          {inv.round_off !== 0 && <div>Round-off: {inr(inv.round_off)}</div>}
-                          {inv.qty_po != null && <div>PO qty {inv.qty_po} · GRN accepted {inv.qty_gr ?? '—'} · Invoiced {inv.qty_invoice ?? '—'}</div>}
-                          {inv.variance_approved_by_name && <div>Variance approved by {inv.variance_approved_by_name}{inv.variance_note ? `: ${inv.variance_note}` : ''}</div>}
-                          {inv.narration && <div>Narration: {inv.narration}</div>}
-                          {inv.cancelled_reason && <div style={{ color: '#b91c1c' }}>Cancelled: {inv.cancelled_reason}</div>}
-                          <div>Recorded by {inv.created_by_name || '—'}{inv.posted_by_name ? ` · Posted by ${inv.posted_by_name}` : ''}</div>
-                        </div>
+                      <RecordFacts>
+                        <DetailGroup title="Tax & amounts" last>
+                          <DetailRow label="Vendor GSTIN">{inv.vendor_gstin ? <span style={{ fontFamily: 'monospace' }}>{inv.vendor_gstin}</span> : null}</DetailRow>
+                          <DetailRow label="Place of supply">{inv.place_of_supply_state_code || null}</DetailRow>
+                          {inv.is_reverse_charge && <DetailRow label="Reverse charge">Yes — we pay the GST</DetailRow>}
+                          <DetailRow label="Taxable value">₹ {inr(inv.invoice_amount)}</DetailRow>
+                          <DetailRow label={inv.is_interstate ? 'IGST' : 'CGST + SGST'}>{inv.is_interstate ? `₹ ${inr(inv.igst_amount)}` : `₹ ${inr(inv.cgst_amount)} + ₹ ${inr(inv.sgst_amount)}`}</DetailRow>
+                          {inv.round_off !== 0 && <DetailRow label="Round-off">₹ {inr(inv.round_off)}</DetailRow>}
+                          <DetailRow label="Bill total"><strong>₹ {inr(inv.invoice_total)}</strong></DetailRow>
+                        </DetailGroup>
+                        <DetailGroup title="Matching & record" last>
+                          {inv.qty_po != null && <DetailRow label="Quantities">{`PO ${inv.qty_po} · GRN accepted ${inv.qty_gr ?? '—'} · Invoiced ${inv.qty_invoice ?? '—'}`}</DetailRow>}
+                          {inv.variance_approved_by_name && <DetailRow label="Variance approved by">{`${inv.variance_approved_by_name}${inv.variance_note ? ` — ${inv.variance_note}` : ''}`}</DetailRow>}
+                          <DetailRow label="Narration">{inv.narration || null}</DetailRow>
+                          {inv.cancelled_reason && <DetailRow label="Cancelled because"><span style={{ color: '#b91c1c' }}>{inv.cancelled_reason}</span></DetailRow>}
+                          <DetailRow label="Recorded by">{inv.created_by_name || null}</DetailRow>
+                          {inv.posted_by_name && <DetailRow label="Posted by">{inv.posted_by_name}</DetailRow>}
+                        </DetailGroup>
                         {seeSettlements && (
-                          <div>
-                            <div style={{ ...labelStyle, marginBottom: 4 }}>Settlement history</div>
-                            <SettlementList rows={settlements[inv.id]} />
-                          </div>
+                          <DetailGroup title="Settlement history" last>
+                            <div style={{ padding: '6px 0' }}><SettlementList rows={settlements[inv.id]} /></div>
+                          </DetailGroup>
                         )}
-                      </div>
+                      </RecordFacts>
                       <div style={{ marginTop: 14 }}>
                         <FinanceAttachments label={<div style={{ ...labelStyle, marginBottom: 6 }}>Supporting documents</div>} entityType="vendor_invoice" entityId={inv.id} tabKey="purchase_invoices"
                           locked={inv.status !== 'pending'} closed={inv.status === 'cancelled'}
@@ -534,7 +542,7 @@ function PurchaseInvoiceForm({ setup, ledgers, rates, vendors, pos, onSaved, onC
 
       <SheetColumns
         left={<>
-          <SheetSection icon="truck" title="Vendor">
+          <SheetSection icon="building" title="Vendor">
             <div data-tour="fin-pinv-mode" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
               {toggleBtn('po', 'Against PO')}
               {toggleBtn('direct', 'Direct (no PO)')}
@@ -658,8 +666,8 @@ function PurchaseInvoiceForm({ setup, ledgers, rates, vendors, pos, onSaved, onC
                   <div style={{ overflow: 'auto', marginTop: 8 }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760, fontSize: 12 }}>
                       <thead>
-                        <tr>{['PO line', 'Received', 'Already billed', 'This bill', 'Qty diff', 'PO rate', 'Bill rate', 'Price diff', 'Match'].map((h) => (
-                          <th key={h} style={{ textAlign: h === 'PO line' ? 'left' : 'right', padding: '5px 8px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+                        <tr>{['PO line', 'Received', 'Already billed', 'This bill', 'Qty diff', 'PO rate', 'Bill rate', 'Price diff', 'Match'].map((h, i) => (
+                          <th key={h} style={{ textAlign: h === 'PO line' ? 'left' : 'right', padding: '5px 8px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: TEXT.muted }}>{h}{i === 0 && <> <RowCount count={(preview.lines || []).length} /></>}</th>
                         ))}</tr>
                       </thead>
                       <tbody>
@@ -753,13 +761,13 @@ function DebitNotesTab(ctx: Ctx) {
       <TableWrap minWidth={1150} tour="fin-dn-table">
         <thead>
           <tr>
-            <th style={thStyle}>Note no.</th><th style={thStyle}>Date</th><th style={thStyle}>Vendor</th><th style={thStyle}>Against bill</th>
+            <th style={thStyle}>Note no. <RowCount count={loading ? 0 : rows.length} /></th><th style={thStyle}>Date</th><th style={thStyle}>Vendor</th><th style={thStyle}>Against bill</th>
             <th style={thStyle}>Reason</th><th style={numTh}>Taxable (₹)</th><th style={numTh}>GST (₹)</th><th style={numTh}>Total (₹)</th>
             <th style={numTh}>Unadjusted (₹)</th><th style={thStyle}>Status</th><th style={thStyle}></th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <EmptyRow colSpan={COLS} text="Loading…" /> : rows.length === 0 ? <EmptyRow colSpan={COLS} text="No debit notes yet." /> : rows.map((n) => {
+          {loading ? <EmptyRow colSpan={COLS} text="Loading…" /> : rows.length === 0 ? <EmptyRow colSpan={COLS} text="No debit notes yet — use + Raise debit note for goods returned or a rate difference." /> : rows.map((n) => {
             const isMaker = userId != null && n.created_by_id === userId
             return (
               <Fragment key={n.id}>
@@ -803,11 +811,17 @@ function DebitNotesTab(ctx: Ctx) {
                     <td colSpan={COLS} style={{ padding: '12px 18px', background: 'rgba(148,163,184,0.06)', borderTop: `1px solid ${BORDER.normal}` }}>
                       <ApprovalPanel entityType="accounts_party_note" entityId={n.id} onChanged={() => load()} />
                       <LinesTable lines={n.lines} interstate={n.is_interstate} />
-                      <div style={{ fontSize: 12, color: TEXT.secondary, marginTop: 10, lineHeight: 1.7 }}>
-                        <div>Vendor GSTIN: <b>{n.party_gstin || '—'}</b> · Place of supply: <b>{n.place_of_supply_state_code || '—'}</b>{n.round_off !== 0 && ` · Round-off ${inr(n.round_off)}`}</div>
-                        {n.narration && <div>Narration: {n.narration}</div>}
-                        <div>Raised by {n.created_by_name || '—'}</div>
-                      </div>
+                      <RecordFacts>
+                        <DetailGroup title="Tax" last>
+                          <DetailRow label="Vendor GSTIN">{n.party_gstin ? <span style={{ fontFamily: 'monospace' }}>{n.party_gstin}</span> : null}</DetailRow>
+                          <DetailRow label="Place of supply">{n.place_of_supply_state_code || null}</DetailRow>
+                          {n.round_off !== 0 && <DetailRow label="Round-off">₹ {inr(n.round_off)}</DetailRow>}
+                        </DetailGroup>
+                        <DetailGroup title="Record" last>
+                          <DetailRow label="Narration">{n.narration || null}</DetailRow>
+                          <DetailRow label="Raised by">{n.created_by_name || null}</DetailRow>
+                        </DetailGroup>
+                      </RecordFacts>
                       <div style={{ marginTop: 14 }}>
                         <FinanceAttachments label={<div style={{ ...labelStyle, marginBottom: 6 }}>Supporting documents</div>} entityType="party_note" entityId={n.id} tabKey="debit_notes"
                           locked={n.status !== 'pending'} closed={n.status === 'cancelled'} />
@@ -896,7 +910,7 @@ function DebitNoteForm({ setup, ledgers, rates, vendors, onSaved, onCancel }: Ct
 
       <SheetColumns
         left={<>
-          <SheetSection icon="truck" title="Against">
+          <SheetSection icon="link" title="Against">
             <SField label="Against purchase invoice" style={{ marginBottom: 12 }} tour="fin-dn-bill">
               <SearchableSelect value={invoiceId} onChange={setInvoiceId} options={billOptions} placeholder="Select a posted bill…" />
               {bill && (

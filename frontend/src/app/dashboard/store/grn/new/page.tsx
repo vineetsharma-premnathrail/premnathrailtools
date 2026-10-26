@@ -8,7 +8,7 @@ import { P2PReceivablePurchaseOrder, StoreLocation } from '@/types'
 import { TEXT, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { smallSecondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -299,8 +299,8 @@ export default function NewStoreGrnPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
               <thead>
                 <tr>
-                  {['Item', 'Unit', 'Ordered Qty', 'Already Received', 'Pending', 'Invoice Qty', 'Received Now *', 'Variance', 'Bin'].map((h) => (
-                    <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, background: SHEET.SOFT, borderBottom: `1px solid ${BORDER.normal}` }}>{h}</th>
+                  {['Item', 'Unit', 'Ordered Qty', 'Already Received', 'Pending', 'Invoice Qty', 'Received Now *', 'Variance', 'Bin'].map((h, hi) => (
+                    <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, background: SHEET.SOFT, borderBottom: `1px solid ${BORDER.normal}` }}>{h}{hi === 0 && <RowCount count={selectedPo.items.length} />}</th>
                   ))}
                 </tr>
               </thead>

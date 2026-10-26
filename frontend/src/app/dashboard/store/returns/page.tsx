@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { StoreMaterialReturn } from '@/types'
-import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
+import { primaryBtnStyle, smallSecondaryBtnStyle, RowCount, Pill, thStyle, numThStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
 import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -14,8 +14,8 @@ import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 
-const STATUS_LABELS: Record<string, string> = { pending_approval: 'Pending Approval', approved: 'Approved', rejected: 'Rejected' }
-const STATUS_HEX: Record<string, string> = { pending_approval: '#d97706', approved: '#16a34a', rejected: '#dc2626' }
+const STATUS_LABELS: Record<string, string> = { pending_approval: 'Pending Approval', approved: 'Approved', rejected: 'Rejected', cancelled: 'Withdrawn' }
+const STATUS_HEX: Record<string, string> = { pending_approval: '#d97706', approved: '#16a34a', rejected: '#dc2626', cancelled: '#78716c' }
 
 export default function StoreMaterialReturnsPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
@@ -42,7 +42,8 @@ export default function StoreMaterialReturnsPage() {
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
             Store &amp; Inventory
           </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Material Returns</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Material Returns</h1>
+          <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 12px' }}>Unused or faulty material coming back into a store; it posts to stock once approved.</p>
         </div>
         {can('store', 'returns', 'create') && (
           <button data-tour="returns-add-btn" onClick={() => router.push('/dashboard/store/returns/new')} style={primaryBtnStyle}>
@@ -57,30 +58,28 @@ export default function StoreMaterialReturnsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead>
             <tr>
-              {['Return #', 'Store', 'Source', 'Date', 'Items', 'Status', ''].map((h) => (
-                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+              {['Return #', 'Store', 'Source', 'Date', 'Items', 'Status', ''].map((h, hi) => (
+                <th key={h} style={h === 'Items' ? numThStyle : thStyle}>{h}{hi === 0 && <RowCount count={returns.length} />}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && returns.length === 0 && (
-              <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No material returns yet.</td></tr>
+              <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No material returns yet{can('store', 'returns', 'create') ? ' — use + New Return when material comes back to a store.' : '.'}</td></tr>
             )}
             {returns.map((r) => (
               <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/store/returns', r))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
-                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{r.return_number}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{r.location_name}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, whiteSpace: 'nowrap' }}>{r.return_number}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{r.location_name || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{r.source_issue_number || r.source_description || r.source_type_label || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{formatDate(r.return_date)}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{r.items.length}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(r.return_date)}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, textAlign: 'right' }}>{r.items.length}</td>
                 <td style={{ padding: '12px 16px' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[r.status]}1a`, color: STATUS_HEX[r.status], whiteSpace: 'nowrap' }}>
-                    {STATUS_LABELS[r.status] || r.status}{r.can_act ? ' · your action' : ''}
-                  </span>
+                  <Pill label={`${STATUS_LABELS[r.status] || r.status}${r.can_act ? ' · your action' : ''}`} hex={STATUS_HEX[r.status] || '#78716c'} />
                 </td>
-                <td onClick={(e) => e.stopPropagation()}>
-                  <span onClick={() => router.push(recordPath('/dashboard/store/returns', r))} style={{ padding: '0 16px', color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>View</span>
+                <td onClick={(e) => e.stopPropagation()} style={{ padding: '8px 16px' }}>
+                  <button type="button" onClick={() => router.push(recordPath('/dashboard/store/returns', r))} style={smallSecondaryBtnStyle}>View</button>
                 </td>
               </tr>
             ))}

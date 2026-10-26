@@ -14,6 +14,7 @@ import TaskActivity from './TaskActivity'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { ErrorBanner, FlagPill, Pill, TASK_HEX, TASK_LABELS, actionBtn, linkBtn, usePmFeature } from './pmUi'
 import { FormSheet, Req, SHEET, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import { RowCount } from '@/components/shared/ui'
 
 type Person = { id: number; name: string; designation?: string | null; department?: string | null }
 type NewTask = { parentId: number | null; title: string; assignee_id: string; due_date: string; limit?: string | null }
@@ -170,10 +171,10 @@ export default function MilestoneDetail({ t, onBack, onChanged, onEdit, onDelete
 
       {/* Row 2 — details */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', margin: '18px 0' }}>
-        <Info label="Given by" value={t.created_by_name || '—'} sub={t.created_at ? `on ${formatDate(t.created_at.slice(0, 10))}` : undefined} />
+        <Info label="Given by" value={t.created_by_name || '—'} sub={t.created_at ? `on ${formatDate(t.created_at)}` : undefined} />
         <Info label="Responsible person" value={t.assignee_name || '—'} sub={t.department_name || undefined} />
         <Info label="Expected completion" value={formatDate(t.due_date)} danger={late > 0}
-          sub={late > 0 ? `Overdue by ${late} day${late > 1 ? 's' : ''}` : t.status === 'done' && t.completed_at ? `Achieved ${formatDate(t.completed_at.slice(0, 10))}` : undefined} />
+          sub={late > 0 ? `Overdue by ${late} day${late > 1 ? 's' : ''}` : t.status === 'done' && t.completed_at ? `Achieved ${formatDate(t.completed_at)}` : undefined} />
       </div>
 
       {/* Row 3 — actions */}
@@ -206,7 +207,7 @@ export default function MilestoneDetail({ t, onBack, onChanged, onEdit, onDelete
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
               <thead>
                 <tr>
-                  <th style={{ ...th, width: 44 }}>#</th>
+                  <th style={{ ...th, width: 44 }}>#<RowCount count={tasks.length} /></th>
                   <th style={th}>Task</th>
                   <th style={th}>Assigned to</th>
                   <th style={th}>Due date</th>
@@ -267,8 +268,8 @@ export default function MilestoneDetail({ t, onBack, onChanged, onEdit, onDelete
 
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
                 <Info label="Assigned to" value={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Avatar name={task.assignee_name} />{task.mine ? 'You' : (task.assignee_name || '—')}</span>} />
-                <Info label="Due date" value={formatDate(task.due_date)} danger={task.is_overdue} sub={task.status === 'done' && task.completed_at ? `Done ${formatDate(task.completed_at.slice(0, 10))}` : undefined} />
-                <Info label="Given by" value={task.created_by_name || '—'} sub={task.created_at ? `on ${formatDate(task.created_at.slice(0, 10))}` : undefined} />
+                <Info label="Due date" value={formatDate(task.due_date)} danger={task.is_overdue} sub={task.status === 'done' && task.completed_at ? `Done ${formatDate(task.completed_at)}` : undefined} />
+                <Info label="Given by" value={task.created_by_name || '—'} sub={task.created_at ? `on ${formatDate(task.created_at)}` : undefined} />
               </div>
 
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>

@@ -2,7 +2,7 @@
 
 // R&D's Technical Offer on a requirement — the formal answer to CRM's
 // Technical Offer Request. Maker-checker:
-//   "Create Technical Offer" (R&D heads, and members ticked in R&D › Settings)
+//   "Create Technical Offer" (R&D heads, and people with R&D › Requirements › Technical Offer team › Create)
 //   creates it from the requirement and opens the letterhead Word template →
 //   the creator writes it in Word → "Send to R&D Head" freezes it → the R&D
 //   head approves it to the BD team (CRM can then quote it) or returns it for
@@ -21,7 +21,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import ManagedDocumentPanel, { openRecordInWord } from '@/components/shared/ManagedDocumentPanel'
-import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallBtnSize } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallBtnSize, pillStyle } from '@/components/shared/ui'
 import { useCan } from '@/lib/permissions'
 
 const ENTITY = 'rnd_technical_offer'
@@ -60,7 +60,7 @@ export default function RequirementTechnicalOffersTab({ source, recordId, access
   const [reasonBusy, setReasonBusy] = useState(false)
   useEscapeKey(!!reasonFor && !reasonBusy, () => setReasonFor(null))
 
-  // Preparing: R&D heads + members ticked in R&D › Settings; approving: the R&D head.
+  // Preparing: R&D heads + Technical Offer team › Create (Role & Permissions); approving: the R&D head.
   // On top, the role's R&D › Requirements › Technical Offers grants (create / edit / delete / approve).
   const { canFeature } = useCan()
   const isHead = !!access.is_head
@@ -259,7 +259,7 @@ export default function RequirementTechnicalOffersTab({ source, recordId, access
             style={sheetBtn('primary', SHEET.BLUE, busy === o.id)}>
             <SheetIcon name="doc" size={15} />
             {busy === o.id ? 'Working…' : <>Technical Offer {o.offer_number}</>}
-            <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: '#fff', color: hex, marginLeft: 4 }}>{STATUS_LABELS[o.status] || o.status}</span>
+            <span style={{ ...pillStyle(hex), fontSize: 10.5, padding: '2px 8px', background: '#fff', marginLeft: 4 }}>{STATUS_LABELS[o.status] || o.status}</span>
             <span style={{ fontSize: 10, marginLeft: 2 }}>▾</span>
           </button>
         ) : (
@@ -328,7 +328,7 @@ export default function RequirementTechnicalOffersTab({ source, recordId, access
         <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>
       ) : all.length === 0 ? (
         <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>
-          No Technical Offer yet.{!canPrepare && ' The R&D head, or members the head allowed in R&D › Settings, create it.'}
+          No Technical Offer yet.{!canPrepare && ' The R&D head, or people given the Technical Offer team permission in Organization › Role & Permissions, create it.'}
         </p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -342,7 +342,7 @@ export default function RequirementTechnicalOffersTab({ source, recordId, access
               <div key={o.id} style={{ borderRadius: 12, border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,0.55)' }}>
                 <div onClick={embedded ? undefined : () => setExpanded(open ? null : o.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', cursor: embedded ? 'default' : 'pointer', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 13.5, fontWeight: 700, color: TEXT.heading }}>{o.offer_number}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{STATUS_LABELS[o.status] || o.status}</span>
+                  <span style={pillStyle(hex)}>{STATUS_LABELS[o.status] || o.status}</span>
                   {o.status !== 'draft' && <span title="Locked — no edits" style={{ fontSize: 12 }}>🔒</span>}
                   <span style={{ fontSize: 13, color: TEXT.body, flex: '1 1 200px', minWidth: 0 }}>{o.title}</span>
                   <span style={{ fontSize: 11.5, color: TEXT.muted, whiteSpace: 'nowrap' }}>

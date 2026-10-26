@@ -7,8 +7,8 @@ import { canActOnTab } from '@/lib/tabAccess'
 import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { HrHoliday } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, secondaryBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import HrNav from '@/components/hr/HrNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -31,7 +31,7 @@ type Row = { holiday_date: string; name: string; holiday_type: string; branch_id
 const EMPTY_ROW: Row = { holiday_date: '', name: '', holiday_type: 'national', branch_id: '', description: '' }
 
 function dmy(iso: string | null) {
-  return iso ? `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}` : '—'
+  return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—'
 }
 
 function Banner({ errors }: { errors: string[] }) {
@@ -290,8 +290,8 @@ export default function HrHolidaysPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead>
             <tr>
-              {['Date', 'Day', 'Holiday', 'Type', 'Plant', ...(isHr ? [''] : [])].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
+              {['Date', 'Day', 'Holiday', 'Type', 'Plant', ...(isHr ? [''] : [])].map((h, i) => (
+                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}{i === 0 && <RowCount count={rows.length} />}</th>
               ))}
             </tr>
           </thead>
@@ -316,7 +316,7 @@ export default function HrHolidaysPage() {
                       {h.description && <div style={{ fontSize: 12, color: TEXT.muted, marginTop: 2 }}>{h.description}</div>}
                     </td>
                     <td style={td}>
-                      <span data-tour="hr-hol-type-badge" style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${TYPE_HEX[h.holiday_type]}1a`, color: TYPE_HEX[h.holiday_type], whiteSpace: 'nowrap' }}>
+                      <span data-tour="hr-hol-type-badge" style={pillStyle(TYPE_HEX[h.holiday_type])}>
                         {TYPE_LABELS[h.holiday_type] || h.holiday_type}
                       </span>
                     </td>

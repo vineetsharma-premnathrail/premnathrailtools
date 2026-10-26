@@ -2,7 +2,7 @@
 
 import { FormSheet, SheetIconName } from '@/components/shared/FormSheet'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { inputStyle as sharedInput, thStyle as sharedTh, tdStyle as sharedTd } from '@/components/shared/ui'
+import { inputStyle as sharedInput, thStyle as sharedTh, tdStyle as sharedTd, RowCount, pillStyle } from '@/components/shared/ui'
 
 /** Small shared bits for the HCM screens (roster, punches, periods,
  * assignment history, registers, claim posting). Popups portal to <body> —
@@ -21,7 +21,7 @@ export const h3: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: T
 export const hint: React.CSSProperties = { fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }
 
 export function dmy(iso?: string | null) {
-  return iso ? `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}` : '—'
+  return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—'
 }
 export function localIso(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -48,7 +48,7 @@ export function Banner({ errors, ok }: { errors?: string[]; ok?: string }) {
 }
 
 export function Pill({ label, hex }: { label: string; hex: string }) {
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
+  return <span style={pillStyle(hex)}>{label}</span>
 }
 
 /** Popup on the app-wide FormSheet (portal to <body>, icon header, footer).
@@ -72,7 +72,7 @@ export function ErrorRows({ rows }: { rows: { row?: number; identifier?: string;
   return (
     <div style={{ ...tableWrap, maxHeight: 280, marginTop: 12 }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
-        <thead><tr><th style={th}>Row</th><th style={th}>Employee</th><th style={th}>Problem</th></tr></thead>
+        <thead><tr><th style={th}>Row <RowCount count={rows.length} /></th><th style={th}>Employee</th><th style={th}>Problem</th></tr></thead>
         <tbody>
           {rows.map((e, i) => (
             <tr key={i}><td style={td}>{e.row ?? dmy(e.date)}</td><td style={td}>{e.identifier || '—'}</td><td style={td}>{e.message}</td></tr>

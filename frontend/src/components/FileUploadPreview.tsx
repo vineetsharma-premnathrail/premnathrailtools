@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { File as FileIcon, X } from '@phosphor-icons/react'
+import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -71,14 +72,14 @@ export default function FileUploadPreview({
         <button
           onClick={onConfirm}
           disabled={uploading}
-          style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.7 : 1 }}
+          style={{ ...primaryBtnStyle, cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.7 : 1 }}
         >
           {uploading ? 'Uploading…' : `Upload ${files.length} file${files.length > 1 ? 's' : ''}`}
         </button>
         <button
           onClick={onCancel}
           disabled={uploading}
-          style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#57534e', fontSize: 12.5, fontWeight: 600, cursor: uploading ? 'default' : 'pointer' }}
+          style={{ ...secondaryBtnStyle, cursor: uploading ? 'default' : 'pointer' }}
         >
           Cancel
         </button>

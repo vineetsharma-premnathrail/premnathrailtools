@@ -14,7 +14,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
-import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RowCount } from '@/components/shared/ui'
 import { sectionStyle, h2Style, thStyle, tdStyle, Pill, ErrorBanner } from '@/components/sales/SalesUi'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { useCan } from '@/lib/permissions'
@@ -217,7 +217,7 @@ function ChangesTable({ a }: { a: SalesAmendment }) {
   return (
     <div style={{ marginTop: 14, overflow: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
-        <thead><tr>{['Where', 'Field', 'Old', 'New'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+        <thead><tr>{['Where', 'Field', 'Old', 'New'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={a.changes.length} />}</th>)}</tr></thead>
         <tbody>
           {a.changes.map((c, i) => (
             <tr key={i}>

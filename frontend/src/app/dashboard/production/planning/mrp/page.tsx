@@ -9,7 +9,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { productionApi } from '@/lib/api'
 import { mrpApi, MrpException, MrpRun, PlannedOrder, PrConversionResult } from '@/lib/mrpApi'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle, RowCount } from '@/components/shared/ui'
 import ProductionNav from '@/components/production/ProductionNav'
 import StockRequirementsDrawer from '@/components/production/StockRequirementsDrawer'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -289,7 +289,7 @@ export default function MrpPage() {
             </div>
             <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
-                <thead><tr>{['', 'Planned Order', 'Item', 'Type', 'Qty', 'Start', 'Finish', 'For (pegged demand)', 'Status', ''].map((h, i) => <th key={i} style={thStyle}>{h}</th>)}</tr></thead>
+                <thead><tr>{['', 'Planned Order', 'Item', 'Type', 'Qty', 'Start', 'Finish', 'For (pegged demand)', 'Status', ''].map((h, i) => <th key={i} style={thStyle}>{h}{i === 0 && <RowCount count={orders.length} />}</th>)}</tr></thead>
                 <tbody>
                   {orders.length === 0 ? (
                     <tr><td colSpan={10} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No planned orders — run MRP to plan the open demand.</td></tr>
@@ -347,7 +347,7 @@ export default function MrpPage() {
         {tab === 'list' && (
           <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-              <thead><tr>{['Level', 'Item', 'Type', 'Stock', 'Safety', 'Requirements', 'Receipts', 'Planned', 'Ending Available', 'Exceptions'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Level', 'Item', 'Type', 'Stock', 'Safety', 'Requirements', 'Receipts', 'Planned', 'Ending Available', 'Exceptions'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={runDetail?.item_results?.length ?? 0} />}</th>)}</tr></thead>
               <tbody>
                 {!runDetail?.item_results?.length ? (
                   <tr><td colSpan={10} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No MRP run yet for this plant.</td></tr>
@@ -380,7 +380,7 @@ export default function MrpPage() {
             </div>
             <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
-                <thead><tr>{['Exception', 'Item', 'Element', 'Date', 'Suggested', 'Message'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Exception', 'Item', 'Element', 'Date', 'Suggested', 'Message'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={exceptions.length} />}</th>)}</tr></thead>
                 <tbody>
                   {exceptions.length === 0 ? (
                     <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No exception messages in the last run.</td></tr>
@@ -464,7 +464,7 @@ export default function MrpPage() {
               <>
                 {prResult.created.map((c) => (
                   <p key={c.pr_id} style={{ fontSize: 13, color: SHEET.BODY, margin: '0 0 8px' }}>
-                    <b>{c.p2p_number}</b> ({c.status.replace('_', ' ')}) — {c.project_label}, {c.category_code}: {c.planned_orders.join(', ')}
+                    <b>{c.p2p_number}</b> ({c.status.replace(/_/g, ' ').replace(/^./, (x) => x.toUpperCase())}) — {c.project_label}, {c.category_code}: {c.planned_orders.join(', ')}
                   </p>
                 ))}
                 {prResult.errors.map((e, i) => <div key={i}>{errorBox(`${e.planned_orders.join(', ')}: ${typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail)}`)}</div>)}

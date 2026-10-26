@@ -146,8 +146,6 @@ const config: TourConfig = {
       required: true,
       options: [
         { value: 'Website', meaning: 'Came through the company website.' },
-        { value: 'Google Ads', meaning: 'Came through a paid Google Ads campaign.' },
-        { value: 'Facebook / Instagram', meaning: 'Came through a Facebook or Instagram ad/post.' },
         { value: 'WhatsApp', meaning: 'Enquired via WhatsApp message.' },
         { value: 'Referral', meaning: 'Came through a referral/existing contact.' },
         { value: 'Phone Call', meaning: 'Inbound or outbound phone call.' },
@@ -155,7 +153,6 @@ const config: TourConfig = {
         { value: 'Walk-in', meaning: 'Customer walked in without prior contact.' },
         { value: 'LinkedIn', meaning: 'Came through LinkedIn outreach or a post.' },
         { value: 'Exhibition/Event', meaning: 'Met at a trade show, exhibition, or industry event — the common case for tenders.' },
-        { value: 'Justdial', meaning: 'Came through the Justdial listing/directory.' },
         { value: 'Other', meaning: 'Any source not covered by the options above.' },
       ],
     },
@@ -168,13 +165,7 @@ const config: TourConfig = {
         { value: 'Medium', meaning: 'Normal requirement (default).' },
         { value: 'Low', meaning: 'Can be handled later.' },
       ],
-    },
-    {
-      target: 'tnd-bd-owner',
-      title: 'BD Owner',
-      required: false,
-      purpose: 'The business-development person responsible — auto-filled with your own name and locked.',
-    },
+    },
     {
       target: 'tnd-org',
       title: 'Customer Organization',

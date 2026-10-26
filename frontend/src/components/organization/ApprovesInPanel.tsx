@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { ApprovesInRow } from '@/types'
 import { SHEET } from '@/components/shared/FormSheet'
+import { pillStyle } from '@/components/shared/ui'
 
 // Read-only "Approves in": the workflow stages a role / person approves in.
 // Always derived from Organization › Approval Workflows — approvals are
@@ -39,7 +40,7 @@ export default function ApprovesInPanel({ rows, error, empty }: { rows: Approves
               )}
             </div>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flex: 'none' }}>
-              <span style={{ fontSize: 10.5, fontWeight: 700, padding: '3px 8px', borderRadius: 9999, background: k.bg, color: k.color, whiteSpace: 'nowrap' }}>{k.label}</span>
+              <span style={{ ...pillStyle(k.color), background: k.bg }}>{k.label}</span>
               <Link href={`/dashboard/organization/workflows/${encodeURIComponent(r.workflow_key)}`} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A' }}>Open workflow</Link>
             </div>
           </div>

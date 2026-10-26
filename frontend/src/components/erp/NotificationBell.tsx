@@ -9,6 +9,7 @@ import { hrNotificationHref } from '@/components/hr/hrNotificationLink'
 import { refOf } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
 import { Bell } from '@phosphor-icons/react'
+import { formatDateTime } from '@/lib/format'
 
 // Some notification types need a more specific link than their entity type
 // alone gives (P2P approvals key their action buttons off ?from=).
@@ -330,7 +331,7 @@ export default function NotificationBell() {
                   <p style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>{n.title}</p>
                   <p style={{ fontSize: 12, color: '#78716c', margin: 0 }}>{n.message}</p>
                   {n.created_at && (
-                    <p style={{ fontSize: 10.5, color: '#a8a29e', margin: '4px 0 0' }}>{new Date(n.created_at).toLocaleString()}</p>
+                    <p style={{ fontSize: 10.5, color: '#a8a29e', margin: '4px 0 0' }}>{formatDateTime(n.created_at)}</p>
                   )}
                 </div>
               )

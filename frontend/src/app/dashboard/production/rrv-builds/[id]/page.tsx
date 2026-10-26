@@ -13,7 +13,7 @@ import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, SheetIconName, SHEET, Req, Optional, sheetBtn, sheetHint, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import ReasonSheet from '@/components/shared/ReasonSheet'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle, smallSecondaryBtnStyle, smallPrimaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, primaryBtnStyle, smallSecondaryBtnStyle, smallPrimaryBtnStyle, smallDangerBtnStyle, RowCount, Pill, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
@@ -56,7 +56,7 @@ const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', f
 const tdStyle: React.CSSProperties = { padding: '9px 10px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
 
 function pill(label: string, hex: string) {
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
+  return <Pill label={label} hex={hex} />
 }
 
 type Tab = 'stages' | 'work_orders' | 'tests' | 'rework' | 'handover' | 'timeline'
@@ -374,16 +374,8 @@ export default function RrvBuildDetailPage() {
         <div style={{ minWidth: 0 }}>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>RRV Build</p>
           <h1 data-tour="production-rrv-detail-header" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {b ? <>{b.build_number} <span style={{ fontWeight: 500, color: TEXT.secondary }}>— {b.rrv_model}</span> {pill(BUILD_LABELS[b.status], BUILD_HEX[b.status])}</> : 'RRV Build'}
+            {b ? <>{b.build_number} <span style={{ fontWeight: 500, color: TEXT.secondary }}>— {b.rrv_model}</span></> : 'RRV Build'}
           </h1>
-          {b && (
-            <div data-tour="production-rrv-detail-progress" style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
-              <div style={{ width: 180, height: 7, borderRadius: 9999, background: 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
-                <div style={{ width: `${pct}%`, height: '100%', background: '#16A34A' }} />
-              </div>
-              <span style={{ fontSize: 12.5, color: TEXT.muted }}>{b.stages_done}/{b.stages_total} stages{b.current_stage_label && b.status !== 'handed_over' ? ` · now: ${b.current_stage_label}` : ''}</span>
-            </div>
-          )}
         </div>
         <button data-tour="production-rrv-detail-back-btn" onClick={() => router.push('/dashboard/production/rrv-builds')} type="button" style={secondaryBtnStyle}>← Back</button>
       </div>
@@ -420,23 +412,59 @@ export default function RrvBuildDetailPage() {
             {can('delete') && <button data-tour="production-rrv-delete-btn" disabled={busy} style={dangerBtnStyle} onClick={() => setConfirmDelete(true)}>Delete</button>}
           </div>
 
-            <div data-tour="production-rrv-info" style={{ ...sectionStyle, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-              {b.order_project_number && b.order_project_id && (
-                <div data-tour="production-rrv-order-project">
-                  <p className="info-row-label" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Order Project</p>
-                  <OrderProjectChip opNumber={b.order_project_number} elementNo={b.order_project_element_no} label={b.order_project_element_label}
-                    onClick={canTab('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', b, 'order_project_id')) : undefined} />
+          {/* One record card: what is being built and for whom, key facts, then details grouped. */}
+          <DetailCard tour="production-rrv-info">
+            <DetailSummary
+              title={b.rrv_model}
+              text={`Build of one ${b.rrv_model}${b.customer_name ? ` for ${b.customer_name}` : ''} — from the first work order through tests to handover.`}
+              meta={<>
+                <Pill label={BUILD_LABELS[b.status] || b.status} hex={BUILD_HEX[b.status] || '#78716c'} />
+                {b.is_overdue && <Pill label="Overdue" hex="#DC2626" />}
+                <span>· <strong style={{ color: TEXT.heading }}>{RRV_PRIORITY_LABELS[b.priority] || b.priority}</strong> priority</span>
+                <span>· Handover due {formatDate(b.target_handover_date)}</span>
+                <span>· Build manager: <strong style={{ color: TEXT.heading }}>{b.build_manager_name || '—'}</strong></span>
+              </>}
+            />
+            <DetailGroup title="Progress">
+              <DetailRow label="Stages done">
+                <div data-tour="production-rrv-detail-progress" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ width: 180, height: 7, borderRadius: 9999, background: 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+                    <div style={{ width: `${pct}%`, height: '100%', background: '#16A34A' }} />
+                  </div>
+                  <span>{b.stages_done} of {b.stages_total}</span>
                 </div>
+              </DetailRow>
+              {b.current_stage_label && b.status !== 'handed_over' && <DetailRow label="Current stage">{b.current_stage_label}</DetailRow>}
+            </DetailGroup>
+            <DetailGroup title="Customer & order">
+              <DetailRow label="Customer">{b.customer_name}</DetailRow>
+              <DetailRow label="Customer PO">{b.customer_po_number ? `${b.customer_po_number}${b.customer_po_date ? ` · ${formatDate(b.customer_po_date)}` : ''}` : null}</DetailRow>
+              {b.order_reference && <DetailRow label="Order reference">{b.order_reference}</DetailRow>}
+              {b.order_project_number && b.order_project_id && (
+                <DetailRow label="Order Project">
+                  <span data-tour="production-rrv-order-project">
+                    <OrderProjectChip opNumber={b.order_project_number} elementNo={b.order_project_element_no} label={b.order_project_element_label}
+                      onClick={canTab('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', b, 'order_project_id')) : undefined} />
+                  </span>
+                </DetailRow>
               )}
-              <InfoRow label="Customer" value={b.customer_name || '—'} />
-              <InfoRow label="Customer PO" value={b.customer_po_number ? `${b.customer_po_number}${b.customer_po_date ? ` · ${formatDate(b.customer_po_date)}` : ''}` : '—'} />
-              <InfoRow label="Machine / serial" value={b.machine_label || b.vehicle_serial_number || 'Registered at completion'} />
-              <InfoRow label="Chassis · engine" value={`${b.chassis_number || '—'} · ${b.engine_number || '—'}`} />
-              <InfoRow label="Build manager" value={b.build_manager_name || '—'} />
-              <InfoRow label="Priority" value={RRV_PRIORITY_LABELS[b.priority] || b.priority} />
-              <InfoRow label="Target completion" value={formatDate(b.target_completion_date)} />
-              <InfoRow label="Target handover" value={`${formatDate(b.target_handover_date)}${b.is_overdue ? ' (overdue)' : ''}`} />
-            </div>
+            </DetailGroup>
+            <DetailGroup title="Vehicle">
+              <DetailRow label="Machine / serial">{b.machine_label || b.vehicle_serial_number || 'Registered when the build is completed'}</DetailRow>
+              <DetailRow label="Chassis number">{b.chassis_number}</DetailRow>
+              <DetailRow label="Engine number">{b.engine_number}</DetailRow>
+              {b.year_of_manufacture && <DetailRow label="Year of manufacture">{b.year_of_manufacture}</DetailRow>}
+            </DetailGroup>
+            <DetailGroup title="Schedule" last={!b.remarks}>
+              <DetailRow label="Planned start">{b.planned_start_date ? formatDate(b.planned_start_date) : null}</DetailRow>
+              <DetailRow label="Target completion">{b.target_completion_date ? formatDate(b.target_completion_date) : null}</DetailRow>
+            </DetailGroup>
+            {b.remarks && (
+              <DetailGroup last>
+                <DetailRow label="Remarks">{b.remarks}</DetailRow>
+              </DetailGroup>
+            )}
+          </DetailCard>
 
           <div style={{ display: 'flex', gap: 4, marginBottom: 14, borderBottom: '1px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
             {([['stages', 'Stages'], ['work_orders', `Work Orders & Material (${b.work_orders.length})`], ['tests', `Tests (${b.tests.length})`],
@@ -472,7 +500,7 @@ export default function RrvBuildDetailPage() {
                 ) : (
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-                      <thead><tr>{['Work order', 'Role', 'Product', 'Operations', 'Material', 'Due', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                      <thead><tr>{['Work order', 'Role', 'Product', 'Operations', 'Material', 'Due', 'Status', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={b.work_orders.length} />}</th>)}</tr></thead>
                       <tbody>
                         {b.work_orders.map((w) => (
                           <tr key={w.id}>
@@ -510,7 +538,7 @@ export default function RrvBuildDetailPage() {
                     </p>
                     <div style={{ overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
-                        <thead><tr>{['Item', 'Required', 'Issued', 'Returned', 'Consumed', 'Still to issue', ...(seeCosts ? ['Value (₹)'] : []), 'Work orders'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                        <thead><tr>{['Item', 'Required', 'Issued', 'Returned', 'Consumed', 'Still to issue', ...(seeCosts ? ['Value (₹)'] : []), 'Work orders'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={consumption.rows.length} />}</th>)}</tr></thead>
                         <tbody>
                           {consumption.rows.map((r) => (
                             <tr key={r.item_id}>
@@ -551,7 +579,7 @@ export default function RrvBuildDetailPage() {
                 </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     {Object.entries(b.test_status).map(([k, v]) => (
-                      <span key={k} style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 9999, background: `${RESULT_HEX[v]}14`, color: RESULT_HEX[v], border: `1px solid ${RESULT_HEX[v]}33` }}>
+                      <span key={k} style={{ ...pillStyle(RESULT_HEX[v] || '#78716c'), fontSize: 12, padding: '5px 12px', border: `1px solid ${RESULT_HEX[v] || '#78716c'}33` }}>
                         {v === 'pass' ? '✓' : v === 'fail' ? '✗' : '○'} {RRV_TEST_TYPES[k] || k}
                       </span>
                     ))}
@@ -563,7 +591,7 @@ export default function RrvBuildDetailPage() {
                 {b.tests.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No tests recorded yet.</p> : (
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
-                      <thead><tr>{['Date', 'Test', 'Result', 'Expected', 'Observed', 'Tested / witnessed', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                      <thead><tr>{['Date', 'Test', 'Result', 'Expected', 'Observed', 'Tested / witnessed', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={b.tests.length} />}</th>)}</tr></thead>
                       <tbody>
                         {b.tests.map((t) => (
                           <tr key={t.id}>
@@ -636,15 +664,15 @@ export default function RrvBuildDetailPage() {
                   <ManagedDocumentPanel entityType="production_rrv_handover" entityId={b.id} revision={0} canModify={can('edit_certificate')} recordLabel="handover record" downloadName={`RRV-Handover-${b.build_number}`} />
                 </div>
               )}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
-                  <InfoRow label="Handover date" value={formatDate(b.handover_date)} />
-                  <InfoRow label="Commissioning date" value={formatDate(b.commissioning_date)} />
-                  <InfoRow label="Handed over to" value={[b.handed_over_to_name, b.handed_over_to_organization].filter(Boolean).join(', ') || '—'} />
-                  <InfoRow label="Location" value={b.handover_location || '—'} />
-                  <InfoRow label="Customer acceptance ref." value={b.customer_acceptance_ref || '—'} />
-                  <InfoRow label="Warranty" value={`${b.warranty_months} months from handover`} />
-                  {b.handed_over_at && <InfoRow label="Signed off" value={`${b.handed_over_by_name || '—'} · ${formatDateTime(b.handed_over_at)}`} />}
-                  {b.handover_remarks && <div style={{ gridColumn: '1 / -1' }}><InfoRow label="Remarks" value={b.handover_remarks} /></div>}
+                <div>
+                  <DetailRow label="Handover date">{b.handover_date ? formatDate(b.handover_date) : null}</DetailRow>
+                  <DetailRow label="Commissioning date">{b.commissioning_date ? formatDate(b.commissioning_date) : null}</DetailRow>
+                  <DetailRow label="Handed over to">{[b.handed_over_to_name, b.handed_over_to_organization].filter(Boolean).join(', ') || null}</DetailRow>
+                  <DetailRow label="Location">{b.handover_location}</DetailRow>
+                  <DetailRow label="Customer acceptance ref.">{b.customer_acceptance_ref}</DetailRow>
+                  <DetailRow label="Warranty">{`${b.warranty_months} months from handover`}</DetailRow>
+                  {b.handed_over_at && <DetailRow label="Signed off">{`${b.handed_over_by_name || '—'} · ${formatDateTime(b.handed_over_at)}`}</DetailRow>}
+                  {b.handover_remarks && <DetailRow label="Remarks">{b.handover_remarks}</DetailRow>}
                 </div>
               <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '14px 0 0' }}>
                 Fill these in, then complete the <strong>Production Handover</strong> stage (manager sign-off). That makes the machine active in the ERP registry

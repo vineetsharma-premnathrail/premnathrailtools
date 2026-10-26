@@ -101,6 +101,9 @@ class InquiryResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
+    # Set on the detail view when a live sales order was raised from this inquiry
+    # (sent to Sales) — the inquiry is then read-only for everyone.
+    sales_order_number: str | None = None
     universal_id: str
     org_id: int
     org_contact_id: int | None = None

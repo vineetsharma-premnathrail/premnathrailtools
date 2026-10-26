@@ -11,8 +11,8 @@ import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
-import { Section, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
-import { Pill, PageHeader, ErrorBanner, ActionSheet, SheetBlock, fmtDate, INSPECTION_TYPE_LABELS, PLAN_STATUS_HEX, SEVERITY_HEX } from '@/components/quality/QualityBits'
+import { DetailCard, DetailSummary, DetailGroup, DetailRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RowCount } from '@/components/shared/ui'
+import { Pill, PageHeader, ErrorBanner, ActionSheet, SheetBlock, fmtDate, INSPECTION_TYPE_LABELS, PLAN_STATUS_HEX, PLAN_STATUS_LABELS, SEVERITY_HEX } from '@/components/quality/QualityBits'
 import { SheetIcon, sheetInput, sheetLabel, sheetHint, sheetBtn, Req, SHEET } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
@@ -22,7 +22,7 @@ type LineDraft = { characteristic_id: number; sequence: number; nominal: string;
 
 const inputStyle: React.CSSProperties = { ...sheetInput, padding: '8px 10px', fontSize: 13 }
 const cell: React.CSSProperties = { padding: '8px 10px', fontSize: 12.5, color: SHEET.BODY, borderTop: `1px solid ${SHEET.LINE}` }
-const head: React.CSSProperties = { ...cell, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: SHEET.MUTED, borderTop: 'none' }
+const head: React.CSSProperties = { ...cell, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: SHEET.MUTED, borderTop: 'none', whiteSpace: 'nowrap' }
 const AQLS = ['', '0.065', '0.10', '0.15', '0.25', '0.40', '0.65', '1.0', '1.5', '2.5', '4.0', '6.5', '10.0']
 const s = (v?: number | null) => (v === null || v === undefined ? '' : String(v))
 const n = (v: string) => (v.trim() === '' ? null : Number(v))
@@ -78,6 +78,7 @@ export default function InspectionPlanDetailPage() {
         <QualityNav />
         <PageHeader title="Inspection Plan"><button type="button" onClick={() => router.push('/dashboard/quality/inspection-plans')} style={secondaryBtnStyle}>← Back</button></PageHeader>
         <ErrorBanner error={error} />
+        {!error && <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>}
       </div>
     )
   }
@@ -106,21 +107,26 @@ export default function InspectionPlanDetailPage() {
         onConfirm={async () => { setConfirm(null); try { await qualityApi.deleteInspectionPlan(plan.id); router.push('/dashboard/quality/inspection-plans') } catch (e) { setError(extractErrorMessages(e, 'Failed to delete the draft.')) } }} />
 
       <PageHeader title={`${plan.plan_number} · rev ${plan.revision}`} subtitle={`Inspection plan · ${INSPECTION_TYPE_LABELS[plan.inspection_type] || plan.inspection_type}`}>
-        <Pill text={plan.status === 'pending_approval' ? 'waiting for approval' : plan.status} hex={PLAN_STATUS_HEX[plan.status]} />
         <button type="button" onClick={() => router.push('/dashboard/quality/inspection-plans')} style={secondaryBtnStyle}>← Back</button>
       </PageHeader>
       <ErrorBanner error={error} />
 
-      <Section title="Plan" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
-          <InfoRow label="Item" value={`${plan.item_code ? `${plan.item_code} — ` : ''}${plan.item_name}`} />
-          <InfoRow label="Sampling" value={plan.sampling_type === 'aql' ? `AQL ${plan.aql ?? '—'}, level ${plan.inspection_level}` : plan.sampling_type === 'full' ? '100%' : `Fixed ${plan.fixed_sample_size}`} />
-          <InfoRow label="Created by" value={plan.created_by_name || '—'} />
-          <InfoRow label="Approved" value={plan.approved_at ? `${fmtDate(plan.approved_at)} · ${plan.approved_by_name || ''}` : '—'} />
-          {plan.title && <InfoRow label="Title" value={plan.title} />}
-        </div>
-        {!plan.item_id && <p style={{ fontSize: 12.5, color: '#b45309', margin: 0 }}>Legacy plan with no Item Master link — it can&apos;t be approved. Create a new plan for the item instead.</p>}
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      <DetailCard>
+        <DetailSummary
+          title={`${plan.item_code ? `${plan.item_code} — ` : ''}${plan.item_name}`}
+          text={plan.title || `What to check on every ${(INSPECTION_TYPE_LABELS[plan.inspection_type] || plan.inspection_type).toLowerCase()} lot of this item, and how many pieces to sample.`}
+          meta={<>
+            <Pill text={PLAN_STATUS_LABELS[plan.status] || plan.status} hex={PLAN_STATUS_HEX[plan.status]} />
+            <span>·</span><span>Created by {plan.created_by_name || '—'}</span>
+            {plan.approved_at && <><span>·</span><span>Approved {fmtDate(plan.approved_at)}{plan.approved_by_name ? ` by ${plan.approved_by_name}` : ''}</span></>}
+          </>}
+        />
+        <DetailGroup last>
+          <DetailRow label="Inspection type">{INSPECTION_TYPE_LABELS[plan.inspection_type] || plan.inspection_type}</DetailRow>
+          <DetailRow label="Sampling">{plan.sampling_type === 'aql' ? `AQL ${plan.aql ?? '—'}, level ${plan.inspection_level}` : plan.sampling_type === 'full' ? '100%' : `Fixed ${plan.fixed_sample_size}`}</DetailRow>
+          {!plan.item_id && <p style={{ fontSize: 12.5, color: '#b45309', margin: '4px 0 8px' }}>Legacy plan with no Item Master link — it can&apos;t be approved. Create a new plan for the item instead.</p>}
+        </DetailGroup>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', paddingTop: 14 }}>
           {isDraft && can('quality', 'inspection_plans', 'submit') && <button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => run(() => qualityApi.submitInspectionPlan(plan.id), 'Failed to submit the plan for approval.')}>Submit for approval</button>}
           {isDraft && can('quality', 'inspection_plans', 'approve') && <button type="button" disabled={busy} style={secondaryBtnStyle} onClick={() => run(() => qualityApi.approveInspectionPlan(plan.id), 'Failed to approve the plan.')}>Approve now (Quality head)</button>}
           {isDraft && canDelete('quality', 'inspection_plans', (plan as { created_by_id?: number | null } | null)?.created_by_id ?? null) && <button type="button" disabled={busy} style={dangerBtnStyle} onClick={() => setConfirm('delete')}>Delete draft</button>}
@@ -132,8 +138,8 @@ export default function InspectionPlanDetailPage() {
           )}
           {plan.status !== 'obsolete' && plan.status !== 'pending_approval' && !isDraft && can('quality', 'inspection_plans', 'approve') && <button type="button" disabled={busy} style={dangerBtnStyle} onClick={() => setConfirm('obsolete')}>Make obsolete</button>}
         </div>
-        {plan.status === 'pending_approval' && <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Waiting for approval — the approvers decide below (Organization › Approval Workflows › Inspection plan). Returned or withdrawn plans come back as drafts.</p>}
-      </Section>
+        {plan.status === 'pending_approval' && <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '10px 0 0' }}>Waiting for approval — the approvers decide below (Organization › Approval Workflows › Inspection plan). Returned or withdrawn plans come back as drafts.</p>}
+      </DetailCard>
 
       <ApprovalPanel key={plan.status} entityType="quality_inspection_plan" entityId={plan.id}
         onChanged={() => { qualityApi.getInspectionPlan(plan.id).then(apply).catch((e) => setError(extractErrorMessages(e, 'Failed to reload the plan.'))) }} />
@@ -145,7 +151,7 @@ export default function InspectionPlanDetailPage() {
         </> : undefined}>
         <div style={{ overflow: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
-            <thead><tr>{['#', 'Characteristic', 'Type', 'Class', 'Nominal', 'Min', 'Max', 'AQL', 'Method', ''].map((h) => <th key={h} style={head}>{h}</th>)}</tr></thead>
+            <thead><tr>{['#', 'Characteristic', 'Type', 'Class', 'Nominal', 'Min', 'Max', 'AQL', 'Method', ''].map((h, i) => <th key={h} style={head}>{h}{i === 0 && <RowCount count={lines.length} />}</th>)}</tr></thead>
             <tbody>
               {lines.length === 0 && <tr><td colSpan={10} style={{ ...cell, color: TEXT.muted, textAlign: 'center' }}>No characteristics yet.</td></tr>}
               {lines.map((l, i) => {
@@ -168,7 +174,7 @@ export default function InspectionPlanDetailPage() {
                           <option value="">Default ({ch?.classification || '—'})</option>
                           <option value="critical">Critical</option><option value="major">Major</option><option value="minor">Minor</option>
                         </Select>
-                      ) : <Pill text={cls} hex={SEVERITY_HEX[cls]} />}
+                      ) : <Pill text={cls.charAt(0).toUpperCase() + cls.slice(1)} hex={SEVERITY_HEX[cls]} />}
                     </td>
                     <td style={cell}>{numInput('nominal')}</td>
                     <td style={cell}>{numInput('min_value')}</td>

@@ -13,7 +13,7 @@ import DateField from '@/components/erp/DateField'
 import PromptDialog from '@/components/erp/PromptDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import {
-  AttachmentList, ErrorBanner, FlagPill, Notice, PRIORITY_HEX, PRIORITY_LABELS, Pill, ProgressBar, TASK_HEX, TASK_LABELS,
+  AttachmentList, ErrorBanner, FlagPill, Notice, PRIORITY_HEX, PRIORITY_LABELS, PROJECT_LABELS, Pill, ProgressBar, TASK_HEX, TASK_LABELS,
   actionBtn, smallActionBtn, sectionStyle, todayIso,
 } from './pmUi'
 import { FormSheet, Optional, Req, SHEET, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
@@ -101,7 +101,7 @@ export default function TaskDetailView({ taskId }: { taskId: number }) {
           <Pill value={t.priority} labels={PRIORITY_LABELS} hex={PRIORITY_HEX} />
           {t.is_overdue && <FlagPill text="Overdue" color="#dc2626" />}
           <span style={{ fontSize: 12.5, color: TEXT.secondary }}>
-            {t.assignee_name} · due {formatDate(t.due_date)} (WBS {formatDate(t.milestone_target_date)}){t.estimated_hours ? ` · ${t.estimated_hours} h est.` : ''} · {t.logged_hours} h logged{t.is_self_created ? ' · added by assignee' : ''}
+            {t.assignee_name} · due {formatDate(t.due_date)} (milestone {formatDate(t.milestone_target_date)}){t.estimated_hours ? ` · ${t.estimated_hours} h est.` : ''} · {t.logged_hours} h logged{t.is_self_created ? ' · added by assignee' : ''}
           </span>
           <span style={{ marginLeft: 'auto' }}><ProgressBar value={t.progress_percent} width={140} /></span>
         </div>
@@ -109,7 +109,7 @@ export default function TaskDetailView({ taskId }: { taskId: number }) {
         {t.status === 'blocked' && <div style={{ marginTop: 12 }}><Notice tone="bad">Blocked: {t.blocker_reason}</Notice></div>}
         {t.status === 'in_progress' && t.reopen_reason && <div style={{ marginTop: 12 }}><Notice tone="warn">Sent back by your head: {t.reopen_reason}</Notice></div>}
         {t.status === 'cancelled' && <div style={{ marginTop: 12 }}><Notice tone="bad">Cancelled: {t.cancel_reason}</Notice></div>}
-        {t.is_assignee && t.project_status !== 'active' && <div style={{ marginTop: 12 }}><Notice tone="warn">The project is {t.project_status?.replace('_', ' ')} — work is frozen.</Notice></div>}
+        {t.is_assignee && t.project_status !== 'active' && <div style={{ marginTop: 12 }}><Notice tone="warn">The project is {(PROJECT_LABELS[t.project_status || ''] || t.project_status || '').toLowerCase()} — work is frozen.</Notice></div>}
         {workable && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14, justifyContent: 'flex-end' }}>
             {t.status === 'todo' && <button data-tour="pm-task-start-btn" type="button" disabled={busy} onClick={() => act(() => pmWorkApi.startTask(t.id), 'Could not start the task.')} style={actionBtn('primary', busy)}>Start task</button>}
@@ -132,7 +132,7 @@ export default function TaskDetailView({ taskId }: { taskId: number }) {
         {!subOpen && !timeOpen && <ErrorBanner error={error} />}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(360px, 100%), 1fr))', gap: 20 }}>
         <div data-tour="pm-task-subtasks" style={{ ...sectionStyle, marginBottom: 0 }}>
           <h2 style={{ fontSize: 16, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Sub-tasks ({d.subtasks.filter((s) => s.status === 'done').length}/{d.subtasks.length})</h2>
           <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 10px' }}>Split the task into smaller steps. The task can only be marked done when every step is ticked.</p>
@@ -280,7 +280,7 @@ export default function TaskDetailView({ taskId }: { taskId: number }) {
       <PromptDialog
         open={doneOpen}
         title={`Mark "${t.title}" done?`}
-        message="What did you deliver? (drawing no., report, file name) — your lead checks this before submitting the WBS."
+        message="What did you deliver? (drawing no., report, file name) — your lead checks this before submitting the milestone."
         confirmLabel="Mark done"
         requireValue
         onConfirm={(v) => { setDoneOpen(false); act(() => pmWorkApi.completeTask(t.id, v), 'Could not complete the task.') }}

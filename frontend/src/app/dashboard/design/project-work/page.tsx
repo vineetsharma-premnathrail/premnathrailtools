@@ -7,11 +7,11 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { designApi } from '@/lib/api'
 import { DesignLookupOption, DesignMilestoneEvidence, DesignRequest, DesignRequestDeliverable } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { secondaryBtnStyle, primaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, smallSecondaryBtnStyle, chipBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import { PRIORITY_LABELS, REQUEST_SOURCE_LABELS, REQUEST_STATUS_LABELS, toOptions } from '@/components/design/designMeta'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
@@ -64,7 +64,7 @@ const smallLabel: React.CSSProperties = { fontSize: 10.5, fontWeight: 600, lette
 
 function badge(label: string, hex: string) {
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
+    <span style={pillStyle(hex)}>{label}</span>
   )
 }
 
@@ -344,11 +344,7 @@ export default function DesignRequestsPage() {
         {STATUS_FILTERS.map((t) => {
           const active = statusFilter === t.key
           return (
-            <button key={t.label} type="button" onClick={() => setStatusFilter(t.key)} style={{
-              padding: '6px 14px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              border: `1px solid ${active ? '#FF6A2A' : BORDER.normal}`, background: active ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,.6)',
-              color: active ? '#FF6A2A' : TEXT.secondary,
-            }}>
+            <button key={t.label} type="button" onClick={() => setStatusFilter(t.key)} style={chipBtnStyle(active)}>
               {t.label}
             </button>
           )
@@ -384,9 +380,9 @@ export default function DesignRequestsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1320 }}>
           <thead>
             <tr>
-              {['Request', 'Title', 'Source', 'Customer / CRM', 'Project / WBS', 'Lead Designer', 'Due', 'Waiting On', 'Status', 'Deliverables', ''].map((h) => (
+              {['Request', 'Title', 'Source', 'Customer / CRM', 'Project / WBS', 'Lead Designer', 'Due', 'Waiting On', 'Status', 'Deliverables', ''].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={requests.length} />}
                 </th>
               ))}
             </tr>
@@ -408,7 +404,7 @@ export default function DesignRequestsPage() {
                   <td style={{ ...cellStyle, maxWidth: 280 }}>
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</div>
                     {r.changed_since_review && (
-                      <span style={{ display: 'inline-block', marginTop: 4, fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: 'rgba(220,38,38,0.1)', color: '#DC2626' }}>
+                      <span style={{ ...pillStyle('#DC2626'), marginTop: 4 }}>
                         Requirement changed · rev {r.requirement_revision}
                       </span>
                     )}

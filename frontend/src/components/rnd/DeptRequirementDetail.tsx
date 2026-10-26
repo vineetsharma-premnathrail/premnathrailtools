@@ -18,7 +18,7 @@ import { DeptRequirementDetail as Detail, RndMyAccess, RndShareDepartment, RndSh
 import { TEXT, BORDER, GLASS, SHADOWS } from '@/lib/theme'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, segmentBtnStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { Chip, RESPONSE_HEX, shareBadge } from '@/components/rnd/RequirementDepartmentsTab'
 import RequirementTasksTab from '@/components/rnd/RequirementTasksTab'
 import RequirementDocumentsTab from '@/components/rnd/RequirementDocumentsTab'
@@ -31,9 +31,6 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 16,
 }
 const sectionTitle: React.CSSProperties = { fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.heading, margin: '0 0 12px' }
-const smallLabel: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 2px' }
-const grid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14 }
-const WIDE_FIELDS = new Set(['Specification', 'Requirement Summary', 'Project Details'])
 
 const TABS = ['Requirement', 'Tasks & Departments', 'Documents', 'Discussion', 'Reply to R&D'] as const
 type Tab = typeof TABS[number]
@@ -45,15 +42,6 @@ const RESPONSES: { key: RndShareResponse; label: string; hint: string }[] = [
   { key: 'feasible_with_changes', label: 'Feasible with changes', hint: 'Possible if something changes — say what.' },
   { key: 'not_feasible', label: 'Not feasible', hint: 'Cannot be built as asked — say why.' },
 ]
-
-function Info({ label, value, wide }: { label: string; value: string | null | undefined; wide?: boolean }) {
-  return (
-    <div style={{ gridColumn: wide ? '1 / -1' : undefined }}>
-      <p style={smallLabel}>{label}</p>
-      <p style={{ fontSize: 13, color: value ? TEXT.heading : TEXT.muted, margin: 0, whiteSpace: 'pre-wrap' }}>{value || 'Not provided'}</p>
-    </div>
-  )
-}
 
 export default function DeptRequirementDetail({ department, departmentLabel, shareId }: { department: RndShareDepartment; departmentLabel: string; shareId: number }) {
   const router = useRouter()
@@ -137,7 +125,6 @@ export default function DeptRequirementDetail({ department, departmentLabel, sha
             <span style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45' }}>{req.offer_number}</span>
             <span style={{ fontSize: 11, color: '#d6d3d1' }}>·</span>
             <span style={{ fontSize: 11, fontWeight: 600, color: TEXT.muted }}>{req.source === 'inquiry' ? 'Inquiry' : 'Tender'} {req.universal_id}</span>
-            {req.priority && <><span style={{ fontSize: 11, color: '#d6d3d1' }}>·</span><span style={{ fontSize: 11, fontWeight: 600, color: TEXT.muted }}>{req.priority}</span></>}
           </div>
           <h1 style={{ fontSize: 20, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{req.title}</h1>
           <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '4px 0 0' }}>
@@ -156,7 +143,7 @@ export default function DeptRequirementDetail({ department, departmentLabel, sha
         <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Chip {...badge} />
           {data.can_respond && share.status === 'open' && (
-            <button type="button" onClick={openReply} style={{ ...secondaryBtnStyle, padding: '6px 14px' }}>Reply →</button>
+            <button type="button" onClick={openReply} style={smallSecondaryBtnStyle}>Reply →</button>
           )}
         </span>
       </div>
@@ -175,6 +162,7 @@ export default function DeptRequirementDetail({ department, departmentLabel, sha
 
       <div className="hide-scrollbar" style={{ display: 'flex', gap: 4, marginBottom: 16, padding: 4, borderRadius: 999, background: 'rgba(0,0,0,0.05)', overflowX: 'auto', width: 'fit-content', maxWidth: '100%' }}>
         {TABS.map((t) => (
+          // ui-audit-ignore-next-line custom-button — page tab bar (navigation between tabs, not an action button)
           <button
             key={t}
             type="button"
@@ -192,67 +180,50 @@ export default function DeptRequirementDetail({ department, departmentLabel, sha
       </div>
 
       {tab === 'Requirement' && (
-        <>
-          <div style={sectionStyle}>
-            <p style={sectionTitle}>What R&amp;D needs from {departmentLabel}</p>
-            <p style={{ fontSize: 13.5, color: TEXT.heading, margin: 0, whiteSpace: 'pre-wrap' }}>{share.note}</p>
-            <p style={{ fontSize: 12, color: share.is_overdue ? '#DC2626' : TEXT.muted, margin: '8px 0 0' }}>
-              {share.shared_by} · {formatDateTime(share.shared_at)}{share.due_date ? ` · reply by ${formatDate(share.due_date)}${share.is_overdue ? ' — overdue' : ''}` : ''}
-            </p>
-          </div>
-
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 8px' }}>Technical Offer Request to R&amp;D</p>
-          <div style={sectionStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13.5, fontWeight: 700, color: TEXT.heading }}>Sent to R&amp;D as {req.offer_number || '—'}</span>
-              <span style={{ fontSize: 12, color: TEXT.muted }}>{formatDateTime(req.last_sent_at)}</span>
-            </div>
-            <p style={{ ...smallLabel, margin: '12px 0 6px' }}>Documents sent</p>
-            {torDocs.length > 0 ? (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{torDocs.map(fileLink)}</div>
-            ) : (
-              <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>No Technical Offer Request file — see the Documents tab for everything shared.</p>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'stretch' }}>
-            <div style={{ ...sectionStyle, flex: '1 1 320px' }}>
-              <p style={sectionTitle}>Customer</p>
-              <div style={grid}>
-                <Info label="Organization" value={req.organization.name} />
-                <Info label="Type" value={req.organization.type} />
-                <Info label="City / State" value={[req.organization.city, req.organization.state].filter(Boolean).join(', ')} />
-              </div>
-              {req.contact && (
-                <>
-                  <p style={{ ...sectionTitle, margin: '16px 0 12px' }}>Contact Person</p>
-                  <div style={grid}>
-                    <Info label="Name" value={req.contact.name} />
-                    <Info label="Designation" value={req.contact.designation} />
-                    <Info label="Department" value={req.contact.department} />
-                    <Info label="Mobile" value={req.contact.mobile} />
-                    <Info label="Email" value={req.contact.email} />
-                  </div>
-                </>
-              )}
-            </div>
-            <div style={{ ...sectionStyle, flex: '0 1 280px' }}>
-              <p style={sectionTitle}>From CRM</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <Info label="BD Owner" value={req.bd_owner} />
-                <Info label="CRM Status" value={req.crm_status} />
-                <Info label="Priority" value={req.priority} />
-              </div>
-            </div>
-          </div>
-
-          <div style={sectionStyle}>
-            <p style={sectionTitle}>{req.source === 'inquiry' ? 'Product Requirement' : 'Tender Details'}</p>
-            <div style={grid}>
-              {req.requirement.map((f) => <Info key={f.label} label={f.label} value={f.value} wide={WIDE_FIELDS.has(f.label)} />)}
-            </div>
-          </div>
-        </>
+        // One card: R&D's ask on top, then every detail as label–value rows
+        // (same layout as R&D › Project › Overview).
+        <DetailCard>
+          <DetailSummary
+            title={`What R&D needs from ${departmentLabel}`}
+            text={share.note || undefined}
+            meta={<span style={{ color: share.is_overdue ? '#DC2626' : undefined }}>
+              {share.shared_by || 'R&D'} · {formatDateTime(share.shared_at)}{share.due_date ? ` · reply by ${formatDate(share.due_date)}${share.is_overdue ? ' — overdue' : ''}` : ''}
+            </span>}
+          />
+          <DetailGroup title="Technical Offer Request to R&D">
+            <DetailRow label="Sent to R&D as">{req.offer_number}</DetailRow>
+            <DetailRow label="Sent on">{req.last_sent_at ? formatDateTime(req.last_sent_at) : null}</DetailRow>
+            <DetailRow label="Documents sent">
+              {torDocs.length > 0
+                ? <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{torDocs.map(fileLink)}</div>
+                : <span style={{ color: TEXT.muted }}>No Technical Offer Request file — see the Documents tab for everything shared.</span>}
+            </DetailRow>
+          </DetailGroup>
+          <DetailGroup title={req.source === 'inquiry' ? 'Product Requirement' : 'Tender Details'}>
+            {req.requirement.length === 0
+              ? <DetailRow label="Details">{null}</DetailRow>
+              : req.requirement.map((f) => <DetailRow key={f.label} label={f.label}>{f.value}</DetailRow>)}
+          </DetailGroup>
+          <DetailGroup title="Customer">
+            <DetailRow label="Organization">{req.organization.name}</DetailRow>
+            <DetailRow label="Type">{req.organization.type}</DetailRow>
+            <DetailRow label="City / State">{[req.organization.city, req.organization.state].filter(Boolean).join(', ')}</DetailRow>
+          </DetailGroup>
+          {req.contact && (
+            <DetailGroup title="Contact Person">
+              <DetailRow label="Name">{req.contact.name}</DetailRow>
+              <DetailRow label="Designation">{req.contact.designation}</DetailRow>
+              <DetailRow label="Department">{req.contact.department}</DetailRow>
+              <DetailRow label="Mobile">{req.contact.mobile}</DetailRow>
+              <DetailRow label="Email">{req.contact.email}</DetailRow>
+            </DetailGroup>
+          )}
+          <DetailGroup title="From CRM" last>
+            <DetailRow label="BD Owner">{req.bd_owner}</DetailRow>
+            <DetailRow label="CRM Status">{req.crm_status}</DetailRow>
+            <DetailRow label="Priority">{req.priority}</DetailRow>
+          </DetailGroup>
+        </DetailCard>
       )}
 
       {(tab === 'Tasks & Departments' || tab === 'Documents') && !access && !error && (
@@ -325,8 +296,8 @@ export default function DeptRequirementDetail({ department, departmentLabel, sha
                       const hex = RESPONSE_HEX[r.key]
                       return (
                         <button key={r.key} type="button" onClick={() => setResponse(r.key)} title={r.hint} style={{
-                          padding: '8px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-                          color: on ? '#fff' : hex, background: on ? hex : `${hex}12`, border: `1px solid ${on ? hex : `${hex}55`}`,
+                          ...segmentBtnStyle(on),
+                          color: on ? '#fff' : hex, background: on ? hex : `${hex}12`, borderColor: on ? hex : `${hex}55`,
                         }}>
                           {r.label}
                         </button>

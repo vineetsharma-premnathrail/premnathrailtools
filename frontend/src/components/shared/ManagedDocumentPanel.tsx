@@ -7,7 +7,7 @@ import { formatDateTime } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { ManagedDocumentChanges, ManagedDocumentState } from '@/types'
 import MessageDialog from '@/components/erp/MessageDialog'
-import { smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { smallSecondaryBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
 
 const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 
@@ -215,9 +215,8 @@ export async function openRecordInWord(entityType: string, entityId: number, tab
 }
 
 const wordBtn = (disabled: boolean): React.CSSProperties => ({
-  display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 10, border: 'none',
-  background: '#2563eb', color: '#fff', fontSize: 13, fontWeight: 700, cursor: disabled ? 'default' : 'pointer',
-  opacity: disabled ? 0.7 : 1, boxShadow: '0 4px 12px rgba(37,99,235,0.25)', whiteSpace: 'nowrap',
+  ...primaryBtnStyle, background: '#2563eb', cursor: disabled ? 'default' : 'pointer',
+  opacity: disabled ? 0.7 : 1, boxShadow: '0 4px 12px rgba(37,99,235,0.25)',
 })
 
 function WordIcon() {

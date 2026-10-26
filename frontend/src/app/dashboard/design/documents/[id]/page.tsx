@@ -7,7 +7,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { designApi } from '@/lib/api'
 import { DesignChecklistAnswer, DesignDocumentDetail, DesignDocumentRevision, DesignLookupOption, DesignRequest, DesignRevisionFile } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -15,7 +15,7 @@ import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, SheetIconName, SHEET, Req, Optional, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { DANGER_RED } from '@/components/design/DesignSheets'
 import ReasonSheet from '@/components/shared/ReasonSheet'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, primaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle, chipBtnStyle, RowCount, Pill, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { DOC_TYPE_LABELS, DISCIPLINE_LABELS, FILE_ROLE_LABELS, DESIGN_FILE_ACCEPT, SUBMISSION_STATUS_LABELS, CUSTOMER_RESPONSE_LABELS, formatBytes, toOptions } from '@/components/design/designMeta'
 import { useDesignFeature } from '@/components/design/useDesignFeature'
@@ -71,12 +71,7 @@ function mergeOptions(base: DesignLookupOption[], extra: DesignLookupOption[]): 
 }
 
 function pill(status: string) {
-  const hex = STATUS_HEX[status] || '#78716c'
-  return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
-      {STATUS_LABELS[status] || status}
-    </span>
-  )
+  return <Pill label={STATUS_LABELS[status] || status} hex={STATUS_HEX[status] || '#78716c'} />
 }
 
 type Confirm = 'submit' | 'discard' | 'delete' | 'reactivate' | null
@@ -399,18 +394,11 @@ export default function DesignDocumentDetailPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            {doc ? `${DOC_TYPE_LABELS[doc.document_type] || doc.document_type} · ${DISCIPLINE_LABELS[doc.discipline] || doc.discipline}` : 'Design Module'}
+            Design · Drawings &amp; Documents
           </p>
-          <h1 data-tour="design-doc-header" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {doc ? <>{doc.doc_number} <span style={{ fontWeight: 500, color: TEXT.secondary }}>— {doc.title}</span> {pill(doc.display_status)}</> : 'Document'}
+          <h1 data-tour="design-doc-header" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>
+            {doc ? doc.doc_number : 'Document'}
           </h1>
-          {doc && (
-            <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>
-              Controlled revision: <strong style={{ color: TEXT.body }}>{doc.released_revision_label || 'none yet'}</strong>
-              {doc.released_at ? ` (released ${formatDate(doc.released_at)})` : ''}
-              {doc.open_revision_label ? ` · ${doc.open_revision_label} ${STATUS_LABELS[doc.open_revision_status || '']?.toLowerCase() || ''}${doc.pending_with_name ? ` with ${doc.pending_with_name}` : ''}` : ''}
-            </p>
-          )}
         </div>
         <button data-tour="design-doc-back-btn" onClick={() => router.push('/dashboard/design/documents')} type="button" style={secondaryBtnStyle}>← Back</button>
       </div>
@@ -439,6 +427,53 @@ export default function DesignDocumentDetailPage() {
 
       {doc && (
         <>
+          {/* What this document is: summary on top, then every header detail as label–value rows. */}
+          <DetailCard tour="design-doc-details">
+            <DetailSummary
+              title={doc.title}
+              text={doc.description || `${DOC_TYPE_LABELS[doc.document_type] || doc.document_type} · ${DISCIPLINE_LABELS[doc.discipline] || doc.discipline}`}
+              meta={<>
+                {pill(doc.display_status)}
+                <span>· Controlled revision <strong style={{ color: TEXT.heading }}>{doc.released_revision_label || 'none yet'}</strong>{doc.released_at ? ` (released ${formatDate(doc.released_at)})` : ''}</span>
+                {doc.open_revision_label && <span>· {doc.open_revision_label} {STATUS_LABELS[doc.open_revision_status || '']?.toLowerCase() || ''}{doc.pending_with_name ? ` with ${doc.pending_with_name}` : ''}</span>}
+                <span>· Owner <strong style={{ color: TEXT.heading }}>{doc.owner_name || '—'}</strong></span>
+              </>}
+              actions={can('edit') && !editingDetails ? (
+                <button data-tour="design-doc-details-edit-btn" type="button" style={smallSecondaryBtnStyle} onClick={startEditDetails}>Edit details</button>
+              ) : undefined}
+            />
+            <DetailGroup title="Document">
+              <DetailRow label="Type · Discipline">{`${DOC_TYPE_LABELS[doc.document_type] || doc.document_type} · ${DISCIPLINE_LABELS[doc.discipline] || doc.discipline}`}</DetailRow>
+              <DetailRow label="Standard">{doc.standard_label}</DetailRow>
+              <DetailRow label="Department">{doc.department_name}</DetailRow>
+              {doc.legacy_number && <DetailRow label="Legacy number">{doc.legacy_number}</DetailRow>}
+            </DetailGroup>
+            <DetailGroup title="Customer">
+              <DetailRow label="Customer">{doc.customer_name}</DetailRow>
+              <DetailRow label="Customer approval">{doc.customer_approval_required ? 'Required before release' : 'Not required'}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="Linked to" last>
+              <DetailRow label="Project">{doc.pm_project_label}</DetailRow>
+              <DetailRow label="Machine">{doc.erp_project_label}</DetailRow>
+              <DetailRow label="Part (Store item)">{doc.store_item_label}</DetailRow>
+              <DetailRow label="Design request">
+                {doc.design_request_id ? (
+                  <span onClick={() => router.push(recordPath('/dashboard/design/requests', doc, 'design_request_id'))} style={{ color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>
+                    {doc.request_number || `Request #${doc.design_request_id}`}
+                  </span>
+                ) : null}
+              </DetailRow>
+              {doc.open_ecns.length > 0 && (
+                <DetailRow label="Approved change notices">
+                  {doc.open_ecns.map((e) => (
+                    <span key={e.id} onClick={() => router.push(recordPath('/dashboard/design/change-notices', e))} style={{ display: 'block', color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>{e.ecn_number} — {e.title}</span>
+                  ))}
+                </DetailRow>
+              )}
+            </DetailGroup>
+            <p style={{ fontSize: 12, color: TEXT.muted, margin: '10px 0 0' }}>Created by {doc.created_by_name || '—'} on {formatDate(doc.created_at)}</p>
+          </DetailCard>
+
           {/* Workflow action bar */}
           <div data-tour="design-doc-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
             {can('submit') && <button data-tour="design-doc-submit-btn" disabled={busy} style={primaryBtn} onClick={() => setConfirm('submit')}>Submit {openRev?.revision_label} for Check</button>}
@@ -489,11 +524,7 @@ export default function DesignDocumentDetailPage() {
                   {doc.revisions.map((r) => {
                     const active = r.id === selectedRevId
                     return (
-                      <button key={r.id} type="button" onClick={() => { setSelectedRevId(r.id); setEditingRevision(false) }} style={{
-                        padding: '5px 12px', borderRadius: 9999, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                        border: `1px solid ${active ? '#FF6A2A' : BORDER.normal}`, background: active ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,.6)',
-                        color: active ? '#FF6A2A' : STATUS_HEX[r.status] || TEXT.secondary,
-                      }}>
+                      <button key={r.id} type="button" onClick={() => { setSelectedRevId(r.id); setEditingRevision(false) }} style={active ? chipBtnStyle(true) : { ...chipBtnStyle(false), color: STATUS_HEX[r.status] || TEXT.secondary }}>
                         {r.revision_label}
                       </button>
                     )
@@ -528,14 +559,16 @@ export default function DesignDocumentDetailPage() {
                     </div>
 
                     {(
-                      <div data-tour="design-doc-rev-info" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 14 }}>
-                        <div style={{ gridColumn: '1 / -1' }}><InfoRow label="Change summary" value={selected.change_summary || '—'} /></div>
-                        <InfoRow label="Prepared by" value={`${selected.created_by_name || '—'} · ${formatDate(selected.created_at)}`} />
-                        <InfoRow label="Checked by" value={selected.reviewed_at ? `${selected.reviewed_by_name} · ${formatDate(selected.reviewed_at)}` : `${selected.reviewer_name || 'not named'} (pending)`} />
-                        <InfoRow label="Approved by" value={selected.approved_at && selected.status !== 'draft' ? `${selected.approved_by_name} · ${formatDate(selected.approved_at)}` : `${selected.approver_name || 'not named'} (pending)`} />
-                        <InfoRow label="Released" value={selected.released_at ? formatDateTime(selected.released_at) : '—'} />
-                        {selected.review_comment && <div style={{ gridColumn: '1 / -1' }}><InfoRow label="Checker remarks" value={selected.review_comment} /></div>}
-                        {selected.approval_comment && <div style={{ gridColumn: '1 / -1' }}><InfoRow label="Approver remarks" value={selected.approval_comment} /></div>}
+                      <div data-tour="design-doc-rev-info" style={{ marginBottom: 14 }}>
+                        <DetailGroup>
+                          <DetailRow label="Change summary">{selected.change_summary}</DetailRow>
+                          <DetailRow label="Prepared by">{`${selected.created_by_name || '—'} · ${formatDate(selected.created_at)}`}</DetailRow>
+                          <DetailRow label="Checked by">{selected.reviewed_at ? `${selected.reviewed_by_name || '—'} · ${formatDate(selected.reviewed_at)}` : `${selected.reviewer_name || 'Not named yet'} (pending)`}</DetailRow>
+                          <DetailRow label="Approved by">{selected.approved_at && selected.status !== 'draft' ? `${selected.approved_by_name || '—'} · ${formatDate(selected.approved_at)}` : `${selected.approver_name || 'Not named yet'} (pending)`}</DetailRow>
+                          <DetailRow label="Released">{selected.released_at ? formatDateTime(selected.released_at) : null}</DetailRow>
+                          {selected.review_comment && <DetailRow label="Checker remarks">{selected.review_comment}</DetailRow>}
+                          {selected.approval_comment && <DetailRow label="Approver remarks">{selected.approval_comment}</DetailRow>}
+                        </DetailGroup>
                       </div>
                     )}
 
@@ -580,7 +613,7 @@ export default function DesignDocumentDetailPage() {
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                     <thead>
-                      <tr>{['Rev', 'Status', 'Change summary', 'Prepared', 'Checked', 'Approved', 'Released', 'Checklist'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                      <tr>{['Rev', 'Status', 'Change summary', 'Prepared', 'Checked', 'Approved', 'Released', 'Checklist'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={doc.revisions.length} />}</th>)}</tr>
                     </thead>
                     <tbody>
                       {doc.revisions.map((r) => {
@@ -621,7 +654,7 @@ export default function DesignDocumentDetailPage() {
                                         </p>
                                         {rows.map((x) => (
                                           <div key={x.id} style={{ display: 'flex', gap: 10, alignItems: 'baseline', padding: '3px 0' }}>
-                                            <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: `${RESULT_HEX[x.result]}1a`, color: RESULT_HEX[x.result], whiteSpace: 'nowrap', minWidth: 44, textAlign: 'center' }}>
+                                            <span style={{ ...pillStyle(RESULT_HEX[x.result] || '#78716c'), minWidth: 44, justifyContent: 'center' }}>
                                               {RESULT_LABELS[x.result] || x.result}
                                             </span>
                                             <span style={{ fontSize: 12.5, color: TEXT.body }}>
@@ -655,7 +688,7 @@ export default function DesignDocumentDetailPage() {
                     <div style={{ overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
                         <thead>
-                          <tr>{['Transmittal', 'Rev', 'Status', 'Sent', 'Customer response', 'Responded'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                          <tr>{['Transmittal', 'Rev', 'Status', 'Sent', 'Customer response', 'Responded'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={doc.submissions.length} />}</th>)}</tr>
                         </thead>
                         <tbody>
                           {doc.submissions.map((sb) => {
@@ -666,15 +699,11 @@ export default function DesignDocumentDetailPage() {
                                 <td style={{ ...tdStyle, fontWeight: 700, color: '#FF6A2A' }}>{sb.submission_number}</td>
                                 <td style={tdStyle}>{sb.revision_label || '—'}</td>
                                 <td style={tdStyle}>
-                                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${shex}1a`, color: shex, whiteSpace: 'nowrap' }}>
-                                    {SUBMISSION_STATUS_LABELS[sb.status] || sb.status}
-                                  </span>
+                                  <Pill label={SUBMISSION_STATUS_LABELS[sb.status] || sb.status} hex={shex} />
                                 </td>
                                 <td style={tdStyle}>{formatDate(sb.sent_date)}</td>
                                 <td style={{ ...tdStyle, maxWidth: 260 }}>
-                                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${rhex}1a`, color: rhex, whiteSpace: 'nowrap' }}>
-                                    {CUSTOMER_RESPONSE_LABELS[sb.response] || sb.response}
-                                  </span>
+                                  <Pill label={CUSTOMER_RESPONSE_LABELS[sb.response] || sb.response} hex={rhex} />
                                   {sb.response_comment && <div style={{ fontSize: 12, color: TEXT.secondary, marginTop: 4 }}>{sb.response_comment}</div>}
                                 </td>
                                 <td style={tdStyle}>{formatDate(sb.response_date)}</td>
@@ -696,7 +725,7 @@ export default function DesignDocumentDetailPage() {
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
                       <thead>
-                        <tr>{['BOM', 'Rev', 'Product', 'Qty', 'Project / Machine'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                        <tr>{['BOM', 'Rev', 'Product', 'Qty', 'Project / Machine'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={doc.where_used.length} />}</th>)}</tr>
                       </thead>
                       <tbody>
                         {doc.where_used.map((w) => (
@@ -718,48 +747,8 @@ export default function DesignDocumentDetailPage() {
               </div>)}
             </div>
 
-            {/* Right: details + timeline */}
+            {/* Right: timeline */}
             <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-              <div style={sectionStyle}>
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
-                  <p data-tour="design-doc-details" style={{ ...sectionTitle, margin: 0, flex: 1 }}>Details</p>
-                  {can('edit') && !editingDetails && (
-                    <button data-tour="design-doc-details-edit-btn" type="button" style={{ ...smallSecondaryBtnStyle }} onClick={startEditDetails}>Edit</button>
-                  )}
-                </div>
-                {(
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {doc.description && <InfoRow label="Description" value={doc.description} />}
-                    <InfoRow label="Owner" value={doc.owner_name || '—'} />
-                    <InfoRow label="Project" value={doc.pm_project_label || '—'} />
-                    <InfoRow label="Machine" value={doc.erp_project_label || '—'} />
-                    <InfoRow label="Part (Store item)" value={doc.store_item_label || '—'} />
-                    <InfoRow label="Department" value={doc.department_name || '—'} />
-                    <InfoRow label="Customer" value={doc.customer_name ? `${doc.customer_name}${doc.customer_approval_required ? ' · approval required' : ''}` : '—'} />
-                    {!doc.customer_name && doc.customer_approval_required && <InfoRow label="Customer approval" value="Required" />}
-                    <InfoRow label="Standard" value={doc.standard_label || '—'} />
-                    {doc.design_request_id ? (
-                      <div>
-                        <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 2px' }}>Design request</p>
-                        <p onClick={() => router.push(recordPath('/dashboard/design/requests', doc, 'design_request_id'))} style={{ fontSize: 13, color: '#FF6A2A', fontWeight: 600, margin: 0, cursor: 'pointer' }}>
-                          {doc.request_number || `Request #${doc.design_request_id}`}
-                        </p>
-                      </div>
-                    ) : <InfoRow label="Design request" value="—" />}
-                    {doc.legacy_number && <InfoRow label="Legacy number" value={doc.legacy_number} />}
-                    <InfoRow label="Created" value={`${doc.created_by_name || '—'} · ${formatDate(doc.created_at)}`} />
-                    {doc.open_ecns.length > 0 && (
-                      <div>
-                        <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 2px' }}>Approved change notices</p>
-                        {doc.open_ecns.map((e) => (
-                          <p key={e.id} onClick={() => router.push(recordPath('/dashboard/design/change-notices', e))} style={{ fontSize: 13, color: '#FF6A2A', fontWeight: 600, margin: 0, cursor: 'pointer' }}>{e.ecn_number} — {e.title}</p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
               {seeTimeline && (<div style={sectionStyle}>
                 <p style={sectionTitle}>Timeline</p>
                 {can('comment') && (
@@ -772,7 +761,7 @@ export default function DesignDocumentDetailPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 520, overflowY: 'auto' }}>
                   {doc.events.map((e) => (
                     <div key={e.id} style={{ display: 'flex', gap: 10, padding: '8px 0', borderTop: `1px solid ${BORDER.light}` }}>
-                      <span style={{ width: 8, height: 8, borderRadius: 9999, marginTop: 6, flex: 'none', background: EVENT_HEX[e.action] || '#a8a29e' }} />
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 6, flex: 'none', background: EVENT_HEX[e.action] || '#a8a29e' }} />
                       <div style={{ minWidth: 0 }}>
                         <p style={{ fontSize: 12.5, color: TEXT.body, margin: 0 }}>
                           <strong>{e.actor_name || 'System'}</strong> {EVENT_LABELS[e.action] || e.action.replace(/_/g, ' ')}
@@ -815,7 +804,7 @@ export default function DesignDocumentDetailPage() {
                           const hex = RESULT_HEX[res]
                           return (
                             <button key={res} type="button" onClick={() => setCheckAnswers({ ...checkAnswers, [it.id]: { ...ans, result: res } })}
-                              style={{ padding: '5px 10px', borderRadius: 9999, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', border: `1px solid ${active ? hex : SHEET.LINE}`, background: active ? `${hex}1a` : '#fff', color: active ? hex : SHEET.BODY }}>
+                              style={{ ...chipBtnStyle(active), ...(active ? { background: hex } : {}) }}>
                               {RESULT_LABELS[res]}
                             </button>
                           )
@@ -935,7 +924,7 @@ export default function DesignDocumentDetailPage() {
               {uploadStaged.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                   {uploadStaged.map((f, i) => (
-                    <span key={`${f.name}-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, padding: '4px 10px', borderRadius: 999, background: '#f1f5f9', color: SHEET.BODY, maxWidth: '100%' }}>
+                    <span key={`${f.name}-${i}`} style={{ ...pillStyle('#475569'), gap: 4, fontSize: 12, fontWeight: 500, padding: '4px 10px', maxWidth: '100%' }}>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name} · {formatBytes(f.size)}</span>
                       <button type="button" aria-label={`Remove ${f.name}`} onClick={() => setUploadStaged((prev) => prev.filter((_, j) => j !== i))} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, color: SHEET.MUTED, display: 'inline-flex' }}><SheetIcon name="x" size={12} /></button>
                     </span>

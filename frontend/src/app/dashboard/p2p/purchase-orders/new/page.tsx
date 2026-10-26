@@ -20,7 +20,8 @@ import { accountAssignmentApi } from '@/lib/mmLogisticsApi'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import POAmendmentPanel from '@/components/p2p/POAmendmentPanel'
 import { TEXT } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, RowCount } from '@/components/shared/ui'
+import { formatDate } from '@/lib/format'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import P2PNav from '@/components/p2p/P2PNav'
 import DateField from '@/components/erp/DateField'
@@ -35,6 +36,10 @@ import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
 const inputStyle = sheetInput
 const label = sheetLabel
 const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: SHEET.MUTED, background: SHEET.SOFT, whiteSpace: 'nowrap' }
+const rupees = (v: number | null | undefined) => (v == null ? '—' : `₹${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+/** PO status keys are shown as words, never raw. */
+const PO_STATUS_LABEL: Record<string, string> = { draft: 'Draft', pending_approval: 'Waiting for approval', approved: 'Approved', rejected: 'Rejected', cancelled: 'Cancelled', closed: 'Closed' }
+const poStatusLabel = (s: string | null | undefined) => (s ? PO_STATUS_LABEL[s] || s.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()) : '—')
 const block: React.CSSProperties = { padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }
 
 // Where a line's price came from (ME21N): awarded quote, vendor + item info record, or typed.
@@ -158,7 +163,7 @@ export default function CreatePurchaseOrderPage() {
     }, 'Could not save the PO and send it for approval — check the prices and try again.')
   }
 
-  const poValue = po ? (editable ? (unpriced.length ? '—' : total.toFixed(2)) : (po.total_value?.toFixed(2) ?? '—')) : '—'
+  const poValue = po ? (editable ? (unpriced.length ? '—' : rupees(total)) : rupees(po.total_value)) : '—'
 
   return (
     <FormPage nav={<P2PNav />} icon="cart" title={po ? `Purchase Order ${po.po_number}` : 'Create Purchase Order'}
@@ -195,7 +200,7 @@ export default function CreatePurchaseOrderPage() {
               {allPos.map((p) => (
                 <button key={p.id} type="button" onClick={() => { setPoRef((p as unknown as { id_ref: string }).id_ref); setLoading(true) }}
                   style={{ ...secondaryBtnStyle, ...(p.id === po?.id ? { borderColor: SHEET.BLUE, color: SHEET.BLUE } : {}) }}>
-                  {p.po_number} · {p.vendor_name} · {p.status}
+                  {p.po_number} · {p.vendor_name || '—'} · {poStatusLabel(p.status)}
                 </button>
               ))}
             </div>
@@ -271,7 +276,7 @@ export default function CreatePurchaseOrderPage() {
               <SheetSection icon="list" title="2. Line prices">
                 <div style={{ overflow: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 10 }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
-                    <thead><tr>{['Item', 'Qty', 'Unit price *', 'Tax %', 'Delivery date', 'Line total'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                    <thead><tr>{['Item', 'Qty', 'Unit Price *', 'Tax %', 'Delivery Date', 'Line Total'].map((h, i) => <th key={h} style={h === 'Qty' || h === 'Line Total' ? { ...th, textAlign: 'right' } : th}>{h}{i === 0 && <RowCount count={po.items.length} />}</th>)}</tr></thead>
                     <tbody>
                       {po.items.map((i) => {
                         const p = prices[i.id] || { unitPrice: '', taxRate: '' }
@@ -284,7 +289,7 @@ export default function CreatePurchaseOrderPage() {
                                 <div style={{ marginTop: 4 }}><OrderProjectChip opNumber={i.order_project_number} elementNo={i.order_project_element_no} label={i.order_project_element_label} /></div>
                               )}
                             </td>
-                            <td style={{ padding: '8px 10px', fontSize: 13, whiteSpace: 'nowrap' }}>{i.quantity} {i.unit || ''}</td>
+                            <td style={{ padding: '8px 10px', fontSize: 13, whiteSpace: 'nowrap', textAlign: 'right' }}>{Number(i.quantity).toLocaleString('en-IN', { maximumFractionDigits: 3 })} {i.unit || ''}</td>
                             <td style={{ padding: '6px 10px', width: 170 }}>
                               {editable ? (
                                 <>
@@ -293,16 +298,16 @@ export default function CreatePurchaseOrderPage() {
                                   {(i as PoLine).price_source && String(i.unit_price ?? '') === p.unitPrice && (
                                     <span style={{ fontSize: 10.5, color: '#2563eb' }}>{PRICE_SOURCE_LABELS[(i as PoLine).price_source || ''] || ''}</span>)}
                                 </>
-                              ) : (i.unit_price ?? '—')}
+                              ) : rupees(i.unit_price)}
                             </td>
                             <td style={{ padding: '6px 10px', width: 100 }}>
                               {editable ? <input type="number" min="0" max="100" step="0.01" value={p.taxRate} style={{ ...inputStyle, padding: '7px 10px' }}
                                 onChange={(e) => setPrices((s) => ({ ...s, [i.id]: { ...p, taxRate: e.target.value } }))} /> : (i.tax_rate ?? '—')}
                             </td>
                             <td style={{ padding: '6px 10px', width: 170 }}>
-                              {editable ? <DateField value={lineDates[i.id] || ''} onChange={(v) => setLineDates((s) => ({ ...s, [i.id]: v }))} /> : ((i as PoLine).delivery_date || '—')}
+                              {editable ? <DateField value={lineDates[i.id] || ''} onChange={(v) => setLineDates((s) => ({ ...s, [i.id]: v }))} /> : formatDate((i as PoLine).delivery_date)}
                             </td>
-                            <td style={{ padding: '8px 10px', fontSize: 13, whiteSpace: 'nowrap' }}>{unit > 0 ? (i.quantity * unit * (1 + (Number(p.taxRate) || 0) / 100)).toFixed(2) : '—'}</td>
+                            <td style={{ padding: '8px 10px', fontSize: 13, whiteSpace: 'nowrap', textAlign: 'right' }}>{unit > 0 ? rupees(i.quantity * unit * (1 + (Number(p.taxRate) || 0) / 100)) : '—'}</td>
                           </tr>
                         )
                       })}

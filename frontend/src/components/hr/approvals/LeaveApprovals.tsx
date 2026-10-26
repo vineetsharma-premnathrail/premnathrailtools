@@ -5,7 +5,7 @@ import { hrApi } from '@/lib/api'
 import { HrLeaveRequest } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import PromptDialog from '@/components/erp/PromptDialog'
-import { smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { smallSecondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 
 const SESSION_SHORT: Record<string, string> = { full: '', first_half: ' (1st half)', second_half: ' (2nd half)' }
@@ -21,7 +21,7 @@ function num(v: string | number) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1)
 }
 function dmy(iso: string | null) {
-  return iso ? `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}` : '—'
+  return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—'
 }
 
 // Leave requests waiting for the signed-in user's decision (direct reports,
@@ -93,8 +93,8 @@ export default function LeaveApprovals() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
             <thead>
               <tr>
-                {['Employee', 'Leave', 'Dates', 'Days', 'Reason', 'Applied', ''].map((h) => (
-                  <th key={h} style={{ textAlign: h === 'Days' ? 'right' : 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }}>{h}</th>
+                {['Employee', 'Leave', 'Dates', 'Days', 'Reason', 'Applied', ''].map((h, hi) => (
+                  <th key={h} style={{ textAlign: h === 'Days' ? 'right' : 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }}>{h}{hi === 0 && <RowCount count={items.length} />}</th>
                 ))}
               </tr>
             </thead>

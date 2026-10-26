@@ -1,6 +1,7 @@
 'use client'
 
 import Select from '@/components/shared/Select'
+import { RowCount } from '@/components/shared/ui'
 import { useMemo, useState } from 'react'
 import { designApi } from '@/lib/api'
 import { DesignBomLine, DesignBomLineInput, DesignLookupOption } from '@/types'
@@ -234,7 +235,7 @@ export default function BomLinesEditor({
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
           <thead>
             <tr>
-              <th data-tour="design-bomlines-pos" style={{ ...thStyle, width: 70 }}>Pos.</th>
+              <th data-tour="design-bomlines-pos" style={{ ...thStyle, width: 70 }}>Pos. <RowCount count={rows.length} /></th>
               <th data-tour="design-bomlines-item" style={{ ...thStyle, minWidth: 300 }}>Item</th>
               <th data-tour="design-bomlines-qty" style={{ ...thStyle, width: 90 }}>Qty</th>
               <th data-tour="design-bomlines-uom" style={{ ...thStyle, width: 80 }}>UOM</th>

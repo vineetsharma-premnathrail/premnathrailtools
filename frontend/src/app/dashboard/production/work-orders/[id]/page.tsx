@@ -10,7 +10,7 @@ import {
   ProductionWorkOrderCosting, ProductionWorkOrderOperation,
 } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER, DANGER } from '@/lib/theme'
-import { secondaryBtnStyle, InfoRow, primaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle, smallSecondaryBtnStyle, RowCount, pillStyle, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -53,7 +53,7 @@ const tdStyle: React.CSSProperties = { padding: '9px 12px', fontSize: 13, color:
 const primaryBtn: React.CSSProperties = primaryBtnStyle
 const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 const dangerBtn: React.CSSProperties = { ...secondaryBtnStyle, color: DANGER.primary, borderColor: DANGER.border }
-const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
+const pill = pillStyle
 const inr = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 const fmtQty = (n: number) => +n.toFixed(4)
 const today = () => new Date().toISOString().slice(0, 10)
@@ -80,6 +80,9 @@ async function fetchBundle(woId: number, movementsOk: boolean, logsOk: boolean, 
 
 type Tab = 'materials' | 'operations' | 'output' | 'time' | 'costing'
 type Confirm = 'release' | 'complete' | 'close' | 'delete' | null
+
+// Quantity cells: right-aligned so the numbers line up down the column.
+const numTd: React.CSSProperties = { ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }
 
 export default function WorkOrderDetailPage() {
   const { isAuthorized, isLoading } = useRequireApp('production')
@@ -367,8 +370,6 @@ export default function WorkOrderDetailPage() {
           </p>
           <div data-tour="production-wo-detail-header" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 20px', flexWrap: 'wrap' }}>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{wo?.wo_number || 'Work Order'}</h1>
-            {wo && <span style={pill(STATUS_HEX[wo.status])}>{STATUS_LABELS[wo.status] || wo.status}</span>}
-            {wo?.is_overdue && <span style={pill('#DC2626')}>Overdue</span>}
           </div>
         </div>
         <button data-tour="production-wo-detail-back-btn" onClick={() => router.push('/dashboard/production/work-orders')} type="button" style={secondaryBtnStyle}>← Back</button>
@@ -402,39 +403,56 @@ export default function WorkOrderDetailPage() {
           </div>
 
           <ChangeFlagBanner wo={wo} canEdit={can('production', 'work_orders', 'edit')} onChanged={load} />
-          <div data-tour="production-wo-info" style={sectionStyle}>
-            <WorkOrderLinks wo={wo} />
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14 }}>
-              <InfoRow label="Product" value={`${wo.product_code} — ${wo.product_name}`} />
-              <InfoRow label="BOM" value={`${wo.bom_number} v${wo.bom_version}`} />
-              <InfoRow label="Machine / Project" value={wo.project_label || 'Stock build'} />
-              {wo.rrv_build_id && (
-                <div onClick={() => router.push(recordPath('/dashboard/production/rrv-builds', wo, 'rrv_build_id'))} style={{ cursor: 'pointer' }}>
-                  <InfoRow label="RRV build" value={`${wo.rrv_build_number || `#${wo.rrv_build_id}`} · ${wo.build_role === 'main' ? 'main assembly' : 'sub-assembly'} →`} />
+          {/* One record card: what is being made, its key facts, then details grouped. */}
+          <DetailCard tour="production-wo-info">
+            <DetailSummary
+              title={`${wo.product_code} — ${wo.product_name}`}
+              text={`Make ${wo.quantity_planned} ${wo.product_uom || 'unit(s)'} to BOM ${wo.bom_number} v${wo.bom_version} — ${wo.project_label ? `for ${wo.project_label}` : 'a stock build (no machine / project)'}.`}
+              meta={<>
+                <Pill label={STATUS_LABELS[wo.status] || wo.status} hex={STATUS_HEX[wo.status] || '#78716c'} />
+                {wo.is_overdue && <Pill label="Overdue" hex="#DC2626" />}
+                <span>· <strong style={{ color: TEXT.heading }}>{PRIORITY_LABELS[wo.priority] || wo.priority}</strong> priority</span>
+                <span>· Planned {wo.planned_start_date ? formatDate(wo.planned_start_date) : '—'} → {wo.planned_end_date ? formatDate(wo.planned_end_date) : '—'}</span>
+                <span>· Supervisor: <strong style={{ color: TEXT.heading }}>{wo.supervisor_name || '—'}</strong></span>
+              </>}
+            />
+            <DetailGroup title="Progress">
+              <DetailRow label="Output received">
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
+                  <span>{fmtQty(wo.quantity_completed)} of {wo.quantity_planned} {wo.product_uom || ''}</span>
+                  <span style={{ color: TEXT.secondary }}>{wo.progress_percent}%</span>
                 </div>
-              )}
-              <InfoRow label="Priority" value={PRIORITY_LABELS[wo.priority] || wo.priority} />
-              <InfoRow label="Planned" value={`${wo.planned_start_date ? formatDate(wo.planned_start_date) : '—'} → ${wo.planned_end_date ? formatDate(wo.planned_end_date) : '—'}`} />
-              <InfoRow label="Actual" value={`${wo.actual_start_at ? formatDateTime(wo.actual_start_at) : '—'} → ${wo.actual_end_at ? formatDateTime(wo.actual_end_at) : '—'}`} />
-              <InfoRow label="Issue From" value={wo.source_location_name || 'Not set'} />
-              <InfoRow label="Receive Into" value={wo.target_location_name || 'Not set'} />
-              <InfoRow label="Supervisor" value={wo.supervisor_name || '—'} />
-              <InfoRow label="Plant" value={wo.branch_name || '—'} />
-              <InfoRow label="Created By" value={wo.created_by_name || '—'} />
-              <InfoRow label="Scrapped" value={`${fmtQty(wo.quantity_scrapped)} ${wo.product_uom || ''}`} />
-            </div>
-            <div style={{ marginTop: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: TEXT.secondary, marginBottom: 6 }}>
-                <span>Output: {fmtQty(wo.quantity_completed)} of {wo.quantity_planned} {wo.product_uom || ''}</span>
-                <span>{wo.progress_percent}%</span>
-              </div>
-              <div style={{ height: 8, borderRadius: 9999, background: 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
-                <div style={{ width: `${wo.progress_percent}%`, height: '100%', background: '#16A34A' }} />
-              </div>
-            </div>
-            {wo.remarks && <div style={{ marginTop: 14 }}><InfoRow label="Remarks" value={wo.remarks} /></div>}
-            {wo.cancel_reason && <div style={{ marginTop: 14 }}><InfoRow label="Cancel Reason" value={wo.cancel_reason} /></div>}
-          </div>
+                <div style={{ height: 8, borderRadius: 9999, background: 'rgba(0,0,0,0.08)', overflow: 'hidden', maxWidth: 420 }}>
+                  <div style={{ width: `${wo.progress_percent}%`, height: '100%', background: '#16A34A' }} />
+                </div>
+              </DetailRow>
+              <DetailRow label="Scrapped">{`${fmtQty(wo.quantity_scrapped)} ${wo.product_uom || ''}`}</DetailRow>
+              <DetailRow label="Actual start → end">{`${wo.actual_start_at ? formatDateTime(wo.actual_start_at) : 'Not started'} → ${wo.actual_end_at ? formatDateTime(wo.actual_end_at) : '—'}`}</DetailRow>
+            </DetailGroup>
+            {(wo.rrv_build_id || wo.sales_order_label || wo.parent_work_order_id || wo.order_project_number) && (
+              <DetailGroup title="Linked records">
+                {wo.rrv_build_id && (
+                  <DetailRow label="RRV build">
+                    <button type="button" onClick={() => router.push(recordPath('/dashboard/production/rrv-builds', wo, 'rrv_build_id'))}
+                      style={{ padding: 0, border: 'none', background: 'none', color: '#2563EB', fontWeight: 600, fontSize: 13.5, cursor: 'pointer', textAlign: 'left' }}>
+                      {wo.rrv_build_number || `#${wo.rrv_build_id}`} · {wo.build_role === 'main' ? 'main assembly' : 'sub-assembly'} →
+                    </button>
+                  </DetailRow>
+                )}
+                <WorkOrderLinks wo={wo} />
+              </DetailGroup>
+            )}
+            <DetailGroup title="Store locations">
+              <DetailRow label="Issue materials from">{wo.source_location_name || <span style={{ color: '#b45309' }}>Not set — needed before release</span>}</DetailRow>
+              <DetailRow label="Receive output into">{wo.target_location_name || <span style={{ color: '#b45309' }}>Not set — needed before release</span>}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="Other details" last>
+              <DetailRow label="Plant">{wo.branch_name}</DetailRow>
+              <DetailRow label="Remarks">{wo.remarks}</DetailRow>
+              {wo.cancel_reason && <DetailRow label="Cancel reason">{wo.cancel_reason}</DetailRow>}
+            </DetailGroup>
+            <p style={{ fontSize: 12, color: TEXT.muted, margin: '10px 0 0' }}>Created by {wo.created_by_name || '—'}</p>
+          </DetailCard>
 
           {wof('sub_orders', 'view') && <DependentOrdersSection wo={wo} canCreate={wof('sub_orders', 'create')} onChanged={load} />}
 
@@ -482,7 +500,7 @@ export default function WorkOrderDetailPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
                   <thead>
                     <tr>
-                      {['Item', 'Required', 'Issued', 'Returned', 'Outstanding', 'Reserved', `Free${wo.source_location_name ? ' at source' : ''}`].map((h) => <th key={h} style={thStyle}>{h}</th>)}
+                      {['Item', 'Required', 'Issued', 'Returned', 'Outstanding', 'Reserved', `Free${wo.source_location_name ? ' at source' : ''}`].map((h, i) => <th key={h} style={i === 0 ? thStyle : { ...thStyle, textAlign: 'right' }}>{h}{i === 0 && <RowCount count={wo.materials.length} />}</th>)}
                     </tr>
                   </thead>
                   <tbody>
@@ -494,12 +512,12 @@ export default function WorkOrderDetailPage() {
                             {m.item_code} — {m.item_name}
                             {m.required_qty === 0 && <span style={{ fontSize: 11, color: TEXT.muted, fontWeight: 400 }}> · extra</span>}
                           </td>
-                          <td style={tdStyle}>{fmtQty(m.required_qty)} {m.uom || ''}</td>
-                          <td style={tdStyle}>{fmtQty(m.issued_qty)}</td>
-                          <td style={tdStyle}>{fmtQty(m.returned_qty)}</td>
-                          <td style={{ ...tdStyle, fontWeight: 600 }}>{fmtQty(m.outstanding_qty)}</td>
-                          <td style={tdStyle}>{wo.status === 'draft' ? '—' : fmtQty(m.reserved_qty)}</td>
-                          <td style={{ ...tdStyle, color: short && m.outstanding_qty > 0 ? '#DC2626' : TEXT.body, fontWeight: short && m.outstanding_qty > 0 ? 600 : 400 }}>
+                          <td style={numTd}>{fmtQty(m.required_qty)} {m.uom || ''}</td>
+                          <td style={numTd}>{fmtQty(m.issued_qty)}</td>
+                          <td style={numTd}>{fmtQty(m.returned_qty)}</td>
+                          <td style={{ ...numTd, fontWeight: 600 }}>{fmtQty(m.outstanding_qty)}</td>
+                          <td style={numTd}>{wo.status === 'draft' ? '—' : fmtQty(m.reserved_qty)}</td>
+                          <td style={{ ...numTd, color: short && m.outstanding_qty > 0 ? '#DC2626' : TEXT.body, fontWeight: short && m.outstanding_qty > 0 ? 600 : 400 }}>
                             {wo.source_location_id ? fmtQty(m.available_qty) : '—'}{short && m.outstanding_qty > 0 && wo.source_location_id ? ' · short' : ''}
                           </td>
                         </tr>
@@ -517,7 +535,7 @@ export default function WorkOrderDetailPage() {
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
                   <thead>
-                    <tr>{['Seq', 'Operation', 'Workstation', 'Hours (actual / plan)', 'Good', 'Scrap', 'Quality', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                    <tr>{['Seq', 'Operation', 'Workstation', 'Hours (actual / plan)', 'Good', 'Scrap', 'Quality', 'Status', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={wo.operations.length} />}</th>)}</tr>
                   </thead>
                   <tbody>
                     {wo.operations.map((op) => {
@@ -607,7 +625,7 @@ export default function WorkOrderDetailPage() {
                 <p style={sectionTitle}>Store Ledger Movements ({movements.length})</p>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
-                    <thead><tr>{['Date', 'Movement', 'Item', 'Qty', ...(seeCosting ? ['Order Value'] : []), 'Location', 'Batch', 'By', 'Remarks'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                    <thead><tr>{['Date', 'Movement', 'Item', 'Qty', ...(seeCosting ? ['Order Value'] : []), 'Location', 'Batch', 'By', 'Remarks'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={movements.length} />}</th>)}</tr></thead>
                     <tbody>
                       {movements.length === 0 ? (
                         <tr><td colSpan={9} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No stock has moved for this work order yet.</td></tr>
@@ -636,7 +654,7 @@ export default function WorkOrderDetailPage() {
               <p style={sectionTitle}>Time Logs</p>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
-                  <thead><tr>{['Date', 'Operation', 'Workstation', 'Operator', 'Hours', 'Good', 'Scrap', 'Remarks', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Date', 'Operation', 'Workstation', 'Operator', 'Hours', 'Good', 'Scrap', 'Remarks', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={logs.length} />}</th>)}</tr></thead>
                   <tbody>
                     {logs.length === 0 ? (
                       <tr><td colSpan={9} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No time booked yet. Use &quot;Log Time&quot; on the Operations tab or the Shop Floor board.</td></tr>
@@ -690,7 +708,7 @@ export default function WorkOrderDetailPage() {
                 <p style={sectionTitle}>Material Cost by Item</p>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-                    <thead><tr>{['Item', 'Unit Cost', 'Required', 'Consumed', 'Estimated', 'Actual'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                    <thead><tr>{['Item', 'Unit Cost', 'Required', 'Consumed', 'Estimated', 'Actual'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={costing.materials.length} />}</th>)}</tr></thead>
                     <tbody>
                       {costing.materials.map((c) => (
                         <tr key={c.item_id}>
@@ -822,8 +840,8 @@ export default function WorkOrderDetailPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
                   <thead>
                     <tr>
-                      {['Item', 'Required', 'Outstanding', 'Reserved', `Free${wo.source_location_name ? ' at source' : ''}`, materialMode === 'issue' ? 'Issue Qty' : 'Return Qty'].map((h) => (
-                        <th key={h} style={{ textAlign: 'left', padding: '9px 12px', fontSize: 11.5, fontWeight: 600, color: SHEET.MUTED, background: SHEET.SOFT, borderBottom: `1px solid ${SHEET.LINE}`, whiteSpace: 'nowrap' }}>{h}</th>
+                      {['Item', 'Required', 'Outstanding', 'Reserved', `Free${wo.source_location_name ? ' at source' : ''}`, materialMode === 'issue' ? 'Issue Qty' : 'Return Qty'].map((h, i) => (
+                        <th key={h} style={{ textAlign: 'left', padding: '9px 12px', fontSize: 11.5, fontWeight: 600, color: SHEET.MUTED, background: SHEET.SOFT, borderBottom: `1px solid ${SHEET.LINE}`, whiteSpace: 'nowrap' }}>{h}{i === 0 && <RowCount count={wo.materials.length} />}</th>
                       ))}
                     </tr>
                   </thead>

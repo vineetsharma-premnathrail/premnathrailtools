@@ -76,3 +76,54 @@ def test_notify_event_reaches_subscribed_roles_with_access(db):
     for u in (approver, blocked, viewer, actor):
         u.invalidate_permissions()
     assert notify_event(db, None, "crm", "quotation_submitted", title="t", message="m", actor=actor) == set()
+
+
+def test_personal_override_replaces_role_channels_for_that_user_only(db):
+    """Role editor › Notifications › for one user: a personal entry replaces
+    the roles' channels for that user (empty = off); it can also subscribe a
+    user whose roles don't; other holders keep following the role."""
+    from app.core.notification_events import notify_event
+    from app.modules.main.models.role import Role
+    from app.modules.main.models.user import User
+
+    perms = ["crm:inquiries_tenders:view", "crm:inquiries_tenders:approve"]
+    subscribed = Role(name="Approvers (bell)", permissions=perms, notification_events={"crm.quotation_submitted": ["bell"]})
+    silent = Role(name="Approvers (no events)", permissions=perms)
+    db.add_all([subscribed, silent])
+    db.flush()
+
+    def user(email, roles, overrides=None):
+        u = User(email=email, name=email.split("@")[0], role="user", is_active=True, notification_overrides=overrides or {})
+        u.roles = roles
+        db.add(u)
+        return u
+
+    follows = user("follows@x.com", [subscribed])
+    muted = user("muted@x.com", [subscribed], {"crm.quotation_submitted": []})
+    added = user("added@x.com", [silent], {"crm.quotation_submitted": ["bell"]})
+    db.commit()
+
+    reached = notify_event(db, None, "crm", "quotation_submitted", title="t", message="m")
+    assert reached == {follows.id, added.id}
+    assert muted.id not in reached
+
+
+def test_notification_override_endpoint(client, db):
+    """PUT /users/{id}/notification-overrides: validated, audited, read back."""
+    from app.auth.jwt_handler import create_access_token
+    from app.modules.main.models.user import User
+
+    admin = User(email="adm@x.com", name="adm", role="admin", is_active=True)
+    target = User(email="tgt@x.com", name="tgt", role="user", is_active=True)
+    db.add_all([admin, target])
+    db.commit()
+    h = {"Authorization": f"Bearer {create_access_token({'sub': str(admin.id), 'email': admin.email, 'role': 'admin'})}"}
+    url = f"/api/v1/users/{target.id}/notification-overrides"
+
+    bad = client.put(url, json={"overrides": {"crm.no_such_event": ["bell"]}}, headers=h)
+    assert bad.status_code == 422 and "not a notification event" in bad.json()["detail"]
+    bad = client.put(url, json={"overrides": {"crm.quotation_submitted": ["pigeon"]}}, headers=h)
+    assert bad.status_code == 422
+    ok = client.put(url, json={"overrides": {"crm.quotation_submitted": [], "crm.quotation_approved": ["email", "bell"]}}, headers=h)
+    assert ok.status_code == 200, ok.text
+    assert client.get(url, headers=h).json()["overrides"] == {"crm.quotation_submitted": [], "crm.quotation_approved": ["bell", "email"]}

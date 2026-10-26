@@ -25,6 +25,9 @@ class RndProjectTask(Base, TimestampMixin):
     # Sub-task: the parent's assignee split their work and handed this part on.
     # The sub-task's creator reviews it, like a lead reviews a top-level task.
     parent_task_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_project_tasks.id", ondelete="CASCADE"), index=True, nullable=True)
+    # The plan milestone this task belongs to (sub-tasks copy their parent's).
+    # NULL on tasks created before milestones existed.
+    milestone_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_project_milestones.id", ondelete="SET NULL"), index=True, nullable=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
     assigned_to_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=False)

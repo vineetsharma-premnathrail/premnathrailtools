@@ -154,14 +154,14 @@ export default function NewStoreItemPage() {
                 <input data-tour="item-part-code" style={sheetInput} value={partCode} onChange={(e) => setPartCode(e.target.value)} placeholder="Part code" />
               </div>
             </div>
-            <label style={{ ...sheetLabel, marginTop: 14 }}>Technical Specification</label>
+            <label style={{ ...sheetLabel, marginTop: 14 }}>Technical Specification <Optional /></label>
             <textarea data-tour="item-description" style={{ ...sheetInput, minHeight: 70, resize: 'vertical' }} value={description} onChange={(e) => setDescription(e.target.value)} />
           </SheetSection>
 
           <SheetSection icon="calendar" title="Planning">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
               <div style={{ flex: '0 1 220px', minWidth: 180 }}>
-                <label style={sheetLabel}>Purchase lead time (days)</label>
+                <label style={sheetLabel}>Purchase lead time (days) <Optional /></label>
                 <input data-tour="item-lead-time" type="number" min={0} max={730} step={1} style={sheetInput} value={leadTime}
                   onChange={(e) => setLeadTime(e.target.value)} placeholder="e.g. 21" />
               </div>

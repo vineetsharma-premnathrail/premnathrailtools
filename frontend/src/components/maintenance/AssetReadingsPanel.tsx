@@ -6,7 +6,7 @@ import { useCan } from '@/lib/permissions'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDateTime } from '@/lib/format'
 import { TEXT, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { smallSecondaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import PortalFormDialog from '@/components/maintenance/PortalFormDialog'
 import { SHEET, SheetSection, Optional, Req, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import Select from '@/components/shared/Select'
@@ -41,7 +41,7 @@ export default function AssetReadingsPanel({ assetId, onChanged }: { assetId: nu
   const [busy, setBusy] = useState(false)
 
   const load = () => {
-    Promise.all([maintenanceCountersApi.listPoints(assetId), maintenanceCountersApi.listReadings(assetId, { limit: 100 })])
+    Promise.all([maintenanceCountersApi.listPoints(assetId), maintenanceCountersApi.listReadings(assetId, { limit: 2000 })])
       .then(([p, d]) => { setPoints(p); setDocs(d); setError('') })
       .catch((err) => setError(extractErrorMessages(err, 'Could not load the readings — reload the page.')))
   }
@@ -110,9 +110,7 @@ export default function AssetReadingsPanel({ assetId, onChanged }: { assetId: nu
               <div style={{ fontSize: 16, fontWeight: 700, color: TEXT.body }}>{fmt(p.current_reading)} {p.unit}</div>
               <div style={{ fontSize: 11.5, color: TEXT.muted }}>Limits {fmt(p.lower_limit)} – {fmt(p.upper_limit)}</div>
               {p.limit_state && (
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${STATE_HEX[p.limit_state]}1a`, color: STATE_HEX[p.limit_state] }}>
-                  {STATE_LABELS[p.limit_state]}
-                </span>
+                <Pill label={STATE_LABELS[p.limit_state]} hex={STATE_HEX[p.limit_state]} />
               )}
             </div>
           ))}
@@ -121,7 +119,7 @@ export default function AssetReadingsPanel({ assetId, onChanged }: { assetId: nu
 
       <div style={{ overflow: 'auto', maxHeight: 420 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
-          <thead><tr>{['Read at', 'Point', 'Reading', 'Change', 'Source', 'By', 'Note'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Read at', 'Point', 'Reading', 'Change', 'Source', 'By', 'Note'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={docs.length} />}</th>)}</tr></thead>
           <tbody>
             {docs.length === 0 && <tr><td colSpan={7} style={{ ...tdStyle, color: TEXT.muted }}>No readings yet.</td></tr>}
             {docs.map((d) => (

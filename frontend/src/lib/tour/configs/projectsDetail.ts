@@ -8,7 +8,7 @@ const config: TourConfig = {
     {
       target: 'pm-proj-badges',
       title: 'Status',
-      purpose: 'The project status badge (no badge while the project is simply Open). Next to it: customer, project manager and target handover date.',
+      purpose: 'The project code and its status badge (no badge while the project is simply Open). Customer, project manager and closing date are in the Overview summary.',
       options: PROJECT_STATUS_OPTIONS,
     },
     {

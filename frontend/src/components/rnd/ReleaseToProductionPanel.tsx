@@ -3,9 +3,11 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { rndApi } from '@/lib/api'
+import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
 import { RndPrototype, RndStoreItemLookup } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
+import { primaryBtnStyle } from '@/components/shared/ui'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
@@ -108,7 +110,7 @@ export default function ReleaseToProductionPanel({
           <Link href={recordPath('/dashboard/production/bom', proto, 'production_bom_id')} style={{ color: '#FF6A2A', fontWeight: 700, textDecoration: 'none' }}>
             {proto.production_bom_number}
           </Link>{' '}
-          ({proto.production_bom_status}){proto.released_at ? ` on ${proto.released_at.slice(0, 10)}` : ''}{proto.released_by_name ? ` by ${proto.released_by_name}` : ''}.
+          ({proto.production_bom_status ? proto.production_bom_status.charAt(0).toUpperCase() + proto.production_bom_status.slice(1).replace(/_/g, ' ') : '—'}){proto.released_at ? ` on ${formatDate(proto.released_at)}` : ''}{proto.released_by_name ? ` by ${proto.released_by_name}` : ''}.
           {proto.production_bom_status === 'draft' && (
             <div style={{ marginTop: 6, fontSize: 12.5, color: TEXT.secondary }}>
               Next step is in Production: add the routing operations on the draft BOM, then activate it. Work orders can&apos;t be released from a BOM with no routing.
@@ -141,7 +143,7 @@ export default function ReleaseToProductionPanel({
               type="button"
               disabled={busy}
               onClick={() => { setError(''); setSheetOpen(true) }}
-              style={{ padding: '10px 22px', borderRadius: 12, border: 'none', cursor: busy ? 'not-allowed' : 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 13.5, fontWeight: 600, opacity: busy ? 0.6 : 1 }}
+              style={{ ...primaryBtnStyle, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.6 : 1 }}
             >
               Release BOM to Production
             </button>

@@ -7,7 +7,7 @@ import { productsApi } from '@/lib/api'
 import { ProductApplication } from '@/types'
 import { TEXT } from '@/lib/theme'
 import ProductsNav from '@/components/products/ProductsNav'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { ErrorBanner, PageHeader, tableWrapStyle, tdStyle, thStyle } from '@/components/products/ProductBits'
 import { extractErrorMessages } from '@/lib/validation'
@@ -106,7 +106,7 @@ export default function ProductApplicationsPage() {
 
       <div style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-          <thead><tr>{['Code', 'Name', 'Description', 'Products', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Code', 'Name', 'Description', 'Products', 'Status', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
             {rows.length === 0 && <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>{loaded ? 'No applications yet.' : 'Loading…'}</td></tr>}
             {rows.map((a) => {

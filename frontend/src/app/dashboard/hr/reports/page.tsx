@@ -7,7 +7,7 @@ import { useCan } from '@/lib/permissions'
 import { hrApi, hrOrgApi, hrRegisterApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import { TEXT } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import HrNav from '@/components/hr/HrNav'
 import DateField from '@/components/erp/DateField'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
@@ -107,7 +107,7 @@ export default function HrReportsPage() {
 
       <div style={tableWrap}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
-          <thead><tr><th style={th}>Register</th><th style={th}>Plant</th><th style={th}>Period</th><th style={th}>Generated</th><th style={th}></th></tr></thead>
+          <thead><tr><th style={th}>Register <RowCount count={rows.length} /></th><th style={th}>Plant</th><th style={th}>Period</th><th style={th}>Generated</th><th style={th}></th></tr></thead>
           <tbody>
             {!rows.length && <tr><td style={td} colSpan={5}>No register generated yet.</td></tr>}
             {rows.map((r) => (

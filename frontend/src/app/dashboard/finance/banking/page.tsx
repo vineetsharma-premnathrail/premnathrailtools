@@ -23,7 +23,9 @@ import {
   thStyle, tdStyle, numTd, numTh, inr, dmy, todayIso,
   Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, useFinanceSubTabs, PageHeader, TableWrap, EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
+import { RowCount } from '@/components/shared/ui'
 
+const PAY_MODE_LABELS: Record<string, string> = { cheque: 'Cheque', neft: 'NEFT', rtgs: 'RTGS', imps: 'IMPS', upi: 'UPI', cash: 'Cash', dd: 'Demand Draft' }
 const TABS = ['Accounts', 'Bank / Cash Book', 'Reconciliation (BRS)', 'Liquidity Forecast', 'Guarantees & EMD'] as const
 type Tab = (typeof TABS)[number]
 /** Permission Matrix tab (Finance & Accounting) behind each sub-tab. The
@@ -117,13 +119,13 @@ function AccountsTab({ accounts, loading, onOpenBook }: { accounts: BankAccount[
       </InfoBanner>
       {!loading && accounts.length > 0 && (
         <div data-tour="fin-bk-stats" style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 18 }}>
-          <StatCard label="Total at Bank" value={inr(total('bank'))} />
-          <StatCard label="Total Cash in Hand" value={inr(total('cash'))} />
-          <StatCard label="Total Liquid Funds" value={inr(total('bank') + total('cash'))} />
+          <StatCard label="Total at Bank" value={`₹ ${inr(total('bank'))}`} />
+          <StatCard label="Total Cash in Hand" value={`₹ ${inr(total('cash'))}`} />
+          <StatCard label="Total Liquid Funds" value={`₹ ${inr(total('bank') + total('cash'))}`} />
         </div>
       )}
       {loading && <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>}
-      {!loading && accounts.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted }}>No active bank or cash accounts. Add one under Finance → Masters → Bank Accounts.</p>}
+      {!loading && accounts.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted }}>No active bank or cash accounts. Add one under Finance → Masters → Bank & Cash.</p>}
       <div data-tour="fin-bk-accounts" style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
         {accounts.map((a) => (
           <div key={a.id} style={{ ...sectionStyle, marginBottom: 0, flex: '1 1 260px', maxWidth: 340, padding: '16px 18px' }}>
@@ -205,17 +207,17 @@ function BookTab({ accounts, accountId, setAccountId }: { accounts: BankAccount[
 
       {data && (
         <div data-tour="fin-bk-book-stats" style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 16 }}>
-          <StatCard label="Opening" value={drcr(data.opening_balance)} />
-          <StatCard label="Receipts (Dr)" value={inr(data.total_debit)} tone="#16a34a" />
-          <StatCard label="Payments (Cr)" value={inr(data.total_credit)} tone="#dc2626" />
-          <StatCard label="Closing" value={drcr(data.closing_balance)} />
+          <StatCard label="Opening" value={`₹ ${drcr(data.opening_balance)}`} />
+          <StatCard label="Receipts (Dr)" value={`₹ ${inr(data.total_debit)}`} tone="#16a34a" />
+          <StatCard label="Payments (Cr)" value={`₹ ${inr(data.total_credit)}`} tone="#dc2626" />
+          <StatCard label="Closing" value={`₹ ${drcr(data.closing_balance)}`} />
         </div>
       )}
 
       <TableWrap minWidth={900} tour="fin-bk-book-table">
         <thead>
           <tr>
-            <th style={thStyle}>Date</th>
+            <th style={thStyle}>Date <RowCount count={data?.rows.length ?? 0} /></th>
             <th style={thStyle}>Voucher No.</th>
             <th style={thStyle}>Type</th>
             <th style={thStyle}>Particulars</th>
@@ -451,7 +453,7 @@ function ReconciliationTab({ accounts }: { accounts: BankAccount[] }) {
                     <th style={{ ...thStyle, width: 36 }}>
                       <input type="checkbox" checked={allSelected} onChange={() => setSelected(allSelected ? [] : unreconciled.map((u) => u.id))} />
                     </th>
-                    <th style={thStyle}>Date</th>
+                    <th style={thStyle}>Date <RowCount count={unreconciled.length} /></th>
                     <th style={thStyle}>Voucher No.</th>
                     <th style={thStyle}>Direction</th>
                     <th style={thStyle}>Party / Narration</th>
@@ -470,7 +472,7 @@ function ReconciliationTab({ accounts }: { accounts: BankAccount[] }) {
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 600 }}>{p.payment_number}</td>
                       <td style={tdStyle}>{p.direction ? <StatusPill status={p.direction} labels={DIR_LABELS} colors={DIR_HEX} /> : '—'}</td>
                       <td style={tdStyle}>{p.party_name || p.vendor_name || p.customer_name || '—'}</td>
-                      <td style={{ ...tdStyle, textTransform: 'capitalize' }}>{(p.payment_mode || '').replace(/_/g, ' ') || '—'}</td>
+                      <td style={tdStyle}>{p.payment_mode ? (PAY_MODE_LABELS[p.payment_mode] || p.payment_mode.replace(/_/g, ' ')) : '—'}</td>
                       <td style={tdStyle}>{p.cheque_number || p.reference_no || '—'}</td>
                       <td style={{ ...numTd, color: p.direction === 'out' ? '#b91c1c' : '#15803d' }}>{inr(p.amount)}</td>
                     </tr>
@@ -503,7 +505,7 @@ function ReconciliationTab({ accounts }: { accounts: BankAccount[] }) {
       <TableWrap minWidth={900} tour="fin-bk-brs-history">
         <thead>
           <tr>
-            <th style={thStyle}>Bank Account</th>
+            <th style={thStyle}>Bank Account <RowCount count={recons.length} /></th>
             <th style={thStyle}>Statement Date</th>
             <th style={numTh}>Book (₹)</th>
             <th style={numTh}>Statement (₹)</th>
@@ -513,7 +515,7 @@ function ReconciliationTab({ accounts }: { accounts: BankAccount[] }) {
           </tr>
         </thead>
         <tbody>
-          {recons.length === 0 && <EmptyRow colSpan={7} text="No reconciliations started yet." />}
+          {recons.length === 0 && <EmptyRow colSpan={7} text="No reconciliations started yet — use + Start reconciliation." />}
           {recons.map((r) => (
             <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => openRecon(r)}>
               <td style={{ ...tdStyle, fontWeight: 600 }}>{r.bank_account_label || '—'}</td>

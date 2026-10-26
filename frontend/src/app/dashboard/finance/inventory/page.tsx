@@ -18,6 +18,7 @@ import {
   inputStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, fyStartIso, currentPeriod, Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, PageHeader, TableWrap, EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
+import { RowCount } from '@/components/shared/ui'
 import { recordHref } from '@/lib/recordRef'
 
 const TABS = ['Stock Value', 'Purchase / Sales Impact', 'Closing Stock'] as const
@@ -81,14 +82,14 @@ function StockValueTab() {
       <ErrorBanner error={error} />
       {data?.note && <InfoBanner tone="warning">{data.note}</InfoBanner>}
       <div data-tour="fin-inv-sv-stats" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-        <StatCard label={`Stock value (as of ${data ? dmy(data.as_of) : '—'})`} value={data ? inr(data.total_value) : '—'} />
+        <StatCard label={`Stock value (as of ${data ? dmy(data.as_of) : '—'})`} value={data ? `₹ ${inr(data.total_value)}` : '—'} />
         <StatCard label="Items in stock" value={data ? String(data.rows.length) : '—'} />
         <StatCard label="Items without cost" value={data ? String(data.unvalued_items) : '—'} tone={data?.unvalued_items ? '#b91c1c' : undefined} />
       </div>
 
       <h3 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 10px' }}>By category</h3>
       <TableWrap minWidth={500} maxHeight="none" tour="fin-inv-sv-categories">
-        <thead><tr><th style={thStyle}>Category</th><th style={numTh}>Items</th><th style={numTh}>Value (₹)</th></tr></thead>
+        <thead><tr><th style={thStyle}>Category <RowCount count={data?.categories.length ?? 0} /></th><th style={numTh}>Items</th><th style={numTh}>Value (₹)</th></tr></thead>
         <tbody>
           {loading ? <EmptyRow colSpan={3} text="Loading…" /> : !data || data.categories.length === 0 ? <EmptyRow colSpan={3} text="No stock on hand in Store." />
             : data.categories.map((c) => (
@@ -108,7 +109,7 @@ function StockValueTab() {
       <TableWrap minWidth={1000} tour="fin-inv-sv-items">
         <thead>
           <tr>
-            <th style={thStyle}>Code</th><th style={thStyle}>Item</th><th style={thStyle}>Category</th>
+            <th style={thStyle}>Code <RowCount count={data?.rows.length ?? 0} /></th><th style={thStyle}>Item</th><th style={thStyle}>Category</th>
             <th style={numTh}>Qty</th><th style={thStyle}>UoM</th><th style={numTh}>Rate (₹)</th><th style={numTh}>Value (₹)</th><th style={thStyle}>Rate source</th>
           </tr>
         </thead>
@@ -167,14 +168,14 @@ function ImpactTab() {
       <ErrorBanner error={error} />
       {data && (
         <div data-tour="fin-inv-imp-stats" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-          <StatCard label="Purchases (taxable)" value={inr(data.total_purchases)} />
-          <StatCard label="Sales (taxable)" value={inr(data.total_sales)} />
+          <StatCard label="Purchases (taxable)" value={`₹ ${inr(data.total_purchases)}`} />
+          <StatCard label="Sales (taxable)" value={`₹ ${inr(data.total_sales)}`} />
         </div>
       )}
       <TableWrap minWidth={850} tour="fin-inv-imp-table">
         <thead>
           <tr>
-            <th style={thStyle}>Item / description</th>
+            <th style={thStyle}>Item / description <RowCount count={data?.rows.length ?? 0} /></th>
             <th style={numTh}>Purchase qty</th><th style={numTh}>Purchase value (₹)</th>
             <th style={numTh}>Sales qty</th><th style={numTh}>Sales value (₹)</th>
           </tr>
@@ -282,12 +283,12 @@ function ClosingStockTab({ canPost, canCancel }: { canPost: boolean; canCancel: 
       <TableWrap minWidth={800} tour="fin-inv-cs-table">
         <thead>
           <tr>
-            <th style={thStyle}>Period</th><th style={thStyle}>Valuation date</th><th style={numTh}>Closing stock (₹)</th>
+            <th style={thStyle}>Period <RowCount count={list.length} /></th><th style={thStyle}>Valuation date</th><th style={numTh}>Closing stock (₹)</th>
             <th style={thStyle}>Status</th><th style={thStyle}>Journal</th><th style={thStyle}>Notes</th><th style={thStyle}></th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <EmptyRow colSpan={7} text="Loading…" /> : list.length === 0 ? <EmptyRow colSpan={7} text="No closing-stock valuations yet." />
+          {loading ? <EmptyRow colSpan={7} text="Loading…" /> : list.length === 0 ? <EmptyRow colSpan={7} text="No closing-stock valuations yet — use + New valuation at month end." />
             : list.map((v) => (
               <tr key={v.id} style={{ cursor: 'pointer' }} onClick={() => openValuation(v.id)}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{v.accounting_period}</td>
@@ -295,7 +296,7 @@ function ClosingStockTab({ canPost, canCancel }: { canPost: boolean; canCancel: 
                 <td style={numTd}>{inr(v.total_value)}</td>
                 <td style={tdStyle}><StatusPill status={v.status} labels={STATUS_LABELS} colors={STATUS_HEX} /></td>
                 <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
-                  {v.journal_entry_id ? <Link href={recordHref('/dashboard/finance/ledger', v, 'journal_entry_id', undefined, 'entry')} style={linkBtnStyle}>JE #{v.journal_entry_id}</Link> : '—'}
+                  {v.journal_entry_id ? <Link href={recordHref('/dashboard/finance/ledger', v, 'journal_entry_id', undefined, 'entry')} style={linkBtnStyle}>Open voucher</Link> : '—'}
                 </td>
                 <td style={{ ...tdStyle, maxWidth: 320, color: TEXT.secondary }}>{v.notes || ''}</td>
                 <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
@@ -356,7 +357,7 @@ function ValuationDetail({ valuation, canPost, canCancel, onChange, onBack }: {
           </div>
           <div style={{ fontSize: 12.5, color: TEXT.secondary, marginTop: 4 }}>
             Valued on {dmy(valuation.valuation_date)} · {valuation.lines.length} item(s)
-            {valuation.journal_entry_id && <> · <Link href={recordHref('/dashboard/finance/ledger', valuation, 'journal_entry_id', undefined, 'entry')} style={linkBtnStyle}>Journal #{valuation.journal_entry_id}</Link></>}
+            {valuation.journal_entry_id && <> · <Link href={recordHref('/dashboard/finance/ledger', valuation, 'journal_entry_id', undefined, 'entry')} style={linkBtnStyle}>View journal voucher</Link></>}
           </div>
           {valuation.notes && <div style={{ fontSize: 12.5, color: TEXT.secondary, marginTop: 4 }}>{valuation.notes}</div>}
         </div>
@@ -370,12 +371,12 @@ function ValuationDetail({ valuation, canPost, canCancel, onChange, onBack }: {
       {isDraft && <InfoBanner>Draft: correct any quantity from the physical count, or a rate (it becomes a manual rate), then post. Changes save when you leave the cell.</InfoBanner>}
       <ErrorBanner error={error} />
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-        <StatCard label="Closing stock value" value={inr(valuation.total_value)} tour="fin-inv-val-total" />
+        <StatCard label="Closing stock value" value={`₹ ${inr(valuation.total_value)}`} tour="fin-inv-val-total" />
       </div>
       <TableWrap minWidth={1000} tour="fin-inv-val-lines">
         <thead>
           <tr>
-            <th style={thStyle}>Code</th><th style={thStyle}>Item</th><th style={thStyle}>Category</th>
+            <th style={thStyle}>Code <RowCount count={valuation.lines.length} /></th><th style={thStyle}>Item</th><th style={thStyle}>Category</th>
             <th style={numTh}>Qty</th><th style={thStyle}>UoM</th><th style={numTh}>Rate (₹)</th><th style={numTh}>Value (₹)</th><th style={thStyle}>Rate source</th>
           </tr>
         </thead>

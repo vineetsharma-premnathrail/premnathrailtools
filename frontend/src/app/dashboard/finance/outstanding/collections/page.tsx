@@ -23,6 +23,7 @@ import {
   sectionStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, ErrorBanner, InfoBanner, StatusPill, PageHeader, TableWrap, EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
+import { RowCount } from '@/components/shared/ui'
 
 const PRIORITY_LABELS: Record<string, string> = { high: 'High', medium: 'Medium', low: 'Low' }
 const PRIORITY_HEX: Record<string, string> = { high: '#dc2626', medium: '#f59e0b', low: '#22c55e' }
@@ -78,16 +79,16 @@ export default function CollectionsPage() {
       <ErrorBanner error={error} />
 
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 20 }}>
-        <StatCard label="Overdue (undisputed)" value={inr(totals.overdue_amount ?? 0)} tone={(totals.overdue_amount ?? 0) > 0 ? '#b91c1c' : undefined} />
+        <StatCard label="Overdue (undisputed)" value={`₹ ${inr(totals.overdue_amount ?? 0)}`} tone={(totals.overdue_amount ?? 0) > 0 ? '#b91c1c' : undefined} />
         <StatCard label="Customers to chase" value={String(totals.customers ?? 0)} />
         <StatCard label="High priority" value={String(totals.high ?? 0)} tone={(totals.high ?? 0) > 0 ? '#b91c1c' : undefined} />
-        <StatCard label="Disputed (not chased)" value={inr(totals.disputed ?? 0)} tone="#7c3aed" />
+        <StatCard label="Disputed (not chased)" value={`₹ ${inr(totals.disputed ?? 0)}`} tone="#7c3aed" />
       </div>
 
       <TableWrap minWidth={1200} maxHeight={selected ? '360px' : undefined} tour="fin-coll-worklist">
         <thead>
           <tr>
-            <th style={thStyle}>Priority</th><th style={thStyle}>Customer</th><th style={numTh}>Overdue (₹)</th><th style={numTh}>Invoices</th>
+            <th style={thStyle}>Priority <RowCount count={rows.length} /></th><th style={thStyle}>Customer</th><th style={numTh}>Overdue (₹)</th><th style={numTh}>Invoices</th>
             <th style={numTh}>Oldest (days)</th><th style={numTh}>Level</th><th style={thStyle}>Last contact</th>
             <th style={thStyle}>Promise to pay</th><th style={thStyle}>Next follow-up</th><th style={numTh}>Broken promises</th>
           </tr>
@@ -146,7 +147,7 @@ function LettersTable({ letters, onChanged }: { letters: DunningLetter[]; onChan
       <TableWrap minWidth={900} maxHeight="420px">
         <thead>
           <tr>
-            <th style={thStyle}>Letter</th><th style={thStyle}>Customer</th><th style={thStyle}>Date</th><th style={numTh}>Level</th>
+            <th style={thStyle}>Letter <RowCount count={letters.length} /></th><th style={thStyle}>Customer</th><th style={thStyle}>Date</th><th style={numTh}>Level</th>
             <th style={numTh}>Overdue (₹)</th><th style={numTh}>Invoices</th><th style={thStyle}>Status</th><th style={thStyle}></th>
           </tr>
         </thead>
@@ -232,7 +233,7 @@ function CustomerPanel({ customerId, customerName, onClose, onChanged }: { custo
       <TableWrap minWidth={820} maxHeight="280px">
         <thead>
           <tr>
-            <th style={thStyle}>Invoice</th><th style={thStyle}>Date</th><th style={thStyle}>Due</th><th style={numTh}>Days overdue</th>
+            <th style={thStyle}>Invoice <RowCount count={items.length} /></th><th style={thStyle}>Date</th><th style={thStyle}>Due</th><th style={numTh}>Days overdue</th>
             <th style={numTh}>Due (₹)</th><th style={numTh}>Disputed (₹)</th><th style={numTh}>To collect (₹)</th><th style={numTh}>Level</th>
           </tr>
         </thead>
@@ -258,7 +259,7 @@ function CustomerPanel({ customerId, customerName, onClose, onChanged }: { custo
       <TableWrap minWidth={980} maxHeight="320px">
         <thead>
           <tr>
-            <th style={thStyle}>Date</th><th style={thStyle}>Type</th><th style={thStyle}>Contact</th><th style={thStyle}>Notes</th>
+            <th style={thStyle}>Date <RowCount count={notes.length} /></th><th style={thStyle}>Type</th><th style={thStyle}>Contact</th><th style={thStyle}>Notes</th>
             <th style={thStyle}>Promise</th><th style={thStyle}>Follow-up</th><th style={thStyle}>By</th><th style={thStyle}></th>
           </tr>
         </thead>
@@ -442,7 +443,7 @@ function DunningRunDialog({ onClose, onDone }: { onClose: () => void; onDone: ()
         <SheetSection icon="users" title="Customers to remind" extra={<span style={{ fontSize: 12, color: SHEET.MUTED }}>{picked.size} of {customers.length} ticked</span>}>
           <TableWrap minWidth={700} maxHeight="55vh">
             <thead>
-              <tr><th style={thStyle}></th><th style={thStyle}>Customer</th><th style={numTh}>Letter level</th><th style={numTh}>Overdue (₹)</th><th style={thStyle}>Invoices (level now → new)</th></tr>
+              <tr><th style={thStyle}><RowCount count={customers.length} /></th><th style={thStyle}>Customer</th><th style={numTh}>Letter level</th><th style={numTh}>Overdue (₹)</th><th style={thStyle}>Invoices (level now → new)</th></tr>
             </thead>
             <tbody>
               {loading ? <EmptyRow colSpan={5} text="Building proposal…" />

@@ -1,6 +1,7 @@
 'use client'
 
 import Select from '@/components/shared/Select'
+import { RowCount, Pill } from '@/components/shared/ui'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -112,9 +113,9 @@ export default function HydServiceRecordsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1150 }}>
           <thead>
             <tr>
-              {['Record No.', 'Date', 'System', 'Type', 'Plan', 'Performed By / Agency', 'Downtime h', 'Total Cost', 'Status', ''].map((h) => (
+              {['Record No.', 'Date', 'System', 'Type', 'Plan', 'Performed By / Agency', 'Downtime h', 'Total Cost', 'Status', ''].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={records.length} />}
                 </th>
               ))}
             </tr>
@@ -139,9 +140,7 @@ export default function HydServiceRecordsPage() {
                   <td style={cellStyle}>{r.downtime_hours ? r.downtime_hours.toLocaleString('en-IN') : '—'}</td>
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.total_cost == null ? '—' : `₹${r.total_cost.toLocaleString('en-IN')}`}</td>
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[r.status]}1a`, color: STATUS_HEX[r.status], whiteSpace: 'nowrap' }}>
-                      {STATUS_LABELS[r.status] || r.status}
-                    </span>
+                    <Pill label={STATUS_LABELS[r.status] || r.status} hex={STATUS_HEX[r.status] || '#78716c'} />
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
                     <span onClick={() => router.push(recordPath('/dashboard/hydraulic/service', r))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>

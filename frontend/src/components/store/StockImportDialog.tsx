@@ -6,6 +6,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { TEXT } from '@/lib/theme'
 import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn } from '@/components/shared/FormSheet'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
+import { RowCount } from '@/components/shared/ui'
 
 interface ImportResult {
   posted: { row: number; item_code: string; item_name: string; warehouse: string; entry_type: string; stock_effect: string; quantity: number; uom: string }[]
@@ -13,7 +14,7 @@ interface ImportResult {
   errors: { row: number; item_code: string; reason: string }[]
 }
 
-const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0 }
+const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, whiteSpace: 'nowrap' }
 const td: React.CSSProperties = { padding: '8px 10px', fontSize: 12.5, color: TEXT.body, borderTop: '1px solid rgba(0,0,0,0.05)' }
 
 /** Bulk stock entries (e.g. opening stock). All-or-nothing: if any row has a
@@ -109,17 +110,17 @@ export default function StockImportDialog({ open, onClose, onImported }: { open:
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 {failed ? (
                   <>
-                    <thead><tr><th style={th}>Row</th><th style={th}>Item Code</th><th style={th}>Problem / Fix</th></tr></thead>
+                    <thead><tr><th style={th}>Row <RowCount count={result.errors.length} /></th><th style={th}>Item Code</th><th style={th}>Problem / Fix</th></tr></thead>
                     <tbody>{result.errors.map((r) => (
                       <tr key={r.row}><td style={td}>{r.row}</td><td style={{ ...td, fontWeight: 600 }}>{r.item_code || '—'}</td><td style={{ ...td, color: '#b91c1c' }}>{r.reason}</td></tr>
                     ))}</tbody>
                   </>
                 ) : (
                   <>
-                    <thead><tr><th style={th}>Row</th><th style={th}>Item</th><th style={th}>Store</th><th style={th}>Type</th><th style={th}>Quantity</th></tr></thead>
+                    <thead><tr><th style={th}>Row <RowCount count={result.posted.length} /></th><th style={th}>Item</th><th style={th}>Store</th><th style={th}>Type</th><th style={{ ...th, textAlign: 'right' }}>Quantity</th></tr></thead>
                     <tbody>{result.posted.map((r) => (
                       <tr key={r.row}><td style={td}>{r.row}</td><td style={td}><b>{r.item_code}</b> {r.item_name}</td><td style={td}>{r.warehouse}</td>
-                        <td style={td}>{r.entry_type}</td><td style={{ ...td, fontWeight: 600, color: r.stock_effect === 'in' ? '#15803d' : '#b45309' }}>{r.stock_effect === 'in' ? '+' : '−'}{r.quantity} {r.uom}</td></tr>
+                        <td style={td}>{r.entry_type}</td><td style={{ ...td, fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', color: r.stock_effect === 'in' ? '#15803d' : '#b45309' }}>{r.stock_effect === 'in' ? '+' : '−'}{Number(r.quantity).toLocaleString('en-IN', { maximumFractionDigits: 3 })} {r.uom || ''}</td></tr>
                     ))}</tbody>
                   </>
                 )}

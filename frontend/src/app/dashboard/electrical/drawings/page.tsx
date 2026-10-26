@@ -13,10 +13,8 @@ import { ElectricalDrawing, ElectricalMeta } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import ElectricalNav from '@/components/electrical/ElectricalNav'
-import {
-  inputStyle, thStyle, tdStyle, smallBtn, pill, Pill, ErrorBanner, useLookupErrors, REVISION_STATUS_LABELS, REVISION_STATUS_HEX,
-} from '@/components/electrical/shared'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, thStyle, tdStyle, Pill, ErrorBanner, useLookupErrors, REVISION_STATUS_LABELS, REVISION_STATUS_HEX } from '@/components/electrical/shared'
+import { segmentBtnStyle, smallSecondaryBtnStyle, Pill as UiPill, RowCount } from '@/components/shared/ui'
 
 const COLUMNS = ['Drawing No.', 'Title', 'Job', 'Type', 'Latest Rev', 'Approved Rev', 'As-built', '']
 
@@ -79,14 +77,16 @@ export default function ElectricalDrawingRegisterPage() {
             Electrical Module
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Drawing Register</h1>
+          <p style={{ fontSize: 13, color: TEXT.muted, margin: '6px 0 0' }}>
+            Every electrical drawing on every RRV job. Open a row to submit or approve its revisions on the job&apos;s Drawings tab.
+          </p>
         </div>
         <button
           data-tour="elec-dreg-awaiting-btn"
           type="button"
           onClick={() => setStatusFilter(awaitingOnly ? '' : 'submitted')}
-          style={awaitingOnly
-            ? { ...secondaryBtnStyle, color: '#b45309', borderColor: 'rgba(245,158,11,0.55)', background: 'rgba(245,158,11,0.12)' }
-            : secondaryBtnStyle}
+          aria-pressed={awaitingOnly}
+          style={segmentBtnStyle(awaitingOnly)}
         >
           {awaitingOnly ? '✓ Awaiting approval only' : 'Awaiting approval only'}
         </button>
@@ -125,7 +125,7 @@ export default function ElectricalDrawingRegisterPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr>
-              {COLUMNS.map((h) => <th key={h} style={{ ...thStyle, padding: '10px 14px' }}>{h}</th>)}
+              {COLUMNS.map((h, hi) => <th key={h} style={{ ...thStyle, padding: '10px 14px' }}>{h}{hi === 0 && <RowCount count={drawings.length} />}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -141,7 +141,7 @@ export default function ElectricalDrawingRegisterPage() {
               drawings.map((d) => (
                 <tr key={d.id} onClick={() => open(d)} style={{ cursor: 'pointer' }}>
                   <td style={{ ...tdStyle, padding: '10px 14px', fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{d.drawing_number}</td>
-                  <td style={{ ...tdStyle, padding: '10px 14px', maxWidth: 280 }}>{d.title}</td>
+                  <td title={d.title} style={{ ...tdStyle, padding: '10px 14px', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.title}</td>
                   <td style={{ ...tdStyle, padding: '10px 14px', maxWidth: 240 }}>
                     <div style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{d.job_number || '—'}</div>
                     {d.job_title && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{d.job_title}</div>}
@@ -159,10 +159,10 @@ export default function ElectricalDrawingRegisterPage() {
                       : <span style={{ color: TEXT.muted }}>—</span>}
                   </td>
                   <td style={{ ...tdStyle, padding: '10px 14px' }}>
-                    {d.is_as_built ? <span style={pill('#0d9488')}>As-built</span> : <span style={{ color: TEXT.muted }}>No</span>}
+                    {d.is_as_built ? <UiPill label="As-built" hex="#0d9488" /> : <span style={{ color: TEXT.muted }}>No</span>}
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={{ ...tdStyle, padding: '10px 14px' }}>
-                    <span onClick={() => open(d)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <button type="button" onClick={() => open(d)} style={smallSecondaryBtnStyle}>View</button>
                   </td>
                 </tr>
               ))

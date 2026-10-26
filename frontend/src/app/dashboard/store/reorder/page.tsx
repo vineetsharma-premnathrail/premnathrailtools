@@ -5,22 +5,24 @@ import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { reorderApi, storeApi } from '@/lib/api'
 import { StoreReorderRow } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, DANGER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER, DANGER } from '@/lib/theme'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
+import { primaryBtnStyle, RowCount, inputStyle as sharedInputStyle } from '@/components/shared/ui'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
-const inputStyle: React.CSSProperties = {
-  padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
-}
+const inputStyle: React.CSSProperties = { ...sharedInputStyle, width: 'auto', background: 'rgba(255,255,255,.7)' }
 const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }
 const td: React.CSSProperties = { padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}`, whiteSpace: 'nowrap' }
-const fmt = (n: number | null | undefined) => (n == null ? '—' : Number(n.toFixed(3)).toString())
+const fmt = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 3 }))
+const thNum: React.CSSProperties = { ...th, textAlign: 'right' }
+const tdNum: React.CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }
+const NUM_COLS = new Set(['Available', 'On order', 'Projected', 'Reorder level', 'Min / Max', 'Lead time', 'Order qty'])
 // One row per item per plant (material master plant views); row_key = item-plant.
 type PlantRow = StoreReorderRow & { row_key?: string; plant_name?: string | null; planning_source?: string }
 const rk = (r: StoreReorderRow) => (r as PlantRow).row_key || String(r.item_id)
@@ -90,7 +92,7 @@ export default function StoreReorderPage() {
         </div>
         {canRaisePr && (
           <button data-tour="store-reorder-raise-pr" type="button" disabled={!picked.length} onClick={raisePr}
-            style={{ padding: '11px 20px', borderRadius: 10, border: 'none', background: GRADIENTS.primary, color: '#fff', fontSize: 13.5, fontWeight: 600, cursor: picked.length ? 'pointer' : 'not-allowed', opacity: picked.length ? 1 : 0.5 }}>
+            style={{ ...primaryBtnStyle, cursor: picked.length ? 'pointer' : 'not-allowed', opacity: picked.length ? 1 : 0.5 }}>
             Raise PR for {picked.length || ''} selected
           </button>
         )}
@@ -105,19 +107,19 @@ export default function StoreReorderPage() {
         <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: TEXT.body }}>
           <input type="checkbox" checked={dueOnly} onChange={(e) => setDueOnly(e.target.checked)} /> Only items due for reorder
         </label>
-        <span style={{ fontSize: 12.5, color: TEXT.muted }}>{due.length} due</span>
+        <span style={{ fontSize: 12.5, color: TEXT.muted }}>{due.length.toLocaleString('en-IN')} due for reorder</span>
       </div>
 
       <div data-tour="store-reorder-table" style={{ ...sectionStyle, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead><tr>
-            {['', 'Item', 'Plant', 'Available', 'On order', 'Projected', 'Reorder level', 'Min / Max', 'Lead time', 'Order qty'].map((h) => <th key={h} style={th}>{h}</th>)}
+            {['', 'Item', 'Plant', 'Available', 'On order', 'Projected', 'Reorder level', 'Min / Max', 'Lead time', 'Order qty'].map((h, hi) => <th key={h} style={NUM_COLS.has(h) ? thNum : th}>{h}{hi === 1 && <RowCount count={rows.length} />}</th>)}
           </tr></thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} style={{ ...td, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={10} style={{ ...td, color: TEXT.muted, textAlign: 'center', padding: 24 }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={10} style={{ ...td, color: TEXT.muted }}>{dueOnly ? 'Nothing is due for reorder.' : 'No items have a reorder level or minimum stock set.'}</td></tr>
+              <tr><td colSpan={10} style={{ ...td, color: TEXT.muted, textAlign: 'center', padding: 24, whiteSpace: 'normal' }}>{dueOnly ? 'Nothing is due for reorder — every item is above its reorder level.' : 'No items have a reorder level or minimum stock set yet — set them on the item (Planning / plant data).'}</td></tr>
             ) : rows.map((r) => (
               <tr key={rk(r)}>
                 <td style={td}>
@@ -128,15 +130,15 @@ export default function StoreReorderPage() {
                 </td>
                 <td style={{ ...td, whiteSpace: 'normal' }}><strong>{r.item_code}</strong> — {r.item_name}{r.uom ? ` (${r.uom})` : ''}</td>
                 <td style={td}>{(r as PlantRow).plant_name || 'All plants'}</td>
-                <td style={td}>{fmt(r.available)}{r.reserved ? <span style={{ color: TEXT.muted, fontSize: 11.5 }}> ({fmt(r.reserved)} reserved)</span> : null}</td>
-                <td style={td} title={r.on_order_docs.join(', ')}>{fmt(r.on_order)}{r.on_order_docs.length ? <span style={{ color: TEXT.muted, fontSize: 11.5 }}> · {r.on_order_docs.length} doc</span> : null}</td>
-                <td style={{ ...td, fontWeight: 700, color: r.due ? DANGER.text : TEXT.body }}>{fmt(r.projected)}</td>
-                <td style={td}>{fmt(r.reorder_level)}</td>
-                <td style={td}>{fmt(r.minimum_stock)} / {fmt(r.maximum_stock)}</td>
-                <td style={td}>{r.lead_time_days != null ? `${r.lead_time_days} d` : '—'}</td>
-                <td style={td}>
+                <td style={tdNum}>{fmt(r.available)}{r.reserved ? <span style={{ color: TEXT.muted, fontSize: 11.5 }}> ({fmt(r.reserved)} reserved)</span> : null}</td>
+                <td style={tdNum} title={r.on_order_docs.join(', ')}>{fmt(r.on_order)}{r.on_order_docs.length ? <span style={{ color: TEXT.muted, fontSize: 11.5 }}> · {r.on_order_docs.length} doc{r.on_order_docs.length === 1 ? '' : 's'}</span> : null}</td>
+                <td style={{ ...tdNum, fontWeight: 700, color: r.due ? DANGER.text : TEXT.body }}>{fmt(r.projected)}</td>
+                <td style={tdNum}>{fmt(r.reorder_level)}</td>
+                <td style={tdNum}>{fmt(r.minimum_stock)} / {fmt(r.maximum_stock)}</td>
+                <td style={tdNum}>{r.lead_time_days != null ? `${r.lead_time_days} day${r.lead_time_days === 1 ? '' : 's'}` : '—'}</td>
+                <td style={tdNum}>
                   {r.due ? (
-                    <input type="number" min={0} step="any" value={qty[rk(r)] ?? ''} style={{ ...inputStyle, width: 100 }}
+                    <input type="number" min={0} step="any" value={qty[rk(r)] ?? ''} style={{ ...inputStyle, width: 110, textAlign: 'right' }}
                       onChange={(e) => setQty((q) => ({ ...q, [rk(r)]: e.target.value }))} />
                   ) : '—'}
                 </td>

@@ -8,13 +8,13 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { designApi } from '@/lib/api'
 import { DesignCustomerSubmissionDetail, DesignLookupOption, DesignSubmissionComment } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import { useDesignMe } from '@/components/design/useDesignMe'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, primaryBtnStyle, smallSecondaryBtnStyle, RowCount, Pill, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, SHEET, Req, Optional, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { DANGER_RED } from '@/components/design/DesignSheets'
 import ReasonSheet from '@/components/shared/ReasonSheet'
@@ -60,7 +60,7 @@ const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', f
 const tdStyle: React.CSSProperties = { padding: '9px 10px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
 
 function pill(label: string, hex: string) {
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
+  return <Pill label={label} hex={hex} />
 }
 
 function todayIso(): string {
@@ -312,23 +312,9 @@ export default function CustomerSubmissionDetailPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Customer submission</p>
-          <h1 data-tour="design-sub-header" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {sub ? (
-              <>
-                {sub.submission_number} <span style={{ fontWeight: 500, color: TEXT.secondary }}>— {sub.customer_name}</span>
-                {pill(SUBMISSION_STATUS_LABELS[sub.status] || sub.status, STATUS_HEX[sub.status] || '#78716c')}
-                {sub.is_overdue && pill('Overdue', '#DC2626')}
-              </>
-            ) : 'Submission'}
+          <h1 data-tour="design-sub-header" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>
+            {sub ? sub.submission_number : 'Submission'}
           </h1>
-          {sub && (
-            <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>
-              {sub.lines.length} drawing{sub.lines.length === 1 ? '' : 's'}
-              {sub.sent_date ? ` · sent ${formatDate(sub.sent_date)}` : ' · not sent yet'}
-              {sub.response_due_date ? ` · response due ${formatDate(sub.response_due_date)}` : ''}
-              {sub.status === 'sent' ? ` · waiting ${sub.days_waiting} day${sub.days_waiting === 1 ? '' : 's'}` : ''}
-            </p>
-          )}
         </div>
         <button data-tour="design-sub-back-btn" onClick={() => router.push('/dashboard/design/reviews')} type="button" style={secondaryBtnStyle}>← Back</button>
       </div>
@@ -351,6 +337,36 @@ export default function CustomerSubmissionDetailPage() {
 
       {sub && (
         <>
+          {/* Which drawings went to which customer, and where the reply stands. */}
+          <DetailCard tour="design-sub-details">
+            <DetailSummary
+              title={`Drawings for ${sub.customer_name}`}
+              text={sub.cover_note || undefined}
+              meta={<>
+                {pill(SUBMISSION_STATUS_LABELS[sub.status] || sub.status, STATUS_HEX[sub.status] || '#78716c')}
+                {sub.is_overdue && pill('Overdue', '#DC2626')}
+                <span>· {sub.lines.length} drawing{sub.lines.length === 1 ? '' : 's'}</span>
+                <span>· {sub.sent_date ? `Sent ${formatDate(sub.sent_date)}` : 'Not sent yet'}</span>
+                {sub.status === 'sent' && <span>· Waiting {sub.days_waiting} day{sub.days_waiting === 1 ? '' : 's'}</span>}
+              </>}
+            />
+            <DetailGroup title="Customer">
+              <DetailRow label="Customer">{sub.customer_name}</DetailRow>
+              <DetailRow label="Contact">{[sub.contact_name, sub.contact_email].filter(Boolean).join(' · ')}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="Dates">
+              <DetailRow label="Prepared by">{`${sub.created_by_name || '—'} · ${formatDate(sub.created_at)}`}</DetailRow>
+              <DetailRow label="Sent">{sub.sent_date ? formatDate(sub.sent_date) : null}</DetailRow>
+              <DetailRow label="Response due">{sub.response_due_date ? `${formatDate(sub.response_due_date)}${sub.is_overdue ? ' — overdue' : ''}` : null}</DetailRow>
+              <DetailRow label="Customer responded">{sub.response_date ? `${formatDate(sub.response_date)}${sub.turnaround_days != null ? ` (${sub.turnaround_days} days)` : ''}` : null}</DetailRow>
+              {sub.response_remarks && <DetailRow label="Response remarks">{sub.response_remarks}</DetailRow>}
+            </DetailGroup>
+            <DetailGroup title="Linked to" last>
+              <DetailRow label="Project">{sub.pm_project_label}</DetailRow>
+              <DetailRow label="Machine">{sub.erp_project_label}</DetailRow>
+            </DetailGroup>
+          </DetailCard>
+
           <div data-tour="design-sub-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
             {can('send') && <button data-tour="design-sub-send-btn" disabled={busy} style={primaryBtn} onClick={() => openPanel('send')}>Send to Customer</button>}
             {can('record_response') && <button data-tour="design-sub-response-btn" disabled={busy} style={primaryBtn} onClick={() => openPanel('response')}>Record Customer Response</button>}
@@ -366,7 +382,7 @@ export default function CustomerSubmissionDetailPage() {
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
                     <thead>
-                      <tr>{['Drawing', 'Title', 'Rev', 'Revision status', 'Customer response', 'Comment'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                      <tr>{['Drawing', 'Title', 'Rev', 'Revision status', 'Customer response', 'Comment'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={sub.lines.length} />}</th>)}</tr>
                     </thead>
                     <tbody>
                       {sub.lines.map((l) => (
@@ -400,7 +416,7 @@ export default function CustomerSubmissionDetailPage() {
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
                       <thead>
-                        <tr>{['Comment', 'Drawing', 'Assigned to', 'Status', 'Resolution', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                        <tr>{['Comment', 'Drawing', 'Assigned to', 'Status', 'Resolution', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={sub.comments.length} />}</th>)}</tr>
                       </thead>
                       <tbody>
                         {sub.comments.map((c) => (
@@ -432,22 +448,6 @@ export default function CustomerSubmissionDetailPage() {
             </div>
 
             <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-              <div data-tour="design-sub-details" style={sectionStyle}>
-                <p style={sectionTitle}>Details</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <InfoRow label="Customer" value={sub.customer_name} />
-                  <InfoRow label="Contact" value={[sub.contact_name, sub.contact_email].filter(Boolean).join(' · ') || '—'} />
-                  <InfoRow label="Project" value={sub.pm_project_label || '—'} />
-                  <InfoRow label="Machine" value={sub.erp_project_label || '—'} />
-                  {sub.cover_note && <InfoRow label="Cover note" value={sub.cover_note} />}
-                  <InfoRow label="Prepared by" value={`${sub.created_by_name || '—'} · ${formatDate(sub.created_at)}`} />
-                  <InfoRow label="Sent" value={formatDate(sub.sent_date)} />
-                  <InfoRow label="Response due" value={sub.response_due_date ? `${formatDate(sub.response_due_date)}${sub.is_overdue ? ' — overdue' : ''}` : '—'} />
-                  <InfoRow label="Customer responded" value={sub.response_date ? `${formatDate(sub.response_date)}${sub.turnaround_days != null ? ` (${sub.turnaround_days} days)` : ''}` : '—'} />
-                  {sub.response_remarks && <InfoRow label="Response remarks" value={sub.response_remarks} />}
-                </div>
-              </div>
-
               <div data-tour="design-sub-letter" style={sectionStyle}>
                 <p style={sectionTitle}>Customer letter</p>
                 {sub.letter_file_name ? (
@@ -476,7 +476,7 @@ export default function CustomerSubmissionDetailPage() {
                   {sub.events.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No activity yet.</p>}
                   {sub.events.map((e) => (
                     <div key={e.id} style={{ display: 'flex', gap: 10, padding: '8px 0', borderTop: `1px solid ${BORDER.light}` }}>
-                      <span style={{ width: 8, height: 8, borderRadius: 9999, marginTop: 6, flex: 'none', background: EVENT_HEX[e.action] || '#a8a29e' }} />
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 6, flex: 'none', background: EVENT_HEX[e.action] || '#a8a29e' }} />
                       <div style={{ minWidth: 0 }}>
                         <p style={{ fontSize: 12.5, color: TEXT.body, margin: 0 }}>
                           <strong>{e.actor_name || 'System'}</strong> {EVENT_LABELS[e.action] || e.action.replace(/_/g, ' ')}
@@ -612,7 +612,7 @@ export default function CustomerSubmissionDetailPage() {
                 {selectedIds.length > 0 && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
                     {selectedIds.map((rid) => (
-                      <span key={rid} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 9999, background: '#eff6ff', color: SHEET.BLUE, fontSize: 12, fontWeight: 600 }}>
+                      <span key={rid} style={{ ...pillStyle(SHEET.BLUE), gap: 6, padding: '4px 10px', fontSize: 12 }}>
                         {lineLabels[rid] || `Revision #${rid}`}
                         <span onClick={() => setSelectedIds((prev) => prev.filter((x) => x !== rid))} style={{ cursor: 'pointer', fontSize: 14, lineHeight: 1 }} aria-label="Remove drawing">×</span>
                       </span>

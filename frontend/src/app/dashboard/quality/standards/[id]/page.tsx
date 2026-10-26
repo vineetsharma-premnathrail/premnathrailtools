@@ -12,7 +12,8 @@ import QualityNav from '@/components/quality/QualityNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
-import { ErrorBanner } from '@/components/quality/QualityBits'
+import { ErrorBanner, PageHeader, fmtDate } from '@/components/quality/QualityBits'
+import { secondaryBtnStyle } from '@/components/shared/ui'
 import { FormPage, SheetSection, SheetIcon, sheetInput, sheetLabel, sheetHint, sheetBtn, Req, Optional, SHEET } from '@/components/shared/FormSheet'
 import Select from '@/components/shared/Select'
 
@@ -60,7 +61,16 @@ export default function QualityStandardDetailPage() {
 
   if (isLoading || !isAuthorized) return null
   if (linkError) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/standards" listLabel="Back to standards" /></div>)
-  if (loading || !standard) return null
+  if (loading || !standard) {
+    return (
+      <div>
+        <QualityNav />
+        <PageHeader title="Quality Standard"><button type="button" onClick={() => router.push('/dashboard/quality/standards')} style={secondaryBtnStyle}>← Back</button></PageHeader>
+        <ErrorBanner error={error} />
+        {!error && <p style={{ fontSize: 13, color: '#64748b' }}>Loading…</p>}
+      </div>
+    )
+  }
 
   const handleSave = async () => {
     setError('')
@@ -147,7 +157,7 @@ export default function QualityStandardDetailPage() {
             <label style={labelStyle}>Description <Optional /></label>
             <textarea style={{ ...inputStyle, minHeight: 90 }} value={description} onChange={(e) => setDescription(e.target.value)} />
             <p style={sheetHint}>
-              Created by {standard.created_by_name || '—'}{standard.created_at ? ` on ${standard.created_at.slice(0, 10)}` : ''}
+              Created by {standard.created_by_name || '—'}{standard.created_at ? ` on ${fmtDate(standard.created_at)}` : ''}
             </p>
           </SheetSection>
         </fieldset>

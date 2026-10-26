@@ -13,6 +13,7 @@ import { useDesignMe } from '@/components/design/useDesignMe'
 import { toOptions } from '@/components/design/designMeta'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
+import { chipBtnStyle, pillStyle } from '@/components/shared/ui'
 
 export default function NewCustomerSubmissionPage() {
   const { isAuthorized, isLoading } = useRequireApp('design')
@@ -154,7 +155,7 @@ export default function NewCustomerSubmissionPage() {
               {selectedIds.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
                   {selectedIds.map((id) => (
-                    <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 9999, background: '#eff6ff', color: SHEET.BLUE, fontSize: 12, fontWeight: 600 }}>
+                    <span key={id} style={{ ...pillStyle(SHEET.BLUE), gap: 6, padding: '4px 10px', fontSize: 12 }}>
                       {label(id)}
                       <span onClick={() => setSelectedIds((prev) => prev.filter((x) => x !== id))} style={{ cursor: 'pointer', fontSize: 14, lineHeight: 1 }} aria-label="Remove drawing">×</span>
                     </span>
@@ -177,10 +178,7 @@ export default function NewCustomerSubmissionPage() {
               {unpicked.length > 0 && unpicked.length <= 12 && !search.trim() && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
                   {unpicked.map((a) => (
-                    <button key={a.id} type="button" onClick={() => setSelectedIds((prev) => [...prev, a.id])} title={a.label} style={{
-                      padding: '4px 10px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                      border: '1px dashed #cbd5e1', background: '#fff', color: SHEET.BODY,
-                    }}>
+                    <button key={a.id} type="button" onClick={() => setSelectedIds((prev) => [...prev, a.id])} title={a.label} style={{ ...chipBtnStyle(false), border: '1px dashed #cbd5e1' }}>
                       + {a.code || a.label}
                     </button>
                   ))}

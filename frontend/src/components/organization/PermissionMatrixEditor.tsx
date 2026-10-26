@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { PermissionRegistry } from '@/types'
 import { TEXT, BORDER, BRAND } from '@/lib/theme'
-import { inputStyle } from '@/components/shared/ui'
+import { inputStyle, chipBtnStyle, smallSecondaryBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import Checkbox from '@/components/Checkbox'
 import AssigneeRuleDialog, { AssigneeOption, AssigneeRule, describeRule } from '@/components/organization/AssigneeRuleDialog'
 
@@ -50,7 +50,8 @@ export function expandGrants(registry: PermissionRegistry, grants: Iterable<stri
         for (const x of acts) if (a === '*' || x === a) out.add(`${mk}:${tab}:${x}`)
       }
       for (const [tab, feats] of Object.entries(mod.features || {})) {
-        for (const [fk, f] of Object.entries(feats)) for (const x of f.actions) if (a === '*' || x === a) out.add(`${mk}:${tab}.${fk}:${x}`)
+        // Explicit-only feature actions (inherit null) never come from a wildcard / preset.
+        for (const [fk, f] of Object.entries(feats)) for (const x of f.actions) if ((a === '*' || x === a) && f.inherit[x] != null) out.add(`${mk}:${tab}.${fk}:${x}`)
       }
     } else if (tk.includes('.')) {
       const [tab, fk] = tk.split('.')
@@ -71,7 +72,7 @@ export function expandGrants(registry: PermissionRegistry, grants: Iterable<stri
       if (customised.has(`${mk}:${tab}`) || !out.has(`${mk}:${tab}:view`)) continue
       for (const [fk, f] of Object.entries(feats)) {
         for (const [act, legacy] of Object.entries(f.inherit)) {
-          if (out.has(`${mk}:${tab}:${legacy}`)) { out.add(`${mk}:${tab}.${fk}:${act}`); out.add(`${mk}:${tab}.${fk}:view`) }
+          if (legacy != null && out.has(`${mk}:${tab}:${legacy}`)) { out.add(`${mk}:${tab}.${fk}:${act}`); out.add(`${mk}:${tab}.${fk}:view`) }
         }
       }
     }
@@ -234,7 +235,7 @@ export default function PermissionMatrixEditor({ registry, value, onChange, read
                 style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
                 <span style={{ fontSize: 11, color: TEXT.muted, width: 10 }}>{isOpen ? '▾' : '▸'}</span>
                 <span style={{ fontSize: 13, fontWeight: 700, color: TEXT.heading }}>{mod.label}</span>
-                <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: granted ? 'rgba(16,185,129,0.12)' : 'rgba(0,0,0,0.05)', color: granted ? '#047857' : TEXT.muted }}>
+                <span style={{ ...pillStyle(granted ? '#047857' : '#64748b'), fontWeight: 600 }}>
                   {granted === 0 ? 'No access' : granted === all.length ? 'Full' : `${granted} / ${all.length}`}
                 </span>
               </button>
@@ -242,12 +243,7 @@ export default function PermissionMatrixEditor({ registry, value, onChange, read
                 <div data-tour={idx === 0 ? 'perm-matrix-presets' : undefined} style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {PRESETS.map((p) => (
                     <button key={p.key} type="button" title={p.hint} onClick={() => applyPreset(moduleKey, p.key)}
-                      style={{
-                        padding: '4px 10px', borderRadius: 9999, fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
-                        border: `1px solid ${preset === p.key ? BRAND.primary : BORDER.normal}`,
-                        background: preset === p.key ? 'rgba(244,113,59,0.1)' : '#fff',
-                        color: preset === p.key ? BRAND.primary : TEXT.secondary,
-                      }}>
+                      style={chipBtnStyle(preset === p.key)}>
                       {p.label}
                     </button>
                   ))}
@@ -259,7 +255,7 @@ export default function PermissionMatrixEditor({ registry, value, onChange, read
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                   <thead>
                     <tr style={{ background: 'rgba(0,0,0,0.02)' }}>
-                      <th style={th('left')}>Tab</th>
+                      <th style={th('left')}>Tab <RowCount count={tabs.length} /></th>
                       {actions.map((a) => <th key={a} style={th('center')}>{labels[a] || a}</th>)}
                     </tr>
                   </thead>
@@ -288,7 +284,7 @@ export default function PermissionMatrixEditor({ registry, value, onChange, read
                             {feats.length > 0 && (
                               <button type="button" onClick={() => setOpenFeatures((o) => ({ ...o, [fKey]: !featsOpen }))}
                                 title="Sub-tabs, sections and actions inside this tab"
-                                style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: BRAND.primaryActive, background: 'rgba(244,113,59,0.08)', border: 'none', borderRadius: 9999, padding: '2px 8px', cursor: 'pointer' }}>
+                                style={{ ...smallSecondaryBtnStyle, marginLeft: 8, color: BRAND.primaryActive, background: 'rgba(244,113,59,0.08)', border: '1px solid transparent' }}>
                                 {featsOpen ? '▾' : '▸'} {feats.length} feature{feats.length === 1 ? '' : 's'}{customisedTab ? ' · customised' : ''}
                               </button>
                             )}
@@ -321,13 +317,13 @@ export default function PermissionMatrixEditor({ registry, value, onChange, read
                           <tr key={`${tabKey}.${fk}`} style={{ borderTop: `1px dashed ${BORDER.normal}`, background: 'rgba(37,99,235,0.02)' }}>
                             <td style={{ padding: '6px 14px', paddingLeft: group ? 44 : 30, fontSize: 12.5, color: TEXT.body }} title={f.hint || undefined}>
                               <span style={{ color: TEXT.muted, marginRight: 6 }}>↳</span>{f.label}
-                              <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 9999, background: f.kind === 'sensitive' ? 'rgba(220,38,38,0.08)' : 'rgba(0,0,0,0.05)', color: f.kind === 'sensitive' ? '#b91c1c' : TEXT.muted, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                              <span style={{ ...pillStyle(f.kind === 'sensitive' ? '#b91c1c' : '#64748b'), marginLeft: 6, fontSize: 10, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: 0.3 }}>
                                 {mod.feature_kinds?.[f.kind] || f.kind}
                               </span>
                               {pickers[`${moduleKey}:${tabKey}.${fk}`] && (
                                 <button type="button" onClick={() => setRuleKey(`${moduleKey}:${tabKey}.${fk}`)} data-tour="perm-matrix-assignee-rule"
                                   title={pickers[`${moduleKey}:${tabKey}.${fk}`].hint}
-                                  style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 9999, cursor: 'pointer',
+                                  style={{ ...smallSecondaryBtnStyle, marginLeft: 8,
                                     border: `1px solid ${assigneeRules?.[`${moduleKey}:${tabKey}.${fk}`] ? BRAND.primary : BORDER.normal}`,
                                     background: assigneeRules?.[`${moduleKey}:${tabKey}.${fk}`] ? 'rgba(244,113,59,0.08)' : '#fff',
                                     color: assigneeRules?.[`${moduleKey}:${tabKey}.${fk}`] ? BRAND.primaryActive : TEXT.secondary }}>
@@ -340,7 +336,8 @@ export default function PermissionMatrixEditor({ registry, value, onChange, read
                               const id = `${moduleKey}:${tabKey}.${fk}:${a}`
                               const from = inherited?.[id]
                               const followsTab = !customisedTab && expanded.has(id)
-                              const tip = from ? `From: ${from.join(', ')}` : !customisedTab ? `Follows the tab's ${labels[f.inherit[a]] || f.inherit[a]}` : undefined
+                              const legacy = f.inherit[a]
+                              const tip = from ? `From: ${from.join(', ')}` : legacy == null ? 'Given only when ticked — no preset or tab gives it' : !customisedTab ? `Follows the tab's ${labels[legacy] || legacy}` : undefined
                               return (
                                 <td key={a} style={{ padding: 6, textAlign: 'center' }} title={tip}>
                                   <div style={{ display: 'inline-flex', opacity: (from && !expanded.has(id)) || followsTab ? 0.55 : 1 }}>

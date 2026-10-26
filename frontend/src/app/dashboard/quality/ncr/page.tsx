@@ -9,7 +9,7 @@ import { qualityApi } from '@/lib/api'
 import { QualityNcr } from '@/types'
 import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import {
   Pill, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtQty, fmtDate,
   NCR_STATUS_LABELS, NCR_STATUS_HEX, SEVERITY_HEX, DISPOSITION_TYPE_LABELS,
@@ -79,19 +79,19 @@ export default function QualityNcrListPage() {
 
       <div style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
-          <thead><tr>{cols.map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{cols.map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={ncrs.length} />}</th>)}</tr></thead>
           <tbody>
             {loading ? (
               <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
             ) : ncrs.length === 0 ? (
-              <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No NCRs found.</td></tr>
+              <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No NCRs found — use + New NCR to raise one.</td></tr>
             ) : ncrs.map((n) => (
               <tr key={n.id} onClick={() => router.push(recordPath('/dashboard/quality/ncr', n))} style={{ cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{n.ncr_number}{n.auto_raised ? <span style={{ color: TEXT.muted, fontWeight: 400 }}> · auto</span> : null}</td>
                 <td style={tdStyle}>{n.item_code ? `${n.item_code} — ` : ''}{n.item_name}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtQty(n.quantity, n.uom)}</td>
                 <td style={tdStyle}><Pill text={n.severity} hex={SEVERITY_HEX[n.severity]} /></td>
-                <td style={tdStyle}>{n.source.replace(/_/g, ' ')}</td>
+                <td style={tdStyle}>{n.source.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}</td>
                 <td style={tdStyle}>
                   {n.disposition_type ? `${DISPOSITION_TYPE_LABELS[n.disposition_type] || n.disposition_type}${n.disposition_status === 'pending_approval' ? ' (awaiting approval)' : ''}` : '—'}
                 </td>

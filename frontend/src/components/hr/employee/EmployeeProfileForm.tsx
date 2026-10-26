@@ -7,7 +7,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { hrApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
 import { HrEmployeeProfile, HrFormField, HrFormRules, HrLookups, HrRuleCondition } from '@/types'
-import { TEXT, BORDER } from '@/lib/theme'
+import { TEXT } from '@/lib/theme'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
@@ -22,6 +22,7 @@ import { recordPath, useRecordId } from '@/lib/recordRef'
 import { todayIso } from '@/components/hr/admin/adminUi'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import JoiningDocumentsChecklist, { DocumentOwner, StagedDocument, uploadChecklistFile } from '@/components/hr/employee/JoiningDocumentsChecklist'
+import { chipBtnStyle } from '@/components/shared/ui'
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
 const MARITAL = [['single', 'Single'], ['married', 'Married'], ['divorced', 'Divorced'], ['widowed', 'Widowed'], ['other', 'Other']]
@@ -466,11 +467,7 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
                       set('weekly_off')(WEEKDAYS.map(([d]) => d).filter((d) => next.includes(d)).join(','))
                     }
                     return (
-                      <button key={k} type="button" onClick={toggle} style={{
-                        padding: '6px 10px', borderRadius: 9999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-                        border: `1px solid ${on ? '#FF7A45' : BORDER.normal}`, background: on ? 'rgba(255,122,69,.12)' : 'rgba(255,255,255,.7)',
-                        color: on ? '#E85A1F' : TEXT.secondary,
-                      }}>{v}</button>
+                      <button key={k} type="button" onClick={toggle} style={chipBtnStyle(on)}>{v}</button>
                     )
                   })}
                 </div>

@@ -7,7 +7,7 @@ import { useCan } from '@/lib/permissions'
 import { extractErrorMessages } from '@/lib/validation'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { MaintenanceStoreItemOption } from '@/types'
-import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { smallSecondaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import PortalFormDialog from '@/components/maintenance/PortalFormDialog'
 import DateField from '@/components/erp/DateField'
 import { SHEET, SheetSection, SheetIcon, Optional, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
@@ -99,7 +99,7 @@ export default function WorkOrderPurchaseCard({ woId, woStatus, onChanged }: { w
       {data && data.purchase_requests.length > 0 && (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
-            <thead><tr>{['PR', 'Purpose', 'Lines', 'Status', 'Purchase orders'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+            <thead><tr>{['PR', 'Purpose', 'Lines', 'Status', 'Purchase orders'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={data.purchase_requests.length} />}</th>)}</tr></thead>
             <tbody>
               {data.purchase_requests.map((pr) => (
                 <tr key={pr.id}>
@@ -107,9 +107,7 @@ export default function WorkOrderPurchaseCard({ woId, woStatus, onChanged }: { w
                   <td style={tdStyle}>{PURPOSE_LABELS[pr.purpose] || pr.purpose}</td>
                   <td style={tdStyle}>{pr.lines.map((l, i) => <div key={i}>{l.item_name} × {l.quantity} {l.unit || ''}</div>)}</td>
                   <td style={tdStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PR_STATUS_HEX[pr.status] || '#78716c'}1a`, color: PR_STATUS_HEX[pr.status] || '#78716c', whiteSpace: 'nowrap' }}>
-                      {pr.status.replace(/_/g, ' ')}
-                    </span>
+                    <Pill label={pr.status.replace(/_/g, ' ')} hex={PR_STATUS_HEX[pr.status] || '#78716c'} />
                   </td>
                   <td style={tdStyle}>
                     {pr.purchase_orders.length === 0 ? '—' : pr.purchase_orders.map((po) => (

@@ -25,10 +25,10 @@ from __future__ import annotations
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.permission_registry import can_view_tab
+from app.core.permission_registry import can_feature, can_view_tab
 from app.modules.main.models.user import User
 from app.modules.rnd.models.requirement_work import (
-    RND_SHARE_DEPARTMENTS, RndRequirementAccess, RndRequirementShare, RndRequirementTask, RndTeamMember,
+    RND_SHARE_DEPARTMENTS, RndRequirementAccess, RndRequirementShare, RndRequirementTask,
 )
 
 PERMS = ("view", "download", "upload", "respond")
@@ -78,20 +78,16 @@ def is_head(db: Session, user: User, roles: dict[int, str] | None = None) -> boo
     return roles.get(user.id) == "head"
 
 
-def _flag(db: Session, user: User, column) -> bool:
-    return db.query(RndTeamMember.id).filter(RndTeamMember.user_id == user.id, column == True).first() is not None  # noqa: E712
-
-
 def can_create_technical_offer(db: Session, user: User) -> bool:
-    """Heads always; others when picked under "Can create Technical Offers"
-    in R&D › Settings."""
-    return is_head(db, user) or _flag(db, user, RndTeamMember.can_create_technical_offer)
+    """Heads always; others with R&D › Requirements › Technical Offer team ›
+    Create (Organization › Role & Permissions — a role or the user's extras)."""
+    return is_head(db, user) or can_feature(user, "rnd", "requirements", "offer_team", "create")
 
 
 def can_view_technical_offer(db: Session, user: User) -> bool:
-    """Creators, plus people picked under "Can see Technical Offers" — they
-    see every requirement and its offers but can't create or change them."""
-    return can_create_technical_offer(db, user) or _flag(db, user, RndTeamMember.can_view_technical_offer)
+    """Creators, plus Technical Offer team › View — they see every requirement
+    and its offers but can't create or change them."""
+    return can_create_technical_offer(db, user) or can_feature(user, "rnd", "requirements", "offer_team", "view")
 
 
 def rnd_users(db: Session) -> list[User]:

@@ -278,6 +278,7 @@ function CalculatorInner() {
                     {group.map((t) => {
                       const active = t.key === selectedKey
                       return (
+                        // ui-audit-ignore-next-line custom-button — calculation-type list row in the picker sidebar (navigation list, not a pill button)
                         <button key={t.key} type="button" onClick={() => pickType(t)}
                           style={{
                             textAlign: 'left', padding: '9px 12px', borderRadius: 10, cursor: 'pointer', fontSize: 13,

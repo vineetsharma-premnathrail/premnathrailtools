@@ -9,7 +9,7 @@ import { qualityApi } from '@/lib/api'
 import { QualityCustomerComplaint } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import {
   Pill, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtDate, fmtMoney,
   COMPLAINT_STATUS_LABELS, COMPLAINT_STATUS_HEX, SEVERITY_HEX,
@@ -98,12 +98,12 @@ export default function QualityComplaintsPage() {
 
       <div style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
-          <thead><tr>{cols.map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{cols.map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
             {loading ? (
               <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No complaints found.</td></tr>
+              <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No complaints found — use + Log complaint to record one.</td></tr>
             ) : rows.map((c) => (
               <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/quality/complaints', c))} style={{ cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>

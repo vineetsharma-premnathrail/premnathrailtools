@@ -11,10 +11,10 @@ import { useCan } from '@/lib/permissions'
 import { pricingApi, productMappingApi, PriceCondition } from '@/lib/sdServiceApi'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
-import { formatINR } from '@/components/sales/labels'
+import { formatINR, SO_STATUS_LABELS, SO_STATUS_HEX } from '@/components/sales/labels'
 import { recordPath } from '@/lib/recordRef'
 import { TEXT } from '@/lib/theme'
-import { Section } from '@/components/shared/ui'
+import { Section, RowCount, Pill, numThStyle, numTdStyle } from '@/components/shared/ui'
 import { ErrorBanner, tableWrapStyle, tdStyle, thStyle } from '@/components/products/ProductBits'
 
 interface OrderBookRow { so_id: number; so_number: string; status: string; customer_name: string | null; customer_po_number: string | null; po_date: string | null; quantity: number; qty_delivered: number; open_qty: number; unit_price: number | null; taxable_amount: number | null }
@@ -48,7 +48,7 @@ export default function ProductSalesPanels({ productId }: { productId: number })
         {prices.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No price conditions — this product is priced per quotation.</p> : (
           <div style={{ ...tableWrapStyle, maxHeight: 320 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
-              <thead><tr>{['Type', 'Customer', 'Value', 'Min. price', 'Valid', 'Today'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Type', 'Customer', 'Value', 'Min. price', 'Valid', 'Today'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={prices.length} />}</th>)}</tr></thead>
               <tbody>
                 {prices.map((c) => (
                   <tr key={c.id}>
@@ -74,19 +74,19 @@ export default function ProductSalesPanels({ productId }: { productId: number })
           {book.rows.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No sales order lines for this product yet.</p> : (
             <div style={{ ...tableWrapStyle, maxHeight: 360 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
-                <thead><tr>{['Order', 'Status', 'Customer', 'PO', 'Qty', 'Delivered', 'Open', ...(seePrices ? ['Unit price', 'Value'] : [])].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Order', 'Status', 'Customer', 'PO', 'Qty', 'Delivered', 'Open', ...(seePrices ? ['Unit price', 'Value'] : [])].map((h, hi) => <th key={h} style={hi >= 4 ? numThStyle : thStyle}>{h}{hi === 0 && <RowCount count={book.rows.length} />}</th>)}</tr></thead>
                 <tbody>
                   {book.rows.map((r, i) => (
                     <tr key={i}>
                       <td style={tdStyle}><Link href={recordPath('/dashboard/sales/orders', r, 'so_id')} style={{ color: '#2563eb', fontWeight: 600 }}>{r.so_number}</Link></td>
-                      <td style={tdStyle}>{r.status.replace(/_/g, ' ')}</td>
+                      <td style={tdStyle}><Pill label={SO_STATUS_LABELS[r.status] || r.status.replace(/_/g, ' ')} hex={SO_STATUS_HEX[r.status] || '#78716c'} /></td>
                       <td style={tdStyle}>{r.customer_name || '—'}</td>
                       <td style={tdStyle}>{r.customer_po_number || '—'}</td>
-                      <td style={tdStyle}>{r.quantity}</td>
-                      <td style={tdStyle}>{r.qty_delivered}</td>
-                      <td style={tdStyle}>{r.open_qty}</td>
-                      {seePrices && <td style={tdStyle}>{formatINR(r.unit_price ?? 0)}</td>}
-                      {seePrices && <td style={tdStyle}>{formatINR(r.taxable_amount ?? 0)}</td>}
+                      <td style={numTdStyle}>{r.quantity}</td>
+                      <td style={numTdStyle}>{r.qty_delivered}</td>
+                      <td style={numTdStyle}>{r.open_qty}</td>
+                      {seePrices && <td style={numTdStyle}>{formatINR(r.unit_price ?? 0)}</td>}
+                      {seePrices && <td style={numTdStyle}>{formatINR(r.taxable_amount ?? 0)}</td>}
                     </tr>
                   ))}
                 </tbody>
@@ -101,7 +101,7 @@ export default function ProductSalesPanels({ productId }: { productId: number })
           {quotes.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No quotation lines linked to this product yet.</p> : (
             <div style={{ ...tableWrapStyle, maxHeight: 360 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
-                <thead><tr>{['Quotation', 'Date', 'Customer', 'Inquiry', 'Qty', ...(seePrices ? ['Quoted', 'List', 'Override reason'] : []), 'Response'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Quotation', 'Date', 'Customer', 'Inquiry', 'Qty', ...(seePrices ? ['Quoted', 'List', 'Override reason'] : []), 'Response'].map((h, hi) => <th key={h} style={h === 'Qty' || h === 'Quoted' || h === 'List' ? numThStyle : thStyle}>{h}{hi === 0 && <RowCount count={quotes.length} />}</th>)}</tr></thead>
                 <tbody>
                   {quotes.map((q, i) => (
                     <tr key={i}>
@@ -109,10 +109,10 @@ export default function ProductSalesPanels({ productId }: { productId: number })
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(q.quote_date)}</td>
                       <td style={tdStyle}>{q.customer_name || '—'}</td>
                       <td style={tdStyle}>{q.inquiry_ref}</td>
-                      <td style={tdStyle}>{q.quantity ?? '—'}</td>
-                      {seePrices && <td style={tdStyle}>{q.unit_price == null ? '—' : formatINR(q.unit_price)}</td>}
-                      {seePrices && <td style={tdStyle}>{q.list_price == null ? '—' : formatINR(q.list_price)}</td>}
-                      {seePrices && <td style={tdStyle}>{q.price_override_reason || ''}</td>}
+                      <td style={numTdStyle}>{q.quantity ?? '—'}</td>
+                      {seePrices && <td style={numTdStyle}>{q.unit_price == null ? '—' : formatINR(q.unit_price)}</td>}
+                      {seePrices && <td style={numTdStyle}>{q.list_price == null ? '—' : formatINR(q.list_price)}</td>}
+                      {seePrices && <td style={tdStyle}>{q.price_override_reason || '—'}</td>}
                       <td style={tdStyle}>{q.customer_response || '—'}</td>
                     </tr>
                   ))}

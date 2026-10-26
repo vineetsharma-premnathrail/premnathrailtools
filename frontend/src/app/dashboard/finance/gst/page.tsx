@@ -15,6 +15,7 @@ import {
   inputStyle, sectionStyle, primaryBtnStyle, secondaryBtnStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, currentPeriod, Field, ErrorBanner, InfoBanner, SubTabs, PageHeader, TableWrap, EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
+import { RowCount } from '@/components/shared/ui'
 
 const TABS = ['Registers', 'GSTR-1', 'GSTR-3B', 'ITC Set-off'] as const
 type Tab = typeof TABS[number]
@@ -104,7 +105,7 @@ function RegistersTab() {
       <TableWrap minWidth={1300} tour="fin-gst-reg-table">
         <thead>
           <tr>
-            {cols.map((c) => <th key={c} style={thStyle}>{c}</th>)}
+            {cols.map((c, i) => <th key={c} style={thStyle}>{c}{i === 0 && <RowCount count={data?.rows.length ?? 0} />}</th>)}
             {['Taxable (₹)', 'CGST', 'SGST', 'IGST', 'Total (₹)'].map((c) => <th key={c} style={numTh}>{c}</th>)}
           </tr>
         </thead>
@@ -189,7 +190,7 @@ function DocRateTable({ rows, kind }: { rows: (GSTR1['b2b'][number] | GSTR1['cdn
     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1250 }}>
       <thead>
         <tr>
-          {head.map((h) => <th key={h} style={plainTh}>{h}</th>)}
+          {head.map((h, i) => <th key={h} style={plainTh}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}
           {[kind === 'invoice' ? 'Invoice value' : 'Note value', 'Rate %', 'Taxable', 'CGST', 'SGST', 'IGST'].map((h) => <th key={h} style={plainNumTh}>{h}</th>)}
         </tr>
       </thead>
@@ -284,7 +285,7 @@ function Gstr1Tab() {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
               <thead>
                 <tr>
-                  <th style={plainTh}>Place of supply</th><th style={plainTh}>Type</th>
+                  <th style={plainTh}>Place of supply <RowCount count={data.b2cs.length} /></th><th style={plainTh}>Type</th>
                   {['Rate %', 'Taxable', 'CGST', 'SGST', 'IGST'].map((h) => <th key={h} style={plainNumTh}>{h}</th>)}
                 </tr>
               </thead>
@@ -320,7 +321,7 @@ function Gstr1Tab() {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 850 }}>
               <thead>
                 <tr>
-                  <th style={plainTh}>HSN / SAC</th><th style={plainTh}>UQC</th>
+                  <th style={plainTh}>HSN / SAC <RowCount count={data.hsn_summary.length} /></th><th style={plainTh}>UQC</th>
                   {['Rate %', 'Quantity', 'Taxable', 'CGST', 'SGST', 'IGST'].map((h) => <th key={h} style={plainNumTh}>{h}</th>)}
                 </tr>
               </thead>
@@ -351,7 +352,7 @@ function Gstr1Tab() {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
               <thead>
                 <tr>
-                  <th style={plainTh}>Nature of document</th><th style={plainTh}>Sr. no. from</th><th style={plainTh}>Sr. no. to</th>
+                  <th style={plainTh}>Nature of document <RowCount count={1} /></th><th style={plainTh}>Sr. no. from</th><th style={plainTh}>Sr. no. to</th>
                   <th style={plainNumTh}>Total issued</th><th style={plainNumTh}>Cancelled</th><th style={plainNumTh}>Net issued</th>
                 </tr>
               </thead>
@@ -413,7 +414,7 @@ function Gstr3bTab() {
       <TableWrap minWidth={900} tour="fin-gst-r3b-table">
         <thead>
           <tr>
-            <th style={thStyle}>Table</th><th style={thStyle}>Nature of supplies / ITC</th>
+            <th style={thStyle}>Table <RowCount count={data ? rows.length : 0} /></th><th style={thStyle}>Nature of supplies / ITC</th>
             {['Taxable value (₹)', 'IGST', 'CGST', 'SGST'].map((h) => <th key={h} style={numTh}>{h}</th>)}
           </tr>
         </thead>
@@ -502,14 +503,14 @@ function SetoffTab({ canPost }: { canPost: boolean }) {
       {data && (
         <>
           <div data-tour="fin-gst-setoff-stats" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-            <StatCard label={`Cash payable (as of ${dmy(data.as_of)})`} value={inr(cashTotal)} tone={cashTotal > 0 ? '#b45309' : undefined} />
-            <StatCard label="Credit carried forward" value={inr(data.credit_carried_forward.igst + data.credit_carried_forward.cgst + data.credit_carried_forward.sgst)} />
+            <StatCard label={`Cash payable (as of ${dmy(data.as_of)})`} value={`₹ ${inr(cashTotal)}`} tone={cashTotal > 0 ? '#b45309' : undefined} />
+            <StatCard label="Credit carried forward" value={`₹ ${inr(data.credit_carried_forward.igst + data.credit_carried_forward.cgst + data.credit_carried_forward.sgst)}`} />
           </div>
 
           <h3 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 10px' }}>Ledger balances at period end</h3>
           <TableWrap minWidth={600} maxHeight="none" tour="fin-gst-setoff-balances">
             <thead>
-              <tr><th style={thStyle}>Tax</th><th style={numTh}>Input credit (₹)</th><th style={numTh}>Output liability (₹)</th></tr>
+              <tr><th style={thStyle}>Tax <RowCount count={heads.length + 1} /></th><th style={numTh}>Input credit (₹)</th><th style={numTh}>Output liability (₹)</th></tr>
             </thead>
             <tbody>
               {heads.map((h) => (
@@ -530,7 +531,7 @@ function SetoffTab({ canPost }: { canPost: boolean }) {
           <h3 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 10px' }}>Utilisation (in Rule 88A order)</h3>
           <TableWrap minWidth={600} maxHeight="none" tour="fin-gst-setoff-utilisation">
             <thead>
-              <tr><th style={thStyle}>Step</th><th style={thStyle}>Credit of</th><th style={thStyle}>Paid against</th><th style={numTh}>Amount (₹)</th></tr>
+              <tr><th style={thStyle}>Step <RowCount count={data.utilisation.length} /></th><th style={thStyle}>Credit of</th><th style={thStyle}>Paid against</th><th style={numTh}>Amount (₹)</th></tr>
             </thead>
             <tbody>
               {data.utilisation.length === 0 ? <EmptyRow colSpan={4} text="Nothing to set off — no input credit and output tax to adjust against each other." />
@@ -549,7 +550,7 @@ function SetoffTab({ canPost }: { canPost: boolean }) {
             <div style={{ flex: '1 1 320px', maxWidth: 480 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 10px' }}>Cash payable after set-off</h3>
               <TableWrap minWidth={300} maxHeight="none" tour="fin-gst-setoff-cash">
-                <thead><tr><th style={thStyle}>Head</th><th style={numTh}>Amount (₹)</th></tr></thead>
+                <thead><tr><th style={thStyle}>Head <RowCount count={heads.length + 1} /></th><th style={numTh}>Amount (₹)</th></tr></thead>
                 <tbody>
                   {heads.map((h) => <tr key={h}><td style={tdStyle}>{h.toUpperCase()}</td><td style={numTd}>{inr(data.cash_payable[h])}</td></tr>)}
                   <tr><td style={tdStyle}>RCM (cash only)</td><td style={numTd}>{inr(data.cash_payable.rcm)}</td></tr>
@@ -560,7 +561,7 @@ function SetoffTab({ canPost }: { canPost: boolean }) {
             <div style={{ flex: '1 1 320px', maxWidth: 480 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 10px' }}>Credit carried forward</h3>
               <TableWrap minWidth={300} maxHeight="none" tour="fin-gst-setoff-cf">
-                <thead><tr><th style={thStyle}>Head</th><th style={numTh}>Amount (₹)</th></tr></thead>
+                <thead><tr><th style={thStyle}>Head <RowCount count={heads.length} /></th><th style={numTh}>Amount (₹)</th></tr></thead>
                 <tbody>
                   {heads.map((h) => <tr key={h}><td style={tdStyle}>{h.toUpperCase()}</td><td style={numTd}>{inr(data.credit_carried_forward[h])}</td></tr>)}
                 </tbody>

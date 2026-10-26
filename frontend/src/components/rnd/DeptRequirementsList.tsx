@@ -10,14 +10,13 @@ import { deptRequirementsApi } from '@/lib/api'
 import { recordPath } from '@/lib/recordRef'
 import { DeptRequirementRow, RndShareDepartment } from '@/types'
 import { TEXT, BORDER, GLASS, SHADOWS } from '@/lib/theme'
+import { chipBtnStyle, RowCount, inputStyle as sharedInputStyle } from '@/components/shared/ui'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { Chip, shareBadge } from '@/components/rnd/RequirementDepartmentsTab'
 
-const inputStyle: React.CSSProperties = {
-  padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
-}
+// Shared 34px control scale; list filters keep their own width.
+const inputStyle: React.CSSProperties = { ...sharedInputStyle, width: 'auto', background: 'rgba(255,255,255,.7)' }
 const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
 const headStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, textAlign: 'left' }
 
@@ -72,11 +71,7 @@ export default function DeptRequirementsList({ department, departmentLabel, modu
           {FILTERS.map((f) => {
             const active = filter === f.key
             return (
-              <button key={f.key} type="button" onClick={() => setFilter(f.key)} style={{
-                padding: '6px 12px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                color: active ? '#fff' : '#78716c', background: active ? '#FF7A45' : 'rgba(255,255,255,.55)',
-                border: `1px solid ${active ? '#FF7A45' : 'rgba(0,0,0,0.08)'}`,
-              }}>
+              <button key={f.key} type="button" onClick={() => setFilter(f.key)} style={chipBtnStyle(active)}>
                 {f.label}
               </button>
             )
@@ -95,7 +90,7 @@ export default function DeptRequirementsList({ department, departmentLabel, modu
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
             <thead>
               <tr>
-                <th style={headStyle}>Requirement</th>
+                <th style={headStyle}>Requirement <RowCount count={shown.length} /></th>
                 <th style={headStyle}>Customer</th>
                 <th style={headStyle}>R&amp;D asks</th>
                 <th style={headStyle}>Reply by</th>

@@ -9,6 +9,7 @@ import { ASSET_CATEGORY_LABELS, ASSET_CONDITION_LABELS } from '@/components/hr/a
 import { ErrorBanner, EmptyRow, Pill, sectionStyle, thStyle, tdStyle, fmtDate, linkActionStyle } from '@/components/hr/admin/adminUi'
 import { TEXT } from '@/lib/theme'
 import { recordPath } from '@/lib/recordRef'
+import { RowCount } from '@/components/shared/ui'
 
 // Assets tab on the HR employee detail page: what the employee holds now
 // (open assignments) and everything they held before.
@@ -42,7 +43,7 @@ export default function EmployeeAssetsTab({ userId }: { userId: number }) {
       </div>
       <div style={{ padding: error.length ? '0 20px' : 0 }}><ErrorBanner error={error} /></div>
       <table data-tour="hr-emp-assets-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
-        <thead><tr>{['Asset', 'Category', 'Serial', 'Issued', 'Returned', 'Condition (out → in)', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+        <thead><tr>{['Asset', 'Category', 'Serial', 'Issued', 'Returned', 'Condition (out → in)', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
         <tbody>
           {loading ? <EmptyRow colSpan={7} text="Loading…" /> : rows.length === 0 ? <EmptyRow colSpan={7} text="No assets have ever been issued to this employee." /> : rows.map((r) => (
             <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/hr/assets', r, 'asset_id'))} style={{ cursor: 'pointer' }}>

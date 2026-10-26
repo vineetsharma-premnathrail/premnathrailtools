@@ -12,6 +12,7 @@ import { formatDate } from '@/lib/format'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordHref } from '@/lib/recordRef'
+import { segmentBtnStyle, RowCount } from '@/components/shared/ui'
 
 type Bucket = 'open' | 'overdue' | 'today'
 
@@ -49,7 +50,7 @@ export default function FollowUpsPage() {
     setLoading(true)
     setError('')
     const params = bucket === 'overdue' ? { overdue: true } : bucket === 'today' ? { due_today: true } : { status: 'Open' }
-    crmApi.listActivities(params)
+    crmApi.listActivities({ ...params, limit: 10000 })
       .then(setActivities)
       .catch((err) => setError(extractErrorMessages(err, 'Could not load follow-ups — check your connection and reload; if it persists your account may lack access to this module.').join(' ')))
       .finally(() => setLoading(false))
@@ -78,23 +79,13 @@ export default function FollowUpsPage() {
         <button type="button" data-tour="followups-back-btn" onClick={() => router.push('/dashboard/crm')} style={secondaryBtnStyle}>← Back</button>
       </div>
 
-      <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(0,0,0,0.05)', marginBottom: 16 }}>
+      <div style={{ display: 'inline-flex', gap: 4, marginBottom: 16 }}>
         {BUCKETS.map((b) => (
           <button
             key={b.key}
             data-tour={`followups-tab-${b.key}`}
             onClick={() => router.push(`/dashboard/crm/followups?bucket=${b.key}`)}
-            style={{
-              padding: '8px 16px',
-              borderRadius: 8,
-              border: 'none',
-              fontSize: 12.5,
-              fontWeight: 600,
-              cursor: 'pointer',
-              background: bucket === b.key ? '#fff' : 'transparent',
-              color: bucket === b.key ? '#FF7A45' : '#78716c',
-              boxShadow: bucket === b.key ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
-            }}
+            style={segmentBtnStyle(bucket === b.key)}
           >
             {b.label}
           </button>
@@ -111,9 +102,9 @@ export default function FollowUpsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-              {['Type', 'Related', 'Customer Organization', 'Due Date', 'Assigned To', 'Remarks', 'Status'].map((label) => (
+              {['Type', 'Related', 'Customer Organization', 'Due Date', 'Assigned To', 'Remarks', 'Status'].map((label, hi) => (
                 <th key={label} style={{ textAlign: 'left', padding: '7px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {label}
+                  {label}{hi === 0 && <RowCount count={rows.length} />}
                 </th>
               ))}
             </tr>

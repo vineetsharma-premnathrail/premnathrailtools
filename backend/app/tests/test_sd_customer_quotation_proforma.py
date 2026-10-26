@@ -198,9 +198,12 @@ def test_lost_needs_reason_competitor_and_owner_is_a_user(client, db):
     outsider = make_user(db, "o.out@premnathrail.com", apps=("store",))
     inq = _inq(db, owner, 6)
     url = f"{CRM}/inquiries/{inq.id}"
-    assert client.patch(url, json={"bd_owner_id": outsider.id}, headers=hdr(owner)).status_code == 422
-    r = client.patch(url, json={"bd_owner_id": bd.id, "expected_value": 1000000, "probability": 40}, headers=hdr(owner))
-    assert r.status_code == 200 and r.json()["bd_owner"] == bd.name
+    # BD owner = the creator and can't be changed (owner rule 2026-10-24) — not to anyone.
+    for other in (outsider, bd):
+        r = client.patch(url, json={"bd_owner_id": other.id}, headers=hdr(owner))
+        assert r.status_code == 422 and "can't be changed" in r.json()["detail"]
+    r = client.patch(url, json={"expected_value": 1000000, "probability": 40}, headers=hdr(owner))
+    assert r.status_code == 200
     assert client.patch(url, json={"probability": 140}, headers=hdr(owner)).status_code == 422
 
     lost = {"current_stage": "Closed – Not Ordered"}

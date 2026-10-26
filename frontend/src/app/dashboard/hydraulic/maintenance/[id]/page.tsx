@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
 import { HydMaintenancePlan, HydServiceRecord } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle, Pill } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -96,9 +96,7 @@ export default function HydMaintenancePlanDetailPage() {
           <div data-tour="hyd-pland-due-card" style={{ ...cardStyle, borderLeft: `4px solid ${dueHex}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${dueHex}1a`, color: dueHex, whiteSpace: 'nowrap' }}>
-                  {DUE_LABELS[plan.due_status] || plan.due_status}
-                </span>
+                <Pill label={DUE_LABELS[plan.due_status] || plan.due_status} hex={dueHex || '#78716c'} />
                 <span style={{ fontSize: 13, color: TEXT.secondary }}>
                   {MAINTENANCE_TYPE_LABELS[plan.maintenance_type] || plan.maintenance_type} · {frequencyText(plan)}
                 </span>
@@ -163,9 +161,7 @@ export default function HydMaintenancePlanDetailPage() {
                   {r.performed_by_name || r.external_agency ? ` · ${r.performed_by_name || r.external_agency}` : ''}
                 </span>
                 <span style={{ color: TEXT.secondary, minWidth: 90 }}>{r.total_cost == null ? '—' : `₹${r.total_cost.toLocaleString('en-IN')}`}</span>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${SERVICE_STATUS_HEX[r.status]}1a`, color: SERVICE_STATUS_HEX[r.status], whiteSpace: 'nowrap' }}>
-                  {SERVICE_STATUS_LABELS[r.status] || r.status}
-                </span>
+                <Pill label={SERVICE_STATUS_LABELS[r.status] || r.status} hex={SERVICE_STATUS_HEX[r.status] || '#78716c'} />
               </div>
             ))}
           </div>

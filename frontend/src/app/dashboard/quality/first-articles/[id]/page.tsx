@@ -9,7 +9,7 @@ import { qualityApi } from '@/lib/api'
 import { QualityFirstArticle } from '@/types'
 import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
-import { Section, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { Section, InfoRow, DetailCard, DetailSummary, DetailGroup, DetailRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
 import { Pill, PageHeader, ErrorBanner, ActionSheet, fmtDate, LOT_STATUS_LABELS, DECISION_LABELS } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
@@ -89,37 +89,43 @@ export default function FirstArticleDetailPage() {
         </ActionSheet>
       )}
       <PageHeader title={fai.fai_number} subtitle="Quality · First article inspection">
-        <Pill text={STATUS_LABELS[fai.status] || fai.status} hex={STATUS_HEX[fai.status]} />
         {back}
       </PageHeader>
       {!confirm && <ErrorBanner error={error} />}
-      <Section title="First article" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
-          <InfoRow label="Item" value={`${fai.item_code ? `${fai.item_code} — ` : ''}${fai.item_name}`} />
-          <InfoRow label="Source" value={fai.vendor_name || 'In-house production'} />
-          <InfoRow label="Why" value={TRIGGER_LABELS[fai.trigger] || fai.trigger} />
-          <InfoRow label="Drawing revision" value={fai.drawing_ref || 'No released drawing in Design'} />
-          <InfoRow label="Raised from" value={fai.source_reference || fai.source_type} />
-          <InfoRow label="Raised" value={`${fai.created_by_name || 'System'} · ${fmtDate(fai.created_at)}`} />
-        </div>
-        {revChanged && (
-          <p style={{ fontSize: 13, color: '#b45309', margin: 0 }}>
-            The item&apos;s released drawing is now {fai.current_drawing_ref || 'none'} — this approval covered {fai.drawing_ref || 'no drawing'}, so the next receipt needs a new FAI.
+      <DetailCard>
+        <DetailSummary
+          title={`${fai.item_code ? `${fai.item_code} — ` : ''}${fai.item_name}`}
+          text={`First piece from ${fai.vendor_name || 'in-house production'} checked against the full drawing before regular lots are allowed. Reason: ${(TRIGGER_LABELS[fai.trigger] || fai.trigger).toLowerCase()}.`}
+          meta={<>
+            <Pill text={STATUS_LABELS[fai.status] || fai.status} hex={STATUS_HEX[fai.status]} />
+            <span>·</span><span>Raised {fmtDate(fai.created_at)} by {fai.created_by_name || 'System'}</span>
+          </>}
+        />
+        <DetailGroup title="What is checked">
+          <DetailRow label="Source">{fai.vendor_name || 'In-house production'}</DetailRow>
+          <DetailRow label="Drawing revision">{fai.drawing_ref || 'No released drawing in Design'}</DetailRow>
+          <DetailRow label="Raised from">{fai.source_reference || fai.source_type}</DetailRow>
+          {revChanged && (
+            <p style={{ fontSize: 13, color: '#b45309', margin: '4px 0 8px' }}>
+              The item&apos;s released drawing is now {fai.current_drawing_ref || 'none'} — this approval covered {fai.drawing_ref || 'no drawing'}, so the next receipt needs a new FAI.
+            </p>
+          )}
+        </DetailGroup>
+        <DetailGroup title="Full drawing check (lot)" last>
+          <DetailRow label="Inspection lot">
+            {fai.lot_id ? (
+              <span style={{ display: 'inline-flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button type="button" onClick={() => router.push(recordPath('/dashboard/quality/lots', fai, 'lot_id'))} style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontWeight: 700, color: '#FF6A2A', fontSize: 13.5 }}>{fai.lot_number}</button>
+                <span>{LOT_STATUS_LABELS[fai.lot_status || ''] || fai.lot_status}</span>
+                {fai.lot_decision && <span style={{ color: TEXT.muted }}>Decision: {DECISION_LABELS[fai.lot_decision] || fai.lot_decision}</span>}
+              </span>
+            ) : 'No lot'}
+          </DetailRow>
+          <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '2px 0 6px' }}>
+            The lot checks every characteristic of the item&apos;s First article plan — or, without one, its incoming / final plan on the first-article sample (Quality → Settings), accept 0.
           </p>
-        )}
-      </Section>
-      <Section title="Full drawing check (lot)" style={{ marginBottom: 20 }}>
-        {fai.lot_id ? (
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
-            <span onClick={() => router.push(recordPath('/dashboard/quality/lots', fai, 'lot_id'))} style={{ cursor: 'pointer', fontWeight: 700, color: '#FF6A2A' }}>{fai.lot_number}</span>
-            <span>{LOT_STATUS_LABELS[fai.lot_status || ''] || fai.lot_status}</span>
-            {fai.lot_decision && <span style={{ color: TEXT.muted }}>Decision: {DECISION_LABELS[fai.lot_decision] || fai.lot_decision}</span>}
-          </div>
-        ) : <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No lot.</p>}
-        <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>
-          The lot checks every characteristic of the item&apos;s First article plan — or, without one, its incoming / final plan on the first-article sample (Quality → Settings), accept 0.
-        </p>
-      </Section>
+        </DetailGroup>
+      </DetailCard>
       {fai.status === 'open' ? (
         <Section title="Decision" style={{ marginBottom: 20 }}>
           {canDecide ? (

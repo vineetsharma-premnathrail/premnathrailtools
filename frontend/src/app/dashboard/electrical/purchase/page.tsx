@@ -11,8 +11,9 @@ import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import ElectricalNav from '@/components/electrical/ElectricalNav'
 import {
-  inputStyle, thStyle, tdStyle, linkStyle, Pill, ErrorBanner, useLookupErrors, PROCUREMENT_LABELS, PROCUREMENT_HEX,
+  inputStyle, thStyle, tdStyle, Pill, ErrorBanner, useLookupErrors, PROCUREMENT_LABELS, PROCUREMENT_HEX, humanize,
 } from '@/components/electrical/shared'
+import { RowCount, numThStyle, numTdStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 
 // '' = the API default: every line still open (To Buy / PR Raised / Ordered).
 const STATUS_FILTERS: { value: string; label: string }[] = [
@@ -121,7 +122,7 @@ export default function ElectricalPurchaseRequirementsPage() {
           </span>
           <span style={chipStyle('#2563EB')}>
             <strong style={{ fontSize: 18 }}>{rows.length}</strong>
-            <span style={{ fontSize: 12, fontWeight: 600 }}>shown across {jobCount} {jobCount === 1 ? 'job' : 'jobs'}</span>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>{rows.length === 1 ? 'line' : 'lines'} shown, across {jobCount} {jobCount === 1 ? 'job' : 'jobs'}</span>
           </span>
           <span style={{ fontSize: 12.5, color: TEXT.muted }}>
             Raise the PR in Procurement from the job&apos;s BOM tab, then link it to the line.
@@ -135,7 +136,7 @@ export default function ElectricalPurchaseRequirementsPage() {
       }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
-            <tr>{COLS.map((h, i) => <th key={`${h}-${i}`} style={thStyle}>{h}</th>)}</tr>
+            <tr>{COLS.map((h, i) => <th key={`${h}-${i}`} style={h === 'Qty' || h === 'Line #' ? numThStyle : thStyle}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {loading ? (
@@ -154,7 +155,7 @@ export default function ElectricalPurchaseRequirementsPage() {
                   <div style={{ fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{r.job_number || '—'}</div>
                   {r.job_title && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{r.job_title}</div>}
                 </td>
-                <td style={tdStyle}>{r.line_no}</td>
+                <td style={numTdStyle}>{r.line_no}</td>
                 <td style={tdStyle}>{categoryLabel(r.category)}</td>
                 <td style={{ ...tdStyle, maxWidth: 340 }}>
                   {r.description}
@@ -162,19 +163,19 @@ export default function ElectricalPurchaseRequirementsPage() {
                     <div style={{ fontSize: 11.5, color: TEXT.muted }}>{[r.make, r.part_number].filter(Boolean).join(' · ')}</div>
                   )}
                 </td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{r.quantity} {r.uom}</td>
+                <td style={numTdStyle}>{r.quantity.toLocaleString('en-IN')} {r.uom}</td>
                 <td style={tdStyle}>{r.rating || '—'}</td>
                 <td style={tdStyle}><Pill value={r.procurement_status} labels={PROCUREMENT_LABELS} hex={PROCUREMENT_HEX} /></td>
                 <td style={tdStyle}>
                   {r.p2p_number ? (
                     <>
                       <div style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{r.p2p_number}</div>
-                      {r.p2p_status && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{r.p2p_status.replace(/_/g, ' ')}</div>}
+                      {r.p2p_status && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{humanize(r.p2p_status)}</div>}
                     </>
                   ) : '—'}
                 </td>
                 <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                  <span onClick={() => go(r)} style={linkStyle}>View</span>
+                  <button type="button" onClick={() => go(r)} style={smallSecondaryBtnStyle}>View</button>
                 </td>
               </tr>
             ))}

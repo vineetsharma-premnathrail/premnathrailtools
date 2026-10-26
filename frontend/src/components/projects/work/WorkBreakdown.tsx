@@ -21,6 +21,7 @@ import {
 } from './pmUi'
 import { MentionText } from './PmChat'
 import { recordPath } from '@/lib/recordRef'
+import { RowCount } from '@/components/shared/ui'
 
 const small: React.CSSProperties = { fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '10px 0 4px' }
 const line: React.CSSProperties = { fontSize: 12.5, color: TEXT.body, margin: '2px 0' }
@@ -31,7 +32,7 @@ function PeopleTable({ rows }: { rows: PmPersonSummary[] }) {
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
-        <thead><tr>{['Person', 'Given by lead', 'Added by self', 'Done', 'Open', 'Overdue', 'Cancelled', 'Est. h', 'Logged h', 'Last completed'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+        <thead><tr>{['Person', 'Given by lead', 'Added by self', 'Done', 'Open', 'Overdue', 'Cancelled', 'Est. h', 'Logged h', 'Last completed'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.user_id ?? 0}>
@@ -235,7 +236,7 @@ export default function WorkBreakdown({ projectId, milestoneId, refreshKey }: { 
             </button>
           ) : <h2 style={{ fontSize: 16, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Work breakdown</h2>}
           <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '2px 0 0' }}>
-            {single ? 'Who got how many tasks, and each task\'s files, comments, tags, reasons and history.' : 'Every WBS in step order → who got how many tasks → each task with its files, comments, tags, reasons, history and time. Click ▸ to expand.'}
+            {single ? 'Who got how many tasks, and each task\'s files, comments, tags, reasons and history.' : 'Every milestone in step order → who got how many tasks → each task with its files, comments, tags, reasons, history and time. Click ▸ to expand.'}
           </p>
         </div>
         <button type="button" onClick={load} style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>↻ Refresh</button>
@@ -247,7 +248,7 @@ export default function WorkBreakdown({ projectId, milestoneId, refreshKey }: { 
           <div style={{ height: 14 }} />
         </>
       )}
-      {data.milestones.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No WBS elements yet.</p>
+      {data.milestones.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No milestones yet.</p>
         : single ? data.milestones.map((b) => <MilestoneBody key={b.milestone.id} b={b} onOpenFile={openFile} bare />)
         : data.milestones.map((b) => <MilestoneBlock key={b.milestone.id} b={b} onOpenFile={openFile} />)}
     </div>

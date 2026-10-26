@@ -89,7 +89,10 @@ async def list_organizations(
             | (cast(Organization.created_at, SAString).ilike(like))
             | (Organization.created_by_id.in_(creator_ids_matching))
         )
-    orgs = query.order_by(Organization.id.desc()).offset(skip).limit(limit).all()
+    # A picker must offer every organization — a default page of 200 silently hid
+    # newer customers from the Inquiry / Tender / Finance dropdowns.
+    q = query.order_by(Organization.id.desc())
+    orgs = (q.all() if picker else q.offset(skip).limit(limit).all())
     creator_ids = {o.created_by_id for o in orgs if o.created_by_id}
     names_by_id = {}
     if creator_ids:

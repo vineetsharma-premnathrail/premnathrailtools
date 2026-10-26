@@ -78,8 +78,8 @@ export interface PermissionFeature {
   kind: 'subtab' | 'section' | 'action' | 'sensitive'
   hint?: string
   actions: string[]
-  /** feature action -> tab action it inherits from */
-  inherit: Record<string, string>
+  /** feature action -> tab action it inherits from; null = explicit-only (never inherited / preset-granted) */
+  inherit: Record<string, string | null>
 }
 
 export interface Role {
@@ -566,6 +566,8 @@ export interface InquiryLineItemInput {
 
 export interface Inquiry {
   id: number
+  /** Live sales order raised from this inquiry (detail view) — the inquiry is then read-only. */
+  sales_order_number?: string | null
   universal_id: string
   org_id: number
   org_contact_id?: number
@@ -863,7 +865,7 @@ export interface RndMyAccess {
   upload: boolean
   respond: boolean
   is_head: boolean
-  /** Head, or ticked "Can create Technical Offers" in R&D › Settings. */
+  /** Head, or R&D › Requirements › Technical Offer team › Create (Role & Permissions). */
   create_technical_offer?: boolean
   /** Which of the requirement's departments I belong to — "My department" (R&D and/or a shared department). */
   departments?: RndWorkDepartment[]
@@ -872,22 +874,9 @@ export interface RndMyAccess {
 /** R&D plus the departments a requirement can be shared with. */
 export type RndWorkDepartment = 'rnd' | 'design' | 'electrical' | 'hydraulic'
 
-/** Someone on an R&D › Settings Technical Offer list. */
-export interface RndOfferPerson {
-  user_id: number
-  name: string
-  email: string | null
-  has_rnd_app: boolean
-  is_active: boolean
-}
-
 export interface RndSettings {
   /** R&D heads — the R&D department's heads in Organization › Department (empty = every R&D user acts as head). */
   heads: { user_id: number; name: string }[]
-  /** May create Technical Offers (heads always can). */
-  creators: RndOfferPerson[]
-  /** May see every requirement and its Technical Offers, view only. */
-  viewers: RndOfferPerson[]
   can_edit: boolean
   is_head: boolean
   /** The current user may create Technical Offers. */
@@ -1058,6 +1047,8 @@ export interface RndTask {
   record_id: number
   // Project tasks only: set on a sub-task (the parent's assignee split the work).
   parent_task_id?: number | null
+  /** Project tasks only: the plan milestone it belongs to (null on older tasks). */
+  milestone_id?: number | null
   title: string
   remarks: string | null
   // Requirement tasks only: whose work it is (R&D or a shared department).
@@ -1117,6 +1108,64 @@ export interface RndTaskCreateInput {
   files: File[]
   /** Requirement tasks: the assignee's department. */
   department?: RndWorkDepartment
+  /** Project tasks: the milestone it goes into. */
+  milestone_id?: number
+}
+
+/** A milestone of an R&D project's plan (Project Plan & Milestones, same as PM). */
+export interface RndMilestone {
+  id: number
+  project_id: number
+  title: string
+  description: string | null
+  assignee_id: number
+  assignee_name: string | null
+  department_name: string | null
+  co_owner_ids: number[]
+  co_owner_names: string[]
+  start_date: string | null
+  due_date: string
+  status: 'todo' | 'in_progress' | 'blocked' | 'done' | 'cancelled'
+  status_label: string
+  blocker_reason: string | null
+  reopen_reason: string | null
+  cancel_reason: string | null
+  color: string | null
+  icon: string | null
+  created_by_name: string | null
+  created_at: string | null
+  completed_by_name: string | null
+  completed_at: string | null
+  is_overdue: boolean
+  tasks_total: number
+  tasks_done: number
+  tasks: { id: number; title: string; done: boolean }[]
+  can_edit: boolean
+  can_work: boolean
+  can_plan: boolean
+  can_delete: boolean
+}
+
+export interface RndMilestoneInput {
+  title: string
+  description: string | null
+  assignee_id: number
+  co_owner_ids: number[]
+  start_date: string | null
+  due_date: string
+  status?: 'todo' | 'in_progress' | 'blocked'
+  blocker_reason: string | null
+  color: string | null
+  icon: string | null
+}
+
+export interface RndProjectHistoryEntry {
+  id: string
+  kind: 'milestone' | 'project' | 'task'
+  action: string
+  summary: string
+  performed_by: string
+  performed_at: string | null
 }
 
 export interface RndTaskEditInput {
@@ -1129,6 +1178,8 @@ export interface RndTaskEditInput {
   start_date?: string | null
   work_status?: RndTaskWorkStatus
   checklist?: { id?: string; text: string; done?: boolean }[]
+  /** Project tasks: move a main task into another milestone. */
+  milestone_id?: number
 }
 
 export interface QuotationLineItem {

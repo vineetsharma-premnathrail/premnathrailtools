@@ -13,6 +13,7 @@ import SalesNav from '@/components/sales/SalesNav'
 import { sectionStyle, h2Style, inputStyle, thStyle, tdStyle, Pill, ErrorBanner, PageHeader } from '@/components/sales/SalesUi'
 import { ROW_STATUS_LABELS, ROW_STATUS_HEX, EXTENSION_REASON_LABELS, formatINR } from '@/components/sales/labels'
 import { recordPath } from '@/lib/recordRef'
+import { RowCount } from '@/components/shared/ui'
 
 export default function SalesDeliveryPage() {
   const { isAuthorized, isLoading } = useRequireApp('sales')
@@ -72,7 +73,7 @@ export default function SalesDeliveryPage() {
 
       <div data-tour="sales-delivery-board" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 360px)', marginBottom: 20 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
-          <thead><tr>{['Due', 'Order', 'Customer', 'Vehicle', 'Consignee', 'Build', 'Stage', 'Status', 'Risk', 'LD accrued', 'LD forecast'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Due', 'Order', 'Customer', 'Vehicle', 'Consignee', 'Build', 'Stage', 'Status', 'Risk', 'LD accrued', 'LD forecast'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
             {loading ? <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>
               : rows.length === 0 ? <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No open vehicles match.</td></tr>
@@ -104,7 +105,7 @@ export default function SalesDeliveryPage() {
         {extError ? null : exts.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>None open. Request an extension from the order&apos;s Delivery Schedule tab.</p> : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr>{['Order', 'Customer', 'Vehicles', 'Requested date', 'Reason'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Order', 'Customer', 'Vehicles', 'Requested date', 'Reason'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={exts.length} />}</th>)}</tr></thead>
               <tbody>{exts.map((e) => (
                 <tr key={e.id} onClick={() => router.push(`${recordPath('/dashboard/sales/orders', e, 'so_id')}?tab=schedule`)} style={{ cursor: 'pointer' }}>
                   <td style={{ ...tdStyle, fontWeight: 600 }}>{e.so_display}</td><td style={tdStyle}>{e.customer_name}</td><td style={tdStyle}>{e.vehicles.join(', ')}</td>

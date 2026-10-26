@@ -5,6 +5,25 @@ const config: TourConfig = {
   pageTitle: 'Create / Edit Inquiry',
   steps: [
     {
+      target: 'inq-org',
+      title: 'Client Company',
+      purpose: 'The customer organization raising this requirement. Search and select an existing customer organization — new ones are created from the Customer Organizations page, not from here.',
+      required: true,
+      after: 'Selecting an customer organization loads its contacts below and auto-fills Railway Zone/Division if the org has them set. It also checks for existing open inquiries/tenders from the same customer organization and warns you if found, to avoid duplicates.',
+    },
+    {
+      target: 'inq-contact',
+      title: 'Contact Person',
+      purpose: 'The specific person at the customer organization this inquiry is tied to.',
+      required: true,
+      options: [
+        { value: '(existing contact)', meaning: 'Any contact already saved under the selected customer organization.' },
+        { value: '+ Add New Contact', meaning: 'Reveals a small form below to create a brand-new contact for this customer organization inline, without leaving this page.' },
+      ],
+      why: 'Saving is blocked with "Please select a contact person, or save the new contact you are adding." if this is left on "+ Add New Contact" without actually saving it.',
+      after: 'Once the client company and a saved contact are chosen, the rest of the inquiry (Basic Information, Product Requirement) opens for editing.',
+    },
+    {
       target: 'inq-number',
       title: 'Inquiry Number',
       purpose: 'A unique, auto-generated ID for this inquiry (format INQ-YYYYMMDD-####). Read-only — you never type this.',
@@ -17,8 +36,6 @@ const config: TourConfig = {
       required: true,
       options: [
         { value: 'Website', meaning: 'Came through the company website.' },
-        { value: 'Google Ads', meaning: 'Came through a paid Google Ads campaign.' },
-        { value: 'Facebook / Instagram', meaning: 'Came through a Facebook or Instagram ad/post.' },
         { value: 'WhatsApp', meaning: 'Enquired via WhatsApp message.' },
         { value: 'Referral', meaning: 'Came through a referral/existing contact.' },
         { value: 'Phone Call', meaning: 'Inbound or outbound phone call.' },
@@ -26,7 +43,6 @@ const config: TourConfig = {
         { value: 'Walk-in', meaning: 'Customer walked in without prior contact.' },
         { value: 'LinkedIn', meaning: 'Came through LinkedIn outreach or a post.' },
         { value: 'Exhibition/Event', meaning: 'Met at a trade show, exhibition, or industry event.' },
-        { value: 'Justdial', meaning: 'Came through the Justdial listing/directory.' },
         { value: 'Other', meaning: 'Any source not covered by the options above.' },
       ],
     },
@@ -58,30 +74,11 @@ const config: TourConfig = {
       why: 'Status drives which pipeline stage this inquiry shows up in on the dashboard.',
     },
     {
-      target: 'inq-bd-owner',
-      title: 'BD Owner',
-      purpose: 'The business-development person responsible for this inquiry — auto-filled with your own name and locked. Admins can instead pick any user from the directory here.',
-      required: false,
-    },
-    {
       target: 'inq-current-status-note',
       title: 'Current Status',
       purpose: 'A free-text running note on where things stand right now — separate from the fixed Status dropdown above. Can also be updated later from the inquiry\'s detail page.',
       required: false,
       why: 'Every change to this note is recorded on the Timeline, just like any other field edit.',
-    },
-    {
-      target: 'inq-opportunity',
-      title: 'Opportunity',
-      purpose: 'Expected value, win probability, expected order date and the sales engineer (a user). These feed the weighted pipeline on the CRM dashboard.',
-      required: false,
-      why: 'Closing an inquiry as not ordered asks for a lost reason (and competitor) — used in the win / loss report.',
-    },
-    {
-      target: 'inq-product-category',
-      title: 'Category',
-      required: true,
-      purpose: 'The broad product category for the primary item being enquired about. Pick an existing one or type a new value to add it to the shared catalog.',
     },
     {
       target: 'inq-product',
@@ -145,24 +142,6 @@ const config: TourConfig = {
       title: 'Project Details',
       required: false,
       purpose: 'Background on the broader project this requirement is part of — scope, timeline, context.',
-    },
-    {
-      target: 'inq-org',
-      title: 'Client Company',
-      purpose: 'The customer organization raising this requirement. Search and select an existing customer organization — new ones are created from the Customer Organizations page, not from here.',
-      required: true,
-      after: 'Selecting an customer organization loads its contacts below and auto-fills Railway Zone/Division if the org has them set. It also checks for existing open inquiries/tenders from the same customer organization and warns you if found, to avoid duplicates.',
-    },
-    {
-      target: 'inq-contact',
-      title: 'Contact Person',
-      purpose: 'The specific person at the customer organization this inquiry is tied to.',
-      required: true,
-      options: [
-        { value: '(existing contact)', meaning: 'Any contact already saved under the selected customer organization.' },
-        { value: '+ Add New Contact', meaning: 'Reveals a small form below to create a brand-new contact for this customer organization inline, without leaving this page.' },
-      ],
-      why: 'Saving is blocked with "Please select a contact person, or save the new contact you are adding." if this is left on "+ Add New Contact" without actually saving it.',
     },
     {
       target: 'inq-save',

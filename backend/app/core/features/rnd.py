@@ -39,6 +39,13 @@ register_features(
     _feature("technical_offers", "Technical Offers", "subtab", {
         "view": "view", "create": "view", "edit": "view", "delete": "view", "approve": "view",
     }, "Technical Offers sub-tab: see offers; create / revise, edit and delete drafts (Technical Offer creators in R&D › Settings); approve = send the offer to the BD team (R&D head)."),
+    # Explicit-only (None): never inherited and never given by a module preset —
+    # a role or a user's extra permission must tick it. Replaces the hand-picked
+    # "Can create / Can see Technical Offers" lists that lived in R&D › Settings.
+    _feature("offer_team", "Technical Offer team (every requirement)", "action", {"view": None, "create": None},
+             "View = see every requirement and its Technical Offers and download them, without being added to each requirement. "
+             "Create = also start a Technical Offer on any requirement and edit its Word document. Releasing to BD stays with the R&D head. "
+             "Not given by No access / View only / Contributor / Full access — tick it on purpose."),
     _feature("documents", "Documents", "subtab", {"view": "view", "create": "view", "export": "view"},
              "Documents sub-tab: list the requirement's files, upload (create) and open / download (export). The per-requirement Upload / Download ticks still apply."),
     _feature("discussion", "Discussion", "subtab", {"view": "view", "create": "view"},
@@ -54,6 +61,12 @@ register_features(
     }, "The Tasks board of a Prototype / Research project: see tasks, create tasks / sub-tasks, edit / reopen, decide approval requests and cancel. Record rules stay: project leads give tasks, the task's creator reviews it."),
     _feature("team", "Project lead & team", "section", {"view": "view"},
              "The Project Lead(s) and Team Members fields of a Prototype / Research project. Changing them still needs 'edit' on Prototype / Research; this row carries the role's 'Assign to' rule for those fields."),
+    _feature("milestones", "Milestones", "subtab", {
+        "view": "view", "create": "view", "edit": "view", "delete": "view",
+    }, "The Milestones tab of a Prototype / Research project: see the plan; add, edit and delete milestones. Record rule stays: only project leads change the plan."),
+    _feature("milestone_status", "Achieve, reopen & cancel milestones", "action", {
+        "view": "view", "approve": "view", "edit": "view", "cancel": "view",
+    }, "Approve = mark a milestone achieved (its responsible people or a lead, once every task is finished); edit = reopen an achieved one; cancel = cancel an open one (leads, with a reason)."),
 )
 
 register_features(
@@ -76,6 +89,8 @@ register_pickers("rnd", "requirements",
 register_pickers("rnd", "projects",
                  ("tasks", "Assign tasks to", "Who this role may give project tasks / sub-tasks to, or reassign them to."))
 register_pickers("rnd", "projects",
-                 ("team", "Pick project lead & team", "Who this role may make a project lead or team member when creating or editing a Prototype / Research project."))
+                 ("milestones", "Set milestone owners to", "Who this role may make responsible for a milestone of a Prototype / Research project (only people on the project team)."))
+register_pickers("rnd", "projects",
+                 ("team", "Pick project lead & team","Who this role may make a project lead or team member when creating or editing a Prototype / Research project."))
 register_pickers("rnd", "experiments",
                  ("conducted_by", "Assign experiment to", "Who this role may set as 'Conducted by' on an experiment / test (new or edited)."))

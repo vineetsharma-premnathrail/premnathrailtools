@@ -10,7 +10,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi, storeSerialsApi } from '@/lib/api'
 import { StoreLocation } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { inputStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, smallSecondaryBtnStyle, RowCount, Pill, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -31,9 +31,11 @@ const th: React.CSSProperties = {
 }
 const td: React.CSSProperties = { padding: '11px 14px', fontSize: 13, color: TEXT.secondary, borderTop: '1px solid rgba(0,0,0,0.05)' }
 
+// "in_stock" → "In stock" when the server sends no label.
+const humanize = (v?: string | null) => (v ? v.charAt(0).toUpperCase() + v.slice(1).replace(/_/g, ' ') : '—')
+
 function Badge({ status, label }: { status: string; label?: string }) {
-  const hex = STATUS_HEX[status] || '#6b7280'
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label || status}</span>
+  return <Pill label={label || humanize(status)} hex={STATUS_HEX[status] || '#6b7280'} />
 }
 
 export default function StoreSerialsPage() {
@@ -111,7 +113,7 @@ export default function StoreSerialsPage() {
           <option value="">All stores</option>
           {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
         </Select>
-        <span style={{ fontSize: 12.5, color: TEXT.muted, alignSelf: 'center' }}>{total} unit(s)</span>
+        <span style={{ fontSize: 12.5, color: TEXT.muted, alignSelf: 'center' }}>{total.toLocaleString('en-IN')} unit{total === 1 ? '' : 's'}{total > PAGE ? ` — page ${page + 1} of ${pages}` : ''}</span>
         {total > PAGE && (
           <>
             <button disabled={page === 0} onClick={() => setPage((p) => p - 1)} style={smallSecondaryBtnStyle}>‹ Prev</button>
@@ -122,19 +124,19 @@ export default function StoreSerialsPage() {
 
       <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-          <thead><tr>{['Serial no.', 'Item', 'Status', 'Store / bin', 'From (GRN · vendor)', 'Issued to', 'Supplier warranty', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Serial no.', 'Item', 'Status', 'Store / bin', 'From (GRN · vendor)', 'Issued to', 'Supplier warranty', ''].map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={total} />}</th>)}</tr></thead>
           <tbody>
             {loading && <tr><td colSpan={8} style={{ ...td, textAlign: 'center', padding: 24 }}>Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={8} style={{ ...td, textAlign: 'center', padding: 24 }}>No serial numbers match.</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={8} style={{ ...td, textAlign: 'center', padding: 24 }}>{q.trim() || status || locationId ? 'No serial numbers match these filters.' : 'No serial numbers yet — units are added when a GRN receives an item with “Serial numbers” ticked in the Item Master.'}</td></tr>}
             {!loading && rows.map((r) => (
               <tr key={r.id} onClick={() => open(r.id)} style={{ cursor: 'pointer' }}>
                 <td style={{ ...td, fontWeight: 700, color: TEXT.body }}>{r.serial_no}</td>
-                <td style={td}>{r.item_code} — {r.item_name}</td>
+                <td style={{ ...td, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${r.item_code || ''} — ${r.item_name || ''}`}>{r.item_code || '—'} — {r.item_name || '—'}</td>
                 <td style={td}><Badge status={r.status} label={r.status_label} />{r.on_transfer ? <span style={{ fontSize: 11, color: TEXT.muted, marginLeft: 6 }}>on transfer</span> : null}</td>
                 <td style={td}>{r.location_name || '—'}{r.bin_code ? ` · ${r.bin_code}` : ''}</td>
                 <td style={td}>{r.grn_number || '—'}{r.vendor_name ? ` · ${r.vendor_name}` : ''}</td>
                 <td style={{ ...td, maxWidth: 260 }}>{r.issued_to || (r.issue_number ? r.issue_number : '—')}</td>
-                <td style={td}>{r.vendor_warranty_until || '—'}</td>
+                <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.vendor_warranty_until ? formatDate(r.vendor_warranty_until) : '—'}</td>
                 <td style={td} onClick={(e) => e.stopPropagation()}><span onClick={() => open(r.id)} style={{ color: '#c2410c', fontWeight: 600, cursor: 'pointer' }}>View</span></td>
               </tr>
             ))}
@@ -143,7 +145,7 @@ export default function StoreSerialsPage() {
       </div>
 
       {detail && (
-        <FormSheet width={860} icon="tag" title={detail.serial_no} subtitle={`${detail.item_code} — ${detail.item_name} · ${detail.status_label || detail.status}`}
+        <FormSheet width={860} icon="tag" title={detail.serial_no} subtitle={`${detail.item_code || ''} — ${detail.item_name || ''}`}
           onClose={() => setDetail(null)} busy={false}
           footer={<>
             {detail.status === 'quality' && canFeature('store', 'grn', 'inspection', 'approve') && (
@@ -156,25 +158,30 @@ export default function StoreSerialsPage() {
           </>}>
           <div style={{ padding: '20px 24px' }}>
             <SheetSection icon="list" title="Details" extra={<Badge status={detail.status} label={detail.status_label} />}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, fontSize: 13, color: SHEET.BODY }}>
-                <div><span style={{ color: SHEET.MUTED }}>GRN: </span><strong>{detail.grn_number || '—'}</strong></div>
-                <div><span style={{ color: SHEET.MUTED }}>Vendor: </span><strong>{detail.vendor_name || '—'}</strong></div>
-                <div><span style={{ color: SHEET.MUTED }}>Received: </span><strong>{detail.received_date || '—'}</strong></div>
-                <div><span style={{ color: SHEET.MUTED }}>Supplier warranty until: </span><strong>{detail.vendor_warranty_until || '—'}</strong></div>
-                {detail.issue_number && <div><span style={{ color: SHEET.MUTED }}>Issue: </span><strong>{detail.issue_number}</strong></div>}
-                {detail.issued_to && <div><span style={{ color: SHEET.MUTED }}>Issued to: </span><strong>{detail.issued_to}</strong></div>}
-              </div>
+              <DetailGroup last={!detail.issue_number && !detail.issued_to}>
+                <DetailRow label="GRN">{detail.grn_number}</DetailRow>
+                <DetailRow label="Vendor">{detail.vendor_name}</DetailRow>
+                <DetailRow label="Received on">{detail.received_date ? formatDate(detail.received_date) : null}</DetailRow>
+                <DetailRow label="Supplier warranty until">{detail.vendor_warranty_until ? formatDate(detail.vendor_warranty_until) : null}</DetailRow>
+              </DetailGroup>
+              {(detail.issue_number || detail.issued_to) && (
+                <DetailGroup last>
+                  {detail.issue_number && <DetailRow label="Issue">{detail.issue_number}</DetailRow>}
+                  {detail.issued_to && <DetailRow label="Issued to">{detail.issued_to}</DetailRow>}
+                </DetailGroup>
+              )}
             </SheetSection>
             <SheetSection icon="history" title="Serial History">
               <div style={{ overflow: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 10 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
-                  <thead><tr>{['Date', 'Event', 'Status', 'Store / bin', 'Document', 'By', 'Remarks'].map((h) => <th key={h} style={{ ...th, position: 'static' }}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Date', 'Event', 'Status', 'Store / bin', 'Document', 'By', 'Remarks'].map((h, hi) => <th key={h} style={{ ...th, position: 'static' }}>{h}{hi === 0 && <RowCount count={detail.history.length} />}</th>)}</tr></thead>
                   <tbody>
+                    {detail.history.length === 0 && <tr><td colSpan={7} style={{ ...td, textAlign: 'center' }}>No history recorded for this unit yet.</td></tr>}
                     {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                     {detail.history.map((h: any) => (
                       <tr key={h.id}>
                         <td style={{ ...td, whiteSpace: 'nowrap' }}>{formatDate(h.event_date)}</td>
-                        <td style={td}>{String(h.event).replace(/_/g, ' ')}</td>
+                        <td style={td}>{humanize(String(h.event))}</td>
                         <td style={td}><Badge status={h.to_status} label={h.to_status_label} /></td>
                         <td style={td}>{h.location_name || '—'}{h.bin_code ? ` · ${h.bin_code}` : ''}</td>
                         <td style={td}>{h.reference_number || '—'}</td>

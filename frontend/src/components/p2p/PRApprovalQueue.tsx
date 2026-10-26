@@ -6,6 +6,7 @@
 
 import { useState } from 'react'
 import P2PRequestList from '@/components/p2p/P2PRequestList'
+import { segmentBtnStyle } from '@/components/shared/ui'
 
 type Bucket = 'pending' | 'approved' | 'rejected' | 'all'
 
@@ -27,14 +28,10 @@ export default function PRApprovalQueue() {
   const active = BUCKETS.find((b) => b.key === bucket) || BUCKETS[0]
   return (
     <div>
-      <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(0,0,0,0.05)', marginBottom: 16 }}>
+      <div style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap', marginBottom: 16 }}>
         {BUCKETS.map((b) => (
           <button key={b.key} type="button" data-tour={`pr-approval-bucket-${b.key}`} onClick={() => setBucket(b.key)}
-            style={{
-              padding: '8px 16px', borderRadius: 8, border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-              background: bucket === b.key ? '#fff' : 'transparent', color: bucket === b.key ? '#FF7A45' : '#78716c',
-              boxShadow: bucket === b.key ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
-            }}>
+            style={segmentBtnStyle(bucket === b.key)}>
             {b.label}
           </button>
         ))}

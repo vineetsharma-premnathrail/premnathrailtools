@@ -7,14 +7,15 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { electricalApi } from '@/lib/api'
 import { recordPath } from '@/lib/recordRef'
 import { ElectricalIssue } from '@/types'
-import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import ElectricalNav from '@/components/electrical/ElectricalNav'
 import {
-  inputStyle, thStyle, tdStyle, linkStyle, Pill, ErrorBanner,
+  inputStyle, thStyle, tdStyle, Pill, ErrorBanner,
   SEVERITY_LABELS, SEVERITY_HEX, ISSUE_STATUS_LABELS, ISSUE_STATUS_HEX,
 } from '@/components/electrical/shared'
+import { RowCount, segmentBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 
 // 'open' is the API's shorthand for open + investigating (every unresolved issue).
 const STATUS_FILTERS: { value: string; label: string }[] = [
@@ -25,12 +26,6 @@ const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: '', label: 'All statuses' },
 ]
 
-const toggleStyle = (active: boolean): React.CSSProperties => ({
-  padding: '9px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
-  border: `1px solid ${active ? '#FF6A2A' : BORDER.normal}`,
-  background: active ? 'rgba(255,106,42,0.10)' : 'rgba(255,255,255,.7)',
-  color: active ? '#c2410c' : TEXT.secondary,
-})
 
 const chipStyle = (hex: string): React.CSSProperties => ({
   display: 'inline-flex', alignItems: 'baseline', gap: 8, padding: '8px 14px', borderRadius: 12,
@@ -94,7 +89,7 @@ export default function ElectricalTroubleshootingPage() {
           <option value="">All severities</option>
           {Object.entries(SEVERITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </Select>
-        <button data-tour="elec-ireg-mine-toggle" type="button" onClick={() => setMine((v) => !v)} style={toggleStyle(mine)} aria-pressed={mine}>
+        <button data-tour="elec-ireg-mine-toggle" type="button" onClick={() => setMine((v) => !v)} style={segmentBtnStyle(mine)} aria-pressed={mine}>
           {mine ? '✓ ' : ''}Assigned to me
         </button>
       </div>
@@ -109,10 +104,6 @@ export default function ElectricalTroubleshootingPage() {
             <strong style={{ fontSize: 18 }}>{criticalCount}</strong>
             <span style={{ fontSize: 12, fontWeight: 600 }}>critical still open</span>
           </span>
-          <span style={chipStyle('#2563EB')}>
-            <strong style={{ fontSize: 18 }}>{issues.length}</strong>
-            <span style={{ fontSize: 12, fontWeight: 600 }}>shown</span>
-          </span>
         </div>
       )}
 
@@ -122,7 +113,7 @@ export default function ElectricalTroubleshootingPage() {
       }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
-            <tr>{COLS.map((h, i) => <th key={`${h}-${i}`} style={thStyle}>{h}</th>)}</tr>
+            <tr>{COLS.map((h, i) => <th key={`${h}-${i}`} style={thStyle}>{h}{i === 0 && <RowCount count={issues.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {loading ? (
@@ -148,7 +139,7 @@ export default function ElectricalTroubleshootingPage() {
                     <div style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{i.job_number || '—'}</div>
                     {i.job_title && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{i.job_title}</div>}
                   </td>
-                  <td style={{ ...tdStyle, maxWidth: 320 }}>{i.title}</td>
+                  <td title={i.title} style={{ ...tdStyle, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.title}</td>
                   <td style={tdStyle}><Pill value={i.severity} labels={SEVERITY_LABELS} hex={SEVERITY_HEX} /></td>
                   <td style={tdStyle}><Pill value={i.status} labels={ISSUE_STATUS_LABELS} hex={ISSUE_STATUS_HEX} /></td>
                   <td style={{ ...tdStyle, fontSize: 12.5 }}>{links || '—'}</td>
@@ -158,7 +149,7 @@ export default function ElectricalTroubleshootingPage() {
                     {i.reported_by_name && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{i.reported_by_name}</div>}
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                    <span onClick={() => go(i)} style={linkStyle}>View</span>
+                    <button type="button" onClick={() => go(i)} style={smallSecondaryBtnStyle}>View</button>
                   </td>
                 </tr>
               )

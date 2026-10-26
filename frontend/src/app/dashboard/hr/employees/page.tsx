@@ -8,7 +8,7 @@ import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { HrEmployeeListItem, HrEmployeeListResponse, HrLookups } from '@/types'
 import { TEXT, BORDER, GLASS, SHADOWS } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle, pageBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, pageBtnStyle, RowCount } from '@/components/shared/ui'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import HrNav from '@/components/hr/HrNav'
 import { extractErrorMessages } from '@/lib/validation'
@@ -205,14 +205,14 @@ export default function HrEmployeesPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr>
-              {COLUMNS.map((c) => (
+              {COLUMNS.map((c, ci) => (
                 <th
                   key={c.label || 'view'}
                   style={{ ...thStyle, cursor: c.key ? 'pointer' : 'default', userSelect: 'none' }}
                   onClick={() => c.key && toggleSort(c.key)}
                   title={c.key ? 'Sort' : undefined}
                 >
-                  {c.label}{c.key && sort === c.key ? (order === 'asc' ? ' ▲' : ' ▼') : ''}
+                  {c.label}{c.key && sort === c.key ? (order === 'asc' ? ' ▲' : ' ▼') : ''}{ci === 0 && <RowCount count={total} />}
                 </th>
               ))}
             </tr>

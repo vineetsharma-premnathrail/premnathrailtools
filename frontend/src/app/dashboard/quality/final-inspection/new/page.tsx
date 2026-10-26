@@ -13,6 +13,7 @@ import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheet
 import { ErrorBanner, sheetGap } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
+import { RowCount } from '@/components/shared/ui'
 
 function emptyResult(sortOrder: number): QualityInspectionResultInput {
   return { parameter: '', method: '', acceptance_criteria: '', observed_value: '', result: 'na', sort_order: sortOrder }
@@ -151,7 +152,7 @@ export default function NewFinalInspectionPage() {
           <div style={{ overflowX: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 12 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
               <thead>
-                <tr>{['SL', 'Parameter', 'Method', 'Acceptance Criteria', 'Observed Value', 'Result', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
+                <tr>{['SL', 'Parameter', 'Method', 'Acceptance Criteria', 'Observed Value', 'Result', ''].map((h, i) => <th key={h} style={th}>{h}{i === 0 && <RowCount count={results.length} />}</th>)}</tr>
               </thead>
               <tbody>
                 {results.map((r, idx) => (

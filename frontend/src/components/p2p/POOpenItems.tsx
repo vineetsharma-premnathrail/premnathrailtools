@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react'
 import { poReportsApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { inputStyle, secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, RowCount, secondaryBtnStyle, smallSecondaryBtnStyle, segmentBtnStyle, Pill, pillStyle } from '@/components/shared/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
@@ -35,6 +35,11 @@ const wrap: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 360px)', minHeight: 160,
 }
 const EVENT_HEX: Record<string, string> = { grn: '#2563eb', rtv: '#dc2626', invoice: '#16a34a', service_entry: '#7c3aed' }
+const numTd: React.CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }
+const numTh: React.CSSProperties = { ...th, textAlign: 'right' }
+const qty = (v: number | null | undefined) => (v == null ? '—' : (+v.toFixed(3)).toLocaleString('en-IN', { maximumFractionDigits: 3 }))
+/** 'partially_received' → 'Partially received' (raw status keys are never shown as-is). */
+const statusLabel = (s: string | null | undefined) => (s ? s.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()) : '—')
 
 function POHistoryDialog({ poId, onClose }: { poId: number; onClose: () => void }) {
   const [data, setData] = useState<any>(null)
@@ -54,21 +59,21 @@ function POHistoryDialog({ poId, onClose }: { poId: number; onClose: () => void 
           <div key={l.po_item_id} style={{ border: `1px solid ${BORDER.normal}`, borderRadius: 12, padding: 12, marginBottom: 12 }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, fontSize: 13, marginBottom: 8 }}>
               <strong style={{ color: TEXT.heading }}>{l.item_code ? `${l.item_code} — ` : ''}{l.item_name}</strong>
-              <span style={{ color: TEXT.muted }}>Ordered {l.ordered_qty} {l.unit || ''}</span>
-              {l.summary && <span style={{ color: TEXT.muted }}>Delivered {l.summary.delivered_qty} · Invoiced {l.summary.invoiced_qty} · Open {l.summary.open_qty}</span>}
+              <span style={{ color: TEXT.muted }}>Ordered {qty(l.ordered_qty)} {l.unit || ''}</span>
+              {l.summary && <span style={{ color: TEXT.muted }}>Delivered {qty(l.summary.delivered_qty)} · Invoiced {qty(l.summary.invoiced_qty)} · Open {qty(l.summary.open_qty)}</span>}
             </div>
             {l.events.length === 0 ? <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Nothing received or invoiced yet.</p> : (
               <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
-                <thead><tr>{['Document', 'No.', 'Date', 'Status', 'Qty', 'Details'].map((h) => <th key={h} style={{ ...th, position: 'static', ...(h === 'Qty' ? { textAlign: 'right' } : {}) }}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Document', 'No.', 'Date', 'Status', 'Qty', 'Details'].map((h, i) => <th key={h} style={{ ...th, position: 'static', ...(h === 'Qty' ? { textAlign: 'right' } : {}) }}>{h}{i === 0 && <RowCount count={l.events.length} />}</th>)}</tr></thead>
                 <tbody>
                   {l.events.map((e: any, i: number) => (
                     <tr key={i}>
-                      <td style={td}><span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${EVENT_HEX[e.type] || '#6b7280'}1a`, color: EVENT_HEX[e.type] || '#6b7280' }}>{e.label}</span></td>
+                      <td style={td}><span style={pillStyle(EVENT_HEX[e.type] || '#6b7280')}>{e.label}</span></td>
                       <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{e.document_number}</td>
-                      <td style={td}>{e.date || '—'}</td>
-                      <td style={td}>{e.status || '—'}</td>
-                      <td style={{ ...td, textAlign: 'right' }}>{e.quantity}</td>
+                      <td style={td}>{formatDate(e.date)}</td>
+                      <td style={td}>{statusLabel(e.status)}</td>
+                      <td style={numTd}>{qty(e.quantity)}</td>
                       <td style={{ ...td, whiteSpace: 'normal' }}>
                         {e.type === 'grn' && [
                           e.accepted != null ? `accepted ${e.accepted}` : null, e.rejected ? `rejected ${e.rejected}` : null,
@@ -147,7 +152,7 @@ export default function POOpenItems() {
         <div style={{ display: 'flex', gap: 4 }}>
           {([['po', 'By PO line'], ['vendor', 'By vendor'], ['item', 'By item']] as [Group, string][]).map(([k, label]) => (
             <button key={k} type="button" onClick={() => setGroup(k)}
-              style={{ ...smallSecondaryBtnStyle, background: group === k ? 'rgba(255,122,69,0.12)' : undefined, color: group === k ? '#c2410c' : undefined }}>{label}</button>
+              style={segmentBtnStyle(group === k)}>{label}</button>
           ))}
         </div>
         <input style={{ ...inputStyle, flex: '1 1 180px', maxWidth: 260, width: 'auto' }} placeholder="Vendor" value={vendor} onChange={(e) => setVendor(e.target.value)} />
@@ -166,32 +171,32 @@ export default function POOpenItems() {
         {group === 'po' ? (
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1300 }}>
             <thead><tr>
-              {['PO', 'Vendor', 'Item', 'Ordered', 'Received', 'Rejected', 'Returned', 'Delivered', 'Invoiced', 'Open', 'Open value', 'Due', 'Overdue', ''].map((h) => <th key={h} style={th}>{h}</th>)}
+              {['PO No.', 'Vendor', 'Item', 'Ordered', 'Received', 'Rejected', 'Returned', 'Delivered', 'Invoiced', 'Open', 'Open Value', 'Due', 'Overdue', ''].map((h, i) => <th key={h} style={(i >= 3 && i <= 10) || i === 12 ? numTh : th}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}
             </tr></thead>
             <tbody>
               {loading && <tr><td colSpan={14} style={{ ...td, textAlign: 'center', padding: 24 }}>Loading…</td></tr>}
-              {!loading && rows.length === 0 && <tr><td colSpan={14} style={{ ...td, textAlign: 'center', padding: 24 }}>No open PO lines match.</td></tr>}
+              {!loading && rows.length === 0 && <tr><td colSpan={14} style={{ ...td, textAlign: 'center', padding: 24 }}>No open PO lines match — clear the vendor / PO filters, or tick &quot;Include fully delivered lines&quot;.</td></tr>}
               {!loading && rows.map((r) => (
                 <tr key={r.po_item_id} onClick={() => { if (seeHistory) setHistoryFor(r.po_id) }} style={{ cursor: seeHistory ? 'pointer' : 'default' }}>
                   <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{r.po_number}<div style={{ fontSize: 11, color: TEXT.muted, fontWeight: 400 }}>{formatDate(r.po_date)}</div></td>
                   <td style={td}>{r.vendor_name || '—'}</td>
                   <td style={{ ...td, whiteSpace: 'normal', minWidth: 200 }}>{r.item_code ? `${r.item_code} — ` : ''}{r.item_name}</td>
-                  <td style={td}>{r.ordered_qty} {r.unit || ''}</td>
-                  <td style={td}>{r.received_qty}</td>
-                  <td style={{ ...td, color: r.rejected_qty ? '#b91c1c' : TEXT.secondary }}>{r.rejected_qty}</td>
-                  <td style={td}>{r.returned_qty}</td>
-                  <td style={td}>{r.delivered_qty}</td>
-                  <td style={td}>{r.invoiced_qty}</td>
-                  <td style={{ ...td, fontWeight: 700, color: r.open_qty > 0 ? '#d97706' : '#16a34a' }}>{r.open_qty}</td>
-                  <td style={td}>{money(r.open_value)}</td>
-                  <td style={td}>{r.expected_delivery || '—'}</td>
-                  <td style={td}>
+                  <td style={numTd}>{qty(r.ordered_qty)} {r.unit || ''}</td>
+                  <td style={numTd}>{qty(r.received_qty)}</td>
+                  <td style={{ ...numTd, color: r.rejected_qty ? '#b91c1c' : TEXT.secondary }}>{qty(r.rejected_qty)}</td>
+                  <td style={numTd}>{qty(r.returned_qty)}</td>
+                  <td style={numTd}>{qty(r.delivered_qty)}</td>
+                  <td style={numTd}>{qty(r.invoiced_qty)}</td>
+                  <td style={{ ...numTd, fontWeight: 700, color: r.open_qty > 0 ? '#d97706' : '#16a34a' }}>{qty(r.open_qty)}</td>
+                  <td style={numTd}>{money(r.open_value)}</td>
+                  <td style={td}>{formatDate(r.expected_delivery)}</td>
+                  <td style={numTd}>
                     {r.days_overdue > 0
-                      ? <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: '#dc26261a', color: '#dc2626' }}>{r.days_overdue} d</span>
+                      ? <Pill label={`${r.days_overdue} day${r.days_overdue === 1 ? '' : 's'}`} hex="#dc2626" />
                       : '—'}
                   </td>
-                  <td style={td} onClick={(e) => e.stopPropagation()}>
-                    {seeHistory && <span onClick={() => setHistoryFor(r.po_id)} style={{ color: '#c2410c', fontWeight: 600, cursor: 'pointer' }}>History</span>}
+                  <td style={{ ...td, textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
+                    {seeHistory && <button type="button" onClick={() => setHistoryFor(r.po_id)} style={smallSecondaryBtnStyle}>History</button>}
                   </td>
                 </tr>
               ))}
@@ -199,17 +204,18 @@ export default function POOpenItems() {
           </table>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
-            <thead><tr>{[group === 'vendor' ? 'Vendor' : 'Item', 'Open lines', 'Open qty', 'Open value', 'Overdue lines', 'Max days overdue'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{[group === 'vendor' ? 'Vendor' : 'Item', 'Open Lines', 'Open Qty', 'Open Value', 'Overdue Lines', 'Max Days Overdue'].map((h, i) => <th key={h} style={i === 0 ? th : numTh}>{h}{i === 0 && <RowCount count={summary.length} />}</th>)}</tr></thead>
             <tbody>
-              {!loading && summary.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', padding: 24 }}>No open PO lines match.</td></tr>}
+              {loading && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', padding: 24 }}>Loading…</td></tr>}
+              {!loading && summary.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', padding: 24 }}>No open PO lines match — clear the vendor / PO filters, or tick &quot;Include fully delivered lines&quot;.</td></tr>}
               {summary.map((s, i) => (
                 <tr key={i}>
                   <td style={{ ...td, fontWeight: 600, color: TEXT.body, whiteSpace: 'normal' }}>{(group === 'vendor' ? s.vendor_name : s.item_name) || '—'}</td>
-                  <td style={td}>{s.lines}</td>
-                  <td style={td}>{+s.open_qty.toFixed(3)}</td>
-                  <td style={td}>{money(s.open_value)}</td>
-                  <td style={{ ...td, color: s.overdue_lines ? '#dc2626' : TEXT.secondary }}>{s.overdue_lines}</td>
-                  <td style={td}>{s.max_days_overdue || '—'}</td>
+                  <td style={numTd}>{s.lines.toLocaleString('en-IN')}</td>
+                  <td style={numTd}>{qty(s.open_qty)}</td>
+                  <td style={numTd}>{money(s.open_value)}</td>
+                  <td style={{ ...numTd, color: s.overdue_lines ? '#dc2626' : TEXT.secondary }}>{s.overdue_lines.toLocaleString('en-IN')}</td>
+                  <td style={numTd}>{s.max_days_overdue || '—'}</td>
                 </tr>
               ))}
             </tbody>

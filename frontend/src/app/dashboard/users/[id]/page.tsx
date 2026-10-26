@@ -10,7 +10,8 @@ import { approvalsApi, usersApi, organizationApi, rolesApi, securityApi } from '
 import { User, BranchUserAssignment, Branch, Department, UserSession, UserActivity, UserDocument, PermissionRegistry, Role, EffectivePermissions, UserDataScopeRow, ApprovesInUser } from '@/types'
 import PermissionMatrixEditor from '@/components/organization/PermissionMatrixEditor'
 import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
+import OrgListItem, { orgEmptyStyle } from '@/components/organization/OrgListItem'
 import Checkbox from '@/components/Checkbox'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -25,24 +26,15 @@ import ApprovesInPanel from '@/components/organization/ApprovesInPanel'
 import { governedUsersApi } from '@/lib/basisApi'
 import DateField from '@/components/erp/DateField'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import { formatDate, formatDateTime } from '@/lib/format'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
-const labelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }
-const valueStyle: React.CSSProperties = { fontSize: 14, color: TEXT.body, marginBottom: 16 }
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '9px 11px', borderRadius: 9, border: `1px solid ${BORDER.normal}`,
   background: '#fff', fontSize: 13, outline: 'none', color: TEXT.body,
-}
-const cardRowStyle: React.CSSProperties = {
-  display: 'flex', flexDirection: 'column', gap: 8, padding: '14px 16px', borderRadius: 12,
-  background: 'rgba(255,255,255,.5)', border: `1px solid ${BORDER.normal}`,
-}
-const primaryBtnStyle: React.CSSProperties = {
-  padding: '9px 16px', borderRadius: 9, border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
-  background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`, color: '#fff',
 }
 const linkBtnStyle: React.CSSProperties = { fontSize: 11.5, fontWeight: 600, color: BRAND.primaryActive, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }
 const dangerLinkStyle: React.CSSProperties = { ...linkBtnStyle, color: '#b91c1c' }
@@ -127,8 +119,13 @@ export default function UserDetailPage() {
 
   if (error) {
     return (
-      <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-        {error}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+          <button type="button" onClick={() => router.push('/dashboard/users')} style={secondaryBtnStyle}>← Back</button>
+        </div>
+        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+          {error}
+        </div>
       </div>
     )
   }
@@ -139,15 +136,14 @@ export default function UserDetailPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+        <div style={{ minWidth: 0 }}>
+          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Organization › Users</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{user.name}</h1>
-            <span data-tour="org-user-status" style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: user.is_active ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.12)', color: user.is_active ? '#047857' : '#64748B' }}>
-              {user.is_active ? 'Active' : 'Inactive'}
-            </span>
+            <span data-tour="org-user-status"><Pill label={user.is_active ? 'Active' : 'Inactive'} hex={user.is_active ? '#047857' : '#64748B'} /></span>
           </div>
-          <p style={{ fontSize: 12, color: TEXT.secondary, margin: '8px 0 0 0' }}>{user.email}</p>
+          <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: '6px 0 0 0' }}>{[user.email, user.designation, user.department].filter(Boolean).join(' · ')}</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <TourButton variant="icon" />
@@ -226,41 +222,46 @@ function UserDetailsTab({ user, isSelf, onRefresh }: { user: User; isSelf: boole
   }
 
   return (
-    <div style={sectionStyle}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', margin: 0 }}>User Details</h2>
-        {can('organization', 'users', 'edit') && <button
-          onClick={() => toggleActive()}
-          data-tour="org-user-toggle-active"
-          disabled={isSelf || toggling}
-          style={{ fontSize: 12.5, fontWeight: 600, padding: '9px 16px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: '#fff', color: user.is_active ? '#b91c1c' : '#047857', cursor: isSelf ? 'not-allowed' : 'pointer', opacity: isSelf ? 0.5 : 1 }}
-        >
-          {user.is_active ? 'Deactivate User' : 'Activate User'}
-        </button>}
-      </div>
+    <DetailCard>
       <MessageDialog open={!!error} variant="error" title="User Error" message={error} onClose={() => setError('')} />
       <ConfirmDialog open={askDeactivate} title="Deactivate an approver?" confirmLabel="Deactivate anyway"
         message={deactivateWarning} onConfirm={() => toggleActive(true)} onCancel={() => setAskDeactivate(false)} />
-      <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '0 0 16px' }}>Name, email, designation, department, and office location are synced from Azure AD and aren&apos;t editable here.</p>
-      <div data-tour="org-user-details-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 10px))), 1fr))', gap: 20 }}>
-        <div><div style={labelStyle}>Full Name</div><div style={valueStyle}>{user.name}</div></div>
-        <div><div style={labelStyle}>Email</div><div style={valueStyle}>{user.email}</div></div>
-        <div><div style={labelStyle}>Designation</div><div style={valueStyle}>{user.designation || '—'}</div></div>
-        <div><div style={labelStyle}>Department</div><div style={valueStyle}>{user.department || '—'}</div></div>
-        <div><div style={labelStyle}>Office Location</div><div style={valueStyle}>{user.office_location || '—'}</div></div>
-        <div><div style={labelStyle}>Branch</div><div style={valueStyle}>{user.branch_name || '—'}</div></div>
-        <div><div style={labelStyle}>Reporting Manager</div><div style={valueStyle}>{user.reporting_manager_name || '—'}</div></div>
-        <div><div style={labelStyle}>Phone</div><div style={valueStyle}>{user.phone || '—'}</div></div>
-        <div><div style={labelStyle}>Role</div><div style={{ ...valueStyle, textTransform: 'capitalize' }}>{user.role}</div></div>
-        <div><div style={labelStyle}>Date of Joining</div><div style={valueStyle}>{user.date_of_joining || '—'}</div></div>
+      <DetailSummary
+        title="Profile"
+        text="Name, email, designation, department and office location are synced from Azure AD and aren't editable here."
+        meta={<>
+          <span>Portal role: {user.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : '—'}</span>
+          {user.date_of_joining && <><span>·</span><span>Joined {formatDate(user.date_of_joining)}</span></>}
+          {approvesIn?.pending_steps ? <><span>·</span><Pill label={`${approvesIn.pending_steps} approval(s) waiting`} hex="#b45309" /></> : null}
+        </>}
+        actions={can('organization', 'users', 'edit') ? <button
+          onClick={() => toggleActive()}
+          data-tour="org-user-toggle-active"
+          disabled={isSelf || toggling}
+          title={isSelf ? 'You cannot deactivate your own account' : undefined}
+          style={{ ...secondaryBtnStyle, color: user.is_active ? '#b91c1c' : '#047857', cursor: isSelf ? 'not-allowed' : 'pointer', opacity: isSelf ? 0.5 : 1 }}
+        >
+          {user.is_active ? 'Deactivate User' : 'Activate User'}
+        </button> : undefined}
+      />
+      <div data-tour="org-user-details-grid">
+        <DetailGroup title="Work & contact">
+          <DetailRow label="Designation">{user.designation}</DetailRow>
+          <DetailRow label="Department">{user.department}</DetailRow>
+          <DetailRow label="Office location">{user.office_location}</DetailRow>
+          <DetailRow label="Branch">{user.branch_name}</DetailRow>
+          <DetailRow label="Reporting manager">{user.reporting_manager_name}</DetailRow>
+          <DetailRow label="Date of joining">{user.date_of_joining ? formatDate(user.date_of_joining) : null}</DetailRow>
+          <DetailRow label="Phone">{user.phone}</DetailRow>
+        </DetailGroup>
       </div>
-      <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', margin: '24px 0 4px' }}>Approves in</h2>
-      <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '0 0 10px' }}>
-        Read-only — the approval stages this person can decide, from Organization › Approval Workflows (the only place approvals are set up).
-        {approvesIn?.pending_steps ? ` ${approvesIn.pending_steps} approval(s) are waiting on them now.` : ''}
-      </p>
-      <ApprovesInPanel rows={approvesIn ? approvesIn.stages : null} error={approvesErr} empty="Not an approver in any workflow." />
-    </div>
+      <DetailGroup title="Approves in" last>
+        <p style={{ fontSize: 12, color: TEXT.muted, margin: '2px 0 10px' }}>
+          Read-only — the approval stages this person can decide, from Organization › Approval Workflows (the only place approvals are set up).
+        </p>
+        <ApprovesInPanel rows={approvesIn ? approvesIn.stages : null} error={approvesErr} empty="Not an approver in any workflow." />
+      </DetailGroup>
+    </DetailCard>
   )
 }
 
@@ -411,25 +412,18 @@ function AssignmentsTab({ user, assignments, branches, departments, onRefresh }:
         </FormSheet>
       )}
 
-      {assignments.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted }}>No branch assignments yet.</p> : (
-        <div data-tour="org-user-asg-list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {assignments.map((a) => (
-            <div key={a.id} style={cardRowStyle}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{branches.find((b) => b.id === a.branch_id)?.name || `Branch #${a.branch_id}`}</span>
-                    {a.role && <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: BRAND.primary }}>{a.role}</span>}
-                    {a.is_primary_branch && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(16,185,129,0.12)', color: '#047857' }}>PRIMARY</span>}
-                  </div>
-                  <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>{[a.designation, a.department_name, a.access_level, a.employee_id].filter(Boolean).join(' · ') || '—'}</p>
-                </div>
-                {canEditAsg && <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
-                  <button type="button" style={linkBtnStyle} onClick={() => startEdit(a)}>Edit</button>
-                  <button type="button" style={dangerLinkStyle} onClick={() => setDeleteTarget(a)}>Remove</button>
-                </div>}
-              </div>
-            </div>
+      {assignments.length === 0 ? <p style={orgEmptyStyle}>No branch assignments yet{canEditAsg ? ' — use + Add Assignment to post this person to a branch.' : '.'}</p> : (
+        <div data-tour="org-user-asg-list">
+          {assignments.map((a, i) => (
+            <OrgListItem key={a.id} last={i === assignments.length - 1}
+              title={branches.find((b) => b.id === a.branch_id)?.name || `Branch #${a.branch_id}`}
+              sub={a.role || undefined}
+              tags={<>{a.is_primary_branch && <Pill label="Primary branch" hex="#047857" />}{a.status && a.status !== 'active' && <Pill label="Inactive" hex="#64748b" />}</>}
+              body={[a.designation, a.department_name, a.access_level ? `${a.access_level.charAt(0).toUpperCase()}${a.access_level.slice(1)} access` : '', a.employee_id ? `Emp. ID ${a.employee_id}` : '', a.effective_from ? `From ${formatDate(a.effective_from)}${a.effective_to ? ` to ${formatDate(a.effective_to)}` : ''}` : ''].filter(Boolean).join(' · ') || '—'}
+              action={canEditAsg ? <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+                <button type="button" style={linkBtnStyle} onClick={() => startEdit(a)}>Edit</button>
+                <button type="button" style={dangerLinkStyle} onClick={() => setDeleteTarget(a)}>Remove</button>
+              </div> : null} />
           ))}
         </div>
       )}
@@ -566,7 +560,7 @@ function RolesPermissionsTab({ user, registry, onRefresh }: { user: User; regist
         {canEditRoles && <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
           <button type="button" data-tour="org-user-roles-save" disabled={!!saving || !rolesChanged}
             onClick={() => run('roles', () => sod.guard(user.id, { role_ids: roleIds }, (reason) => governedUsersApi.updateRoles(user.id, roleIds, reason)), 'Roles saved — the user gets the new access on their next page load.')}
-            style={{ ...primaryBtnStyle, padding: '10px 24px', opacity: saving || !rolesChanged ? 0.6 : 1 }}>
+            style={{ ...primaryBtnStyle, opacity: saving || !rolesChanged ? 0.6 : 1 }}>
             {saving === 'roles' ? 'Saving…' : 'Save Roles'}
           </button>
         </div>}
@@ -612,7 +606,7 @@ function RolesPermissionsTab({ user, registry, onRefresh }: { user: User; regist
             {canEditExtras && <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
               <button type="button" disabled={!!saving || !extrasChanged}
                 onClick={() => run('extra permissions', () => sod.guard(user.id, { granular_permissions: extras }, (reason) => governedUsersApi.updatePermissions(user.id, extras, reason)), 'Extra permissions saved.')}
-                style={{ ...primaryBtnStyle, padding: '10px 24px', opacity: saving || !extrasChanged ? 0.6 : 1 }}>
+                style={{ ...primaryBtnStyle, opacity: saving || !extrasChanged ? 0.6 : 1 }}>
                 {saving === 'extra permissions' ? 'Saving…' : 'Save Extra Permissions'}
               </button>
             </div>}
@@ -641,13 +635,10 @@ function PermissionHistoryTab({ history }: { history: UserActivity[] }) {
   return (
     <div style={sectionStyle}>
       <h2 data-tour="org-user-perm-history" style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Permission History</h2>
-      {history.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted }}>No permission changes recorded yet.</p> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {history.map((h) => (
-            <div key={h.id} style={cardRowStyle}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading }}>{h.summary || h.action}</span>
-              <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>{new Date(h.performed_at).toLocaleString()}</p>
-            </div>
+      {history.length === 0 ? <p style={orgEmptyStyle}>No permission changes recorded yet — role, extra-permission and approval-flag changes will appear here.</p> : (
+        <div>
+          {history.map((h, i) => (
+            <OrgListItem key={h.id} last={i === history.length - 1} title={h.summary || h.action} body={formatDateTime(h.performed_at)} />
           ))}
         </div>
       )}
@@ -719,7 +710,7 @@ function DataAccessTab({ userId }: { userId: number }) {
   )
 }
 
-const REVOKE_REASON: Record<string, string> = { logout: 'SIGNED OUT', admin: 'SIGNED OUT BY ADMIN', idle: 'IDLE TIMEOUT', rotated: 'RENEWED', limit: 'DEVICE LIMIT', deactivated: 'DEACTIVATED' }
+const REVOKE_REASON: Record<string, string> = { logout: 'Signed out', admin: 'Signed out by admin', idle: 'Idle timeout', rotated: 'Renewed', limit: 'Device limit', deactivated: 'Deactivated' }
 
 function LoginHistoryTab({ userId, sessions, onRefresh }: { userId: number; sessions: UserSession[]; onRefresh: () => void }) {
   const { can } = useCan()
@@ -747,17 +738,17 @@ function LoginHistoryTab({ userId, sessions, onRefresh }: { userId: number; sess
           <button type="button" style={secondaryBtnStyle} onClick={() => setAsk(true)}>Sign out everywhere</button>
         )}
       </div>
-      {sessions.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted }}>No sessions recorded yet.</p> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {sessions.map((s) => (
-            <div key={s.id} style={cardRowStyle}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading }}>{new Date(s.created_at).toLocaleString()}</span>
-                {s.revoked_at && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(220,38,38,0.1)', color: '#b91c1c' }}>{REVOKE_REASON[s.revoked_reason || ''] || 'REVOKED'}</span>}
-              </div>
-              <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>Last used {new Date(s.last_used_at).toLocaleString()} · Expires {new Date(s.expires_at).toLocaleString()}{s.ip_address ? ` · IP ${s.ip_address}` : ''}{s.user_agent ? ` · ${s.user_agent}` : ''}</p>
-            </div>
-          ))}
+      {sessions.length === 0 ? <p style={orgEmptyStyle}>No sessions recorded yet — this person has not signed in.</p> : (
+        <div>
+          {sessions.map((s, i) => {
+            const isLive = !s.revoked_at && new Date(s.expires_at) > new Date()
+            return (
+              <OrgListItem key={s.id} last={i === sessions.length - 1}
+                title={`Signed in ${formatDateTime(s.created_at)}`}
+                tags={s.revoked_at ? <Pill label={REVOKE_REASON[s.revoked_reason || ''] || 'Revoked'} hex="#b91c1c" /> : isLive ? <Pill label="Live" hex="#047857" /> : <Pill label="Expired" hex="#64748b" />}
+                body={`Last used ${formatDateTime(s.last_used_at)} · Expires ${formatDateTime(s.expires_at)}${s.ip_address ? ` · IP ${s.ip_address}` : ''}${s.user_agent ? ` · ${s.user_agent}` : ''}`} />
+            )
+          })}
         </div>
       )}
     </div>
@@ -768,16 +759,13 @@ function UserActivityTab({ activity }: { activity: UserActivity[] }) {
   return (
     <div style={sectionStyle}>
       <h2 data-tour="org-user-activity" style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>User Activity</h2>
-      {activity.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted }}>No activity recorded yet.</p> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {activity.map((a) => (
-            <div key={a.id} style={cardRowStyle}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading }}>{a.action}</span>
-                <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: BRAND.primary }}>{a.entity_type}</span>
-              </div>
-              <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>{a.summary || '—'} · {new Date(a.performed_at).toLocaleString()}</p>
-            </div>
+      {activity.length === 0 ? <p style={orgEmptyStyle}>No activity recorded yet.</p> : (
+        <div>
+          {activity.map((a, i) => (
+            <OrgListItem key={a.id} last={i === activity.length - 1}
+              title={a.summary || a.action}
+              tags={a.entity_type ? <Pill label={a.entity_type.replace(/_/g, ' ')} hex={BRAND.primary} /> : null}
+              body={a.summary ? `${a.action} · ${formatDateTime(a.performed_at)}` : formatDateTime(a.performed_at)} />
           ))}
         </div>
       )}
@@ -902,24 +890,17 @@ function UserDocumentsTab({ userId, documents, onRefresh }: { userId: number; do
         </FormSheet>
       )}
 
-      {documents.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted }}>No documents uploaded yet.</p> : (
-        <div data-tour="org-user-doc-list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {documents.map((d) => (
-            <div key={d.id} style={cardRowStyle}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{d.document_name}</span>
-                    <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: BRAND.primary }}>{d.document_type}</span>
-                  </div>
-                  <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>{d.filename}{d.expiry_date ? ` · Expires ${d.expiry_date}` : ''}</p>
-                </div>
-                <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
-                  {d.sharepoint_url && canOpenDocs && <a href={d.sharepoint_url} target="_blank" rel="noreferrer" style={linkBtnStyle}>Open</a>}
-                  {canDeleteDocs && <button type="button" style={dangerLinkStyle} onClick={() => setDeleteTarget(d)}>Delete</button>}
-                </div>
-              </div>
-            </div>
+      {documents.length === 0 ? <p style={orgEmptyStyle}>No documents uploaded yet{canEditDocs ? ' — use + Add Document to upload ID proof, offer letter or certificates.' : '.'}</p> : (
+        <div data-tour="org-user-doc-list">
+          {documents.map((d, i) => (
+            <OrgListItem key={d.id} last={i === documents.length - 1}
+              title={d.document_name}
+              sub={d.document_type}
+              body={`${d.filename}${d.expiry_date ? ` · Expires ${formatDate(d.expiry_date)}` : ''}`}
+              action={<div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+                {d.sharepoint_url && canOpenDocs && <a href={d.sharepoint_url} target="_blank" rel="noreferrer" style={linkBtnStyle}>Open</a>}
+                {canDeleteDocs && <button type="button" style={dangerLinkStyle} onClick={() => setDeleteTarget(d)}>Delete</button>}
+              </div>} />
           ))}
         </div>
       )}

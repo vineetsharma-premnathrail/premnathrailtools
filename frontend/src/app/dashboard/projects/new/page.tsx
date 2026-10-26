@@ -39,7 +39,7 @@ export default function NewProjectPage() {
     }
   }
 
-  const subtitle = 'Name, client and timeline. Then open the project, and add the WBS elements it needs — the first WBS releases it to the departments.'
+  const subtitle = 'Name, client and timeline. Then open the project, and add the milestones it needs — the first milestone releases it to the departments.'
 
   if (canCreate === false) {
     return (

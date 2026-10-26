@@ -15,7 +15,7 @@ import { useCan } from '@/lib/permissions'
 import { CrmDocument, DiscussionPerson, DiscussionSide, RequirementComment } from '@/types'
 import { formatDateTime } from '@/lib/format'
 import { TEXT, GLASS, SHADOWS, BORDER, BRAND } from '@/lib/theme'
-import { inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, primaryBtnStyle, secondaryBtnStyle, chipBtnStyle, smallSecondaryBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import DiscussionDocumentPicker from '@/components/crm/DiscussionDocumentPicker'
 import { extractErrorMessages } from '@/lib/validation'
@@ -252,11 +252,10 @@ export default function RequirementDiscussionTab({ source, recordId, side }: {
       border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '10px 18px', borderBottom: `1px solid ${BORDER.light}` }}>
-        <div style={{ display: 'flex', gap: 4, padding: 3, borderRadius: 999, background: 'rgba(0,0,0,0.05)' }}>
+        <div style={{ display: 'flex', gap: 4 }}>
           {([['messages', `💬 Messages (${items.length})`], ['files', `📁 Files (${fileHistory.length})`]] as const).map(([v, label]) => (
             <button key={v} type="button" onClick={() => setView(v)}
-              style={{ padding: '6px 14px', border: 'none', borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-                background: view === v ? '#fff' : 'transparent', color: view === v ? '#FF7A45' : '#78716c', boxShadow: view === v ? '0 2px 6px rgba(0,0,0,0.08)' : 'none' }}>
+              style={chipBtnStyle(view === v)}>
               {label}
             </button>
           ))}
@@ -274,8 +273,8 @@ export default function RequirementDiscussionTab({ source, recordId, side }: {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
               <thead>
                 <tr>
-                  {['File', 'Sent by', 'Sent on', 'Size'].map((h) => (
-                    <th key={h} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', position: 'sticky', top: 0, background: '#fdf1e6' }}>{h}</th>
+                  {['File', 'Sent by', 'Sent on', 'Size'].map((h, hi) => (
+                    <th key={h} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', position: 'sticky', top: 0, background: '#fdf1e6' }}>{h}{hi === 0 && <RowCount count={fileHistory.length} />}</th>
                   ))}
                 </tr>
               </thead>
@@ -291,7 +290,7 @@ export default function RequirementDiscussionTab({ source, recordId, side }: {
                         </button>
                       </td>
                       <td style={{ padding: '10px 16px', fontSize: 13, color: TEXT.body, whiteSpace: 'nowrap' }}>
-                        {f.author} <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 9999, background: `${t.color}1a`, color: t.color }}>{t.label}</span>
+                        {f.author} <span style={{ ...pillStyle(t.color), fontSize: 10, padding: '1px 7px' }}>{t.label}</span>
                       </td>
                       <td style={{ padding: '10px 16px', fontSize: 12.5, color: TEXT.muted, whiteSpace: 'nowrap' }}>{formatDateTime(f.sentAt)}</td>
                       <td style={{ padding: '10px 16px', fontSize: 12.5, color: TEXT.muted, whiteSpace: 'nowrap' }}>{fmtSize(f.file_size) || '—'}</td>
@@ -315,7 +314,7 @@ export default function RequirementDiscussionTab({ source, recordId, side }: {
             <div key={c.id} style={{ display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, fontSize: 11.5, color: TEXT.muted, flexDirection: mine ? 'row-reverse' : 'row' }}>
                 <b style={{ color: TEXT.heading, fontSize: 12.5 }}>{mine ? 'You' : c.author_name}</b>
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 9999, background: `${tag.color}1a`, color: tag.color }}>{tag.label}</span>
+                <span style={{ ...pillStyle(tag.color), fontSize: 10, padding: '1px 7px' }}>{tag.label}</span>
                 <span>{formatDateTime(c.created_at)}</span>
                 {c.can_delete && (
                   <button type="button" onClick={() => setDeleteId(c.id)}
@@ -332,7 +331,7 @@ export default function RequirementDiscussionTab({ source, recordId, side }: {
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: c.body ? 8 : 0 }}>
                     {c.attachments.map((a) => (
                       <button key={a.id} type="button" onClick={() => openDoc(a)} title="Open file"
-                        style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: `1px solid ${BORDER.normal}`, background: '#fff', color: '#2563eb', cursor: 'pointer' }}>
+                        style={{ ...smallSecondaryBtnStyle, color: '#2563eb' }}>
                         📎 {a.file_name} <span style={{ color: TEXT.muted }}>{fmtSize(a.file_size)}</span>
                       </button>
                     ))}
@@ -435,7 +434,7 @@ export default function RequirementDiscussionTab({ source, recordId, side }: {
         {pickedDocs.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
             {pickedDocs.map((d) => (
-              <span key={d.id} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 9999, background: 'rgba(37,99,235,0.08)', color: TEXT.body }}>
+              <span key={d.id} style={{ ...pillStyle('#2563eb'), fontSize: 12, fontWeight: 400, padding: '4px 10px', color: TEXT.body, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
                 📂 {d.file_name} <span style={{ cursor: 'pointer', fontWeight: 700, marginLeft: 4 }} onClick={() => togglePicked(d)} title="Remove">×</span>
               </span>
             ))}
@@ -445,7 +444,7 @@ export default function RequirementDiscussionTab({ source, recordId, side }: {
         {files.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
             {files.map((f, i) => (
-              <span key={i} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 9999, background: 'rgba(0,0,0,0.05)', color: TEXT.body }}>
+              <span key={i} style={{ ...pillStyle('#57534e'), fontSize: 12, fontWeight: 400, padding: '4px 10px', color: TEXT.body, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
                 📎 {f.name} <span style={{ cursor: 'pointer', fontWeight: 700, marginLeft: 4 }} onClick={() => setFiles((l) => l.filter((_, j) => j !== i))}>×</span>
               </span>
             ))}
@@ -462,11 +461,13 @@ export default function RequirementDiscussionTab({ source, recordId, side }: {
               onClick={() => (canPickDocs ? setAttachMenu((v) => !v) : fileRef.current?.click())}>📎 Attach files</button>
             {attachMenu && (
               <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, zIndex: 20, width: 300, borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: '#fff', boxShadow: '0 6px 18px rgba(0,0,0,.12)', overflow: 'hidden' }}>
+                {/* ui-audit-ignore-next-line custom-button — full-width two-line menu row in the attach dropdown, not a pill */}
                 <button type="button" onClick={() => { setAttachMenu(false); fileRef.current?.click() }}
                   style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', borderBottom: `1px solid ${BORDER.light}`, background: '#fff', cursor: 'pointer' }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading }}>💻 Upload new file</span>
                   <span style={{ display: 'block', fontSize: 11.5, color: TEXT.muted }}>From your computer</span>
                 </button>
+                {/* ui-audit-ignore-next-line custom-button — full-width two-line menu row in the attach dropdown, not a pill */}
                 <button type="button" onClick={openDocPicker}
                   style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: '#fff', cursor: 'pointer' }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading }}>📂 Already uploaded in the application</span>

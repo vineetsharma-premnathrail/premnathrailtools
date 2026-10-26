@@ -8,7 +8,8 @@ import { useCan } from '@/lib/permissions'
 import { hydraulicApi } from '@/lib/api'
 import { recordPath } from '@/lib/recordRef'
 import { HydBom } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import { SYSTEM_TYPE_LABELS, useHydCosts } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
@@ -64,11 +65,7 @@ export default function HydBomsPage() {
           <button
             data-tour="hyd-bom-new-btn"
             onClick={() => router.push('/dashboard/hydraulic/bom/new')}
-            style={{
-              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-            }}
+            style={primaryBtnStyle}
           >
             + New BOM
           </button>
@@ -100,9 +97,9 @@ export default function HydBomsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr>
-              {['BOM No.', 'Rev', 'Title', 'System', 'Circuit', 'Lines', ...(seeCosts ? ['Total Cost'] : []), 'Status', ''].map((h) => (
+              {['BOM No.', 'Rev', 'Title', 'System', 'Circuit', 'Lines', ...(seeCosts ? ['Total Cost'] : []), 'Status', ''].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={boms.length} />}
                 </th>
               ))}
             </tr>
@@ -123,9 +120,7 @@ export default function HydBomsPage() {
                   <td style={cellStyle}>{b.line_count}</td>
                   {seeCosts && <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{b.total_cost == null ? '—' : `₹${b.total_cost.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}</td>}
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[b.status]}1a`, color: STATUS_HEX[b.status], whiteSpace: 'nowrap' }}>
-                      {STATUS_LABELS[b.status] || b.status}
-                    </span>
+                    <Pill label={STATUS_LABELS[b.status] || b.status} hex={STATUS_HEX[b.status] || '#78716c'} />
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
                     <span onClick={() => router.push(recordPath('/dashboard/hydraulic/bom', b))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>

@@ -13,6 +13,7 @@ import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
+import { CONTROL } from '@/lib/theme'
 
 interface Line { itemId: string; actualQuantity: string; remarks: string }
 
@@ -176,7 +177,7 @@ export default function NewStockAdjustmentPage() {
                   {line.actualQuantity !== '' && existingQty != null ? (Number(line.actualQuantity) - existingQty > 0 ? '+' : '') + (Number(line.actualQuantity) - existingQty) : ''}
                 </div>
                 <button type="button" aria-label="Remove line" {...(idx === 0 ? { 'data-tour': 'adjustment-remove-line-btn' } : {})} onClick={() => removeLine(idx)} disabled={lines.length === 1}
-                  style={{ ...sheetBtn('secondary', SHEET.INK, lines.length === 1), padding: 0, width: 38, height: 38, justifyContent: 'center', flex: 'none' }}><SheetIcon name="trash" size={15} /></button>
+                  style={{ ...sheetBtn('secondary', SHEET.INK, lines.length === 1), padding: 0, width: CONTROL.height, height: CONTROL.height, justifyContent: 'center', flex: 'none' }}><SheetIcon name="trash" size={15} /></button>
               </div>
             )
           })}

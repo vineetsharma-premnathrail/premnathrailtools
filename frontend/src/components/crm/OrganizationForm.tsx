@@ -8,7 +8,7 @@ import PhoneField, { isPhoneValid } from '@/components/erp/PhoneField'
 import { isValidEmail, isValidGST, isValidWebsite } from './validators'
 import { extractErrorMessages } from '@/lib/validation'
 import MessageDialog from '@/components/erp/MessageDialog'
-import { ORG_TYPES, ORG_TYPE_LABELS, RAILWAY_ZONES, COUNTRIES, orgTypeHasRailwayFields } from './constants'
+import { ORG_TYPES, ORG_TYPE_LABELS, RAILWAY_ZONES, COUNTRIES, INDIA_STATES, orgTypeHasRailwayFields } from './constants'
 import { AddMoreButton, RemoveValueButton, ValueRow, canAddMore } from '@/components/shared/MoreValuesButtons'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 
@@ -89,8 +89,8 @@ function Field({ label, tourId, children }: { label: React.ReactNode; tourId?: s
     </div>
   )
 }
-const withAdd = (field: React.ReactNode, onAdd: () => void, label: string, extras: string[]) => (
-  <ValueRow button={<AddMoreButton onClick={onAdd} label={label} extras={extras} />}>{field}</ValueRow>
+const withAdd = (field: React.ReactNode, onAdd: () => void, label: string, extras: string[], primary?: string | null) => (
+  <ValueRow button={<AddMoreButton onClick={onAdd} label={label} extras={extras} primary={primary} />}>{field}</ValueRow>
 )
 
 const contactInputStyle: React.CSSProperties = inputStyle
@@ -202,7 +202,9 @@ export default function OrganizationForm({
     setContacts((rows) => rows.map((r, i) => (i === index ? { ...r, [field]: value } : r)))
   }
 
-  const addContact = () => setContacts((rows) => [...rows, emptyContact()])
+  // Fill the contacts above before adding another — never a second empty card.
+  const contactsFilled = contacts.every((r) => r.name.trim())
+  const addContact = () => setContacts((rows) => (rows.every((r) => r.name.trim()) ? [...rows, emptyContact()] : rows))
 
   const addExtraPhone = () => setExtraPhones((rows) => (canAddMore(rows) ? [...rows, ''] : rows))
   const setExtraPhone = (index: number, value: string) => setExtraPhones((rows) => rows.map((r, i) => (i === index ? value : r)))
@@ -432,13 +434,14 @@ export default function OrganizationForm({
           )}
           </div>
         </SheetSection>
-        <SheetSection icon="truck" title="Address">
+        <SheetSection icon="location" title="Address">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Field label="Address" tourId="org-address"><textarea value={form.address} onChange={(e) => set('address', e.target.value)} rows={2} placeholder="Street / locality" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ flex: '1 1 160px', minWidth: 140 }}>
               <Field label="Country" tourId="org-country">
-                <Select value={form.country} onChange={(e) => set('country', e.target.value)} style={inputStyle}>
+                {/* Switching country clears the state: India's list and a typed foreign state don't mix. */}
+                <Select value={form.country} onChange={(e) => { if (e.target.value !== form.country) set('state', ''); set('country', e.target.value) }} style={inputStyle}>
                   {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </Select>
                 {form.country === 'Other' && (
@@ -447,7 +450,17 @@ export default function OrganizationForm({
               </Field>
             </div>
             <div style={{ flex: '1 1 180px', minWidth: 160 }}>
-              <Field label="State / UT" tourId="org-state"><input value={form.state} onChange={(e) => set('state', e.target.value)} placeholder="e.g. Delhi" style={inputStyle} /></Field>
+              {form.country === 'India' ? (
+                <Field label="State / UT" tourId="org-state">
+                  <Select value={form.state} onChange={(e) => set('state', e.target.value)} style={inputStyle}>
+                    <option value="">-- Select State / UT --</option>
+                    {/* An older record's typed state that isn't on the list stays selectable. */}
+                    {(form.state && !INDIA_STATES.includes(form.state) ? [...INDIA_STATES, form.state] : INDIA_STATES).map((s) => <option key={s} value={s}>{s}</option>)}
+                  </Select>
+                </Field>
+              ) : (
+                <Field label="State / Province" tourId="org-state"><input value={form.state} onChange={(e) => set('state', e.target.value)} placeholder="e.g. Dubai" style={inputStyle} /></Field>
+              )}
             </div>
             <div style={{ flex: '1 1 180px', minWidth: 160 }}>
               <Field label="City" tourId="org-city"><input value={form.city} onChange={(e) => set('city', e.target.value)} placeholder="e.g. New Delhi" style={inputStyle} /></Field>
@@ -458,11 +471,11 @@ export default function OrganizationForm({
           </div>
           </div>
         </SheetSection>
-        <SheetSection icon="rupee" title="Contact & Registration">
+        <SheetSection icon="idcard" title="Contact & Registration">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ flex: '1 1 200px', minWidth: 180 }}>
               <Field label="Official Phone" tourId="org-phone">
-                {withAdd(<PhoneField value={form.official_phone} onChange={(v) => set('official_phone', v)} placeholder="+91 XXXXX XXXXX" style={{ ...inputStyle, ...dupFieldStyle(dupOrgPhones.has(normPhone(form.official_phone))) }} />, addExtraPhone, 'Add another phone', extraPhones)}
+                {withAdd(<PhoneField value={form.official_phone} onChange={(v) => set('official_phone', v)} placeholder="+91 XXXXX XXXXX" style={{ ...inputStyle, ...dupFieldStyle(dupOrgPhones.has(normPhone(form.official_phone))) }} />, addExtraPhone, 'Add another phone', extraPhones, form.official_phone)}
               </Field>
               {dupOrgPhones.has(normPhone(form.official_phone)) && (
                 <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>Duplicate phone number.</p>
@@ -487,7 +500,7 @@ export default function OrganizationForm({
                   onChange={(e) => set('official_email', e.target.value)}
                   placeholder="contact@org.gov.in"
                   style={{ ...inputStyle, ...(form.official_email && !isValidEmail(form.official_email) ? { borderColor: '#f87171' } : {}), ...dupFieldStyle(dupOrgEmails.has(normEmail(form.official_email))) }}
-                />, addExtraEmail, 'Add another email', extraEmails)}
+                />, addExtraEmail, 'Add another email', extraEmails, form.official_email)}
                 {form.official_email && !isValidEmail(form.official_email) && (
                   <p style={{ fontSize: 11, color: '#ef4444', fontWeight: 600, margin: '4px 0 0' }}>Enter a valid email address.</p>
                 )}
@@ -577,7 +590,7 @@ export default function OrganizationForm({
                       </div>
                       <div style={{ flex: '1 1 140px', minWidth: 120 }}>
                         <Field label="Mobile" tourId={i === 0 ? 'contact-mobile' : undefined}>
-                          {withAdd(<PhoneField value={row.mobile} onChange={(v) => setContact(i, 'mobile', v)} placeholder="+91..." style={{ ...contactInputStyle, ...dupFieldStyle(dupContactMobiles.has(normPhone(row.mobile))) }} />, () => addContactMobile(i), 'Add another mobile', row.additionalMobiles)}
+                          {withAdd(<PhoneField value={row.mobile} onChange={(v) => setContact(i, 'mobile', v)} placeholder="+91..." style={{ ...contactInputStyle, ...dupFieldStyle(dupContactMobiles.has(normPhone(row.mobile))) }} />, () => addContactMobile(i), 'Add another mobile', row.additionalMobiles, row.mobile)}
                         </Field>
                         {dupContactMobiles.has(normPhone(row.mobile)) && (
                           <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>Duplicate mobile number.</p>
@@ -602,7 +615,7 @@ export default function OrganizationForm({
                             onChange={(e) => setContact(i, 'email', e.target.value)}
                             placeholder="email"
                             style={{ ...contactInputStyle, ...(row.email && !isValidEmail(row.email) ? { borderColor: '#f87171' } : {}), ...dupFieldStyle(dupContactEmails.has(normEmail(row.email))) }}
-                          />, () => addContactEmail(i), 'Add another email', row.additionalEmails)}
+                          />, () => addContactEmail(i), 'Add another email', row.additionalEmails, row.email)}
                           {row.email && !isValidEmail(row.email) && (
                             <p style={{ fontSize: 11, color: '#ef4444', fontWeight: 600, margin: '4px 0 0' }}>Enter a valid email address.</p>
                           )}
@@ -636,7 +649,7 @@ export default function OrganizationForm({
                 ))}
               </div>
               <div style={{ marginTop: 10 }}>
-                <button type="button" onClick={addContact} data-tour="org-add-contact" style={sheetBtn('secondary', SHEET.INK)}><SheetIcon name="plus" size={15} />Add Contact</button>
+                <button type="button" onClick={addContact} disabled={!contactsFilled} title={contactsFilled ? 'Add another contact' : 'Fill in the Name of the contact above first.'} data-tour="org-add-contact" style={sheetBtn('secondary', SHEET.INK, !contactsFilled)}><SheetIcon name="plus" size={15} />Add Contact</button>
                 <p style={sheetHint}>Add key contacts for this customer organization.</p>
               </div>
             </>

@@ -14,6 +14,7 @@ import {
   sectionStyle, tableWrapStyle, thStyle, tdStyle, linkActionStyle, dangerActionStyle, mutedActionStyle,
   ErrorBanner, ActiveBadge, Modal, MasterToolbar,
 } from './masterUi'
+import { RowCount, pillStyle } from '@/components/shared/ui'
 
 type Form = {
   id: number | null; code: string; name: string; start_time: string; end_time: string; grace_minutes: string
@@ -235,7 +236,7 @@ export default function ShiftsMaster() {
       <div data-tour="hr-mst-shift-table" style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 780 }}>
           <thead>
-            <tr>{['Code', 'Name', 'Timing', 'Grace', 'Hours', 'Plant', 'Employees', 'Status', ''].map((h) => <th key={h} style={['Grace', 'Hours', 'Employees'].includes(h) ? { ...thStyle, textAlign: 'right' } : thStyle}>{h}</th>)}</tr>
+            <tr>{['Code', 'Name', 'Timing', 'Grace', 'Hours', 'Plant', 'Employees', 'Status', ''].map((h, hi) => <th key={h} style={['Grace', 'Hours', 'Employees'].includes(h) ? { ...thStyle, textAlign: 'right' } : thStyle}>{h}{hi === 0 && <RowCount count={visible.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={9} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted, padding: 24 }}>Loading…</td></tr>}
@@ -250,7 +251,7 @@ export default function ShiftsMaster() {
                 <td style={tdStyle}>{r.name}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                   {hhmm(r.start_time)} – {hhmm(r.end_time)}
-                  {r.is_night && <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: '#7C3AED1a', color: '#7C3AED' }}>Night</span>}
+                  {r.is_night && <span style={{ ...pillStyle('#7C3AED'), marginLeft: 8 }}>Night</span>}
                 </td>
                 <td style={{ ...tdStyle, color: TEXT.secondary, textAlign: 'right' }}>{r.grace_minutes} min</td>
                 <td style={{ ...tdStyle, color: TEXT.secondary, textAlign: 'right' }}>{r.working_hours != null ? Number(r.working_hours) : '—'}</td>

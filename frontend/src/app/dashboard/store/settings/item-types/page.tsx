@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
 import StoreSettingsNav from '@/components/store/StoreSettingsNav'
 import MasterEditDialog from '@/components/store/MasterEditDialog'
@@ -111,20 +111,20 @@ export default function StoreItemTypesPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
           <thead>
             <tr>
-              {['Name', 'Code Prefix', ''].map((h) => (
-                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+              {['Name', 'Code Prefix', ''].map((h, hi) => (
+                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap' }}>{h}{hi === 0 && <RowCount count={types.length} />}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={3} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && types.length === 0 && (
-              <tr><td colSpan={3} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No item types yet.</td></tr>
+              <tr><td colSpan={3} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No item types yet — use + Add Item Type to create the first one.</td></tr>
             )}
             {!loading && types.map((t) => (
               <tr key={t.value} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{t.label}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, fontFamily: 'monospace' }}>{t.prefix}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, fontFamily: 'monospace' }}>{t.prefix || '—'}</td>
                 <td style={{ padding: '0 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                   {can('store', 'item_types', 'edit') && <span data-tour="itype-edit-link" onClick={() => setEditing(t)} style={{ color: '#FF6A2A', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Edit</span>}
                   {canDelete('store', 'item_types', null) && <span data-tour="itype-delete-link" onClick={() => setDeleteTarget(t)} style={{ color: '#b91c1c', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', marginLeft: 14 }}>Delete</span>}

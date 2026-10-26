@@ -9,6 +9,7 @@ import {
   ElectricalMeta, ElectricalPanel, ElectricalTest,
 } from '@/types'
 import { TEXT, BORDER } from '@/lib/theme'
+import { chipBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
 import SearchableSelect from '@/components/erp/SearchableSelect'
@@ -37,12 +38,7 @@ const emptyForm = (): IssueForm => ({ title: '', symptom: '', severity: 'major',
 
 const OPEN_STATUSES = ['open', 'investigating']
 
-const filterBtn = (active: boolean): React.CSSProperties => ({
-  padding: '7px 14px', borderRadius: 9999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-  border: `1px solid ${active ? '#FF6A2A' : BORDER.normal}`,
-  background: active ? 'rgba(255,106,42,0.10)' : 'rgba(255,255,255,.7)',
-  color: active ? '#c2410c' : TEXT.secondary,
-})
+const filterBtn = (active: boolean): React.CSSProperties => chipBtnStyle(active)
 
 const cardStyle: React.CSSProperties = {
   borderRadius: 12, border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,.6)', padding: '12px 14px', marginBottom: 10,

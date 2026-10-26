@@ -16,7 +16,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import { FormSheet, SheetSection, SheetIconName, SHEET, sheetBtn, sheetInput, SheetError } from '@/components/shared/FormSheet'
 import { SField, SheetFooter } from '@/components/finance/financeSheet'
 import Select from '@/components/shared/Select'
-import { smallBtnSize } from '@/components/shared/ui'
+import { smallBtnSize, RowCount } from '@/components/shared/ui'
 import {
   sectionStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle,
   thStyle, tdStyle, numTd, numTh, inr, dmy, ErrorBanner, InfoBanner, StatusPill, TableWrap, EmptyRow, ledgerOptions,
@@ -189,7 +189,7 @@ export default function BankStatementPanel({ recon, canCreate, canEdit, canBook 
       <TableWrap minWidth={1050} maxHeight="440px">
         <thead>
           <tr>
-            <th style={thStyle}>Value Date</th>
+            <th style={thStyle}>Value Date <RowCount count={lines.length} /></th>
             <th style={thStyle}>Description</th>
             <th style={thStyle}>Ref / Cheque</th>
             <th style={numTh}>Debit (₹)</th>
@@ -277,7 +277,7 @@ function MatchDialog({ line, onClose, onDone }: { line: StatementLine | null; on
       <SheetSection icon="list" title="Uncleared vouchers" extra={<span style={{ fontSize: 12, color: SHEET.MUTED }}>tick the voucher(s) this line clears</span>}>
         <TableWrap minWidth={640} maxHeight="360px">
           <thead><tr>
-            <th style={{ ...thStyle, width: 32 }}></th><th style={thStyle}>Date</th><th style={thStyle}>Voucher</th>
+            <th style={{ ...thStyle, width: 32 }}></th><th style={thStyle}>Date <RowCount count={cands?.length ?? 0} /></th><th style={thStyle}>Voucher</th>
             <th style={thStyle}>Party / Narration</th><th style={thStyle}>Ref / Cheque</th><th style={numTh}>Amount (₹)</th>
           </tr></thead>
           <tbody>

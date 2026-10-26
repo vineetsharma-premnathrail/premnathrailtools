@@ -5,7 +5,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi, organizationApi } from '@/lib/api'
 import { StoreLocation, Branch } from '@/types'
 import { TEXT, GLASS, SHADOWS, SUCCESS } from '@/lib/theme'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import StoreSettingsNav from '@/components/store/StoreSettingsNav'
@@ -185,29 +185,27 @@ export default function StoreLocationsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
           <thead>
             <tr>
-              {['Name', 'Code', 'Branch', 'Type', 'Status', ''].map((h) => (
-                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+              {['Name', 'Code', 'Branch', 'Type', 'Status', ''].map((h, hi) => (
+                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap' }}>{h}{hi === 0 && <RowCount count={locations.length} />}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && locations.length === 0 && (
-              <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No stores yet.</td></tr>
+              <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No stores yet — use + Add Store to create the first one.</td></tr>
             )}
             {locations.map((loc) => {
               return (
                 <tr key={loc.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>
                       {loc.name}
                     </td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{loc.code}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{loc.code || '—'}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{loc.branch_name || '—'}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{loc.warehouse_type || '—'}</td>
                     <td style={{ padding: '12px 16px' }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: loc.is_active ? `${SUCCESS.primary}1a` : 'rgba(100,116,139,0.12)', color: loc.is_active ? SUCCESS.hover : TEXT.muted }}>
-                        {loc.is_active ? 'Active' : 'Inactive'}
-                      </span>
+                      <Pill label={loc.is_active ? 'Active' : 'Inactive'} hex={loc.is_active ? SUCCESS.hover : TEXT.muted} />
                     </td>
                     <td onClick={(e) => e.stopPropagation()} style={{ padding: '0 16px', textAlign: 'right' }}>
                       {canDelete('store', 'warehouses', null) && <span onClick={() => setDeleteTarget(loc)} style={{ color: '#b91c1c', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Delete</span>}

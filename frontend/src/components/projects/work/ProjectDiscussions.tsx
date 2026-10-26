@@ -17,10 +17,11 @@ import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 import { DOC_TYPE_LABELS, ErrorBanner, actionBtn, inputStyle, sectionStyle } from './pmUi'
 import { MentionText } from './PmChat'
+import { smallSecondaryBtnStyle, pillStyle } from '@/components/shared/ui'
 
-const KIND_LABELS: Record<PmCommItem['kind'], string> = { message: 'WBS chat', comment: 'Task comment', file: 'File' }
+const KIND_LABELS: Record<PmCommItem['kind'], string> = { message: 'Milestone chat', comment: 'Task comment', file: 'File' }
 const KIND_HEX: Record<PmCommItem['kind'], string> = { message: '#2563eb', comment: '#7c3aed', file: '#0f766e' }
-const SOURCE_LABELS: Record<string, string> = { evidence: 'WBS evidence', task: 'Task file', chat: 'Sent in chat', project: 'Project document' }
+const SOURCE_LABELS: Record<string, string> = { evidence: 'Milestone evidence', task: 'Task file', chat: 'Sent in chat', project: 'Project document' }
 
 const seenKey = (projectId: number) => `pm-discussions-seen-${projectId}`
 function readSeen(projectId: number): string | null {
@@ -83,10 +84,10 @@ export default function ProjectDiscussions({ projectId, limit, onOpenAll }: { pr
         <div>
           <h2 style={{ fontSize: 16, fontWeight: 700, color: TEXT.heading, margin: 0 }}>
             {compact ? 'Latest from departments' : 'Discussions & files'}
-            {newCount > 0 && <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 700, color: '#fff', background: '#dc2626', borderRadius: 999, padding: '2px 8px' }}>{newCount} new</span>}
+            {newCount > 0 && <span style={{ ...pillStyle('#dc2626'), marginLeft: 8, color: '#fff', background: '#dc2626' }}>{newCount} new</span>}
           </h2>
           <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '2px 0 0' }}>
-            {compact ? 'What departments discussed and sent on this project.' : `${items.length} item(s) · ${fileCount} file(s) from every department's WBS chat, task comments, evidence and task files. Newest first.`}
+            {compact ? 'What departments discussed and sent on this project.' : `${items.length} item(s) · ${fileCount} file(s) from every department's Milestone chat, task comments, evidence and task files. Newest first.`}
           </p>
         </div>
         {compact ? (onOpenAll && items.length > 0 && <button type="button" onClick={onOpenAll} style={actionBtn('secondary')}>Open all discussions</button>)
@@ -100,7 +101,7 @@ export default function ProjectDiscussions({ projectId, limit, onOpenAll }: { pr
             {depts.map((d) => <option key={d} value={d}>{d}</option>)}
           </Select>
           <Select style={{ ...inputStyle, width: 240 }} value={wbs} onChange={(e) => setWbs(e.target.value)}>
-            <option value="">All WBS</option>
+            <option value="">All milestones</option>
             {wbsList.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
           </Select>
           <Select style={{ ...inputStyle, width: 160 }} value={kind} onChange={(e) => setKind(e.target.value)}>
@@ -115,10 +116,11 @@ export default function ProjectDiscussions({ projectId, limit, onOpenAll }: { pr
 
       {rows.length === 0 ? (
         <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>
-          {items.length === 0 ? 'Nothing yet. When a department chats in its WBS, comments on a task or attaches a drawing, it shows up here.' : 'Nothing matches these filters.'}
+          {items.length === 0 ? 'Nothing yet. When a department chats in its milestone, comments on a task or attaches a drawing, it shows up here.' : 'Nothing matches these filters.'}
         </p>
       ) : rows.map((x) => (
         <div key={x.key} style={{ display: 'flex', gap: 12, padding: '10px 0', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+          {/* ui-audit-ignore-next-line custom-pill — 8px "new" dot, not a pill */}
           <span style={{ flex: 'none', width: 8, height: 8, borderRadius: 999, marginTop: 6, background: isNew(x) ? '#dc2626' : 'transparent' }} title={isNew(x) ? 'New since your last visit' : undefined} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12 }}>
@@ -135,7 +137,7 @@ export default function ProjectDiscussions({ projectId, limit, onOpenAll }: { pr
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
                 {x.files.map((f) => (
                   <button key={f.id} type="button" onClick={() => openFile(f)} title={`${SOURCE_LABELS[f.source || ''] || 'File'} · ${DOC_TYPE_LABELS[f.doc_type] || f.doc_type}`}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,.8)', fontSize: 12, color: TEXT.body, cursor: 'pointer' }}>
+                    style={{ ...smallSecondaryBtnStyle, color: TEXT.body }}>
                     📎 {f.file_name}
                     <span style={{ fontSize: 11, color: TEXT.muted }}>{SOURCE_LABELS[f.source || ''] || ''}</span>
                   </button>

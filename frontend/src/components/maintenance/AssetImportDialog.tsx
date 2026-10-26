@@ -8,6 +8,7 @@ import { TEXT, BORDER } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SHEET, SheetIcon, SheetSection, sheetBtn } from '@/components/shared/FormSheet'
+import { RowCount } from '@/components/shared/ui'
 
 /** Excel import of the existing machine list: download template → choose
  * file → Validate (dry run, nothing saved) → Import (all-or-nothing, only
@@ -140,7 +141,7 @@ export default function AssetImportDialog({ open, onClose, onImported }: { open:
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
                 <thead>
                   <tr>
-                    <th style={thStyle}>Row</th>
+                    <th style={thStyle}>Row <RowCount count={(badRows.length ? badRows : result.rows).length} /></th>
                     <th style={thStyle}>Asset code</th>
                     <th style={thStyle}>Name</th>
                     <th style={thStyle}>{badRows.length ? 'Problems' : 'Plant · Category'}</th>

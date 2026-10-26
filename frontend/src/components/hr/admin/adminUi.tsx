@@ -8,7 +8,7 @@
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetIconName } from '@/components/shared/FormSheet'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { primaryBtnStyle, inputStyle as sharedInput } from '@/components/shared/ui'
+import { primaryBtnStyle, inputStyle as sharedInput, pillStyle } from '@/components/shared/ui'
 
 const inrFormatter = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -22,10 +22,10 @@ export function fmtINR(value: string | number | null | undefined): string {
 export function fmtDate(value: string | null | undefined): string {
   if (!value) return '—'
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value)
-  if (m && value.length === 10) return `${m[3]}-${m[2]}-${m[1]}`
+  if (m && value.length === 10) return `${m[3]}/${m[2]}/${m[1]}`
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return value
-  return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
 
 export function fmtDateTime(value: string | null | undefined): string {
@@ -54,9 +54,7 @@ export function titleCase(value: string | null | undefined): string {
 
 export function Pill({ hex, label }: { hex: string; label: string }) {
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
-      {label}
-    </span>
+    <span style={pillStyle(hex)}>{label}</span>
   )
 }
 

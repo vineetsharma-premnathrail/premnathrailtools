@@ -6,7 +6,7 @@ import { useProtectedPage } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { StoreMaterialReturn } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { Row, InfoRow, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, RowCount, Pill, TableScroll, thStyle, tdStyle, numThStyle, numTdStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRecordId } from '@/lib/recordRef'
@@ -22,7 +22,6 @@ const STATUS_HEX: Record<string, string> = { pending_approval: '#d97706', approv
 const STEP_LABELS: Record<string, string> = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected' }
 
 const card = { borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass() }
-const pill = (hex: string) => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' as const })
 
 export default function StoreMaterialReturnDetailPage() {
   // Not useRequireApp('store'): a department head / QC approver often has
@@ -107,12 +106,9 @@ export default function StoreMaterialReturnDetailPage() {
               <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
                 Store &amp; Inventory · Material Return
               </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{ret.return_number}</h1>
-                <span style={pill(STATUS_HEX[ret.status])}>{STATUS_LABELS[ret.status] || ret.status}</span>
-              </div>
+              <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{ret.return_number}</h1>
             </div>
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               {ret.can_act && (
                 <>
                   <button type="button" data-tour="return-reject-btn" disabled={busy} onClick={() => setRejectOpen(true)} style={{ ...secondaryBtnStyle, color: '#b91c1c' }}>Reject</button>
@@ -129,24 +125,28 @@ export default function StoreMaterialReturnDetailPage() {
             </div>
           )}
 
-          <div data-tour="return-detail-summary" style={{ ...card, padding: 20, marginBottom: 20 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <Row>
-                <InfoRow label="Store" value={ret.location_name || '—'} />
-                <InfoRow label="Source" value={ret.source_type_label || ret.source_type} />
-                <InfoRow label={ret.source_issue_number ? 'Material Issue' : 'Source Description'} value={ret.source_issue_number || ret.source_description || '—'} />
-              </Row>
-              <Row>
-                <InfoRow label="Department" value={ret.department_name || '—'} />
-                <InfoRow label="Return Date" value={formatDate(ret.return_date)} />
-                <InfoRow label="Returned By" value={ret.returned_by_name || '—'} />
-              </Row>
-              <Row>
-                <InfoRow label="Reason" value={ret.reason || '—'} />
-                <InfoRow label="Remarks" value={ret.remarks || '—'} />
-              </Row>
-            </div>
-          </div>
+          {/* One record view: what came back, from where — then every fact as label–value rows. */}
+          <DetailCard tour="return-detail-summary">
+            <DetailSummary
+              title={ret.return_number}
+              text={`${ret.items.length} item line${ret.items.length === 1 ? '' : 's'} returned to ${ret.location_name || 'the store'}${ret.source_issue_number ? ` against material issue ${ret.source_issue_number}` : ret.source_type_label ? ` from ${ret.source_type_label.toLowerCase()}` : ''}${ret.reason ? ` — ${ret.reason}` : ''}.`}
+              meta={<>
+                <Pill label={STATUS_LABELS[ret.status] || ret.status} hex={STATUS_HEX[ret.status] || '#78716c'} />
+                <span>· {formatDate(ret.return_date)}</span>
+                {ret.returned_by_name && <span>· Returned by <strong style={{ color: TEXT.heading }}>{ret.returned_by_name}</strong></span>}
+              </>}
+            />
+            <DetailGroup title="Return">
+              <DetailRow label="Store">{ret.location_name}</DetailRow>
+              <DetailRow label="Source">{ret.source_type_label || ret.source_type}</DetailRow>
+              <DetailRow label={ret.source_issue_number ? 'Material Issue' : 'Source Description'}>{ret.source_issue_number || ret.source_description}</DetailRow>
+              <DetailRow label="Department">{ret.department_name}</DetailRow>
+            </DetailGroup>
+            <DetailGroup last>
+              <DetailRow label="Reason">{ret.reason}</DetailRow>
+              <DetailRow label="Remarks">{ret.remarks}</DetailRow>
+            </DetailGroup>
+          </DetailCard>
 
           {/* Approval routed by Organization › Approval Workflows › Material return. */}
           <div data-tour="return-detail-approval-panel">
@@ -164,10 +164,10 @@ export default function StoreMaterialReturnDetailPage() {
                       <div style={{ fontSize: 12, color: TEXT.muted, marginTop: 2 }}>
                         {a.status === 'pending'
                           ? `Any one of: ${a.approver_names.join(', ') || '—'}`
-                          : `${STEP_LABELS[a.status]} by ${a.acted_by_name || '—'}${a.acted_at ? ` on ${new Date(a.acted_at).toLocaleDateString('en-GB')}` : ''}${a.comment ? ` — ${a.comment}` : ''}`}
+                          : `${STEP_LABELS[a.status]} by ${a.acted_by_name || '—'}${a.acted_at ? ` on ${formatDate(a.acted_at)}` : ''}${a.comment ? ` — ${a.comment}` : ''}`}
                       </div>
                     </div>
-                    <span style={pill(STATUS_HEX[a.status === 'pending' ? 'pending_approval' : a.status])}>{STEP_LABELS[a.status]}</span>
+                    <Pill label={STEP_LABELS[a.status] || a.status} hex={STATUS_HEX[a.status === 'pending' ? 'pending_approval' : a.status] || '#78716c'} />
                   </div>
                 ))}
               </div>
@@ -175,29 +175,33 @@ export default function StoreMaterialReturnDetailPage() {
           )}
 
           <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 10px' }}>Items</p>
-          <div data-tour="return-detail-items" style={{ ...card, overflow: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
-              <thead>
-                <tr>
-                  {['Item', 'Quantity', 'Condition', 'Batch', 'Remarks'].map((h) => (
-                    <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {ret.items.map((line) => (
-                  <tr key={line.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{line.item_code} — {line.item_name}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{line.quantity} {line.uom}</td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <span style={pill(line.condition === 'good' ? '#16a34a' : '#d97706')}>{line.condition_label || line.condition}</span>
-                    </td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{line.batch_number || '—'}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{line.remarks || '—'}</td>
+          <div data-tour="return-detail-items">
+            <TableScroll maxHeight="none" minWidth={560}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Item <RowCount count={ret.items.length} /></th>
+                    <th style={numThStyle}>Quantity</th>
+                    <th style={thStyle}>Condition</th>
+                    <th style={thStyle}>Batch</th>
+                    <th style={thStyle}>Remarks</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {ret.items.map((line) => (
+                    <tr key={line.id}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{line.item_code} — {line.item_name}</td>
+                      <td style={numTdStyle}>{line.quantity.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {line.uom}</td>
+                      <td style={tdStyle}>
+                        <Pill label={line.condition_label || line.condition} hex={line.condition === 'good' ? '#16a34a' : '#d97706'} />
+                      </td>
+                      <td style={tdStyle}>{line.batch_number || '—'}</td>
+                      <td style={tdStyle}>{line.remarks || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableScroll>
           </div>
         </>
       )}

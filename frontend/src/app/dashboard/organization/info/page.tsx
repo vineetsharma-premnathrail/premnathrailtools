@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
-import { organizationApi } from '@/lib/api'
+import { organizationApi, storeApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
 import { extractErrorMessages } from '@/lib/validation'
 import { Company, CompanyAddress, CompanyContact, CompanyFinancialYear, CompanyDocument } from '@/types'
@@ -11,18 +11,26 @@ import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import CompanyPartnersPanel from '@/components/organization/CompanyPartnersPanel'
+import OrgListItem, { orgEmptyStyle } from '@/components/organization/OrgListItem'
+import { primaryBtnStyle, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
+import { formatDate } from '@/lib/format'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
-const labelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }
-const valueStyle: React.CSSProperties = { fontSize: 14, color: TEXT.body, marginBottom: 16 }
-const cardRowStyle: React.CSSProperties = {
-  display: 'flex', flexDirection: 'column', gap: 8, padding: '14px 16px', borderRadius: 12,
-  background: 'rgba(255,255,255,.5)', border: `1px solid ${BORDER.normal}`,
-}
 const linkBtnStyle: React.CSSProperties = { fontSize: 11.5, fontWeight: 600, color: BRAND.primaryActive, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }
+
+const emptyStyle = orgEmptyStyle
+const ListItem = OrgListItem
+
+function Swatch({ hex }: { hex: string }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+      <span style={{ width: 16, height: 16, borderRadius: 4, background: hex, border: `1px solid ${BORDER.normal}` }} />{hex}
+    </span>
+  )
+}
 
 const TABS = ['Basic', 'Address', 'Legal & Registration', 'Tax Configuration', 'Partners', 'Contacts', 'Financial Year', 'Branding', 'Documents', 'Defaults & Controls'] as const
 
@@ -59,6 +67,25 @@ export default function OrganizationInfoPage() {
   const [error, setError] = useState('')
   const [notSetUp, setNotSetUp] = useState(false)
   const [tab, setTab] = useState<typeof TABS[number]>('Basic')
+  // Names for the default plant / store (read-only lookup; falls back to the number).
+  const [plantNames, setPlantNames] = useState<Record<number, string>>({})
+  const [storeNames, setStoreNames] = useState<Record<number, string>>({})
+  const canEdit = can('organization', 'info', 'edit')
+  const currentFy = financialYears.find((f) => f.status === 'open')
+
+  useEffect(() => {
+    if (!company) return
+    if (company.default_plant_id) {
+      organizationApi.listBranches()
+        .then((list) => setPlantNames(Object.fromEntries(list.map((b: { id: number; name: string }) => [b.id, b.name]))))
+        .catch(() => undefined)
+    }
+    if (company.default_warehouse_id) {
+      storeApi.listLocations()
+        .then((list) => setStoreNames(Object.fromEntries(list.map((l: { id: number; name: string }) => [l.id, l.name]))))
+        .catch(() => undefined)
+    }
+  }, [company])
 
   useEffect(() => {
     if (isAuthorized) {
@@ -106,12 +133,7 @@ export default function OrganizationInfoPage() {
           <button
             data-tour="org-info-edit-btn"
             onClick={() => router.push('/dashboard/organization/info/edit')}
-            style={{
-              padding: '10px 20px', borderRadius: 10, border: 'none',
-              background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`,
-              color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer',
-              boxShadow: `0 4px 14px ${BRAND.primaryGlow}`,
-            }}
+            style={primaryBtnStyle}
           >
             {notSetUp ? 'Set Up Company Info' : 'Edit'}
           </button>
@@ -139,8 +161,19 @@ export default function OrganizationInfoPage() {
           <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Click &quot;Set Up Company Info&quot; above to add your organization&apos;s name, address, and other master details.</p>
         </div>
       ) : !company ? null : (
-        <>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: `1px solid ${BORDER.normal}`, flexWrap: 'wrap' }}>
+        <DetailCard>
+          <DetailSummary
+            title={company.name}
+            text={company.description || (company.legal_name && company.legal_name !== company.name ? `Registered as ${company.legal_name}.` : undefined)}
+            meta={<>
+              <span>Code {company.code}</span>
+              {company.gstin && seeStatutory && <><span>·</span><span>GSTIN {company.gstin}</span></>}
+              {company.country && <><span>·</span><span>{company.country}</span></>}
+              {currentFy && <><span>·</span><Pill label={`${currentFy.name} open`} hex="#047857" /></>}
+            </>}
+          />
+
+          <div style={{ display: 'flex', gap: 8, margin: '4px 0', borderBottom: `1px solid ${BORDER.normal}`, flexWrap: 'wrap' }}>
             {TABS.filter(seeTab).map((t) => (
               <button
                 key={t}
@@ -168,221 +201,162 @@ export default function OrganizationInfoPage() {
           </div>
 
           {(tab === 'Basic' || !seeTab(tab)) && (
-            <div style={sectionStyle} data-tour="org-info-basic-panel">
-              <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Basic Information</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 10px))), 1fr))', gap: 20 }}>
-                <div><div style={labelStyle}>Company Name</div><div style={valueStyle}>{company.name}</div></div>
-                <div><div style={labelStyle}>Legal Name</div><div style={valueStyle}>{company.legal_name || '—'}</div></div>
-                <div><div style={labelStyle}>Short Name</div><div style={valueStyle}>{company.short_name || '—'}</div></div>
-                <div><div style={labelStyle}>Code</div><div style={valueStyle}>{company.code}</div></div>
-                <div><div style={labelStyle}>Company Type</div><div style={valueStyle}>{company.company_type || '—'}</div></div>
-                <div><div style={labelStyle}>Industry</div><div style={valueStyle}>{company.industry || '—'}</div></div>
-                <div><div style={labelStyle}>Business Nature</div><div style={valueStyle}>{company.business_nature || '—'}</div></div>
-                <div><div style={labelStyle}>Website</div><div style={valueStyle}>{company.website || '—'}</div></div>
-                <div style={{ gridColumn: '1 / -1' }}><div style={labelStyle}>Description</div><div style={valueStyle}>{company.description || '—'}</div></div>
-                <div><div style={labelStyle}>Date of Incorporation</div><div style={valueStyle}>{company.date_of_incorporation || '—'}</div></div>
-                <div><div style={labelStyle}>Country</div><div style={valueStyle}>{company.country || '—'}</div></div>
-                <div><div style={labelStyle}>Default Currency</div><div style={valueStyle}>{company.currency || '—'}</div></div>
-                <div><div style={labelStyle}>Default Language</div><div style={valueStyle}>{company.default_language || '—'}</div></div>
-                <div><div style={labelStyle}>Time Zone</div><div style={valueStyle}>{company.timezone || '—'}</div></div>
-              </div>
+            <div data-tour="org-info-basic-panel">
+              <DetailGroup title="Basic information">
+                <DetailRow label="Company name">{company.name}</DetailRow>
+                <DetailRow label="Legal name">{company.legal_name}</DetailRow>
+                <DetailRow label="Short name">{company.short_name}</DetailRow>
+                <DetailRow label="Code">{company.code}</DetailRow>
+                <DetailRow label="Company type">{company.company_type}</DetailRow>
+                <DetailRow label="Industry">{company.industry}</DetailRow>
+                <DetailRow label="Business nature">{company.business_nature}</DetailRow>
+                <DetailRow label="Website">{company.website}</DetailRow>
+                <DetailRow label="Date of incorporation">{company.date_of_incorporation ? formatDate(company.date_of_incorporation) : null}</DetailRow>
+              </DetailGroup>
+              <DetailGroup title="Locale" last>
+                <DetailRow label="Country">{company.country}</DetailRow>
+                <DetailRow label="Default currency">{company.currency}</DetailRow>
+                <DetailRow label="Default language">{company.default_language}</DetailRow>
+                <DetailRow label="Time zone">{company.timezone}</DetailRow>
+              </DetailGroup>
             </div>
           )}
 
           {tab === 'Address' && (
-            <div style={sectionStyle} data-tour="org-info-address-panel">
-              <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Addresses</h2>
+            <div data-tour="org-info-address-panel" style={{ paddingTop: 8 }}>
               {addresses.length === 0 ? (
-                <p style={{ fontSize: 13, color: TEXT.muted }}>No addresses added yet.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {addresses.map((a) => (
-                    <div key={a.id} style={cardRowStyle}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{a.address_type || 'Address'}</span>
-                        {a.is_primary && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(16,185,129,0.12)', color: '#047857' }}>PRIMARY</span>}
-                        {!a.is_active && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(220,38,38,0.1)', color: '#b91c1c' }}>INACTIVE</span>}
-                      </div>
-                      <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>
-                        {[a.address_line1, a.address_line2, a.landmark, a.city, a.district, a.state, a.country, a.pincode].filter(Boolean).join(', ')}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
+                <p style={emptyStyle}>No addresses added yet{canEdit ? ' — use Edit › Address to add the registered office and plant addresses.' : '.'}</p>
+              ) : addresses.map((a, i) => (
+                <ListItem key={a.id} last={i === addresses.length - 1}
+                  title={a.address_type || 'Address'}
+                  tags={<>{a.is_primary && <Pill label="Primary" hex="#047857" />}{!a.is_active && <Pill label="Inactive" hex="#b91c1c" />}</>}
+                  body={[a.address_line1, a.address_line2, a.landmark, a.city, a.district, a.state, a.country, a.pincode].filter(Boolean).join(', ')} />
+              ))}
             </div>
           )}
 
           {tab === 'Legal & Registration' && seeStatutory && (
-            <div style={sectionStyle} data-tour="org-info-legal-panel">
-              <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Legal & Registration</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 10px))), 1fr))', gap: 20 }}>
-                <div><div style={labelStyle}>Legal Entity Type</div><div style={valueStyle}>{company.legal_entity_type || '—'}</div></div>
-                <div><div style={labelStyle}>Legal Status</div><div style={valueStyle}>{company.legal_status || '—'}</div></div>
-                <div><div style={labelStyle}>CIN</div><div style={valueStyle}>{company.cin || '—'}</div></div>
-                <div><div style={labelStyle}>PAN</div><div style={valueStyle}>{company.pan || '—'}</div></div>
-                <div><div style={labelStyle}>TAN</div><div style={valueStyle}>{company.tan || '—'}</div></div>
-                <div><div style={labelStyle}>GSTIN</div><div style={valueStyle}>{company.gstin || '—'}</div></div>
-                <div><div style={labelStyle}>Udyam Registration No.</div><div style={valueStyle}>{company.udyam_registration_no || '—'}</div></div>
-                <div><div style={labelStyle}>IEC</div><div style={valueStyle}>{company.iec || '—'}</div></div>
-                <div><div style={labelStyle}>MSME Registration No.</div><div style={valueStyle}>{company.msme_registration_no || '—'}</div></div>
-                <div><div style={labelStyle}>PF Registration No.</div><div style={valueStyle}>{company.pf_registration_no || '—'}</div></div>
-                <div><div style={labelStyle}>ESIC Registration No.</div><div style={valueStyle}>{company.esic_registration_no || '—'}</div></div>
-                <div><div style={labelStyle}>Other Registration Type</div><div style={valueStyle}>{company.other_registration_type || '—'}</div></div>
-                <div><div style={labelStyle}>Registration Number</div><div style={valueStyle}>{company.other_registration_number || '—'}</div></div>
-                <div><div style={labelStyle}>Registration Date</div><div style={valueStyle}>{company.other_registration_date || '—'}</div></div>
-                <div><div style={labelStyle}>Issuing Authority</div><div style={valueStyle}>{company.issuing_authority || '—'}</div></div>
-                <div><div style={labelStyle}>Expiry Date</div><div style={valueStyle}>{company.expiry_date || '—'}</div></div>
-                <div><div style={labelStyle}>Authorized Capital</div><div style={valueStyle}>{company.authorized_capital != null ? company.authorized_capital.toLocaleString() : '—'}</div></div>
-                <div><div style={labelStyle}>Paid-up Capital</div><div style={valueStyle}>{company.paid_up_capital != null ? company.paid_up_capital.toLocaleString() : '—'}</div></div>
-                <div><div style={labelStyle}>Legal Representative</div><div style={valueStyle}>{company.legal_representative || '—'}</div></div>
-              </div>
+            <div data-tour="org-info-legal-panel">
+              <DetailGroup title="Legal entity">
+                <DetailRow label="Legal entity type">{company.legal_entity_type}</DetailRow>
+                <DetailRow label="Legal status">{company.legal_status}</DetailRow>
+              </DetailGroup>
+              <DetailGroup title="Registration numbers">
+                <DetailRow label="CIN">{company.cin}</DetailRow>
+                <DetailRow label="PAN">{company.pan}</DetailRow>
+                <DetailRow label="TAN">{company.tan}</DetailRow>
+                <DetailRow label="GSTIN">{company.gstin}</DetailRow>
+                <DetailRow label="Udyam registration no.">{company.udyam_registration_no}</DetailRow>
+                <DetailRow label="IEC">{company.iec}</DetailRow>
+                <DetailRow label="MSME registration no.">{company.msme_registration_no}</DetailRow>
+                <DetailRow label="PF registration no.">{company.pf_registration_no}</DetailRow>
+                <DetailRow label="ESIC registration no.">{company.esic_registration_no}</DetailRow>
+              </DetailGroup>
+              <DetailGroup title="Other registration">
+                <DetailRow label="Registration type">{company.other_registration_type}</DetailRow>
+                <DetailRow label="Registration number">{company.other_registration_number}</DetailRow>
+                <DetailRow label="Registration date">{company.other_registration_date ? formatDate(company.other_registration_date) : null}</DetailRow>
+                <DetailRow label="Issuing authority">{company.issuing_authority}</DetailRow>
+                <DetailRow label="Expiry date">{company.expiry_date ? formatDate(company.expiry_date) : null}</DetailRow>
+              </DetailGroup>
+              <DetailGroup title="Representative & capital" last>
+                <DetailRow label="Legal representative">{company.legal_representative}</DetailRow>
+                <DetailRow label="Authorized capital">{company.authorized_capital != null ? `₹ ${company.authorized_capital.toLocaleString('en-IN')}` : null}</DetailRow>
+                <DetailRow label="Paid-up capital">{company.paid_up_capital != null ? `₹ ${company.paid_up_capital.toLocaleString('en-IN')}` : null}</DetailRow>
+              </DetailGroup>
             </div>
           )}
 
           {tab === 'Tax Configuration' && seeStatutory && (
-            <div style={sectionStyle} data-tour="org-info-tax-panel">
-              <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Tax Configuration</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 10px))), 1fr))', gap: 20 }}>
-                <div><div style={labelStyle}>GST Registration Type</div><div style={valueStyle}>{company.gst_registration_type || '—'}</div></div>
-                <div><div style={labelStyle}>TDS Applicable</div><div style={valueStyle}>{company.tds_applicable ? 'Yes' : 'No'}</div></div>
-                <div><div style={labelStyle}>TCS Applicable</div><div style={valueStyle}>{company.tcs_applicable ? 'Yes' : 'No'}</div></div>
-                <div><div style={labelStyle}>Default Tax Region</div><div style={valueStyle}>{company.default_tax_region || '—'}</div></div>
-                <div><div style={labelStyle}>Tax Deductibility</div><div style={valueStyle}>{company.tax_deductibility || '—'}</div></div>
-                <div><div style={labelStyle}>Tax Registration Status</div><div style={valueStyle}>{company.tax_registration_status || '—'}</div></div>
-                <div><div style={labelStyle}>Tax Effective Date</div><div style={valueStyle}>{company.tax_effective_date || '—'}</div></div>
-              </div>
+            <div data-tour="org-info-tax-panel">
+              <DetailGroup title="GST">
+                <DetailRow label="GST registration type">{company.gst_registration_type}</DetailRow>
+                <DetailRow label="Tax registration status">{company.tax_registration_status}</DetailRow>
+                <DetailRow label="Tax effective date">{company.tax_effective_date ? formatDate(company.tax_effective_date) : null}</DetailRow>
+                <DetailRow label="Default tax region">{company.default_tax_region}</DetailRow>
+                <DetailRow label="Tax deductibility">{company.tax_deductibility}</DetailRow>
+              </DetailGroup>
+              <DetailGroup title="Deducted / collected at source" last>
+                <DetailRow label="TDS applicable">{company.tds_applicable ? 'Yes' : 'No'}</DetailRow>
+                <DetailRow label="TCS applicable">{company.tcs_applicable ? 'Yes' : 'No'}</DetailRow>
+              </DetailGroup>
             </div>
           )}
 
-          {tab === 'Partners' && seeTab('Partners') && <CompanyPartnersPanel sectionStyle={sectionStyle} />}
+          {tab === 'Partners' && seeTab('Partners') && <CompanyPartnersPanel sectionStyle={{ paddingTop: 14 }} />}
 
           {tab === 'Contacts' && (
-            <div style={sectionStyle} data-tour="org-info-contacts-panel">
-              <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Contacts</h2>
+            <div data-tour="org-info-contacts-panel" style={{ paddingTop: 8 }}>
               {contacts.length === 0 ? (
-                <p style={{ fontSize: 13, color: TEXT.muted }}>No contacts added yet.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {contacts.map((c) => (
-                    <div key={c.id} style={cardRowStyle}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{c.contact_person}</span>
-                        {c.designation && <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: BRAND.primary }}>{c.designation}</span>}
-                        {c.is_primary && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(16,185,129,0.12)', color: '#047857' }}>PRIMARY</span>}
-                        {!c.is_active && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(220,38,38,0.1)', color: '#b91c1c' }}>INACTIVE</span>}
-                      </div>
-                      <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>
-                        {[c.department, c.mobile, c.email].filter(Boolean).join(' · ') || '—'}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
+                <p style={emptyStyle}>No contacts added yet{canEdit ? ' — use Edit › Contacts to add the people customers and vendors should reach.' : '.'}</p>
+              ) : contacts.map((c, i) => (
+                <ListItem key={c.id} last={i === contacts.length - 1}
+                  title={c.contact_person}
+                  sub={[c.designation, c.department].filter(Boolean).join(', ')}
+                  tags={<>{c.is_primary && <Pill label="Primary" hex="#047857" />}{!c.is_active && <Pill label="Inactive" hex="#b91c1c" />}</>}
+                  body={[c.mobile, c.phone, c.email, c.alternate_email].filter(Boolean).join(' · ') || '—'} />
+              ))}
             </div>
           )}
 
           {tab === 'Financial Year' && seeFy && (
-            <div style={sectionStyle} data-tour="org-info-fy-panel">
-              <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Financial Years</h2>
+            <div data-tour="org-info-fy-panel" style={{ paddingTop: 8 }}>
               {financialYears.length === 0 ? (
-                <p style={{ fontSize: 13, color: TEXT.muted }}>No financial years added yet.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {financialYears.map((fy) => (
-                    <div key={fy.id} style={cardRowStyle}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{fy.name}</span>
-                        <span style={{
-                          fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, textTransform: 'uppercase',
-                          background: fy.status === 'open' ? 'rgba(16,185,129,0.12)' : 'rgba(220,38,38,0.1)',
-                          color: fy.status === 'open' ? '#047857' : '#b91c1c',
-                        }}>{fy.status}</span>
-                      </div>
-                      <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>{fy.start_date} → {fy.end_date}{fy.fiscal_year_code ? ` · ${fy.fiscal_year_code}` : ''}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
+                <p style={emptyStyle}>No financial years added yet{canEdit ? ' — use Edit › Financial Year to add the current year (e.g. FY 2026-27).' : '.'}</p>
+              ) : financialYears.map((fy, i) => (
+                <ListItem key={fy.id} last={i === financialYears.length - 1}
+                  title={fy.name}
+                  sub={fy.fiscal_year_code || undefined}
+                  tags={<Pill label={fy.status ? fy.status.charAt(0).toUpperCase() + fy.status.slice(1) : '—'} hex={fy.status === 'open' ? '#047857' : '#b91c1c'} />}
+                  body={`${formatDate(fy.start_date)} → ${formatDate(fy.end_date)}${fy.lock_date ? ` · Locked up to ${formatDate(fy.lock_date)}` : ''}`} />
+              ))}
             </div>
           )}
 
           {tab === 'Branding' && (
-            <div style={sectionStyle} data-tour="org-info-branding-panel">
-              <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Branding</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 10px))), 1fr))', gap: 20 }}>
-                <div><div style={labelStyle}>Company Logo</div><div style={valueStyle}>{company.logo_url || '—'}</div></div>
-                <div>
-                  <div style={labelStyle}>Primary Brand Color</div>
-                  <div style={{ ...valueStyle, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {company.primary_brand_color && <span style={{ width: 16, height: 16, borderRadius: 4, background: company.primary_brand_color, border: `1px solid ${BORDER.normal}` }} />}
-                    {company.primary_brand_color || '—'}
-                  </div>
-                </div>
-                <div>
-                  <div style={labelStyle}>Secondary Brand Color</div>
-                  <div style={{ ...valueStyle, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {company.secondary_brand_color && <span style={{ width: 16, height: 16, borderRadius: 4, background: company.secondary_brand_color, border: `1px solid ${BORDER.normal}` }} />}
-                    {company.secondary_brand_color || '—'}
-                  </div>
-                </div>
-                <div>
-                  <div style={labelStyle}>Accent Color</div>
-                  <div style={{ ...valueStyle, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {company.accent_color && <span style={{ width: 16, height: 16, borderRadius: 4, background: company.accent_color, border: `1px solid ${BORDER.normal}` }} />}
-                    {company.accent_color || '—'}
-                  </div>
-                </div>
-                <div style={{ gridColumn: '1 / -1' }}><div style={labelStyle}>Company Header</div><div style={{ ...valueStyle, whiteSpace: 'pre-wrap' }}>{company.company_header || '—'}</div></div>
-                <div style={{ gridColumn: '1 / -1' }}><div style={labelStyle}>Company Footer</div><div style={{ ...valueStyle, whiteSpace: 'pre-wrap' }}>{company.company_footer || '—'}</div></div>
-                <div><div style={labelStyle}>Watermark</div><div style={valueStyle}>{company.watermark || '—'}</div></div>
-                <div style={{ gridColumn: '1 / -1' }}><div style={labelStyle}>Email Signature</div><div style={{ ...valueStyle, whiteSpace: 'pre-wrap' }}>{company.email_signature || '—'}</div></div>
-              </div>
+            <div data-tour="org-info-branding-panel">
+              <DetailGroup title="Logo & colours">
+                <DetailRow label="Company logo">{company.logo_url}</DetailRow>
+                <DetailRow label="Primary brand colour">{company.primary_brand_color && <Swatch hex={company.primary_brand_color} />}</DetailRow>
+                <DetailRow label="Secondary brand colour">{company.secondary_brand_color && <Swatch hex={company.secondary_brand_color} />}</DetailRow>
+                <DetailRow label="Accent colour">{company.accent_color && <Swatch hex={company.accent_color} />}</DetailRow>
+              </DetailGroup>
+              <DetailGroup title="Documents & email" last>
+                <DetailRow label="Company header">{company.company_header}</DetailRow>
+                <DetailRow label="Company footer">{company.company_footer}</DetailRow>
+                <DetailRow label="Watermark">{company.watermark}</DetailRow>
+                <DetailRow label="Email signature">{company.email_signature}</DetailRow>
+              </DetailGroup>
             </div>
           )}
 
           {tab === 'Documents' && seeDocs && (
-            <div style={sectionStyle} data-tour="org-info-documents-panel">
-              <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Company Documents</h2>
+            <div data-tour="org-info-documents-panel" style={{ paddingTop: 8 }}>
               {documents.length === 0 ? (
-                <p style={{ fontSize: 13, color: TEXT.muted }}>No documents uploaded yet.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {documents.map((d) => (
-                    <div key={d.id} style={cardRowStyle}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{d.document_name}</span>
-                            <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: BRAND.primary }}>{d.document_type}</span>
-                            {d.confidentiality && <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(0,0,0,0.05)', color: TEXT.secondary }}>{d.confidentiality}</span>}
-                          </div>
-                          <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>
-                            {d.filename}{d.expiry_date ? ` · Expires ${d.expiry_date}` : ''}{d.issuing_authority ? ` · ${d.issuing_authority}` : ''}
-                          </p>
-                        </div>
-                        {d.sharepoint_url && canFeature('organization', 'info', 'documents', 'export') && <a href={d.sharepoint_url} target="_blank" rel="noreferrer" style={linkBtnStyle}>Open</a>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                <p style={emptyStyle}>No documents uploaded yet{canEdit ? ' — use Edit › Documents to upload registration certificates and licences.' : '.'}</p>
+              ) : documents.map((d, i) => (
+                <ListItem key={d.id} last={i === documents.length - 1}
+                  title={d.document_name}
+                  sub={d.document_type}
+                  tags={d.confidentiality ? <Pill label={d.confidentiality} hex="#64748b" /> : null}
+                  body={[d.filename, d.expiry_date ? `Expires ${formatDate(d.expiry_date)}` : '', d.issuing_authority || ''].filter(Boolean).join(' · ')}
+                  action={d.sharepoint_url && canFeature('organization', 'info', 'documents', 'export') ? <a href={d.sharepoint_url} target="_blank" rel="noreferrer" style={linkBtnStyle}>Open</a> : null} />
+              ))}
             </div>
           )}
 
           {tab === 'Defaults & Controls' && (
-            <div style={sectionStyle} data-tour="org-info-defaults-panel">
-              <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Company Defaults & Controls</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 10px))), 1fr))', gap: 20 }}>
-                <div><div style={labelStyle}>Default Tax</div><div style={valueStyle}>{company.default_tax || '—'}</div></div>
-                <div><div style={labelStyle}>Default Plant</div><div style={valueStyle}>{company.default_plant_id ? `#${company.default_plant_id}` : '—'}</div></div>
-                <div><div style={labelStyle}>Default Store</div><div style={valueStyle}>{company.default_warehouse_id ? `#${company.default_warehouse_id}` : '—'}</div></div>
-                <div><div style={labelStyle}>Default Cost Center</div><div style={valueStyle}>{company.default_cost_center || '—'}</div></div>
-                <div><div style={labelStyle}>Default Profit Center</div><div style={valueStyle}>{company.default_profit_center || '—'}</div></div>
-              </div>
+            <div data-tour="org-info-defaults-panel">
+              <DetailGroup title="Used when a form leaves these blank" last>
+                <DetailRow label="Default tax">{company.default_tax}</DetailRow>
+                <DetailRow label="Default plant">{company.default_plant_id ? (plantNames[company.default_plant_id] || `Plant #${company.default_plant_id}`) : null}</DetailRow>
+                <DetailRow label="Default store">{company.default_warehouse_id ? (storeNames[company.default_warehouse_id] || `Store #${company.default_warehouse_id}`) : null}</DetailRow>
+                <DetailRow label="Default cost center">{company.default_cost_center}</DetailRow>
+                <DetailRow label="Default profit center">{company.default_profit_center}</DetailRow>
+              </DetailGroup>
             </div>
           )}
-        </>
+        </DetailCard>
       )}
     </div>
   )

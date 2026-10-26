@@ -1,5 +1,6 @@
 'use client'
 
+import { Pill } from '@/components/shared/ui'
 import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { hydraulicApi } from '@/lib/api'
@@ -412,9 +413,7 @@ export default function TestForm({
                     <label style={rowLabel}>Result</label>
                     {auto ? (
                       <div style={{ padding: '7px 0' }} title="Judged from the limits and the measured value">
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${READING_RESULT_HEX[auto]}1a`, color: READING_RESULT_HEX[auto], whiteSpace: 'nowrap' }}>
-                          {READING_RESULT_LABELS[auto]} · auto
-                        </span>
+                        <Pill label={<>{READING_RESULT_LABELS[auto]} · auto</>} hex={READING_RESULT_HEX[auto] || '#78716c'} />
                       </div>
                     ) : (
                       <Select style={rowInput} value={r.result} onChange={(e) => updateRow(r.key, { result: e.target.value })}>

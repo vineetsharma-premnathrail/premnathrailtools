@@ -15,7 +15,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import QualityRecordDoc from '@/components/quality/QualityRecordDoc'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
-import { Field, Section, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
+import { Field, Section, InfoRow, DetailCard, DetailSummary, DetailGroup, DetailRow, pillStyle, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
 import {
   Pill, PageHeader, ErrorBanner, fmtDate, fmtQty, CAPA_STATUS_LABELS, CAPA_STATUS_HEX, CAPA_TRIGGER_LABELS, SEVERITY_HEX,
   NCR_STATUS_LABELS,
@@ -32,6 +32,7 @@ const FISHBONE_LABELS: Record<string, string> = {
   man: 'Man (people / skill)', machine: 'Machine', method: 'Method', material: 'Material', measurement: 'Measurement', environment: 'Environment',
 }
 const linkStyle: React.CSSProperties = { color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }
+const linkBtn: React.CSSProperties = { ...linkStyle, padding: 0, border: 'none', background: 'none', fontSize: 13.5, textAlign: 'left' }
 const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 
 export default function CapaDetailPage() {
@@ -167,9 +168,6 @@ export default function CapaDetailPage() {
         onConfirm={(reason) => { setReopenOpen(false); run(() => qualityApi.reopenCapa(capa.id, reason), 'Failed to reopen the CAPA.') }} />
 
       <PageHeader title={capa.capa_number} subtitle={`Quality · CAPA (8D) · ${CAPA_TRIGGER_LABELS[capa.trigger] || capa.trigger}`}>
-        <Pill text={capa.severity} hex={SEVERITY_HEX[capa.severity]} />
-        <Pill text={CAPA_STATUS_LABELS[capa.status] || capa.status} hex={CAPA_STATUS_HEX[capa.status]} />
-        {capa.overdue && <Pill text="Overdue" hex="#DC2626" />}
         <button type="button" onClick={() => router.push('/dashboard/quality/capa')} style={secondaryBtnStyle}>← Back</button>
       </PageHeader>
       {!sheet && <ErrorBanner error={error} />}
@@ -180,26 +178,36 @@ export default function CapaDetailPage() {
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
         {STEPS.map((s, i) => {
           const reached = stepIndex >= i
-          return <span key={s} style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 10px', borderRadius: 9999, background: reached ? '#16A34A1a' : 'rgba(0,0,0,0.04)', color: reached ? '#15803d' : TEXT.muted }}>{i + 1}. {CAPA_STATUS_LABELS[s]}</span>
+          return <span key={s} style={{ ...pillStyle(reached ? '#15803d' : '#64748b'), background: reached ? '#16A34A1a' : 'rgba(0,0,0,0.04)' }}>{i + 1}. {CAPA_STATUS_LABELS[s]}</span>
         })}
         {capa.reopen_count > 0 && <span style={{ fontSize: 11.5, color: '#b91c1c', alignSelf: 'center' }}>Reopened {capa.reopen_count}×</span>}
       </div>
 
-      <Section title={capa.title} style={{ marginBottom: 20 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
-          <InfoRow label="Raised for" value={CAPA_TRIGGER_LABELS[capa.trigger] || capa.trigger} />
-          <InfoRow label="Type" value={capa.action_type} />
-          <InfoRow label="Item" value={capa.item_name || '—'} />
-          <InfoRow label="Vendor" value={capa.vendor_name || '—'} />
-          <InfoRow label="Defect" value={capa.defect_code_label || '—'} />
-          <InfoRow label="Audit" value={capa.audit_reference || '—'} />
-          <InfoRow label="Target date" value={fmtDate(capa.due_date)} />
-          <InfoRow label="Opened" value={fmtDate(capa.created_at)} />
-        </div>
-        {capa.complaint_id && (
-          <p style={{ fontSize: 13, margin: 0 }}>Customer complaint: <span style={linkStyle} onClick={() => router.push(recordPath('/dashboard/quality/complaints', capa, 'complaint_id'))}>{capa.complaint_number}</span></p>
-        )}
-      </Section>
+      <DetailCard>
+        <DetailSummary
+          title={capa.title}
+          text={`${capa.action_type === 'preventive' ? 'Preventive' : 'Corrective'} action raised for: ${CAPA_TRIGGER_LABELS[capa.trigger] || capa.trigger}.`}
+          meta={<>
+            <Pill text={CAPA_STATUS_LABELS[capa.status] || capa.status} hex={CAPA_STATUS_HEX[capa.status]} />
+            <Pill text={capa.severity.charAt(0).toUpperCase() + capa.severity.slice(1)} hex={SEVERITY_HEX[capa.severity]} />
+            {capa.overdue && <Pill text="Overdue" hex="#DC2626" />}
+            {capa.responsible_user_name && <><span>·</span><span>Owner {capa.responsible_user_name}</span></>}
+            <span>·</span><span>Opened {fmtDate(capa.created_at)}</span>
+            <span>·</span><span>Target {fmtDate(capa.due_date)}</span>
+          </>}
+        />
+        <DetailGroup title="What it concerns" last>
+          <DetailRow label="Item">{capa.item_name}</DetailRow>
+          <DetailRow label="Vendor">{capa.vendor_name}</DetailRow>
+          <DetailRow label="Defect">{capa.defect_code_label}</DetailRow>
+          {capa.audit_reference && <DetailRow label="Audit reference">{capa.audit_reference}</DetailRow>}
+          {capa.complaint_id && (
+            <DetailRow label="Customer complaint">
+              <button type="button" style={linkBtn} onClick={() => router.push(recordPath('/dashboard/quality/complaints', capa, 'complaint_id'))}>{capa.complaint_number}</button>
+            </DetailRow>
+          )}
+        </DetailGroup>
+      </DetailCard>
 
       {seeTeam && <Section title="D1 — Team" style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
@@ -213,7 +221,7 @@ export default function CapaDetailPage() {
         {capa.team.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No team yet — an 8D needs the owner and at least one more member (e.g. production, design).</p> : (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {capa.team.map((m) => (
-              <span key={m.id} style={{ fontSize: 12.5, padding: '5px 10px', borderRadius: 9999, background: 'rgba(0,0,0,0.04)' }}>
+              <span key={m.id} style={{ ...pillStyle('#334155'), fontSize: 12.5, fontWeight: 500, padding: '5px 10px', background: 'rgba(0,0,0,0.04)' }}>
                 {m.user_name} · {m.role}{m.department ? ` · ${m.department}` : ''}
                 {!closed && canTeam && m.user_id !== capa.responsible_user_id && (
                   <span style={{ marginLeft: 6, cursor: 'pointer', color: '#b91c1c' }}

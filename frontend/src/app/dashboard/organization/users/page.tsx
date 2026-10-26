@@ -9,6 +9,7 @@ import OrganizationNav from '@/components/organization/OrganizationNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { moduleWords } from '@/lib/permissionWords'
+import { RowCount, Pill } from '@/components/shared/ui'
 
 const APPROVAL_ROLE_FLAGS: { key: keyof User; label: string }[] = [
   { key: 'is_partner', label: 'Partner' },
@@ -92,8 +93,8 @@ export default function OrganizationUsersPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr style={{ background: `${BRAND.primary}0d` }}>
-              {['User', 'Email', 'Department', 'Branch', 'Role', 'Modules', 'Approval Roles', 'Status'].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
+              {['User', 'Email', 'Department', 'Branch', 'Role', 'Modules', 'Approval Roles', 'Status'].map((h, hi) => (
+                <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}{hi === 0 && <RowCount count={filtered.length} />}</th>
               ))}
             </tr>
           </thead>
@@ -145,9 +146,7 @@ export default function OrganizationUsersPage() {
                     )}
                   </td>
                   <td style={{ padding: '12px 16px' }} data-tour={idx === 0 ? 'org-users-status-badge' : undefined}>
-                    <span style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, whiteSpace: 'nowrap', color: u.is_active ? '#047857' : '#64748B', background: u.is_active ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.12)' }}>
-                      {u.is_active ? 'Active' : 'Inactive'}
-                    </span>
+                    <Pill label={u.is_active ? 'Active' : 'Inactive'} hex={u.is_active ? '#047857' : '#64748B'} />
                   </td>
                 </tr>
               )

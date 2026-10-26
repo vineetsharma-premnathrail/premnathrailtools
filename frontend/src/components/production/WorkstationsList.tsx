@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { productionApi } from '@/lib/api'
 import { ProductionWorkstation } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import ProductionNav from '@/components/production/ProductionNav'
 import WorkstationForm, { WORKSTATION_TYPE_LABELS } from '@/components/production/WorkstationForm'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 import { useCan } from '@/lib/permissions'
 import Select from '@/components/shared/Select'
+import { primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<string, string> = { active: 'Active', under_maintenance: 'Under Maintenance', inactive: 'Inactive' }
 const STATUS_HEX: Record<string, string> = { active: '#16A34A', under_maintenance: '#F59E0B', inactive: '#78716c' }
@@ -69,11 +70,7 @@ export default function WorkstationsList({ openNew = false }: { openNew?: boolea
         {can('production', 'workstations', 'create') && <button
           data-tour="production-ws-new-btn"
           onClick={() => router.push('/dashboard/production/workstations/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
+          style={primaryBtnStyle}
         >
           + New Workstation
         </button>}
@@ -104,9 +101,9 @@ export default function WorkstationsList({ openNew = false }: { openNew?: boolea
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['Code', 'Name', 'Type', 'Plant', 'Capacity / day', 'Rate / hr', 'Open Ops', 'Status', ''].map((h) => (
+              {['Code', 'Name', 'Type', 'Plant', 'Capacity / day', 'Rate / hr', 'Open Ops', 'Status', ''].map((h, i) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{i === 0 && <RowCount count={workstations.length} />}
                 </th>
               ))}
             </tr>
@@ -127,9 +124,7 @@ export default function WorkstationsList({ openNew = false }: { openNew?: boolea
                   <td style={cellStyle}>₹{w.hourly_rate.toLocaleString('en-IN')}</td>
                   <td style={cellStyle}>{w.open_operations}</td>
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[w.status]}1a`, color: STATUS_HEX[w.status], whiteSpace: 'nowrap' }}>
-                      {STATUS_LABELS[w.status] || w.status}
-                    </span>
+                    <Pill label={STATUS_LABELS[w.status] || w.status} hex={STATUS_HEX[w.status]} />
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
                     <span onClick={() => router.push(recordPath('/dashboard/production/workstations', w))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>

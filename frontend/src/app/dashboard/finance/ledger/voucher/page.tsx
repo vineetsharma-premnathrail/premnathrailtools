@@ -22,6 +22,7 @@ import {
   thStyle, tdStyle, numTd, numTh, inr, dmy,
   ErrorBanner, InfoBanner, StatusPill, PageHeader, TableWrap, EmptyRow,
 } from '@/components/finance/financeUi'
+import { RowCount, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { STATUS_LABELS, STATUS_HEX, VOUCHER_LABELS, POSTING_LABELS, SOURCE_DOCUMENTS, VOUCHER_PATH } from '@/components/finance/voucherLabels'
 import FinanceAttachments, { useProofRules } from '@/components/finance/FinanceAttachments'
 import { FormSheet, SheetSection, SheetIcon, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
@@ -143,12 +144,6 @@ function Voucher({ entryRef }: { entryRef: string | null }) {
     }
   }
 
-  const fact = (label: string, value: React.ReactNode) => (
-    <div style={{ minWidth: 150 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
-      <div style={{ fontSize: 13.5, color: TEXT.heading, marginTop: 3 }}>{value}</div>
-    </div>
-  )
   const voucherLink = (refRow: object, key: string, label: string) => (
     <Link href={recordHref(VOUCHER_PATH, refRow, key, undefined, 'entry')} style={{ color: 'inherit', fontWeight: 700 }}>{label}</Link>
   )
@@ -157,8 +152,8 @@ function Voucher({ entryRef }: { entryRef: string | null }) {
     <div>
       <FinanceNav />
       <PageHeader
-        title={title}
-        subtitle={`${VOUCHER_LABELS[entry.voucher_type] || entry.voucher_type} voucher · ${POSTING_LABELS[entry.posting_type] || entry.posting_type}`}
+        title="Voucher"
+        subtitle="One accounting entry — what was posted, its ledger lines (debits equal credits), supporting files and every change made to it."
         actions={<>
           {canChange && !editing && <button type="button" data-tour="fin-voucher-change" style={primaryBtnStyle} onClick={startEdit}>Change</button>}
           {back}
@@ -199,30 +194,45 @@ function Voucher({ entryRef }: { entryRef: string | null }) {
         </FormSheet>
       )}
 
-      <div style={{ ...sectionStyle, display: 'flex', flexWrap: 'wrap', gap: '16px 28px' }} data-tour="fin-voucher-header">
-        {fact('Status', <StatusPill status={entry.status} labels={STATUS_LABELS} colors={STATUS_HEX} />)}
-        {fact('Posting date', dmy(entry.posting_date))}
-        {fact('Period / FY', `${entry.accounting_period}${entry.financial_year ? ` · FY ${entry.financial_year}` : ''}`)}
-        {fact('Amount', `₹ ${inr(entry.total_debit)}`)}
-        {fact('Source', source ? `${source.label} (${source.where})` : 'Manual journal')}
-        {fact('Drafted by', entry.created_by_name ? `${entry.created_by_name}${entry.created_at ? ` · ${dmy(entry.created_at)}` : ''}` : '—')}
-        {fact('Posted by', entry.posted_by_name || '—')}
-        {entry.auto_reverse_on && fact('Auto-reverses on', dmy(entry.auto_reverse_on))}
-        {entry.reverses_journal_entry_id && fact('Reverses', voucherLink(entry, 'reverses_journal_entry_id', entry.reverses_entry_number || 'original voucher'))}
-        {entry.status === 'reversed' && fact('Reversed', <>
-          {entry.reversal_journal_entry_id ? voucherLink(entry, 'reversal_journal_entry_id', entry.reversal_entry_number || 'reversal') : '—'}
-          <div style={{ fontSize: 12, color: TEXT.secondary }}>{dmy(entry.reversal_date)}{entry.reversed_by_name ? ` by ${entry.reversed_by_name}` : ''}</div>
-          {entry.reversal_reason && <div style={{ fontSize: 12, color: '#b45309' }}>{entry.reversal_reason}</div>}
-        </>)}
-        <div style={{ flexBasis: '100%' }}>
-          {fact('Narration', entry.description || '—')}
-        </div>
-      </div>
+      <DetailCard tour="fin-voucher-header">
+        <DetailSummary
+          title={<>{title} <span style={{ fontSize: 14, fontWeight: 600, color: TEXT.secondary }}>· ₹ {inr(entry.total_debit)}</span></>}
+          text={entry.description || 'No narration was written for this voucher.'}
+          meta={<>
+            <StatusPill status={entry.status} labels={STATUS_LABELS} colors={STATUS_HEX} />
+            <span>·</span><span>Posted on {dmy(entry.posting_date)}</span>
+            <span>·</span><span>{source ? `From ${source.label.toLowerCase()}` : 'Manual journal'}</span>
+          </>}
+        />
+        <DetailGroup title="Posting">
+          <DetailRow label="Voucher type">{VOUCHER_LABELS[entry.voucher_type] || entry.voucher_type.replace(/_/g, ' ')}</DetailRow>
+          <DetailRow label="Posting type">{POSTING_LABELS[entry.posting_type] || entry.posting_type.replace(/_/g, ' ')}</DetailRow>
+          <DetailRow label="Posting date">{dmy(entry.posting_date)}</DetailRow>
+          <DetailRow label="Period / financial year">{`${entry.accounting_period}${entry.financial_year ? ` · FY ${entry.financial_year}` : ''}`}</DetailRow>
+          <DetailRow label="Amount (Dr = Cr)">₹ {inr(entry.total_debit)}</DetailRow>
+          <DetailRow label="Source">{source ? `${source.label} (${source.where})` : 'Manual journal'}</DetailRow>
+        </DetailGroup>
+        {(entry.auto_reverse_on || entry.reverses_journal_entry_id || entry.status === 'reversed') && (
+          <DetailGroup title="Reversal">
+            {entry.auto_reverse_on && <DetailRow label="Auto-reverses on">{dmy(entry.auto_reverse_on)}</DetailRow>}
+            {entry.reverses_journal_entry_id && <DetailRow label="Reverses">{voucherLink(entry, 'reverses_journal_entry_id', entry.reverses_entry_number || 'original voucher')}</DetailRow>}
+            {entry.status === 'reversed' && <>
+              <DetailRow label="Reversed by voucher">{entry.reversal_journal_entry_id ? voucherLink(entry, 'reversal_journal_entry_id', entry.reversal_entry_number || 'reversal') : null}</DetailRow>
+              <DetailRow label="Reversed on">{`${dmy(entry.reversal_date)}${entry.reversed_by_name ? ` by ${entry.reversed_by_name}` : ''}`}</DetailRow>
+              <DetailRow label="Reason">{entry.reversal_reason ? <span style={{ color: '#b45309' }}>{entry.reversal_reason}</span> : null}</DetailRow>
+            </>}
+          </DetailGroup>
+        )}
+        <DetailGroup title="People" last>
+          <DetailRow label="Drafted by">{entry.created_by_name ? `${entry.created_by_name}${entry.created_at ? ` · ${dmy(entry.created_at)}` : ''}` : null}</DetailRow>
+          <DetailRow label="Posted by">{entry.posted_by_name || null}</DetailRow>
+        </DetailGroup>
+      </DetailCard>
 
       <TableWrap minWidth={900} maxHeight="none" tour="fin-voucher-lines">
         <thead>
           <tr>
-            <th style={thStyle}>#</th>
+            <th style={thStyle}># <RowCount count={entry.lines.length} /></th>
             <th style={thStyle}>Ledger</th>
             <th style={thStyle}>Cost Centre</th>
             <th style={thStyle}>Party</th>
@@ -239,7 +249,7 @@ function Voucher({ entryRef }: { entryRef: string | null }) {
               <td style={tdStyle}>{l.cost_center_name || '—'}</td>
               <td style={tdStyle}>{partyOf(l)}</td>
               <td style={{ ...tdStyle, color: TEXT.secondary, minWidth: 200 }}>
-                {l.remarks || ''}
+                {l.remarks || '—'}
               </td>
               <td style={numTd}>{inr(l.debit_amount, { blankZero: true })}</td>
               <td style={numTd}>{inr(l.credit_amount, { blankZero: true })}</td>
@@ -268,7 +278,7 @@ function Voucher({ entryRef }: { entryRef: string | null }) {
       <TableWrap minWidth={800} maxHeight="none" tour="fin-voucher-history">
         <thead>
           <tr>
-            <th style={thStyle}>When</th>
+            <th style={thStyle}>When <RowCount count={history.length} /></th>
             <th style={thStyle}>Who</th>
             <th style={thStyle}>What</th>
             <th style={thStyle}>Details</th>

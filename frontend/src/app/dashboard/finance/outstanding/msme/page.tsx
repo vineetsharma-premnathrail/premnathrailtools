@@ -16,6 +16,7 @@ import {
   sectionStyle, thStyle, tdStyle, numTd, numTh, inr, dmy, inputStyle,
   ErrorBanner, InfoBanner, StatusPill, PageHeader, TableWrap, EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
+import { RowCount } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<string, string> = { breached: 'Past 45-day limit', due_soon: 'Due soon', ok: 'Within limit' }
 const STATUS_HEX: Record<string, string> = { breached: '#dc2626', due_soon: '#f59e0b', ok: '#16a34a' }
@@ -66,7 +67,7 @@ export default function MsmeDuesPage() {
       {allowed && alerts && (
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
           <StatCard label="Bills past the limit" value={String(alerts.breached_count)} tone="#dc2626" />
-          <StatCard label="Amount past the limit" value={inr(alerts.breached_amount)} tone="#dc2626" />
+          <StatCard label="Amount past the limit" value={`₹ ${inr(alerts.breached_amount)}`} tone="#dc2626" />
           <StatCard label="Due within 7 days" value={String(alerts.due_soon_count)} tone="#f59e0b" />
         </div>
       )}
@@ -76,7 +77,7 @@ export default function MsmeDuesPage() {
         <TableWrap minWidth={980}>
           <thead>
             <tr>
-              <th style={thStyle}>Vendor</th><th style={thStyle}>Category</th><th style={thStyle}>Bill</th><th style={thStyle}>Bill date</th>
+              <th style={thStyle}>Vendor <RowCount count={alerts?.rows.length ?? 0} /></th><th style={thStyle}>Category</th><th style={thStyle}>Bill</th><th style={thStyle}>Bill date</th>
               <th style={thStyle}>Pay by</th><th style={numTh}>Days left</th><th style={numTh}>Amount due</th><th style={thStyle}>Status</th>
             </tr>
           </thead>
@@ -109,7 +110,7 @@ export default function MsmeDuesPage() {
         <TableWrap minWidth={900}>
           <thead>
             <tr>
-              <th style={thStyle}>Vendor</th><th style={thStyle}>Udyam</th><th style={thStyle}>Bill</th><th style={thStyle}>Bill date</th>
+              <th style={thStyle}>Vendor <RowCount count={report?.rows.length ?? 0} /></th><th style={thStyle}>Udyam</th><th style={thStyle}>Bill</th><th style={thStyle}>Bill date</th>
               <th style={thStyle}>Pay by</th><th style={numTh}>Days beyond</th><th style={numTh}>Unpaid at 31 March</th>
             </tr>
           </thead>

@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { purchaseOrdersApi } from '@/lib/api'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount, smallSecondaryBtnStyle, Pill } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -135,8 +135,8 @@ export default function ServiceEntriesPanel({ poId, poOpen, onChanged }: { poId:
       <div style={{ overflow: 'auto', marginBottom: 14 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
           <thead>
-            <tr>{['Service line', 'Ordered', 'Accepted', 'Awaiting acceptance', 'Open'].map((h) => (
-              <th key={h} style={{ textAlign: h === 'Service line' ? 'left' : 'right', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+            <tr>{['Service line', 'Ordered', 'Accepted', 'Awaiting acceptance', 'Open'].map((h, i) => (
+              <th key={h} style={{ textAlign: h === 'Service line' ? 'left' : 'right', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted }}>{h}{i === 0 && <RowCount count={lines.length} />}</th>
             ))}</tr>
           </thead>
           <tbody>
@@ -197,8 +197,8 @@ export default function ServiceEntriesPanel({ poId, poOpen, onChanged }: { poId:
         <div style={{ overflow: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
             <thead>
-              <tr>{['Entry', 'Service', 'Qty', 'Date / period', 'Recorded by', 'Status', ''].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+              <tr>{['Entry No.', 'Service', 'Qty', 'Date / Period', 'Recorded By', 'Status', ''].map((h, i) => (
+                <th key={h} style={{ textAlign: h === 'Qty' ? 'right' : 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap' }}>{h}{i === 0 && <RowCount count={entries.length} />}</th>
               ))}</tr>
             </thead>
             <tbody>
@@ -206,21 +206,19 @@ export default function ServiceEntriesPanel({ poId, poOpen, onChanged }: { poId:
                 <tr key={e.id} style={{ borderTop: `1px solid ${BORDER.light}` }}>
                   <td style={{ ...cell, fontWeight: 700 }}>{e.ses_number}</td>
                   <td style={cell}>{e.item_name}{e.description ? <div style={{ fontSize: 12, color: TEXT.muted }}>{e.description}</div> : null}</td>
-                  <td style={cell}>{e.quantity} {e.unit || ''}</td>
+                  <td style={{ ...cell, textAlign: 'right', whiteSpace: 'nowrap' }}>{e.quantity != null ? Number(e.quantity).toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '—'} {e.unit || ''}</td>
                   <td style={cell}>{formatDate(e.service_date)}{e.period_from || e.period_to ? <div style={{ fontSize: 12, color: TEXT.muted }}>{formatDate(e.period_from)} – {formatDate(e.period_to)}</div> : null}</td>
                   <td style={cell}>{e.created_by_name || '—'}{e.accepted_by_name ? <div style={{ fontSize: 12, color: TEXT.muted }}>Accepted by {e.accepted_by_name}</div> : null}</td>
                   <td style={cell}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[e.status]}1a`, color: STATUS_HEX[e.status], whiteSpace: 'nowrap' }}>
-                      {STATUS_LABELS[e.status] || e.status}
-                    </span>
+                    <Pill label={STATUS_LABELS[e.status] || e.status} hex={STATUS_HEX[e.status] || '#78716c'} />
                     {e.cancel_reason ? <div style={{ fontSize: 12, color: TEXT.muted }}>{e.cancel_reason}</div> : null}
                   </td>
                   <td style={{ ...cell, whiteSpace: 'nowrap' }}>
                     {e.status === 'draft' && can('p2p', 'purchase_orders', 'approve') && canFeature('p2p', 'purchase_orders', 'service_entries', 'approve') && (
-                      <button type="button" disabled={busy} onClick={() => setAccepting(e)} style={{ ...secondaryBtnStyle, marginRight: 6 }}>Accept</button>
+                      <button type="button" disabled={busy} onClick={() => setAccepting(e)} style={{ ...smallSecondaryBtnStyle, marginRight: 6 }}>Accept</button>
                     )}
                     {e.status !== 'cancelled' && can('p2p', 'purchase_orders', 'cancel') && canFeature('p2p', 'purchase_orders', 'service_entries', 'cancel') && (
-                      <button type="button" disabled={busy} onClick={() => { setCancelReason(''); setSheetError(''); setCancelling(e) }} style={secondaryBtnStyle}>Cancel</button>
+                      <button type="button" disabled={busy} onClick={() => { setCancelReason(''); setSheetError(''); setCancelling(e) }} style={smallSecondaryBtnStyle}>Cancel</button>
                     )}
                   </td>
                 </tr>

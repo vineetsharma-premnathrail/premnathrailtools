@@ -27,6 +27,8 @@ import {
   linkBtnStyle, thStyle, tdStyle, numTd, numTh, ErrorBanner, InfoBanner, StatusPill, SubTabs, useFinanceSubTabs, PageHeader, TableWrap,
   EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
+import { RowCount, pillStyle } from '@/components/shared/ui'
+import { VOUCHER_LABELS } from '@/components/finance/voucherLabels'
 import { CostCenterReport, InternalOrdersReport } from '@/components/finance/ControllingReports'
 import Select from '@/components/shared/Select'
 
@@ -75,7 +77,7 @@ const signColor = (n: number) => (n < 0 ? RED : undefined)
 // ─── small presentational pieces ─────────────────────────────────────────
 function BalancedPill({ ok, okText = 'Balanced', badText = 'Out of balance' }: { ok: boolean; okText?: string; badText?: string }) {
   const c = ok ? GREEN : RED
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${c}1a`, color: c, whiteSpace: 'nowrap' }}>{ok ? `✓ ${okText}` : badText}</span>
+  return <span style={pillStyle(c)}>{ok ? `✓ ${okText}` : badText}</span>
 }
 
 function ReportTitle({ title, sub, right }: { title: string; sub?: string; right?: React.ReactNode }) {
@@ -134,9 +136,10 @@ function HeadLines({ head, prefix, level, openMap, toggle }: {
   )
 }
 
-const statementHead = (
+/** Statement header; `count` = data lines (heads / ledger lines), headings and totals excluded. */
+const statementHead = (count: number) => (
   <thead>
-    <tr><th style={thStyle}>Particulars</th><th style={{ ...numTh, width: 180 }}>Amount (₹)</th></tr>
+    <tr><th style={thStyle}>Particulars <RowCount count={count} /></th><th style={{ ...numTh, width: 180 }}>Amount (₹)</th></tr>
   </thead>
 )
 
@@ -293,7 +296,7 @@ export default function FinanceReportsPage() {
       <TableWrap minWidth={1050} maxHeight="none" tour="fin-rep-tb-table">
         <thead>
           <tr>
-            <th style={thStyle}>Code</th><th style={thStyle}>Ledger</th><th style={thStyle}>Group</th>
+            <th style={thStyle}>Code <RowCount count={tb ? tb.rows.length : 0} /></th><th style={thStyle}>Ledger</th><th style={thStyle}>Group</th>
             <th style={numTh}>Opening Dr</th><th style={numTh}>Opening Cr</th><th style={numTh}>Debit</th>
             <th style={numTh}>Credit</th><th style={numTh}>Closing Dr</th><th style={numTh}>Closing Cr</th>
           </tr>
@@ -352,14 +355,14 @@ export default function FinanceReportsPage() {
     return (
       <>
         <div data-tour="fin-rep-pl-stats" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-          <StatCard label="Total income" value={inr(pl.total_income)} />
-          <StatCard label="Total expenses" value={inr(pl.total_expenses)} />
-          <StatCard label="Gross profit (trading)" value={inr(pl.gross_profit)} tone={pl.gross_profit >= 0 ? GREEN : RED} />
-          <StatCard label={pl.profit_for_period >= 0 ? 'Profit for the period' : 'Loss for the period'} value={inr(pl.profit_for_period)} tone={profitTone} />
+          <StatCard label="Total income" value={`₹ ${inr(pl.total_income)}`} />
+          <StatCard label="Total expenses" value={`₹ ${inr(pl.total_expenses)}`} />
+          <StatCard label="Gross profit (trading)" value={`₹ ${inr(pl.gross_profit)}`} tone={pl.gross_profit >= 0 ? GREEN : RED} />
+          <StatCard label={pl.profit_for_period >= 0 ? 'Profit for the period' : 'Loss for the period'} value={`₹ ${inr(pl.profit_for_period)}`} tone={profitTone} />
         </div>
         <ReportTitle title="Statement of Profit and Loss" sub={`For the period ${dmy(pl.from_date)} to ${dmy(pl.to_date)} · Schedule III, Division I · click a head to see its ledgers`} />
         <TableWrap minWidth={560} maxHeight="none" tour="fin-rep-pl-table">
-          {statementHead}
+          {statementHead((rev ? 1 : 0) + (other ? 1 : 0) + pl.expenses.length + 1)}
           <tbody>
             {rev && <HeadLines head={{ ...rev, label: `I. ${rev.label}` }} prefix="pl" level={0} openMap={openMap} toggle={toggle} />}
             {other && <HeadLines head={{ ...other, label: `II. ${other.label}` }} prefix="pl" level={0} openMap={openMap} toggle={toggle} />}
@@ -392,7 +395,7 @@ export default function FinanceReportsPage() {
             <BalancedPill ok={bs.is_balanced} />
           </div>} />
         <TableWrap minWidth={560} maxHeight="none" tour="fin-rep-bs-table">
-          {statementHead}
+          {statementHead(bs.sections.reduce((n, s) => n + s.subsections.reduce((m, sub) => m + Math.max(1, sub.heads.filter((h) => h.ledgers.length > 0 || Math.abs(h.amount) >= 0.005).length), 0), 0))}
           <tbody>
             {bs.sections.map((s, si) => (
               <React.Fragment key={s.key}>
@@ -449,7 +452,7 @@ export default function FinanceReportsPage() {
         <ReportTitle title="Cash Flow Statement (indirect method, AS-3)" sub={`For the period ${dmy(cf.from_date)} to ${dmy(cf.to_date)}`}
           right={<BalancedPill ok={ok} okText="Reconciles to cash" badText={`Doesn't reconcile — difference ${inr(cf.difference)}`} />} />
         <TableWrap minWidth={560} maxHeight="none" tour="fin-rep-cf-table">
-          {statementHead}
+          {statementHead(cf.operating.length + cf.investing.length + cf.financing.length)}
           <tbody>
             {block('A. Cash flow from operating activities', cf.operating, cf.net_operating, 'Net cash from operating activities (A)')}
             {block('B. Cash flow from investing activities', cf.investing, cf.net_investing, 'Net cash from investing activities (B)')}
@@ -490,7 +493,7 @@ export default function FinanceReportsPage() {
         <TableWrap minWidth={1000} maxHeight="none" tour="fin-rep-aging-table">
           <thead>
             <tr>
-              <th style={thStyle}>{partyWord}</th><th style={numTh}>Bills</th>
+              <th style={thStyle}>{partyWord} <RowCount count={rep ? rep.parties.length : 0} /></th><th style={numTh}>Bills</th>
               {BUCKETS.map((b) => <th key={b.key} style={numTh}>{b.label}</th>)}
               <th style={numTh}>Outstanding</th><th style={numTh}>Advances</th><th style={numTh}>Net</th>
             </tr>
@@ -524,7 +527,7 @@ export default function FinanceReportsPage() {
         <TableWrap minWidth={760} maxHeight="none" tour="fin-rep-aging-bills">
           <thead>
             <tr>
-              <th style={thStyle}>Bill no.</th><th style={thStyle}>{partyWord}</th><th style={thStyle}>Due date</th>
+              <th style={thStyle}>Bill no. <RowCount count={rep ? rep.rows.length : 0} /></th><th style={thStyle}>{partyWord}</th><th style={thStyle}>Due date</th>
               <th style={numTh}>Days overdue</th><th style={numTh}>Amount due (₹)</th><th style={thStyle}>Bucket</th>
             </tr>
           </thead>
@@ -568,7 +571,7 @@ export default function FinanceReportsPage() {
       <TableWrap minWidth={860} maxHeight="none" tour="fin-rep-variance-table">
         <thead>
           <tr>
-            <th style={thStyle}>Type</th><th style={thStyle}>Code</th><th style={thStyle}>Name</th>
+            <th style={thStyle}>Type <RowCount count={variance ? variance.rows.length : 0} /></th><th style={thStyle}>Code</th><th style={thStyle}>Name</th>
             <th style={numTh}>Budget (₹)</th><th style={numTh}>Actual (₹)</th><th style={numTh}>Variance (₹)</th><th style={numTh}>Variance %</th>
           </tr>
         </thead>
@@ -693,7 +696,7 @@ export default function FinanceReportsPage() {
             <ReportTitle title={`Year-end close — ${preview.fy_code}`} sub={`Closing date ${dmy(preview.end_date)}`}
               right={<StatusPill status={preview.status} colors={FY_STATUS_HEX} />} />
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-              <StatCard label={preview.net_profit >= 0 ? 'Net profit for the year' : 'Net loss for the year'} value={inr(preview.net_profit)} tone={preview.net_profit >= 0 ? GREEN : RED} />
+              <StatCard label={preview.net_profit >= 0 ? 'Net profit for the year' : 'Net loss for the year'} value={`₹ ${inr(preview.net_profit)}`} tone={preview.net_profit >= 0 ? GREEN : RED} />
               <StatCard label="Closing voucher" value={preview.closing_entry || 'Not closed'} tone={preview.closing_entry ? TEXT.heading : TEXT.muted} />
             </div>
             <p style={{ fontSize: 12.5, color: TEXT.secondary, lineHeight: 1.6, margin: '0 0 14px' }}>
@@ -789,15 +792,15 @@ export default function FinanceReportsPage() {
             {ledgerShown && (
               <>
                 <div data-tour="fin-rep-ledger-stats" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-                  <StatCard label="Opening" value={drcr(ledgerShown.opening_balance)} />
-                  <StatCard label="Debits" value={inr(ledgerShown.total_debit)} />
-                  <StatCard label="Credits" value={inr(ledgerShown.total_credit)} />
-                  <StatCard label="Closing" value={drcr(ledgerShown.closing_balance)} />
+                  <StatCard label="Opening" value={`₹ ${drcr(ledgerShown.opening_balance)}`} />
+                  <StatCard label="Debits" value={`₹ ${inr(ledgerShown.total_debit)}`} />
+                  <StatCard label="Credits" value={`₹ ${inr(ledgerShown.total_credit)}`} />
+                  <StatCard label="Closing" value={`₹ ${drcr(ledgerShown.closing_balance)}`} />
                 </div>
                 <TableWrap minWidth={720} maxHeight="none" tour="fin-rep-ledger-table">
                   <thead>
                     <tr>
-                      <th style={thStyle}>Date</th><th style={thStyle}>Voucher</th><th style={thStyle}>Narration</th>
+                      <th style={thStyle}>Date <RowCount count={ledgerShown.rows.length} /></th><th style={thStyle}>Voucher</th><th style={thStyle}>Narration</th>
                       <th style={numTh}>Debit</th><th style={numTh}>Credit</th><th style={numTh}>Balance</th>
                     </tr>
                   </thead>
@@ -812,7 +815,7 @@ export default function FinanceReportsPage() {
                         <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(r.posting_date)}</td>
                         <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                           <div style={{ fontWeight: 600 }}>{r.entry_number}</div>
-                          <div style={{ fontSize: 11, color: TEXT.muted, textTransform: 'capitalize' }}>{(r.voucher_type || '').replace(/_/g, ' ')}</div>
+                          <div style={{ fontSize: 11, color: TEXT.muted }}>{r.voucher_type ? (VOUCHER_LABELS[r.voucher_type] || r.voucher_type.replace(/_/g, ' ')) : ''}</div>
                         </td>
                         <td style={{ ...tdStyle, color: TEXT.secondary }}>{r.description || '—'}</td>
                         <td style={numTd}>{inr(r.debit_amount, { blankZero: true })}</td>

@@ -1,5 +1,6 @@
 'use client'
 
+import { pillStyle } from '@/components/shared/ui'
 import AnchoredDropdown from '@/components/design/AnchoredDropdown'
 import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
@@ -33,7 +34,7 @@ const chipStyle: React.CSSProperties = {
 
 function pill(label: string, hex: string) {
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
+    <span style={pillStyle(hex)}>
       {label}
     </span>
   )

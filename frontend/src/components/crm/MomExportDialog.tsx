@@ -7,7 +7,9 @@ import { CrmActivity, OrgContact, DirectoryUser } from '@/types'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import DateField from '@/components/erp/DateField'
 import Checkbox from '@/components/Checkbox'
-import { BRAND, TEXT } from '@/lib/theme'
+import { TEXT } from '@/lib/theme'
+import { chipBtnStyle } from '@/components/shared/ui'
+import { formatDate } from '@/lib/format'
 
 function ChipMultiSelect<T extends { id: number; label: string }>({
   options, selected, onToggle, emptyLabel,
@@ -20,12 +22,7 @@ function ChipMultiSelect<T extends { id: number; label: string }>({
           key={o.id}
           type="button"
           onClick={() => onToggle(o.id)}
-          style={{
-            fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, cursor: 'pointer',
-            border: `1px solid ${selected.includes(o.id) ? BRAND.primary : 'rgba(0,0,0,0.12)'}`,
-            background: selected.includes(o.id) ? 'rgba(255,122,69,0.1)' : '#fff',
-            color: selected.includes(o.id) ? BRAND.primary : '#57534e',
-          }}
+          style={chipBtnStyle(selected.includes(o.id))}
         >
           {selected.includes(o.id) ? '✓ ' : ''}{o.label}
         </button>
@@ -161,7 +158,7 @@ function MomExportSheet({ onClose, orgId, orgName, activities, onExportDocx, onE
                   <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: SHEET.INK, cursor: 'pointer' }}>
                     <Checkbox checked={activityIds.includes(a.id)} onChange={() => toggleActivity(a.id)} />
                     {a.subject || a.activity_type || `Follow-up #${a.id}`}
-                    {a.created_at && <span style={{ color: SHEET.MUTED }}> · {new Date(a.created_at).toLocaleDateString('en-GB')}</span>}
+                    {a.created_at && <span style={{ color: SHEET.MUTED }}> · {formatDate(a.created_at)}</span>}
                   </label>
                 ))}
               </div>

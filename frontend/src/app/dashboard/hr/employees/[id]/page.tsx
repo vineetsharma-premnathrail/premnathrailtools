@@ -9,7 +9,7 @@ import { HrEmployeeProfile } from '@/types'
 import { TEXT } from '@/lib/theme'
 import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import HrNav from '@/components/hr/HrNav'
-import EmployeeProfileView from '@/components/hr/employee/EmployeeProfileView'
+import EmployeeProfileView, { EmployeeHeaderSummary } from '@/components/hr/employee/EmployeeProfileView'
 import EmployeeDocumentsTab from '@/components/hr/employee/EmployeeDocumentsTab'
 import EmployeeLifecycleTab from '@/components/hr/employee/EmployeeLifecycleTab'
 import EmployeeLeaveTab from '@/components/hr/employee/EmployeeLeaveTab'
@@ -78,7 +78,6 @@ export default function HrEmployeeDetailPage() {
   if (!id) return <div><HrNav /></div>
 
   const statusKey = emp?.employment_status || ''
-  const subtitle = emp ? [emp.designation_name, emp.department_name, emp.branch_name].filter(Boolean).join(' · ') : ''
 
   return (
     <div>
@@ -89,7 +88,7 @@ export default function HrEmployeeDetailPage() {
           {emp && <Avatar name={emp.name} url={emp.profile_photo_url} id={emp.user_id ?? undefined} size={52} />}
           <div style={{ minWidth: 0 }}>
             <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-              HR &amp; Administration · Employee{emp?.employee_code ? ` · ${emp.employee_code}` : ''}
+              HR &amp; Administration · Employee
             </p>
             <h1 data-tour="hr-emp-header" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               {emp?.name || (loading ? 'Loading…' : 'Employee')}
@@ -98,7 +97,7 @@ export default function HrEmployeeDetailPage() {
                 : <StatusPill label="No HR profile" hex="#D97706" />)}
               {emp && !emp.is_active && <StatusPill label="Account deactivated" hex="#64748B" />}
             </h1>
-            <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>{emp ? `${subtitle || 'No department or designation set'} · ${emp.email}` : ''}</p>
+            {emp && <EmployeeHeaderSummary p={emp} />}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -143,10 +142,9 @@ export default function HrEmployeeDetailPage() {
                   <div>
                     <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>No HR profile yet</h3>
                     <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>
-                      Only the details synced from Azure are shown below. Create the HR profile to record employee code, grade, shift, employment type, statutory IDs and emergency contact.
+                      Only the details synced from Azure are shown below. Use Create HR Profile (top right) to record employee code, grade, shift, employment type, statutory IDs and emergency contact.
                     </p>
                   </div>
-                  {can('hr', 'employees', 'create') && <button type="button" style={primaryBtnStyle} onClick={() => router.push(`/dashboard/hr/employees/${params.id}/edit`)}>Create HR Profile</button>}
                 </div>
               )}
               <EmployeeProfileView p={emp} audience="hr" />

@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireAnyApp } from '@/hooks/useAuth'
 import { maintenanceApi } from '@/lib/api'
 import { MaintenanceLookups, MaintenanceRequest } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
@@ -77,11 +78,7 @@ export default function MaintenanceRequestsPage() {
         <button
           data-tour="maint-req-new-btn"
           onClick={() => router.push('/dashboard/maintenance/requests/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
+          style={primaryBtnStyle}
         >
           + Report Breakdown
         </button>
@@ -119,9 +116,9 @@ export default function MaintenanceRequestsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr>
-              {['Number', 'Asset', 'Type', 'Problem', 'Priority', 'Reported', 'Raised By', 'Status', 'Work Order', ''].map((h) => (
+              {['Number', 'Asset', 'Type', 'Problem', 'Priority', 'Reported', 'Raised By', 'Status', 'Work Order', ''].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={requests.length} />}
                 </th>
               ))}
             </tr>
@@ -147,16 +144,12 @@ export default function MaintenanceRequestsPage() {
                   </td>
                   <td style={{ ...cellStyle, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.problem_description}>{r.problem_description}</td>
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PRIORITY_HEX[r.priority]}1a`, color: PRIORITY_HEX[r.priority] }}>
-                      {PRIORITY_LABELS[r.priority] || r.priority}
-                    </span>
+                    <Pill label={PRIORITY_LABELS[r.priority] || r.priority} hex={PRIORITY_HEX[r.priority]} />
                   </td>
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{formatDateTime(r.reported_at)}</td>
                   <td style={cellStyle}>{r.raised_by_name || '—'}</td>
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[r.status]}1a`, color: STATUS_HEX[r.status], whiteSpace: 'nowrap' }}>
-                      {REQUEST_STATUS_LABELS[r.status] || r.status}
-                    </span>
+                    <Pill label={REQUEST_STATUS_LABELS[r.status] || r.status} hex={STATUS_HEX[r.status]} />
                     {r.can_confirm && <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#F59E0B', marginTop: 4 }}>Confirm repair</span>}
                   </td>
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>

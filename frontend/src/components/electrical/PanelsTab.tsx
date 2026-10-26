@@ -16,6 +16,7 @@ import {
   tableWrap, Pill, ErrorBanner, NoticeBanner, Modal, ModalFooter, F, rowStyle,
   PANEL_STATUS_LABELS, PANEL_STATUS_HEX, strOrNull, useJobFeatures,
 } from './shared'
+import { RowCount } from '@/components/shared/ui'
 
 type Msg = string | string[]
 type PanelForm = {
@@ -162,7 +163,7 @@ export default function PanelsTab({ job, meta, canEdit, onChanged }: { job: Elec
       <div data-tour="elec-panels-table" style={tableWrap}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: canEdit ? 1100 : 960 }}>
           <thead>
-            <tr>{headers.map((h, idx) => <th key={`${h}-${idx}`} style={thStyle}>{h}</th>)}</tr>
+            <tr>{headers.map((h, idx) => <th key={`${h}-${idx}`} style={h === 'Components' ? { ...thStyle, textAlign: 'right' } : thStyle}>{h}{idx === 0 && <RowCount count={panels.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {!loaded ? (
@@ -185,17 +186,15 @@ export default function PanelsTab({ job, meta, canEdit, onChanged }: { job: Elec
                     ? [p.enclosure_material, p.ip_rating].filter(Boolean).join(' · ')
                     : <span style={{ color: TEXT.muted }}>—</span>}
                 </td>
-                <td style={tdStyle}>{p.component_count}</td>
+                <td style={{ ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{p.component_count}</td>
                 <td style={tdStyle}>
                   {canEdit ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
-                      <Pill value={p.status} labels={PANEL_STATUS_LABELS} hex={PANEL_STATUS_HEX} />
-                      <Select data-tour="elec-panel-status-select" aria-label={`Status of panel ${p.panel_tag}`} value={p.status} disabled={busy}
-                        onChange={(e) => changeStatus(p, e.target.value)}
-                        style={{ ...inputStyle, width: 'auto', padding: '4px 8px', fontSize: 12 }}>
-                        {Object.entries(PANEL_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                      </Select>
-                    </div>
+                    // The dropdown already shows the current status — no separate pill.
+                    <Select data-tour="elec-panel-status-select" aria-label={`Status of panel ${p.panel_tag}`} value={p.status} disabled={busy}
+                      onChange={(e) => changeStatus(p, e.target.value)}
+                      style={{ ...inputStyle, width: 'auto', minWidth: 140, color: PANEL_STATUS_HEX[p.status] || inputStyle.color, fontWeight: 600 }}>
+                      {Object.entries(PANEL_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </Select>
                   ) : <Pill value={p.status} labels={PANEL_STATUS_LABELS} hex={PANEL_STATUS_HEX} />}
                 </td>
                 <td style={tdStyle}>

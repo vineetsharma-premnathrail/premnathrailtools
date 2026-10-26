@@ -14,7 +14,8 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi, storeBinStockApi } from '@/lib/api'
 import { StoreLocation } from '@/types'
 import { TEXT, GLASS, SHADOWS, SUCCESS } from '@/lib/theme'
-import { inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, primaryBtnStyle, secondaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
+import { formatDate } from '@/lib/format'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -37,9 +38,10 @@ const UNASSIGNED = 0 // expand key for the "in the store, no bin" row
 
 const th: React.CSSProperties = {
   position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 14px', fontSize: 11,
-  fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted,
+  fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap',
 }
 const td: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.secondary, borderTop: '1px solid rgba(0,0,0,0.05)' }
+const fmtQty = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 3 })
 const linkStyle: React.CSSProperties = { color: '#c2410c', fontWeight: 600, cursor: 'pointer', fontSize: 12.5 }
 
 export default function StoreBinsPage() {
@@ -280,7 +282,7 @@ export default function StoreBinsPage() {
             {rows.map((r) => (
               <tr key={`${r.item_id}-${r.bin_id}`}>
                 <td style={{ padding: '6px 0', fontSize: 12.5, color: TEXT.body, fontWeight: 600 }}>{r.item_code} — {r.item_name}</td>
-                <td style={{ padding: '6px 12px', fontSize: 12.5, fontWeight: 700, color: r.quantity < 0 ? '#b91c1c' : TEXT.body, whiteSpace: 'nowrap', textAlign: 'right' }}>{r.quantity} {r.uom || ''}</td>
+                <td style={{ padding: '6px 12px', fontSize: 12.5, fontWeight: 700, color: r.quantity < 0 ? '#b91c1c' : TEXT.body, whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtQty(r.quantity)} {r.uom || ''}</td>
               </tr>
             ))}
           </tbody>
@@ -354,7 +356,7 @@ export default function StoreBinsPage() {
 
       <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
-          <thead><tr>{['Code', 'Type', 'Name / Description', 'Holding', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Code', 'Type', 'Name / Description', 'Holding', 'Status', ''].map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={locationId ? tree.length : 0} />}</th>)}</tr></thead>
           <tbody>
             {!locationId && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', padding: 24 }}>Pick a store to see its bins and what they hold.</td></tr>}
             {locationId && loading && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', padding: 24 }}>Loading…</td></tr>}
@@ -362,7 +364,7 @@ export default function StoreBinsPage() {
               <>
                 <tr>
                   <td style={{ ...td, fontWeight: 700, color: TEXT.body }}>Unassigned</td>
-                  <td style={td}><span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: '#d977061a', color: '#d97706' }}>No bin</span></td>
+                  <td style={td}><Pill label="No bin" hex="#d97706" /></td>
                   <td style={td}>In the store but not put away in any bin</td>
                   <td style={td}>{holdingCell(UNASSIGNED, unassigned, true)}</td>
                   <td style={td} />
@@ -389,14 +391,12 @@ export default function StoreBinsPage() {
                       {depth > 0 && <span style={{ color: TEXT.muted, marginRight: 6 }}>└</span>}{b.code}
                     </td>
                     <td style={td}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${TYPE_HEX[b.bin_type]}1a`, color: TYPE_HEX[b.bin_type] }}>{TYPE_LABEL[b.bin_type]}</span>
+                      <Pill label={TYPE_LABEL[b.bin_type]} hex={TYPE_HEX[b.bin_type]} />
                     </td>
                     <td style={td}>{b.name || '—'}</td>
                     <td style={td}>{holdingCell(b.id, rows, b.bin_type === 'bin')}</td>
                     <td style={td}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: b.is_active ? `${SUCCESS.primary}1a` : 'rgba(100,116,139,0.12)', color: b.is_active ? SUCCESS.hover : TEXT.muted }}>
-                        {b.is_active ? 'Active' : 'Inactive'}
-                      </span>
+                      <Pill label={b.is_active ? 'Active' : 'Inactive'} hex={b.is_active ? SUCCESS.hover : TEXT.muted} />
                     </td>
                     <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <span style={{ display: 'inline-flex', gap: 14 }}>
@@ -423,7 +423,7 @@ export default function StoreBinsPage() {
           <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '24px 0 10px' }}>Moves &amp; Put-aways</h2>
           <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 420 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
-              <thead><tr>{['Move No.', 'Date', 'Type', 'Item', 'Quantity', 'From → To', 'By', 'Remarks'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Move No.', 'Date', 'Type', 'Item', 'Quantity', 'From → To', 'By', 'Remarks'].map((h, hi) => <th key={h} style={h === 'Quantity' ? { ...th, textAlign: 'right' } : th}>{h}{hi === 0 && <RowCount count={moves.length} />}</th>)}</tr></thead>
               <tbody>
                 {movesError && <tr><td colSpan={8} style={{ ...td, textAlign: 'center', padding: 20, color: '#b91c1c' }}>{movesError}</td></tr>}
                 {!movesError && moves.length === 0 && <tr><td colSpan={8} style={{ ...td, textAlign: 'center', padding: 20 }}>No bin moves or put-aways in {store?.name || 'this store'} yet.</td></tr>}
@@ -432,14 +432,12 @@ export default function StoreBinsPage() {
                   return (
                     <tr key={m.id}>
                       <td style={{ ...td, fontWeight: 700, color: TEXT.body, whiteSpace: 'nowrap' }}>{m.move_number}</td>
-                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{m.move_date ? new Date(m.move_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{m.move_date ? formatDate(m.move_date) : '—'}</td>
                       <td style={td}>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: putaway ? `${SUCCESS.primary}1a` : 'rgba(8,145,178,0.1)', color: putaway ? SUCCESS.hover : '#0891b2' }}>
-                          {putaway ? 'Put away' : m.to_bin_code ? 'Move' : 'Taken out'}
-                        </span>
+                        <Pill label={putaway ? 'Put away' : m.to_bin_code ? 'Move' : 'Taken out'} hex={putaway ? SUCCESS.hover : '#0891b2'} />
                       </td>
-                      <td style={{ ...td, color: TEXT.body }}>{m.item_code} — {m.item_name}</td>
-                      <td style={{ ...td, fontWeight: 700, color: TEXT.body, whiteSpace: 'nowrap' }}>{m.quantity} {m.uom || ''}</td>
+                      <td style={{ ...td, color: TEXT.body, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${m.item_code || ''} — ${m.item_name || ''}`}>{m.item_code || '—'} — {m.item_name || '—'}</td>
+                      <td style={{ ...td, fontWeight: 700, color: TEXT.body, whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtQty(m.quantity)} {m.uom || ''}</td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>{m.from_bin_code || 'Unassigned'} → {m.to_bin_code || 'Unassigned'}</td>
                       <td style={td}>{m.created_by_name || '—'}</td>
                       <td style={td}>{m.remarks || '—'}</td>
@@ -532,7 +530,7 @@ export default function StoreBinsPage() {
             <SheetSection icon="right" title="Destination">
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 220px' }}>
-                  <label style={sheetLabel}>To bin <Req /></label>
+                  <label style={sheetLabel}>To bin {moveSheet.mode === 'putaway' && <Req />}</label>
                   <Select style={sheetInput} value={toBin} onChange={(e) => setToBin(e.target.value)} disabled={!!moveSheet.to}>
                     <option value="">{moveSheet.mode === 'move' ? 'Unassigned (take out of the bin)' : '— pick a bin —'}</option>
                     {bins.filter((b) => b.is_active && b.id !== moveFor?.bin_id).map((b) => <option key={b.id} value={b.id}>{TYPE_LABEL[b.bin_type]} {b.code}{b.name ? ` — ${b.name}` : ''}</option>)}

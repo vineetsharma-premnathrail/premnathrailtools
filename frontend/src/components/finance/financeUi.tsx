@@ -8,7 +8,7 @@ import { accountsApi, costCentersApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
 import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
-import { inputStyle as sharedInput, primaryBtnStyle as sharedPrimary, secondaryBtnStyle as sharedSecondary, thStyle as sharedTh, tdStyle as sharedTd } from '@/components/shared/ui'
+import { inputStyle as sharedInput, primaryBtnStyle as sharedPrimary, secondaryBtnStyle as sharedSecondary, thStyle as sharedTh, tdStyle as sharedTd, chipBtnStyle, RowCount, pillStyle, DetailCard } from '@/components/shared/ui'
 import { GLAccount, GSTRate, TaxLineInput } from '@/types'
 import Select from '@/components/shared/Select'
 
@@ -35,11 +35,12 @@ export function inr(n: number | null | undefined, opts: { blankZero?: boolean } 
   return n < 0 ? `(${s})` : s
 }
 
-/** dd-mm-yyyy for display; values stay ISO. */
+/** DD/MM/YYYY for display (the app-wide Indian date format); values stay ISO. */
 export function dmy(iso?: string | null): string {
   if (!iso) return '—'
   const [y, m, d] = iso.slice(0, 10).split('-')
-  return `${d}-${m}-${y}`
+  if (!y || !m || !d) return iso
+  return `${d}/${m}/${y}`
 }
 
 export function todayIso(): string {
@@ -87,7 +88,7 @@ export function ApprovalBadge({ status, stage }: { status?: string | null; stage
   if (status !== 'pending' && status !== 'returned') return null
   const hex = status === 'pending' ? '#F59E0B' : '#7c3aed'
   const text = status === 'pending' ? `Awaiting approval${stage ? ` · ${stage}` : ''}` : 'Returned for changes'
-  return <span style={{ fontSize: 10.5, fontWeight: 700, padding: '3px 8px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{text}</span>
+  return <span style={pillStyle(hex)}>{text}</span>
 }
 
 /** After saving a draft, send it to its approvers. Returns '' on success, or a
@@ -106,7 +107,7 @@ export async function submitAfterSave(submit: () => Promise<unknown>, what: stri
 export function StatusPill({ status, labels, colors }: { status: string; labels?: Record<string, string>; colors: Record<string, string> }) {
   const hex = colors[status] || '#64748b'
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
+    <span style={pillStyle(hex)}>
       {labels?.[status] || status.replace(/_/g, ' ')}
     </span>
   )
@@ -129,11 +130,7 @@ export function SubTabs<T extends string>({ tabs, value, onChange }: { tabs: rea
   return (
     <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
       {tabs.map((t) => (
-        <button key={t} data-tour={`fin-subtab-${t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`} aria-pressed={value === t} onClick={() => onChange(t)} style={{
-          padding: '8px 16px', borderRadius: 9999, border: `1px solid ${value === t ? BRAND.primary : BORDER.normal}`,
-          background: value === t ? `${BRAND.primary}1a` : '#fff', color: value === t ? BRAND.primaryActive : TEXT.secondary,
-          fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-        }}>{t}</button>
+        <button key={t} data-tour={`fin-subtab-${t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`} aria-pressed={value === t} onClick={() => onChange(t)} style={chipBtnStyle(value === t)}>{t}</button>
       ))}
     </div>
   )
@@ -158,6 +155,17 @@ export function TableWrap({ children, minWidth = 900, maxHeight = 'calc(100vh - 
       border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight, marginBottom: 20 }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth }}>{children}</table>
     </div>
+  )
+}
+
+/** Read-only facts of a document shown under its expanded list row: one white
+ *  card, DetailGroup sections (pass `last` on each) laid out side by side and
+ *  stacking on a phone. */
+export function RecordFacts({ children, tour }: { children: React.ReactNode; tour?: string }) {
+  return (
+    <DetailCard tour={tour} style={{ padding: '4px 20px', marginTop: 12, marginBottom: 0, boxShadow: 'none' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 400px), 1fr))', columnGap: 32 }}>{children}</div>
+    </DetailCard>
   )
 }
 
@@ -254,8 +262,8 @@ export function TaxLinesEditor({ lines, onChange, ledgers, rates, interstate, le
           <thead>
             <tr>
               {['Description', 'HSN/SAC', 'Qty', 'Unit', 'Rate', 'Discount', 'GST %', `Ledger${ledgerHint ? ` (${ledgerHint})` : ''}`,
-                ...(costObjects ? ['Cost centre', 'Internal order'] : []), 'Taxable', ''].map((h) => (
-                <th key={h} style={{ ...thStyle, position: 'static', background: 'transparent', padding: '6px 6px' }}>{h}</th>
+                ...(costObjects ? ['Cost centre', 'Internal order'] : []), 'Taxable', ''].map((h, i) => (
+                <th key={h} style={{ ...thStyle, position: 'static', background: 'transparent', padding: '6px 6px', textAlign: h === 'Taxable' ? 'right' : 'left' }}>{h}{i === 0 && <RowCount count={lines.length} />}</th>
               ))}
             </tr>
           </thead>

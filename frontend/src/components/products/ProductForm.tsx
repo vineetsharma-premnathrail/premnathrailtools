@@ -189,7 +189,7 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
             )}
           </SheetSection>
 
-          <SheetSection icon="truck" title="Sales & service defaults">
+          <SheetSection icon="gear" title="Sales & service defaults">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '0 1 90px', minWidth: 80 }}>
                 <L>Unit</L><input style={sheetInput} value={form.uom} onChange={(e) => set('uom', e.target.value)} />

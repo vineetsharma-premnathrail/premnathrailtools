@@ -17,6 +17,7 @@ import {
   sectionStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh, inr, dmy,
   ErrorBanner, InfoBanner, StatusPill, PageHeader, TableWrap, EmptyRow, StatCard, ApprovalBadge,
 } from '@/components/finance/financeUi'
+import { RowCount } from '@/components/shared/ui'
 
 const REL_LABELS: Record<string, string> = { pending_approval: 'Waiting approval', released: 'Released', rejected: 'Rejected', withdrawn: 'Withdrawn' }
 const REL_HEX: Record<string, string> = { pending_approval: '#f59e0b', released: '#16a34a', rejected: '#dc2626', withdrawn: '#78716c' }
@@ -61,13 +62,13 @@ export default function CreditPage() {
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 20 }}>
         <StatCard label="Customers on hold" value={String(blocked)} tone={blocked ? '#b91c1c' : undefined} />
         <StatCard label="Releases waiting" value={String(pending)} tone={pending ? '#b45309' : undefined} />
-        <StatCard label="Total exposure" value={inr(rows.reduce((s, r) => s + r.exposure, 0))} />
+        <StatCard label="Total exposure" value={`₹ ${inr(rows.reduce((s, r) => s + r.exposure, 0))}`} />
       </div>
 
       <TableWrap minWidth={1250} tour="fin-credit-table">
         <thead>
           <tr>
-            <th style={thStyle}>Customer</th><th style={numTh}>Limit (₹)</th><th style={numTh}>Open invoices (₹)</th>
+            <th style={thStyle}>Customer <RowCount count={rows.length} /></th><th style={numTh}>Limit (₹)</th><th style={numTh}>Open invoices (₹)</th>
             <th style={numTh}>Delivered, not billed (₹)</th><th style={numTh}>Open orders (₹)</th><th style={numTh}>Unapplied (₹)</th>
             <th style={numTh}>Exposure (₹)</th><th style={numTh}>Available (₹)</th><th style={numTh}>Overdue (₹)</th><th style={thStyle}>Status</th><th style={thStyle}></th>
           </tr>
@@ -104,7 +105,7 @@ export default function CreditPage() {
         <TableWrap minWidth={1100} maxHeight="420px">
           <thead>
             <tr>
-              <th style={thStyle}>Release</th><th style={thStyle}>Customer</th><th style={thStyle}>For</th><th style={thStyle}>Order</th>
+              <th style={thStyle}>Release <RowCount count={releases.length} /></th><th style={thStyle}>Customer</th><th style={thStyle}>For</th><th style={thStyle}>Order</th>
               <th style={thStyle}>Why blocked</th><th style={thStyle}>Reason given</th><th style={thStyle}>Status</th><th style={thStyle}>Valid until</th><th style={thStyle}></th>
             </tr>
           </thead>

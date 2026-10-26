@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
 import { HydSparePart } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, Pill } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -24,7 +24,6 @@ const cardStyle: React.CSSProperties = {
 }
 const statLabel: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }
 const statValue: React.CSSProperties = { fontSize: 16, fontWeight: 700, color: TEXT.heading, margin: 0 }
-const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
 const qty = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 3 })
 
 export default function HydSparePartDetailPage() {
@@ -90,8 +89,8 @@ export default function HydSparePartDetailPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
                 <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Stock</h2>
                 <div data-tour="hyd-spared-badges" style={{ display: 'flex', gap: 8 }}>
-                  <span style={pill(CRITICALITY_HEX[spare.criticality])}>{CRITICALITY_LABELS[spare.criticality] || spare.criticality}</span>
-                  <span style={pill(stockHex)}>{STOCK_LABELS[spare.stock_status] || spare.stock_status}</span>
+                  <Pill label={CRITICALITY_LABELS[spare.criticality] || spare.criticality} hex={CRITICALITY_HEX[spare.criticality] || '#78716c'} />
+                  <Pill label={STOCK_LABELS[spare.stock_status] || spare.stock_status} hex={stockHex || '#78716c'} />
                 </div>
               </div>
               {linked ? (

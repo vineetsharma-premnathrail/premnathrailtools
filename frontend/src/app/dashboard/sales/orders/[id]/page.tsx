@@ -12,9 +12,9 @@ import { formatDate, formatDateTime } from '@/lib/format'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
-import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallSecondaryBtnStyle, RowCount, pillStyle, TableScroll, numThStyle, numTdStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import SalesNav from '@/components/sales/SalesNav'
-import { sectionStyle, h2Style, thStyle, tdStyle, Pill, ErrorBanner, PageHeader, Fact } from '@/components/sales/SalesUi'
+import { sectionStyle, h2Style, thStyle, tdStyle, Pill, ErrorBanner, PageHeader } from '@/components/sales/SalesUi'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { useCan } from '@/lib/permissions'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
@@ -213,7 +213,7 @@ export default function SalesOrderDetailPage() {
 
       <div data-tour="sales-detail-stepper" style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
         {STEPS.map((s, i) => (
-          <span key={s} style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 11px', borderRadius: 9999, background: i <= stepIdx && stepIdx >= 0 ? '#FF6A2A1a' : 'rgba(0,0,0,.04)', color: i <= stepIdx && stepIdx >= 0 ? '#c2410c' : TEXT.muted }}>
+          <span key={s} style={{ ...pillStyle(i <= stepIdx && stepIdx >= 0 ? '#c2410c' : TEXT.muted), fontSize: 11.5, padding: '5px 11px', ...(i <= stepIdx && stepIdx >= 0 ? {} : { background: 'rgba(0,0,0,.04)' }) }}>
             {i + 1}. {SO_STATUS_LABELS[s]}
           </span>
         ))}
@@ -262,51 +262,53 @@ export default function SalesOrderDetailPage() {
 
       {shown === 'overview' && (
         <>
-          <div style={sectionStyle}>
-            <h2 style={h2Style}>Order</h2>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-              <Fact label="Customer" value={so.customer_name} />
-              <Fact label="GSTIN" value={so.customer_gstin} />
-              <Fact label="Contact" value={so.customer_contact_name} />
-              <Fact label="Source" value={`${so.source_label || ''}${so.source_quotation_number ? ` · ${so.source_quotation_number}` : ''}`} />
-              <Fact label="Order type" value={ORDER_TYPE_LABELS[so.order_type]} />
-              <Fact label="Billing address" value={so.billing_address} />
-              {seePrices && <Fact label="Value" value={`${formatINR(so.taxable_total)} + GST ${formatINR(so.gst_total)} = ${formatINR(so.grand_total)}`} />}
-              <Fact label="Units delivered" value={`${so.units_delivered} of ${so.units_total}`} />
-              <Fact label="Sales owner" value={so.sales_owner_name} />
-              <Fact label="Confirmed" value={so.confirmed_at ? `${formatDate(so.confirmed_at)} by ${so.confirmed_by_name}` : null} />
-              <Fact label="OA issued" value={so.oa_issued_at ? formatDate(so.oa_issued_at) : null} />
-              {so.hold_reason && so.status === 'on_hold' && <Fact label="Hold reason" value={so.hold_reason} />}
-              {so.cancel_reason && <Fact label="Cancelled" value={so.cancel_reason} />}
-              {so.short_close_reason && <Fact label="Short-closed" value={so.short_close_reason} />}
-            </div>
-          </div>
-          {c.edit ? (
+          {/* One card: what the order is (summary), then customer, order progress and
+              — once it is no longer a draft — the contract terms as label–value rows. */}
+          <DetailCard tour="sales-detail-overview">
+            <DetailSummary
+              title={so.customer_name || 'Customer not set'}
+              text={`${ORDER_TYPE_LABELS[so.order_type] || 'Sales'} order${so.source_label ? ` — from ${so.source_label}${so.source_quotation_number ? ` ${so.source_quotation_number}` : ''}` : ''}.`}
+              meta={<>
+                <Pill label={SO_STATUS_LABELS[so.status] || so.status} hex={SO_STATUS_HEX[so.status] || '#78716c'} />
+                {seePrices && <><span style={{ color: '#cbd5e1' }}>·</span><span>Order value <strong style={{ color: '#0f172a' }}>{formatINR(so.grand_total)}</strong> incl. GST</span></>}
+                <span style={{ color: '#cbd5e1' }}>·</span><span>{so.units_delivered} of {so.units_total} units delivered</span>
+                <span style={{ color: '#cbd5e1' }}>·</span><span>Sales owner: <strong style={{ color: '#0f172a' }}>{so.sales_owner_name || '—'}</strong></span>
+              </>}
+            />
+            <DetailGroup title="Customer">
+              <DetailRow label="GSTIN">{so.customer_gstin}</DetailRow>
+              <DetailRow label="Contact person">{so.customer_contact_name}</DetailRow>
+              <DetailRow label="Billing address">{so.billing_address}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="Order" last={c.edit}>
+              {seePrices && <DetailRow label="Value">{`${formatINR(so.taxable_total)} + GST ${formatINR(so.gst_total)} = ${formatINR(so.grand_total)}`}</DetailRow>}
+              <DetailRow label="Confirmed">{so.confirmed_at ? `${formatDate(so.confirmed_at)}${so.confirmed_by_name ? ` by ${so.confirmed_by_name}` : ''}` : null}</DetailRow>
+              <DetailRow label="Order acknowledgement issued">{so.oa_issued_at ? formatDate(so.oa_issued_at) : null}</DetailRow>
+              {so.hold_reason && so.status === 'on_hold' && <DetailRow label="Hold reason">{so.hold_reason}</DetailRow>}
+              {so.cancel_reason && <DetailRow label="Cancelled because">{so.cancel_reason}</DetailRow>}
+              {so.short_close_reason && <DetailRow label="Short-closed because">{so.short_close_reason}</DetailRow>}
+            </DetailGroup>
+            {!c.edit && (
+              <DetailGroup title="Contract terms" last>
+                <DetailRow label="Customer PO">{so.customer_po_number ? `${so.customer_po_number}${so.customer_po_date ? ` · ${formatDate(so.customer_po_date)}` : ''}` : null}</DetailRow>
+                <DetailRow label="LOA">{so.loa_number ? `${so.loa_number}${so.loa_date ? ` · ${formatDate(so.loa_date)}` : ''}` : null}</DetailRow>
+                <DetailRow label="Purchaser">{so.purchaser_name}</DetailRow>
+                <DetailRow label="Paying authority">{so.paying_authority}</DetailRow>
+                <DetailRow label="Price basis">{PRICE_BASIS_LABELS[so.price_basis]}</DetailRow>
+                <DetailRow label="Freight / insurance">{[so.freight_terms, so.insurance_terms].filter(Boolean).join(' / ') || null}</DetailRow>
+                <DetailRow label="Inspection">{so.inspection_agency ? `${so.inspection_agency.toUpperCase()}${so.third_party_inspection_required ? ' (third-party inspection required)' : ''}` : null}</DetailRow>
+                <DetailRow label="Liquidated damages">{so.ld_applicable ? `${so.ld_rate_percent}% ${LD_PERIOD_LABELS[so.ld_rate_period || ''] || ''} of ${LD_BASIS_LABELS[so.ld_basis || ''] || ''}, ${so.ld_max_percent == null ? 'no cap' : `cap ${so.ld_max_percent}%`}` : 'Not applicable'}</DetailRow>
+                <DetailRow label="Warranty">{so.warranty_rule ? `${so.warranty_months_from_delivery ?? '—'} months from delivery / ${so.warranty_months_from_commissioning ?? '—'} months from commissioning — ${WARRANTY_RULE_LABELS[so.warranty_rule]}` : null}</DetailRow>
+                <DetailRow label="Delivery terms">{so.delivery_terms_text}</DetailRow>
+                <DetailRow label="Special conditions">{so.special_conditions}</DetailRow>
+              </DetailGroup>
+            )}
+          </DetailCard>
+          {c.edit && (
             <DraftBlock icon="doc" title="Contract terms" subtitle="Draft — PO, commercial, LD, warranty and delivery terms." busy={busy} saveLabel="Save terms"
               onSave={() => run(() => salesApi.updateOrder(soId, terms), 'Terms saved.')}>
               <OrderTermsFields v={terms} set={(p) => setTerms((t) => ({ ...t, ...p }))} agencies={agencies} />
             </DraftBlock>
-          ) : (
-          <div style={sectionStyle}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <h2 style={{ ...h2Style, margin: 0 }}>Contract terms</h2>
-            </div>
-            {(
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-                <Fact label="Customer PO" value={`${so.customer_po_number || '—'} · ${formatDate(so.customer_po_date)}`} />
-                <Fact label="LOA" value={so.loa_number ? `${so.loa_number} · ${formatDate(so.loa_date)}` : null} />
-                <Fact label="Purchaser" value={so.purchaser_name} />
-                <Fact label="Paying authority" value={so.paying_authority} />
-                <Fact label="Price basis" value={PRICE_BASIS_LABELS[so.price_basis]} />
-                <Fact label="Freight / insurance" value={[so.freight_terms, so.insurance_terms].filter(Boolean).join(' / ')} />
-                <Fact label="Inspection" value={so.inspection_agency ? `${so.inspection_agency.toUpperCase()}${so.third_party_inspection_required ? ' (TPI required)' : ''}` : null} />
-                <Fact label="LD" value={so.ld_applicable ? `${so.ld_rate_percent}% ${LD_PERIOD_LABELS[so.ld_rate_period || ''] || ''} of ${LD_BASIS_LABELS[so.ld_basis || ''] || ''}, ${so.ld_max_percent == null ? 'no cap' : `cap ${so.ld_max_percent}%`}` : 'Not applicable'} />
-                <Fact label="Warranty" value={so.warranty_rule ? `${so.warranty_months_from_delivery ?? '—'} m from delivery / ${so.warranty_months_from_commissioning ?? '—'} m from commissioning — ${WARRANTY_RULE_LABELS[so.warranty_rule]}` : null} />
-                <Fact label="Delivery terms" value={so.delivery_terms_text} />
-                <Fact label="Special conditions" value={so.special_conditions} />
-              </div>
-            )}
-          </div>
           )}
         </>
       )}
@@ -323,19 +325,19 @@ export default function SalesOrderDetailPage() {
             <h2 style={{ ...h2Style, margin: 0 }}>Lines</h2>
           </div>
           {(
-            <div style={{ overflow: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-                <thead><tr>{['#', 'Type', 'Description', 'Model', 'Cust. ref.', 'Qty', ...(seePrices ? ['Unit price', 'Taxable', 'GST', 'Total'] : []), 'Delivered'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+            <TableScroll minWidth={900}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr>{['#', 'Type', 'Description', 'Model', 'Cust. ref.', 'Qty', ...(seePrices ? ['Unit price', 'Taxable', 'GST', 'Total'] : []), 'Delivered'].map((h, hi) => <th key={h} style={hi >= 5 ? numThStyle : thStyle}>{h}{hi === 0 && <RowCount count={so.lines.length} />}</th>)}</tr></thead>
                 <tbody>{so.lines.map((l) => (
                   <tr key={l.id}>
                     <td style={tdStyle}>{l.line_number}</td><td style={tdStyle}>{LINE_TYPE_LABELS[l.line_type]}</td><td style={tdStyle}>{l.description}</td>
-                    <td style={tdStyle}>{l.rrv_model || '—'}</td><td style={tdStyle}>{l.customer_line_ref || '—'}</td><td style={tdStyle}>{l.quantity} {l.uom}</td>
-                    {seePrices && <><td style={tdStyle}>{formatINR(l.unit_price)}</td><td style={tdStyle}>{formatINR(l.taxable_amount)}</td><td style={tdStyle}>{formatINR(l.gst_amount)} ({l.gst_rate}%)</td>
-                    <td style={tdStyle}>{formatINR(l.line_total)}</td></>}<td style={tdStyle}>{l.qty_delivered}/{l.qty_scheduled}</td>
+                    <td style={tdStyle}>{l.rrv_model || '—'}</td><td style={tdStyle}>{l.customer_line_ref || '—'}</td><td style={numTdStyle}>{l.quantity} {l.uom}</td>
+                    {seePrices && <><td style={numTdStyle}>{formatINR(l.unit_price)}</td><td style={numTdStyle}>{formatINR(l.taxable_amount)}</td><td style={numTdStyle}>{formatINR(l.gst_amount)} ({l.gst_rate}%)</td>
+                    <td style={numTdStyle}>{formatINR(l.line_total)}</td></>}<td style={numTdStyle}>{l.qty_delivered}/{l.qty_scheduled}</td>
                   </tr>))}
                 </tbody>
               </table>
-            </div>
+            </TableScroll>
           )}
         </div>
       )}
@@ -367,7 +369,7 @@ export default function SalesOrderDetailPage() {
             <h2 style={{ ...h2Style, margin: 0 }}>Billing plan</h2>
           </div>
           <BillingPlanEditor rows={billing} onChange={setBilling} grandTotal={so.grand_total} readOnly />
-          {(so.so_number ? <BillingStatusPanel order={so} /> : <p style={{ fontSize: 12, color: TEXT.muted }}>Milestones start falling due once the order is confirmed. {so.billing_lines.map((b) => `${MILESTONE_LABELS[b.milestone_type]}: ${b.status.replace(/_/g, ' ')}`).join(' · ')}</p>)}
+          {(so.so_number ? <BillingStatusPanel order={so} /> : <p style={{ fontSize: 12, color: TEXT.muted }}>Milestones start falling due once the order is confirmed. {so.billing_lines.map((b) => `${MILESTONE_LABELS[b.milestone_type] || b.milestone_type}: ${b.status.replace(/_/g, ' ')}`).join(' · ')}</p>)}
         </div>
       )}
       {shown === 'billing' && so.so_number && seePrices && feat('proforma') && <ProformaPanel order={so} />}
@@ -421,21 +423,21 @@ export default function SalesOrderDetailPage() {
                 </div>
               </FormSheet>
             )}
-            {attachments.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No attachments. The customer PO (or LOA) is required before submitting.</p> : (
-              <div style={{ overflowX: 'auto' }}>
+            {attachments.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No attachments yet{canUploadDocs ? ' — use Upload documents.' : '.'} The customer PO (or LOA) is required before submitting.</p> : (
+              <TableScroll>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead><tr>{['File', 'Type', 'Uploaded by', 'On', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['File', 'Type', 'Uploaded by', 'On', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={attachments.length} />}</th>)}</tr></thead>
                   <tbody>{attachments.map((a) => (
                     <tr key={a.id}>
-                      <td style={tdStyle}><span onClick={() => openAttachment(a)} style={{ color: '#FF6A2A', cursor: 'pointer', fontWeight: 600 }}>{a.filename}</span></td>
+                      <td style={tdStyle}><span onClick={() => openAttachment(a)} title={`Open ${a.filename}`} style={{ color: '#FF6A2A', cursor: 'pointer', fontWeight: 600, overflowWrap: 'anywhere' }}>{a.filename}</span></td>
                       <td style={tdStyle}>{DOC_TYPE_LABELS[a.doc_type] || a.doc_type}</td>
                       <td style={tdStyle}>{a.created_by_name}</td>
                       <td style={tdStyle}>{formatDate(a.created_at)}</td>
-                      <td style={tdStyle}>{canDeleteDocs && <button style={{ ...smallSecondaryBtnStyle }} onClick={() => run(async () => { await salesApi.deleteAttachment(a.id); setAttachments(await salesApi.listAttachments('sales_order', soId)) })}>Delete</button>}</td>
+                      <td style={tdStyle}>{canDeleteDocs && <button style={{ ...smallSecondaryBtnStyle, color: '#b91c1c' }} onClick={() => run(async () => { await salesApi.deleteAttachment(a.id); setAttachments(await salesApi.listAttachments('sales_order', soId)) })}>Delete</button>}</td>
                     </tr>))}
                   </tbody>
                 </table>
-              </div>
+              </TableScroll>
             )}
           </div>
         </>
@@ -449,7 +451,7 @@ export default function SalesOrderDetailPage() {
           {so.approvals.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No decisions yet.</p> : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr>{['Round', 'Level', 'Decision', 'By', 'When', 'Comment'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Round', 'Level', 'Decision', 'By', 'When', 'Comment'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={so.approvals.length} />}</th>)}</tr></thead>
                 <tbody>{so.approvals.map((a) => (
                   <tr key={a.id}>
                     <td style={tdStyle}>{a.revision}</td><td style={tdStyle}>{LEVEL_LABELS[a.level]}</td>

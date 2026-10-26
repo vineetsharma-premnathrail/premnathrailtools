@@ -19,6 +19,7 @@ import {
   inputStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, ErrorBanner, TableWrap, EmptyRow,
 } from '@/components/finance/financeUi'
+import { RowCount, pillStyle } from '@/components/shared/ui'
 import { ProofPicker, PickedProof, uploadPickedProof } from '@/components/finance/FinanceAttachments'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import Select from '@/components/shared/Select'
@@ -87,7 +88,7 @@ export default function SalesBillingDueTab({ soId }: { soId?: number | null }) {
       <TableWrap minWidth={1100}>
         <thead>
           <tr>
-            {['Sales order', 'Customer', 'Milestone', 'Status', 'Due since', 'Due date'].map((h) => <th key={h} style={thStyle}>{h}</th>)}
+            {['Sales order', 'Customer', 'Milestone', 'Status', 'Due since', 'Due date'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}
             <th style={numTh}>Milestone</th><th style={numTh}>Invoiced</th><th style={numTh}>Billable now</th><th style={thStyle}></th>
           </tr>
         </thead>
@@ -100,7 +101,7 @@ export default function SalesBillingDueTab({ soId }: { soId?: number | null }) {
                 {m.recovers_advance_percent ? <div style={{ fontSize: 11.5, color: TEXT.muted }}>recovers {m.recovers_advance_percent}% of the advance</div> : null}
                 {m.invoices.length > 0 && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{m.invoices.map(([, n, s]) => `${n.startsWith('DRAFT-') ? 'draft' : n}${s === 'pending' && !n.startsWith('DRAFT-') ? ' (pending)' : ''}`).join(', ')}</div>}
               </td>
-              <td style={tdStyle}><span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[m.status] || '#94a3b8'}1a`, color: STATUS_HEX[m.status] || '#94a3b8', whiteSpace: 'nowrap' }}>{STATUS_LABELS[m.status] || m.status}</span></td>
+              <td style={tdStyle}><span style={pillStyle(STATUS_HEX[m.status] || '#94a3b8')}>{STATUS_LABELS[m.status] || m.status.replace(/_/g, ' ')}</span></td>
               <td style={tdStyle}>{m.triggered_on ? dmy(m.triggered_on) : '—'}</td>
               <td style={{ ...tdStyle, color: m.overdue ? '#b91c1c' : undefined, fontWeight: m.overdue ? 700 : 400 }}>{m.due_date ? dmy(m.due_date) : '—'}</td>
               <td style={numTd}>{inr(m.amount)}</td>
@@ -148,7 +149,7 @@ export default function SalesBillingDueTab({ soId }: { soId?: number | null }) {
                   {raise.rows.length === 0 && <p style={{ ...sheetHint, color: '#b91c1c' }}>Tick at least one unit.</p>}
                 </SheetSection>
               )}
-              <SheetSection icon="truck" title="Invoice details">
+              <SheetSection icon="doc" title="Invoice details">
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
                   <div style={{ flex: '0 1 170px' }}><label style={sheetLabel}>Invoice date <Req /></label><DateField value={raise.date} onChange={(v) => setRaise({ ...raise, date: v })} /></div>
                   <div style={{ flex: '0 1 170px' }}><label style={sheetLabel}>E-way bill no.</label><input style={sheetInput} value={raise.eway} onChange={(e) => setRaise({ ...raise, eway: e.target.value })} /></div>

@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { productionApi } from '@/lib/api'
 import { ProductionMaterialRequirement, ProductionPlanning } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallSecondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import ProductionNav from '@/components/production/ProductionNav'
 import StockRequirementsDrawer from '@/components/production/StockRequirementsDrawer'
 import { extractErrorMessages } from '@/lib/validation'
@@ -118,7 +118,7 @@ export default function ProductionPlanningPage() {
             </div>
             <div style={{ overflow: 'auto', maxHeight: 460 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-                <thead><tr>{['Item', 'Needed', 'Reserved', 'Free Stock', 'Shortage', 'Reorder Level', 'For Work Orders', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Item', 'Needed', 'Reserved', 'Free Stock', 'Shortage', 'Reorder Level', 'For Work Orders', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={requirements.length} />}</th>)}</tr></thead>
                 <tbody>
                   {requirements.length === 0 ? (
                     <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>{shortOnly ? 'No shortages — Store can cover every open work order.' : 'No outstanding material on open work orders.'}</td></tr>
@@ -181,7 +181,7 @@ export default function ProductionPlanningPage() {
                     </div>
                     <span style={{ fontSize: 12, color: TEXT.secondary, flex: '0 1 260px', minWidth: 200 }}>
                       {w.remaining_hours} h · {w.open_operations} op(s){w.load_days != null ? ` · ${w.load_days} day(s)` : w.remaining_hours ? ' · no capacity set' : ''}
-                      {w.status && w.status !== 'active' ? ` · ${w.status.replace('_', ' ')}` : ''}
+                      {w.status && w.status !== 'active' ? ` · ${w.status.replace(/_/g, ' ')}` : ''}
                     </span>
                   </div>
                 )

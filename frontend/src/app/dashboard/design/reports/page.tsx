@@ -1,12 +1,12 @@
 'use client'
 
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { designApi } from '@/lib/api'
 import { DesignLookupOption, DesignReportSummary } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import { useDesignMe } from '@/components/design/useDesignMe'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
@@ -91,7 +91,7 @@ const MS_HEX: Record<string, string> = { not_started: '#78716c', in_progress: '#
 
 function pill(label: string, hex: string) {
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
+    <span style={pillStyle(hex)}>
       {label}
     </span>
   )
@@ -307,7 +307,7 @@ export default function DesignReportsPage() {
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
               <div style={{ flex: '1 1 380px', ...scrollBox }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 460 }}>
-                  <thead><tr>{['Customer', 'Transmittals', 'Drawings', 'Approved', 'Rejected', 'Avg. turnaround'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Customer', 'Transmittals', 'Drawings', 'Approved', 'Rejected', 'Avg. turnaround'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={approvals.customers.length} />}</th>)}</tr></thead>
                   <tbody>
                     {approvals.customers.map((c) => (
                       <tr key={c.customer_name}>
@@ -324,7 +324,7 @@ export default function DesignReportsPage() {
               </div>
               <div style={{ flex: '2 1 560px', ...scrollBox }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
-                  <thead><tr>{['Transmittal', 'Customer', 'Status', 'Sent', 'Response', 'Turnaround', 'Drawings', 'Rejected'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Transmittal', 'Customer', 'Status', 'Sent', 'Response', 'Turnaround', 'Drawings', 'Rejected'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={approvals.submissions.length} />}</th>)}</tr></thead>
                   <tbody>
                     {approvals.submissions.map((r) => (
                       <tr key={r.id}>
@@ -364,7 +364,7 @@ export default function DesignReportsPage() {
           {register.rows.length === 0 ? <p style={mutedP}>No change requests or notices yet.</p> : (
             <div style={scrollBox}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
-                <thead><tr>{['ECR', 'Title', 'Source', 'ECR status', 'Raised', 'Days to decision', 'ECN', 'ECN status', 'Released', 'Days to release'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                <thead><tr>{['ECR', 'Title', 'Source', 'ECR status', 'Raised', 'Days to decision', 'ECN', 'ECN status', 'Released', 'Days to release'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={register.rows.length} />}</th>)}</tr></thead>
                 <tbody>
                   {register.rows.map((r, i) => (
                     <tr key={`${r.ecr_id ?? 'n'}-${r.ecn_id ?? 'x'}-${i}`}>
@@ -395,7 +395,7 @@ export default function DesignReportsPage() {
             {milestones.note ? <p style={mutedP}>{milestones.note}</p> : milestones.rows.length === 0 ? <p style={mutedP}>No project WBS elements are assigned to the Design department.</p> : (
               <div style={scrollBox}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
-                  <thead><tr>{['WBS', 'Project', 'Target', 'Status', 'Slip'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['WBS', 'Project', 'Target', 'Status', 'Slip'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={milestones.rows.length} />}</th>)}</tr></thead>
                   <tbody>
                     {milestones.rows.map((m) => (
                       <tr key={m.milestone_id}>
@@ -426,7 +426,7 @@ export default function DesignReportsPage() {
             {workload.note ? <p style={mutedP}>{workload.note}</p> : workload.rows.length === 0 ? <p style={mutedP}>No team members.</p> : (
               <div style={scrollBox}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
-                  <thead><tr>{['Member', 'Open', 'Overdue', 'Done', 'On time'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Member', 'Open', 'Overdue', 'Done', 'On time'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={workload.rows.length} />}</th>)}</tr></thead>
                   <tbody>
                     {workload.rows.map((w) => (
                       <tr key={w.user_id}>
@@ -466,7 +466,7 @@ export default function DesignReportsPage() {
             <p style={{ fontSize: 13, color: TEXT.body, margin: '0 0 10px' }}><strong>{history.doc_number}</strong> — {history.title}</p>
             <div style={scrollBox}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-                <thead><tr>{['Rev', 'Status', 'Change summary', 'Author', 'Checked by', 'Approved by', 'Opened', 'Released', 'Returns', 'Cycle'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Rev', 'Status', 'Change summary', 'Author', 'Checked by', 'Approved by', 'Opened', 'Released', 'Returns', 'Cycle'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={history.revisions.length} />}</th>)}</tr></thead>
                 <tbody>
                   {history.revisions.map((r) => (
                     <tr key={r.revision_label}>

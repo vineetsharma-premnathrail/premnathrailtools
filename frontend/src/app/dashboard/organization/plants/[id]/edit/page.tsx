@@ -19,6 +19,7 @@ import { PLANT_STATUS_LABELS } from '@/components/organization/PlantForm'
 import { FormPage, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { useCan } from '@/lib/permissions'
 import { extractErrorMessages } from '@/lib/validation'
+import { formatDate } from '@/lib/format'
 
 const { INK, BODY, MUTED, LINE, SOFT, BLUE } = SHEET
 
@@ -948,7 +949,7 @@ function DocumentsEditor({ branchId, documents, onRefresh }: { branchId: number;
                     <span style={{ fontSize: 13.5, fontWeight: 600, color: INK }}>{d.document_name}</span>
                     <span style={pill('#eff6ff', BLUE)}>{d.document_type}</span>
                   </div>
-                  <p style={{ fontSize: 12.5, color: MUTED, margin: 0 }}>{d.filename}{d.expiry_date ? ` · Expires ${d.expiry_date}` : ''}{d.version ? ` · v${d.version}` : ''}</p>
+                  <p style={{ fontSize: 12.5, color: MUTED, margin: 0 }}>{d.filename}{d.expiry_date ? ` · Expires ${formatDate(d.expiry_date)}` : ''}{d.version ? ` · v${d.version}` : ''}</p>
                 </div>
                 <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
                   {d.sharepoint_url && mayOpen && <a href={d.sharepoint_url} target="_blank" rel="noreferrer" style={linkBtnStyle}>Open</a>}

@@ -19,7 +19,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
-import { dangerBtnStyle, primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { dangerBtnStyle, primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import PersonFields, { EMPTY_PERSON, PersonForm, personToPayload } from '@/components/hr/safety/PersonFields'
 import { SafetyIncident, SafetyMeta, SafetyPerson, TYPE_LABELS, downloadBlob } from '@/components/hr/safety/types'
 
@@ -46,23 +46,14 @@ const inputStyle: React.CSSProperties = {
 const labelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, marginBottom: 5, display: 'block' }
 const h3: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 12px' }
 const errorBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
-const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
+const pill = (hex: string): React.CSSProperties => pillStyle(hex)
 const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 
-const fmtD = (iso: string | null) => (iso ? iso.slice(0, 10).split('-').reverse().join('-') : '—')
+const fmtD = (iso: string | null) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '—')
 const fmtDT = (iso: string | null) => {
   if (!iso) return '—'
   const d = new Date(iso)
-  return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-
-function Info({ label, value, wide }: { label: string; value: React.ReactNode; wide?: boolean }) {
-  return (
-    <div style={wide ? { flex: '1 1 100%' } : { flex: '1 1 180px', minWidth: 150, maxWidth: 300 }}>
-      <div style={labelStyle}>{label}</div>
-      <div style={{ fontSize: 13.5, color: TEXT.heading, whiteSpace: 'pre-wrap' }}>{value || '—'}</div>
-    </div>
-  )
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 function personForm(p: SafetyPerson): PersonForm {
@@ -173,7 +164,6 @@ export default function SafetyIncidentPage() {
             {inc && <span style={pill(SEVERITY_HEX[inc.severity])}>{SEVERITY_LABELS[inc.severity]}</span>}
             {inc?.reportable && <span style={pill(inc.form18_submitted_on ? '#0891B2' : '#DC2626')}>{inc.form18_submitted_on ? 'Form 18 sent' : 'Reportable — Form 18 due'}</span>}
           </div>
-          {inc && <p style={{ fontSize: 13.5, color: TEXT.muted, margin: '4px 0 0' }}><b style={{ color: TEXT.heading }}>{inc.title}</b> · {TYPE_LABELS[inc.incident_type] || inc.incident_type}</p>}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {inc?.can_edit && !editing && <button type="button" style={secondaryBtnStyle} onClick={() => { setEdit({ title: inc.title, incident_type: inc.incident_type, severity: inc.severity, location_text: inc.location_text || '', description: inc.description, immediate_action: inc.immediate_action || '' }); setEditing(true) }}>Edit details</button>}
@@ -195,29 +185,36 @@ export default function SafetyIncidentPage() {
             </div>
           )}
 
-          <div style={sectionStyle}>
-            <h3 style={h3}>Details</h3>
-            {(
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px 20px' }}>
-                <Info label="Happened" value={fmtDT(inc.occurred_at)} />
-                <Info label="Reported" value={`${fmtDT(inc.reported_at)} · ${inc.reported_by_name || '—'}`} />
-                <Info label="Plant / place" value={[inc.branch_name, inc.department_name, inc.location_text].filter(Boolean).join(' · ')} />
-                <Info label="Machine" value={inc.asset_label} />
-                <Info label="Customer machine" value={inc.erp_project_label} />
-                <Info label="Injured / days lost" value={`${inc.injured_count} / ${inc.lost_days}${inc.lti_count ? ` · ${inc.lti_count} LTI` : ''}`} />
-                <Info wide label="Description" value={inc.description} />
-                <Info wide label="Immediate action" value={inc.immediate_action} />
-                {(inc.witnesses || []).length > 0 && <Info wide label="Witnesses" value={(inc.witnesses || []).map((w) => `${w.name || '—'}${w.statement ? `: ${w.statement}` : ''}`).join('\n')} />}
-              </div>
-            )}
-          </div>
+          {/* What happened: one card — title, description, key facts, then details. */}
+          <DetailCard>
+            <DetailSummary
+              title={inc.title}
+              text={inc.description}
+              meta={<>
+                <span>{TYPE_LABELS[inc.incident_type] || inc.incident_type}</span>
+                <span>· Happened <strong style={{ color: TEXT.heading }}>{fmtDT(inc.occurred_at)}</strong></span>
+                {inc.branch_name && <span>· {inc.branch_name}</span>}
+              </>}
+            />
+            <DetailGroup title="Where and when">
+              <DetailRow label="Reported">{`${fmtDT(inc.reported_at)} · ${inc.reported_by_name || '—'}`}</DetailRow>
+              <DetailRow label="Plant / place">{[inc.branch_name, inc.department_name, inc.location_text].filter(Boolean).join(' · ')}</DetailRow>
+              <DetailRow label="Machine">{inc.asset_label}</DetailRow>
+              <DetailRow label="Customer machine">{inc.erp_project_label}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="Impact and response" last>
+              <DetailRow label="Injured / days lost">{`${inc.injured_count} injured · ${inc.lost_days} day${inc.lost_days === 1 ? '' : 's'} lost${inc.lti_count ? ` · ${inc.lti_count} lost-time injur${inc.lti_count === 1 ? 'y' : 'ies'}` : ''}`}</DetailRow>
+              <DetailRow label="Immediate action">{inc.immediate_action}</DetailRow>
+              {(inc.witnesses || []).length > 0 && <DetailRow label="Witnesses">{(inc.witnesses || []).map((w) => `${w.name || '—'}${w.statement ? `: ${w.statement}` : ''}`).join('\n')}</DetailRow>}
+            </DetailGroup>
+          </DetailCard>
 
           <div style={sectionStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <h3 style={{ ...h3, margin: 0 }}>Persons injured / involved</h3>
               {canPeople && !closedish && !personEdit && <button type="button" style={secondaryBtnStyle} onClick={() => { setError([]); setPersonEdit({ id: null, form: { ...EMPTY_PERSON } }) }}>+ Add person</button>}
             </div>
-            {inc.persons.length === 0 && !personEdit && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Nobody recorded.</p>}
+            {inc.persons.length === 0 && !personEdit && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Nobody recorded yet{canPeople && !closedish ? ' — use + Add person for anyone injured or involved' : ''}.</p>}
             {inc.persons.map((p) => (
               <div key={p.id} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 13, padding: '8px 0', borderTop: `1px solid ${BORDER.light}`, alignItems: 'baseline' }}>
                 <b style={{ color: TEXT.heading, minWidth: 160 }}>{p.display_name || '—'}{p.employee_code ? ` · ${p.employee_code}` : ''}</b>
@@ -267,18 +264,18 @@ export default function SafetyIncidentPage() {
                 </div>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px 20px' }}>
-                <Info label="Lead" value={inc.investigation_lead_name} />
-                <Info label="Root-cause category" value={(meta?.root_cause_categories || []).find((o) => o.value === inc.root_cause_category)?.label} />
-                <Info wide label="Root cause" value={inc.root_cause} />
-                <Info wide label="Contributing factors" value={inc.contributing_factors} />
+              <div>
+                <DetailRow label="Lead">{inc.investigation_lead_name}</DetailRow>
+                <DetailRow label="Root-cause category">{(meta?.root_cause_categories || []).find((o) => o.value === inc.root_cause_category)?.label}</DetailRow>
+                <DetailRow label="Root cause">{inc.root_cause}</DetailRow>
+                <DetailRow label="Contributing factors">{inc.contributing_factors}</DetailRow>
               </div>
             )}
           </div>
 
           <div style={sectionStyle}>
             <h3 style={h3}>Corrective / preventive actions (CAPA)</h3>
-            {inc.actions.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted, margin: '0 0 8px' }}>No actions yet.</p>}
+            {inc.actions.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted, margin: '0 0 8px' }}>No corrective or preventive actions yet{capa('create') ? ' — use + Add action below' : ''}.</p>}
             {inc.actions.map((a) => (
               <div key={a.id} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 13, padding: '8px 0', borderTop: `1px solid ${BORDER.light}`, alignItems: 'baseline' }}>
                 <span style={pill(a.status === 'open' && a.is_overdue ? '#DC2626' : ACTION_HEX[a.status] || '#78716C')}>{a.status === 'open' ? (a.is_overdue ? 'Overdue' : 'Open') : a.status === 'done' ? 'Done' : 'Cancelled'}</span>
@@ -305,10 +302,10 @@ export default function SafetyIncidentPage() {
                 <button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => run(() => hrSafetyApi.saveStatutory(inc.id, { form18_submitted_on: stat.form18_submitted_on || null, authority_ref: stat.authority_ref.trim() || null, reportable_manual: stat.reportable_manual }), 'The statutory details could not be saved.')}>Save</button>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px 20px' }}>
-                <Info label="Reportable" value={inc.reportable ? 'Yes' : 'No'} />
-                <Info label="Form 18 sent on" value={fmtD(inc.form18_submitted_on)} />
-                <Info label="Inspector's reference" value={inc.authority_ref} />
+              <div>
+                <DetailRow label="Reportable">{inc.reportable ? 'Yes' : 'No'}</DetailRow>
+                <DetailRow label="Form 18 sent on">{inc.form18_submitted_on ? fmtD(inc.form18_submitted_on) : null}</DetailRow>
+                <DetailRow label="Inspector's reference">{inc.authority_ref}</DetailRow>
               </div>
             )}
             <div style={{ marginTop: 14 }}>
@@ -318,7 +315,7 @@ export default function SafetyIncidentPage() {
 
           <div style={sectionStyle}>
             <h3 style={h3}>Attachments</h3>
-            {inc.attachments.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted, margin: '0 0 8px' }}>No files.</p>}
+            {inc.attachments.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted, margin: '0 0 8px' }}>No files attached yet{inc.status !== 'closed' ? ' — add photos, reports or statements below' : ''}.</p>}
             {inc.attachments.map((a) => (
               <div key={a.id} style={{ display: 'flex', gap: 10, fontSize: 13, padding: '6px 0', borderTop: `1px solid ${BORDER.light}`, alignItems: 'center', flexWrap: 'wrap' }}>
                 <span onClick={() => openFile(a.id, a.filename)} style={{ color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>{a.filename}</span>

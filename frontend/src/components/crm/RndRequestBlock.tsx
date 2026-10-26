@@ -6,6 +6,7 @@ import { formatDate, formatDateTime } from '@/lib/format'
 import { RequirementMovementDoc, RndRequest } from '@/types'
 import { extractErrorMessages } from '@/lib/validation'
 import { FormSheet, SheetSection, SheetIcon, FileDropZone, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
+import { chipBtnStyle, pillStyle } from '@/components/shared/ui'
 
 const sectionLabel: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 4px' }
 
@@ -22,13 +23,17 @@ export function rndRequestBadge(r: RndRequest): { label: string; hex: string } {
 
 // One CRM → R&D ask inside a Requirement Movement card: who owns it, by when,
 // CRM's remark, and R&D's answer. `canRespond` turns on the answer form (R&D side).
+// `buttonOnly` renders just the respond button + its form, without the request
+// card; `renderButton` lets the caller keep its own button (it gets `open`).
 export default function RndRequestBlock({
-  request, canRespond, onOpenDoc, onResponded,
+  request, canRespond, onOpenDoc, onResponded, buttonOnly, renderButton,
 }: {
   request: RndRequest
   canRespond?: boolean
   onOpenDoc: (doc: RequirementMovementDoc) => void
   onResponded?: (r: RndRequest) => void
+  buttonOnly?: boolean
+  renderButton?: (open: () => void) => React.ReactNode
 }) {
   const [remarks, setRemarks] = useState('')
   const [delayReason, setDelayReason] = useState('')
@@ -55,6 +60,43 @@ export default function RndRequestBlock({
     }
   }
 
+  const canAnswer = !!canRespond && request.status === 'open'
+  const respondButton = canAnswer && (
+    <button type="button" data-tour="rnd-respond-form" onClick={() => { setError(''); setOpen(true) }} style={sheetBtn('primary', SHEET.BLUE)}>
+      <SheetIcon name="send" size={15} />Respond to CRM
+    </button>
+  )
+  const respondSheet = open && canAnswer && (
+    <FormSheet width={600} icon="send" title="Respond to CRM" onClose={() => setOpen(false)} busy={saving}
+      subtitle={`Requested by ${request.requested_by || 'CRM'} · due ${formatDate(request.due_date)}`}
+      footer={<>
+        <button type="button" onClick={() => setOpen(false)} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+        <button type="button" onClick={submit} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+          <SheetIcon name="send" size={16} />{saving ? 'Submitting…' : 'Submit Response to CRM'}
+        </button>
+      </>}>
+      <div style={{ padding: '20px 24px' }}>
+        <SheetError error={error} />
+        <SheetSection icon="chat" title="Your Response">
+          <label style={sheetLabel}>Response remarks</label>
+          <textarea autoFocus style={{ ...sheetInput, minHeight: 80, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Answer, feasibility notes, deviations…" />
+          {lateNow && (
+            <>
+              <label style={{ ...sheetLabel, marginTop: 14 }}>Reason for delay <Req /> <span style={{ fontWeight: 400, color: SHEET.MUTED }}>(was due {formatDate(request.due_date)})</span></label>
+              <textarea style={{ ...sheetInput, minHeight: 56, resize: 'vertical', borderColor: 'rgba(220,38,38,0.35)' }} value={delayReason} onChange={(e) => setDelayReason(e.target.value)} placeholder="Why this couldn't be answered by the due date" />
+            </>
+          )}
+        </SheetSection>
+        <SheetSection icon="clip" title="Response documents">
+          <FileDropZone files={files} onChange={setFiles} />
+          <p style={sheetHint}>Give remarks, at least one document, or both. The BD owner is notified.</p>
+        </SheetSection>
+      </div>
+    </FormSheet>
+  )
+
+  if (buttonOnly) return <>{canAnswer && renderButton ? renderButton(() => { setError(''); setOpen(true) }) : respondButton}{respondSheet}</>
+
   return (
     <div data-tour="rnd-request-block" style={{ marginTop: 12, padding: '12px 14px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.07)', background: 'rgba(255,255,255,0.45)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
@@ -62,7 +104,7 @@ export default function RndRequestBlock({
           Assigned to <strong style={{ color: '#1f1108' }}>{request.assigned_to_id ? (request.assigned_to || 'Unknown') : 'R&D team'}</strong>
           {' · '}due <strong style={{ color: request.is_late && request.status === 'open' ? '#DC2626' : '#1f1108' }}>{formatDate(request.due_date)}</strong>
         </p>
-        <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 9999, background: `${badge.hex}1a`, color: badge.hex, whiteSpace: 'nowrap' }}>
+        <span style={pillStyle(badge.hex)}>
           {badge.label}
         </span>
       </div>
@@ -91,7 +133,7 @@ export default function RndRequestBlock({
                   type="button"
                   onClick={() => onOpenDoc(d)}
                   title="Open document"
-                  style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 999, border: '1px solid rgba(22,163,74,0.25)', background: 'rgba(22,163,74,0.08)', color: '#15803d', cursor: 'pointer' }}
+                  style={{ ...chipBtnStyle(), borderColor: 'rgba(22,163,74,0.25)', background: 'rgba(22,163,74,0.08)', color: '#15803d' }}
                 >
                   📄 {d.name}
                 </button>
@@ -101,42 +143,13 @@ export default function RndRequestBlock({
         </div>
       )}
 
-      {canRespond && request.status === 'open' && (
+      {respondButton && (
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'flex-end' }}>
-          <button type="button" data-tour="rnd-respond-form" onClick={() => { setError(''); setOpen(true) }} style={sheetBtn('primary', SHEET.BLUE)}>
-            <SheetIcon name="send" size={15} />Respond to CRM
-          </button>
+          {respondButton}
         </div>
       )}
 
-      {open && canRespond && request.status === 'open' && (
-        <FormSheet width={600} icon="send" title="Respond to CRM" onClose={() => setOpen(false)} busy={saving}
-          subtitle={`Requested by ${request.requested_by || 'CRM'} · due ${formatDate(request.due_date)}`}
-          footer={<>
-            <button type="button" onClick={() => setOpen(false)} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
-            <button type="button" onClick={submit} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
-              <SheetIcon name="send" size={16} />{saving ? 'Submitting…' : 'Submit Response to CRM'}
-            </button>
-          </>}>
-          <div style={{ padding: '20px 24px' }}>
-            <SheetError error={error} />
-            <SheetSection icon="chat" title="Your Response">
-              <label style={sheetLabel}>Response remarks</label>
-              <textarea autoFocus style={{ ...sheetInput, minHeight: 80, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Answer, feasibility notes, deviations…" />
-              {lateNow && (
-                <>
-                  <label style={{ ...sheetLabel, marginTop: 14 }}>Reason for delay <Req /> <span style={{ fontWeight: 400, color: SHEET.MUTED }}>(was due {formatDate(request.due_date)})</span></label>
-                  <textarea style={{ ...sheetInput, minHeight: 56, resize: 'vertical', borderColor: 'rgba(220,38,38,0.35)' }} value={delayReason} onChange={(e) => setDelayReason(e.target.value)} placeholder="Why this couldn't be answered by the due date" />
-                </>
-              )}
-            </SheetSection>
-            <SheetSection icon="clip" title="Response documents">
-              <FileDropZone files={files} onChange={setFiles} />
-              <p style={sheetHint}>Give remarks, at least one document, or both. The BD owner is notified.</p>
-            </SheetSection>
-          </div>
-        </FormSheet>
-      )}
+      {respondSheet}
     </div>
   )
 }

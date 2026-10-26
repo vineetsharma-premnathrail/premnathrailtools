@@ -29,7 +29,9 @@ export const ORG_TYPE_LABELS: Record<string, string> = {
 export const orgTypeHasRailwayFields = (orgType?: string | null) =>
   orgType === 'Railway' || orgType === 'Govt Department'
 
-export const COUNTRIES = ['India', 'USA', 'UK', 'UAE', 'Other']
+// India gets the State / UT list (GST place of supply); any other country is typed
+// in under 'Other'. Older records with e.g. 'USA' open as Other + that name.
+export const COUNTRIES = ['India', 'Other']
 
 export const INDIA_STATES = [
   'Andaman and Nicobar Islands', 'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chandigarh',
@@ -41,9 +43,13 @@ export const INDIA_STATES = [
 ]
 
 export const LEAD_SOURCES = [
-  'Website', 'Google Ads', 'Facebook / Instagram', 'WhatsApp', 'Referral', 'Phone Call',
-  'Email', 'Walk-in', 'LinkedIn', 'Exhibition/Event', 'Justdial', 'Other',
+  'Website', 'WhatsApp', 'Referral', 'Phone Call', 'Email', 'Walk-in', 'LinkedIn', 'Exhibition/Event', 'Other',
 ]
+
+// Older records may still carry a retired source (e.g. 'Google Ads', 'Justdial') —
+// keep it selectable so opening such a record doesn't silently blank it.
+export const leadSourceOptions = (current?: string | null) =>
+  current && !LEAD_SOURCES.includes(current) ? [...LEAD_SOURCES, current] : LEAD_SOURCES
 
 export const PRODUCT_CATEGORIES = ['Road Rail Vehicle', 'Rail Vehicle', 'Hydraulic System', 'Braking System', 'Spare Parts', 'Other']
 

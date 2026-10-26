@@ -87,7 +87,7 @@ export default function EmployeeLifecycleTab({ userId, userRef }: { userId: numb
               onClick={() => router.push(recordPath('/dashboard/hr/lifecycle', e))}
               style={{ position: 'relative', padding: '10px 12px', marginBottom: 8, borderRadius: 12, border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,0.65)', cursor: 'pointer' }}
             >
-              <span style={{ position: 'absolute', left: -18, top: 16, width: 12, height: 12, borderRadius: 9999, background: TYPE_HEX[e.event_type], border: '2px solid #fff' }} />
+              <span style={{ position: 'absolute', left: -18, top: 16, width: 12, height: 12, borderRadius: '50%', background: TYPE_HEX[e.event_type], border: '2px solid #fff' }} />
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={badge(TYPE_HEX[e.event_type])}>{TYPE_LABELS[e.event_type]}</span>
                 <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading }}>{e.event_no}</span>

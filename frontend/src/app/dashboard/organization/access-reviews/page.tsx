@@ -10,7 +10,7 @@ import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, she
 import { grcApi, AccessReviewLineRow, AccessReviewRow } from '@/lib/basisApi'
 import { extractErrorMessages } from '@/lib/validation'
 import { BORDER, GLASS, SHADOWS, TEXT } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, RowCount, Pill as UiPill } from '@/components/shared/ui'
 
 // Organization › Access Reviews (SAP GRC User Access Review). Every reporting
 // manager confirms or revokes the roles their reports hold; campaign admins
@@ -30,7 +30,7 @@ const errBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, bo
 
 function Pill({ status }: { status: string }) {
   const hex = DECISION_HEX[status] || STATUS_HEX[status] || '#78716c'
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{DECISION_LABELS[status] || status}</span>
+  return <UiPill label={DECISION_LABELS[status] || status} hex={hex} />
 }
 
 function LinesTable({ lines, onKeep, onRevoke, showReviewer, canDecide }: { lines: AccessReviewLineRow[]; onKeep: (l: AccessReviewLineRow) => void; onRevoke: (l: AccessReviewLineRow) => void; showReviewer?: boolean; canDecide: (l: AccessReviewLineRow) => boolean }) {
@@ -38,7 +38,7 @@ function LinesTable({ lines, onKeep, onRevoke, showReviewer, canDecide }: { line
     <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
         <thead><tr>
-          <th style={th}>Employee</th><th style={th}>Access</th>{showReviewer && <th style={th}>Reviewer</th>}
+          <th style={th}>Employee <RowCount count={lines.length} /></th><th style={th}>Access</th>{showReviewer && <th style={th}>Reviewer</th>}
           <th style={th}>Decision</th><th style={th}>Comment</th><th style={th}></th>
         </tr></thead>
         <tbody>
@@ -194,7 +194,7 @@ export default function AccessReviewsPage() {
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-              <thead><tr><th style={th}>Period</th><th style={th}>Status</th><th style={th}>Due</th><th style={th}>Lines</th><th style={th}>Pending</th><th style={th}>Kept</th><th style={th}>Revoked</th><th style={th}>Unassigned</th><th style={th}></th></tr></thead>
+              <thead><tr><th style={th}>Period <RowCount count={reviews.length} /></th><th style={th}>Status</th><th style={th}>Due</th><th style={th}>Lines</th><th style={th}>Pending</th><th style={th}>Kept</th><th style={th}>Revoked</th><th style={th}>Unassigned</th><th style={th}></th></tr></thead>
               <tbody>
                 {reviews.length === 0 && <tr><td style={td} colSpan={9}>No access review has been run yet.</td></tr>}
                 {reviews.map((r) => (

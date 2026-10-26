@@ -352,7 +352,7 @@ export const poAmendmentsApi = {
 }
 
 export const infoRecordsApi = {
-  list: async (params: { store_item_id?: number; vendor_id?: number; unlinked?: boolean; search?: string } = {}): Promise<InfoRecord[]> => {
+  list: async (params: { store_item_id?: number; vendor_id?: number; unlinked?: boolean; search?: string; limit?: number } = {}): Promise<InfoRecord[]> => {
     const { data } = await apiClient.get('/p2p/info-records', { params }); return data
   },
   create: async (payload: Record<string, unknown>): Promise<InfoRecord> => { const { data } = await apiClient.post('/p2p/info-records', payload); return data },

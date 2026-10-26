@@ -13,7 +13,7 @@ import { QualityDefectCode, QualityInspectionLot, QualityLotResult } from '@/typ
 import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import PromptDialog from '@/components/erp/PromptDialog'
-import { Field, Section, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { Field, Section, InfoRow, DetailCard, DetailSummary, DetailGroup, DetailRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RowCount } from '@/components/shared/ui'
 import {
   Pill, PageHeader, ErrorBanner, ActionSheet, SheetBlock, fmtQty, fmtDate, INSPECTION_TYPE_LABELS, LOT_STATUS_LABELS, LOT_STATUS_HEX,
   DECISION_LABELS, SEVERITY_HEX, NCR_STATUS_LABELS, NCR_STATUS_HEX,
@@ -188,46 +188,50 @@ export default function LotDetailPage() {
         onConfirm={(reason) => { setCancelOpen(false); run(() => qualityApi.cancelLot(lot.id, reason), 'Failed to cancel the lot.') }} />
 
       <PageHeader title={lot.lot_number} subtitle={`Quality · ${INSPECTION_TYPE_LABELS[lot.inspection_type] || lot.inspection_type} lot`}>
-        <Pill text={LOT_STATUS_LABELS[lot.status] || lot.status} hex={LOT_STATUS_HEX[lot.status]} />
-        {lot.op_number && (
-          <OrderProjectChip opNumber={lot.op_number} elementNo={lot.element_no} label={lot.element_label}
-            onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', lot, 'order_project_id')) : undefined} />
-        )}
         <button type="button" onClick={() => router.push('/dashboard/quality/lots')} style={secondaryBtnStyle}>← Back</button>
       </PageHeader>
       {!sheet && <ErrorBanner error={error} />}
 
-      <Section title="Lot" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
-          <InfoRow label="Item" value={`${lot.item_code ? `${lot.item_code} — ` : ''}${lot.item_name}`} />
-          <InfoRow label="Quantity" value={fmtQty(lot.quantity, lot.uom)} />
-          <InfoRow label="Source" value={`${SOURCE_LABELS[lot.source_type] || lot.source_type} ${lot.source_reference || ''}`} />
-          <InfoRow label="Lot date" value={`${fmtDate(lot.lot_date)} (${lot.age_days} d)`} />
-          <InfoRow label="Stock" value={lot.stock_in_quality ? `Held in Quality stock at ${lot.location_name || 'store'}` : 'No stock behind this lot'} />
-          <InfoRow label="Batch / serial" value={lot.batch_number || '—'} />
-          <InfoRow label="Vendor" value={lot.vendor_name || '—'} />
-          <InfoRow label="Plan" value={lot.plan_number ? `${lot.plan_number} rev ${lot.plan_revision}` : 'No approved plan yet'} />
-          <InfoRow label="Sample size (max)" value={lot.sample_size != null ? String(lot.sample_size) : '—'} />
-        </div>
-        {(lot.first_article || lot.gate) && (
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', fontSize: 13 }}>
-            {lot.first_article && (
-              <span onClick={() => router.push(recordPath('/dashboard/quality/first-articles', lot.first_article))} style={{ cursor: 'pointer', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                <span style={{ color: TEXT.muted }}>First article</span>
-                <strong style={{ color: '#FF6A2A' }}>{lot.first_article.fai_number}</strong>
-                <Pill text={lot.first_article.status} hex={FAI_STATUS_HEX[lot.first_article.status]} />
-                <span style={{ color: TEXT.muted, fontSize: 12 }}>— full drawing check; approve the FAI after the decision</span>
-              </span>
+      <DetailCard>
+        <DetailSummary
+          title={`${lot.item_code ? `${lot.item_code} — ` : ''}${lot.item_name}`}
+          text={`${fmtQty(lot.quantity, lot.uom)} to inspect — ${INSPECTION_TYPE_LABELS[lot.inspection_type] || lot.inspection_type} inspection from ${SOURCE_LABELS[lot.source_type] || lot.source_type}${lot.source_reference ? ` ${lot.source_reference}` : ''}.`}
+          meta={<>
+            <Pill text={LOT_STATUS_LABELS[lot.status] || lot.status} hex={LOT_STATUS_HEX[lot.status]} />
+            {lot.op_number && (
+              <OrderProjectChip opNumber={lot.op_number} elementNo={lot.element_no} label={lot.element_label}
+                onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', lot, 'order_project_id')) : undefined} />
             )}
-            {lot.gate && (
-              <span onClick={() => router.push(recordPath('/dashboard/production/work-orders', lot.gate, 'work_order_id'))} style={{ cursor: 'pointer', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                <span style={{ color: TEXT.muted }}>Production gate</span>
+            <span>·</span><span>Lot date {fmtDate(lot.lot_date)} ({lot.age_days} days old)</span>
+          </>}
+        />
+        <DetailGroup title="Material">
+          <DetailRow label="Vendor">{lot.vendor_name}</DetailRow>
+          <DetailRow label="Batch / serial">{lot.batch_number}</DetailRow>
+          <DetailRow label="Stock">{lot.stock_in_quality ? `Held in Quality stock at ${lot.location_name || 'store'}` : 'No stock behind this lot'}</DetailRow>
+        </DetailGroup>
+        <DetailGroup title="Inspection">
+          <DetailRow label="Inspection plan">{lot.plan_number ? `${lot.plan_number} rev ${lot.plan_revision}` : 'No approved plan yet'}</DetailRow>
+          <DetailRow label="Sample size (max)">{lot.sample_size != null ? String(lot.sample_size) : null}</DetailRow>
+          {lot.first_article && (
+            <DetailRow label="First article">
+              <button type="button" onClick={() => router.push(recordPath('/dashboard/quality/first-articles', lot.first_article))} style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', textAlign: 'left', fontSize: 13.5 }}>
+                <strong style={{ color: '#FF6A2A' }}>{lot.first_article.fai_number}</strong>
+                <Pill text={lot.first_article.status.charAt(0).toUpperCase() + lot.first_article.status.slice(1)} hex={FAI_STATUS_HEX[lot.first_article.status]} />
+                <span style={{ color: TEXT.muted, fontSize: 12 }}>full drawing check; approve the FAI after the decision</span>
+              </button>
+            </DetailRow>
+          )}
+          {lot.gate && (
+            <DetailRow label="Production gate">
+              <button type="button" onClick={() => router.push(recordPath('/dashboard/production/work-orders', lot.gate, 'work_order_id'))} style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', textAlign: 'left', fontSize: 13.5 }}>
                 <strong style={{ color: '#FF6A2A' }}>{lot.gate.wo_number}</strong>
                 <span style={{ color: TEXT.muted, fontSize: 12 }}>op {lot.gate.operation} — the next operation is held until this lot is decided</span>
-              </span>
-            )}
-          </div>
-        )}
+              </button>
+            </DetailRow>
+          )}
+        </DetailGroup>
+        <div style={{ paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
           <div style={{ flex: '0 1 200px', minWidth: 170 }}>
             <Field label="Sampling state">
@@ -271,7 +275,8 @@ export default function LotDetailPage() {
             <button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => run(() => qualityApi.lotAction(lot.id, 'close'), 'Failed to close the lot.')}>Close lot</button>
           )}
         </div>
-      </Section>
+        </div>
+      </DetailCard>
 
       <SheetBlock icon="list" title={`Results (${lot.results.length} characteristics)`}
         extra={resultsEditable && (lot.results.length > 0 || (lot.skip_lot && !!lot.plan_id)) ? <>
@@ -294,7 +299,7 @@ export default function LotDetailPage() {
           <div style={{ overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
               <thead><tr>
-                {['Characteristic', 'Class', 'Spec', 'Sample n / Ac / Re', 'Measured values', 'Defective', 'Defect code', 'Gauge', 'Remarks', 'Result'].map((h) => <th key={h} style={head}>{h}</th>)}
+                {['Characteristic', 'Class', 'Spec', 'Sample n / Ac / Re', 'Measured values', 'Defective', 'Defect code', 'Gauge', 'Remarks', 'Result'].map((h, i) => <th key={h} style={head}>{h}{i === 0 && <RowCount count={lot.results.length} />}</th>)}
               </tr></thead>
               <tbody>
                 {lot.results.map((r) => {

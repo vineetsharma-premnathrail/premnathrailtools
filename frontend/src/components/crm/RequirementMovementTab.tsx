@@ -7,6 +7,7 @@ import { RequirementMovement, RequirementMovementDoc } from '@/types'
 import MessageDialog from '@/components/erp/MessageDialog'
 import RndRequestBlock from '@/components/crm/RndRequestBlock'
 import { extractErrorMessages } from '@/lib/validation'
+import { primaryBtnStyle, chipBtnStyle } from '@/components/shared/ui'
 
 const cardStyle: React.CSSProperties = {
   padding: '14px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)',
@@ -78,7 +79,7 @@ export default function RequirementMovementTab({ module, recordId, sentAt, movem
             disabled={sendAction.disabled}
             title={sendAction.title}
             data-tour="req-movement-send-btn"
-            style={{ padding: '9px 18px', borderRadius: 999, border: 'none', background: 'linear-gradient(135deg, #FF7A45, #FF5A1F)', color: '#fff', fontSize: 13, fontWeight: 600, opacity: sendAction.disabled ? 0.5 : 1, cursor: sendAction.disabled ? 'not-allowed' : 'pointer' }}
+            style={{ ...primaryBtnStyle, opacity: sendAction.disabled ? 0.5 : 1, cursor: sendAction.disabled ? 'not-allowed' : 'pointer' }}
           >
             {sendAction.label}
           </button>
@@ -155,7 +156,7 @@ export default function RequirementMovementTab({ module, recordId, sentAt, movem
                       type="button"
                       onClick={() => openDoc(d)}
                       title="Open document"
-                      style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 999, border: '1px solid rgba(0,0,0,0.08)', background: i === 0 && m.tor_document ? 'rgba(255,122,69,0.1)' : 'rgba(0,0,0,0.03)', color: i === 0 && m.tor_document ? '#FF7A45' : '#57534e', cursor: 'pointer' }}
+                      style={chipBtnStyle(i === 0 && !!m.tor_document)}
                     >
                       📄 {d.name}
                     </button>

@@ -13,7 +13,7 @@ import MyHrTabs from '@/components/hr/MyHrTabs'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import PromptDialog from '@/components/erp/PromptDialog'
-import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallSecondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { RegisterVisitorDialog, CheckInDialog, EditVisitorDialog } from '@/components/hr/admin/VisitorDialogs'
 import {
   PageHeader, ErrorBanner, SuccessBanner, Pill, EmptyRow, primaryActionStyle, filterInputStyle, sectionStyle,
@@ -139,6 +139,8 @@ export default function HrVisitorsPage() {
         ...(dateFrom ? { date_from: dateFrom } : {}), ...(dateTo ? { date_to: dateTo } : {}),
         ...(hostF ? { host_user_id: Number(hostF) } : {}), ...(branchF ? { branch_id: Number(branchF) } : {}),
         ...(debounced.trim() ? { search: debounced.trim() } : {}),
+        // The list API returns 300 visits by default — ask for its maximum so the list and its count aren't cut short.
+        limit: 1000,
       })
       : hrApi.myVisitors(params)
     req
@@ -268,7 +270,7 @@ export default function HrVisitorsPage() {
           <div data-tour="hr-visitors-table" style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
               <thead>
-                <tr>{['Visit', 'Visitor', 'Host', 'Purpose', 'Expected', 'In', 'Out', 'Badge / Vehicle', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                <tr>{['Visit', 'Visitor', 'Host', 'Purpose', 'Expected', 'In', 'Out', 'Badge / Vehicle', 'Status', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr>
               </thead>
               <tbody>
                 {rowsLoading ? <EmptyRow colSpan={10} text="Loading…" /> : rows.length === 0 ? (

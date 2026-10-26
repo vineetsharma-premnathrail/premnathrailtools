@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { CaretDown, ListBullets, ListNumbers, WarningCircle } from '@phosphor-icons/react'
+import { placePopover } from '@/lib/popover'
 
 const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'LI', 'BR', 'DIV', 'P', 'SPAN'])
 const SAFE_FONT_SIZE = /^\d{1,2}px$/
@@ -103,9 +104,8 @@ function FontSizeMenu({ onPick, tourAttr }: { onPick: (px: string) => void; tour
     const place = () => {
       const r = btnRef.current?.getBoundingClientRect()
       if (!r) return
-      const h = listRef.current?.offsetHeight ?? 110
-      const top = r.bottom + 4 + h > window.innerHeight ? Math.max(4, r.top - 4 - h) : r.bottom + 4
-      setPos((p) => (p && p.top === top && p.left === r.left ? p : { top, left: r.left }))
+      const { top, left } = placePopover(r, { width: listRef.current?.offsetWidth ?? 140, height: listRef.current?.offsetHeight ?? 110 }, 4)
+      setPos((p) => (p && p.top === top && p.left === left ? p : { top, left }))
     }
     const close = (e: MouseEvent) => {
       const t = e.target as Node
@@ -129,7 +129,7 @@ function FontSizeMenu({ onPick, tourAttr }: { onPick: (px: string) => void; tour
   const toggle = () => {
     if (pos) { setPos(null); return }
     const r = btnRef.current?.getBoundingClientRect()
-    if (r) setPos({ top: r.bottom + 4, left: r.left })
+    if (r) setPos(placePopover(r, { width: 140, height: 110 }, 4))
   }
 
   return (

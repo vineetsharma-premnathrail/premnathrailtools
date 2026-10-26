@@ -14,7 +14,7 @@ import { formatDate } from '@/lib/format'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallSecondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { sectionStyle, h2Style, thStyle, tdStyle, Pill, ErrorBanner } from '@/components/sales/SalesUi'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
@@ -75,7 +75,7 @@ export default function DeliveryPanel({ order, onChange }: { order: SalesOrder; 
         </div>
         <div style={{ overflow: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
-            <thead><tr>{['Vehicle', 'Consignee', 'Contract date', 'Current date', 'Committed', 'Build', 'Stage', 'Status', 'Risk', 'LD accrued', 'LD forecast', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Vehicle', 'Consignee', 'Contract date', 'Current date', 'Committed', 'Build', 'Stage', 'Status', 'Risk', 'LD accrued', 'LD forecast', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
@@ -156,7 +156,7 @@ export default function DeliveryPanel({ order, onChange }: { order: SalesOrder; 
         {exts.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No DP extensions on this order.</p> : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr>{['Vehicles', 'Requested', 'Reason', 'Status', 'Granted', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Vehicles', 'Requested', 'Reason', 'Status', 'Granted', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={exts.length} />}</th>)}</tr></thead>
               <tbody>
                 {exts.map((e) => (
                   <tr key={e.id}>

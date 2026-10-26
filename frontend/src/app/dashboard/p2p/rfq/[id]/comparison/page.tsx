@@ -15,12 +15,13 @@ import { Comparison, LineQuotation, RfqInvites, RfqQuoteFile, mmQuotationsApi, r
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { P2PRequest, RFQ } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, primaryBtnStyle, secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
+import { formatDate } from '@/lib/format'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
@@ -35,7 +36,7 @@ const cellInput: React.CSSProperties = { ...sheetInput, padding: '6px 8px' }
 const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 1 }
 const td: React.CSSProperties = { padding: '7px 10px', fontSize: 12.5, borderTop: `1px solid ${BORDER.normal}`, verticalAlign: 'top' }
 const errBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
-const money = (v: number | null | undefined) => (v == null ? '—' : v.toLocaleString('en-IN', { maximumFractionDigits: 2 }))
+const money = (v: number | null | undefined) => (v == null ? '—' : `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`)
 
 type Opt = { value: string; label: string }
 const QUOTE_FILE_ACCEPT = '.pdf,image/*,.doc,.docx,.xls,.xlsx'
@@ -221,7 +222,7 @@ export default function QuotationComparisonPage() {
                 {quotes.map((q) => (
                   <div key={q.id} style={{ border: `1px solid ${BORDER.normal}`, borderRadius: 12, padding: '10px 12px', minWidth: 220 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 700 }}>{q.vendor_name}</div>
-                    <div style={{ fontSize: 12, color: TEXT.muted }}>{q.quote_ref || 'no ref'} · {q.items.length} line(s) · {money(q.quoted_price)} excl. GST{q.valid_until ? ` · valid till ${q.valid_until}` : ''}</div>
+                    <div style={{ fontSize: 12, color: TEXT.muted }}>{q.quote_ref || 'no ref'} · {q.items.length} line(s) · {money(q.quoted_price)} excl. GST{q.valid_until ? ` · valid till ${formatDate(q.valid_until)}` : ''}</div>
                     {(quoteFiles[q.id] || []).map((f) => (
                       <div key={f.id}><button type="button" style={fileLink} onClick={() => openQuoteFile(f)} title="Open the vendor's quotation">📎 {f.filename}</button></div>
                     ))}
@@ -251,9 +252,9 @@ export default function QuotationComparisonPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 + cmp.vendors.length * 160 }}>
                 <thead>
                   <tr>
-                    <th style={th}>Item</th><th style={th}>Qty</th><th style={th}>Last PO</th>
+                    <th style={th}>Item <RowCount count={cmp.lines.length} /></th><th style={{ ...th, textAlign: 'right' }}>Qty</th><th style={{ ...th, textAlign: 'right' }}>Last PO</th>
                     {cmp.vendors.map((v) => (
-                      <th key={v.vendor_quotation_id} style={th}>
+                      <th key={v.vendor_quotation_id} style={{ ...th, textAlign: 'right' }}>
                         {v.vendor_name}{v.overall_rank ? ` (${v.overall_rank})` : ''}
                         {!v.eligible && <div style={{ color: '#b91c1c', textTransform: 'none' }}>{v.ineligible_reason}</div>}
                       </th>
@@ -268,10 +269,10 @@ export default function QuotationComparisonPage() {
                     return (
                       <tr key={l.pr_item_id}>
                         <td style={td}>{l.item_code ? `${l.item_code} · ` : ''}{l.item_name}</td>
-                        <td style={{ ...td, whiteSpace: 'nowrap' }}>{l.quantity} {l.unit || ''}</td>
-                        <td style={{ ...td, whiteSpace: 'nowrap' }}>{l.last_po ? `${money(l.last_po.unit_price)} (${l.last_po.vendor_name})` : '—'}</td>
+                        <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right' }}>{l.quantity.toLocaleString('en-IN')} {l.unit || ''}</td>
+                        <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right' }}>{l.last_po ? `${money(l.last_po.unit_price)} (${l.last_po.vendor_name})` : '—'}</td>
                         {l.quotes.map((c, i) => (
-                          <td key={i} style={{ ...td, background: c?.rank === 'L1' ? 'rgba(22,163,74,0.07)' : undefined }}>
+                          <td key={i} style={{ ...td, textAlign: 'right', background: c?.rank === 'L1' ? 'rgba(22,163,74,0.07)' : undefined }}>
                             {c ? (
                               <>
                                 <div><b>{money(c.landed_unit)}</b> landed {c.rank && <span style={{ fontSize: 11, fontWeight: 800, color: c.rank === 'L1' ? '#16a34a' : TEXT.muted }}>{c.rank}</span>}</div>
@@ -293,7 +294,7 @@ export default function QuotationComparisonPage() {
                   })}
                   <tr>
                     <td style={{ ...td, fontWeight: 700 }} colSpan={3}>Total landed (excl. GST)</td>
-                    {cmp.vendors.map((v) => <td key={v.vendor_quotation_id} style={{ ...td, fontWeight: 700 }}>{money(v.landed_total)}{!v.complete && <div style={{ fontSize: 11, color: TEXT.muted, fontWeight: 400 }}>{v.lines_quoted}/{cmp.lines.length} lines</div>}</td>)}
+                    {cmp.vendors.map((v) => <td key={v.vendor_quotation_id} style={{ ...td, fontWeight: 700, textAlign: 'right', whiteSpace: 'nowrap' }}>{money(v.landed_total)}{!v.complete && <div style={{ fontSize: 11, color: TEXT.muted, fontWeight: 400 }}>{v.lines_quoted}/{cmp.lines.length} lines</div>}</td>)}
                     <td style={td} />
                   </tr>
                 </tbody>
@@ -412,7 +413,7 @@ function QuoteDialog({ rfq, pr, quote, presetVendorId, onClose, onSaved }: {
         <SheetSection icon="list" title="Line prices">
           <div style={{ overflow: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 10 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-              <thead><tr>{['Item', 'Qty', 'Unit price', 'Disc. %', 'GST %', 'Delivery (days)', 'Make offered'].map((h) => <th key={h} style={{ ...th, position: 'static' }}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Item', 'Qty', 'Unit price', 'Disc. %', 'GST %', 'Delivery (days)', 'Make offered'].map((h, i) => <th key={h} style={{ ...th, position: 'static' }}>{h}{i === 0 && <RowCount count={buyLines.length} />}</th>)}</tr></thead>
               <tbody>
                 {buyLines.map((i) => (
                   <tr key={i.id}>

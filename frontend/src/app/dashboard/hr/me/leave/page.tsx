@@ -6,8 +6,8 @@ import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { HrLeaveBalance, HrLeaveRequest, HrLeaveType } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import HrNav from '@/components/hr/HrNav'
 import MyHrTabs from '@/components/hr/MyHrTabs'
 import LeaveApplyForm from '@/components/hr/leave/LeaveApplyForm'
@@ -33,7 +33,7 @@ function num(v: string | number | null | undefined) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1)
 }
 function dmy(iso: string | null) {
-  return iso ? `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}` : '—'
+  return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—'
 }
 
 export default function MyLeavePage() {
@@ -133,7 +133,7 @@ export default function MyLeavePage() {
         </div>
       )}
 
-      <div data-tour="hr-myleave-balances" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12, marginBottom: 20 }}>
+      <div data-tour="hr-myleave-balances" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
         {loading && balances.length === 0 ? (
           <div style={{ ...cardStyle, fontSize: 13, color: TEXT.muted }}>Loading balances…</div>
         ) : shownBalances.length === 0 ? (
@@ -188,8 +188,8 @@ export default function MyLeavePage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
           <thead>
             <tr>
-              {['Request', 'Type', 'Dates', 'Days', 'Status', 'Approver / decision', ''].map((h) => (
-                <th key={h} style={{ textAlign: h === 'Days' ? 'right' : 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }}>{h}</th>
+              {['Request', 'Type', 'Dates', 'Days', 'Status', 'Approver / decision', ''].map((h, hi) => (
+                <th key={h} style={{ textAlign: h === 'Days' ? 'right' : 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }}>{h}{hi === 0 && <RowCount count={requests.length} />}</th>
               ))}
             </tr>
           </thead>
@@ -197,7 +197,7 @@ export default function MyLeavePage() {
             {loading ? (
               <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : requests.length === 0 ? (
-              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No leave requests in {year}.</td></tr>
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No leave requests in {year}{can('hr', 'me', 'create') ? ' — use + Apply Leave to request time off' : ''}.</td></tr>
             ) : requests.map((r) => (
               <tr key={r.id}>
                 <td style={{ ...td, fontWeight: 600, color: TEXT.heading }}>
@@ -211,7 +211,7 @@ export default function MyLeavePage() {
                 </td>
                 <td style={{ ...td, textAlign: 'right' }}>{num(r.days)}</td>
                 <td style={td}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[r.status]}1a`, color: STATUS_HEX[r.status], whiteSpace: 'nowrap' }}>
+                  <span style={pillStyle(STATUS_HEX[r.status])}>
                     {STATUS_LABELS[r.status] || r.status}
                   </span>
                 </td>

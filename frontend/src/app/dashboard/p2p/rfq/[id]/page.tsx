@@ -8,10 +8,10 @@ import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { rfqApi, purchaseOrdersApi, vendorsApi } from '@/lib/api'
 import { rfqInvitesApi, RfqInvite, RfqInvites } from '@/lib/mmPurchasingApi'
 import SearchableSelect from '@/components/erp/SearchableSelect'
-import { formatDateTime } from '@/lib/format'
+import { formatDate, formatDateTime } from '@/lib/format'
 import { RFQ, P2PPurchaseOrder, ProcurementVendor } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { secondaryBtnStyle, primaryBtnStyle, smallSecondaryBtnStyle, RowCount, Pill, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
@@ -24,14 +24,8 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
 const textArea: React.CSSProperties = { ...sheetInput, minHeight: 60, resize: 'vertical' }
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 20px', borderRadius: 10, border: 'none', cursor: 'pointer',
-  background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600,
-}
-const ghostBtn: React.CSSProperties = {
-  padding: '10px 20px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, cursor: 'pointer',
-  background: 'transparent', color: TEXT.secondary, fontSize: 13, fontWeight: 600,
-}
+const primaryBtn = primaryBtnStyle
+const ghostBtn = secondaryBtnStyle
 const PO_WORKFLOW_STAGE_LABELS: Record<string, string> = {
   vendor_quotations: 'Pending PO',
   technical_evaluation: 'Pending PO',
@@ -51,39 +45,21 @@ const RFQ_STATUS_LABELS: Record<string, string> = { draft: 'Draft', locked: 'Loc
 // green once the PO is approved (incl. receipt stages after it).
 const PO_STAGE_HEX = (label: string) => label === 'PO Approved' ? '#16a34a' : label === 'PO Draft' ? '#64748b' : '#d97706'
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{label}</p>
-      <p style={{ fontSize: 13.5, color: TEXT.body, margin: 0 }}>{value}</p>
-    </div>
-  )
-}
-
 // Emailed RFQs — per-page status maps (repo convention).
 const EMAIL_STATUS_HEX: Record<RfqInvite['email_status'], string> = { sent: '#16a34a', failed: '#dc2626', pending: '#64748b' }
 const QUOTE_STATUS_HEX: Record<RfqInvite['quote_status'], string> = { quoted: '#16a34a', waiting: '#d97706', overdue: '#dc2626', not_sent: '#64748b' }
 const QUOTE_STATUS_LABELS: Record<RfqInvite['quote_status'], string> = { quoted: 'Quoted', waiting: 'Waiting', overdue: 'Overdue', not_sent: 'Not sent' }
 const pad2 = (n: number) => String(n).padStart(2, '0')
-/** DD-MM-YYYY from an ISO date (date-only strings are not shifted by the timezone). */
-function fmtDay(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
-  if (m) return `${m[3]}-${m[2]}-${m[1]}`
-  const d = new Date(iso)
-  return isNaN(d.getTime()) ? '—' : `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}`
-}
-/** DD-MM HH:mm for a send / reminder timestamp. */
+/** DD/MM HH:mm for a send / reminder timestamp. */
 function fmtStamp(iso: string | null | undefined): string {
   if (!iso) return '—'
   const d = new Date(iso)
-  return isNaN(d.getTime()) ? '—' : `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  return isNaN(d.getTime()) ? '—' : `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
 }
 function todayIso(): string {
   const d = new Date()
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
 }
-const pill = (hex: string): React.CSSProperties => ({ fontSize: 11.5, fontWeight: 600, padding: '3px 9px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
 const invTh: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap', borderBottom: `1px solid ${BORDER.normal}` }
 const invTd: React.CSSProperties = { padding: '8px 10px', fontSize: 12.5, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}`, verticalAlign: 'top' }
 const linkBtn: React.CSSProperties = { background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#2563eb', fontSize: 12.5, fontWeight: 600 }
@@ -219,6 +195,7 @@ export default function RfqDetailPage() {
   }
 
   const statusColor = RFQ_STATUS_HEX[rfq.status] || '#64748b'
+  const poStageLabel = rfq.p2p_status ? (PO_WORKFLOW_STAGE_LABELS[rfq.p2p_status] || rfq.p2p_status) : ''
   // Emailed RFQ = has invited vendors. Old RFQs (L1–L4 attachment slots) keep the old layout.
   const inviteList = invites?.invites || []
   const hasInvites = inviteList.length > 0
@@ -245,13 +222,8 @@ export default function RfqDetailPage() {
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{rfq.rfq_number}</h1>
-            <span style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: `${statusColor}1a`, color: statusColor }}>
-              {RFQ_STATUS_LABELS[rfq.status]}
-            </span>
-          </div>
-          <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>Purchase Requisition {rfq.p2p_number || rfq.p2p_request_id}</p>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>{rfq.rfq_number}</h1>
+          <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>Request for quotation</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button data-tour="rfq-detail-back" onClick={() => router.push('/dashboard/p2p/rfq')} type="button" style={secondaryBtnStyle}>
@@ -264,6 +236,39 @@ export default function RfqDetailPage() {
       </div>
 
       <MessageDialog open={!!error} variant="error" title="Cannot Update RFQ" message={error} onClose={() => setError('')} />
+
+      {/* One read-only record card: what this RFQ is, its key facts, then its terms. */}
+      <DetailCard tour="rfq-detail-meta">
+        <DetailSummary
+          title={`Quotations for purchase request ${rfq.p2p_number || rfq.p2p_request_id}`}
+          text={rfq.is_single_quotation
+            ? 'Single-quotation RFQ — only one vendor quoted; the reason is recorded below.'
+            : hasInvites
+              ? `Emailed to ${inviteList.length} vendor${inviteList.length === 1 ? '' : 's'} for their quotes.`
+              : 'Vendor quotations (L1 = lowest) are attached below.'}
+          meta={<>
+            <Pill label={RFQ_STATUS_LABELS[rfq.status] ?? rfq.status} hex={statusColor} />
+            <span>· Created {formatDateTime(rfq.created_at)} by <strong style={{ color: TEXT.heading }}>{rfq.created_by_name || '—'}</strong></span>
+            {rfq.locked_at && <span>· Locked {formatDateTime(rfq.locked_at)}</span>}
+          </>}
+        />
+        <div data-tour="rfq-detail-commercial-terms">
+          <DetailGroup title={hasInvites ? 'Commercial Terms' : 'L1 Vendor Commercial Terms'} last={!rfq.is_single_quotation}>
+            {/* Emailed RFQs: payment terms and delivery come with each vendor's quote. */}
+            {!hasInvites && <DetailRow label="Payment Terms">{rfq.payment_terms}</DetailRow>}
+            {!hasInvites && <DetailRow label="Delivery Lead Time">{rfq.delivery_lead_time}</DetailRow>}
+            <DetailRow label="Late Delivery Clause">{rfq.late_delivery_clause}</DetailRow>
+          </DetailGroup>
+        </div>
+        {rfq.is_single_quotation && (
+          <div data-tour="rfq-detail-single-quotation">
+            <DetailGroup title="Single Quotation" last>
+              <DetailRow label="Reason">{rfq.single_quotation_reason}</DetailRow>
+              <DetailRow label="Comments">{rfq.comments}</DetailRow>
+            </DetailGroup>
+          </div>
+        )}
+      </DetailCard>
 
       {hasInvites && invites && (
         <InvitedVendorsSection
@@ -338,11 +343,7 @@ export default function RfqDetailPage() {
         <div style={sectionStyle}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
             <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Purchase Order</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: `${PO_STAGE_HEX(PO_WORKFLOW_STAGE_LABELS[rfq.p2p_status] || '')}1a`, color: PO_STAGE_HEX(PO_WORKFLOW_STAGE_LABELS[rfq.p2p_status] || '') }}>
-                {PO_WORKFLOW_STAGE_LABELS[rfq.p2p_status] || rfq.p2p_status}
-              </span>
-            </div>
+            <Pill label={poStageLabel} hex={PO_STAGE_HEX(poStageLabel)} />
           </div>
 
           {/* No PO yet — next step is creating it in the application: pick the vendor from
@@ -381,9 +382,9 @@ export default function RfqDetailPage() {
             ) : (
               <>
                 {poDraft && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 14 }}>
-                    <InfoRow label="PO Number" value={poDraft.po_number} />
-                    <InfoRow label="Vendor" value={poDraft.vendor_name || '—'} />
+                  <div style={{ marginBottom: 10 }}>
+                    <DetailRow label="PO Number">{poDraft.po_number}</DetailRow>
+                    <DetailRow label="Vendor">{poDraft.vendor_name}</DetailRow>
                   </div>
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -404,10 +405,10 @@ export default function RfqDetailPage() {
           {['po_raised', 'po_approved', 'partially_received', 'received', 'closed'].includes(rfq.p2p_status) && (
             <div>
               {poDraft?.po_number && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 14 }}>
-                  <InfoRow label="PO Number" value={poDraft.po_number} />
-                  <InfoRow label="Vendor" value={poDraft.vendor_name || '—'} />
-                  {seePoPrices && <InfoRow label="PO Value (incl. tax)" value={poDraft.total_value != null ? poDraft.total_value.toFixed(2) : '—'} />}
+                <div style={{ marginBottom: 10 }}>
+                  <DetailRow label="PO Number">{poDraft.po_number}</DetailRow>
+                  <DetailRow label="Vendor">{poDraft.vendor_name}</DetailRow>
+                  {seePoPrices && <DetailRow label="PO Value (incl. tax)">{poDraft.total_value != null ? `₹${poDraft.total_value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null}</DetailRow>}
                 </div>
               )}
               <p style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 12px' }}>
@@ -457,39 +458,6 @@ export default function RfqDetailPage() {
           </div>
         </FormSheet>
       )}
-      <>
-          {rfq.is_single_quotation && (
-            <div data-tour="rfq-detail-single-quotation" style={sectionStyle}>
-              <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Single Quotation</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
-                <InfoRow label="Reason for Single Quotation" value={rfq.single_quotation_reason || '—'} />
-                <InfoRow label="Comments" value={rfq.comments || '—'} />
-              </div>
-            </div>
-          )}
-
-          <div data-tour="rfq-detail-commercial-terms" style={sectionStyle}>
-            <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>{hasInvites ? 'Commercial Terms' : 'L1 Vendor Commercial Terms'}</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
-              {/* Emailed RFQs: payment terms and delivery come with each vendor's quote. */}
-              {!hasInvites && <InfoRow label="Payment Terms" value={rfq.payment_terms || '—'} />}
-              {!hasInvites && <InfoRow label="Delivery Lead Time" value={rfq.delivery_lead_time || '—'} />}
-              <div style={{ gridColumn: '1 / -1' }}>
-                <InfoRow label="Late Delivery Clause" value={rfq.late_delivery_clause || '—'} />
-              </div>
-            </div>
-          </div>
-      </>
-
-      <div data-tour="rfq-detail-meta" style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Details</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
-          <InfoRow label="Created By" value={rfq.created_by_name || '—'} />
-          <InfoRow label="Created At" value={formatDateTime(rfq.created_at)} />
-          <InfoRow label="Locked At" value={formatDateTime(rfq.locked_at)} />
-        </div>
-      </div>
-
     </div>
   )
 }
@@ -522,25 +490,25 @@ function InvitedVendorsSection({ invites, canEdit, canOpenComparison, busy, noti
         <div>
           <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Invited vendors</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5, color: TEXT.secondary }}>
-            <span>Quote by <b style={{ color: TEXT.heading }}>{fmtDay(due)}</b></span>
-            {duePassed && <span style={pill('#dc2626')}>passed</span>}
+            <span>Quote by <b style={{ color: TEXT.heading }}>{formatDate(due)}</b></span>
+            {duePassed && <Pill label="Date passed" hex="#dc2626" />}
             <span>·</span>
             <span><b style={{ color: TEXT.heading }}>{quoted} of {list.length}</b> quoted</span>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {canEdit && anyUnsent && (
-            <button type="button" data-tour="rfq-detail-send-pending" disabled={off} onClick={onSendPending} style={{ ...ghostBtn, padding: '8px 14px', opacity: off ? 0.6 : 1 }}>
+            <button type="button" data-tour="rfq-detail-send-pending" disabled={off} onClick={onSendPending} style={{ ...smallSecondaryBtnStyle, opacity: off ? 0.6 : 1 }}>
               {busy === 'send' ? 'Sending…' : 'Send pending emails'}
             </button>
           )}
           {canEdit && anyToRemind && (
-            <button type="button" data-tour="rfq-detail-remind-all" disabled={off} onClick={onRemind} style={{ ...ghostBtn, padding: '8px 14px', opacity: off ? 0.6 : 1 }}>
+            <button type="button" data-tour="rfq-detail-remind-all" disabled={off} onClick={onRemind} style={{ ...smallSecondaryBtnStyle, opacity: off ? 0.6 : 1 }}>
               {busy === 'remind' ? 'Sending…' : 'Remind all who haven’t quoted'}
             </button>
           )}
           {canEdit && (
-            <button type="button" data-tour="rfq-detail-invite-more" disabled={off} onClick={onInviteMore} style={{ ...ghostBtn, padding: '8px 14px', opacity: off ? 0.6 : 1 }}>
+            <button type="button" data-tour="rfq-detail-invite-more" disabled={off} onClick={onInviteMore} style={{ ...smallSecondaryBtnStyle, opacity: off ? 0.6 : 1 }}>
               + Invite more vendors
             </button>
           )}
@@ -557,7 +525,7 @@ function InvitedVendorsSection({ invites, canEdit, canOpenComparison, busy, noti
       <div data-tour="rfq-detail-invites-table" style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead>
-            <tr>{['Vendor', 'Email', 'Email status', 'Reminder', 'Quote', ''].map((h, i) => <th key={i} style={invTh}>{h}</th>)}</tr>
+            <tr>{['Vendor', 'Email', 'Email Status', 'Reminder Sent', 'Quote', ''].map((h, i) => <th key={i} style={invTh}>{h}{i === 0 && <RowCount count={list.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {list.map((inv) => {
@@ -576,7 +544,7 @@ function InvitedVendorsSection({ invites, canEdit, canOpenComparison, busy, noti
                   </td>
                   <td style={{ ...invTd, whiteSpace: 'nowrap' }}>{inv.reminder_sent_at ? fmtStamp(inv.reminder_sent_at) : '—'}</td>
                   <td style={invTd}>
-                    <span style={pill(qHex)}>
+                    <span style={pillStyle(qHex)}>
                       {isQuoted && inv.quoted_price != null
                         ? `Quoted ₹${inv.quoted_price.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
                         : QUOTE_STATUS_LABELS[inv.quote_status] || inv.quote_status}

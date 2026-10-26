@@ -12,7 +12,7 @@ import QualityNav from '@/components/quality/QualityNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import Select from '@/components/shared/Select'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<string, string> = { active: 'Active', draft: 'Draft', obsolete: 'Obsolete' }
 const STATUS_HEX: Record<string, string> = { active: '#16A34A', draft: '#F59E0B', obsolete: '#78716c' }
@@ -97,9 +97,9 @@ export default function QualityStandardsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead>
             <tr>
-              {['Code', 'Title', 'Category', 'Effective Date', 'Status', ''].map((h) => (
+              {['Code', 'Title', 'Category', 'Effective Date', 'Status', ''].map((h, i) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{i === 0 && <RowCount count={filtered.length} />}
                 </th>
               ))}
             </tr>
@@ -117,9 +117,7 @@ export default function QualityStandardsPage() {
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{s.category || '—'}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{formatDate(s.effective_date)}</td>
                   <td style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[s.status]}1a`, color: STATUS_HEX[s.status], whiteSpace: 'nowrap' }}>
-                      {STATUS_LABELS[s.status] || s.status}
-                    </span>
+                    <Pill label={STATUS_LABELS[s.status] || s.status} hex={STATUS_HEX[s.status]} />
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
                     <span onClick={() => router.push(recordPath('/dashboard/quality/standards', s))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>

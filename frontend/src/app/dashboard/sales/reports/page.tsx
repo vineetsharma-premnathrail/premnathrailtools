@@ -11,6 +11,7 @@ import SalesNav from '@/components/sales/SalesNav'
 import { sectionStyle, h2Style, thStyle, tdStyle, Pill, ErrorBanner, PageHeader } from '@/components/sales/SalesUi'
 import { SO_STATUS_LABELS, SO_STATUS_HEX, formatINR } from '@/components/sales/labels'
 import { recordPath } from '@/lib/recordRef'
+import { RowCount } from '@/components/shared/ui'
 
 type BookRow = { id: number; so_number: string; customer_name: string; status: string; order_month: string | null; models: string[]; taxable_total: number; grand_total: number; delivered_value: number; balance_value: number; units_total: number; units_delivered: number; next_due_date: string | null }
 type BacklogRow = { month: string; units: number; value: number; at_risk: number; overdue: number; ld_forecast: number }
@@ -43,7 +44,7 @@ export default function SalesReportsPage() {
         <h2 style={h2Style}>Order book</h2>
         <div style={{ overflow: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
-            <thead><tr>{['Order', 'Customer', 'Models', 'Confirmed', 'Taxable value', 'Delivered value', 'Balance', 'Units', 'Next due', 'Status'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Order', 'Customer', 'Models', 'Confirmed', 'Taxable value', 'Delivered value', 'Balance', 'Units', 'Next due', 'Status'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={book.length} />}</th>)}</tr></thead>
             <tbody>
               {book.length === 0 ? <tr><td colSpan={10} style={{ ...tdStyle, color: TEXT.muted }}>No open orders.</td></tr> : book.map((r) => (
                 <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/sales/orders', r))} style={{ cursor: 'pointer' }}>
@@ -63,7 +64,7 @@ export default function SalesReportsPage() {
           <h2 style={h2Style}>Backlog by delivery month</h2>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr>{['Month', 'Units', 'Value', 'At risk', 'Overdue', 'LD forecast'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Month', 'Units', 'Value', 'At risk', 'Overdue', 'LD forecast'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={backlog.length} />}</th>)}</tr></thead>
               <tbody>
                 {backlog.length === 0 ? <tr><td colSpan={6} style={{ ...tdStyle, color: TEXT.muted }}>No undelivered vehicles.</td></tr> : backlog.map((b) => (
                   <tr key={b.month}>
@@ -80,7 +81,7 @@ export default function SalesReportsPage() {
           <h2 style={h2Style}>LD exposure</h2>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr>{['Order', 'Customer', 'Overdue', 'At risk', 'Accrued', 'Forecast'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Order', 'Customer', 'Overdue', 'At risk', 'Accrued', 'Forecast'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={ld.length} />}</th>)}</tr></thead>
               <tbody>
                 {ld.length === 0 ? <tr><td colSpan={6} style={{ ...tdStyle, color: TEXT.muted }}>No exposure.</td></tr> : ld.map((r) => (
                   <tr key={r.so_id} onClick={() => router.push(`${recordPath('/dashboard/sales/orders', r, 'so_id')}?tab=schedule`)} style={{ cursor: 'pointer' }}>

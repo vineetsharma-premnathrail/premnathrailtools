@@ -14,7 +14,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import DateField from '@/components/erp/DateField'
-import { smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { smallSecondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { h2Style, thStyle, tdStyle, Pill, ErrorBanner } from '@/components/sales/SalesUi'
 import { FormSheet, SheetSection, SheetIcon, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { formatINR } from '@/components/sales/labels'
@@ -57,7 +57,7 @@ export default function BillingStatusPanel({ order }: { order: SalesOrder }) {
       {notice && <div style={{ padding: '10px 14px', marginBottom: 12, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', color: '#15803d', fontSize: 13 }}>{notice}</div>}
       <div style={{ overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-          <thead><tr>{['#', 'Milestone', 'Amount', 'Status', 'Due since', 'Due date', 'Invoiced', 'Billable now', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{['#', 'Milestone', 'Amount', 'Status', 'Due since', 'Due date', 'Invoiced', 'Billable now', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
             {rows.map((m) => (
               <tr key={m.billing_line_id}>

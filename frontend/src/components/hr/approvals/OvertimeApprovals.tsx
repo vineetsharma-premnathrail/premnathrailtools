@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { hrTimeApi } from '@/lib/api'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import PromptDialog from '@/components/erp/PromptDialog'
-import { smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { smallSecondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { OvertimeRequest, hhmm } from '@/components/hr/safety/types'
 
@@ -14,7 +14,7 @@ const actionBtn = (color: string): React.CSSProperties => ({
   ...smallSecondaryBtnStyle, fontWeight: 700, borderRadius: 9999, border: `1px solid ${color}55`,
   background: `${color}14`, color, marginRight: 6,
 })
-const dmy = (iso: string) => `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}`
+const dmy = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`
 
 // Overtime claims waiting for the signed-in user's decision (central engine, hr.overtime).
 export default function OvertimeApprovals() {
@@ -66,8 +66,8 @@ export default function OvertimeApprovals() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
             <thead>
               <tr>
-                {['Employee', 'Date', 'In – Out', 'Worked', 'OT claimed', 'Approve (min)', 'Reason', ''].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
+                {['Employee', 'Date', 'In – Out', 'Worked', 'OT claimed', 'Approve (min)', 'Reason', ''].map((h, hi) => (
+                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}{hi === 0 && <RowCount count={items.length} />}</th>
                 ))}
               </tr>
             </thead>

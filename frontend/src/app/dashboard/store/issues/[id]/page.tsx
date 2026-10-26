@@ -5,8 +5,9 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { StoreMaterialIssue } from '@/types'
-import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { Row, InfoRow, secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT } from '@/lib/theme'
+import { secondaryBtnStyle, smallSecondaryBtnStyle, RowCount, Pill, TableScroll, thStyle, tdStyle, numThStyle, numTdStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
+import { formatDate } from '@/lib/format'
 import StoreNav from '@/components/store/StoreNav'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import { useCan } from '@/lib/permissions'
@@ -15,6 +16,9 @@ import { recordPath, useRecordId } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
+
+const linkBtn: React.CSSProperties = { background: 'none', border: 'none', padding: 0, fontSize: 13.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }
+const yesNo = (v?: boolean | null) => (v == null ? null : v ? 'Yes' : 'No')
 
 export default function StoreMaterialIssueDetailPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
@@ -61,81 +65,96 @@ export default function StoreMaterialIssueDetailPage() {
             <button type="button" data-tour="issue-detail-back-btn" onClick={() => router.push('/dashboard/store/issues')} style={secondaryBtnStyle}>← Back</button>
           </div>
 
-          <div data-tour="issue-detail-summary" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <Row>
-                <InfoRow label="Store" value={issue.location_name || '—'} />
-                <InfoRow label="Issue Type" value={issue.issue_type_label || '—'} />
-                <InfoRow label="Department" value={issue.department_name || '—'} />
-                {issue.project_or_work_order && <InfoRow label="Work Order / Reference" value={issue.project_or_work_order} />}
-                {issue.against_label && <InfoRow label="Against" value={issue.against_label} />}
-                {issue.challan_number && <InfoRow label="Challan No." value={issue.challan_number} />}
-                {issue.expected_return_date && <InfoRow label="Expected return" value={issue.expected_return_date} />}
-                {issue.returnable != null && <InfoRow label="Returnable" value={issue.returnable ? 'Yes' : 'No'} />}
-                {issue.destructive != null && <InfoRow label="Destructive test" value={issue.destructive ? 'Yes' : 'No'} />}
-                {issue.purpose && <InfoRow label="Purpose" value={issue.purpose === 'trial' ? 'Trial' : 'Sample'} />}
-                {issue.site_address && <InfoRow label="Site" value={issue.site_address} />}
-                {(issue.vehicle_number || issue.transporter || issue.lr_number) && (
-                  <InfoRow label="Transport" value={[issue.transporter, issue.vehicle_number, issue.lr_number && `LR ${issue.lr_number}`].filter(Boolean).join(' · ')} />
-                )}
-                {issue.scrap_buyer && <InfoRow label="Scrap buyer" value={issue.scrap_buyer} />}
-              </Row>
-              <Row>
-                <InfoRow label="Issue Date" value={issue.issue_date} />
-                <InfoRow label="Requested By" value={issue.requested_by_name || '—'} />
-                <InfoRow label="Issued By" value={issue.issued_by_name || '—'} />
-              </Row>
+          {/* One record view: what was issued, from where, to whom — then every fact as label–value rows. */}
+          <DetailCard tour="issue-detail-summary">
+            <DetailSummary
+              title={issue.issue_number}
+              text={`${issue.issue_type_label || 'Material'} issue from ${issue.location_name || 'the store'}${issue.department_name ? ` to ${issue.department_name}` : ''}${issue.against_label ? ` against ${issue.against_label}` : ''} — ${issue.items.length} item line${issue.items.length === 1 ? '' : 's'}.`}
+              meta={<>
+                {issue.issue_type_label && <Pill label={issue.issue_type_label} hex="#2563eb" />}
+                <span>· Issued {formatDate(issue.issue_date)}</span>
+                {issue.issued_by_name && <span>· by <strong style={{ color: TEXT.heading }}>{issue.issued_by_name}</strong></span>}
+                {issue.requested_by_name && <span>· Requested by <strong style={{ color: TEXT.heading }}>{issue.requested_by_name}</strong></span>}
+              </>}
+            />
+            <DetailGroup title="Issued To">
+              <DetailRow label="Store">{issue.location_name}</DetailRow>
+              <DetailRow label="Department">{issue.department_name}</DetailRow>
+              {issue.against_label && <DetailRow label="Against">{issue.against_label}</DetailRow>}
+              {issue.project_or_work_order && <DetailRow label="Work Order / Reference">{issue.project_or_work_order}</DetailRow>}
               {issue.op_number && (
                 <div data-tour="issue-detail-order-project">
-                  <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Order Project</p>
-                  <OrderProjectChip opNumber={issue.op_number} elementNo={issue.element_no} label={issue.element_label}
-                    onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', issue, 'order_project_id')) : undefined} />
+                  <DetailRow label="Order Project">
+                    <OrderProjectChip opNumber={issue.op_number} elementNo={issue.element_no} label={issue.element_label}
+                      onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', issue, 'order_project_id')) : undefined} />
+                  </DetailRow>
                 </div>
-              )}
-              {issue.project_stock_override_reason && (
-                <InfoRow label="Project stock used (Store Manager override)" value={issue.project_stock_override_reason} />
               )}
               {issue.p2p_number && (
-                <div>
-                  <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 2px' }}>Purchase Requisition</p>
-                  <span onClick={() => router.push(recordPath('/dashboard/p2p', issue, 'p2p_request_id'))} style={{ fontSize: 13, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>{issue.p2p_number}</span>
-                </div>
+                <DetailRow label="Purchase Requisition">
+                  <button type="button" onClick={() => router.push(recordPath('/dashboard/p2p', issue, 'p2p_request_id'))} style={linkBtn}>{issue.p2p_number}</button>
+                </DetailRow>
               )}
-              <InfoRow label="Remarks" value={issue.remarks || '—'} />
-            </div>
-          </div>
+            </DetailGroup>
+            {(issue.challan_number || issue.expected_return_date || issue.returnable != null || issue.destructive != null || issue.purpose || issue.site_address || issue.vehicle_number || issue.transporter || issue.lr_number || issue.scrap_buyer) && (
+              <DetailGroup title="Dispatch & Return">
+                {issue.challan_number && <DetailRow label="Challan No.">{issue.challan_number}</DetailRow>}
+                {issue.returnable != null && <DetailRow label="Returnable">{yesNo(issue.returnable)}</DetailRow>}
+                {issue.expected_return_date && <DetailRow label="Expected return">{formatDate(issue.expected_return_date)}</DetailRow>}
+                {issue.purpose && <DetailRow label="Purpose">{issue.purpose === 'trial' ? 'Trial' : 'Sample'}</DetailRow>}
+                {issue.destructive != null && <DetailRow label="Destructive test">{yesNo(issue.destructive)}</DetailRow>}
+                {issue.site_address && <DetailRow label="Site">{issue.site_address}</DetailRow>}
+                {(issue.vehicle_number || issue.transporter || issue.lr_number) && (
+                  <DetailRow label="Transport">{[issue.transporter, issue.vehicle_number, issue.lr_number && `LR ${issue.lr_number}`].filter(Boolean).join(' · ')}</DetailRow>
+                )}
+                {issue.scrap_buyer && <DetailRow label="Scrap buyer">{issue.scrap_buyer}</DetailRow>}
+              </DetailGroup>
+            )}
+            <DetailGroup last>
+              {issue.project_stock_override_reason && (
+                <DetailRow label="Project stock used (Store Manager override)">{issue.project_stock_override_reason}</DetailRow>
+              )}
+              <DetailRow label="Remarks">{issue.remarks}</DetailRow>
+            </DetailGroup>
+          </DetailCard>
 
           <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 10px' }}>Items</p>
-          <div data-tour="issue-detail-items" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
-              <thead>
-                <tr>
-                  {['Item', 'Quantity', 'Batch', ...(showLineElement ? ['Vehicle / lot'] : []), 'Remarks'].map((h) => (
-                    <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {issue.items.map((line) => (
-                  <tr key={line.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{line.item_code} — {line.item_name}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{line.quantity} {line.uom}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{line.batch_number || '—'}</td>
-                    {showLineElement && <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{line.element_display || '—'}</td>}
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{line.remarks || '—'}</td>
+          <div data-tour="issue-detail-items">
+            <TableScroll maxHeight="none" minWidth={560}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Item <RowCount count={issue.items.length} /></th>
+                    <th style={numThStyle}>Quantity</th>
+                    <th style={thStyle}>Batch</th>
+                    {showLineElement && <th style={thStyle}>Vehicle / lot</th>}
+                    <th style={thStyle}>Remarks</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {issue.items.length === 0 ? (
+                    <tr><td colSpan={showLineElement ? 5 : 4} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No item lines on this issue.</td></tr>
+                  ) : issue.items.map((line) => (
+                    <tr key={line.id}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{line.item_code} — {line.item_name}</td>
+                      <td style={numTdStyle}>{line.quantity.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {line.uom}</td>
+                      <td style={tdStyle}>{line.batch_number || '—'}</td>
+                      {showLineElement && <td style={tdStyle}>{line.element_display || '—'}</td>}
+                      <td style={tdStyle}>{line.remarks || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableScroll>
           </div>
 
           {issue.issue_type === 'job_work' && (
             <div style={{ marginTop: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
                 <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: 0 }}>Job Work Challan</p>
-                <span onClick={() => router.push('/dashboard/store/job-work')} style={{ fontSize: 12.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>
+                <button type="button" onClick={() => router.push('/dashboard/store/job-work')} style={smallSecondaryBtnStyle}>
                   Open in Job Work (stock at vendor, receive back) →
-                </span>
+                </button>
               </div>
               <ManagedDocumentPanel entityType="store_job_work_challan" entityId={issue.id} revision={0}
                 canModify={can('store', 'issues', 'edit')} recordLabel={`Job work challan ${issue.challan_number || issue.issue_number}`}

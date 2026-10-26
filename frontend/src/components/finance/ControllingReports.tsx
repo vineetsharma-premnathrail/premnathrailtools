@@ -18,6 +18,7 @@ import {
   inr, dmy, sectionStyle, secondaryBtnStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh, labelStyle,
   ErrorBanner, InfoBanner, StatusPill, TableWrap, EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
+import { RowCount } from '@/components/shared/ui'
 
 type CC = { id: number; code: string; name: string; status: string; parent_cost_center_id?: number | null }
 type LineItem = {
@@ -53,7 +54,7 @@ function LineItemsTable({ data, loading, tour }: { data: LineItems | null; loadi
     <TableWrap minWidth={1150} maxHeight="calc(100vh - 260px)" tour={tour}>
       <thead>
         <tr>
-          <th style={thStyle}>Date</th><th style={thStyle}>Voucher</th><th style={thStyle}>Ledger</th><th style={thStyle}>Cost centre</th>
+          <th style={thStyle}>Date <RowCount count={data?.rows.length ?? 0} /></th><th style={thStyle}>Voucher</th><th style={thStyle}>Ledger</th><th style={thStyle}>Cost centre</th>
           <th style={thStyle}>Order</th><th style={thStyle}>Party</th><th style={thStyle}>Narration</th>
           <th style={numTh}>Debit (₹)</th><th style={numTh}>Credit (₹)</th><th style={numTh}>Running (₹)</th>
         </tr>
@@ -167,7 +168,7 @@ export function CostCenterReport({ fromDate, toDate }: { fromDate: string; toDat
       <TableWrap minWidth={Math.max(700, 320 + (cols.length + 2) * 140)} maxHeight="calc(100vh - 320px)" tour="fin-rep-cc-matrix">
         <thead>
           <tr>
-            <th style={thStyle}>Ledger</th>
+            <th style={thStyle}>Ledger <RowCount count={actuals?.rows.length ?? 0} /></th>
             {cols.map((c) => <th key={c.id} style={numTh} title={c.name}>{c.code}</th>)}
             {showUnassigned && <th style={numTh}>Unassigned</th>}
             <th style={numTh}>Total (₹)</th>
@@ -265,7 +266,7 @@ export function InternalOrdersReport({ toDate, initialOrderId }: { toDate: strin
       <TableWrap minWidth={1100} maxHeight="calc(100vh - 360px)" tour="fin-rep-io-table">
         <thead>
           <tr>
-            <th style={thStyle}>Order</th><th style={thStyle}>Name</th><th style={thStyle}>Status</th><th style={thStyle}>Cost centre</th>
+            <th style={thStyle}>Order <RowCount count={rows?.length ?? 0} /></th><th style={thStyle}>Name</th><th style={thStyle}>Status</th><th style={thStyle}>Cost centre</th>
             <th style={numTh}>Budget (₹)</th><th style={numTh}>Actual (₹)</th><th style={numTh}>Commitment (₹)</th>
             <th style={numTh}>Available (₹)</th><th style={numTh}>Used %</th>
           </tr>
@@ -298,15 +299,15 @@ export function InternalOrdersReport({ toDate, initialOrderId }: { toDate: strin
             <button type="button" style={secondaryBtnStyle} onClick={() => setOrderId(null)}>Close order</button>
           </div>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-            <StatCard label="Budget" value={inr(s.budgeted_amount)} />
-            <StatCard label="Actual (life to date)" value={inr(s.actual_amount)} />
-            <StatCard label="Commitment (open POs)" value={inr(s.commitment_amount)} />
-            <StatCard label="Available" value={inr(s.available_amount)} tone={s.available_amount != null && s.available_amount < 0 ? RED : undefined} />
+            <StatCard label="Budget" value={`₹ ${inr(s.budgeted_amount)}`} />
+            <StatCard label="Actual (life to date)" value={`₹ ${inr(s.actual_amount)}`} />
+            <StatCard label="Commitment (open POs)" value={`₹ ${inr(s.commitment_amount)}`} />
+            <StatCard label="Available" value={`₹ ${inr(s.available_amount)}`} tone={s.available_amount != null && s.available_amount < 0 ? RED : undefined} />
           </div>
           {report.commitments.length > 0 && (
             <TableWrap minWidth={800} maxHeight="none" tour="fin-rep-io-commitments">
               <thead>
-                <tr><th style={thStyle}>Purchase order</th><th style={thStyle}>Date</th><th style={thStyle}>Vendor</th><th style={thStyle}>Status</th>
+                <tr><th style={thStyle}>Purchase order <RowCount count={report.commitments.length} /></th><th style={thStyle}>Date</th><th style={thStyle}>Vendor</th><th style={thStyle}>Status</th>
                   <th style={numTh}>PO value (₹)</th><th style={numTh}>Invoiced (₹)</th><th style={numTh}>Open (₹)</th></tr>
               </thead>
               <tbody>
@@ -322,7 +323,7 @@ export function InternalOrdersReport({ toDate, initialOrderId }: { toDate: strin
           )}
           {report.by_ledger.length > 0 && (
             <TableWrap minWidth={600} maxHeight="none" tour="fin-rep-io-ledgers">
-              <thead><tr><th style={thStyle}>Ledger</th><th style={numTh}>Actual (₹)</th></tr></thead>
+              <thead><tr><th style={thStyle}>Ledger <RowCount count={report.by_ledger.length} /></th><th style={numTh}>Actual (₹)</th></tr></thead>
               <tbody>
                 {report.by_ledger.map((g) => (
                   <tr key={g.gl_account_id}><td style={tdStyle}>{g.gl_account_code} — {g.gl_account_name}</td><td style={numTd}>{inr(g.amount)}</td></tr>

@@ -20,6 +20,7 @@ import {
   tdStyle, thStyle, todayIso,
 } from '@/components/projects/work/pmUi'
 import { FormSheet, Optional, Req, SHEET, SheetColumns, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import { RowCount } from '@/components/shared/ui'
 
 type Dept = { id: number; name: string; heads: string[]; has_head: boolean }
 type Form = { id?: number; title: string; department_id: string; lead_user_id: string; assistant_user_ids: number[]; target_date: string; deliverable: string; date_change_reason: string; original_target?: string; start_rule: PmStartRule; depends_on: string }
@@ -233,11 +234,12 @@ export default function MilestonesTab({ project, onChange }: { project: PmProjec
       ) : (
         <div data-tour="pm-ms-table" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
-            <thead><tr>{['WBS no.', 'WBS', 'Department / team', 'Target', 'Status', 'Progress', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+            <thead><tr>{['WBS no.', 'WBS', 'Department / team', 'Target', 'Status', 'Progress', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
             <tbody>
               {rows.map((m, i) => (
                 <tr key={m.id} style={{ opacity: m.status === 'cancelled' ? 0.55 : 1 }}>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                    {/* ui-audit-ignore-next-line custom-pill — round step-number badge, not a status pill */}
                     <span style={{ display: 'inline-flex', width: 26, height: 26, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, background: m.status === 'achieved' ? '#16a34a1a' : 'rgba(99,102,241,0.1)', color: m.status === 'achieved' ? '#16a34a' : '#4338ca' }}>{m.sequence || i + 1}</span>
                     {editable && movable(m) && (
                       <span style={{ display: 'inline-flex', flexDirection: 'column', marginLeft: 4, verticalAlign: 'middle' }}>

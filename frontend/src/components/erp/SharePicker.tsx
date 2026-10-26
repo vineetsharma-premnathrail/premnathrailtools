@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { DirectoryUser } from '@/types'
 import Checkbox from '@/components/Checkbox'
+import { chipBtnStyle } from '@/components/shared/ui'
 
 /** Bundles the 4 pieces of state a private-document share selection needs
  * (private flag + 3 independent OR-matched picks) so the three places that
@@ -76,12 +77,7 @@ function ChipMultiSelect({
             type="button"
             onClick={() => onToggle(value)}
             disabled={disabled}
-            style={{
-              fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, cursor: 'pointer',
-              border: `1px solid ${selected.includes(value) ? '#FF7A45' : 'rgba(0,0,0,0.12)'}`,
-              background: selected.includes(value) ? 'rgba(244,113,59,0.1)' : '#fff',
-              color: selected.includes(value) ? '#FF7A45' : '#57534e',
-            }}
+            style={chipBtnStyle(selected.includes(value))}
           >
             {selected.includes(value) ? '✓ ' : ''}{value}
           </button>
@@ -159,12 +155,7 @@ export default function SharePicker({
                   type="button"
                   onClick={() => onToggleUser(d.id)}
                   disabled={disabled}
-                  style={{
-                    fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, cursor: 'pointer',
-                    border: `1px solid ${selectedUserIds.includes(d.id) ? '#FF7A45' : 'rgba(0,0,0,0.12)'}`,
-                    background: selectedUserIds.includes(d.id) ? 'rgba(244,113,59,0.1)' : '#fff',
-                    color: selectedUserIds.includes(d.id) ? '#FF7A45' : '#57534e',
-                  }}
+                  style={chipBtnStyle(selectedUserIds.includes(d.id))}
                 >
                   {selectedUserIds.includes(d.id) ? '✓ ' : ''}{d.name}
                 </button>

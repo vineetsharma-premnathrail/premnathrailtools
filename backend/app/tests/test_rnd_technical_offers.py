@@ -8,6 +8,17 @@ from app.tests.test_cov_crm_quotations_rnd import ITEM, auth, make_inquiry, make
 from app.tests.test_crm_quotation_documents import sp  # noqa: F401 — fixture
 from app.tests.test_rnd_requirement_work import make_rnd_head
 
+
+def join_offer_team(db, user, create=True):
+    """R&D › Requirements › Technical Offer team (what the old R&D › Settings
+    lists became), given through a role in Role & Permissions."""
+    from app.modules.main.models.role import Role
+    grants = ["rnd:requirements.offer_team:view"] + (["rnd:requirements.offer_team:create"] if create else [])
+    role = Role(name=f"Offer team {user.id}", permissions=grants, is_active=True)
+    db.add(role)
+    user.roles.append(role)
+    db.commit()
+
 RND = "/api/v1/rnd/requirement-work"
 CRM = "/api/v1/crm"
 
@@ -92,13 +103,11 @@ def test_only_ticked_members_create_offers_from_the_tor(client, db, sp):
     viewer = make_user(db, "to3.viewer@premnathrail.com", apps=("rnd",))
     inq = _sent_inquiry(db, bd)
     make_rnd_head(db, head)
-    saved = client.put("/api/v1/rnd/settings", json={"creator_ids": [writer.id], "viewer_ids": [viewer.id]}, headers=auth(head))
-    assert saved.status_code == 200, saved.text
-    assert [m["user_id"] for m in saved.json()["creators"]] == [writer.id]
-    assert [m["user_id"] for m in saved.json()["viewers"]] == [viewer.id]
+    join_offer_team(db, writer)
+    join_offer_team(db, viewer, create=False)
 
     denied = client.post(f"{RND}/inquiry/{inq.id}/technical-offers", headers=auth(other))
-    assert denied.status_code == 403 and "Can create Technical Offers" in denied.json()["detail"]
+    assert denied.status_code == 403 and "Technical Offer team" in denied.json()["detail"]
     assert client.get(f"{RND}/technical-offers/tor-options", headers=auth(other)).status_code == 403
     assert client.get("/api/v1/rnd/settings", headers=auth(other)).json()["can_create_technical_offer"] is False
 
@@ -128,7 +137,7 @@ def test_send_to_head_lock_and_revision_request(client, db, sp):
     writer = make_user(db, "to4.writer@premnathrail.com", apps=("rnd",))
     inq = _sent_inquiry(db, bd)
     make_rnd_head(db, head)
-    client.put("/api/v1/rnd/settings", json={"creator_ids": [writer.id], "viewer_ids": []}, headers=auth(head))
+    join_offer_team(db, writer)
     offer = client.post(f"{RND}/inquiry/{inq.id}/technical-offers", headers=auth(writer)).json()
     oid = offer["id"]
     _word(client, oid, writer)

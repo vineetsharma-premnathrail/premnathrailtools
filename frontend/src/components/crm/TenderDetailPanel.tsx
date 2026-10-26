@@ -20,11 +20,12 @@ import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDia
 import RequirementDiscussionTab from '@/components/crm/RequirementDiscussionTab'
 import SalesOrderHandoff from '@/components/crm/SalesOrderHandoff'
 import { TND_STAGES, TENDER_STATUSES, tenderStatusColor, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
-import { Card, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RevisionSelector, SpecInfoRow, SpecRevision, StageProgress, smallDangerBtnStyle, smallSecondaryBtnStyle, AnchoredMenu } from '@/components/crm/ui'
+import { inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RevisionSelector, SpecDetailRow, SpecRevision, StageProgress, smallDangerBtnStyle, smallSecondaryBtnStyle, AnchoredMenu } from '@/components/crm/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { refOf } from '@/lib/recordRef'
-import { formatDateTime } from '@/lib/format'
+import { formatDate, formatDateTime } from '@/lib/format'
+import { segmentBtnStyle, RowCount, Pill, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 
 // ?tab=discussion (from a @mention notification) opens the Discussion tab.
 const tabFromUrl = (): 'Discussion' | 'Info' =>
@@ -170,15 +171,13 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45' }}>{tender.universal_id}</span>
-            <span title={`Status: ${tender.status}`} style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: tenderStatusColor(tender.status).bg, color: tenderStatusColor(tender.status).text }}>{tender.status}</span>
+            <Pill label={tender.status} hex={tenderStatusColor(tender.status).text} title={`Status: ${tender.status}`} />
           </div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{tender.tender_name || org?.name || 'Tender'}</h1>
         </div>
         {editing && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 999, background: 'rgba(255,122,69,0.12)', color: '#FF7A45' }}>
-              ✎ Editing Tender
-            </span>
+            <Pill label="✎ Editing Tender" hex="#FF7A45" />
             <button onClick={() => setEditing(false)} type="button" style={secondaryBtnStyle}>Cancel</button>
           </div>
         )}
@@ -229,23 +228,17 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
         </div>
       )}
 
-      <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, padding: 4, borderRadius: 999, background: 'rgba(0,0,0,0.05)', overflowX: 'auto', overflowY: 'visible' }}>
+      <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, overflowX: 'auto', overflowY: 'visible' }}>
         {TABS.filter((t) => (t !== 'Discussion' || !!tender.technical_offer_sent_at) && seeTab(t)).map((t) => (
           <div key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             <button
               onClick={() => setTab(t)}
               data-tour={`tender-tab-${t}`}
-              style={{
-                padding: '9px 16px', border: 'none', borderRadius: 999, whiteSpace: 'nowrap',
-                background: tab === t ? '#fff' : 'transparent',
-                boxShadow: tab === t ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
-                color: tab === t ? '#FF7A45' : '#78716c', fontWeight: 600, fontSize: 13, cursor: 'pointer',
-                display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'background .15s, box-shadow .15s, color .15s',
-              }}
+              style={{ ...segmentBtnStyle(tab === t), transition: 'background .15s, color .15s' }}
             >
               {t}
               {t === 'Info' && tab === t && revisions.length > 0 && (
-                <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: 'rgba(255,122,69,0.15)', color: '#FF7A45' }}>
+                <span title={`${revisions.length} revision(s) of the requirement`} style={{ ...pillStyle('#FF7A45'), fontSize: 10.5, padding: '1px 6px' }}>
                   {revisions.length}
                 </span>
               )}
@@ -328,44 +321,56 @@ function InfoTab({ tender, org, contact, revisions, selectedRevId, canModify, on
   const seeCustomer = canFeature('crm', 'inquiries_tenders', 'customer_contact', 'view')
   const seePrices = canFeature('crm', 'inquiries_tenders', 'prices', 'view')
 
+  const join = (...v: (string | null | undefined)[]) => v.filter(Boolean).join(', ') || null
+  const dot = <span style={{ color: '#cbd5e1' }}>·</span>
+  const hex = tenderStatusColor(tender.status).text
+
+  // One card, same order as the tender form: summary, tender information, customer.
+  // Stage is the stage bar above; the key dates have their own Dates tab.
   return (
-    <div data-tour="tender-info-view" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <Card title="Current Status">
-        <p data-tour="tnd-info-current-status" style={{ fontSize: 13, color: '#1f1108', margin: 0, whiteSpace: 'pre-wrap' }}>{tender.current_status_note || 'Not provided'}</p>
-      </Card>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-        <Card title="Tender Details">
-          <InfoRow
-            label="Status"
-            value={
-              canModify ? (
-                <Select data-tour="tnd-info-status" value={tender.status} onChange={(e) => onChangeLeadInfo({ status: e.target.value })} style={{ ...inputStyle, padding: '4px 8px', fontSize: 12.5, width: 'auto' }}>
+    <div data-tour="tender-info-view">
+      <DetailCard>
+        <DetailSummary
+          title={tender.tender_number ? `Tender No. ${tender.tender_number}` : 'Tender number not filled in yet'}
+          text={<span data-tour="tnd-info-current-status">{tender.current_status_note || <span style={{ color: '#64748b' }}>No current status written yet — use Edit to add where this tender stands.</span>}</span>}
+          meta={<>
+            <span>Submission due: <strong style={{ color: '#0f172a' }}>{tender.submission_date ? formatDate(tender.submission_date) : '—'}</strong></span>
+            {tender.priority && <>{dot}<span>Priority: <strong style={{ color: '#0f172a' }}>{tender.priority}</strong></span></>}
+            {dot}<span>BD Owner: <strong style={{ color: '#0f172a' }}>{tender.bd_owner || '—'}</strong></span>
+            {tender.created_at && <>{dot}<span>Created {formatDate(tender.created_at)}{tender.created_by_name ? ` by ${tender.created_by_name}` : ''}</span></>}
+          </>}
+        />
+
+        <DetailGroup title="Tender Information" last={!seeCustomer}>
+          <DetailRow label="Status">
+            {canModify ? (
+              <div style={{ maxWidth: 320 }}>
+                <Select data-tour="tnd-info-status" value={tender.status} onChange={(e) => onChangeLeadInfo({ status: e.target.value })} style={{ ...inputStyle, width: '100%' }}>
                   {TENDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
                 </Select>
-              ) : (tender.status || 'Not provided')
-            }
-          />
-          <SpecInfoRow label="Tender No." value={tender.tender_number || '—'} change={changeFor('tender_number')} />
-          <SpecInfoRow label="Authority" value={tender.tender_authority || '—'} change={changeFor('tender_authority')} />
-          <SpecInfoRow label="Portal" value={tender.tender_portal || '—'} change={changeFor('tender_portal')} />
-          <SpecInfoRow label="Type" value={tender.tender_type || '—'} change={changeFor('tender_type')} />
-          <SpecInfoRow label="Category" value={tender.tender_category || '—'} change={changeFor('tender_category')} />
-          {seePrices && <SpecInfoRow label="Value" value={tender.tender_value != null ? `${tender.currency} ${tender.tender_value.toLocaleString()}` : '—'} change={changeFor('tender_value') || changeFor('currency')} />}
-          <InfoRow label="Currency" value={tender.currency} />
-          <InfoRow label="Current Stage" value={tender.current_stage} />
-        </Card>
-        {seeCustomer && <Card title="Customer Organization">
-          <InfoRow label="Name" value={org?.name || '—'} />
-          <SpecInfoRow label="Railway Zone" value={tender.railway_zone || '—'} change={changeFor('railway_zone')} />
-          <SpecInfoRow label="Division" value={tender.division || '—'} change={changeFor('division')} />
-        </Card>}
-        {seeCustomer && <Card title="Contact Person">
-          <InfoRow label="Name" value={contact?.name || 'Not provided'} />
-          <InfoRow label="Mobile" value={contact?.mobile || 'Not provided'} />
-          <InfoRow label="Email" value={contact?.email || 'Not provided'} />
-          <InfoRow label="Department" value={contact?.department || 'Not provided'} />
-        </Card>}
-      </div>
+              </div>
+            ) : <Pill label={tender.status} hex={hex} />}
+          </DetailRow>
+          <SpecDetailRow label="Tender authority" value={tender.tender_authority} change={changeFor('tender_authority')} />
+          <SpecDetailRow label="Tender portal" value={tender.tender_portal} change={changeFor('tender_portal')} />
+          <SpecDetailRow label="Tender type" value={tender.tender_type} change={changeFor('tender_type')} />
+          <SpecDetailRow label="Category" value={tender.tender_category} change={changeFor('tender_category')} />
+          {seePrices && <SpecDetailRow label="Tender value" value={tender.tender_value != null ? `${tender.currency} ${tender.tender_value.toLocaleString('en-IN')}` : null} change={changeFor('tender_value') || changeFor('currency')} />}
+          <DetailRow label="Lead source">{tender.lead_source}</DetailRow>
+          {changeFor('tender_number') && <SpecDetailRow label="Tender number" value={tender.tender_number} change={changeFor('tender_number')} />}
+        </DetailGroup>
+
+        {seeCustomer && (
+          <DetailGroup title="Customer" last>
+            <DetailRow label="Customer organization">{org?.name}</DetailRow>
+            <SpecDetailRow label="Railway zone" value={tender.railway_zone} change={changeFor('railway_zone')} />
+            <SpecDetailRow label="Division" value={tender.division} change={changeFor('division')} />
+            <DetailRow label="Contact person">{contact ? join(contact.name, contact.designation, contact.department) : null}</DetailRow>
+            <DetailRow label="Mobile">{contact ? join(contact.mobile, ...(contact.additional_mobiles || [])) : null}</DetailRow>
+            <DetailRow label="Email">{contact ? join(contact.email, ...(contact.additional_emails || [])) : null}</DetailRow>
+          </DetailGroup>
+        )}
+      </DetailCard>
     </div>
   )
 }
@@ -386,7 +391,7 @@ function DatesTab({ tender }: { tender: Tender }) {
       <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ background: '#fffaf5', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-            <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e' }}>Milestone</th>
+            <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e' }}>Milestone <RowCount count={rows.length} /></th>
             <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e' }}>Date</th>
           </tr>
         </thead>
@@ -394,7 +399,7 @@ function DatesTab({ tender }: { tender: Tender }) {
           {rows.map(([label, value]) => (
             <tr key={label} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
               <td style={{ padding: '10px 16px', color: '#57534e' }}>{label}</td>
-              <td style={{ padding: '10px 16px', fontWeight: 600, color: '#1f1108' }}>{value || '—'}</td>
+              <td style={{ padding: '10px 16px', fontWeight: 600, color: '#1f1108', whiteSpace: 'nowrap' }}>{value ? formatDate(value) : '—'}</td>
             </tr>
           ))}
         </tbody>

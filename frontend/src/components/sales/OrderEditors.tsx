@@ -13,7 +13,9 @@ import { TEXT } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
 import { thStyle as salesTh, tdStyle } from '@/components/sales/SalesUi'
 import { LINE_TYPE_LABELS, MILESTONE_LABELS, formatINR } from '@/components/sales/labels'
+import { formatDate } from '@/lib/format'
 import { SheetIcon, SHEET, sheetBtn, sheetInput } from '@/components/shared/FormSheet'
+import { RowCount } from '@/components/shared/ui'
 
 // Grid rows in the FormSheet look (white inputs, slate header) — the same
 // editors sit inside the new-order / draft / amendment FormPage blocks.
@@ -92,7 +94,7 @@ export function LinesEditor({ lines, onChange, readOnly, customerId, priceDate }
     <div>
       <div style={{ overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1300 }}>
-          <thead><tr>{['#', 'Type', 'Product', 'Description (as on PO)', 'RRV model', 'Customer item ref.', 'HSN', 'Qty', 'Unit price ₹', 'Disc %', 'GST %', 'Total', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{['#', 'Type', 'Product', 'Description (as on PO)', 'RRV model', 'Customer item ref.', 'HSN', 'Qty', 'Unit price ₹', 'Disc %', 'GST %', 'Total', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={lines.length} />}</th>)}</tr></thead>
           <tbody>
             {lines.map((l, i) => (
               <tr key={i}>
@@ -148,7 +150,7 @@ export function ScheduleEditor({ lines, rows, onChange, readOnly }: {
       </p>
       <div style={{ overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
-          <thead><tr>{['Line', 'Qty', 'Consignee', 'Consignee address', 'Consignee GSTIN', 'Contractual delivery date', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Line', 'Qty', 'Consignee', 'Consignee address', 'Consignee GSTIN', 'Contractual delivery date', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
             {rows.length === 0 && <tr><td colSpan={7} style={{ ...tdStyle, color: TEXT.muted }}>No delivery rows yet — add an RRV line and its vehicles appear here.</td></tr>}
             {rows.map((r, i) => {
@@ -166,7 +168,7 @@ export function ScheduleEditor({ lines, rows, onChange, readOnly }: {
                   <td style={{ ...tdStyle, minWidth: 200 }}><input disabled={readOnly} style={cellInput} value={r.consignee_address || ''} onChange={(e) => set(i, { consignee_address: e.target.value })} /></td>
                   <td style={{ ...tdStyle, width: 150 }}><input disabled={readOnly} style={cellInput} value={r.consignee_gstin || ''} onChange={(e) => set(i, { consignee_gstin: e.target.value.toUpperCase() })} /></td>
                   <td style={{ ...tdStyle, width: 170 }}>
-                    {readOnly ? (r.contract_delivery_date || '—') : <DateField value={r.contract_delivery_date || ''} onChange={(v) => set(i, { contract_delivery_date: v || null })} />}
+                    {readOnly ? (r.contract_delivery_date ? formatDate(r.contract_delivery_date) : '—') : <DateField value={r.contract_delivery_date || ''} onChange={(v) => set(i, { contract_delivery_date: v || null })} />}
                   </td>
                   <td style={{ ...tdStyle, width: 30 }}>{!readOnly && line?.line_type !== 'rrv' && <button type="button" style={removeBtn} title="Remove lot" aria-label="Remove lot" onClick={() => onChange(rows.filter((_, j) => j !== i))}><RemoveIcon /></button>}</td>
                 </tr>
@@ -198,7 +200,7 @@ export function BillingPlanEditor({ rows, onChange, grandTotal, readOnly }: {
     <div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr>{['#', 'Milestone', 'Description', '%', 'Amount', 'Per vehicle', 'Credit days', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{['#', 'Milestone', 'Description', '%', 'Amount', 'Per vehicle', 'Credit days', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
             {rows.map((r, i) => (
               <tr key={i}>

@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
 import { HydCircuit } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER, DANGER } from '@/lib/theme'
-import { secondaryBtnStyle, InfoRow, primaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -15,7 +15,7 @@ import HydDocumentsPanel from '@/components/hydraulic/HydDocumentsPanel'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
-import { SYSTEM_TYPE_LABELS } from '@/components/hydraulic/labels'
+import { SYSTEM_TYPE_LABELS, SYSTEM_TYPE_HEX } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { useCan } from '@/lib/permissions'
@@ -30,7 +30,6 @@ const sectionStyle: React.CSSProperties = {
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }
 const primaryBtn: React.CSSProperties = { ...primaryBtnStyle, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }
 const dangerBtn: React.CSSProperties = { ...secondaryBtnStyle, color: DANGER.primary, borderColor: DANGER.border }
-const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
 
 type PromptKind = 'approve' | 'return' | 'revise'
 
@@ -142,9 +141,8 @@ export default function HydCircuitDetailPage() {
           </p>
           <div data-tour="hyd-cird-header" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 20px', flexWrap: 'wrap' }}>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>
-              {circuit ? `${circuit.circuit_number} Rev ${circuit.revision} — ${circuit.title}` : 'Circuit'}
+              {circuit ? `${circuit.circuit_number} Rev ${circuit.revision}` : 'Circuit'}
             </h1>
-            {circuit && <span style={pill(STATUS_HEX[circuit.status])}>{STATUS_LABELS[circuit.status] || circuit.status}</span>}
           </div>
         </div>
         <button data-tour="hyd-cird-back-btn" onClick={() => router.push('/dashboard/hydraulic/circuits')} type="button" style={secondaryBtnStyle}>← Back</button>
@@ -205,15 +203,6 @@ export default function HydCircuitDetailPage() {
             onChanged={() => setReloadKey((k) => k + 1)}
           />
 
-          <div data-tour="hyd-cird-audit" style={{ ...sectionStyle, padding: '14px 20px' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px' }}>
-              <InfoRow label="Created by" value={`${circuit.created_by_name || '—'}${circuit.created_at ? ` · ${formatDateTime(circuit.created_at)}` : ''}`} />
-              <InfoRow label="Submitted" value={circuit.submitted_at ? `${circuit.submitted_by_name || '—'} · ${formatDateTime(circuit.submitted_at)}` : '—'} />
-              <InfoRow label="Approved" value={circuit.approved_at ? `${circuit.approved_by_name || '—'} · ${formatDateTime(circuit.approved_at)}` : '—'} />
-              {!isDraft && circuit.review_remarks && <InfoRow label="Approval remarks" value={circuit.review_remarks} />}
-            </div>
-          </div>
-
           {editOpen && (
             <CircuitForm
               mode="sheet"
@@ -231,24 +220,38 @@ export default function HydCircuitDetailPage() {
               }}
             />
           )}
-          <div data-tour="hyd-cird-info" style={sectionStyle}>
-            <p style={sectionTitle}>Circuit</p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 28px' }}>
-              <div style={{ flex: '1 1 240px', maxWidth: 360 }}>
-                <InfoRow label="System" value={circuit.system_number ? `${circuit.system_number} — ${circuit.system_name || ''}` : 'Not linked to a system'} />
-                {circuit.system_id && (
-                  <span onClick={() => router.push(recordPath('/dashboard/hydraulic/systems', circuit, 'system_id'))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>Open system →</span>
-                )}
-              </div>
-              <InfoRow label="Medium" value={SYSTEM_TYPE_LABELS[circuit.system_type] || circuit.system_type} />
-              <InfoRow label="Drawing Number" value={circuit.drawing_number || '—'} />
-              <InfoRow label="Symbol Standard" value={circuit.symbol_standard || '—'} />
+          <DetailCard tour="hyd-cird-info">
+            <DetailSummary
+              title={circuit.title}
+              text={circuit.description || undefined}
+              meta={(
+                <>
+                  <Pill label={STATUS_LABELS[circuit.status] || circuit.status} hex={STATUS_HEX[circuit.status] || '#78716c'} />
+                  <Pill label={SYSTEM_TYPE_LABELS[circuit.system_type] || circuit.system_type} hex={SYSTEM_TYPE_HEX[circuit.system_type] || '#78716c'} />
+                  {circuit.drawing_number && <span>· Dwg {circuit.drawing_number}</span>}
+                </>
+              )}
+            />
+            <DetailGroup title="Circuit">
+              <DetailRow label="System">
+                {circuit.system_number ? (
+                  <span onClick={() => router.push(recordPath('/dashboard/hydraulic/systems', circuit, 'system_id'))} title="Open system" style={{ fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>
+                    {circuit.system_number}{circuit.system_name ? ` — ${circuit.system_name}` : ''} →
+                  </span>
+                ) : 'Not linked to a system'}
+              </DetailRow>
+              <DetailRow label="Symbol standard">{circuit.symbol_standard}</DetailRow>
+              <DetailRow label="Change note">{circuit.change_note}</DetailRow>
+            </DetailGroup>
+            <div data-tour="hyd-cird-audit">
+              <DetailGroup title="Review trail" last>
+                <DetailRow label="Created by">{`${circuit.created_by_name || '—'}${circuit.created_at ? ` · ${formatDateTime(circuit.created_at)}` : ''}`}</DetailRow>
+                <DetailRow label="Submitted">{circuit.submitted_at ? `${circuit.submitted_by_name || '—'} · ${formatDateTime(circuit.submitted_at)}` : null}</DetailRow>
+                <DetailRow label="Approved">{circuit.approved_at ? `${circuit.approved_by_name || '—'} · ${formatDateTime(circuit.approved_at)}` : null}</DetailRow>
+                {!isDraft && circuit.review_remarks && <DetailRow label="Approval remarks">{circuit.review_remarks}</DetailRow>}
+              </DetailGroup>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 28px', marginTop: 14 }}>
-              <div style={{ flex: '1 1 300px' }}><InfoRow label="Description" value={circuit.description || '—'} /></div>
-              <div style={{ flex: '1 1 300px' }}><InfoRow label="Change Note" value={circuit.change_note || '—'} /></div>
-            </div>
-          </div>
+          </DetailCard>
 
           {seeRevisions && <div data-tour="hyd-cird-revisions" style={sectionStyle}>
             <p style={sectionTitle}>Revision History ({circuit.revisions.length})</p>
@@ -264,7 +267,7 @@ export default function HydCircuitDetailPage() {
                     background: current ? 'rgba(255,106,42,0.08)' : 'transparent',
                   }}>
                   <span style={{ fontWeight: 700, color: TEXT.heading, minWidth: 56 }}>Rev {r.revision}</span>
-                  <span style={pill(STATUS_HEX[r.status])}>{STATUS_LABELS[r.status] || r.status}</span>
+                  <Pill label={STATUS_LABELS[r.status] || r.status} hex={STATUS_HEX[r.status] || '#78716c'} />
                   <span style={{ color: TEXT.muted, minWidth: 130 }}>{r.approved_at ? `Approved ${formatDate(r.approved_at)}` : 'Not approved'}</span>
                   <span style={{ flex: '1 1 200px', color: TEXT.body }}>{r.change_note || '—'}</span>
                   {current && <span style={{ fontSize: 11.5, fontWeight: 600, color: '#FF6A2A' }}>Viewing</span>}

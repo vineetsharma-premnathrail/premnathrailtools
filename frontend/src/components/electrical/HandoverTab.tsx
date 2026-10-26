@@ -12,6 +12,7 @@ import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
+import { DetailRow } from '@/components/shared/ui'
 import {
   inputStyle, sectionStyle, sectionTitle, primaryBtn, smallBtn, ErrorBanner, NoticeBanner, F, rowStyle, Pill,
   STAGE_STATUS_LABELS, STAGE_STATUS_HEX, INSPECTION_LABELS, INSPECTION_HEX, strOrNull,
@@ -126,9 +127,16 @@ export default function HandoverTab({ job, canEdit, onJob }: {
       <div style={sectionStyle}>
         <p style={sectionTitle}>Commissioning</p>
         <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 12px' }}>
-          {s.commissioning_tests} commissioning test(s) recorded on the Tests tab. The stage also needs the commissioning date.
+          {s.commissioning_tests} commissioning {s.commissioning_tests === 1 ? 'test' : 'tests'} recorded on the Tests tab. The stage also needs the commissioning date.
         </p>
-        <div style={rowStyle}>
+        {/* Read-only viewers see the saved values as label–value rows, not greyed-out inputs. */}
+        {!detailsEditable ? (
+          <div>
+            <div data-tour="elec-handover-comm-location"><DetailRow label="Commissioning Location">{job.commissioning_location}</DetailRow></div>
+            <div data-tour="elec-handover-comm-date"><DetailRow label="Commissioned On">{job.commissioned_on ? formatDate(job.commissioned_on) : null}</DetailRow></div>
+          </div>
+        ) : (
+          <div style={rowStyle}>
           <F tour="elec-handover-comm-location" label="Commissioning Location" basis={300} grow max={440}>
             <input style={inputStyle} disabled={!detailsEditable} value={commissioning.commissioning_location} onChange={(e) => setCommissioning((c) => ({ ...c, commissioning_location: e.target.value }))} placeholder="e.g. Customer depot, Kanpur" />
           </F>
@@ -138,6 +146,7 @@ export default function HandoverTab({ job, canEdit, onJob }: {
               : <input style={inputStyle} disabled value={commissioning.commissioned_on ? formatDate(commissioning.commissioned_on) : ''} />}
           </F>
         </div>
+        )}
         {detailsEditable && (
           <button data-tour="elec-handover-comm-save" type="button" disabled={busy} style={smallBtn} onClick={() => save({
             commissioning_location: strOrNull(commissioning.commissioning_location),
@@ -151,6 +160,15 @@ export default function HandoverTab({ job, canEdit, onJob }: {
       <div style={sectionStyle}>
         <p style={sectionTitle}>RRV Electrical Handover</p>
         {job.handed_over_at && <p style={{ fontSize: 13, color: '#15803d', margin: '0 0 12px', fontWeight: 600 }}>Handed over {formatDateTime(job.handed_over_at)}</p>}
+        {!detailsEditable ? (
+          <div>
+            <div data-tour="elec-handover-to-name"><DetailRow label="Handed Over To">{job.handover_to_name}</DetailRow></div>
+            <div data-tour="elec-handover-to-org"><DetailRow label="Organisation">{job.handover_to_organization}</DetailRow></div>
+            <div data-tour="elec-handover-date"><DetailRow label="Handover Date">{job.handover_date ? formatDate(job.handover_date) : null}</DetailRow></div>
+            <div data-tour="elec-handover-remarks"><DetailRow label="Handover Remarks">{job.handover_remarks}</DetailRow></div>
+          </div>
+        ) : (
+          <>
         <div style={rowStyle}>
           <F tour="elec-handover-to-name" label="Handed Over To" basis={240} grow max={340}>
             <input style={inputStyle} disabled={!detailsEditable} value={handover.handover_to_name} onChange={(e) => setHandover((h) => ({ ...h, handover_to_name: e.target.value }))} placeholder="Person receiving the RRV" />
@@ -170,6 +188,8 @@ export default function HandoverTab({ job, canEdit, onJob }: {
               placeholder="Punch points, spares handed over, training given…" />
           </F>
         </div>
+          </>
+        )}
         {detailsEditable && (
           <button data-tour="elec-handover-save" type="button" disabled={busy} style={smallBtn} onClick={() => save({
             handover_to_name: strOrNull(handover.handover_to_name),

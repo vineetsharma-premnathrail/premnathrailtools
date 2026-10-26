@@ -22,8 +22,9 @@ import {
 import {
   sectionStyle, sectionTitle, thStyle, tdStyle, primaryBtn, smallBtn, smallDangerBtn, linkStyle,
   tableWrap, Pill, ErrorBanner, NoticeBanner, Modal, ModalFooter, F, rowStyle,
-  SELECTION_LABELS, SELECTION_HEX, PROCUREMENT_LABELS, PROCUREMENT_HEX, numOrNull, strOrNull, useJobFeatures,
+  SELECTION_LABELS, SELECTION_HEX, PROCUREMENT_LABELS, PROCUREMENT_HEX, numOrNull, strOrNull, useJobFeatures, humanize,
 } from './shared'
+import { RowCount } from '@/components/shared/ui'
 
 type Msg = string | string[]
 type BomForm = {
@@ -347,7 +348,7 @@ export default function BomTab({ job, meta, canEdit, onChanged }: { job: Electri
       <div data-tour="elec-bom-table" style={tableWrap}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: canEdit ? 1180 : 1000 }}>
           <thead>
-            <tr>{headers.map((h, idx) => <th key={`${h}-${idx}`} style={thStyle}>{h}</th>)}</tr>
+            <tr>{headers.map((h, idx) => <th key={`${h}-${idx}`} style={thStyle}>{h}{idx === 0 && <RowCount count={items.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {!loaded ? (
@@ -387,7 +388,7 @@ export default function BomTab({ job, meta, canEdit, onChanged }: { job: Electri
                 <td data-tour="elec-bom-procurement-cell" style={tdStyle}>
                   <Pill value={i.procurement_status} labels={PROCUREMENT_LABELS} hex={PROCUREMENT_HEX} />
                   {i.p2p_number && (
-                    <div style={small}>{i.p2p_number}{i.p2p_status ? ` · ${i.p2p_status.replace(/_/g, ' ')}` : ''}</div>
+                    <div style={small}>{i.p2p_number}{i.p2p_status ? ` · ${humanize(i.p2p_status)}` : ''}</div>
                   )}
                 </td>
                 {canEdit && (
@@ -409,7 +410,7 @@ export default function BomTab({ job, meta, canEdit, onChanged }: { job: Electri
                         <button data-tour="elec-bom-link-pr-btn" type="button" style={smallBtn} disabled={busy} onClick={() => openLink(i)}>Link PR</button>
                       )}
                       {i.procurement_status === 'required' && canRaisePr && (
-                        <button data-tour="elec-bom-raise-pr-btn" type="button" style={linkStyle} onClick={() => raisePr(i)}>Raise PR</button>
+                        <button data-tour="elec-bom-raise-pr-btn" type="button" style={smallBtn} onClick={() => raisePr(i)}>Raise PR</button>
                       )}
                       {canRemove && <button data-tour="elec-bom-delete-btn" type="button" style={smallDangerBtn} disabled={busy} onClick={() => setDeleting(i)}>Delete</button>}
                     </div>

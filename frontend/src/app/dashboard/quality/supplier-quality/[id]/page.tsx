@@ -10,7 +10,7 @@ import { QualityApprovedVendor } from '@/types'
 import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
-import { Section, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { Section, InfoRow, DetailCard, DetailSummary, DetailGroup, DetailRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
 import { Pill, PageHeader, ErrorBanner, ActionSheet, fmtDate, AVL_STATUS_LABELS, AVL_STATUS_HEX, SAMPLING_LABELS } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
@@ -86,8 +86,7 @@ export default function AvlDetailPage() {
         </ActionSheet>
       )}
 
-      <PageHeader title={`${a.vendor_name} — ${a.item_name}`} subtitle="Quality · Approved vendor list">
-        <Pill text={AVL_STATUS_LABELS[a.status]} hex={AVL_STATUS_HEX[a.status]} />
+      <PageHeader title={a.vendor_name} subtitle="Quality · Approved vendor list">
         <button type="button" onClick={() => router.push('/dashboard/quality/supplier-quality')} style={secondaryBtnStyle}>← Back</button>
       </PageHeader>
       {!prompt && <ErrorBanner error={error} />}
@@ -111,16 +110,28 @@ export default function AvlDetailPage() {
 
       <ApprovalPanel key={`${a.status}-${a.pending_action || ''}`} entityType="quality_approved_vendor" entityId={a.id} onChanged={reload} title="Approval workflow" />
 
-      <Section title="Approval" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
-          <InfoRow label="Item" value={`${a.item_code || ''} ${a.item_name || ''}`.trim()} />
-          <InfoRow label="Status reason" value={a.status_reason || '—'} />
-          <InfoRow label="Approved" value={a.approved_at ? `${fmtDate(a.approved_at)} · ${a.approved_by_name || '—'}` : '—'} />
-          <InfoRow label="First article" value={a.fai_number || '—'} />
-          <InfoRow label="Valid until" value={`${fmtDate(a.valid_until)}${a.expired ? ' — re-evaluation due' : ''}`} />
-          <InfoRow label="Last rating" value={a.last_score != null ? `${a.last_score.toFixed(1)} (${a.last_rated_period})` : '—'} />
-        </div>
-        {canManage && <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      <DetailCard>
+        <DetailSummary
+          title={`${a.item_code ? `${a.item_code} — ` : ''}${a.item_name || ''}`}
+          text={`Whether ${a.vendor_name} may supply this item, and how strictly its lots are sampled.`}
+          meta={<>
+            <Pill text={AVL_STATUS_LABELS[a.status]} hex={AVL_STATUS_HEX[a.status]} />
+            {a.expired && <Pill text="Re-evaluation due" hex="#DC2626" />}
+            <span>·</span><span>Valid until {fmtDate(a.valid_until)}</span>
+            {a.last_score != null && <><span>·</span><span>Last rating {a.last_score.toFixed(1)} ({a.last_rated_period})</span></>}
+          </>}
+        />
+        <DetailGroup title="Approval">
+          <DetailRow label="Status reason">{a.status_reason}</DetailRow>
+          <DetailRow label="Approved">{a.approved_at ? `${fmtDate(a.approved_at)}${a.approved_by_name ? ` by ${a.approved_by_name}` : ''}` : null}</DetailRow>
+          <DetailRow label="First article">{a.fai_number}</DetailRow>
+        </DetailGroup>
+        <DetailGroup title="Sampling (ISO 2859-1 switching)" last>
+          <DetailRow label="Current state">{`${SAMPLING_LABELS[a.sampling_state]}${a.skip_lot_active ? ' · skip-lot active' : ''}`}</DetailRow>
+          <DetailRow label="Accepted in a row">{String(a.consecutive_accepted)}</DetailRow>
+          <DetailRow label="Recent lots (oldest → newest)">{(a.recent_lots || []).map((x) => (x ? '✓' : '✗')).join(' ') || null}</DetailRow>
+        </DetailGroup>
+        {canManage && !(a.status === 'blocked' && a.pending_action) && <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', borderTop: '1px solid #e2e8f0', paddingTop: 14, marginTop: 4 }}>
           {a.status === 'trial' && (
             <button type="button" disabled={busy} style={primaryBtnStyle}
               onClick={() => { setReason(''); setError(''); setPrompt({ action: 'approve', title: 'Approve this vendor for the item?', message: 'Record the basis (sample report, audit, trial order). Inspection-controlled items are approved by their first article instead.', label: 'Approve' }) }}>Approve vendor</button>
@@ -142,20 +153,12 @@ export default function AvlDetailPage() {
               onClick={() => { setReason(''); setError(''); setPrompt({ action: 'request-unblock', title: 'Request an unblock?', message: 'A Partner must approve; the vendor returns On watch. Give the reason.', label: 'Request unblock' }) }}>Request unblock</button>
           )}
         </div>}
-      </Section>
-
-      <Section title="Sampling (ISO 2859-1 switching)" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
-          <InfoRow label="Current state" value={`${SAMPLING_LABELS[a.sampling_state]}${a.skip_lot_active ? ' · skip-lot active' : ''}`} />
-          <InfoRow label="Accepted in a row" value={String(a.consecutive_accepted)} />
-          <InfoRow label="Recent lots (oldest → newest)" value={(a.recent_lots || []).map((x) => (x ? '✓' : '✗')).join(' ') || '—'} />
-        </div>
-      </Section>
+      </DetailCard>
 
       <Section title="History" style={{ marginBottom: 20 }}>
         {a.events.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No history.</p> : a.events.map((e) => (
           <p key={e.id} style={{ fontSize: 12.5, margin: 0 }}>
-            {fmtDate(e.created_at)} · {e.event.replace(/_/g, ' ')}{e.from_status !== e.to_status && e.to_status ? ` (${AVL_STATUS_LABELS[e.from_status || ''] || e.from_status} → ${AVL_STATUS_LABELS[e.to_status] || e.to_status})` : ''}
+            {fmtDate(e.created_at)} · {e.event.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}{e.from_status !== e.to_status && e.to_status ? ` (${AVL_STATUS_LABELS[e.from_status || ''] || e.from_status} → ${AVL_STATUS_LABELS[e.to_status] || e.to_status})` : ''}
             {e.reason ? ` — ${e.reason}` : ''} · {e.user_name || 'System'}
           </p>
         ))}

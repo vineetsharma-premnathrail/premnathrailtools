@@ -12,7 +12,7 @@ import { useCan } from '@/lib/permissions'
 import { SalesOrder, SalesProforma } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
-import { smallPrimaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
+import { smallPrimaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle, RowCount } from '@/components/shared/ui'
 import { sectionStyle, h2Style, thStyle, tdStyle, Pill, ErrorBanner } from '@/components/sales/SalesUi'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { formatINR } from '@/components/sales/labels'
@@ -83,7 +83,7 @@ export default function ProformaPanel({ order }: { order: SalesOrder }) {
       {rows.length > 0 && (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-            <thead><tr>{['PI number', 'Date', 'Milestone', 'Taxable', 'GST', 'Total', 'Advance received', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+            <thead><tr>{['PI number', 'Date', 'Milestone', 'Taxable', 'GST', 'Total', 'Advance received', 'Status', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
             <tbody>
               {rows.map((pi) => (
                 <tr key={pi.id}>

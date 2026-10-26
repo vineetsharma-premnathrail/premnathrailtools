@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { storeApi } from '@/lib/api'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
+import { formatDate } from '@/lib/format'
 
 // Stock on a posting date (SAP MB5B): rebuilt from the stock ledger, never from
 // today's balances — opening, receipts, issues and closing per item and store,
@@ -54,7 +55,9 @@ const todayIso = () => {
 const inr = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 const th: React.CSSProperties = { position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, padding: '9px 10px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: TEXT.secondary, textAlign: 'left', whiteSpace: 'nowrap' }
 const td: React.CSSProperties = { padding: '8px 10px', fontSize: 12.5, color: TEXT.body, borderTop: '1px solid rgba(0,0,0,0.05)', whiteSpace: 'nowrap' }
-const num: React.CSSProperties = { ...td, textAlign: 'right' }
+const num: React.CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }
+const numTh: React.CSSProperties = { ...th, textAlign: 'right' }
+const fmtQ = (n?: number | null) => (n || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 })
 
 export default function StockAsOfPanel({ locationId, search, canExport }: { locationId: string; search: string; canExport: boolean }) {
   const [toDate, setToDate] = useState(todayIso())
@@ -128,24 +131,24 @@ export default function StockAsOfPanel({ locationId, search, canExport }: { loca
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr>
-              {['Item', 'Store', 'Opening', 'Receipts', 'Issues', 'Closing', 'Free', 'Quality', 'Blocked', 'With vendor', 'Rate', 'Closing value', 'Rate basis'].map((h) => <th key={h} style={th}>{h}</th>)}
+              {['Item', 'Store', 'Opening', 'Receipts', 'Issues', 'Closing', 'Free', 'Quality', 'Blocked', 'With vendor', 'Rate', 'Closing value', 'Rate basis'].map((h, hi) => <th key={h} style={hi >= 2 && hi <= 11 ? numTh : th}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={13} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>Building stock on {toDate}…</td></tr>}
+            {loading && <tr><td colSpan={13} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>Building stock on {formatDate(toDate)}…</td></tr>}
             {!loading && rows.length === 0 && <tr><td colSpan={13} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>No stock or movements for this date range.</td></tr>}
             {!loading && rows.map((r) => (
               <tr key={`${r.item_id}-${r.location_id}`}>
                 <td style={td}><b>{r.item_code}</b> {r.item_name}</td>
-                <td style={td}>{r.location_name}</td>
-                <td style={num}>{r.opening_qty} {r.uom}</td>
-                <td style={num}>{r.receipt_qty}</td>
-                <td style={num}>{r.issue_qty}</td>
-                <td style={{ ...num, fontWeight: 700 }}>{r.closing_qty} {r.uom}</td>
-                <td style={num}>{r.closing_free_qty}</td>
-                <td style={num}>{r.closing_quality_qty}</td>
-                <td style={num}>{r.closing_blocked_qty}</td>
-                <td style={num}>{r.closing_vendor_qty || 0}</td>
+                <td style={td}>{r.location_name || '—'}</td>
+                <td style={num}>{fmtQ(r.opening_qty)} {r.uom}</td>
+                <td style={num}>{fmtQ(r.receipt_qty)}</td>
+                <td style={num}>{fmtQ(r.issue_qty)}</td>
+                <td style={{ ...num, fontWeight: 700 }}>{fmtQ(r.closing_qty)} {r.uom}</td>
+                <td style={num}>{fmtQ(r.closing_free_qty)}</td>
+                <td style={num}>{fmtQ(r.closing_quality_qty)}</td>
+                <td style={num}>{fmtQ(r.closing_blocked_qty)}</td>
+                <td style={num}>{fmtQ(r.closing_vendor_qty)}</td>
                 <td style={num}>{inr(r.closing_rate)}</td>
                 <td style={{ ...num, fontWeight: 700 }}>{inr(r.closing_value)}</td>
                 <td style={{ ...td, color: r.rate_source === 'average_on_date' ? TEXT.muted : '#d97706' }}>{RATE_BASIS[r.rate_source] || r.rate_source}</td>

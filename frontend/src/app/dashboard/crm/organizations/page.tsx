@@ -15,13 +15,14 @@ import ErrorRecoveryDialog from '@/components/erp/ErrorRecoveryDialog'
 import ExportDialog from '@/components/erp/ExportDialog'
 import CrmImportDialog from '@/components/crm/CrmImportDialog'
 import { FormSheet, SheetSection, SHEET, sheetBtn } from '@/components/shared/FormSheet'
-import { secondaryBtnStyle } from '@/components/crm/ui'
+import { secondaryBtnStyle, primaryBtnStyle, inputStyle, smallDangerBtnStyle } from '@/components/crm/ui'
 import { BRAND, TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { recordHref, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { RowCount } from '@/components/shared/ui'
 
 const PINNED_ORGS_KEY = 'crm_pinned_org_ids'
 
@@ -99,6 +100,7 @@ export default function OrganizationsPage() {
     try {
       const data = await crmApi.listOrganizations({
         search: search || undefined,
+        limit: 10000,
       })
       setOrgs(data)
     } catch (err) {
@@ -214,16 +216,24 @@ export default function OrganizationsPage() {
     <>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 10 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Customer Organizations</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        {/* One toolbar row: add, search, clear, then export / import; wraps on narrow screens. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {can('crm', 'organizations', 'create') && <Link
             href="/dashboard/crm/organizations/new"
             data-tour="orgs-add-btn"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14.5, fontWeight: 700, padding: '12px 24px', borderRadius: 10, background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`, color: TEXT.white, textDecoration: 'none', whiteSpace: 'nowrap', boxShadow: `0 4px 14px ${BRAND.primaryGlow}` }}
+            style={{ ...primaryBtnStyle, textDecoration: 'none', boxShadow: `0 4px 14px ${BRAND.primaryGlow}` }}
           >
-            <span style={{ fontSize: 17, lineHeight: 1 }}>+</span> Add Customer Organization
+            <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Add Customer Organization
           </Link>}
-          <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{sortedOrgs.length} Customer Organizations Found</p>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <input
+            data-tour="orgs-search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search name, type, zone, city, state..."
+            style={{ ...inputStyle, flex: '1 1 260px', minWidth: 200, width: 'auto' }}
+          />
+          <button type="button" onClick={clearFilters} data-tour="orgs-clear-btn" style={secondaryBtnStyle}>Clear</button>
+          <div style={{ display: 'flex', gap: 8 }}>
             {can('crm', 'organizations', 'export') && <button type="button" data-tour="orgs-export-btn" onClick={() => setShowExport(true)} style={secondaryBtnStyle}>Export</button>}
             {isAdmin && can('crm', 'organizations', 'import') && <button type="button" data-tour="orgs-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>}
           </div>
@@ -239,11 +249,7 @@ export default function OrganizationsPage() {
           <button
             onClick={() => setShowDuplicates(true)}
             data-tour="orgs-duplicate-btn"
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8, alignSelf: 'flex-start',
-              padding: '8px 14px', borderRadius: 9, border: '1px solid #fecaca', background: '#fef2f2',
-              color: '#b91c1c', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-            }}
+            style={{ ...smallDangerBtnStyle, alignSelf: 'flex-start' }}
           >
             ⚠ {duplicateGroups.length} duplicate customer organization {duplicateGroups.length === 1 ? 'name' : 'names'} found — review
           </button>
@@ -289,18 +295,6 @@ export default function OrganizationsPage() {
     </>
   )
 
-  const searchBar = (
-    <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', marginBottom: 10 }}>
-      <input
-        data-tour="orgs-search"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search name, type, zone, city, state..."
-        style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', fontSize: 13.5, outline: 'none' }}
-      />
-      <button onClick={clearFilters} data-tour="orgs-clear-btn" style={secondaryBtnStyle}>Clear</button>
-    </div>
-  )
 
   const fullTable = (
     <>
@@ -342,7 +336,7 @@ export default function OrganizationsPage() {
                     style={{ textAlign: 'left', padding: '7px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: sortKey === col.key ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, cursor: 'pointer', userSelect: 'none' }}
                   >
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      {col.label}
+                      {col.label}{col.key === 'name' && <RowCount count={sortedOrgs.length} />}
                       {col.sortLabels && (
                         <span style={{ fontSize: 9.5, fontWeight: 700, opacity: sortKey === col.key ? 1 : 0.45, textTransform: 'none' }}>
                           ({sortKey === col.key ? col.sortLabels[sortDir === 'asc' ? 0 : 1] : `${col.sortLabels[0]}/${col.sortLabels[1]}`})
@@ -400,7 +394,6 @@ export default function OrganizationsPage() {
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
         <CrmNav />
         {header}
-        {searchBar}
         {fullTable}
       </div>
     )

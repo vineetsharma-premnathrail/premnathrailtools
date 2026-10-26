@@ -28,7 +28,9 @@ import DateField from '@/components/erp/DateField'
 import {
   inputStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, fyStartIso, Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, PageHeader, TableWrap, EmptyRow, ledgerOptions,
+  RecordFacts,
 } from '@/components/finance/financeUi'
+import { RowCount, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import Select from '@/components/shared/Select'
@@ -630,7 +632,7 @@ function PaymentsPage() {
                 <TableWrap minWidth={760} maxHeight="360px">
                   <thead>
                     <tr>
-                      <th style={thStyle}>Bill no.</th><th style={thStyle}>Date</th><th style={thStyle}>Due</th>
+                      <th style={thStyle}>Bill no. <RowCount count={openLoading ? 0 : openDocs.length} /></th><th style={thStyle}>Date</th><th style={thStyle}>Due</th>
                       <th style={numTh}>Overdue days</th><th style={numTh}>Bill total</th><th style={numTh}>Due amount</th>
                       <th style={numTh}>Settle amount</th><th style={thStyle}></th>
                     </tr>
@@ -677,8 +679,8 @@ function PaymentsPage() {
                       <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
                           <thead>
-                            <tr>{['Bill', 'Reason', 'Amount (₹)', 'Ledger (optional)', 'Remarks', ''].map((h) => (
-                              <th key={h} style={{ ...thStyle, position: 'static', background: 'transparent', padding: '6px 6px' }}>{h}</th>))}</tr>
+                            <tr>{['Bill', 'Reason', 'Amount (₹)', 'Ledger (optional)', 'Remarks', ''].map((h, i) => (
+                              <th key={h} style={{ ...thStyle, position: 'static', background: 'transparent', padding: '6px 6px' }}>{h}{i === 0 && <> <RowCount count={deductions.length} /></>}</th>))}</tr>
                           </thead>
                           <tbody>
                             {deductions.map((d) => {
@@ -734,8 +736,8 @@ function PaymentsPage() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
                     <thead>
                       <tr>
-                        {['Ledger', 'Amount (₹)', 'Cost centre', 'Internal order', 'Remarks', ''].map((h) => (
-                          <th key={h} style={{ ...thStyle, position: 'static', background: 'transparent', padding: '6px 6px' }}>{h}</th>
+                        {['Ledger', 'Amount (₹)', 'Cost centre', 'Internal order', 'Remarks', ''].map((h, i) => (
+                          <th key={h} style={{ ...thStyle, position: 'static', background: 'transparent', padding: '6px 6px' }}>{h}{i === 0 && <> <RowCount count={lines.length} /></>}</th>
                         ))}
                       </tr>
                     </thead>
@@ -827,7 +829,7 @@ function PaymentsPage() {
         <thead>
           <tr>
             <th style={thStyle}></th>
-            <th style={thStyle}>Number</th>
+            <th style={thStyle}>Number <RowCount count={loading ? 0 : payments.length} /></th>
             <th style={thStyle}>Date</th>
             <th style={thStyle}>Type</th>
             <th style={thStyle}>Party / ledgers</th>
@@ -951,16 +953,21 @@ function VoucherDetail({ p, onRemoveAllocation }: { p: PaymentTransaction; onRem
   const cell: React.CSSProperties = { padding: '5px 10px', fontSize: 12.5, borderTop: `1px solid ${BORDER.normal}` }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ fontSize: 12.5, color: TEXT.body, display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-        {p.narration && <span><b>Narration:</b> {p.narration}</span>}
-        {p.cheque_date && <span><b>Cheque date:</b> {dmy(p.cheque_date)}</span>}
-        {p.reference_no && <span><b>Reference:</b> {p.reference_no}</span>}
-        {p.cleared_date && <span><b>Cleared:</b> {dmy(p.cleared_date)}</span>}
-        {p.created_by_name && <span><b>Recorded by:</b> {p.created_by_name}</span>}
-        {p.approved_by_name && <span><b>Approved by:</b> {p.approved_by_name}</span>}
-        {p.is_advance && <span><b>Advance:</b> {p.sales_order_number || p.purchase_order_number || `on account — ${p.advance_reason || ''}`}</span>}
-        {p.rejection_reason && <span style={{ color: '#b91c1c' }}><b>Rejected:</b> {p.rejection_reason}</span>}
-      </div>
+      <RecordFacts>
+        <DetailGroup title="Payment" last>
+          <DetailRow label="Narration">{p.narration || null}</DetailRow>
+          {p.cheque_number && <DetailRow label="Cheque">{`No. ${p.cheque_number}${p.cheque_date ? ` dated ${dmy(p.cheque_date)}` : ''}`}</DetailRow>}
+          {!p.cheque_number && p.cheque_date && <DetailRow label="Cheque date">{dmy(p.cheque_date)}</DetailRow>}
+          {p.reference_no && <DetailRow label="Reference">{p.reference_no}</DetailRow>}
+          {p.cleared_date && <DetailRow label="Cleared in bank on">{dmy(p.cleared_date)}</DetailRow>}
+          {p.is_advance && <DetailRow label="Advance against">{p.sales_order_number || p.purchase_order_number || `On account${p.advance_reason ? ` — ${p.advance_reason}` : ''}`}</DetailRow>}
+        </DetailGroup>
+        <DetailGroup title="Record" last>
+          <DetailRow label="Recorded by">{p.created_by_name || null}</DetailRow>
+          {p.approved_by_name && <DetailRow label="Approved by">{p.approved_by_name}</DetailRow>}
+          {p.rejection_reason && <DetailRow label="Rejected because"><span style={{ color: '#b91c1c' }}>{p.rejection_reason}</span></DetailRow>}
+        </DetailGroup>
+      </RecordFacts>
       {p.lines.length > 0 && (
         <div>
           <div style={sub}>Ledger lines</div>
@@ -970,7 +977,7 @@ function VoucherDetail({ p, onRemoveAllocation }: { p: PaymentTransaction; onRem
                 <tr key={l.id}>
                   <td style={cell}>{l.gl_account_code} — {l.gl_account_name}</td>
                   <td style={{ ...cell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{inr(l.amount)}</td>
-                  <td style={{ ...cell, color: TEXT.muted }}>{l.remarks || ''}</td>
+                  <td style={{ ...cell, color: TEXT.muted }}>{l.remarks || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -988,7 +995,7 @@ function VoucherDetail({ p, onRemoveAllocation }: { p: PaymentTransaction; onRem
                   <td style={cell}>{d.reason_label || d.reason}</td>
                   <td style={cell}>{d.gl_account_code} — {d.gl_account_name}</td>
                   <td style={{ ...cell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{inr(d.amount)}</td>
-                  <td style={{ ...cell, color: TEXT.muted }}>{d.remarks || ''}</td>
+                  <td style={{ ...cell, color: TEXT.muted }}>{d.remarks || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -1091,7 +1098,7 @@ function AllocateDialog({ voucher, onClose, onDone }: { voucher: PaymentTransact
           <TableWrap minWidth={640} maxHeight="50vh" tour="fin-pay-alloc-table">
             <thead>
               <tr>
-                <th style={thStyle}>Bill no.</th><th style={thStyle}>Date</th><th style={thStyle}>Due</th>
+                <th style={thStyle}>Bill no. <RowCount count={loading ? 0 : docs.length} /></th><th style={thStyle}>Date</th><th style={thStyle}>Due</th>
                 <th style={numTh}>Overdue days</th><th style={numTh}>Due amount</th><th style={numTh}>Allocate</th><th style={thStyle}></th>
               </tr>
             </thead>

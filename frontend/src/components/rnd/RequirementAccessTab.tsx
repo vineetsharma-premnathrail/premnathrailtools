@@ -11,7 +11,7 @@ import { RndPerson, RndRequirementAccessRow } from '@/types'
 import { TEXT, BORDER, SHADOWS, GLASS } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import Checkbox from '@/components/Checkbox'
-import { dangerBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
+import { dangerBtnStyle, primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
@@ -126,7 +126,7 @@ export default function RequirementAccessTab({ source, recordId, canEdit = true 
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
             <thead>
               <tr>
-                <th style={{ textAlign: 'left', fontSize: 11, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', letterSpacing: '.05em', padding: '6px 8px' }}>Person</th>
+                <th style={{ textAlign: 'left', fontSize: 11, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', letterSpacing: '.05em', padding: '6px 8px' }}>Person <RowCount count={rows.length} /></th>
                 {RIGHTS.map((r) => (
                   <th key={r.key} title={r.hint} style={{ fontSize: 11, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', letterSpacing: '.05em', padding: '6px 8px', width: 90 }}>{r.label}</th>
                 ))}

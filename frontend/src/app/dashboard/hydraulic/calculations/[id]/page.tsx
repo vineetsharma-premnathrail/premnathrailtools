@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
 import { HydCalculation, HydCalcTypeMeta, HydLookupOption } from '@/types'
 import { TEXT, DANGER, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle, Pill } from '@/components/shared/ui'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
@@ -177,9 +177,7 @@ export default function HydCalculationDetailPage() {
         <>
           <div data-tour="hyd-calcd-meta" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 16px', fontSize: 13, color: TEXT.secondary }}>
             <span style={{ fontWeight: 600, color: TEXT.heading }}>{calc.calc_type_label || calc.calc_type}</span>
-            <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${SYSTEM_TYPE_HEX[calc.system_type]}1a`, color: SYSTEM_TYPE_HEX[calc.system_type], whiteSpace: 'nowrap' }}>
-              {SYSTEM_TYPE_LABELS[calc.system_type] || calc.system_type}
-            </span>
+            <Pill label={SYSTEM_TYPE_LABELS[calc.system_type] || calc.system_type} hex={SYSTEM_TYPE_HEX[calc.system_type] || '#78716c'} />
             {calc.system_id && (
               <span onClick={() => router.push(recordPath('/dashboard/hydraulic/systems', calc, 'system_id'))} style={{ color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>
                 {calc.system_number}{calc.system_name ? ` — ${calc.system_name}` : ''}

@@ -7,9 +7,10 @@ import { useAuth, useRequireApp } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import { Project, ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
-import { Section } from '@/components/shared/ui'
+import { Section, RowCount } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
+import { formatDate } from '@/lib/format'
 
 const PRIORITY_COLORS: Record<string, string> = {
   urgent: '#dc2626',
@@ -35,7 +36,7 @@ function ageInDays(dateStr?: string) {
 
 function warrantyLabel(project?: Project) {
   if (!project?.warranty_start_date || !project?.warranty_end_date) return 'No'
-  return `${project.warranty_start_date} → ${project.warranty_end_date}`
+  return `${formatDate(project.warranty_start_date)} → ${formatDate(project.warranty_end_date)}`
 }
 
 export default function ErpDashboardPage() {
@@ -51,7 +52,7 @@ export default function ErpDashboardPage() {
     if (!isAuthorized) return
     // Load each list on its own so one failure doesn't silently show zeros
     // for both — whatever failed is named in the banner.
-    Promise.allSettled([erpApi.listProjects({ limit: 5000 }), erpApi.listServiceRequests({ limit: 1000 })])
+    Promise.allSettled([erpApi.listProjects({ limit: 10000 }), erpApi.listServiceRequests({ limit: 1000 })])
       .then(([p, s]) => {
         const errs: string[] = []
         if (p.status === 'fulfilled') setProjects(p.value)
@@ -161,8 +162,8 @@ export default function ErpDashboardPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
             <thead>
               <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-                {['SR Number', 'Serial No.', 'Model', 'Machine Type', 'Client', 'Site', 'Issue Summary', 'Priority', 'Status', 'Age', 'Warranty', 'Actions'].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
+                {['SR Number', 'Serial No.', 'Model', 'Machine Type', 'Client', 'Site', 'Issue Summary', 'Priority', 'Status', 'Age', 'Warranty', 'Actions'].map((h, hi) => (
+                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}{hi === 0 && <RowCount count={recentSrs.length} />}</th>
                 ))}
               </tr>
             </thead>
@@ -215,8 +216,8 @@ export default function ErpDashboardPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
             <thead>
               <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-                {['Serial Number', 'Model', 'Machine Type', 'Application Type', 'Client', 'Site', 'Year of Mfg.', 'Dispatch Date', 'Commissioning Date', 'Status', 'Total SRs', 'Warranty', 'Actions'].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
+                {['Serial Number', 'Model', 'Machine Type', 'Application Type', 'Client', 'Site', 'Year of Mfg.', 'Dispatch Date', 'Commissioning Date', 'Status', 'Total SRs', 'Warranty', 'Actions'].map((h, hi) => (
+                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}{hi === 0 && <RowCount count={recentProjects.length} />}</th>
                 ))}
               </tr>
             </thead>
@@ -238,8 +239,8 @@ export default function ErpDashboardPage() {
                   <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{p.client_company || '—'}</td>
                   <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{p.site_name || '—'}</td>
                   <td style={{ padding: '10px 14px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.year_of_manufacture || '—'}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.delivery_date || '—'}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.commissioning_date || '—'}</td>
+                  <td style={{ padding: '10px 14px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.delivery_date ? formatDate(p.delivery_date) : '—'}</td>
+                  <td style={{ padding: '10px 14px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.commissioning_date ? formatDate(p.commissioning_date) : '—'}</td>
                   <td style={{ padding: '10px 14px' }}>
                     <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'capitalize', color: STATUS_COLORS[p.status] || '#64748b' }}>{p.status.replace(/_/g, ' ')}</span>
                   </td>

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { approvalsApi } from '@/lib/api'
 import { ApprovalEntityStatus, ApprovalRequestInfo, ApprovalStep } from '@/types'
 import { BORDER, TEXT } from '@/lib/theme'
-import { Section, dangerBtnStyle, inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { Section, dangerBtnStyle, inputStyle, primaryBtnStyle, secondaryBtnStyle, pillStyle } from '@/components/shared/ui'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 
@@ -21,7 +21,7 @@ function fmt(d?: string | null) {
 }
 
 function Pill({ text, hex }: { text: string; hex: string }) {
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{text}</span>
+  return <span style={pillStyle(hex)}>{text}</span>
 }
 
 function StageList({ req }: { req: ApprovalRequestInfo }) {

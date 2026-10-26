@@ -15,6 +15,7 @@ import { TEXT, BORDER } from '@/lib/theme'
 import { formatDateTime } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { ErrorBanner, actionBtn, inputStyle, sectionStyle } from './pmUi'
+import { smallSecondaryBtnStyle, pillStyle } from '@/components/shared/ui'
 
 const chip: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, padding: '3px 10px',
@@ -136,7 +137,7 @@ export function MentionComposer({ onSend, allowFiles = false, placeholder = 'Wri
       {files.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
           {files.map((f, i) => (
-            <span key={i} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 9999, background: 'rgba(0,0,0,0.05)', color: TEXT.body }}>
+            <span key={i} style={{ ...pillStyle('#44403c'), fontSize: 12, fontWeight: 500, background: 'rgba(0,0,0,0.05)', color: TEXT.body }}>
               📎 {f.name} <span style={{ cursor: 'pointer', fontWeight: 700, marginLeft: 4 }} onClick={() => setFiles((l) => l.filter((_, j) => j !== i))}>×</span>
             </span>
           ))}
@@ -207,7 +208,7 @@ export default function PmChat({ milestoneId, readOnly = false }: { milestoneId:
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: c.body ? 8 : 0 }}>
                     {c.files.map((f) => (
                       <button key={f.id} type="button" onClick={() => openAttachmentBlob(() => pmWorkApi.fileBlob(f.id), f.file_name).catch(() => setError(`Could not open ${f.file_name} — it may have been removed from SharePoint.`))}
-                        style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: `1px solid ${BORDER.normal}`, background: '#fff', color: '#2563eb', cursor: 'pointer' }}>
+                        style={{ ...smallSecondaryBtnStyle, color: '#2563eb' }}>
                         📎 {f.file_name}
                       </button>
                     ))}

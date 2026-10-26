@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { productionApi } from '@/lib/api'
 import { ProductionReport } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import DateField from '@/components/erp/DateField'
 import ProductionNav from '@/components/production/ProductionNav'
 import { extractErrorMessages } from '@/lib/validation'
@@ -122,7 +122,7 @@ export default function ProductionReportsPage() {
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
-                <thead><tr>{['Item', 'UOM', 'Quantity Received', 'Work Orders'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Item', 'UOM', 'Quantity Received', 'Work Orders'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={report.output.length} />}</th>)}</tr></thead>
                 <tbody>
                   {report.output.length === 0 ? (
                     <tr><td colSpan={4} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No finished goods were received in this range.</td></tr>
@@ -149,7 +149,7 @@ export default function ProductionReportsPage() {
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-                <thead><tr>{['WO Number', 'Product', 'Built / Planned', 'Scrap', 'Estimated', 'Actual', 'Variance', 'Cost / Unit'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                <thead><tr>{['WO Number', 'Product', 'Built / Planned', 'Scrap', 'Estimated', 'Actual', 'Variance', 'Cost / Unit'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={report.costs.length} />}</th>)}</tr></thead>
                 <tbody>
                   {report.costs.length === 0 ? (
                     <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No work orders were completed in this range.</td></tr>
@@ -182,7 +182,7 @@ export default function ProductionReportsPage() {
             <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }}>Hours booked ÷ (daily capacity × working days, Monday–Saturday).</p>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-                <thead><tr>{['Workstation', 'Hours Logged', 'Capacity', 'Utilization', 'Good', 'Scrap'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Workstation', 'Hours Logged', 'Capacity', 'Utilization', 'Good', 'Scrap'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={report.utilization.length} />}</th>)}</tr></thead>
                 <tbody>
                   {report.utilization.length === 0 ? (
                     <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No workstations or time bookings in this range.</td></tr>

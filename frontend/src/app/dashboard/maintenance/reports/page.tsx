@@ -15,7 +15,7 @@ import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
 import DateField from '@/components/erp/DateField'
 import MaintenanceAssetPicker from '@/components/maintenance/MaintenanceAssetPicker'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { ASSET_CATEGORY_LABELS, FAILURE_CATEGORY_LABELS, PRIORITY_LABELS, formatINR, formatMinutes } from '@/components/maintenance/labels'
 import Select from '@/components/shared/Select'
 
@@ -331,7 +331,7 @@ export default function MaintenanceReportsPage() {
                 <p style={sectionHint}>Your worst offenders — candidates for a root-cause review or a PM plan.</p>
                 {rows.length === 0 ? <Empty text="No breakdowns in this period." /> : (
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead><tr><th style={thStyle}>Asset</th><th style={{ ...thStyle, textAlign: 'right' }}>Breakdowns</th><th style={{ ...thStyle, textAlign: 'right' }}>Downtime</th></tr></thead>
+                    <thead><tr><th style={thStyle}>Asset <RowCount count={rows.length} /></th><th style={{ ...thStyle, textAlign: 'right' }}>Breakdowns</th><th style={{ ...thStyle, textAlign: 'right' }}>Downtime</th></tr></thead>
                     <tbody>
                       {rows.map((r) => (
                         <tr key={r.asset_id} style={{ cursor: 'pointer' }} onClick={() => router.push(recordPath('/dashboard/maintenance/assets', r, 'asset_id'))}>
@@ -355,7 +355,7 @@ export default function MaintenanceReportsPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
-                      <th style={thStyle}>Age (days)</th>
+                      <th style={thStyle}>Age (days) <RowCount count={data.backlog.matrix.length} /></th>
                       {data.backlog.priorities.map((p) => <th key={p} style={{ ...thStyle, textAlign: 'right', color: PRIORITY_HEX[p] }}>{PRIORITY_LABELS[p] || p}</th>)}
                       <th style={{ ...thStyle, textAlign: 'right' }}>Total</th>
                     </tr>
@@ -381,7 +381,7 @@ export default function MaintenanceReportsPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
-                      <th style={thStyle}>Failure category</th>
+                      <th style={thStyle}>Failure category <RowCount count={data.failure_pareto.length} /></th>
                       <th style={{ ...thStyle, textAlign: 'right' }}>Jobs</th>
                       <th style={{ ...thStyle, width: '30%' }}>Share</th>
                       <th style={{ ...thStyle, textAlign: 'right' }}>Cum. %</th>
@@ -415,7 +415,7 @@ export default function MaintenanceReportsPage() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
                     <thead>
                       <tr>
-                        <th style={thStyle}>Asset</th>
+                        <th style={thStyle}>Asset <RowCount count={data.cost.by_asset.length} /></th>
                         {['Jobs', 'Spares', 'Labour', 'External', 'Total'].map((h) => <th key={h} style={{ ...thStyle, textAlign: 'right' }}>{h}</th>)}
                       </tr>
                     </thead>
@@ -443,7 +443,7 @@ export default function MaintenanceReportsPage() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
                     <thead>
                       <tr>
-                        <th style={thStyle}>Asset</th>
+                        <th style={thStyle}>Asset <RowCount count={data.downtime.by_asset.length} /></th>
                         {['Breakdowns', 'Downtime', 'Available', 'Availability'].map((h) => <th key={h} style={{ ...thStyle, textAlign: 'right' }}>{h}</th>)}
                       </tr>
                     </thead>

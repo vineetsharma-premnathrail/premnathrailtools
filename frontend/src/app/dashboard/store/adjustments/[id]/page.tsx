@@ -5,8 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { approvalsApi, storeApi } from '@/lib/api'
 import { StoreStockAdjustment } from '@/types'
-import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
-import { Row, InfoRow, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT } from '@/lib/theme'
+import { primaryBtnStyle, secondaryBtnStyle, RowCount, Pill, TableScroll, thStyle, tdStyle, numThStyle, numTdStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRecordId } from '@/lib/recordRef'
@@ -20,6 +20,7 @@ import { useCan } from '@/lib/permissions'
 
 const STATUS_LABELS: Record<string, string> = { pending_approval: 'Pending Approval', approved: 'Approved', rejected: 'Rejected', cancelled: 'Withdrawn' }
 const STATUS_HEX: Record<string, string> = { pending_approval: '#f59e0b', approved: '#22c55e', rejected: '#dc2626', cancelled: '#78716c' }
+const fmtQty = (v: number) => v.toLocaleString('en-IN', { maximumFractionDigits: 3 })
 
 export default function StoreStockAdjustmentDetailPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('store')
@@ -114,12 +115,7 @@ export default function StoreStockAdjustmentDetailPage() {
               <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
                 Store &amp; Inventory · Stock Adjustment
               </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{adjustment.adjustment_number}</h1>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[adjustment.status]}1a`, color: STATUS_HEX[adjustment.status], whiteSpace: 'nowrap' }}>
-                  {STATUS_LABELS[adjustment.status] || adjustment.status}
-                </span>
-              </div>
+              <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{adjustment.adjustment_number}</h1>
             </div>
             <button type="button" data-tour="adjustment-detail-back-btn" onClick={() => router.push('/dashboard/store/adjustments')} style={secondaryBtnStyle}>← Back</button>
           </div>
@@ -148,46 +144,56 @@ export default function StoreStockAdjustmentDetailPage() {
             </div>
           )}
 
-          <div data-tour="adjustment-detail-summary" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <Row>
-                <InfoRow label="Store" value={adjustment.location_name || '—'} />
-                <InfoRow label="Adjustment Date" value={formatDate(adjustment.adjustment_date)} />
-                <InfoRow label={adjustment.status === 'pending_approval' ? 'Approver' : adjustment.status === 'rejected' ? 'Rejected By' : 'Approved By'} value={adjustment.approved_by_name || '—'} />
-              </Row>
-              <Row>
-                <InfoRow label="Reason" value={adjustment.reason || '—'} />
-                <InfoRow label="Created By" value={adjustment.created_by_name || '—'} />
-              </Row>
-              <InfoRow label="Remarks" value={adjustment.remarks || '—'} />
-              {adjustment.status === 'rejected' && <InfoRow label="Rejection Reason" value={adjustment.rejected_reason || '—'} />}
-            </div>
-          </div>
+          {/* One record view: what was corrected and why, then every fact as label–value rows. */}
+          <DetailCard tour="adjustment-detail-summary">
+            <DetailSummary
+              title={adjustment.adjustment_number}
+              text={`Corrects the book stock of ${adjustment.items.length} item line${adjustment.items.length === 1 ? '' : 's'} at ${adjustment.location_name || 'the store'} to the physically counted quantity${adjustment.reason ? ` — ${adjustment.reason}` : ''}.`}
+              meta={<>
+                <Pill label={STATUS_LABELS[adjustment.status] || adjustment.status} hex={STATUS_HEX[adjustment.status] || '#78716c'} />
+                <span>· {formatDate(adjustment.adjustment_date)}</span>
+                {adjustment.created_by_name && <span>· Raised by <strong style={{ color: TEXT.heading }}>{adjustment.created_by_name}</strong></span>}
+              </>}
+            />
+            <DetailGroup title="Adjustment">
+              <DetailRow label="Store">{adjustment.location_name}</DetailRow>
+              <DetailRow label="Reason">{adjustment.reason}</DetailRow>
+              <DetailRow label={adjustment.status === 'pending_approval' ? 'Approver' : adjustment.status === 'rejected' ? 'Rejected By' : 'Approved By'}>{adjustment.approved_by_name}</DetailRow>
+              {adjustment.status === 'rejected' && <DetailRow label="Rejection Reason">{adjustment.rejected_reason}</DetailRow>}
+            </DetailGroup>
+            <DetailGroup last>
+              <DetailRow label="Remarks">{adjustment.remarks}</DetailRow>
+            </DetailGroup>
+          </DetailCard>
 
           <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 10px' }}>Items</p>
-          <div data-tour="adjustment-detail-items" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
-              <thead>
-                <tr>
-                  {['Item', 'Qty at Count', 'Counted Qty', 'Difference', 'Remarks'].map((h) => (
-                    <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {adjustment.items.map((line) => (
-                  <tr key={line.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{line.item_code} — {line.item_name}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{line.existing_quantity} {line.uom}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{line.actual_quantity} {line.uom}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: line.difference === 0 ? TEXT.muted : line.difference > 0 ? '#15803d' : '#b91c1c' }}>
-                      {line.difference > 0 ? '+' : ''}{line.difference}
-                    </td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{line.remarks || '—'}</td>
+          <div data-tour="adjustment-detail-items">
+            <TableScroll maxHeight="none" minWidth={620}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Item <RowCount count={adjustment.items.length} /></th>
+                    <th style={numThStyle}>Qty at Count</th>
+                    <th style={numThStyle}>Counted Qty</th>
+                    <th style={numThStyle}>Difference</th>
+                    <th style={thStyle}>Remarks</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {adjustment.items.map((line) => (
+                    <tr key={line.id}>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{line.item_code} — {line.item_name}</td>
+                      <td style={numTdStyle}>{fmtQty(line.existing_quantity)} {line.uom}</td>
+                      <td style={numTdStyle}>{fmtQty(line.actual_quantity)} {line.uom}</td>
+                      <td style={{ ...numTdStyle, fontWeight: 700, color: line.difference === 0 ? TEXT.muted : line.difference > 0 ? '#15803d' : '#b91c1c' }}>
+                        {line.difference > 0 ? '+' : ''}{fmtQty(line.difference)}
+                      </td>
+                      <td style={tdStyle}>{line.remarks || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableScroll>
           </div>
         </>
       )}

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { WarningCircle } from '@phosphor-icons/react'
 import { createPortal } from 'react-dom'
+import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 
 /**
  * Center-screen error popup for failures that need more than a dismiss button —
@@ -87,7 +88,7 @@ export default function ErrorRecoveryDialog({
             <button
               onClick={onClose}
               disabled={!!actioning}
-              style={{ fontSize: 13, fontWeight: 600, padding: '9px 16px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#57534e', cursor: actioning ? 'default' : 'pointer', opacity: actioning ? 0.6 : 1 }}
+              style={{ ...secondaryBtnStyle, cursor: actioning ? 'default' : 'pointer', opacity: actioning ? 0.6 : 1 }}
             >
               Dismiss
             </button>
@@ -95,14 +96,14 @@ export default function ErrorRecoveryDialog({
           <button
             onClick={refreshPage}
             disabled={!!actioning}
-            style={{ fontSize: 13, fontWeight: 600, padding: '9px 16px', borderRadius: 10, border: 'none', background: '#fff7ed', color: '#c2410c', cursor: actioning ? 'default' : 'pointer', opacity: actioning ? 0.6 : 1 }}
+            style={{ ...secondaryBtnStyle, border: '1px solid transparent', background: '#fff7ed', color: '#c2410c', cursor: actioning ? 'default' : 'pointer', opacity: actioning ? 0.6 : 1 }}
           >
             {actioning === 'refresh' ? 'Refreshing…' : 'Refresh Page'}
           </button>
           <button
             onClick={reloadApp}
             disabled={!!actioning}
-            style={{ fontSize: 13, fontWeight: 600, padding: '9px 16px', borderRadius: 10, border: 'none', background: '#dc2626', color: '#fff', cursor: actioning ? 'default' : 'pointer', opacity: actioning ? 0.6 : 1 }}
+            style={{ ...primaryBtnStyle, background: '#dc2626', cursor: actioning ? 'default' : 'pointer', opacity: actioning ? 0.6 : 1 }}
           >
             {actioning === 'reload' ? 'Reloading…' : 'Reload App'}
           </button>

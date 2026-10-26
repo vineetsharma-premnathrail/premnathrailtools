@@ -37,6 +37,12 @@ const config: TourConfig = {
       after: 'Delete only ever lets a user delete records they created themselves — admins can delete anything.',
     },
     { target: 'org-role-save', title: 'Save Role', purpose: 'Saves name, flags and permissions.', after: 'People holding the role get the change on their next page load; it is recorded in the audit log.' },
+    {
+      target: 'org-role-for-user',
+      title: 'Settings for (one holder)',
+      purpose: 'Pick one person who holds this role to see exactly what they get on this tab — from all their roles — and to give that person something different: extra permissions, their own data access, their own notifications. Changes apply to that person only; the role stays the same for its other holders. Approves in only shows their stages — approvers are set in Approval Workflows.',
+      after: 'Pick "This role — all holders" to go back to editing the role itself.',
+    },
     { target: 'org-role-tab-users', title: 'Users tab', purpose: 'Who holds this role — add people by name or email, remove them, then Save Users.' },
     { target: 'org-role-copy', title: 'Copy', purpose: 'Makes an editable copy under a new name — the quickest way to build a role close to an existing one or a built-in preset.' },
     { target: 'org-role-delete', title: 'Delete', purpose: 'Removes a custom role. A role still held by users cannot be deleted — remove it from them first, or untick Active.' },

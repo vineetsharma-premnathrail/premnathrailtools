@@ -1,12 +1,12 @@
 'use client'
 
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, chipBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import Select from '@/components/shared/Select'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { designApi } from '@/lib/api'
 import { DesignApprovedMake, DesignChecklist, DesignLookupOption, DesignStandard, DesignStandardPart, DesignTemplate } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -65,7 +65,7 @@ const noteStyle: React.CSSProperties = { fontSize: 12.5, color: TEXT.muted, marg
 
 function pill(label: string, hex: string) {
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
+    <span style={pillStyle(hex)}>
       {label}
     </span>
   )
@@ -378,11 +378,7 @@ export default function DesignLibraryPage() {
         {visibleTabs.map((t) => {
           const active = shownTab === t.key
           return (
-            <button key={t.key} type="button" data-tour={`design-lib-tab-${t.key}`} onClick={() => switchTab(t.key)} style={{
-              padding: '6px 14px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              border: `1px solid ${active ? '#FF6A2A' : BORDER.normal}`, background: active ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,.6)',
-              color: active ? '#FF6A2A' : TEXT.secondary,
-            }}>
+            <button key={t.key} type="button" data-tour={`design-lib-tab-${t.key}`} onClick={() => switchTab(t.key)} style={chipBtnStyle(active)}>
               {t.label}
             </button>
           )
@@ -404,7 +400,7 @@ export default function DesignLibraryPage() {
           <input ref={stdFileRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip" style={{ display: 'none' }} onChange={(e) => uploadStandardFile(e.target.files)} />
           <div data-tour="design-lib-std-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-              <thead><tr>{['Body', 'Code', 'Version', 'Title', 'Current', 'Cited by', 'File', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Body', 'Code', 'Version', 'Title', 'Current', 'Cited by', 'File', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={standards.length} />}</th>)}</tr></thead>
               <tbody>
                 {loading ? <EmptyRow cols={8} text="Loading…" /> : standards.length === 0 ? <EmptyRow cols={8} text={stdSearch ? 'No standards match this search.' : 'No standards in the library yet.'} /> : standards.map((s) => (
                   <tr key={s.id}>
@@ -465,7 +461,7 @@ export default function DesignLibraryPage() {
           </div>
           <div data-tour="design-lib-part-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
-              <thead><tr>{['Item', 'Item status', 'Discipline', 'Drawing', 'Standard', 'Approved makes', 'Notes', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Item', 'Item status', 'Discipline', 'Drawing', 'Standard', 'Approved makes', 'Notes', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={parts.length} />}</th>)}</tr></thead>
               <tbody>
                 {loading ? <EmptyRow cols={8} text="Loading…" /> : parts.length === 0 ? <EmptyRow cols={8} text="No standard parts match these filters." /> : parts.map((p) => {
                   const itemLabel = `${p.item_code || `#${p.store_item_id}`}${p.item_name ? ` — ${p.item_name}` : ''}`
@@ -475,7 +471,7 @@ export default function DesignLibraryPage() {
                         <div style={{ fontWeight: 600, color: TEXT.heading }}>{p.item_code || `#${p.store_item_id}`}</div>
                         <div style={{ fontSize: 12, color: TEXT.muted }}>{p.item_name}</div>
                       </td>
-                      <td style={tdStyle}>{p.item_status ? pill(p.item_status.replace(/_/g, ' '), ITEM_STATUS_HEX[p.item_status] || '#78716c') : '—'}</td>
+                      <td style={tdStyle}>{p.item_status ? pill((p.item_status.charAt(0).toUpperCase() + p.item_status.slice(1)).replace(/_/g, ' '), ITEM_STATUS_HEX[p.item_status] || '#78716c') : '—'}</td>
                       <td style={tdStyle}>{DISCIPLINE_LABELS[p.discipline] || p.discipline}</td>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                         {p.doc_number ? <>{p.doc_number} <span style={{ color: TEXT.muted, fontSize: 12 }}>· {p.released_revision_label ? `Rev ${p.released_revision_label}` : 'not released'}</span></> : <span style={{ color: TEXT.muted }}>—</span>}
@@ -526,7 +522,7 @@ export default function DesignLibraryPage() {
           </div>
           <div data-tour="design-lib-make-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-              <thead><tr>{['Item', 'Make', 'Part no.', 'Status', 'Remarks', 'Approved by', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Item', 'Make', 'Part no.', 'Status', 'Remarks', 'Approved by', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={makes.length} />}</th>)}</tr></thead>
               <tbody>
                 {loading ? <EmptyRow cols={7} text="Loading…" /> : makes.length === 0 ? <EmptyRow cols={7} text={makeSearch ? 'No approved makes match this search.' : 'No approved makes recorded yet.'} /> : makes.map((m) => {
                   const itemLabel = `${m.item_code || `#${m.store_item_id}`}${m.item_name ? ` — ${m.item_name}` : ''}`
@@ -577,7 +573,7 @@ export default function DesignLibraryPage() {
           </div>
           <div data-tour="design-lib-tpl-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-              <thead><tr>{['Kind', 'Name', 'Description', 'File', 'Uploaded by', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Kind', 'Name', 'Description', 'File', 'Uploaded by', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={templates.length} />}</th>)}</tr></thead>
               <tbody>
                 {loading ? <EmptyRow cols={6} text="Loading…" /> : templates.length === 0 ? <EmptyRow cols={6} text="No templates published yet." /> : templates.map((t) => (
                   <tr key={t.id}>

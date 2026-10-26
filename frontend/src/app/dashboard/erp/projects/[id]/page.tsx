@@ -17,7 +17,7 @@ import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import LetterEditorDialog, { letterTypeTitle } from '@/components/erp/LetterEditorDialog'
 import ManagedDocumentPanel, { openRecordInWord } from '@/components/shared/ManagedDocumentPanel'
 import FileUploadPreview from '@/components/FileUploadPreview'
-import { Card, InfoRow, secondaryBtnStyle, dangerBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle, segmentBtnStyle, primaryBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -102,8 +102,8 @@ export default function ProjectDetailPage() {
     if (!project?.warranty_end_date) return { label: '—', sub: 'No warranty on record' }
     const end = new Date(project.warranty_end_date)
     const daysLeft = Math.ceil((end.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-    if (daysLeft < 0) return { label: 'Expired', sub: `Expired on ${project.warranty_end_date}` }
-    return { label: 'Active', sub: `Valid until ${project.warranty_end_date}` }
+    if (daysLeft < 0) return { label: 'Expired', sub: `Expired on ${formatDate(project.warranty_end_date)}` }
+    return { label: 'Active', sub: `Valid until ${formatDate(project.warranty_end_date)} (${daysLeft} day${daysLeft === 1 ? '' : 's'} left)` }
   })()
 
   const handleDelete = async () => {
@@ -129,24 +129,20 @@ export default function ProjectDetailPage() {
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 4px' }}>Machine</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{project.serial_number}</h1>
-            <span data-tour="erp-proj-status-badge" style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, textTransform: 'capitalize', background: `${MACHINE_STATUS_HEX[project.status] || '#78716c'}1a`, color: MACHINE_STATUS_HEX[project.status] || '#78716c' }}>
-              {project.status.replace(/_/g, ' ')}
-            </span>
+            <span data-tour="erp-proj-status-badge"><Pill label={machineStatusLabel(project.status)} hex={MACHINE_STATUS_HEX[project.status] || '#78716c'} /></span>
             <ContractChip projectId={project.id} />
           </div>
-          <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{project.model_name || 'Not provided'} {project.client_company ? `· ${project.client_company}` : ''}</p>
+          <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{[project.model_name || 'Model not provided', project.client_company].filter(Boolean).join(' · ')}</p>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <button onClick={() => router.push('/dashboard/erp/projects')} type="button" style={secondaryBtnStyle} data-tour="erp-proj-back-btn">
-            ← Back
-          </button>
           {canCreateSr && (project.approval_status ?? 'approved') === 'approved' && (
             <Link
               href={{ pathname: '/dashboard/erp/service-requests/new' }}
               data-tour="erp-proj-new-sr-btn"
-              style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)', color: '#fff', textDecoration: 'none', whiteSpace: 'nowrap' }}
+              style={{ ...primaryBtnStyle, textDecoration: 'none', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}
             >
               + New Service Request
             </Link>
@@ -155,14 +151,17 @@ export default function ProjectDetailPage() {
             <Link
               href={`/dashboard/erp/projects/${ref}/edit`}
               data-tour="erp-proj-edit-btn"
-              style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#57534e', textDecoration: 'none', whiteSpace: 'nowrap' }}
+              style={{ ...secondaryBtnStyle, textDecoration: 'none', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}
             >
-              Edit Project
+              Edit Machine
             </Link>
           )}
           {project && canDeleteRecord(project.created_by_id) && (
             <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle} data-tour="erp-proj-delete-btn">Delete</button>
           )}
+          <button onClick={() => router.push('/dashboard/erp/projects')} type="button" style={secondaryBtnStyle} data-tour="erp-proj-back-btn">
+            ← Back
+          </button>
         </div>
       </div>
 
@@ -182,7 +181,7 @@ export default function ProjectDetailPage() {
       )}
       <ApprovalPanel title="Machine approval" entityType="erp_machine" entityId={project.id} onChanged={() => { load() }} />
 
-      <div data-tour="erp-proj-kpis" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 20 }}>
+      <div data-tour="erp-proj-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 20 }}>
         <div style={{ position: 'relative', overflow: 'hidden', padding: 18, borderRadius: 14, background: 'linear-gradient(140deg,#fffbeb,#fff)', border: '1px solid rgba(245,158,11,0.15)' }}>
           <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 8px' }}>Active Tickets</p>
           <p style={{ fontSize: 28, fontWeight: 700, color: '#1f1108', margin: '0 0 6px' }}>{activeTicketCount}</p>
@@ -195,7 +194,7 @@ export default function ProjectDetailPage() {
         </div>}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
         {visibleTabs.map((t) => (
           <button
             key={t}
@@ -211,6 +210,7 @@ export default function ProjectDetailPage() {
               fontWeight: 600,
               fontSize: 13,
               cursor: 'pointer',
+              whiteSpace: 'nowrap',
             }}
           >
             {t}
@@ -236,78 +236,96 @@ export default function ProjectDetailPage() {
   )
 }
 
+const machineStatusLabel = (status: string) => status.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+const d = (v?: string | null) => (v ? formatDate(v) : null)
+
 function OverviewTab({ project, showContacts, showWarranty }: { project: Project; showContacts: boolean; showWarranty: boolean }) {
+  const what = [project.machine_type, project.application_type ? `for ${project.application_type}` : ''].filter(Boolean).join(' ')
+  const where = [project.site_name, project.site_location, project.site_state].filter(Boolean).join(', ')
+  const sentence = [
+    `${project.product_name || project.model_name || 'Machine'}${what ? ` — ${what}` : ''}`,
+    showContacts && project.client_company ? `supplied to ${project.client_company}${where ? ` at ${where}` : ''}` : '',
+  ].filter(Boolean).join(', ') + '.'
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-      <Card title="Machine Identity">
-        <InfoRow label="Product" value={project.product_name || 'Not linked to a product (Sales › Products)'} />
-        <InfoRow label="Machine Type" value={project.machine_type || 'Not provided'} />
-        <InfoRow label="Application Type" value={project.application_type || 'Not provided'} />
-        <InfoRow label="Engine Number" value={project.engine_number || 'Not provided'} />
-        <InfoRow label="Chassis Number" value={project.chassis_number || 'Not provided'} />
-        <InfoRow label="Year of Manufacture" value={project.year_of_manufacture || 'Not provided'} />
-      </Card>
+    <DetailCard>
+      <DetailSummary
+        title={project.model_name || project.serial_number}
+        text={sentence}
+        meta={<>
+          <span>Serial {project.serial_number}</span>
+          {project.delivery_date && <><span>·</span><span>Dispatched {formatDate(project.delivery_date)}</span></>}
+          {project.commissioning_date && <><span>·</span><span>Commissioned {formatDate(project.commissioning_date)}</span></>}
+          {showContacts && project.is_export && <><span>·</span><Pill label="Export" hex="#2563EB" /></>}
+        </>}
+      />
 
-      <Card title="Timeline">
-        <InfoRow label="PO Date" value={project.po_date || 'Not provided'} />
-        <InfoRow label="Dispatch Date" value={project.delivery_date || 'Not provided'} />
-        <InfoRow label="Commissioning Date" value={project.commissioning_date || 'Not provided'} />
-        <InfoRow label="Handover Date" value={project.handover_date || 'Not provided'} />
-      </Card>
+      <DetailGroup title="Machine identity">
+        <DetailRow label="Product">{project.product_name || <span style={{ color: '#64748b' }}>Not linked to a product (Sales › Products)</span>}</DetailRow>
+        <DetailRow label="Model">{project.model_name}</DetailRow>
+        <DetailRow label="Machine type">{project.machine_type}</DetailRow>
+        <DetailRow label="Application type">{project.application_type}</DetailRow>
+        <DetailRow label="Engine number">{project.engine_number}</DetailRow>
+        <DetailRow label="Chassis number">{project.chassis_number}</DetailRow>
+        <DetailRow label="Year of manufacture">{project.year_of_manufacture}</DetailRow>
+      </DetailGroup>
 
-      {showContacts && <Card title="Client & Site">
-        <InfoRow label="CRM Customer" value={project.customer_name || 'Not linked — edit the machine and pick the Customer (needed for service invoices)'} />
-        <InfoRow label="Client Company" value={project.client_company || 'Not provided'} />
-        <InfoRow label="Contact Name" value={project.client_name || 'Not provided'} />
-        <InfoRow label="Contact Designation" value={project.client_designation || 'Not provided'} />
-        <InfoRow label="Contact Email" value={project.client_email || 'Not provided'} />
-        <InfoRow label="Contact Phone" value={project.client_phone || 'Not provided'} />
-        <InfoRow label="Alternate Phone" value={project.client_phone_alt || 'Not provided'} />
-        <InfoRow label="Client GST" value={project.client_gst || 'Not provided'} />
-        <InfoRow label="Site" value={project.site_name || 'Not provided'} />
-        <InfoRow label="Site Location" value={project.site_location || 'Not provided'} />
-        <InfoRow label="Site State" value={project.site_state || 'Not provided'} />
-        <InfoRow label="Site Pincode" value={project.site_pincode || 'Not provided'} />
-        <InfoRow label="Site Country" value={project.site_country || 'Not provided'} />
-        <InfoRow label="Zone" value={project.zone || 'Not provided'} />
-        <InfoRow label="Export Deployment" value={project.is_export ? 'Yes' : 'No'} />
-      </Card>}
+      <DetailGroup title="Timeline">
+        <DetailRow label="PO date">{d(project.po_date)}</DetailRow>
+        <DetailRow label="Dispatch date">{d(project.delivery_date)}</DetailRow>
+        <DetailRow label="Commissioning date">{d(project.commissioning_date)}</DetailRow>
+        <DetailRow label="Handover date">{d(project.handover_date)}</DetailRow>
+      </DetailGroup>
 
-      {showWarranty && <Card title="Warranty & AMC">
-        <InfoRow label="Warranty Start" value={project.warranty_start_date || 'Not provided'} />
-        <InfoRow label="Warranty End" value={project.warranty_end_date || 'Not provided'} />
-        <InfoRow label="Warranty Terms" value={project.warranty_override || 'Not provided'} />
-        <InfoRow label="Extended Warranty" value={project.extended_warranty ? `Yes (until ${project.extended_warranty_end || 'Not provided'})` : 'No'} />
-        <InfoRow label="AMC Status" value={project.amc_status || 'Not provided'} />
-        <InfoRow label="AMC End Date" value={project.amc_end_date || 'Not provided'} />
-      </Card>}
+      {showContacts && <>
+        <DetailGroup title="Customer">
+          <DetailRow label="CRM customer">{project.customer_name || <span style={{ color: '#b45309' }}>Not linked — edit the machine and pick the Customer (needed for service invoices)</span>}</DetailRow>
+          <DetailRow label="Client company">{project.client_company}</DetailRow>
+          <DetailRow label="Client GST">{project.client_gst}</DetailRow>
+          <DetailRow label="Contact person">{[project.client_name, project.client_designation].filter(Boolean).join(', ')}</DetailRow>
+          <DetailRow label="Contact email">{project.client_email}</DetailRow>
+          <DetailRow label="Contact phone">{[project.client_phone, project.client_phone_alt].filter(Boolean).join(' / ')}</DetailRow>
+        </DetailGroup>
+        <DetailGroup title="Site">
+          <DetailRow label="Site">{project.site_name}</DetailRow>
+          <DetailRow label="Location">{[project.site_location, project.site_state, project.site_pincode, project.site_country].filter(Boolean).join(', ')}</DetailRow>
+          <DetailRow label="Zone">{project.zone}</DetailRow>
+          <DetailRow label="Export deployment">{project.is_export ? 'Yes' : 'No'}</DetailRow>
+        </DetailGroup>
+      </>}
+
+      {showWarranty && <DetailGroup title="Warranty & AMC" last={!project.notes}>
+        <DetailRow label="Warranty period">{project.warranty_start_date || project.warranty_end_date ? `${d(project.warranty_start_date) || '—'} → ${d(project.warranty_end_date) || '—'}` : null}</DetailRow>
+        <DetailRow label="Warranty terms">{project.warranty_override}</DetailRow>
+        <DetailRow label="Extended warranty">{project.extended_warranty ? `Yes, until ${d(project.extended_warranty_end) || 'date not set'}` : 'No'}</DetailRow>
+        <DetailRow label="AMC status">{project.amc_status}</DetailRow>
+        <DetailRow label="AMC end date">{d(project.amc_end_date)}</DetailRow>
+      </DetailGroup>}
 
       {project.notes && (
-        <Card title="Production Notes">
-          <p style={{ fontSize: 13.5, color: '#1f1108', margin: 0 }}>{project.notes}</p>
-        </Card>
+        <DetailGroup title="Production notes" last>
+          <DetailRow label="Notes">{project.notes}</DetailRow>
+        </DetailGroup>
       )}
-    </div>
+    </DetailCard>
   )
 }
 
 function TechnicalSpecsTab({ project }: { project: Project }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-      <Card title="Operator Details">
-        <InfoRow label="Operator Name" value={project.operator_name || 'Not provided'} />
-        <InfoRow label="Operator Phone" value={project.operator_phone || 'Not provided'} />
-        <InfoRow label="Operator Email" value={project.operator_email || 'Not provided'} />
-        <InfoRow label="Qualification" value={project.operator_qualification || 'Not provided'} />
-      </Card>
-
-      <Card title="Technical Specifications">
-        <InfoRow label="Software Version" value={project.software_version || 'Not provided'} />
-        <InfoRow label="Installed Options" value={project.installed_options || 'Not provided'} />
-        <InfoRow label="Specifications" value={project.specifications || 'Not provided'} />
-        <InfoRow label="Engineering Notes" value={project.tech_notes || 'Not provided'} />
-      </Card>
-    </div>
+    <DetailCard>
+      <DetailGroup title="Operator">
+        <DetailRow label="Operator name">{project.operator_name}</DetailRow>
+        <DetailRow label="Operator phone">{project.operator_phone}</DetailRow>
+        <DetailRow label="Operator email">{project.operator_email}</DetailRow>
+        <DetailRow label="Qualification">{project.operator_qualification}</DetailRow>
+      </DetailGroup>
+      <DetailGroup title="Technical specifications" last>
+        <DetailRow label="Software version">{project.software_version}</DetailRow>
+        <DetailRow label="Installed options">{project.installed_options}</DetailRow>
+        <DetailRow label="Specifications">{project.specifications}</DetailRow>
+        <DetailRow label="Engineering notes">{project.tech_notes}</DetailRow>
+      </DetailGroup>
+    </DetailCard>
   )
 }
 
@@ -325,7 +343,7 @@ function MaintenanceHistoryTab({ projectId }: { projectId: number }) {
 
   if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
   if (error) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{error}</p>
-  if (srs.length === 0) return <p style={{ fontSize: 13, color: '#a8a29e' }}>No service requests raised for this machine yet.</p>
+  if (srs.length === 0) return <p style={{ fontSize: 13, color: '#78716c' }}>No service requests raised for this machine yet — use “+ New Service Request” above when the customer reports a problem.</p>
 
   return (
     <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden' }}>
@@ -333,8 +351,8 @@ function MaintenanceHistoryTab({ projectId }: { projectId: number }) {
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-            {['SR Number', 'Issue', 'Priority', 'Status', 'Created'].map((h) => (
-              <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
+            {['SR Number', 'Issue', 'Priority', 'Status', 'Created'].map((h, hi) => (
+              <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}{hi === 0 && <RowCount count={srs.length} />}</th>
             ))}
           </tr>
         </thead>
@@ -348,8 +366,8 @@ function MaintenanceHistoryTab({ projectId }: { projectId: number }) {
               </td>
               <td style={{ padding: '10px 14px', fontSize: 13 }}>{sr.issue_title}</td>
               <td style={{ padding: '10px 14px', fontSize: 12.5, textTransform: 'capitalize' }}>{sr.priority}</td>
-              <td style={{ padding: '10px 14px', fontSize: 12.5, textTransform: 'capitalize' }}>{sr.status.replace('_', ' ')}</td>
-              <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#78716c' }}>{formatDate(sr.created_at)}</td>
+              <td style={{ padding: '10px 14px', fontSize: 12.5, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{sr.status.replace(/_/g, ' ')}</td>
+              <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{formatDate(sr.created_at)}</td>
             </tr>
           ))}
         </tbody>
@@ -385,8 +403,8 @@ function ProductionTab({ projectId, canOpen }: { projectId: number; canOpen: boo
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
         <thead>
           <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-            {['Work Order', 'Product', 'Built / Planned', 'Planned End', 'Status'].map((h) => (
-              <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
+            {['Work Order', 'Product', 'Built / Planned', 'Planned End', 'Status'].map((h, hi) => (
+              <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}{hi === 0 && <RowCount count={orders.length} />}</th>
             ))}
           </tr>
         </thead>
@@ -399,12 +417,10 @@ function ProductionTab({ projectId, canOpen }: { projectId: number; canOpen: boo
                 ) : <span style={{ fontSize: 13, fontWeight: 600 }}>{o.wo_number}</span>}
               </td>
               <td style={{ padding: '10px 14px', fontSize: 13 }}>{o.product_name || '—'}</td>
-              <td style={{ padding: '10px 14px', fontSize: 12.5 }}>{o.quantity_completed} / {o.quantity_planned} ({o.progress_percent}%)</td>
+              <td style={{ padding: '10px 14px', fontSize: 12.5, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{o.quantity_completed} / {o.quantity_planned} ({o.progress_percent}%)</td>
               <td style={{ padding: '10px 14px', fontSize: 12.5, color: o.is_overdue ? '#b91c1c' : '#78716c' }}>{o.planned_end_date ? formatDate(o.planned_end_date) : '—'}{o.is_overdue ? ' · overdue' : ''}</td>
               <td style={{ padding: '10px 14px' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${WO_STATUS_HEX[o.status] || '#78716c'}1a`, color: WO_STATUS_HEX[o.status] || '#78716c', textTransform: 'capitalize', whiteSpace: 'nowrap' }}>
-                  {o.status.replace('_', ' ')}
-                </span>
+                <Pill label={machineStatusLabel(o.status)} hex={WO_STATUS_HEX[o.status] || '#78716c'} />
               </td>
             </tr>
           ))}
@@ -455,19 +471,14 @@ function DocumentsTab({ project, signatory, access }: { project: Project; signat
   return (
     <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', padding: '12px 18px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-        <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(0,0,0,0.05)' }}>
+        <div style={{ display: 'inline-flex', gap: 4 }}>
           {VIEWS.map((v) => (
             <button
               key={v.key}
               type="button"
               data-tour={`erp-proj-docs-view-${v.key}`}
               onClick={() => setView(v.key)}
-              style={{
-                padding: '8px 16px', borderRadius: 8, border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-                background: view === v.key ? '#fff' : 'transparent',
-                color: view === v.key ? '#FF7A45' : '#78716c',
-                boxShadow: view === v.key ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
-              }}
+              style={segmentBtnStyle(view === v.key)}
             >
               {v.label} <span style={{ fontSize: 11, opacity: 0.75 }}>({v.count})</span>
             </button>
@@ -478,7 +489,7 @@ function DocumentsTab({ project, signatory, access }: { project: Project; signat
             type="button"
             onClick={() => setEditor({ open: true, letter: null })}
             data-tour="erp-proj-letter-create-btn"
-            style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: 'none', background: 'linear-gradient(140deg,#FF7A45,#ff9a6b)', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}
+            style={primaryBtnStyle}
           >
             + Create New
           </button>
@@ -584,7 +595,7 @@ function CreatedDocuments({ projectId, letters, loading, error, setError, reload
                 </a>
                 <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '2px 0 0' }}>
                   {l.letter_type && l.letter_type !== 'general' && (
-                    <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 999, background: 'rgba(255,122,69,0.1)', color: '#c2410c', marginRight: 6 }}>{letterTypeTitle(l.letter_type)}</span>
+                    <span style={{ marginRight: 6 }}><Pill label={letterTypeTitle(l.letter_type)} hex="#c2410c" /></span>
                   )}
                   {l.letter_no} · {formatDate(l.letter_date)}{l.created_by_name ? ` · by ${l.created_by_name}` : ''}
                 </p>
@@ -713,7 +724,7 @@ function UploadedDocuments({ projectId, attachments, loading, reload, canEdit, c
       {loading ? (
         <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>Loading…</p>
       ) : attachments.length === 0 ? (
-        <p style={{ fontSize: 13, color: '#a8a29e', margin: 0 }}>No documents uploaded.</p>
+        <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>No documents uploaded yet{canEdit ? ' — drop drawings, manuals or photos in the box above.' : '.'}</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {attachments.map((a) => (
@@ -726,7 +737,7 @@ function UploadedDocuments({ projectId, attachments, loading, reload, canEdit, c
                 {a.filename}
               </a>
               {canDelete(a.created_by_id) && (
-                <button onClick={() => handleDelete(a.id)} style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(220,38,38,0.25)', background: 'rgba(220,38,38,0.06)', color: '#b91c1c', cursor: 'pointer' }}>
+                <button onClick={() => handleDelete(a.id)} style={smallDangerBtnStyle}>
                   Delete
                 </button>
               )}
@@ -747,7 +758,7 @@ function AuditTab({ projectId }: { projectId: number }) {
   }, [projectId])
 
   if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
-  if (entries.length === 0) return <p style={{ fontSize: 13, color: '#a8a29e' }}>No audit history yet.</p>
+  if (entries.length === 0) return <p style={{ fontSize: 13, color: '#78716c' }}>No changes recorded yet — every edit to this machine will be listed here.</p>
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

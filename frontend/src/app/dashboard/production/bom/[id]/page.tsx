@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { productionApi } from '@/lib/api'
 import { ProductionBom } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER, DANGER } from '@/lib/theme'
-import { secondaryBtnStyle, InfoRow, primaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import ProductionNav from '@/components/production/ProductionNav'
 import BomForm from '@/components/production/BomForm'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -136,11 +136,6 @@ export default function BomDetailPage() {
           </p>
           <div data-tour="production-bom-detail-header" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 20px', flexWrap: 'wrap' }}>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{bom ? `${bom.bom_number} · v${bom.version}` : 'BOM'}</h1>
-            {bom && (
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[bom.status]}1a`, color: STATUS_HEX[bom.status], whiteSpace: 'nowrap' }}>
-                {STATUS_LABELS[bom.status] || bom.status}
-              </span>
-            )}
           </div>
         </div>
         <button data-tour="production-bom-detail-back-btn" onClick={() => router.push('/dashboard/production/bom')} type="button" style={secondaryBtnStyle}>← Back</button>
@@ -176,36 +171,44 @@ export default function BomDetailPage() {
 
       {bom && (
         <>
-          <div data-tour="production-bom-summary" style={sectionStyle}>
-            <p style={sectionTitle}>Summary</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
-              <InfoRow label="Product" value={`${bom.product_code} — ${bom.product_name}`} />
-              <InfoRow label="Base Quantity" value={`${bom.base_quantity} ${bom.product_uom || ''}`} />
-              {seeCosts && (
-                <>
-                  <InfoRow label="Std Material Cost" value={inr(bom.standard_material_cost ?? 0)} />
-                  <InfoRow label="Std Labour Cost" value={inr(bom.standard_labour_cost ?? 0)} />
-                  <InfoRow label="Std Cost / Unit" value={inr(unitCost)} />
-                </>
-              )}
-              <InfoRow label="Work Orders" value={String(bom.work_order_count)} />
-              <InfoRow label="Created By" value={bom.created_by_name || '—'} />
-              <InfoRow label="Activated" value={bom.activated_at ? `${formatDateTime(bom.activated_at)} by ${bom.activated_by_name || '—'}` : '—'} />
-              <InfoRow label="Valid" value={`${bom.valid_from ? formatDate(bom.valid_from) : 'from activation'} → ${bom.valid_to ? formatDate(bom.valid_to) : 'open'}`} />
-              <InfoRow label="Change Number" value={bom.ecn_number || bom.change_number || '—'} />
-              {bom.effective_serial && <InfoRow label="Effective from serial" value={bom.effective_serial} />}
-            </div>
+          {/* One record card: what the BOM makes, its key facts, then details grouped. */}
+          <DetailCard tour="production-bom-summary">
+            <DetailSummary
+              title={`${bom.product_code} — ${bom.product_name}`}
+              text={bom.description || `Material list${seeRouting ? ' and routing' : ''} to make ${bom.base_quantity} ${bom.product_uom || 'unit(s)'} of this product — ${bom.items.length} component(s)${seeRouting ? `, ${bom.operations.length} operation(s)` : ''}.`}
+              meta={<>
+                <Pill label={STATUS_LABELS[bom.status] || bom.status} hex={STATUS_HEX[bom.status] || '#78716c'} />
+                <span>· Version {bom.version}</span>
+                <span>· Valid {bom.valid_from ? formatDate(bom.valid_from) : 'from activation'} → {bom.valid_to ? formatDate(bom.valid_to) : 'open'}</span>
+                <span>· Used by <strong style={{ color: TEXT.heading }}>{bom.work_order_count}</strong> work order(s)</span>
+              </>}
+            />
             {bom.status === 'scheduled' && (
-              <p style={{ fontSize: 12.5, color: '#1d4ed8', margin: '12px 0 0' }}>
+              <p style={{ fontSize: 12.5, color: '#1d4ed8', margin: '12px 0 4px' }}>
                 Approved, in force from {bom.valid_from ? formatDate(bom.valid_from) : '—'}. Until then the current active version is used; work orders starting on or after that date use this one.
               </p>
             )}
-            {bom.description && <div style={{ marginTop: 14 }}><InfoRow label="Description" value={bom.description} /></div>}
-            {bom.remarks && <div style={{ marginTop: 14 }}><InfoRow label="Remarks" value={bom.remarks} /></div>}
-            {seeCosts && <p style={{ fontSize: 12, color: TEXT.muted, margin: '14px 0 0' }}>
-              Standard costs use each component&apos;s Store standard cost (or moving-average cost) and each workstation&apos;s hourly rate.
-            </p>}
-          </div>
+            <DetailGroup title="Quantity & change control">
+              <DetailRow label="Base quantity">{`${bom.base_quantity} ${bom.product_uom || ''}`}</DetailRow>
+              <DetailRow label="Change number">{bom.ecn_number || bom.change_number}</DetailRow>
+              {bom.effective_serial && <DetailRow label="Effective from serial">{bom.effective_serial}</DetailRow>}
+            </DetailGroup>
+            {seeCosts && (
+              <DetailGroup title="Standard cost">
+                <DetailRow label="Material">{inr(bom.standard_material_cost ?? 0)}</DetailRow>
+                <DetailRow label="Labour">{inr(bom.standard_labour_cost ?? 0)}</DetailRow>
+                <DetailRow label="Cost per unit"><strong>{inr(unitCost)}</strong></DetailRow>
+                <p style={{ fontSize: 12, color: TEXT.muted, margin: '4px 0 6px' }}>
+                  Standard costs use each component&apos;s Store standard cost (or moving-average cost) and each workstation&apos;s hourly rate.
+                </p>
+              </DetailGroup>
+            )}
+            <DetailGroup title="Record" last>
+              <DetailRow label="Created by">{bom.created_by_name}</DetailRow>
+              <DetailRow label="Activated">{bom.activated_at ? `${formatDateTime(bom.activated_at)} by ${bom.activated_by_name || '—'}` : null}</DetailRow>
+              {bom.remarks && <DetailRow label="Remarks">{bom.remarks}</DetailRow>}
+            </DetailGroup>
+          </DetailCard>
 
           {bom.design_bom_id && seeDesignLink && (
             <DesignDiffSection bom={bom} canTransfer={canFeature('production', 'bom', 'design_link', 'create')} onChanged={setBom} />
@@ -215,10 +218,10 @@ export default function BomDetailPage() {
             <p style={sectionTitle}>Components ({bom.items.length})</p>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
-                <thead><tr>{['Item', 'Category', 'Qty', 'UOM', 'Make / Buy', 'Scrap %', ...(seeCosts ? ['Unit Cost', 'Line Cost'] : []), 'Remarks'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Item', 'Category', 'Qty', 'UOM', 'Make / Buy', 'Scrap %', ...(seeCosts ? ['Unit Cost', 'Line Cost'] : []), 'Remarks'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={bom.items.length} />}</th>)}</tr></thead>
                 <tbody>
                   {bom.items.length === 0 ? (
-                    <tr><td colSpan={9} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No components.</td></tr>
+                    <tr><td colSpan={9} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No components on this BOM yet.</td></tr>
                   ) : bom.items.map((i) => (
                     <tr key={i.id}>
                       <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>
@@ -247,22 +250,22 @@ export default function BomDetailPage() {
             <p style={sectionTitle}>Routing ({bom.operations.length})</p>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-                <thead><tr>{['Seq', 'Operation', 'Control key', 'Workstation / Vendor', 'Setup hrs', 'Run hrs / unit', 'Confirmation', 'Quality Gate', 'Print', 'Instructions'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Seq', 'Operation', 'Control key', 'Workstation / Vendor', 'Setup hrs', 'Run hrs / unit', 'Confirmation', 'Quality Gate', 'Print', 'Instructions'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={bom.operations.length} />}</th>)}</tr></thead>
                 <tbody>
                   {bom.operations.length === 0 ? (
-                    <tr><td colSpan={10} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No routing operations.</td></tr>
+                    <tr><td colSpan={10} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No routing operations — a work order needs at least one before it can be released.</td></tr>
                   ) : bom.operations.map((o) => (
                     <tr key={o.id}>
                       <td style={{ ...tdStyle, fontWeight: 600 }}>{o.sequence}</td>
                       <td style={{ ...tdStyle, color: TEXT.heading }}>{o.operation_name}</td>
                       <td style={tdStyle}>{o.control_key === 'external'
-                        ? <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: '#9333ea1a', color: '#9333ea' }}>External</span>
+                        ? <Pill label="External" hex="#9333ea" />
                         : 'Internal'}</td>
                       <td style={tdStyle}>{o.control_key === 'external' ? `${o.vendor_name || '—'}${seeCosts && o.external_cost ? ` · ${inr(o.external_cost)}/unit` : ''}` : (o.workstation_name || '—')}</td>
                       <td style={tdStyle}>{o.setup_hours}</td>
                       <td style={tdStyle}>{o.run_hours_per_unit}</td>
                       <td style={tdStyle}>{CONFIRM_LABELS[o.confirmation || 'optional']}</td>
-                      <td style={tdStyle}>{o.requires_inspection ? <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: '#0d94881a', color: '#0d9488' }}>Inspection</span> : '—'}</td>
+                      <td style={tdStyle}>{o.requires_inspection ? <Pill label="Inspection" hex="#0d9488" /> : '—'}</td>
                       <td style={tdStyle}>{o.print_on_job_card === false ? 'No' : 'Yes'}</td>
                       <td style={tdStyle}>{o.instructions || '—'}</td>
                     </tr>

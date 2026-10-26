@@ -9,6 +9,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { CrmDocument } from '@/types'
 import { inputStyle } from '@/components/crm/ui'
 import { FormSheet, SheetSection, SheetIcon, FileDropZone, SHEET, sheetBtn, sheetInput, sheetHint, SheetError } from '@/components/shared/FormSheet'
+import { pillStyle } from '@/components/shared/ui'
 
 /** A document the system generates from a record (e.g. a quotation PDF) —
  * listed with the uploaded files but opened live and never deleted from here. */
@@ -129,7 +130,7 @@ export default function CrmDocumentFolder({ tourId, title, folderType, docs, gen
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <p style={{ fontSize: 13.5, fontWeight: 700, color: '#1f1108', margin: 0 }}>{title}</p>
-        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(255,122,69,0.12)', color: '#c2410c' }}>{q ? `${shown.length} of ${rows.length}` : rows.length}</span>
+        <span style={{ ...pillStyle('#c2410c'), padding: '2px 8px' }}>{q ? `${shown.length} of ${rows.length}` : rows.length}</span>
       </div>
 
       {shown.length === 0 ? (
@@ -154,7 +155,7 @@ export default function CrmDocumentFolder({ tourId, title, folderType, docs, gen
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#1f1108', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
                   <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 3 }}>
-                    <span style={{ fontSize: 10.5, fontWeight: 600, padding: '1px 7px', borderRadius: 9999, background: r.generated ? 'rgba(139,92,246,0.1)' : 'rgba(0,0,0,0.05)', color: r.generated ? '#7c3aed' : '#57534e' }}>{r.category}</span>
+                    <span style={{ ...pillStyle(r.generated ? '#7c3aed' : '#57534e'), fontSize: 10.5, fontWeight: 600, padding: '1px 7px' }}>{r.category}</span>
                     <span style={{ fontSize: 11, color: '#78716c' }}>
                       {[r.createdAt ? formatDateTime(r.createdAt) : null, r.by, r.size ? formatSize(r.size) : null].filter(Boolean).join(' · ') || '—'}
                     </span>

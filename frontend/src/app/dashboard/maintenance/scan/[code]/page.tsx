@@ -12,8 +12,8 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireAnyApp } from '@/hooks/useAuth'
 import { maintenanceApi } from '@/lib/api'
 import { MaintenanceAssetScan } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { secondaryBtnStyle, primaryBtnStyle, Pill } from '@/components/shared/ui'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import { recordHref, recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
@@ -26,10 +26,9 @@ const cardStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 16,
 }
-const bigBtnBase: React.CSSProperties = {
-  display: 'block', width: '100%', padding: '18px 20px', borderRadius: 14, fontSize: 17, fontWeight: 700,
-  cursor: 'pointer', textAlign: 'center', marginBottom: 12,
-}
+/** Full-width button for the phone scan screen — the shared button, stretched to the row and
+ * made 48px tall so it is an easy thumb target on the shop floor. */
+const bigBtnBase: React.CSSProperties = { display: 'flex', width: '100%', minHeight: 48, fontSize: 15, marginBottom: 12 }
 
 function decodeParam(raw: string | string[] | undefined): string {
   const v = Array.isArray(raw) ? raw.join('/') : raw || ''
@@ -70,7 +69,8 @@ export default function MaintenanceScanPage() {
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
             Asset Tag Scan
           </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px', wordBreak: 'break-word' }}>{asset?.asset_code || code}</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px', wordBreak: 'break-word' }}>{asset?.asset_code || code}</h1>
+          <p style={{ fontSize: 13.5, color: TEXT.secondary, margin: '0 0 20px' }}>Report a problem on this machine or open its record.</p>
         </div>
         <button data-tour="maint-scan-back" onClick={() => router.push('/dashboard/maintenance/requests')} type="button" style={secondaryBtnStyle}>← Back</button>
       </div>
@@ -94,12 +94,8 @@ export default function MaintenanceScanPage() {
                 {[asset.branch_name, asset.location_text].filter(Boolean).join(' · ') || '—'}
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 9999, background: `${statusHex}1a`, color: statusHex, whiteSpace: 'nowrap' }}>
-                  {ASSET_STATUS_LABELS[asset.status] || asset.status}
-                </span>
-                <span style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 9999, background: `${critHex}1a`, color: critHex, whiteSpace: 'nowrap' }}>
-                  {CRITICALITY_LABELS[asset.criticality] || `Criticality ${asset.criticality}`}
-                </span>
+                <Pill label={ASSET_STATUS_LABELS[asset.status] || asset.status} hex={statusHex} />
+                <Pill label={CRITICALITY_LABELS[asset.criticality] || `Criticality ${asset.criticality}`} hex={critHex} />
               </div>
               <div style={{ display: 'flex', gap: 12 }}>
                 <div style={{ flex: 1, padding: '10px 12px', borderRadius: 12, border: `1px solid ${BORDER.normal}` }}>
@@ -120,7 +116,7 @@ export default function MaintenanceScanPage() {
 
             {asset.can_raise_request ? (
               <button data-tour="maint-scan-report-btn" type="button" onClick={() => router.push(recordHref('/dashboard/maintenance/requests/new', asset, 'id', undefined, 'asset'))}
-                style={{ ...bigBtnBase, border: 'none', background: GRADIENTS.primary, color: '#fff', boxShadow: '0 6px 18px rgba(255,106,42,.3)' }}>
+                style={{ ...primaryBtnStyle, ...bigBtnBase }}>
                 Report Breakdown
               </button>
             ) : (
@@ -131,7 +127,7 @@ export default function MaintenanceScanPage() {
 
             {asset.can_view_asset && (
               <button data-tour="maint-scan-view-btn" type="button" onClick={() => router.push(recordPath('/dashboard/maintenance/assets', asset))}
-                style={{ ...bigBtnBase, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.8)', color: TEXT.heading }}>
+                style={{ ...secondaryBtnStyle, ...bigBtnBase }}>
                 View Asset
               </button>
             )}

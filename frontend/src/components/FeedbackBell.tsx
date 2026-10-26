@@ -5,6 +5,7 @@ import { feedbackApi } from '@/lib/api'
 import { Feedback } from '@/types'
 import { useAuth } from '@/hooks/useAuth'
 import { Bell, X } from '@phosphor-icons/react'
+import { formatDateTime } from '@/lib/format'
 
 export default function FeedbackBell() {
   const { user } = useAuth()
@@ -150,7 +151,7 @@ export default function FeedbackBell() {
                 <p style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>{f.user_name}</p>
                 <p style={{ fontSize: 11, color: '#a8a29e', margin: '0 0 4px' }}>{f.user_email}</p>
                 <p style={{ fontSize: 12, color: '#57534e', margin: 0, whiteSpace: 'pre-wrap' }}>{f.message}</p>
-                <p style={{ fontSize: 10.5, color: '#a8a29e', margin: '4px 0 0' }}>{new Date(f.created_at).toLocaleString()}</p>
+                <p style={{ fontSize: 10.5, color: '#a8a29e', margin: '4px 0 0' }}>{formatDateTime(f.created_at)}</p>
               </div>
             ))
           )}

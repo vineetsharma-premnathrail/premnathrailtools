@@ -7,17 +7,17 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { designApi } from '@/lib/api'
 import { DesignChangeRequestDetail, DesignChangeRequestItem, DesignLookupOption } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, primaryBtnStyle, RowCount, Pill, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { DANGER_RED } from '@/components/design/DesignSheets'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import {
-  DISPOSITION_LABELS, ECN_EFFECTIVITY_LABELS, ECR_SOURCE_LABELS, ECR_STATUS_LABELS, ECR_URGENCY_LABELS, toOptions,
+  BOM_STATUS_LABELS, DISPOSITION_LABELS, ECN_EFFECTIVITY_LABELS, ECR_SOURCE_LABELS, ECR_STATUS_LABELS, ECR_URGENCY_LABELS, toOptions,
 } from '@/components/design/designMeta'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
@@ -60,7 +60,7 @@ const dropStyle: React.CSSProperties = { position: 'absolute', top: '100%', left
 const optionStyle: React.CSSProperties = { padding: '8px 12px', fontSize: 13, cursor: 'pointer', borderTop: `1px solid ${SHEET.LINE}` }
 
 function pill(label: string, hex: string) {
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
+  return <Pill label={label} hex={hex} />
 }
 
 function formatInr(v?: number | null): string {
@@ -357,21 +357,9 @@ export default function ChangeRequestDetailPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Engineering Change Request</p>
-          <h1 data-tour="design-ecr-header" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {ecr ? (
-              <>
-                {ecr.ecr_number} <span style={{ fontWeight: 500, color: TEXT.secondary }}>— {ecr.title}</span>
-                {pill(ECR_STATUS_LABELS[ecr.status] || ecr.status, STATUS_HEX[ecr.status] || '#78716c')}
-                {pill(`${ECR_URGENCY_LABELS[ecr.urgency] || ecr.urgency} urgency`, URGENCY_HEX[ecr.urgency] || '#78716c')}
-              </>
-            ) : 'Change Request'}
+          <h1 data-tour="design-ecr-header" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>
+            {ecr ? ecr.ecr_number : 'Change Request'}
           </h1>
-          {ecr && (
-            <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>
-              Raised by {ecr.raised_by_name || '—'} on {formatDate(ecr.created_at)} · {ECR_SOURCE_LABELS[ecr.source] || ecr.source}
-              {['open', 'impact_checked'].includes(ecr.status) ? ` · open ${ecr.days_open} day${ecr.days_open === 1 ? '' : 's'}` : ''}
-            </p>
-          )}
         </div>
         <button data-tour="design-ecr-back-btn" onClick={() => router.push('/dashboard/design/change-notices')} type="button" style={secondaryBtnStyle}>← Back</button>
       </div>
@@ -389,6 +377,40 @@ export default function ChangeRequestDetailPage() {
 
       {ecr && (
         <>
+          {/* What is being asked and why: summary on top, then the request's details. */}
+          <DetailCard tour="design-ecr-request">
+            <DetailSummary
+              title={ecr.title}
+              meta={<>
+                {pill(ECR_STATUS_LABELS[ecr.status] || ecr.status, STATUS_HEX[ecr.status] || '#78716c')}
+                {pill(`${ECR_URGENCY_LABELS[ecr.urgency] || ecr.urgency} urgency`, URGENCY_HEX[ecr.urgency] || '#78716c')}
+                <span>· Raised by <strong style={{ color: TEXT.heading }}>{ecr.raised_by_name || '—'}</strong> on {formatDate(ecr.created_at)}</span>
+                {['open', 'impact_checked'].includes(ecr.status) && <span>· Open {ecr.days_open} day{ecr.days_open === 1 ? '' : 's'}</span>}
+              </>}
+            />
+            <DetailGroup title="Request">
+              <DetailRow label="Reason">{ecr.reason}</DetailRow>
+              <DetailRow label="Proposed change">{ecr.proposed_change}</DetailRow>
+            </DetailGroup>
+            <div data-tour="design-ecr-details">
+              <DetailGroup title="Where it came from">
+                <DetailRow label="Source">{ECR_SOURCE_LABELS[ecr.source] || ecr.source}</DetailRow>
+                {ecr.ncr_number && <DetailRow label="NCR">{ecr.ncr_number}</DetailRow>}
+                {ecr.capa_number && <DetailRow label="CAPA">{ecr.capa_number}</DetailRow>}
+                <DetailRow label="Source reference">{ecr.source_reference}</DetailRow>
+              </DetailGroup>
+              <DetailGroup title="Linked to" last>
+                <DetailRow label="Project">{ecr.pm_project_label}</DetailRow>
+                <DetailRow label="Machine">{ecr.erp_project_label}</DetailRow>
+                {ecr.ecn_id && (
+                  <DetailRow label="Change notice">
+                    <span onClick={() => router.push(recordPath('/dashboard/design/change-notices', ecr, 'ecn_id'))} style={{ color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>{ecr.ecn_number}</span>
+                  </DetailRow>
+                )}
+              </DetailGroup>
+            </div>
+          </DetailCard>
+
           <div data-tour="design-ecr-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
             {can('impact') && <button data-tour="design-ecr-impact-btn" disabled={busy} style={primaryBtn} onClick={() => openPanel('impact')}>{ecr.status === 'open' ? 'Record Impact' : 'Update Impact'}</button>}
             {can('vote') && <button data-tour="design-ecr-vote-approve-btn" disabled={busy} style={primaryBtn} onClick={() => setPrompt('vote_approve')}>Vote Approve</button>}
@@ -429,14 +451,6 @@ export default function ChangeRequestDetailPage() {
 
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
             <div style={{ flex: '2 1 560px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-              <div data-tour="design-ecr-request" style={sectionStyle}>
-                <p style={sectionTitle}>Request</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <InfoRow label="Reason" value={ecr.reason} />
-                  <InfoRow label="Proposed change" value={ecr.proposed_change} />
-                </div>
-              </div>
-
               <div data-tour="design-ecr-items" style={sectionStyle}>
                 <p style={sectionTitle}>Affected items &amp; where used</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -455,13 +469,13 @@ export default function ChangeRequestDetailPage() {
                         <div style={{ overflowX: 'auto' }}>
                           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
                             <thead>
-                              <tr>{['Used in BOM', 'Revision', 'Qty', 'Project / Machine'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                              <tr>{['Used in BOM', 'Revision', 'Qty', 'Project / Machine'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={i.where_used.length} />}</th>)}</tr>
                             </thead>
                             <tbody>
                               {i.where_used.map((w) => (
                                 <tr key={`${w.bom_id}-${w.revision_id}`} onClick={() => router.push(recordPath('/dashboard/design/boms', w, 'bom_id'))} style={{ cursor: 'pointer' }}>
                                   <td style={tdStyle}><strong>{w.bom_number}</strong><div style={{ color: TEXT.muted }}>{w.bom_title}{w.product_item_label ? ` · ${w.product_item_label}` : ''}</div></td>
-                                  <td style={tdStyle}><strong style={{ marginRight: 6 }}>{w.revision_label}</strong>{pill(w.revision_status, WU_STATUS_HEX[w.revision_status] || '#78716c')}</td>
+                                  <td style={tdStyle}><strong style={{ marginRight: 6 }}>{w.revision_label}</strong>{pill(BOM_STATUS_LABELS[w.revision_status] || w.revision_status, WU_STATUS_HEX[w.revision_status] || '#78716c')}</td>
                                   <td style={tdStyle}>{w.quantity ?? '—'}</td>
                                   <td style={tdStyle}>{[w.pm_project_label, w.erp_project_label].filter(Boolean).join(' · ') || '—'}</td>
                                 </tr>
@@ -479,14 +493,14 @@ export default function ChangeRequestDetailPage() {
               <div data-tour="design-ecr-impact" style={sectionStyle}>
                 <p style={sectionTitle}>Impact</p>
                 {ecr.impact_checked_at ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
-                    <div style={{ gridColumn: '1 / -1' }}><InfoRow label="Summary" value={ecr.impact_summary || '—'} /></div>
-                    <div style={{ gridColumn: '1 / -1' }}><InfoRow label="Stock affected" value={ecr.impact_stock || '—'} /></div>
-                    <div style={{ gridColumn: '1 / -1' }}><InfoRow label="Open orders affected" value={ecr.impact_open_orders || '—'} /></div>
-                    {seeCost && <InfoRow label="Cost impact" value={formatInr(ecr.impact_cost)} />}
-                    <InfoRow label="Delivery impact" value={ecr.impact_delivery_days != null ? `${ecr.impact_delivery_days} day${ecr.impact_delivery_days === 1 ? '' : 's'}` : '—'} />
-                    <InfoRow label="Checked by" value={`${ecr.impact_checked_by_name || '—'} · ${formatDateTime(ecr.impact_checked_at)}`} />
-                  </div>
+                  <DetailGroup last>
+                    <DetailRow label="Summary">{ecr.impact_summary}</DetailRow>
+                    <DetailRow label="Stock affected">{ecr.impact_stock}</DetailRow>
+                    <DetailRow label="Open orders affected">{ecr.impact_open_orders}</DetailRow>
+                    {seeCost && <DetailRow label="Cost impact">{formatInr(ecr.impact_cost)}</DetailRow>}
+                    <DetailRow label="Delivery impact">{ecr.impact_delivery_days != null ? `${ecr.impact_delivery_days} day${ecr.impact_delivery_days === 1 ? '' : 's'}` : null}</DetailRow>
+                    <DetailRow label="Checked by">{`${ecr.impact_checked_by_name || '—'} · ${formatDateTime(ecr.impact_checked_at)}`}</DetailRow>
+                  </DetailGroup>
                 ) : (
                   <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Not checked yet — the Design team records the impact before the change board votes.</p>
                 )}
@@ -512,7 +526,7 @@ export default function ChangeRequestDetailPage() {
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
                       <thead>
-                        <tr>{['Member', 'Vote', 'Comment', 'When'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                        <tr>{['Member', 'Vote', 'Comment', 'When'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={ecr.votes.length} />}</th>)}</tr>
                       </thead>
                       <tbody>
                         {ecr.votes.map((v) => (
@@ -529,33 +543,13 @@ export default function ChangeRequestDetailPage() {
                 )}
                 {ecr.decided_at && (
                   <div style={{ marginTop: 14 }}>
-                    <InfoRow label={`Decision — ${ECR_STATUS_LABELS[ecr.status] || ecr.status}`} value={`${ecr.decided_by_name || '—'} · ${formatDate(ecr.decided_at)}${ecr.decision_comment ? ` — ${ecr.decision_comment}` : ''}`} />
+                    <DetailRow label={`Decision — ${ECR_STATUS_LABELS[ecr.status] || ecr.status}`}>{`${ecr.decided_by_name || '—'} · ${formatDate(ecr.decided_at)}${ecr.decision_comment ? ` — ${ecr.decision_comment}` : ''}`}</DetailRow>
                   </div>
                 )}
               </div>
             </div>
 
             <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-              <div data-tour="design-ecr-details" style={sectionStyle}>
-                <p style={sectionTitle}>Details</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <InfoRow label="Source" value={ECR_SOURCE_LABELS[ecr.source] || ecr.source} />
-                  {ecr.ncr_number && <InfoRow label="NCR" value={ecr.ncr_number} />}
-                  {ecr.capa_number && <InfoRow label="CAPA" value={ecr.capa_number} />}
-                  <InfoRow label="Source reference" value={ecr.source_reference || '—'} />
-                  <InfoRow label="Urgency" value={ECR_URGENCY_LABELS[ecr.urgency] || ecr.urgency} />
-                  <InfoRow label="Project" value={ecr.pm_project_label || '—'} />
-                  <InfoRow label="Machine" value={ecr.erp_project_label || '—'} />
-                  <InfoRow label="Raised by" value={`${ecr.raised_by_name || '—'} · ${formatDate(ecr.created_at)}`} />
-                  {ecr.ecn_id && (
-                    <div>
-                      <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 2px' }}>Change notice</p>
-                      <p onClick={() => router.push(recordPath('/dashboard/design/change-notices', ecr, 'ecn_id'))} style={{ fontSize: 13, color: '#FF6A2A', fontWeight: 600, margin: 0, cursor: 'pointer' }}>{ecr.ecn_number}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
               <div data-tour="design-ecr-timeline" style={sectionStyle}>
                 <p style={sectionTitle}>Timeline</p>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
@@ -565,7 +559,7 @@ export default function ChangeRequestDetailPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 520, overflowY: 'auto' }}>
                   {ecr.events.map((e) => (
                     <div key={e.id} style={{ display: 'flex', gap: 10, padding: '8px 0', borderTop: `1px solid ${BORDER.light}` }}>
-                      <span style={{ width: 8, height: 8, borderRadius: 9999, marginTop: 6, flex: 'none', background: EVENT_HEX[e.action] || '#a8a29e' }} />
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 6, flex: 'none', background: EVENT_HEX[e.action] || '#a8a29e' }} />
                       <div style={{ minWidth: 0 }}>
                         <p style={{ fontSize: 12.5, color: TEXT.body, margin: 0 }}>
                           <strong>{e.actor_name || 'System'}</strong> {EVENT_LABELS[e.action] || e.action.replace(/_/g, ' ')}
@@ -729,7 +723,7 @@ export default function ChangeRequestDetailPage() {
                   {boardIds.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
                       {boardIds.map((uid) => (
-                        <span key={uid} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 9999, background: '#eff6ff', color: '#1d4ed8', fontSize: 12, fontWeight: 600 }}>
+                        <span key={uid} style={{ ...pillStyle('#1d4ed8'), gap: 6, padding: '4px 10px', fontSize: 12 }}>
                           {userName[uid] || `User #${uid}`}
                           <button type="button" onClick={() => { setBoardIds((prev) => prev.filter((x) => x !== uid)); setBoardTouched(true) }} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, color: 'inherit', display: 'inline-flex' }} aria-label="Remove member"><SheetIcon name="x" size={12} /></button>
                         </span>

@@ -14,6 +14,7 @@ import TaskActivity from './TaskActivity'
 import { ErrorBanner, usePmFeature } from './pmUi'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { FileDropZone, FormSheet, Optional, Req, SHEET, SheetColumns, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import { chipBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 
 /* ── Look ─────────────────────────────────────────────────────────────── */
 
@@ -147,7 +148,7 @@ const MS_STATE: Record<string, { text: string; c: string; bg: string }> = {
   cancelled: { text: 'Cancelled', c: '#78716c', bg: '#f5f5f4' },
 }
 function Chip({ text, c, bg, dot = false }: { text: string; c: string; bg: string; dot?: boolean }) {
-  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 999, background: bg, color: c, fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap' }}>{dot && <span style={{ width: 6, height: 6, borderRadius: '50%', background: c }} />}{text}</span>
+  return <span style={{ ...pillStyle(c), gap: 5, background: bg, fontSize: 11.5, fontWeight: 600 }}>{dot && <span style={{ width: 6, height: 6, borderRadius: '50%', background: c }} />}{text}</span>
 }
 function Bar({ value, color = BLUE, height = 8 }: { value: number; color?: string; height?: number }) {
   const v = Math.max(0, Math.min(100, value || 0))
@@ -435,7 +436,7 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
             <button key={v.k} type="button" onClick={() => { setMyView(v.k); setSelId(null); setTaskId(null) }}
               style={{ ...tabStyle(view === v.k, BLUE), display: 'inline-flex', alignItems: 'center', gap: 7 }}>
               {v.t}
-              <span style={{ fontSize: 11.5, fontWeight: 700, padding: '1px 8px', borderRadius: 999, background: view === v.k ? '#dbeafe' : SOFT, color: view === v.k ? BLUE : MUTED }}>{loaded ? viewCounts[v.k] : '…'}</span>
+              <span style={{ ...pillStyle(MUTED), fontSize: 11.5, padding: '1px 8px', background: view === v.k ? '#dbeafe' : SOFT, color: view === v.k ? BLUE : MUTED }}>{loaded ? viewCounts[v.k] : '…'}</span>
             </button>
           ))}
           <label data-tour="pm-mt-show-done" style={{ marginLeft: 'auto', fontSize: 12.5, color: BODY, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', paddingBottom: 6 }}>
@@ -521,6 +522,7 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
           {sel && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {ms.map((m, i) => m.id === sel.id ? null : (
+                // ui-audit-ignore-next-line custom-button — whole milestone summary row (card), not a pill button
                 <button key={m.id} type="button" onClick={() => { setSelId(m.id); setTaskId(null) }}
                   style={{ ...card, display: 'flex', alignItems: 'center', gap: 14, padding: '11px 16px', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', flexWrap: 'wrap', opacity: m.status === 'cancelled' ? 0.55 : 1 }}>
                   <span style={{ width: 26, height: 26, borderRadius: '50%', background: colOf(m, i).c, color: '#fff', fontSize: 12.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</span>
@@ -636,6 +638,7 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
                       const c = ICON_COLOR[ic]
                       const on = msForm.icon === ic
                       return (
+                        // ui-audit-ignore-next-line custom-button — icon swatch tile in the milestone icon picker, not a pill button
                         <button key={ic} type="button" aria-label={ICON_LABEL[ic]} aria-pressed={on} title={ICON_LABEL[ic]} onClick={() => setMsForm({ ...msForm, icon: ic, color: c })}
                           style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 2px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
                             border: `1.5px solid ${on ? c : 'transparent'}`, background: on ? `${c}14` : 'transparent', boxShadow: on ? `0 4px 12px ${c}26` : 'none' }}>
@@ -813,7 +816,7 @@ function MultiPick({ values, onChange, options, placeholder }: { values: string[
       {values.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
           {values.map((v) => (
-            <span key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, padding: '4px 8px 4px 10px', borderRadius: 999, background: '#eff6ff', color: '#1d4ed8', maxWidth: '100%' }}>
+            <span key={v} style={{ ...pillStyle('#1d4ed8'), gap: 4, fontSize: 12, fontWeight: 500, padding: '4px 8px 4px 10px', background: '#eff6ff', maxWidth: '100%', whiteSpace: 'normal' }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{byValue.get(v) || `#${v}`}</span>
               <button type="button" aria-label="Remove" onClick={() => onChange(values.filter((x) => x !== v))} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, color: '#1d4ed8', display: 'inline-flex' }}><Icon name="x" size={12} /></button>
             </span>
@@ -838,7 +841,7 @@ function LabelInput({ labels, onChange }: { labels: string[]; onChange: (l: stri
     <div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: labels.length ? 6 : 0 }}>
         {labels.map((l) => (
-          <span key={l} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, padding: '4px 8px 4px 10px', borderRadius: 999, background: '#f5f3ff', color: '#6d28d9' }}>
+          <span key={l} style={{ ...pillStyle('#6d28d9'), gap: 4, fontSize: 12, fontWeight: 500, padding: '4px 8px 4px 10px', background: '#f5f3ff' }}>
             {l}
             <button type="button" aria-label={`Remove ${l}`} onClick={() => onChange(labels.filter((x) => x !== l))} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, color: '#6d28d9', display: 'inline-flex' }}><Icon name="x" size={12} /></button>
           </span>
@@ -978,7 +981,7 @@ function MilestonePanel(props: {
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 700, color: col.c }}><Icon name="list" size={18} color={col.c} />Tasks ({ts.length})</span>
           <div style={{ display: 'flex', gap: 6, marginLeft: 8, flexWrap: 'wrap' }}>
             {chips.map((c) => (
-              <button key={c.k} type="button" onClick={() => setFilter(c.k)} style={{ padding: '6px 12px', borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${filter === c.k ? col.c : LINE}`, background: filter === c.k ? col.soft : '#fff', color: filter === c.k ? col.c : BODY }}>{c.t}</button>
+              <button key={c.k} type="button" onClick={() => setFilter(c.k)} style={{ ...chipBtnStyle(filter === c.k), ...(filter === c.k ? { background: col.c } : {}) }}>{c.t}</button>
             ))}
           </div>
           <div style={{ position: 'relative', flex: '1 1 180px', maxWidth: 260, marginLeft: 'auto' }}>
@@ -1004,7 +1007,7 @@ function MilestonePanel(props: {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
               <thead>
                 <tr>
-                  <th style={{ ...th, width: 36 }}>#</th>
+                  <th style={{ ...th, width: 36 }}>#<RowCount count={shown.length} /></th>
                   <th style={th}>Task Name</th>
                   <th style={th}>Assignee</th>
                   <th style={th}>Priority</th>
@@ -1029,7 +1032,7 @@ function MilestonePanel(props: {
                         <div style={{ fontWeight: 600, color: INK }}>{s.title}</div>
                         {(kids.length > 0 || s.remarks_count > 0 || s.files_count > 0 || (s.labels?.length || 0) > 0) && (
                           <div style={{ display: 'flex', gap: 10, fontSize: 11.5, color: MUTED, marginTop: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-                            {(s.labels || []).map((l) => <span key={l} style={{ padding: '1px 7px', borderRadius: 999, background: '#f5f3ff', color: '#6d28d9' }}>{l}</span>)}
+                            {(s.labels || []).map((l) => <span key={l} style={{ ...pillStyle('#6d28d9'), fontSize: 11.5, fontWeight: 500, padding: '1px 7px', background: '#f5f3ff' }}>{l}</span>)}
                             {kids.length > 0 && <span>☑ {kids.filter((k) => k.status === 'done').length}/{kids.length}</span>}
                             {s.remarks_count > 0 && pmf('task_comments', 'view') && <span>💬 {s.remarks_count}</span>}
                             {s.files_count > 0 && pmf('task_files', 'view') && <span>📎 {s.files_count}</span>}
@@ -1098,6 +1101,7 @@ function TaskSplit(props: Parameters<typeof MilestonePanel>[0] & { list: PmDeptS
           const stt = STATE[taskState(m, s)]
           const active = s.id === task.id
           return (
+            // ui-audit-ignore-next-line custom-button — sidebar task list row (selectable list item), not a pill button
             <button key={s.id} type="button" onClick={() => { setTab('overview'); setTaskId(s.id) }}
               style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '10px 12px', borderTop: '0', borderRight: '0', borderBottom: `1px solid ${LINE}`, borderLeft: `3px solid ${active ? col.c : 'transparent'}`, borderRadius: 0, boxShadow: 'none', transform: 'none', background: active ? col.soft : '#fff', color: INK, cursor: 'pointer', fontFamily: 'inherit' }}>
               <span style={{ width: 22, height: 22, borderRadius: '50%', background: s.status === 'done' ? col.c : '#e2e8f0', color: s.status === 'done' ? '#fff' : BODY, fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{s.status === 'done' ? <Icon name="check" size={12} color="#fff" /> : ts.indexOf(s) + 1}</span>
@@ -1133,12 +1137,12 @@ function TaskSplit(props: Parameters<typeof MilestonePanel>[0] & { list: PmDeptS
         </div>
 
         {/* Tabs */}
-        <div role="tablist" style={{ display: 'flex', gap: 2, padding: '0 12px', borderBottom: `1px solid ${LINE}`, overflowX: 'auto' }}>
+        <div role="tablist" style={{ display: 'flex', flexWrap: 'wrap', gap: 2, padding: '0 12px', borderBottom: `1px solid ${LINE}` }}>
           {tabs.map((x) => (
             <button key={x.k} role="tab" aria-selected={view === x.k} type="button" onClick={() => setTab(x.k)} style={tabStyle(view === x.k, col.c)}>
               <Icon name={x.icon} size={14} color={view === x.k ? col.c : MUTED} />{x.t}
               {x.n !== undefined && (
-                <span style={{ fontSize: 11, fontWeight: 700, lineHeight: '16px', padding: '0 6px', borderRadius: 999, minWidth: 18, textAlign: 'center',
+                <span style={{ ...pillStyle(MUTED), justifyContent: 'center', padding: '0 6px', minWidth: 18, textAlign: 'center',
                   background: view === x.k ? `${col.c}1a` : '#f1f5f9', color: view === x.k ? col.c : MUTED }}>{x.n}</span>
               )}
             </button>
@@ -1178,7 +1182,7 @@ function TaskSplit(props: Parameters<typeof MilestonePanel>[0] & { list: PmDeptS
                 </Box>
                 <Box icon="tag" title="Labels / Tags" color="#f59e0b">
                   {task.labels?.length
-                    ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{task.labels.map((l) => <span key={l} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 999, background: '#f5f3ff', color: '#6d28d9' }}>{l}</span>)}</div>
+                    ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{task.labels.map((l) => <span key={l} style={{ ...pillStyle('#6d28d9'), fontSize: 12, fontWeight: 500, padding: '3px 10px', background: '#f5f3ff' }}>{l}</span>)}</div>
                     : <span style={{ fontSize: 12.5, color: MUTED }}>No labels.{task.can_edit ? ' Add them with Edit.' : ''}</span>}
                 </Box>
                 <Box icon="flag" title="Related Items" color={col.c}>

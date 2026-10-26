@@ -412,6 +412,7 @@ function PhotoThumbnails({
           {existingAttachments.map((a) => (
             <div key={a.id} style={{ position: 'relative', width: 56, height: 56, flex: 'none' }}>
               <ActivityPhotoThumb activityId={activityId} attachment={a} />
+              {/* ui-audit-ignore-next-line custom-button — 18px round remove badge overlaid on an attachment thumbnail, not a pill */}
               <button
                 type="button"
                 onClick={() => onDeleteExisting(a.id)}
@@ -430,6 +431,7 @@ function PhotoThumbnails({
             <div key={i} style={{ position: 'relative', width: 56, height: 56, flex: 'none' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={previews[i]} alt={f.name} style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(0,0,0,0.08)' }} />
+              {/* ui-audit-ignore-next-line custom-button — 18px round remove badge overlaid on an attachment thumbnail, not a pill */}
               <button
                 type="button"
                 onClick={() => onRemoveStaged(i)}

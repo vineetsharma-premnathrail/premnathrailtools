@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { UserDocument } from '@/types'
 import { TEXT, BORDER, BRAND } from '@/lib/theme'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, pillStyle } from '@/components/shared/ui'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -248,9 +248,9 @@ export default function EmployeeDocumentsTab({ userId, mode = 'hr' }: { userId: 
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 3 }}>
                     <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{d.document_name}</span>
-                    <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: `${BRAND.primary}1a`, color: BRAND.primaryActive }}>{d.document_type}</span>
-                    {d.confidentiality && <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(0,0,0,0.05)', color: TEXT.secondary }}>{d.confidentiality}</span>}
-                    {exp && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: `${exp.hex}1a`, color: exp.hex }}>{exp.label}</span>}
+                    <span style={pillStyle(BRAND.primaryActive)}>{d.document_type}</span>
+                    {d.confidentiality && <span style={pillStyle('#475569')}>{d.confidentiality}</span>}
+                    {exp && <span style={pillStyle(exp.hex)}>{exp.label}</span>}
                   </div>
                   <p style={{ fontSize: 12, color: TEXT.muted, margin: 0 }}>
                     {[d.filename, formatSize(d.size), d.document_number ? `No. ${d.document_number}` : '', d.issue_date ? `Issued ${formatDate(d.issue_date)}` : '', d.issuing_authority || '', `Added ${formatDate(d.created_at)}`].filter(Boolean).join(' · ')}

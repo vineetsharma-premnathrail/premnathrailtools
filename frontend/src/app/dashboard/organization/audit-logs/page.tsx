@@ -1,15 +1,16 @@
 'use client'
 
 import Select from '@/components/shared/Select'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, Pill, pillStyle } from '@/components/shared/ui'
 import { useEffect, useState } from 'react'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { organizationApi } from '@/lib/api'
 import { AuditLogEntry, AuditDashboard } from '@/types'
-import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
+import { CONTROL, TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { formatDateTime } from '@/lib/format'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -22,7 +23,7 @@ const statCardStyle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   padding: '9px 11px', borderRadius: 9, border: `1px solid ${BORDER.normal}`,
   background: '#fff', fontSize: 13, outline: 'none', color: TEXT.body,
-  minHeight: 38, boxSizing: 'border-box',
+  minHeight: CONTROL.height, boxSizing: 'border-box',
 }
 const cardRowStyle: React.CSSProperties = {
   display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 16px', borderRadius: 12,
@@ -30,7 +31,7 @@ const cardRowStyle: React.CSSProperties = {
 }
 
 const MODULE_LABELS: Record<string, string> = {
-  organization: 'Organization', erp: 'Service Module', crm: 'CRM Module', p2p: 'Procurement', quality: 'Quality', store: 'Store', production: 'Production', hydraulic: 'Hydraulic & Pneumatic', design: 'Design', rnd: 'R&D', other: 'Other',
+  organization: 'Organization', erp: 'Service Module', crm: 'CRM', p2p: 'Procurement', quality: 'Quality', store: 'Store', production: 'Production', hydraulic: 'Hydraulic & Pneumatic', design: 'Design', rnd: 'R&D', other: 'Other',
 }
 
 const API_SOURCE_LABELS: Record<string, string> = {
@@ -185,7 +186,7 @@ export default function AuditLogsPage() {
           <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Activity by Module</h2>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {Object.entries(dashboard.by_module).map(([mk, count]) => (
-              <span key={mk} style={{ fontSize: 12.5, fontWeight: 600, padding: '6px 14px', borderRadius: 9999, background: 'rgba(244,113,59,0.08)', color: BRAND.primary }}>
+              <span key={mk} style={{ ...pillStyle(BRAND.primary), fontSize: 12.5, fontWeight: 600, padding: '6px 14px' }}>
                 {MODULE_LABELS[mk] || mk}: {count}
               </span>
             ))}
@@ -221,10 +222,10 @@ export default function AuditLogsPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 10.5, color: TEXT.muted }}>#{log.id}</span>
                     <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading }}>{log.action}</span>
-                    <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: BRAND.primary }}>{MODULE_LABELS[log.module_key || 'other'] || log.module_key}</span>
-                    <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(0,0,0,0.05)', color: TEXT.secondary }}>{log.entity_type}{log.entity_id ? ` #${log.entity_id}` : ''}</span>
+                    <Pill label={MODULE_LABELS[log.module_key || 'other'] || log.module_key} hex={BRAND.primary} />
+                    <Pill label={`${(log.entity_type || '').replace(/_/g, ' ')}${log.entity_id ? ` #${log.entity_id}` : ''}`} hex="#64748b" />
                   </div>
-                  <span style={{ fontSize: 11.5, color: TEXT.muted, whiteSpace: 'nowrap' }}>{new Date(log.performed_at).toLocaleString()}</span>
+                  <span style={{ fontSize: 11.5, color: TEXT.muted, whiteSpace: 'nowrap' }}>{formatDateTime(log.performed_at)}</span>
                 </div>
                 <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>
                   {log.summary || '—'}{log.performed_by_name ? ` · by ${log.performed_by_name}` : ''}

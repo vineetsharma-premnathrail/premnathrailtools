@@ -12,7 +12,7 @@ import { storeApi } from '@/lib/api'
 import { StoreItem, StoreItemCategory, StoreItemMeta } from '@/types'
 import { ItemErpForm, ItemErpInfo, ItemVendorSuggestions, erpPayload } from '@/components/store/ItemErpSections'
 import { TEXT } from '@/lib/theme'
-import { Section, Row, InfoRow, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import ItemPlantData from '@/components/store/ItemPlantData'
@@ -30,6 +30,7 @@ const STATUSES = [
   { value: 'inactive', label: 'Inactive' },
   { value: 'discontinued', label: 'Discontinued' },
 ]
+const STATUS_HEX: Record<string, string> = { active: '#16a34a', inactive: '#78716c', discontinued: '#dc2626' }
 
 export default function StoreItemDetailPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
@@ -276,62 +277,54 @@ export default function StoreItemDetailPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
             <div>
               <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-                Store &amp; Inventory · {item.item_code}
+                Store &amp; Inventory · Item Master
               </p>
-              <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{item.item_name}</h1>
+              <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{item.item_code}</h1>
             </div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button type="button" data-tour="item-detail-back-btn" onClick={() => router.push('/dashboard/store')} style={secondaryBtnStyle}>← Back</button>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               {can('store', 'items', 'edit') && <button type="button" data-tour="item-detail-edit-btn" onClick={startEdit} style={secondaryBtnStyle}>Edit</button>}
               {/* Items carry no creator, so anyone holding Items › Delete may delete. */}
               {canDelete('store', 'items', null) && <button type="button" data-tour="item-detail-delete-btn" onClick={() => setDeleteConfirmOpen(true)} style={dangerBtnStyle}>Delete</button>}
+              <button type="button" data-tour="item-detail-back-btn" onClick={() => router.push('/dashboard/store')} style={secondaryBtnStyle}>← Back</button>
             </div>
           </div>
 
-          <Section title="Photo" style={{ marginBottom: 20 }}>
-            <div data-tour="item-detail-photo">
-              <ItemPhoto itemId={item.id} hasPhoto={!!item.has_photo} editable={can('store', 'items', 'edit')} onChanged={(has) => setItem({ ...item, has_photo: has })} />
+          {/* One record view: name + what it is on top, then every fact as label–value rows. */}
+          <DetailCard>
+            <div data-tour="item-detail-info">
+              <DetailSummary
+                title={item.item_name}
+                text={`${typeLabel(item.item_type)}${item.category ? ` · ${item.category}${item.subcategory ? ` › ${item.subcategory}` : ''}` : ''} — stocked, bought and issued in ${item.uom || 'units'}.`}
+                meta={<>
+                  <Pill label={STATUSES.find((s) => s.value === item.status)?.label || item.status} hex={STATUS_HEX[item.status] || '#78716c'} />
+                  <span>· Code <strong style={{ color: TEXT.heading }}>{item.item_code}</strong></span>
+                  {item.part_number && <span>· Part code <strong style={{ color: TEXT.heading }}>{item.part_number}</strong></span>}
+                </>}
+                actions={
+                  <div data-tour="item-detail-photo">
+                    <ItemPhoto itemId={item.id} hasPhoto={!!item.has_photo} editable={can('store', 'items', 'edit')} onChanged={(has) => setItem({ ...item, has_photo: has })} />
+                  </div>
+                }
+              />
+              <DetailGroup title="Item Details">
+                <DetailRow label="Item Type">{typeLabel(item.item_type)}</DetailRow>
+                <DetailRow label="Category">{item.category ? `${item.category}${item.subcategory ? ` › ${item.subcategory}` : ''}` : null}</DetailRow>
+                <DetailRow label="UOM">{item.uom}</DetailRow>
+                <DetailRow label="Technical Specification">{item.description}</DetailRow>
+              </DetailGroup>
             </div>
-          </Section>
-
-          {!editing ? (
-            <Section title="Item Details" style={{ marginBottom: 20 }}>
-              <div data-tour="item-detail-info" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <Row>
-                <InfoRow label="Item Code" value={item.item_code} />
-                <InfoRow label="Item Type" value={typeLabel(item.item_type)} />
-                <InfoRow label="Category" value={item.category || '—'} />
-                <InfoRow label="Subcategory" value={item.subcategory || '—'} />
-              </Row>
-              <Row>
-                <InfoRow label="Item Name" value={item.item_name} />
-                <InfoRow label="UOM" value={item.uom || '—'} />
-                <InfoRow label="Part Code" value={item.part_number || '—'} />
-                <InfoRow label="Status" value={STATUSES.find((s) => s.value === item.status)?.label || item.status} />
-              </Row>
-              <InfoRow label="Technical Specification" value={item.description || '—'} />
-              </div>
-            </Section>
-          ) : null}
-          {!editing ? (
-            <Section title="Planning & Cost" style={{ marginBottom: 20 }}>
-              <div data-tour="item-detail-planning">
-              <Row>
-                <InfoRow label="Purchase lead time" value={item.lead_time_days != null ? `${item.lead_time_days} calendar day(s)` : 'Not set — MRP will assume one'} />
-                <InfoRow label="Legacy code (v3 / Tally)" value={item.legacy_code || '—'} />
-                {seeStandardCost && <InfoRow label="Standard cost" value={item.standard_cost != null ? `₹${item.standard_cost.toLocaleString('en-IN')}` : '—'} />}
-                {seeValues && <InfoRow label="Weighted average" value={averageText(item)} />}
-              </Row>
-              </div>
-            </Section>
-          ) : null}
-          {!editing ? (
-            <>
-              <ItemErpInfo item={item} />
-              {seePlantData && <ItemPlantData itemId={item.id} canEdit={canFeature('store', 'items', 'plant_data', 'edit')} />}
-              {seeVendors && <ItemVendorSuggestions itemId={item.id} />}
-            </>
-          ) : null}
+            <div data-tour="item-detail-planning">
+              <DetailGroup title="Planning & Cost">
+                <DetailRow label="Purchase lead time">{item.lead_time_days != null ? `${item.lead_time_days.toLocaleString('en-IN')} calendar day(s)` : 'Not set — MRP will assume one'}</DetailRow>
+                <DetailRow label="Legacy code (v3 / Tally)">{item.legacy_code}</DetailRow>
+                {seeStandardCost && <DetailRow label="Standard cost">{item.standard_cost != null ? `₹${item.standard_cost.toLocaleString('en-IN')}` : null}</DetailRow>}
+                {seeValues && <DetailRow label="Weighted average">{averageText(item)}</DetailRow>}
+              </DetailGroup>
+            </div>
+            <ItemErpInfo item={item} />
+          </DetailCard>
+          {seePlantData && <ItemPlantData itemId={item.id} canEdit={canFeature('store', 'items', 'plant_data', 'edit')} />}
+          {seeVendors && <ItemVendorSuggestions itemId={item.id} />}
         </>
       )}
     </div>

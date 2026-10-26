@@ -7,12 +7,12 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { designApi } from '@/lib/api'
 import { DesignBomDetail, DesignBomExplosionRow, DesignBomLine, DesignBomRevision, DesignChecklistAnswer, DesignLookupOption } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, primaryBtnStyle, smallSecondaryBtnStyle, chipBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, SheetIconName, SHEET, Req, Optional, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { DANGER_RED } from '@/components/design/DesignSheets'
 import ReasonSheet from '@/components/shared/ReasonSheet'
@@ -57,15 +57,9 @@ const tdStyle: React.CSSProperties = { padding: '9px 10px', fontSize: 12.5, colo
 const sheetTh: React.CSSProperties = { textAlign: 'left', padding: '9px 10px', fontSize: 11.5, fontWeight: 600, color: SHEET.MUTED, background: SHEET.SOFT, borderBottom: `1px solid ${SHEET.LINE}` }
 const sheetTd: React.CSSProperties = { padding: '8px 10px', fontSize: 12.5, color: SHEET.BODY, borderBottom: `1px solid ${SHEET.LINE}`, verticalAlign: 'top' }
 const linkStyle: React.CSSProperties = { color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }
-const smallLabel: React.CSSProperties = { fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 2px' }
 
 function pill(status: string) {
-  const hex = STATUS_HEX[status] || '#78716c'
-  return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
-      {BOM_STATUS_LABELS[status] || status}
-    </span>
-  )
+  return <Pill label={BOM_STATUS_LABELS[status] || status} hex={STATUS_HEX[status] || '#78716c'} />
 }
 
 function mergeOptions(base: DesignLookupOption[], extra: DesignLookupOption[]): DesignLookupOption[] {
@@ -384,18 +378,11 @@ export default function DesignBomDetailPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            {bom ? `Bill of Materials · ${bom.product_item_code || ''}${bom.product_item_name ? ` — ${bom.product_item_name}` : ''}` : 'Design Module'}
+            Design · Bill of Materials
           </p>
-          <h1 data-tour="design-bom-header" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {bom ? <>{bom.bom_number} <span style={{ fontWeight: 500, color: TEXT.secondary }}>— {bom.title}</span> {pill(bom.display_status)}</> : 'BOM'}
+          <h1 data-tour="design-bom-header" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>
+            {bom ? bom.bom_number : 'BOM'}
           </h1>
-          {bom && (
-            <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>
-              Controlled revision: <strong style={{ color: TEXT.body }}>{bom.released_revision_label || 'none yet'}</strong>
-              {bom.released_at ? ` (released ${formatDate(bom.released_at)})` : ''}
-              {bom.open_revision_label ? ` · ${bom.open_revision_label} ${(BOM_STATUS_LABELS[bom.open_revision_status || ''] || '').toLowerCase()}${bom.pending_with_name ? ` with ${bom.pending_with_name}` : ''}` : ''}
-            </p>
-          )}
         </div>
         <button data-tour="design-bom-back-btn" onClick={() => router.push('/dashboard/design/boms')} type="button" style={secondaryBtnStyle}>← Back</button>
       </div>
@@ -423,6 +410,50 @@ export default function DesignBomDetailPage() {
 
       {bom && (
         <>
+          {/* What this BOM is: summary on top, then every header detail as label–value rows. */}
+          <DetailCard tour="design-bom-details">
+            <DetailSummary
+              title={bom.title}
+              text={bom.description || `Bill of materials for ${bom.product_item_code || 'the product'}${bom.product_item_name ? ` — ${bom.product_item_name}` : ''}.`}
+              meta={<>
+                {pill(bom.display_status)}
+                <span>· Controlled revision <strong style={{ color: TEXT.heading }}>{bom.released_revision_label || 'none yet'}</strong>{bom.released_at ? ` (released ${formatDate(bom.released_at)})` : ''}</span>
+                {bom.open_revision_label && <span>· {bom.open_revision_label} {(BOM_STATUS_LABELS[bom.open_revision_status || ''] || '').toLowerCase()}{bom.pending_with_name ? ` with ${bom.pending_with_name}` : ''}</span>}
+                <span>· Owner <strong style={{ color: TEXT.heading }}>{bom.owner_name || '—'}</strong></span>
+              </>}
+              actions={can('edit') && !editingHeader ? (
+                <button data-tour="design-bom-details-edit-btn" type="button" style={smallSecondaryBtnStyle} onClick={startEditHeader}>Edit details</button>
+              ) : undefined}
+            />
+            <DetailGroup title="What it builds">
+              <DetailRow label="Product item">{bom.product_item_code ? `${bom.product_item_code}${bom.product_item_name ? ` — ${bom.product_item_name}` : ''}` : null}</DetailRow>
+              <DetailRow label="GA / assembly drawing">
+                {bom.document_id ? <span onClick={() => router.push(recordPath('/dashboard/design/documents', bom, 'document_id'))} style={linkStyle}>{bom.doc_number}</span> : null}
+              </DetailRow>
+            </DetailGroup>
+            <DetailGroup title="Linked to" last>
+              {bom.order_project_number && (
+                <DetailRow label="Order project">
+                  <OrderProjectChip opNumber={bom.order_project_number} elementNo={bom.order_project_element_no} label={bom.order_project_element_label}
+                    onClick={() => router.push(recordPath('/dashboard/projects/order-projects', bom, 'order_project_id'))} />
+                </DetailRow>
+              )}
+              <DetailRow label="Project">{bom.pm_project_label}</DetailRow>
+              <DetailRow label="Machine">{bom.erp_project_label}</DetailRow>
+              <DetailRow label="Design request">
+                {bom.design_request_id ? <span onClick={() => router.push(recordPath('/dashboard/design/requests', bom, 'design_request_id'))} style={linkStyle}>{bom.request_number || `#${bom.design_request_id}`}</span> : null}
+              </DetailRow>
+              {bom.open_ecns.length > 0 && (
+                <DetailRow label="Open change notices">
+                  {bom.open_ecns.map((e) => (
+                    <span key={e.id} onClick={() => router.push(recordPath('/dashboard/design/change-notices', e))} style={{ ...linkStyle, display: 'block' }}>{e.ecn_number} — {e.title}</span>
+                  ))}
+                </DetailRow>
+              )}
+            </DetailGroup>
+            <p style={{ fontSize: 12, color: TEXT.muted, margin: '10px 0 0' }}>Created {formatDate(bom.created_at)}</p>
+          </DetailCard>
+
           {/* Workflow action bar */}
           <div data-tour="design-bom-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
             {can('submit') && openRev?.status === 'draft' && <button data-tour="design-bom-submit-btn" disabled={busy} style={primaryBtn} onClick={openSubmit}>Submit {openRev.revision_label} for Check</button>}
@@ -459,11 +490,7 @@ export default function DesignBomDetailPage() {
                   {bom.revisions.map((r) => {
                     const active = r.id === selectedRevId
                     return (
-                      <button key={r.id} type="button" onClick={() => { setSelectedRevId(r.id); setEditingRevision(false); setExplosion(null); setExplosionOpen(false) }} style={{
-                        padding: '5px 12px', borderRadius: 9999, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                        border: `1px solid ${active ? '#FF6A2A' : BORDER.normal}`, background: active ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,.6)',
-                        color: active ? '#FF6A2A' : STATUS_HEX[r.status] || TEXT.secondary,
-                      }}>
+                      <button key={r.id} type="button" onClick={() => { setSelectedRevId(r.id); setEditingRevision(false); setExplosion(null); setExplosionOpen(false) }} style={active ? chipBtnStyle(true) : { ...chipBtnStyle(false), color: STATUS_HEX[r.status] || TEXT.secondary }}>
                         {r.revision_label}
                       </button>
                     )
@@ -539,21 +566,22 @@ export default function DesignBomDetailPage() {
                       </div>
                     ) : (
                       <>
-                        <div data-tour="design-bom-rev-info" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 14 }}>
-                          <div style={{ gridColumn: '1 / -1' }}><InfoRow label="Change summary" value={selected.change_summary || '—'} /></div>
-                          <InfoRow label="Prepared by" value={`${selected.created_by_name || '—'} · ${formatDate(selected.created_at)}`} />
-                          <InfoRow label="Checked by" value={selected.reviewed_at ? `${selected.reviewed_by_name} · ${formatDate(selected.reviewed_at)}` : `${selected.reviewer_name || 'not named'} (pending)`} />
-                          <InfoRow label="Released by" value={selected.released_at ? `${selected.approved_by_name} · ${formatDate(selected.approved_at)}` : `${selected.approver_name || 'not named'} (pending)`} />
-                          <InfoRow label="Released" value={selected.released_at ? formatDateTime(selected.released_at) : '—'} />
-                          {selected.review_comment && <div style={{ gridColumn: '1 / -1' }}><InfoRow label="Checker remarks" value={selected.review_comment} /></div>}
-                          {selected.approval_comment && <div style={{ gridColumn: '1 / -1' }}><InfoRow label="Approver remarks" value={selected.approval_comment} /></div>}
+                        <div data-tour="design-bom-rev-info" style={{ marginBottom: 14 }}>
+                          <DetailGroup>
+                            <DetailRow label="Change summary">{selected.change_summary}</DetailRow>
+                            <DetailRow label="Prepared by">{`${selected.created_by_name || '—'} · ${formatDate(selected.created_at)}`}</DetailRow>
+                            <DetailRow label="Checked by">{selected.reviewed_at ? `${selected.reviewed_by_name || '—'} · ${formatDate(selected.reviewed_at)}` : `${selected.reviewer_name || 'Not named yet'} (pending)`}</DetailRow>
+                            <DetailRow label="Released by">{selected.released_at ? `${selected.approved_by_name || '—'} · ${formatDateTime(selected.released_at)}` : `${selected.approver_name || 'Not named yet'} (pending)`}</DetailRow>
+                            {selected.review_comment && <DetailRow label="Checker remarks">{selected.review_comment}</DetailRow>}
+                            {selected.approval_comment && <DetailRow label="Approver remarks">{selected.approval_comment}</DetailRow>}
+                          </DetailGroup>
                         </div>
 
                         <p data-tour="design-bom-lines" style={{ ...sectionTitle, margin: '4px 0 8px' }}>Lines · {sortedLines.length}</p>
                         <div style={{ overflowX: 'auto' }}>
                           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
                             <thead>
-                              <tr>{['Pos.', 'Item', 'Qty', 'UOM', 'Drawing', 'Make / Buy', 'Approved makes', 'Sub-assembly', 'Remarks'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                              <tr>{['Pos.', 'Item', 'Qty', 'UOM', 'Drawing', 'Make / Buy', 'Approved makes', 'Sub-assembly', 'Remarks'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={sortedLines.length} />}</th>)}</tr>
                             </thead>
                             <tbody>
                               {sortedLines.length === 0 ? (
@@ -626,7 +654,7 @@ export default function DesignBomDetailPage() {
                     {!explosion ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Loading…</p> : (
                       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
                         <thead>
-                          <tr>{['Level', 'Item', 'Qty / assy', 'Total qty', 'UOM', 'Make / Buy', 'Drawing', 'Sub-BOM'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                          <tr>{['Level', 'Item', 'Qty / assy', 'Total qty', 'UOM', 'Make / Buy', 'Drawing', 'Sub-BOM'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={explosion.length} />}</th>)}</tr>
                         </thead>
                         <tbody>
                           {explosion.length === 0 ? (
@@ -657,7 +685,7 @@ export default function DesignBomDetailPage() {
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                     <thead>
-                      <tr>{['Rev', 'Status', 'Change summary', 'Lines', 'Prepared', 'Checked', 'Released'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                      <tr>{['Rev', 'Status', 'Change summary', 'Lines', 'Prepared', 'Checked', 'Released'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={bom.revisions.length} />}</th>)}</tr>
                     </thead>
                     <tbody>
                       {bom.revisions.map((r) => (
@@ -677,50 +705,8 @@ export default function DesignBomDetailPage() {
               </div>
             </div>
 
-            {/* Right: details, where used, timeline */}
+            {/* Right: where used, timeline */}
             <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-              <div style={sectionStyle}>
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
-                  <p data-tour="design-bom-details" style={{ ...sectionTitle, margin: 0, flex: 1 }}>Details</p>
-                  {can('edit') && !editingHeader && (
-                    <button data-tour="design-bom-details-edit-btn" type="button" style={{ ...smallSecondaryBtnStyle }} onClick={startEditHeader}>Edit</button>
-                  )}
-                </div>
-                {(
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <InfoRow label="Product item" value={`${bom.product_item_code || '—'}${bom.product_item_name ? ` — ${bom.product_item_name}` : ''}`} />
-                    {bom.description && <InfoRow label="Description" value={bom.description} />}
-                    <div>
-                      <p style={smallLabel}>GA / assembly drawing</p>
-                      {bom.document_id ? <p onClick={() => router.push(recordPath('/dashboard/design/documents', bom, 'document_id'))} style={{ ...linkStyle, fontSize: 13, margin: 0 }}>{bom.doc_number}</p> : <p style={{ fontSize: 13, color: TEXT.body, margin: 0 }}>—</p>}
-                    </div>
-                    <InfoRow label="Owner" value={bom.owner_name || '—'} />
-                    {bom.order_project_number && (
-                      <div>
-                        <p style={smallLabel}>Order project</p>
-                        <OrderProjectChip opNumber={bom.order_project_number} elementNo={bom.order_project_element_no} label={bom.order_project_element_label}
-                          onClick={() => router.push(recordPath('/dashboard/projects/order-projects', bom, 'order_project_id'))} />
-                      </div>
-                    )}
-                    <InfoRow label="Project" value={bom.pm_project_label || '—'} />
-                    <InfoRow label="Machine" value={bom.erp_project_label || '—'} />
-                    <div>
-                      <p style={smallLabel}>Design request</p>
-                      {bom.design_request_id ? <p onClick={() => router.push(recordPath('/dashboard/design/requests', bom, 'design_request_id'))} style={{ ...linkStyle, fontSize: 13, margin: 0 }}>{bom.request_number || `#${bom.design_request_id}`}</p> : <p style={{ fontSize: 13, color: TEXT.body, margin: 0 }}>—</p>}
-                    </div>
-                    <InfoRow label="Created" value={formatDate(bom.created_at)} />
-                    {bom.open_ecns.length > 0 && (
-                      <div>
-                        <p style={smallLabel}>Open change notices</p>
-                        {bom.open_ecns.map((e) => (
-                          <p key={e.id} onClick={() => router.push(recordPath('/dashboard/design/change-notices', e))} style={{ fontSize: 13, color: '#FF6A2A', fontWeight: 600, margin: 0, cursor: 'pointer' }}>{e.ecn_number} — {e.title}</p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
               {seeWhereUsed && (<div style={sectionStyle}>
                 <p data-tour="design-bom-where-used" style={sectionTitle}>Where used</p>
                 {bom.where_used.length === 0 ? (
@@ -750,7 +736,7 @@ export default function DesignBomDetailPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 520, overflowY: 'auto' }}>
                   {bom.events.map((e) => (
                     <div key={e.id} style={{ display: 'flex', gap: 10, padding: '8px 0', borderTop: `1px solid ${BORDER.light}` }}>
-                      <span style={{ width: 8, height: 8, borderRadius: 9999, marginTop: 6, flex: 'none', background: EVENT_HEX[e.action] || '#a8a29e' }} />
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 6, flex: 'none', background: EVENT_HEX[e.action] || '#a8a29e' }} />
                       <div style={{ minWidth: 0 }}>
                         <p style={{ fontSize: 12.5, color: TEXT.body, margin: 0 }}>
                           <strong>{e.actor_name || 'System'}</strong> {EVENT_LABELS[e.action] || e.action.replace(/_/g, ' ')}
@@ -863,7 +849,7 @@ export default function DesignBomDetailPage() {
               <SheetSection icon="list" title="Checklist">
                 <div style={{ overflowX: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 12 }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
-                    <thead><tr>{['#', 'Check', 'Result', 'Remark'].map((h) => <th key={h} style={sheetTh}>{h}</th>)}</tr></thead>
+                    <thead><tr>{['#', 'Check', 'Result', 'Remark'].map((h, i) => <th key={h} style={sheetTh}>{h}{i === 0 && <RowCount count={bom.checklist?.items.length ?? 0} />}</th>)}</tr></thead>
                     <tbody>
                       {[...bom.checklist.items].sort((a, b) => a.sort_order - b.sort_order).map((item, idx) => {
                         const a = answers[item.id] || { result: '', remark: '' }
@@ -875,11 +861,7 @@ export default function DesignBomDetailPage() {
                               {(['ok', 'not_ok', 'na'] as const).map((res) => {
                                 const active = a.result === res
                                 return (
-                                  <button key={res} type="button" onClick={() => setAnswers({ ...answers, [item.id]: { ...a, result: res } })} style={{
-                                    padding: '4px 10px', marginRight: 4, borderRadius: 9999, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
-                                    border: `1px solid ${active ? RESULT_HEX[res] : SHEET.LINE}`, background: active ? `${RESULT_HEX[res]}1a` : '#fff',
-                                    color: active ? RESULT_HEX[res] : SHEET.BODY,
-                                  }}>{RESULT_LABELS[res]}</button>
+                                  <button key={res} type="button" onClick={() => setAnswers({ ...answers, [item.id]: { ...a, result: res } })} style={{ ...chipBtnStyle(active), marginRight: 4, ...(active ? { background: RESULT_HEX[res] } : {}) }}>{RESULT_LABELS[res]}</button>
                                 )
                               })}
                             </td>

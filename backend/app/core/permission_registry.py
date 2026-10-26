@@ -361,8 +361,14 @@ FEATURE_KINDS = {
 }
 
 
-def _feature(key: str, label: str, kind: str, inherit: dict[str, str], hint: str = "") -> tuple:
-    """(key, label, kind, {feature action: tab action it inherits from}, hint)."""
+def _feature(key: str, label: str, kind: str, inherit: dict[str, str | None], hint: str = "") -> tuple:
+    """(key, label, kind, {feature action: tab action it inherits from}, hint).
+
+    An action mapped to None is EXPLICIT-ONLY: it is never inherited from the
+    tab and never granted by a module wildcard (the No access / View only /
+    Contributor / Full access presets) — only ticking it on a role or as a
+    user's extra permission grants it. For special powers that used to be a
+    hand-picked list of people (e.g. the R&D Technical Offer team)."""
     assert kind in FEATURE_KINDS, kind
     assert set(inherit) <= set(ACTIONS), (key, inherit)
     return (key, label, kind, inherit, hint)
@@ -535,7 +541,8 @@ def expand_grants(grants) -> set[str]:
                 out.update(permission_id(mk, tab, x) for x in acts if a == "*" or x == a)
             for tab, feats in module.get("features", {}).items():
                 for fk, f in feats.items():
-                    out.update(feature_id(mk, tab, fk, x) for x in f["actions"] if a == "*" or x == a)
+                    out.update(feature_id(mk, tab, fk, x) for x in f["actions"]
+                               if (a == "*" or x == a) and f["inherit"].get(x) is not None)
         elif "." in tk:
             tab = tk.split(".", 1)[0]
             customised.add((mk, tab))
@@ -554,7 +561,7 @@ def expand_grants(grants) -> set[str]:
                 continue
             for fk, f in feats.items():
                 for a, legacy in f["inherit"].items():
-                    if permission_id(mk, tab, legacy) in out:
+                    if legacy is not None and permission_id(mk, tab, legacy) in out:
                         out.add(feature_id(mk, tab, fk, a))
                         out.add(feature_id(mk, tab, fk, "view"))
     return out

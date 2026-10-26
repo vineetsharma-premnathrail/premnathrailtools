@@ -12,9 +12,14 @@ const config: TourConfig = {
       options: RND_PROTO_STATUS_OPTIONS,
     },
     {
-      target: 'rnd-ptd-form',
-      title: 'Prototype form',
-      purpose: 'Details, findings, summary and the BOM in one form; Delete / Cancel / Save Changes are at the bottom.',
+      target: 'rnd-ptd-overview',
+      title: 'Prototype overview',
+      purpose: 'Name and version, what it is, status, build date and project on top; then the details, findings and the BOM (read-only).',
+    },
+    {
+      target: 'rnd-ptd-edit-btn',
+      title: 'Edit',
+      purpose: 'Opens the full form to change details, findings and the BOM. Save returns to this view; Discard drops the changes.',
     },
     {
       target: 'rnd-ptd-back-btn',
@@ -88,7 +93,7 @@ const config: TourConfig = {
     {
       target: 'rnd-ptd-save-btn',
       title: 'Save Changes',
-      purpose: 'Saves details and BOM.',
+      purpose: 'Shown after Edit: saves details and BOM and returns to the overview.',
       after: 'Project, Name and Version are required; each BOM line needs a name and a quantity above 0.',
     },
     {

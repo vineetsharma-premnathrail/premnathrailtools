@@ -90,7 +90,7 @@ export const grcApi = {
   },
   mitigations: () => g<SodMitigationRow[]>('/organization/grc/sod/mitigations'),
   deleteMitigation: async (id: number) => { const { data } = await apiClient.delete(`/organization/grc/sod/mitigations/${id}`); return data },
-  denials: (params: { user_id?: number; days?: number; permission?: string } = {}) => g<DenialRow[]>('/organization/grc/denials', params),
+  denials: (params: { user_id?: number; days?: number; permission?: string; limit?: number } = {}) => g<DenialRow[]>('/organization/grc/denials', params),
   denialSummary: (days = 7) => g<DenialSummaryRow[]>('/organization/grc/denials/summary', { days }),
 }
 
@@ -98,7 +98,7 @@ export const monitorApi = {
   jobs: () => g<JobRow[]>('/organization/monitor/jobs'),
   runs: (jobId: string) => g<JobRunRow[]>(`/organization/monitor/jobs/${encodeURIComponent(jobId)}/runs`),
   runNow: async (jobId: string) => { const { data } = await apiClient.post(`/organization/monitor/jobs/${encodeURIComponent(jobId)}/run`); return data },
-  errors: (params: { days?: number; path?: string; user_id?: number; q?: string } = {}) => g<SystemErrorRow[]>('/organization/monitor/errors', params),
+  errors: (params: { days?: number; path?: string; user_id?: number; q?: string; limit?: number } = {}) => g<SystemErrorRow[]>('/organization/monitor/errors', params),
   errorSummary: (days = 7) => g<{ method: string; path: string; exception_type: string; count: number }[]>('/organization/monitor/errors/summary', { days }),
   error: (ref: string) => g<SystemErrorRow>(`/organization/monitor/errors/${encodeURIComponent(ref)}`),
 }

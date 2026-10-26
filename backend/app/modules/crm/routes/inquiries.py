@@ -16,7 +16,7 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.crm.models.inquiry import Inquiry, InquiryLineItem
 from app.modules.crm.services.cascade import cascade_delete_children
 from app.modules.crm.services import requirement_movement, technical_offer
-from app.modules.crm.services.stage_guard import check_stage_move, ensure_deletable, ensure_no_live_order
+from app.modules.crm.services.stage_guard import check_stage_move, ensure_deletable, ensure_no_live_order, ensure_not_with_sales
 from app.modules.crm.services import opportunity as opp
 from app.modules.crm.models.activity import Activity
 from app.modules.crm.models.stage_log import CrmStageLog
@@ -38,10 +38,15 @@ from fastapi.responses import Response
 router = APIRouter(prefix="/crm/inquiries", tags=["CRM - Inquiries"])
 
 
-def _out(inquiry: Inquiry, user: User) -> InquiryResponse:
+def _out(inquiry: Inquiry, user: User, db: Session | None = None) -> InquiryResponse:
     """A inquiry as the API returns it — money fields blanked for a user without
-    CRM › Inquiries & Tenders › Prices & margins."""
+    CRM › Inquiries & Tenders › Prices & margins. With `db`, also names the live
+    sales order it was sent to Sales as (the record is then read-only)."""
     resp = InquiryResponse.model_validate(inquiry)
+    if db is not None:
+        from app.modules.sales import service as sales_svc
+        order = sales_svc.live_order_for_source(db, inquiry.id, None)
+        resp.sales_order_number = order.display_number if order else None
     return resp if sees_prices(user) else blank(resp, INQUIRY_MONEY_FIELDS)
 
 # Pre-sales stages only — mirrors INQ_STAGES in frontend/src/components/crm/constants.ts.
@@ -201,6 +206,9 @@ async def create_inquiry(
     _check_choice({"status": payload.status}, None, "status", INQ_STATUSES, "inquiry status")
 
     data = payload.model_dump(exclude={"additional_items"})
+    # The BD owner is always the person who logs the inquiry — not picked on the form.
+    data["bd_owner_id"] = user.id
+    data["bd_owner"] = user.name or user.email
     _check_probability(data.get("probability"))
     opp.check_lost_code(data.get("lost_reason_code"))
     opp.apply_owners(db, None, data, user)
@@ -262,7 +270,7 @@ async def get_inquiry(
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
     ensure_in_scope(db, _user, inquiry)
-    return _out(inquiry, _user)
+    return _out(inquiry, _user, db)
 
 
 @router.patch("/{inquiry_id}", response_model=InquiryResponse)
@@ -278,8 +286,17 @@ async def update_inquiry(
     ensure_in_scope(db, user, inquiry)
     if not _can_modify(inquiry, user):
         raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this inquiry.")
+    ensure_not_with_sales(db, inquiry_id=inquiry.id, label="inquiry")
 
     updates = payload.model_dump(exclude_unset=True, exclude={"additional_items", "stage_reason"})
+    # BD owner = the creator, fixed for the inquiry's life. The form sends the
+    # current values back (fine); asking for a different owner is refused.
+    if updates.get("bd_owner_id") is not None and updates["bd_owner_id"] != inquiry.bd_owner_id:
+        raise HTTPException(status_code=422, detail=(
+            f"The BD owner of inquiry {inquiry.universal_id} is the person who created it "
+            f"({inquiry.bd_owner or 'not recorded'}) and can't be changed."))
+    updates.pop("bd_owner", None)
+    updates.pop("bd_owner_id", None)
     _check_choice(updates, inquiry, "current_stage", INQ_STAGES, "inquiry stage")
     _check_choice(updates, inquiry, "status", INQ_STATUSES, "inquiry status")
     drop_money_updates(user, updates, INQUIRY_MONEY_FIELDS)
@@ -412,6 +429,7 @@ async def create_technical_offer_request(
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
     ensure_in_scope(db, user, inquiry)
+    ensure_not_with_sales(db, inquiry_id=inquiry.id, label="inquiry")
     missing = [label for label, ok in (
         ("Product", bool(inquiry.product)),
         ("Specification or Requirement Description", bool(inquiry.product_spec or inquiry.requirement_desc)),

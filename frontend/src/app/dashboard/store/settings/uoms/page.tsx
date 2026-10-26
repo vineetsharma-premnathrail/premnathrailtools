@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
 import StoreSettingsNav from '@/components/store/StoreSettingsNav'
 import MasterEditDialog from '@/components/store/MasterEditDialog'
@@ -118,15 +118,15 @@ export default function StoreUomsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
           <thead>
             <tr>
-              {['Code', 'Name', ''].map((h) => (
-                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+              {['Code', 'Name', ''].map((h, hi) => (
+                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap' }}>{h}{hi === 0 && <RowCount count={uoms.length} />}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={3} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && uoms.length === 0 && (
-              <tr><td colSpan={3} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No units yet.</td></tr>
+              <tr><td colSpan={3} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No units yet — use + Add Unit to create the first one.</td></tr>
             )}
             {!loading && uoms.map((u) => (
               <tr key={u.code} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>

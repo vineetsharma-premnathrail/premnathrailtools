@@ -9,7 +9,7 @@ import { hrApi } from '@/lib/api'
 import { HrLifecycleEvent, HrLifecycleMeta } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
-import { dangerBtnStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { dangerBtnStyle, primaryBtnStyle, secondaryBtnStyle, pillStyle, DetailCard, DetailGroup, DetailRow } from '@/components/shared/ui'
 import PromptDialog from '@/components/erp/PromptDialog'
 import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import HrNav from '@/components/hr/HrNav'
@@ -30,17 +30,8 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
 const errorBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
-const badge = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
-const fmtDate = (d: string | null) => (d ? d.slice(0, 10).split('-').reverse().join('-') : '—')
-
-function Info({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div style={{ flex: '1 1 180px', minWidth: 150, maxWidth: 300 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, marginBottom: 3 }}>{label}</div>
-      <div style={{ fontSize: 13.5, color: TEXT.heading, whiteSpace: 'pre-wrap' }}>{value || '—'}</div>
-    </div>
-  )
-}
+const badge = (hex: string): React.CSSProperties => pillStyle(hex)
+const fmtDate = (d: string | null) => (d ? d.slice(0, 10).split('-').reverse().join('/') : '—')
 
 export default function HrLifecycleDetailPage() {
   const { isAuthorized, isLoading, user } = useProtectedPage()
@@ -125,8 +116,9 @@ export default function HrLifecycleDetailPage() {
   if (!id) return <div><HrNav /></div>
 
   const summary = event?.completion_summary
+  // "From → To" for a field the event changes; just the current value when unchanged.
   const move = (label: string, from: string | null, to: string | null) => (
-    <Info label={label} value={to ? <>{from || '—'} <span style={{ color: TEXT.muted }}>→</span> <b>{to}</b></> : (from || '—')} />
+    <DetailRow label={label}>{to ? <>{from || '—'} <span style={{ color: TEXT.muted }}>→</span> <b>{to}</b></> : from}</DetailRow>
   )
 
   return (
@@ -209,42 +201,44 @@ export default function HrLifecycleDetailPage() {
             </div>
           )}
 
-          <div data-tour="hr-lcd-details" style={sectionStyle}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Details</h3>
-            {(
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px 20px' }}>
-                {event.event_type === 'exit' ? (
+          {/* Read-only event details: one card, label–value rows grouped by meaning. */}
+          <DetailCard tour="hr-lcd-details" style={{ paddingTop: 10 }}>
+            {event.event_type === 'exit' ? (
+              <DetailGroup title="Exit">
+                <DetailRow label="Exit type">{event.exit_type ? EXIT_TYPE_LABELS[event.exit_type] || event.exit_type : null}</DetailRow>
+                {event.is_hr_view && <DetailRow label="Resignation date">{event.resignation_date ? fmtDate(event.resignation_date) : null}</DetailRow>}
+                <DetailRow label="Last working day">{(event.last_working_day || event.effective_date) ? fmtDate(event.last_working_day || event.effective_date) : null}</DetailRow>
+                {event.is_hr_view && <DetailRow label="Notice period">{event.notice_period_days != null ? `${event.notice_period_days} days` : null}</DetailRow>}
+                <DetailRow label="Handover to">{event.handover_to_name}</DetailRow>
+                {event.is_hr_view && event.exit_reason && <DetailRow label="Exit reason">{event.exit_reason}</DetailRow>}
+              </DetailGroup>
+            ) : (
+              <DetailGroup title={event.event_type === 'joining' ? 'Joining' : event.event_type === 'confirmation' ? 'Confirmation' : 'What changes'}>
+                <DetailRow label={event.event_type === 'joining' ? 'Date of joining' : event.event_type === 'confirmation' ? 'Confirmation date' : 'Effective from'}>{event.effective_date ? fmtDate(event.effective_date) : null}</DetailRow>
+                {event.event_type !== 'confirmation' && (
                   <>
-                    <Info label="Exit type" value={event.exit_type ? EXIT_TYPE_LABELS[event.exit_type] || event.exit_type : null} />
-                    {event.is_hr_view && <Info label="Resignation date" value={fmtDate(event.resignation_date)} />}
-                    <Info label="Last working day" value={fmtDate(event.last_working_day || event.effective_date)} />
-                    {event.is_hr_view && <Info label="Notice period" value={event.notice_period_days != null ? `${event.notice_period_days} days` : null} />}
-                    <Info label="Handover to" value={event.handover_to_name} />
-                    <Info label="Department" value={event.from_department_name} />
-                    <Info label="Designation" value={event.from_designation_name} />
-                    <Info label="Reporting manager" value={event.from_manager_name} />
-                  </>
-                ) : (
-                  <>
-                    <Info label={event.event_type === 'joining' ? 'Date of joining' : event.event_type === 'confirmation' ? 'Confirmation date' : 'Effective from'} value={fmtDate(event.effective_date)} />
-                    {event.event_type !== 'confirmation' && (
-                      <>
-                        {move('Department', event.from_department_name, event.to_department_name)}
-                        {move('Plant', event.from_branch_name, event.to_branch_name)}
-                        {move('Designation', event.from_designation_name, event.to_designation_name)}
-                        {move('Grade', event.from_grade_name, event.to_grade_name)}
-                        {move('Reporting manager', event.from_manager_name, event.to_manager_name)}
-                      </>
-                    )}
-                    {(event.event_type === 'transfer' || event.event_type === 'promotion') && <Info label="Successor" value={event.handover_to_name} />}
+                    {move('Department', event.from_department_name, event.to_department_name)}
+                    {move('Plant', event.from_branch_name, event.to_branch_name)}
+                    {move('Designation', event.from_designation_name, event.to_designation_name)}
+                    {move('Grade', event.from_grade_name, event.to_grade_name)}
+                    {move('Reporting manager', event.from_manager_name, event.to_manager_name)}
                   </>
                 )}
-                <Info label="Raised by" value={event.created_by_name ? `${event.created_by_name} · ${fmtDate(event.created_at)}` : fmtDate(event.created_at)} />
-                {event.is_hr_view && event.exit_reason && <div style={{ flex: '1 1 100%' }}><Info label="Exit reason" value={event.exit_reason} /></div>}
-                {event.is_hr_view && event.remarks && <div style={{ flex: '1 1 100%' }}><Info label="Remarks" value={event.remarks} /></div>}
-              </div>
+                {(event.event_type === 'transfer' || event.event_type === 'promotion') && <DetailRow label="Successor">{event.handover_to_name}</DetailRow>}
+              </DetailGroup>
             )}
-          </div>
+            {event.event_type === 'exit' && (
+              <DetailGroup title="Position at exit">
+                <DetailRow label="Department">{event.from_department_name}</DetailRow>
+                <DetailRow label="Designation">{event.from_designation_name}</DetailRow>
+                <DetailRow label="Reporting manager">{event.from_manager_name}</DetailRow>
+              </DetailGroup>
+            )}
+            <DetailGroup last>
+              <DetailRow label="Raised by">{event.created_by_name ? `${event.created_by_name} · ${fmtDate(event.created_at)}` : fmtDate(event.created_at)}</DetailRow>
+              {event.is_hr_view && event.remarks && <DetailRow label="Remarks">{event.remarks}</DetailRow>}
+            </DetailGroup>
+          </DetailCard>
 
           <ChecklistPanel event={event} meta={meta} isHr={canEditLc && canFeature('hr', 'lifecycle', 'checklist', 'edit')} onChanged={load} />
 

@@ -3,7 +3,6 @@
 import Select from '@/components/shared/Select'
 import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState } from 'react'
-import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { crmApi } from '@/lib/api'
 import { formatDate } from '@/lib/format'
@@ -11,7 +10,7 @@ import { Tender, Organization, OrgContact } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import PhoneField from '@/components/erp/PhoneField'
-import { RAILWAY_ZONES, TENDER_PORTALS, TENDER_TYPES, CURRENCIES, TENDER_STATUSES, LEAD_SOURCES, priorityOptions, priorityLabel } from './constants'
+import { RAILWAY_ZONES, TENDER_PORTALS, TENDER_TYPES, CURRENCIES, TENDER_STATUSES, leadSourceOptions, priorityOptions, priorityLabel } from './constants'
 import { handleEnterAsTab } from './ui'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import ValidatedInput from '@/components/ValidatedInput'
@@ -128,8 +127,6 @@ export default function TenderForm({
 }) {
   // Inquiries & Tenders › Prices & margins: without it the value is hidden (and the server ignores it on save).
   const seePrices = useCan().canFeature('crm', 'inquiries_tenders', 'prices', 'view')
-  const { user } = useAuth()
-  const bdOwnerName = initial?.bd_owner || user?.name || ''
   const orgLocked = !!defaultOrgId
   const [form, setForm] = useState<FormState>(() => toFormState(initial, defaultOrgId))
   const [railwayZoneCustom] = useState(
@@ -239,7 +236,8 @@ export default function TenderForm({
         ...form,
         org_id: Number(form.org_id),
         org_contact_id: orgContactId,
-        bd_owner: bdOwnerName,
+        // BD owner = whoever logs the tender, set by the server; never sent from the form.
+        bd_owner: undefined,
         tender_value: form.tender_value ? Number(form.tender_value) : undefined,
         railway_zone: form.railway_zone === 'Other' ? railwayZoneCustom : form.railway_zone,
         tender_portal: form.tender_portal === 'Other' ? tenderPortalCustom : form.tender_portal,
@@ -384,7 +382,7 @@ export default function TenderForm({
                 <F label={<>Lead Source <Req /></>} tourId="tnd-lead-source">
                   <Select value={form.lead_source} onChange={(e) => set('lead_source', e.target.value)} style={inputStyle}>
                     <option value="">-- Select Source --</option>
-                    {LEAD_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {leadSourceOptions(form.lead_source).map((s) => <option key={s} value={s}>{s}</option>)}
                   </Select>
                 </F>
               </div>
@@ -393,11 +391,6 @@ export default function TenderForm({
                   <Select value={form.priority} onChange={(e) => set('priority', e.target.value)} style={inputStyle}>
                     {priorityOptions(initial?.priority).map((p) => <option key={p} value={p}>{priorityLabel(p)}</option>)}
                   </Select>
-                </F>
-              </div>
-              <div style={{ flex: '1 1 160px' }}>
-                <F label="BD Owner" tourId="tnd-bd-owner">
-                  <input value={bdOwnerName} disabled style={{ ...inputStyle, background: SHEET.SOFT, color: SHEET.MUTED }} />
                 </F>
               </div>
             </div>

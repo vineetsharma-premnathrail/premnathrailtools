@@ -9,7 +9,7 @@ import { mrpApi, StockRequirements } from '@/lib/mrpApi'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { TEXT, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 
 const EXC_HEX: Record<string, string> = {
   shortage: '#DC2626', reschedule_in: '#F59E0B', reschedule_out: '#2563EB', cancel: '#7C3AED',
@@ -74,7 +74,7 @@ export default function StockRequirementsDrawer({ itemId, branchId, onClose }: {
 
             <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 340px)', border: `1px solid ${BORDER.light}`, borderRadius: 12 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-                <thead><tr>{['Date', 'MRP Element', 'Reference', 'Receipt / Reqmt', 'Available', 'Exception'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Date', 'MRP Element', 'Reference', 'Receipt / Reqmt', 'Available', 'Exception'].map((h, i) => <th key={h} style={th}>{h}{i === 0 && <RowCount count={data.rows.length} />}</th>)}</tr></thead>
                 <tbody>
                   {data.rows.map((r, i) => (
                     <tr key={i}>

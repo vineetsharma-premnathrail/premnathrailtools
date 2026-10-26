@@ -11,7 +11,7 @@ import {
   HrAttendanceRegularization, HrAttendanceSummaryRow,
 } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle, chipBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import HrNav from '@/components/hr/HrNav'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import AttendanceCalendar, { AttendanceLegend, MonthPicker, MONTH_NAMES } from '@/components/hr/attendance/AttendanceCalendar'
@@ -48,7 +48,7 @@ const sectionStyle: React.CSSProperties = { borderRadius: 18, background: GLASS.
 const linkBtn = (color: string): React.CSSProperties => ({ background: 'none', border: 'none', padding: 0, fontSize: 12.5, fontWeight: 600, color, cursor: 'pointer', marginRight: 12 })
 
 function dmy(iso: string | null) {
-  return iso ? `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}` : '—'
+  return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—'
 }
 function localIso(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -57,7 +57,7 @@ function Badge({ status, computed }: { status: string | null; computed?: boolean
   if (!status) return <span style={{ fontSize: 12, color: TEXT.muted }}>—</span>
   const hex = ATT_HEX[status] || '#64748B'
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap', fontStyle: computed ? 'italic' : 'normal', border: computed ? `1px dashed ${hex}66` : 'none' }}>
+    <span style={{ ...pillStyle(hex), fontStyle: computed ? 'italic' : 'normal', border: computed ? `1px dashed ${hex}66` : 'none' }}>
       {ATT_LABELS[status] || status}
     </span>
   )
@@ -335,7 +335,7 @@ export default function HrAttendancePage() {
         {TABS.filter((t) => tabOk(t.key)).map((t) => {
           const active = t.key === tab
           return (
-            <button key={t.key} type="button" data-tour={`hr-att-tab-${t.key}`} onClick={() => { setTab(t.key); setError([]); setNotice('') }} style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 14px', borderRadius: 9999, cursor: 'pointer', border: active ? '1px solid #FF6A2A' : '1px solid rgba(0,0,0,0.1)', background: active ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,0.7)', color: active ? '#e0521a' : '#57534e' }}>
+            <button key={t.key} type="button" data-tour={`hr-att-tab-${t.key}`} onClick={() => { setTab(t.key); setError([]); setNotice('') }} style={chipBtnStyle(active)}>
               {t.label}
             </button>
           )
@@ -358,7 +358,7 @@ export default function HrAttendancePage() {
             <div data-tour="hr-att-reg-counts" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
               <span style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.secondary, padding: '4px 0' }}>{register.total} employees:</span>
               {Object.entries(register.counts).filter(([, n]) => n > 0).map(([k, n]) => (
-                <button key={k} type="button" onClick={() => setStatusFilter(statusFilter === k ? '' : k)} style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, border: statusFilter === k ? `1px solid ${ATT_HEX[k]}` : '1px solid transparent', background: `${ATT_HEX[k]}1a`, color: ATT_HEX[k], cursor: 'pointer' }}>
+                <button key={k} type="button" onClick={() => setStatusFilter(statusFilter === k ? '' : k)} style={{ ...chipBtnStyle(), borderColor: statusFilter === k ? ATT_HEX[k] : 'transparent', background: `${ATT_HEX[k]}1a`, color: ATT_HEX[k] }}>
                   {ATT_LABELS[k]} · {n}
                 </button>
               ))}
@@ -382,7 +382,7 @@ export default function HrAttendancePage() {
                   <th style={{ ...th, width: 36 }}>
                     <input type="checkbox" data-tour="hr-att-select-all" checked={allSelected} onChange={(e) => setSelected(e.target.checked ? visibleRows.map((r) => r.user_id) : [])} aria-label="Select all" />
                   </th>
-                  {['Employee', 'Department / plant', 'Shift', 'Status', 'In', 'Out', 'Source', ''].map((h) => <th key={h} style={th}>{h}</th>)}
+                  {['Employee', 'Department / plant', 'Shift', 'Status', 'In', 'Out', 'Source', ''].map((h, i) => <th key={h} style={th}>{h}{i === 0 && <RowCount count={visibleRows.length} />}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -479,7 +479,7 @@ export default function HrAttendancePage() {
           <div data-tour="hr-att-summary-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
               <thead>
-                <tr>{['Employee', 'Department', 'Present', 'Half day', 'Absent', 'Leave', 'On duty', 'WFH', 'Holiday', 'Weekly off', 'Not marked', 'Late', 'Present eq.'].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
+                <tr>{['Employee', 'Department', 'Present', 'Half day', 'Absent', 'Leave', 'On duty', 'WFH', 'Holiday', 'Weekly off', 'Not marked', 'Late', 'Present eq.'].map((h, i) => <th key={h} style={th}>{h}{i === 0 && <RowCount count={summary.length} />}</th>)}</tr>
               </thead>
               <tbody>
                 {sumLoading ? (
@@ -542,7 +542,7 @@ export default function HrAttendancePage() {
               {importResult.errors.length > 0 && (
                 <div style={{ ...tableWrap, maxHeight: 360 }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
-                    <thead><tr>{['Row', 'Employee', 'Problem'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                    <thead><tr>{['Row', 'Employee', 'Problem'].map((h, i) => <th key={h} style={th}>{h}{i === 0 && <RowCount count={importResult.errors.length} />}</th>)}</tr></thead>
                     <tbody>
                       {importResult.errors.map((e) => (
                         <tr key={`${e.row}-${e.message}`}>
@@ -573,7 +573,7 @@ export default function HrAttendancePage() {
           </div>
           <div data-tour="hr-att-corr-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1020 }}>
-              <thead><tr>{['Request', 'Employee', 'Date', 'Currently', 'Asked for', 'Times', 'Reason', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Request', 'Employee', 'Date', 'Currently', 'Asked for', 'Times', 'Reason', 'Status', ''].map((h, i) => <th key={h} style={th}>{h}{i === 0 && <RowCount count={regs.length} />}</th>)}</tr></thead>
               <tbody>
                 {regsLoading ? (
                   <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
@@ -589,7 +589,7 @@ export default function HrAttendancePage() {
                     <td style={td}>{r.check_in_time || '--'} – {r.check_out_time || '--'}</td>
                     <td style={{ ...td, maxWidth: 240 }}>{r.reason}</td>
                     <td style={td}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${REG_HEX[r.status]}1a`, color: REG_HEX[r.status], whiteSpace: 'nowrap' }}>{REG_LABELS[r.status]}</span>
+                      <span style={pillStyle(REG_HEX[r.status])}>{REG_LABELS[r.status]}</span>
                       {r.decision_remarks && <div style={{ fontSize: 11.5, color: TEXT.muted, marginTop: 3 }}>“{r.decision_remarks}”</div>}
                     </td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>

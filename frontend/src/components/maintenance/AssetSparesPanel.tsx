@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { maintenanceApi } from '@/lib/api'
 import { MaintenanceAssetSpare, MaintenanceStoreItemOption } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { secondaryBtnStyle, primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 
@@ -135,7 +135,7 @@ export default function AssetSparesPanel({ assetId, canEdit }: { assetId: number
         ? ['#F59E0B', 'At reorder']
         : min == null ? ['#78716c', 'No min set'] : ['#16A34A', 'OK']
     return (
-      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
+      <Pill label={label} hex={hex} />
     )
   }
 
@@ -171,7 +171,7 @@ export default function AssetSparesPanel({ assetId, canEdit }: { assetId: number
               <button
                 data-tour="maint-bos-save"
                 onClick={save} disabled={saving}
-                style={{ padding: '9px 18px', borderRadius: 10, border: 'none', cursor: saving ? 'wait' : 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600, opacity: saving ? 0.7 : 1 }}
+                style={{ ...primaryBtnStyle, cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.7 : 1 }}
               >
                 {saving ? 'Saving…' : 'Save'}
               </button>
@@ -195,7 +195,7 @@ export default function AssetSparesPanel({ assetId, canEdit }: { assetId: number
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
               <thead>
-                <tr>{['Item', 'Qty / Replacement', 'Critical', 'On Hand (all stores)', 'Min / Reorder', 'Stock', 'Remarks'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                <tr>{['Item', 'Qty / Replacement', 'Critical', 'On Hand (all stores)', 'Min / Reorder', 'Stock', 'Remarks'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={lines.length} />}</th>)}</tr>
               </thead>
               <tbody>
                 {lines.map((l) => (
@@ -206,7 +206,7 @@ export default function AssetSparesPanel({ assetId, canEdit }: { assetId: number
                     </td>
                     <td style={tdStyle}>{fmtQty(l.qty_per_replacement)} {l.uom || ''}</td>
                     <td style={tdStyle}>
-                      {l.is_critical ? <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: '#DC26261a', color: '#DC2626' }}>Critical</span> : '—'}
+                      {l.is_critical ? <Pill label="Critical" hex="#DC2626" /> : '—'}
                     </td>
                     <td style={{ ...tdStyle, fontWeight: 600 }}>{fmtQty(l.on_hand_total)} {l.uom || ''}</td>
                     <td style={tdStyle}>{fmtQty(l.minimum_stock)} / {fmtQty(l.reorder_level)}</td>
@@ -252,7 +252,7 @@ export default function AssetSparesPanel({ assetId, canEdit }: { assetId: number
             <div data-tour="maint-bos-draft" style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                 <thead>
-                  <tr>{['Item', 'Qty / Replacement', 'Critical', 'Remarks', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                  <tr>{['Item', 'Qty / Replacement', 'Critical', 'Remarks', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={draft.length} />}</th>)}</tr>
                 </thead>
                 <tbody>
                   {draft.map((d, idx) => (

@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import { erpApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import { TEXT } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { createPortal } from 'react-dom'
 
@@ -165,14 +165,14 @@ export default function BulkImportDialog({ kind, open, onClose, onImported }: {
             </p>
 
             <Block title="Saved" color="#15803d" count={result.created.length}>
-              <thead><tr><th style={th}>Row</th><th style={th}>{copy.refLabel}</th><th style={th}>{kind === 'projects' ? 'Model' : 'Issue'}</th><th style={th}>{kind === 'projects' ? 'Client' : 'Machine · Status'}</th></tr></thead>
+              <thead><tr><th style={th}>Row <RowCount count={result.created.length} /></th><th style={th}>{copy.refLabel}</th><th style={th}>{kind === 'projects' ? 'Model' : 'Issue'}</th><th style={th}>{kind === 'projects' ? 'Client' : 'Machine · Status'}</th></tr></thead>
               <tbody>{result.created.map((r) => (
                 <tr key={r.row}><td style={td}>{r.row}</td><td style={{ ...td, fontWeight: 700 }}>{r.ref}</td><td style={td}>{r.name || '—'}</td><td style={td}>{r.detail || '—'}</td></tr>
               ))}</tbody>
             </Block>
 
             <Block title="Duplicates — not saved" color="#b45309" count={result.existing.length}>
-              <thead><tr><th style={th}>Row</th><th style={th}>{copy.keyLabel}</th><th style={th}>Matches</th><th style={th}>Why</th></tr></thead>
+              <thead><tr><th style={th}>Row <RowCount count={result.existing.length} /></th><th style={th}>{copy.keyLabel}</th><th style={th}>Matches</th><th style={th}>Why</th></tr></thead>
               <tbody>{result.existing.map((r) => (
                 <tr key={r.row}><td style={td}>{r.row}</td><td style={td}>{r.key}</td>
                   <td style={td}>{r.existing_ref ? <b>{r.existing_label}</b> : r.existing_label}</td><td style={td}>{r.reason}</td></tr>
@@ -181,7 +181,7 @@ export default function BulkImportDialog({ kind, open, onClose, onImported }: {
 
             {result.errors.length > 0 && (
               <Block title="Problems — not saved" color="#dc2626" count={result.errors.length}>
-                <thead><tr><th style={th}>Row</th><th style={th}>{copy.keyLabel}</th><th style={th}>Fix</th></tr></thead>
+                <thead><tr><th style={th}>Row <RowCount count={result.errors.length} /></th><th style={th}>{copy.keyLabel}</th><th style={th}>Fix</th></tr></thead>
                 <tbody>{result.errors.map((r) => (
                   <tr key={r.row}><td style={td}>{r.row}</td><td style={td}>{r.key || '—'}</td><td style={td}>{r.reason}</td></tr>
                 ))}</tbody>

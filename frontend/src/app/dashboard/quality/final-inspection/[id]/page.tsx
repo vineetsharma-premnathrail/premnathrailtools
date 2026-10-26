@@ -14,9 +14,10 @@ import QualityNav from '@/components/quality/QualityNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
-import { ErrorBanner } from '@/components/quality/QualityBits'
+import { ErrorBanner, PageHeader } from '@/components/quality/QualityBits'
 import { FormPage, SheetSection, SheetIcon, sheetInput, sheetLabel, sheetBtn, Req, Optional, SHEET } from '@/components/shared/FormSheet'
 import Select from '@/components/shared/Select'
+import { RowCount, secondaryBtnStyle } from '@/components/shared/ui'
 
 function emptyResult(sortOrder: number): QualityInspectionResultInput {
   return { parameter: '', method: '', acceptance_criteria: '', observed_value: '', result: 'na', sort_order: sortOrder }
@@ -92,7 +93,16 @@ export default function FinalInspectionDetailPage() {
 
   if (isLoading || !isAuthorized) return null
   if (linkError) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/final-inspection" listLabel="Back to final inspections" /></div>)
-  if (loading || !inspection) return null
+  if (loading || !inspection) {
+    return (
+      <div>
+        <QualityNav />
+        <PageHeader title="Final Inspection"><button type="button" onClick={() => router.push('/dashboard/quality/final-inspection')} style={secondaryBtnStyle}>← Back</button></PageHeader>
+        <ErrorBanner error={error} />
+        {!error && <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>}
+      </div>
+    )
+  }
 
   const updateResult = (idx: number, field: keyof QualityInspectionResultInput, value: string) => {
     setResults((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)))
@@ -229,9 +239,9 @@ export default function FinalInspectionDetailPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                 <thead>
                   <tr>
-                    {['SL', 'Parameter', 'Method', 'Acceptance criteria', 'Observed value', 'Result', ''].map((h) => (
+                    {['SL', 'Parameter', 'Method', 'Acceptance criteria', 'Observed value', 'Result', ''].map((h, i) => (
                       <th key={h} style={{ textAlign: 'left', padding: '0 8px 8px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: SHEET.MUTED, whiteSpace: 'nowrap' }}>
-                        {h}
+                        {h}{i === 0 && <RowCount count={results.length} />}
                       </th>
                     ))}
                   </tr>

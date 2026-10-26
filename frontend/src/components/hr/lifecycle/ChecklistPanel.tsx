@@ -6,7 +6,7 @@ import { hrApi } from '@/lib/api'
 import { HrChecklistItem, HrLifecycleEvent, HrLifecycleMeta } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, pillStyle } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
@@ -178,7 +178,7 @@ export default function ChecklistPanel({
                     </div>
                     <div data-tour="hr-lcd-item-actions" style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                       {!it.can_edit || !open ? (
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${ITEM_STATUS_HEX[it.status]}1a`, color: ITEM_STATUS_HEX[it.status], whiteSpace: 'nowrap' }}>
+                        <span style={pillStyle(ITEM_STATUS_HEX[it.status])}>
                           {ITEM_STATUS_LABELS[it.status] || it.status}
                         </span>
                       ) : it.status === 'pending' ? (
@@ -188,7 +188,7 @@ export default function ChecklistPanel({
                         </>
                       ) : (
                         <>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${ITEM_STATUS_HEX[it.status]}1a`, color: ITEM_STATUS_HEX[it.status], whiteSpace: 'nowrap' }}>
+                          <span style={pillStyle(ITEM_STATUS_HEX[it.status])}>
                             {ITEM_STATUS_LABELS[it.status]}
                           </span>
                           <button type="button" data-tour="hr-lcd-item-reopen" disabled={busy} onClick={() => update(it, { status: 'pending' })} style={chip('#F59E0B')}>Reopen</button>

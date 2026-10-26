@@ -6,7 +6,8 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi, storeJobWorkApi } from '@/lib/api'
 import { StoreItem } from '@/types'
 import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
-import { Field, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { Field, primaryBtnStyle, secondaryBtnStyle, chipBtnStyle, RowCount, Pill } from '@/components/shared/ui'
+import { formatDate } from '@/lib/format'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -53,11 +54,18 @@ const STATUS_HEX: Record<string, string> = { open: '#2563eb', due_back: '#d97706
 const card: React.CSSProperties = { borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 340px)' }
 const th: React.CSSProperties = { position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap' }
 const td: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.secondary, verticalAlign: 'top' }
-const fmtDate = (d?: string | null) => (d ? d.split('-').reverse().join('-') : '—')
+const thNum: React.CSSProperties = { ...th, textAlign: 'right' }
+const tdNum: React.CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }
+// Columns holding numbers / money — right-aligned so digits line up.
+const NUM_COLS = new Set(['Value at vendor', 'Days out', 'Quantity at vendor', 'Value', 'Component value', 'Job charge', 'Unit cost', 'Qty', 'Taxable value', 'At vendor', 'With vendor'])
+const thFor = (h: string) => (NUM_COLS.has(h) ? thNum : th)
+const fmtDate = (d?: string | null) => (d ? formatDate(d) : '—')
+const fmtQty = (n?: number | null) => (n == null ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 4 }))
+const humanize = (v?: string | null) => (v ? v.charAt(0).toUpperCase() + v.slice(1).replace(/_/g, ' ') : '')
 const money = (v?: number | null) => (v == null ? '—' : `₹${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`)
 
 function Badge({ status }: { status: string }) {
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[status]}1a`, color: STATUS_HEX[status], whiteSpace: 'nowrap' }}>{STATUS_LABELS[status] || status}</span>
+  return <Pill label={STATUS_LABELS[status] || humanize(status)} hex={STATUS_HEX[status] || '#64748b'} />
 }
 
 type Tab = 'challans' | 'vendor' | 'receipts' | 'itc04'
@@ -132,13 +140,13 @@ export default function JobWorkPage() {
       <MessageDialog open={!!done} variant="success" title="Job Work Receipt Posted" message={done} onClose={() => setDone('')} />
       <MessageDialog open={!!returned} variant="success" title="Return Recorded" message={returned} onClose={() => setReturned('')} />
 
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 16 }}>
         {[
-          { label: 'Open challans', value: String(challans.filter((c) => c.status !== 'closed').length) },
+          { label: 'Open challans', value: challans.filter((c) => c.status !== 'closed').length.toLocaleString('en-IN') },
           ...(seeValues ? [{ label: 'Value at vendors', value: money(atVendorValue) }] : []),
-          { label: 'Past Rule 45 limit', value: String(overdue), danger: overdue > 0 },
+          { label: 'Past Rule 45 limit', value: overdue.toLocaleString('en-IN'), danger: overdue > 0 },
         ].map((k) => (
-          <div key={k.label} style={{ flex: '0 1 200px', padding: '12px 16px', borderRadius: 14, background: GLASS.card, border: `1px solid ${GLASS.border}` }}>
+          <div key={k.label} style={{ padding: '12px 16px', borderRadius: 14, background: GLASS.card, border: `1px solid ${GLASS.border}` }}>
             <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', color: TEXT.muted }}>{k.label}</div>
             <div style={{ fontSize: 20, fontWeight: 700, color: k.danger ? '#dc2626' : TEXT.heading }}>{k.value}</div>
           </div>
@@ -147,8 +155,7 @@ export default function JobWorkPage() {
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
         {([['challans', 'Challans'], ['vendor', 'Stock with Vendors'], ['receipts', 'Job Work Receipts'], ['itc04', 'ITC-04']] as [Tab, string][]).filter(([k]) => k !== 'receipts' || seeReceipts).map(([k, l]) => (
-          <button key={k} type="button" onClick={() => setTab(k)} style={{ padding: '7px 14px', borderRadius: 9999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-            color: tab === k ? '#fff' : '#57534e', background: tab === k ? BRAND.primaryActive : 'rgba(0,0,0,0.04)', border: tab === k ? `1px solid ${BRAND.primaryActive}` : '1px solid rgba(0,0,0,0.08)' }}>{l}</button>
+          <button key={k} type="button" onClick={() => setTab(k)} style={chipBtnStyle(tab === k)}>{l}</button>
         ))}
         {tab === 'challans' && (
           <label style={{ fontSize: 12.5, color: TEXT.secondary, marginLeft: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -160,27 +167,27 @@ export default function JobWorkPage() {
       {tab === 'challans' && (
         <div style={card}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
-            <thead><tr>{['Challan', 'Date', 'Vendor', 'Material (sent / back / used / at vendor)', ...(seeValues ? ['Value at vendor'] : []), 'Days out', 'Return by (Rule 45)', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Challan', 'Date', 'Vendor', 'Material (sent / back / used / at vendor)', ...(seeValues ? ['Value at vendor'] : []), 'Days out', 'Return by (Rule 45)', 'Status', ''].map((h, hi) => <th key={h} style={thFor(h)}>{h}{hi === 0 && <RowCount count={challans.length} />}</th>)}</tr></thead>
             <tbody>
               {loading && <tr><td colSpan={9} style={{ ...td, textAlign: 'center' }}>Loading…</td></tr>}
-              {!loading && challans.length === 0 && <tr><td colSpan={9} style={{ ...td, textAlign: 'center' }}>No job-work material is out at vendors.</td></tr>}
+              {!loading && challans.length === 0 && <tr><td colSpan={9} style={{ ...td, textAlign: 'center' }}>{showAll ? 'No job-work challans yet — use + New Challan to send material to a job worker.' : 'No job-work material is out at vendors — tick “Show closed challans too” to see past ones.'}</td></tr>}
               {!loading && challans.map((c) => (
                 <tr key={c.issue_id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }} onClick={() => router.push(recordPath('/dashboard/store/issues', c, 'issue_id'))}>
                   <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{c.challan_number || '—'}<div style={{ fontSize: 11.5, color: TEXT.muted, fontWeight: 400 }}>{c.issue_number}</div></td>
-                  <td style={td}>{fmtDate(c.challan_date)}</td>
-                  <td style={td}>{c.vendor_name || '—'}{c.process && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{c.process.replace('_', ' ')}</div>}</td>
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtDate(c.challan_date)}</td>
+                  <td style={td}>{c.vendor_name || '—'}{c.process && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{humanize(c.process)}</div>}</td>
                   <td style={td}>
                     {c.lines.map((l) => (
                       <div key={l.issue_item_id} style={{ marginBottom: 3 }}>
-                        <b style={{ color: TEXT.body }}>{l.item_name}</b>{l.batch_number ? ` · ${l.batch_number}` : ''} — {l.quantity_sent} / {l.quantity_returned} / {+(l.quantity_consumed + l.quantity_scrap).toFixed(4)} /{' '}
-                        <b style={{ color: l.quantity_outstanding > 0 ? '#7c3aed' : '#16a34a' }}>{l.quantity_outstanding}</b> {l.uom}
-                        {l.quantity_return_pending > 0 && <span style={{ color: '#d97706' }}> ({l.quantity_return_pending} return awaiting approval)</span>}
+                        <b style={{ color: TEXT.body }}>{l.item_name}</b>{l.batch_number ? ` · ${l.batch_number}` : ''} — {fmtQty(l.quantity_sent)} / {fmtQty(l.quantity_returned)} / {fmtQty(+(l.quantity_consumed + l.quantity_scrap).toFixed(4))} /{' '}
+                        <b style={{ color: l.quantity_outstanding > 0 ? '#7c3aed' : '#16a34a' }}>{fmtQty(l.quantity_outstanding)}</b> {l.uom || ''}
+                        {l.quantity_return_pending > 0 && <span style={{ color: '#d97706' }}> ({fmtQty(l.quantity_return_pending)} return awaiting approval)</span>}
                       </div>
                     ))}
                   </td>
-                  {seeValues && <td style={td}>{money(c.outstanding_value)}</td>}
-                  <td style={td}>{c.days_out}</td>
-                  <td style={{ ...td, color: c.status === 'overdue' ? '#dc2626' : TEXT.secondary }}>{fmtDate(c.return_deadline)}</td>
+                  {seeValues && <td style={tdNum}>{money(c.outstanding_value)}</td>}
+                  <td style={tdNum}>{c.days_out}</td>
+                  <td style={{ ...td, whiteSpace: 'nowrap', color: c.status === 'overdue' ? '#dc2626' : TEXT.secondary }}>{fmtDate(c.return_deadline)}</td>
                   <td style={td}><Badge status={c.status} /></td>
                   <td style={td} onClick={(e) => e.stopPropagation()}>
                     {c.status !== 'closed' && canReceive && (
@@ -200,16 +207,17 @@ export default function JobWorkPage() {
       {tab === 'vendor' && (
         <div style={card}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
-            <thead><tr>{['Vendor', 'Item', 'Quantity at vendor', ...(seeValues ? ['Value'] : []), 'Challans', 'Oldest challan'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Vendor', 'Item', 'Quantity at vendor', ...(seeValues ? ['Value'] : []), 'Challans', 'Oldest challan'].map((h, hi) => <th key={h} style={thFor(h)}>{h}{hi === 0 && <RowCount count={vendorStock.length} />}</th>)}</tr></thead>
             <tbody>
-              {!loading && vendorStock.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center' }}>No stock is with vendors.</td></tr>}
-              {vendorStock.map((s, i) => (
+              {loading && <tr><td colSpan={6} style={{ ...td, textAlign: 'center' }}>Loading…</td></tr>}
+              {!loading && vendorStock.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center' }}>No stock is with vendors — material shows here once a job-work challan is issued.</td></tr>}
+              {!loading && vendorStock.map((s, i) => (
                 <tr key={i} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
                   <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{s.vendor_name || '—'}</td>
-                  <td style={td}>{s.item_code} — {s.item_name}</td>
-                  <td style={{ ...td, fontWeight: 600, color: '#7c3aed' }}>{s.quantity} {s.uom}</td>
-                  {seeValues && <td style={td}>{money(s.value)}</td>}
-                  <td style={td}>{s.challans.join(', ')}</td>
+                  <td style={td}>{s.item_code || '—'} — {s.item_name || '—'}</td>
+                  <td style={{ ...tdNum, fontWeight: 600, color: '#7c3aed' }}>{fmtQty(s.quantity)} {s.uom || ''}</td>
+                  {seeValues && <td style={tdNum}>{money(s.value)}</td>}
+                  <td style={td}>{s.challans.join(', ') || '—'}</td>
                   <td style={{ ...td, color: s.overdue ? '#dc2626' : TEXT.secondary }}>{fmtDate(s.oldest_challan_date)}{s.overdue ? ' · Rule 45 limit passed' : ''}</td>
                 </tr>
               ))}
@@ -221,20 +229,21 @@ export default function JobWorkPage() {
       {tab === 'receipts' && seeReceipts && (
         <div style={card}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-            <thead><tr>{['Receipt', 'Date', 'Challan', 'Vendor', 'Processed item', 'Batch', ...(seeValues ? ['Component value'] : []), 'Job charge', ...(seeValues ? ['Unit cost'] : []), 'Inspection'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Receipt', 'Date', 'Challan', 'Vendor', 'Processed item', 'Batch', ...(seeValues ? ['Component value'] : []), 'Job charge', ...(seeValues ? ['Unit cost'] : []), 'Inspection'].map((h, hi) => <th key={h} style={thFor(h)}>{h}{hi === 0 && <RowCount count={receipts.length} />}</th>)}</tr></thead>
             <tbody>
-              {!loading && receipts.length === 0 && <tr><td colSpan={10} style={{ ...td, textAlign: 'center' }}>No job work receipts yet.</td></tr>}
-              {receipts.map((r) => (
+              {loading && <tr><td colSpan={10} style={{ ...td, textAlign: 'center' }}>Loading…</td></tr>}
+              {!loading && receipts.length === 0 && <tr><td colSpan={10} style={{ ...td, textAlign: 'center' }}>No job work receipts yet — use “Receive processed item” on an open challan.</td></tr>}
+              {!loading && receipts.map((r) => (
                 <tr key={r.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
                   <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{r.receipt_number}{r.vendor_challan_number && <div style={{ fontSize: 11.5, color: TEXT.muted, fontWeight: 400 }}>Vendor DC {r.vendor_challan_number}</div>}</td>
-                  <td style={td}>{fmtDate(r.receipt_date)}</td>
-                  <td style={td}>{r.challan_number || r.issue_number}</td>
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtDate(r.receipt_date)}</td>
+                  <td style={td}>{r.challan_number || r.issue_number || '—'}</td>
                   <td style={td}>{r.vendor_name || '—'}</td>
-                  <td style={td}>{r.output_quantity} {r.uom} {r.output_item_name}</td>
+                  <td style={td}>{fmtQty(r.output_quantity)} {r.uom || ''} {r.output_item_name || ''}</td>
                   <td style={td}>{r.output_batch_number || '—'}</td>
-                  {seeValues && <td style={td}>{money(r.component_value)}</td>}
-                  <td style={td}>{r.job_charge_rate != null ? `${money(r.job_charge_rate)} / ${r.uom || 'unit'}` : '—'}</td>
-                  {seeValues && <td style={td}>{money(r.output_unit_cost)}</td>}
+                  {seeValues && <td style={tdNum}>{money(r.component_value)}</td>}
+                  <td style={tdNum}>{r.job_charge_rate != null ? `${money(r.job_charge_rate)} / ${r.uom || 'unit'}` : '—'}</td>
+                  {seeValues && <td style={tdNum}>{money(r.output_unit_cost)}</td>}
                   <td style={td}>{r.inspection_lot_number || '—'}</td>
                 </tr>
               ))}
@@ -298,19 +307,19 @@ function Itc04({ canExport, onError }: { canExport: boolean; onError: (e: string
       {data && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>
-            Table 4 (sent): <b>{data.sent.length}</b> line(s) · Table 5A (received back / used): <b>{data.received.length}</b> line(s) ·
+            Table 4 (sent): <b>{data.sent.length}</b> line{data.sent.length === 1 ? '' : 's'} · Table 5A (received back / used): <b>{data.received.length}</b> line{data.received.length === 1 ? '' : 's'} ·
             Outstanding at job workers: <b>{data.outstanding.length}</b>{data.overdue.length > 0 && <span style={{ color: '#dc2626' }}> · {data.overdue.length} past the Rule 45 limit</span>}
           </p>
           <div style={card}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-              <thead><tr>{['4 · Challan', 'Date', 'Job worker', 'Item', 'HSN', 'Qty', 'Taxable value', 'Type'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['4 · Challan', 'Date', 'Job worker', 'Item', 'HSN', 'Qty', 'Taxable value', 'Type'].map((h, hi) => <th key={h} style={thFor(h)}>{h}{hi === 0 && <RowCount count={data.sent.length} />}</th>)}</tr></thead>
               <tbody>
                 {data.sent.length === 0 && <tr><td colSpan={8} style={{ ...td, textAlign: 'center' }}>Nothing sent in this period.</td></tr>}
                 {data.sent.map((r) => (
                   <tr key={r.issue_item_id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                    <td style={{ ...td, fontWeight: 600 }}>{r.challan_number}</td><td style={td}>{fmtDate(r.challan_date)}</td><td style={td}>{r.vendor_name}</td>
-                    <td style={td}>{r.item_name}</td><td style={td}>{r.hsn_code || '—'}</td><td style={td}>{r.quantity_sent} {r.uom}</td>
-                    <td style={td}>{money(r.taxable_value)}</td><td style={td}>{r.goods_type === 'capital_goods' ? 'Capital goods' : 'Inputs'}</td>
+                    <td style={{ ...td, fontWeight: 600 }}>{r.challan_number || '—'}</td><td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtDate(r.challan_date)}</td><td style={td}>{r.vendor_name || '—'}</td>
+                    <td style={td}>{r.item_name}</td><td style={td}>{r.hsn_code || '—'}</td><td style={tdNum}>{fmtQty(r.quantity_sent)} {r.uom || ''}</td>
+                    <td style={tdNum}>{money(r.taxable_value)}</td><td style={td}>{r.goods_type === 'capital_goods' ? 'Capital goods' : 'Inputs'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -318,13 +327,13 @@ function Itc04({ canExport, onError }: { canExport: boolean; onError: (e: string
           </div>
           <div style={card}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-              <thead><tr>{['5A · Original challan', 'Our document', 'Date', 'Received as', 'Item', 'Qty', 'Taxable value'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['5A · Original challan', 'Our document', 'Date', 'Received as', 'Item', 'Qty', 'Taxable value'].map((h, hi) => <th key={h} style={thFor(h)}>{h}{hi === 0 && <RowCount count={data.received.length} />}</th>)}</tr></thead>
               <tbody>
                 {data.received.length === 0 && <tr><td colSpan={7} style={{ ...td, textAlign: 'center' }}>Nothing received back in this period.</td></tr>}
                 {data.received.map((r, i) => (
                   <tr key={i} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                    <td style={{ ...td, fontWeight: 600 }}>{r.challan_number}</td><td style={td}>{r.document}</td><td style={td}>{fmtDate(r.document_date)}</td>
-                    <td style={td}>{r.nature}</td><td style={td}>{r.item_name}</td><td style={td}>{r.quantity} {r.uom || ''}</td><td style={td}>{money(r.taxable_value)}</td>
+                    <td style={{ ...td, fontWeight: 600 }}>{r.challan_number}</td><td style={td}>{r.document}</td><td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtDate(r.document_date)}</td>
+                    <td style={td}>{r.nature}</td><td style={td}>{r.item_name}</td><td style={tdNum}>{fmtQty(r.quantity)} {r.uom || ''}</td><td style={tdNum}>{money(r.taxable_value)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -406,12 +415,12 @@ function ReceiveDialog({ challan, onClose, onDone }: {
           <SheetSection icon="list" title="Challan Material Used">
             <div style={{ overflow: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 10 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr>{['Item', 'At vendor', 'Used in item', 'Process scrap'].map((h) => <th key={h} style={{ ...th, position: 'static' }}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Item', 'At vendor', 'Used in item', 'Process scrap'].map((h, hi) => <th key={h} style={{ ...thFor(h), position: 'static' }}>{h}{hi === 0 && <RowCount count={open.length} />}</th>)}</tr></thead>
                 <tbody>
                   {open.map((l) => (
                     <tr key={l.issue_item_id}>
                       <td style={td}>{l.item_name}{l.batch_number ? ` · ${l.batch_number}` : ''}</td>
-                      <td style={td}>{+(l.quantity_outstanding - l.quantity_return_pending).toFixed(4)} {l.uom}</td>
+                      <td style={tdNum}>{fmtQty(+(l.quantity_outstanding - l.quantity_return_pending).toFixed(4))} {l.uom || ''}</td>
                       <td style={td}><input type="number" min={0} step="any" style={{ ...sheetInput, width: 100, padding: '7px 10px' }} value={use[l.issue_item_id]?.consumed || ''}
                         onChange={(e) => setUse((u) => ({ ...u, [l.issue_item_id]: { ...u[l.issue_item_id], consumed: e.target.value } }))} /></td>
                       <td style={td}><input type="number" min={0} step="any" style={{ ...sheetInput, width: 100, padding: '7px 10px' }} value={use[l.issue_item_id]?.scrap || ''}
@@ -506,12 +515,12 @@ function ReturnAsIsDialog({ challan, onClose, onDone }: {
         <SheetSection icon="box" title="Material Back">
           <div style={{ border: `1px solid ${SHEET.LINE}`, borderRadius: 12, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
-              <thead><tr style={{ background: SHEET.SOFT }}>{['Item', 'With vendor', 'Qty back', 'Condition'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11.5, color: SHEET.BODY }}>{h}</th>)}</tr></thead>
+              <thead><tr style={{ background: SHEET.SOFT }}>{['Item', 'With vendor', 'Qty back', 'Condition'].map((h, hi) => <th key={h} style={{ textAlign: h === 'With vendor' ? 'right' : 'left', padding: '8px 10px', fontSize: 11.5, color: SHEET.BODY, whiteSpace: 'nowrap' }}>{h}{hi === 0 && <RowCount count={open.length} />}</th>)}</tr></thead>
               <tbody>
                 {open.map((l) => (
                   <tr key={l.issue_item_id}>
                     <td style={cell}>{l.item_name}{l.batch_number ? <div style={{ fontSize: 11.5, color: SHEET.MUTED }}>Batch {l.batch_number}</div> : null}</td>
-                    <td style={cell}>{left(l)} {l.uom}</td>
+                    <td style={{ ...cell, textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtQty(left(l))} {l.uom || ''}</td>
                     <td style={{ ...cell, width: 130 }}>
                       <input style={{ ...sheetInput, padding: '7px 10px' }} type="number" min={0} max={left(l)} value={qty[l.issue_item_id] || ''} placeholder="0"
                         onChange={(e) => setQty({ ...qty, [l.issue_item_id]: e.target.value })} />

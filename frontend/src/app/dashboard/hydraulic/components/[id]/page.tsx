@@ -5,18 +5,14 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
 import { HydComponent } from '@/types'
-import { TEXT, DANGER, GLASS, SHADOWS } from '@/lib/theme'
-import { secondaryBtnStyle, InfoRow } from '@/components/shared/ui'
-import { COMPONENT_CATEGORY_LABELS, MEDIA_TYPE_LABELS, CATEGORY_FIELDS, DEFAULT_CATEGORY_FIELDS, useHydCosts } from '@/components/hydraulic/labels'
+import { TEXT, DANGER } from '@/lib/theme'
+import { secondaryBtnStyle, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
+import { COMPONENT_CATEGORY_LABELS, MEDIA_TYPE_LABELS, SYSTEM_TYPE_HEX, CATEGORY_FIELDS, DEFAULT_CATEGORY_FIELDS, useHydCosts } from '@/components/hydraulic/labels'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRecordId } from '@/lib/recordRef'
 import ComponentForm, { RATING_FIELDS } from '@/components/hydraulic/ComponentForm'
 
-const cardStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20,
-}
 import HydDocumentsPanel from '@/components/hydraulic/HydDocumentsPanel'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
@@ -70,7 +66,7 @@ export default function HydComponentDetailPage() {
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
             Hydraulic &amp; Pneumatic · Component
           </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>{comp ? `${comp.code} — ${comp.name}` : 'Component'}</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>{comp ? comp.code : 'Component'}</h1>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {comp && canDelete('hydraulic', 'components', (comp as { created_by_id?: number | null } | null)?.created_by_id ?? null) && (
@@ -93,52 +89,44 @@ export default function HydComponentDetailPage() {
 
       {comp && (
         <>
-          <p data-tour="hyd-compd-summary" style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 14px' }}>
-            {comp.bom_usage_count ? `Used on ${comp.bom_usage_count} BOM(s).` : 'Not on any BOM yet.'}
-            {comp.store_item_code ? ` Stocked in Store as ${comp.store_item_code}.` : ''}
-            {comp.datasheet_url && <> · <a href={comp.datasheet_url} target="_blank" rel="noreferrer" style={{ color: '#FF6A2A', fontWeight: 600 }}>Open datasheet ↗</a></>}
-          </p>
-          <div data-tour="hyd-compd-info" style={cardStyle}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-              <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Component Details</h2>
-              {canEditComp && <button data-tour="hyd-compd-edit-btn" type="button" style={secondaryBtnStyle} onClick={() => { setSaved(false); setEditOpen(true) }}>Edit</button>}
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px' }}>
-              <InfoRow label="Category" value={COMPONENT_CATEGORY_LABELS[comp.category] || comp.category} />
-              <InfoRow label="Medium" value={MEDIA_TYPE_LABELS[comp.system_type] || comp.system_type} />
-              <InfoRow label="Status" value={comp.status === 'obsolete' ? 'Obsolete' : 'Active'} />
-              <InfoRow label="Manufacturer" value={comp.manufacturer || '—'} />
-              <InfoRow label="Model Number" value={comp.model_number || '—'} />
-              <InfoRow label="Part / Order Number" value={comp.part_number || '—'} />
-              <InfoRow label="Linked Store Item" value={comp.store_item_code ? `${comp.store_item_code}${comp.store_item_name ? ` — ${comp.store_item_name}` : ''}` : 'Not stocked in Store'} />
-              {seeCosts && <InfoRow label="Unit Cost" value={`₹${(comp.unit_cost ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`} />}
-            </div>
-            <p style={{ fontSize: 12, fontWeight: 600, color: TEXT.secondary, margin: '16px 0 8px' }}>Ratings</p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px' }}>
+          <DetailCard tour="hyd-compd-info">
+            <DetailSummary
+              title={comp.name}
+              text={comp.description || undefined}
+              meta={(
+                <span data-tour="hyd-compd-summary" style={{ display: 'inline-flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <Pill label={comp.status === 'obsolete' ? 'Obsolete' : 'Active'} hex={comp.status === 'obsolete' ? '#78716c' : '#16A34A'} />
+                  <Pill label={COMPONENT_CATEGORY_LABELS[comp.category] || comp.category} hex="#0369a1" />
+                  <Pill label={MEDIA_TYPE_LABELS[comp.system_type] || comp.system_type} hex={SYSTEM_TYPE_HEX[comp.system_type] || '#78716c'} />
+                  <span>· {comp.bom_usage_count ? `Used on ${comp.bom_usage_count} BOM${comp.bom_usage_count === 1 ? '' : 's'}` : 'Not on any BOM yet'}</span>
+                  {comp.datasheet_url && <span>· <a href={comp.datasheet_url} target="_blank" rel="noreferrer" style={{ color: '#FF6A2A', fontWeight: 600 }}>Open datasheet ↗</a></span>}
+                </span>
+              )}
+              actions={canEditComp ? <button data-tour="hyd-compd-edit-btn" type="button" style={secondaryBtnStyle} onClick={() => { setSaved(false); setEditOpen(true) }}>Edit</button> : undefined}
+            />
+            <DetailGroup title="Make & purchase">
+              <DetailRow label="Manufacturer">{comp.manufacturer}</DetailRow>
+              <DetailRow label="Model number">{comp.model_number}</DetailRow>
+              <DetailRow label="Part / order number">{comp.part_number}</DetailRow>
+              <DetailRow label="Linked store item">{comp.store_item_code ? `${comp.store_item_code}${comp.store_item_name ? ` — ${comp.store_item_name}` : ''}` : 'Not stocked in Store'}</DetailRow>
+              {seeCosts && <DetailRow label="Unit cost">{`₹${(comp.unit_cost ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}</DetailRow>}
+            </DetailGroup>
+            <DetailGroup title="Ratings" last={comp.specifications.length === 0}>
               {(CATEGORY_FIELDS[comp.category] || DEFAULT_CATEGORY_FIELDS).map((k) => {
                 const [label, unit] = RATING_FIELDS[k]
                 const v = (comp as unknown as Record<string, unknown>)[k]
-                return <InfoRow key={k} label={`${label}${unit ? ` (${unit})` : ''}`} value={v == null || v === '' ? '—' : String(v)} />
+                return <DetailRow key={k} label={label}>{v == null || v === '' ? null : `${String(v)}${unit ? ` ${unit}` : ''}`}</DetailRow>
               })}
-              <InfoRow label="Medium / Fluid" value={comp.media || '—'} />
-              <InfoRow label="Temp (°C)" value={comp.temp_min_c != null || comp.temp_max_c != null ? `${comp.temp_min_c ?? '—'} to ${comp.temp_max_c ?? '—'}` : '—'} />
-              <InfoRow label="Weight (kg)" value={comp.weight_kg != null ? String(comp.weight_kg) : '—'} />
-            </div>
+              <DetailRow label="Medium / fluid">{comp.media}</DetailRow>
+              <DetailRow label="Temperature range">{comp.temp_min_c != null || comp.temp_max_c != null ? `${comp.temp_min_c ?? '—'} to ${comp.temp_max_c ?? '—'} °C` : null}</DetailRow>
+              <DetailRow label="Weight">{comp.weight_kg != null ? `${comp.weight_kg} kg` : null}</DetailRow>
+            </DetailGroup>
             {comp.specifications.length > 0 && (
-              <>
-                <p style={{ fontSize: 12, fontWeight: 600, color: TEXT.secondary, margin: '16px 0 8px' }}>Other Specifications</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px' }}>
-                  {comp.specifications.map((s, i) => <InfoRow key={`${s.label}-${i}`} label={s.label} value={s.value || '—'} />)}
-                </div>
-              </>
+              <DetailGroup title="Other specifications" last>
+                {comp.specifications.map((sp, i) => <DetailRow key={`${sp.label}-${i}`} label={sp.label}>{sp.value}</DetailRow>)}
+              </DetailGroup>
             )}
-            {comp.description && (
-              <>
-                <p style={{ fontSize: 12, fontWeight: 600, color: TEXT.secondary, margin: '16px 0 4px' }}>Description</p>
-                <p style={{ fontSize: 13, color: TEXT.body, margin: 0, whiteSpace: 'pre-wrap' }}>{comp.description}</p>
-              </>
-            )}
-          </div>
+          </DetailCard>
           {editOpen && (
             <ComponentForm
               mode="sheet"
@@ -157,7 +145,6 @@ export default function HydComponentDetailPage() {
             />
           )}
 
-          <div style={{ marginTop: 20 }} />
           <HydDocumentsPanel entityType="component" entityId={comp.id} title="Datasheets & Drawings" defaultDocType="datasheet"
             currentUserId={user?.id} isAdmin={user?.role === 'admin'} />
         </>

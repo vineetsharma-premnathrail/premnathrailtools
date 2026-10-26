@@ -14,6 +14,8 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { PLANT_STATUS_LABELS, PLANT_STATUS_HEX } from '@/components/organization/PlantForm'
 import { extractErrorMessages } from '@/lib/validation'
+import { RowCount, pillStyle } from '@/components/shared/ui'
+import { formatDate } from '@/lib/format'
 
 export default function OrganizationPlantsPage() {
   const { isAuthorized, isLoading } = useRequireOrgTab('branches')
@@ -102,7 +104,7 @@ export default function OrganizationPlantsPage() {
           href="/dashboard/organization/plants/new"
           data-tour="org-plants-add-btn"
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 20px', borderRadius: 10,
+            display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 14px', borderRadius: 10,
             background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`,
             color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none',
             boxShadow: `0 4px 14px ${BRAND.primaryGlow}`,
@@ -144,9 +146,9 @@ export default function OrganizationPlantsPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
             <thead>
               <tr style={{ background: '#fdf1e6' }}>
-                {['Branch Code', 'Branch Name', 'Company', 'Branch Type', 'Branch Manager', 'Industry / Function', 'Status', 'Created Date', 'Last Updated', ''].map((h) => (
+                {['Branch Code', 'Branch Name', 'Company', 'Branch Type', 'Branch Manager', 'Industry / Function', 'Status', 'Created Date', 'Last Updated', ''].map((h, hi) => (
                   <th key={h} style={{ position: 'sticky', top: 0, zIndex: 1, background: '#fdf1e6', textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap' }}>
-                    {h}
+                    {h}{hi === 0 && <RowCount count={filtered.length} />}
                   </th>
                 ))}
               </tr>
@@ -169,12 +171,12 @@ export default function OrganizationPlantsPage() {
                   <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{p.manager_user_name || '—'}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{p.industry_function || '—'}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13 }}>
-                    <span data-tour={idx === 0 ? 'org-plants-status-badge' : undefined} style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PLANT_STATUS_HEX[p.status]}1a`, color: PLANT_STATUS_HEX[p.status], whiteSpace: 'nowrap' }}>
+                    <span data-tour={idx === 0 ? 'org-plants-status-badge' : undefined} style={pillStyle(PLANT_STATUS_HEX[p.status] || '#78716c')}>
                       {PLANT_STATUS_LABELS[p.status] || p.status}
                     </span>
                   </td>
-                  <td style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{new Date(p.created_at).toLocaleDateString()}</td>
-                  <td style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{new Date(p.updated_at).toLocaleDateString()}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(p.created_at)}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(p.updated_at)}</td>
                   <td style={{ padding: '12px 16px', fontSize: 12, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                     <div style={{ display: 'flex', gap: 10 }}>
                       <span onClick={() => router.push(recordPath('/dashboard/organization/plants', p))} data-tour={idx === 0 ? 'org-plants-view-btn' : undefined} style={{ color: BRAND.primaryActive, cursor: 'pointer', fontWeight: 600 }}>View</span>

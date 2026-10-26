@@ -7,7 +7,8 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
 import { recordPath } from '@/lib/recordRef'
 import { HydCalculation, HydCalcTypeMeta } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import { keyResultText } from '@/components/hydraulic/CalcResults'
 import { SYSTEM_TYPE_LABELS, SYSTEM_TYPE_HEX } from '@/components/hydraulic/labels'
@@ -71,11 +72,7 @@ export default function HydCalculationsPage() {
         <button
           data-tour="hyd-calc-new-btn"
           onClick={() => router.push('/dashboard/hydraulic/calculations/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
+          style={primaryBtnStyle}
         >
           + New Calculation
         </button>
@@ -116,9 +113,9 @@ export default function HydCalculationsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr>
-              {['Calc No.', 'Title', 'Calculation', 'Type', 'System', 'Key Result', 'By', 'Date', ''].map((h) => (
+              {['Calc No.', 'Title', 'Calculation', 'Type', 'System', 'Key Result', 'By', 'Date', ''].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={calcs.length} />}
                 </th>
               ))}
             </tr>
@@ -135,9 +132,7 @@ export default function HydCalculationsPage() {
                   <td style={cellStyle}>{c.title}</td>
                   <td style={cellStyle}>{c.calc_type_label || c.calc_type}</td>
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${SYSTEM_TYPE_HEX[c.system_type]}1a`, color: SYSTEM_TYPE_HEX[c.system_type], whiteSpace: 'nowrap' }}>
-                      {SYSTEM_TYPE_LABELS[c.system_type] || c.system_type}
-                    </span>
+                    <Pill label={SYSTEM_TYPE_LABELS[c.system_type] || c.system_type} hex={SYSTEM_TYPE_HEX[c.system_type] || '#78716c'} />
                   </td>
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{c.system_number || '—'}</td>
                   <td style={cellStyle}>{keyResultText(c.results?.results)}</td>

@@ -3,7 +3,7 @@
 import { ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { secondaryBtnStyle, inputStyle as sharedInput, thStyle as sharedTh, tdStyle as sharedTd } from '@/components/shared/ui'
+import { secondaryBtnStyle, pillStyle, inputStyle as sharedInput, thStyle as sharedTh, tdStyle as sharedTd } from '@/components/shared/ui'
 
 export const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -16,11 +16,7 @@ export const tdStyle: React.CSSProperties = sharedTd
 export const h2Style: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 12px' }
 
 export function Pill({ label, hex }: { label: string; hex: string }) {
-  return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
-      {label}
-    </span>
-  )
+  return <span style={pillStyle(hex)}>{label}</span>
 }
 
 export function ErrorBanner({ error }: { error: string | string[] }) {

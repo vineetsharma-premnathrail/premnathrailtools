@@ -11,7 +11,7 @@ import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import PromptDialog from '@/components/erp/PromptDialog'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
-import { Section, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { Section, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import {
   Pill, PageHeader, ErrorBanner, ActionSheet, fmtQty, fmtDate, NCR_STATUS_LABELS, NCR_STATUS_HEX, SEVERITY_HEX,
   APPROVAL_ROLE_LABELS, DISPOSITION_TYPE_LABELS,
@@ -22,6 +22,7 @@ import { useCan } from '@/lib/permissions'
 import { sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 import Select from '@/components/shared/Select'
 
+const linkBtn: React.CSSProperties = { padding: 0, border: 'none', background: 'none', color: '#FF6A2A', fontWeight: 600, fontSize: 13.5, cursor: 'pointer', textAlign: 'left' }
 const STEPS = ['open', 'disposition_decided', 'action_done', 'verified', 'closed']
 const ACTION_HINT: Record<string, string> = {
   use_as_is: 'Concession / release note no.', rework: 'Rework order no.', repair: 'Repair order / deviation no.',
@@ -114,8 +115,6 @@ export default function NcrDetailPage() {
         onConfirm={(reason) => { setCancelOpen(false); act('cancel', { reason }, 'Failed to cancel the NCR.') }} />
 
       <PageHeader title={ncr.ncr_number} subtitle={`Quality · NCR${ncr.auto_raised ? ' (raised by inspection)' : ''}`}>
-        <Pill text={ncr.severity} hex={SEVERITY_HEX[ncr.severity]} />
-        <Pill text={NCR_STATUS_LABELS[ncr.status] || ncr.status} hex={NCR_STATUS_HEX[ncr.status]} />
         <button type="button" onClick={() => router.push('/dashboard/quality/ncr')} style={secondaryBtnStyle}>← Back</button>
       </PageHeader>
       {!sheet && <ErrorBanner error={error} />}
@@ -123,39 +122,51 @@ export default function NcrDetailPage() {
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
         {STEPS.map((s, i) => {
           const reached = STEPS.indexOf(ncr.status) >= i
-          return <span key={s} style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 10px', borderRadius: 9999, background: reached ? '#16A34A1a' : 'rgba(0,0,0,0.04)', color: reached ? '#15803d' : TEXT.muted }}>{i + 1}. {NCR_STATUS_LABELS[s]}</span>
+          return <span key={s} style={{ ...pillStyle(reached ? '#15803d' : '#64748b'), background: reached ? '#16A34A1a' : 'rgba(0,0,0,0.04)' }}>{i + 1}. {NCR_STATUS_LABELS[s]}</span>
         })}
       </div>
 
-      <Section title="Non-conformance" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
-          <InfoRow label="Item" value={`${ncr.item_code ? `${ncr.item_code} — ` : ''}${ncr.item_name}`} />
-          <InfoRow label="Quantity" value={fmtQty(ncr.quantity, ncr.uom)} />
-          <InfoRow label="Source" value={ncr.source.replace(/_/g, ' ')} />
-          <InfoRow label="Reference" value={ncr.source_reference || '—'} />
-          <InfoRow label="Stock" value={ncr.stock_blocked ? `Blocked at ${ncr.location_name || 'store'}` : 'Not holding Blocked stock'} />
-          <InfoRow label="Batch / serial" value={ncr.batch_number || '—'} />
-          <InfoRow label="Vendor" value={ncr.vendor_name || '—'} />
-          <InfoRow label="Defect" value={ncr.defect_code_label || '—'} />
-          <InfoRow label="Raised" value={`${ncr.raised_by_name || '—'} · ${fmtDate(ncr.ncr_date)}`} />
-          {seeCosts && <InfoRow label="Estimated value" value={ncr.estimated_value != null ? `₹${ncr.estimated_value.toLocaleString('en-IN')}` : '—'} />}
-        </div>
-        {ncr.lot_id && (
-          <p style={{ fontSize: 13, margin: 0 }}>Inspection lot: <span onClick={() => router.push(recordPath('/dashboard/quality/lots', ncr, 'lot_id'))} style={{ color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>{ncr.lot_number}</span></p>
-        )}
+      <DetailCard>
+        <DetailSummary
+          title={`${ncr.item_code ? `${ncr.item_code} — ` : ''}${ncr.item_name}`}
+          text={ncr.description}
+          meta={<>
+            <Pill text={NCR_STATUS_LABELS[ncr.status] || ncr.status} hex={NCR_STATUS_HEX[ncr.status]} />
+            <Pill text={ncr.severity.charAt(0).toUpperCase() + ncr.severity.slice(1)} hex={SEVERITY_HEX[ncr.severity]} />
+            <span>·</span><span>{fmtQty(ncr.quantity, ncr.uom)}</span>
+            <span>·</span><span>Raised {fmtDate(ncr.ncr_date)}{ncr.raised_by_name ? ` by ${ncr.raised_by_name}` : ''}</span>
+          </>}
+          actions={canCancel && ncr.status === 'open' && ncr.disposition_status === 'none' && !ncr.auto_raised && !ncr.stock_blocked
+            ? <button type="button" disabled={busy} style={dangerBtnStyle} onClick={() => setCancelOpen(true)}>Cancel NCR</button>
+            : undefined}
+        />
+        <DetailGroup title="Where it came from">
+          <DetailRow label="Source">{ncr.source.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}</DetailRow>
+          <DetailRow label="Reference">{ncr.source_reference}</DetailRow>
+          {ncr.lot_id && (
+            <DetailRow label="Inspection lot">
+              <button type="button" onClick={() => router.push(recordPath('/dashboard/quality/lots', ncr, 'lot_id'))} style={linkBtn}>{ncr.lot_number}</button>
+            </DetailRow>
+          )}
+          <DetailRow label="Vendor">{ncr.vendor_name}</DetailRow>
+          <DetailRow label="Batch / serial">{ncr.batch_number}</DetailRow>
+        </DetailGroup>
+        <DetailGroup title="Defect & stock" last={!(ncr.capas || []).length}>
+          <DetailRow label="Defect">{ncr.defect_code_label}</DetailRow>
+          <DetailRow label="Stock">{ncr.stock_blocked ? `Blocked at ${ncr.location_name || 'store'}` : 'Not holding Blocked stock'}</DetailRow>
+          {seeCosts && <DetailRow label="Estimated value">{ncr.estimated_value != null ? `₹${ncr.estimated_value.toLocaleString('en-IN')}` : null}</DetailRow>}
+          {ncr.root_cause && <DetailRow label="Root cause">{ncr.root_cause}</DetailRow>}
+        </DetailGroup>
         {(ncr.capas || []).length > 0 && (
-          <p style={{ fontSize: 13, margin: 0 }}>CAPA:{' '}
-            {(ncr.capas || []).map((c, i) => (
-              <span key={c.id}>{i > 0 ? ', ' : ''}<span onClick={() => router.push(recordPath('/dashboard/quality/capa', c))} style={{ color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>{c.capa_number}</span> ({c.status.replace(/_/g, ' ')})</span>
-            ))}
-          </p>
+          <DetailGroup last>
+            <DetailRow label="CAPA">
+              {(ncr.capas || []).map((c, i) => (
+                <span key={c.id}>{i > 0 ? ', ' : ''}<button type="button" onClick={() => router.push(recordPath('/dashboard/quality/capa', c))} style={linkBtn}>{c.capa_number}</button> ({c.status.replace(/_/g, ' ')})</span>
+              ))}
+            </DetailRow>
+          </DetailGroup>
         )}
-        <InfoRow label="Description" value={ncr.description} />
-        {ncr.root_cause && <InfoRow label="Root cause" value={ncr.root_cause} />}
-        {canCancel && ncr.status === 'open' && ncr.disposition_status === 'none' && !ncr.auto_raised && !ncr.stock_blocked && (
-          <div><button type="button" disabled={busy} style={dangerBtnStyle} onClick={() => setCancelOpen(true)}>Cancel NCR</button></div>
-        )}
-      </Section>
+      </DetailCard>
 
       <Section title="Disposition" style={{ marginBottom: 20 }}>
         {ncr.disposition_type && (

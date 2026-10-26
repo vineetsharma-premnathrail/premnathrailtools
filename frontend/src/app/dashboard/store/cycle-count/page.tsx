@@ -6,8 +6,8 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { physicalCountsApi, storeApi } from '@/lib/api'
 import { StorePhysicalCount } from '@/types'
-import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { TEXT } from '@/lib/theme'
+import { primaryBtnStyle, RowCount, Pill, TableScroll, thStyle, tdStyle, numThStyle, numTdStyle } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -15,11 +15,6 @@ import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 import Select from '@/components/shared/Select'
-
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
 
 const STATUS_LABELS: Record<string, string> = { counting: 'Counting (stock frozen)', submitted: 'Awaiting approval', posted: 'Posted', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { counting: '#d97706', submitted: '#2563eb', posted: '#16a34a', cancelled: '#94a3b8' }
@@ -34,6 +29,7 @@ export default function PhysicalCountListPage() {
   const canCreate = canFeature('store', 'adjustments', 'cycle_count', 'create')
   const router = useRouter()
   const [counts, setCounts] = useState<StorePhysicalCount[]>([])
+  const [loaded, setLoaded] = useState(false)
   const [locations, setLocations] = useState<{ id: number; name: string }[]>([])
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
   const [locationId, setLocationId] = useState('')
@@ -48,7 +44,7 @@ export default function PhysicalCountListPage() {
 
   useEffect(() => {
     if (!isAuthorized || !seeCounts) return
-    physicalCountsApi.list().then(setCounts).catch((err) => setError(extractErrorMessages(err, 'Could not load physical counts.')))
+    physicalCountsApi.list().then(setCounts).catch((err) => setError(extractErrorMessages(err, 'Could not load physical counts.'))).finally(() => setLoaded(true))
     storeApi.listLocations().then(setLocations).catch(() => setLocations([]))
     storeApi.listCategories().then(setCategories).catch(() => setCategories([]))
   }, [isAuthorized, seeCounts])
@@ -138,31 +134,39 @@ export default function PhysicalCountListPage() {
         </FormSheet>
       )}
 
-      <div data-tour="store-count-list" style={{ ...sectionStyle, overflow: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-          <thead><tr>
-            {['Count No.', 'Store', 'Date', 'Scope', 'Lines', 'Status', 'Adjustment'].map((h) => (
-              <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6' }}>{h}</th>
-            ))}
-          </tr></thead>
-          <tbody>
-            {counts.length === 0 ? (
-              <tr><td colSpan={7} style={{ padding: 14, fontSize: 13, color: TEXT.muted }}>No physical counts yet.</td></tr>
-            ) : counts.map((c) => (
-              <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/store/cycle-count', c))} style={{ cursor: 'pointer' }}>
-                <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 700 }}>{c.count_number}</td>
-                <td style={{ padding: '8px 10px', fontSize: 13 }}>{c.location_name}</td>
-                <td style={{ padding: '8px 10px', fontSize: 13 }}>{formatDate(c.count_date)}</td>
-                <td style={{ padding: '8px 10px', fontSize: 13 }}>{c.scope || '—'}</td>
-                <td style={{ padding: '8px 10px', fontSize: 13 }}>{c.lines_counted}/{c.lines_total} counted</td>
-                <td style={{ padding: '8px 10px' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[c.status]}1a`, color: STATUS_HEX[c.status], whiteSpace: 'nowrap' }}>{STATUS_LABELS[c.status] || c.status}</span>
-                </td>
-                <td style={{ padding: '8px 10px', fontSize: 13 }}>{c.adjustment_number || '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div data-tour="store-count-list">
+        <TableScroll minWidth={760}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>
+              <th style={thStyle}>Count No. <RowCount count={counts.length} /></th>
+              <th style={thStyle}>Store</th>
+              <th style={thStyle}>Date</th>
+              <th style={thStyle}>Scope</th>
+              <th style={numThStyle}>Lines</th>
+              <th style={thStyle}>Status</th>
+              <th style={thStyle}>Adjustment</th>
+            </tr></thead>
+            <tbody>
+              {!loaded ? (
+                <tr><td colSpan={7} style={{ ...tdStyle, padding: 24, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
+              ) : counts.length === 0 ? (
+                <tr><td colSpan={7} style={{ ...tdStyle, padding: 24, textAlign: 'center', color: TEXT.muted }}>No physical counts yet{canCreate ? ' — use + Start Count to count a store against the books.' : '.'}</td></tr>
+              ) : counts.map((c) => (
+                <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/store/cycle-count', c))} style={{ cursor: 'pointer' }}>
+                  <td style={{ ...tdStyle, fontWeight: 700, whiteSpace: 'nowrap' }}>{c.count_number}</td>
+                  <td style={tdStyle}>{c.location_name || '—'}</td>
+                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(c.count_date)}</td>
+                  <td style={tdStyle}>{c.scope || 'All stocked items'}</td>
+                  <td style={numTdStyle}>{c.lines_counted.toLocaleString('en-IN')} / {c.lines_total.toLocaleString('en-IN')} counted</td>
+                  <td style={tdStyle}>
+                    <Pill label={STATUS_LABELS[c.status] || c.status} hex={STATUS_HEX[c.status] || '#94a3b8'} />
+                  </td>
+                  <td style={tdStyle}>{c.adjustment_number || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableScroll>
       </div>
     </div>
   )

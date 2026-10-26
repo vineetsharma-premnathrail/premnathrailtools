@@ -6,14 +6,14 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
 import { HydBom } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER, DANGER } from '@/lib/theme'
-import { secondaryBtnStyle, InfoRow, primaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, InfoRow, primaryBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import HydBomForm from '@/components/hydraulic/HydBomForm'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
-import { COMPONENT_CATEGORY_LABELS, SYSTEM_TYPE_LABELS, useHydCosts } from '@/components/hydraulic/labels'
+import { COMPONENT_CATEGORY_LABELS, SYSTEM_TYPE_LABELS, SYSTEM_TYPE_HEX, useHydCosts } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDateTime } from '@/lib/format'
 import { useCan } from '@/lib/permissions'
@@ -30,7 +30,6 @@ const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', f
 const tdStyle: React.CSSProperties = { padding: '9px 12px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'middle' }
 const primaryBtn: React.CSSProperties = { ...primaryBtnStyle, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }
 const dangerBtn: React.CSSProperties = { ...secondaryBtnStyle, color: DANGER.primary, borderColor: DANGER.border }
-const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
 const inr = (n: number | null) => (n == null ? '—' : `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`)
 
 type ConfirmKind = 'release' | 'submit' | 'revise' | 'delete'
@@ -140,6 +139,8 @@ export default function HydBomDetailPage() {
   const canSubmit = can('hydraulic', 'bom', 'submit')
   // Saving a draft and raising a revision need bom:edit on the backend.
   const canEditBom = can('hydraulic', 'bom', 'edit')
+  const editingDraft = isDraft && canEditBom
+  const linkStyle: React.CSSProperties = { fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }
 
   return (
     <div>
@@ -152,9 +153,9 @@ export default function HydBomDetailPage() {
           </p>
           <div data-tour="hyd-bomd-header" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 20px', flexWrap: 'wrap' }}>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>
-              {bom ? `${bom.bom_number} Rev ${bom.revision} — ${bom.title}` : 'BOM'}
+              {bom ? (editingDraft ? `${bom.bom_number} Rev ${bom.revision} — ${bom.title}` : `${bom.bom_number} Rev ${bom.revision}`) : 'BOM'}
             </h1>
-            {bom && <span style={pill(STATUS_HEX[bom.status])}>{STATUS_LABELS[bom.status] || bom.status}</span>}
+            {bom && editingDraft && <Pill label={STATUS_LABELS[bom.status] || bom.status} hex={STATUS_HEX[bom.status] || '#78716c'} />}
           </div>
         </div>
         <button data-tour="hyd-bomd-back-btn" onClick={() => router.push('/dashboard/hydraulic/bom')} type="button" style={secondaryBtnStyle}>← Back</button>
@@ -190,16 +191,16 @@ export default function HydBomDetailPage() {
             onChanged={() => setReloadKey((k) => k + 1)}
           />
 
-          <div data-tour="hyd-bomd-audit" style={{ ...sectionStyle, padding: '14px 20px' }}>
+          {editingDraft && <div data-tour="hyd-bomd-audit" style={{ ...sectionStyle, padding: '14px 20px' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px' }}>
               <InfoRow label="Created by" value={`${bom.created_by_name || '—'}${bom.created_at ? ` · ${formatDateTime(bom.created_at)}` : ''}`} />
               <InfoRow label="Released" value={bom.released_at ? `${bom.released_by_name || '—'} · ${formatDateTime(bom.released_at)}` : '—'} />
               <InfoRow label="Lines" value={String(bom.line_count)} />
               {seeCosts && <InfoRow label="Total cost" value={inr(bom.total_cost)} />}
             </div>
-          </div>
+          </div>}
 
-          {isDraft && canEditBom ? (
+          {editingDraft ? (
             <HydBomForm
               key={bom.updated_at || bom.id}
               title={`Edit Draft — ${bom.bom_number} Rev ${bom.revision}`}
@@ -215,33 +216,50 @@ export default function HydBomDetailPage() {
             />
           ) : (
             <>
-              <div data-tour="hyd-bomd-info" style={sectionStyle}>
-                <p style={sectionTitle}>BOM</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 28px' }}>
-                  <div style={{ flex: '1 1 240px', maxWidth: 360 }}>
-                    <InfoRow label="System" value={bom.system_number ? `${bom.system_number} — ${bom.system_name || ''}` : 'Not linked to a system'} />
-                    {bom.system_id && (
-                      <span onClick={() => router.push(recordPath('/dashboard/hydraulic/systems', bom, 'system_id'))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>Open system →</span>
-                    )}
-                  </div>
-                  <div style={{ flex: '1 1 220px', maxWidth: 320 }}>
-                    <InfoRow label="Circuit" value={bom.circuit_number ? `${bom.circuit_number} Rev ${bom.circuit_revision || '?'}` : '—'} />
-                    {bom.circuit_id && (
-                      <span onClick={() => router.push(recordPath('/dashboard/hydraulic/circuits', bom, 'circuit_id'))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>Open circuit →</span>
-                    )}
-                  </div>
-                  <InfoRow label="Medium" value={SYSTEM_TYPE_LABELS[bom.system_type] || bom.system_type} />
+              <DetailCard tour="hyd-bomd-info">
+                <DetailSummary
+                  title={bom.title}
+                  meta={(
+                    <>
+                      <Pill label={STATUS_LABELS[bom.status] || bom.status} hex={STATUS_HEX[bom.status] || '#78716c'} />
+                      <Pill label={SYSTEM_TYPE_LABELS[bom.system_type] || bom.system_type} hex={SYSTEM_TYPE_HEX[bom.system_type] || '#78716c'} />
+                      <span>· {bom.line_count} line{bom.line_count === 1 ? '' : 's'}</span>
+                      {seeCosts && bom.total_cost != null && <span>· Total {inr(bom.total_cost)}</span>}
+                    </>
+                  )}
+                />
+                <DetailGroup title="Linked to">
+                  <DetailRow label="System">
+                    {bom.system_number ? (
+                      <span onClick={() => router.push(recordPath('/dashboard/hydraulic/systems', bom, 'system_id'))} title="Open system" style={linkStyle}>
+                        {bom.system_number}{bom.system_name ? ` — ${bom.system_name}` : ''} →
+                      </span>
+                    ) : 'Not linked to a system'}
+                  </DetailRow>
+                  <DetailRow label="Circuit">
+                    {bom.circuit_number ? (
+                      <span onClick={() => router.push(recordPath('/dashboard/hydraulic/circuits', bom, 'circuit_id'))} title="Open circuit" style={linkStyle}>
+                        {bom.circuit_number} Rev {bom.circuit_revision || '?'} →
+                      </span>
+                    ) : null}
+                  </DetailRow>
+                  {bom.remarks && <DetailRow label="Remarks">{bom.remarks}</DetailRow>}
+                </DetailGroup>
+                <div data-tour="hyd-bomd-audit">
+                  <DetailGroup title="Release trail" last>
+                    <DetailRow label="Created by">{`${bom.created_by_name || '—'}${bom.created_at ? ` · ${formatDateTime(bom.created_at)}` : ''}`}</DetailRow>
+                    <DetailRow label="Released">{bom.released_at ? `${bom.released_by_name || '—'} · ${formatDateTime(bom.released_at)}` : null}</DetailRow>
+                  </DetailGroup>
                 </div>
-                {bom.remarks && <div style={{ marginTop: 14 }}><InfoRow label="Remarks" value={bom.remarks} /></div>}
-              </div>
+              </DetailCard>
 
               <div data-tour="hyd-bomd-lines" style={{ ...sectionStyle, padding: 0, overflow: 'auto' }}>
                 <p style={{ ...sectionTitle, padding: '16px 20px 0' }}>Lines ({bom.items.length})</p>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                   <thead>
                     <tr>
-                      {['Tag', 'Code', 'Component', 'Category', 'Make / Model', 'Qty', 'UOM', ...(seeCosts ? ['Unit Cost', 'Line Cost'] : [])].map((h) => (
-                        <th key={h} style={{ ...thStyle, textAlign: ['Qty', 'Unit Cost', 'Line Cost'].includes(h) ? 'right' : 'left' }}>{h}</th>
+                      {['Tag', 'Code', 'Component', 'Category', 'Make / Model', 'Qty', 'UOM', ...(seeCosts ? ['Unit Cost', 'Line Cost'] : [])].map((h, hi) => (
+                        <th key={h} style={{ ...thStyle, textAlign: ['Qty', 'Unit Cost', 'Line Cost'].includes(h) ? 'right' : 'left' }}>{h}{hi === 0 && <RowCount count={bom.items.length} />}</th>
                       ))}
                     </tr>
                   </thead>

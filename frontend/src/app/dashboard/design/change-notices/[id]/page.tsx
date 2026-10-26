@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { designApi } from '@/lib/api'
 import { DesignChangeNoticeDetail, DesignEcnAcknowledgement } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import ChangeNoticeForm, { EffectivityFields } from '@/components/design/ChangeNoticeForm'
 import DateField from '@/components/erp/DateField'
@@ -14,7 +14,7 @@ import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetLabel, SheetE
 import { DANGER_RED } from '@/components/design/DesignSheets'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, primaryBtnStyle, smallSecondaryBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import {
   ACK_DEPARTMENT_LABELS, DISPOSITION_LABELS, ECN_EFFECTIVITY_LABELS, ECN_PRIORITY_LABELS, ECN_REASON_LABELS, ECN_STATUS_LABELS,
 } from '@/components/design/designMeta'
@@ -49,7 +49,7 @@ const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', f
 const tdStyle: React.CSSProperties = { padding: '9px 10px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
 
 function pill(label: string, hex: string) {
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
+  return <Pill label={label} hex={hex} />
 }
 
 type Confirm = 'submit' | 'implement' | 'delete' | null
@@ -229,15 +229,9 @@ export default function ChangeNoticeDetailPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Engineering Change Notice</p>
-          <h1 data-tour="design-ecn-header" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {ecn ? <>{ecn.ecn_number} <span style={{ fontWeight: 500, color: TEXT.secondary }}>— {ecn.title}</span> {pill(ECN_STATUS_LABELS[ecn.status] || ecn.status, STATUS_HEX[ecn.status] || '#78716c')}</> : 'Change Notice'}
+          <h1 data-tour="design-ecn-header" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>
+            {ecn ? ecn.ecn_number : 'Change Notice'}
           </h1>
-          {ecn?.ecr_id && (
-            <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>
-              From change request{' '}
-              <span onClick={() => router.push(recordPath('/dashboard/design/change-requests', ecn, 'ecr_id'))} style={{ color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>{ecn.ecr_number}</span>
-            </p>
-          )}
         </div>
         <button data-tour="design-ecn-back-btn" onClick={() => router.push('/dashboard/design/change-notices?tab=ecn')} type="button" style={secondaryBtnStyle}>← Back</button>
       </div>
@@ -255,6 +249,42 @@ export default function ChangeNoticeDetailPage() {
 
       {ecn && (
         <>
+          {/* What changes and why: summary on top, then the notice's details. */}
+          <DetailCard tour="design-ecn-change">
+            <DetailSummary
+              title={ecn.title}
+              text={ecn.description || undefined}
+              meta={<>
+                {pill(ECN_STATUS_LABELS[ecn.status] || ecn.status, STATUS_HEX[ecn.status] || '#78716c')}
+                <span>· {ECN_PRIORITY_LABELS[ecn.priority] || ecn.priority} priority</span>
+                <span>· Target {ecn.target_date ? formatDate(ecn.target_date) : 'not set'}</span>
+                <span>· Raised by <strong style={{ color: TEXT.heading }}>{ecn.created_by_name || '—'}</strong> on {formatDate(ecn.created_at)}</span>
+              </>}
+            />
+            <DetailGroup title="Change">
+              <DetailRow label="Impact">{ecn.impact_assessment}</DetailRow>
+              <DetailRow label="Reason">{ECN_REASON_LABELS[ecn.reason] || ecn.reason}</DetailRow>
+              {ecn.ecr_id && (
+                <DetailRow label="From change request">
+                  <span onClick={() => router.push(recordPath('/dashboard/design/change-requests', ecn, 'ecr_id'))} style={{ color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>{ecn.ecr_number}</span>
+                </DetailRow>
+              )}
+            </DetailGroup>
+            <div data-tour="design-ecn-details">
+              <DetailGroup title="Linked to">
+                <DetailRow label="Project">{ecn.pm_project_label}</DetailRow>
+                <DetailRow label="Machine">{ecn.erp_project_label}</DetailRow>
+              </DetailGroup>
+              <DetailGroup title="Approval & release" last>
+                <DetailRow label="Approver">{ecn.approver_name || 'Not named yet'}</DetailRow>
+                {ecn.decided_at && <DetailRow label={ecn.status === 'rejected' ? 'Rejected by' : 'Approved by'}>{`${ecn.decided_by_name || '—'} · ${formatDate(ecn.decided_at)}${ecn.decision_comment ? ` — ${ecn.decision_comment}` : ''}`}</DetailRow>}
+                {ecn.implemented_at && <DetailRow label="Released">{`${ecn.implemented_by_name || '—'} · ${formatDate(ecn.implemented_at)}`}</DetailRow>}
+                {ecn.closed_at && <DetailRow label="Closed">{formatDate(ecn.closed_at)}</DetailRow>}
+                {ecn.cancelled_at && <DetailRow label="Cancelled">{`${formatDate(ecn.cancelled_at)}${ecn.cancel_reason ? ` — ${ecn.cancel_reason}` : ''}`}</DetailRow>}
+              </DetailGroup>
+            </div>
+          </DetailCard>
+
           <div data-tour="design-ecn-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
             {can('edit') && <button data-tour="design-ecn-edit-btn" disabled={busy} style={secondaryBtnStyle} onClick={() => { setError(''); setSuccess(''); setEditing(true) }}>Edit</button>}
             {can('submit') && <button data-tour="design-ecn-submit-btn" disabled={busy} style={primaryBtn} onClick={() => setConfirm('submit')}>Submit for Approval</button>}
@@ -288,7 +318,7 @@ export default function ChangeNoticeDetailPage() {
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
                     <thead>
-                      <tr>{['Drawing', 'What changes', 'Owner', 'Controlled rev', 'Under this ECN'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                      <tr>{['Drawing', 'What changes', 'Owner', 'Controlled rev', 'Under this ECN'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={ecn.documents.length} />}</th>)}</tr>
                     </thead>
                     <tbody>
                       {ecn.documents.map((d) => (
@@ -318,7 +348,7 @@ export default function ChangeNoticeDetailPage() {
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
                     <thead>
-                      <tr>{['BOM', 'What changes', 'Released rev', 'Under this ECN'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                      <tr>{['BOM', 'What changes', 'Released rev', 'Under this ECN'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={ecn.boms.length} />}</th>)}</tr>
                     </thead>
                     <tbody>
                       {ecn.boms.map((b) => (
@@ -349,13 +379,13 @@ export default function ChangeNoticeDetailPage() {
                     <button type="button" data-tour="design-ecn-eff-edit-btn" style={{ ...smallSecondaryBtnStyle }} onClick={startEditEff}>Edit</button>
                   )}
                 </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
-                    <InfoRow label="Takes effect" value={effectivityText} />
-                    <InfoRow label="Stock on hand" value={DISPOSITION_LABELS[ecn.stock_disposition] || ecn.stock_disposition} />
-                    <InfoRow label="Work in progress" value={DISPOSITION_LABELS[ecn.wip_disposition] || ecn.wip_disposition} />
-                    {ecn.effectivity_note && <div style={{ gridColumn: '1 / -1' }}><InfoRow label="Effectivity note" value={ecn.effectivity_note} /></div>}
-                    {ecn.disposition_note && <div style={{ gridColumn: '1 / -1' }}><InfoRow label="Disposition note" value={ecn.disposition_note} /></div>}
-                  </div>
+                  <DetailGroup last>
+                    <DetailRow label="Takes effect">{effectivityText}</DetailRow>
+                    <DetailRow label="Stock on hand">{DISPOSITION_LABELS[ecn.stock_disposition] || ecn.stock_disposition}</DetailRow>
+                    <DetailRow label="Work in progress">{DISPOSITION_LABELS[ecn.wip_disposition] || ecn.wip_disposition}</DetailRow>
+                    {ecn.effectivity_note && <DetailRow label="Effectivity note">{ecn.effectivity_note}</DetailRow>}
+                    {ecn.disposition_note && <DetailRow label="Disposition note">{ecn.disposition_note}</DetailRow>}
+                  </DetailGroup>
               </div>
 
               {ecn.acknowledgements.length > 0 && (
@@ -364,7 +394,7 @@ export default function ChangeNoticeDetailPage() {
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
                       <thead>
-                        <tr>{['Department', 'Acknowledged by', 'When', 'Remarks', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                        <tr>{['Department', 'Acknowledged by', 'When', 'Remarks', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={ecn.acknowledgements.length} />}</th>)}</tr>
                       </thead>
                       <tbody>
                         {ecn.acknowledgements.map((a) => (
@@ -385,40 +415,9 @@ export default function ChangeNoticeDetailPage() {
                   </div>
                 </div>
               )}
-
-              <div data-tour="design-ecn-change" style={sectionStyle}>
-                <p style={sectionTitle}>Change</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <InfoRow label="Description" value={ecn.description || '—'} />
-                  <InfoRow label="Impact" value={ecn.impact_assessment || '—'} />
-                </div>
-              </div>
             </div>
 
             <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-              <div data-tour="design-ecn-details" style={sectionStyle}>
-                <p style={sectionTitle}>Details</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {ecn.ecr_id && (
-                    <div>
-                      <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 2px' }}>Change request</p>
-                      <p onClick={() => router.push(recordPath('/dashboard/design/change-requests', ecn, 'ecr_id'))} style={{ fontSize: 13, color: '#FF6A2A', fontWeight: 600, margin: 0, cursor: 'pointer' }}>{ecn.ecr_number}</p>
-                    </div>
-                  )}
-                  <InfoRow label="Reason" value={ECN_REASON_LABELS[ecn.reason] || ecn.reason} />
-                  <InfoRow label="Priority" value={ECN_PRIORITY_LABELS[ecn.priority] || ecn.priority} />
-                  <InfoRow label="Target date" value={formatDate(ecn.target_date)} />
-                  <InfoRow label="Project" value={ecn.pm_project_label || '—'} />
-                  <InfoRow label="Machine" value={ecn.erp_project_label || '—'} />
-                  <InfoRow label="Raised by" value={`${ecn.created_by_name || '—'} · ${formatDate(ecn.created_at)}`} />
-                  <InfoRow label="Approver" value={ecn.approver_name || 'Not named yet'} />
-                  {ecn.decided_at && <InfoRow label={ecn.status === 'rejected' ? 'Rejected by' : 'Approved by'} value={`${ecn.decided_by_name || '—'} · ${formatDate(ecn.decided_at)}${ecn.decision_comment ? ` — ${ecn.decision_comment}` : ''}`} />}
-                  {ecn.implemented_at && <InfoRow label="Released" value={`${ecn.implemented_by_name || '—'} · ${formatDate(ecn.implemented_at)}`} />}
-                  {ecn.closed_at && <InfoRow label="Closed" value={formatDate(ecn.closed_at)} />}
-                  {ecn.cancelled_at && <InfoRow label="Cancelled" value={`${formatDate(ecn.cancelled_at)} — ${ecn.cancel_reason || ''}`} />}
-                </div>
-              </div>
-
               <div data-tour="design-ecn-timeline" style={sectionStyle}>
                 <p style={sectionTitle}>Timeline</p>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>

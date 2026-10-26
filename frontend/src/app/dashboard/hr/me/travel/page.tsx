@@ -17,6 +17,7 @@ import {
   tableWrapStyle, thStyle, tdStyle, linkActionStyle, fmtDate, fmtINR,
 } from '@/components/hr/admin/adminUi'
 import { TEXT } from '@/lib/theme'
+import { RowCount } from '@/components/shared/ui'
 
 export default function MyTravelPage() {
   // Self-service: any logged-in user.
@@ -82,7 +83,7 @@ export default function MyTravelPage() {
       <div data-tour="hr-mytravel-table" style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
           <thead>
-            <tr>{['Request', 'Trip', 'Dates', 'Mode', 'Est. cost', 'Approver', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+            <tr>{['Request', 'Trip', 'Dates', 'Mode', 'Est. cost', 'Approver', 'Status', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {loading ? <EmptyRow colSpan={8} text="Loading…" /> : rows.length === 0 ? (

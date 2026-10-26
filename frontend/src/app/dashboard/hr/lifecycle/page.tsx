@@ -7,8 +7,8 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { HrLifecycleCounts, HrLifecycleEvent, HrLifecycleEventType } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import HrNav from '@/components/hr/HrNav'
 import MyChecklistTasks from '@/components/hr/lifecycle/MyChecklistTasks'
@@ -60,7 +60,8 @@ export default function HrLifecyclePage() {
     if (!isAuthorized) return
     setLoading(true)
     setError([])
-    const params: Record<string, unknown> = {}
+    // The list API returns 200 events by default — ask for its maximum (1000) so the list and its count aren't cut short.
+    const params: Record<string, unknown> = { limit: 1000 }
     if (typeFilter) params.event_type = typeFilter
     if (statusFilter === 'open') params.open_only = true
     else if (statusFilter) params.status = statusFilter
@@ -150,9 +151,9 @@ export default function HrLifecyclePage() {
         <table data-tour="hr-lc-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
           <thead>
             <tr>
-              {['Event No', 'Type', 'Employee / Candidate', 'Effective', 'Checklist', 'Status', 'Raised', ''].map((h) => (
+              {['Event No', 'Type', 'Employee / Candidate', 'Effective', 'Checklist', 'Status', 'Raised', ''].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={events.length} />}
                 </th>
               ))}
             </tr>
@@ -172,7 +173,7 @@ export default function HrLifecyclePage() {
                   <tr key={e.id} onClick={() => router.push(recordPath('/dashboard/hr/lifecycle', e))} style={{ cursor: 'pointer' }}>
                     <td style={{ ...td, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{e.event_no}</td>
                     <td style={td}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${TYPE_HEX[e.event_type]}1a`, color: TYPE_HEX[e.event_type], whiteSpace: 'nowrap' }}>
+                      <span style={pillStyle(TYPE_HEX[e.event_type])}>
                         {TYPE_LABELS[e.event_type] || e.event_type}
                       </span>
                     </td>
@@ -195,7 +196,7 @@ export default function HrLifecyclePage() {
                       ) : <span style={{ color: TEXT.muted }}>No items</span>}
                     </td>
                     <td style={td} data-tour="hr-lc-status-badge">
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[e.status]}1a`, color: STATUS_HEX[e.status], whiteSpace: 'nowrap' }}>
+                      <span style={pillStyle(STATUS_HEX[e.status])}>
                         {STATUS_LABELS[e.status] || e.status}
                       </span>
                     </td>

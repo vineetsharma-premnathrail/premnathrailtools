@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
 import { HydSystem, HydCircuit, HydBom, HydTest, HydServiceRecord } from '@/types'
 import { TEXT, DANGER, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle, InfoRow } from '@/components/shared/ui'
+import { secondaryBtnStyle, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -17,7 +17,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import {
-  SYSTEM_TYPE_LABELS, SYSTEM_TYPE_HEX, SYSTEM_STATUS_LABELS, TEST_TYPE_LABELS, SERVICE_TYPE_LABELS, flowUnit, useHydCosts,
+  SYSTEM_TYPE_LABELS, SYSTEM_TYPE_HEX, SYSTEM_STATUS_LABELS, TEST_TYPE_LABELS, SERVICE_TYPE_LABELS, flowUnit, useHydCosts, withUnit,
 } from '@/components/hydraulic/labels'
 import { useCan } from '@/lib/permissions'
 
@@ -42,14 +42,11 @@ const rowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', g
 const codeStyle: React.CSSProperties = { fontWeight: 600, color: TEXT.heading, minWidth: 110, whiteSpace: 'nowrap' }
 const titleStyle: React.CSSProperties = { flex: '1 1 200px', minWidth: 0, color: TEXT.body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
 const numText = (v: number | null | undefined) => (v == null ? '—' : String(v))
+const dash = (v: string) => (v === '—' ? null : v)
 const metaStyle: React.CSSProperties = { fontSize: 12, color: TEXT.muted, whiteSpace: 'nowrap' }
 
-function Badge({ label, hex }: { label: string; hex: string }) {
-  return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
-      {label}
-    </span>
-  )
+function Badge({ label, hex }: { label: string; hex?: string }) {
+  return <Pill label={label} hex={hex || '#78716c'} />
 }
 
 /** One related-records list; `rows === null` means the fetch was refused/failed. */
@@ -150,13 +147,6 @@ export default function HydSystemDetailPage() {
   const go = (path: string) => () => router.push(`/dashboard/hydraulic/${path}`)
   const newFor = (entity: string) => go(`${entity}/new?system_id=${ref}`)
 
-  const summary: string[] = []
-  if (system) {
-    if (system.project_label) summary.push(`Project ${system.project_label}`)
-    if (system.branch_name) summary.push(system.branch_name)
-    if (system.equipment_ref) summary.push(`Serial ${system.equipment_ref}`)
-    if (system.owner_name) summary.push(`Owner ${system.owner_name}`)
-  }
 
   return (
     <div>
@@ -168,13 +158,7 @@ export default function HydSystemDetailPage() {
             Hydraulic &amp; Pneumatic · System
           </p>
           <div data-tour="hyd-sysd-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 20px' }}>
-            <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{system ? `${system.system_number} — ${system.name}` : 'System'}</h1>
-            {system && (
-              <>
-                <Badge label={SYSTEM_TYPE_LABELS[system.system_type] || system.system_type} hex={SYSTEM_TYPE_HEX[system.system_type]} />
-                <Badge label={SYSTEM_STATUS_LABELS[system.status] || system.status} hex={STATUS_HEX[system.status] || '#78716c'} />
-              </>
-            )}
+            <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{system ? system.system_number : 'System'}</h1>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -218,48 +202,50 @@ export default function HydSystemDetailPage() {
             </div>
           )}
 
-          <p data-tour="hyd-sysd-summary" style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 14px' }}>
-            {summary.join(' · ')}
-          </p>
-
-          <div data-tour="hyd-sysd-info" style={cardStyle}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-              <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>System Details</h2>
-              {canEditSystem && <button data-tour="hyd-sysd-edit-btn" type="button" style={secondaryBtnStyle} onClick={() => { setSaved(false); setEditOpen(true) }}>Edit</button>}
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px' }}>
-              <InfoRow label="Application" value={system.application || '—'} />
+          <DetailCard tour="hyd-sysd-info">
+            <DetailSummary
+              title={system.name}
+              text={system.description || `${SYSTEM_TYPE_LABELS[system.system_type] || system.system_type} system${system.application ? ` for ${system.application}` : ''}.`}
+              meta={(
+                <span data-tour="hyd-sysd-summary" style={{ display: 'inline-flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <Badge label={SYSTEM_TYPE_LABELS[system.system_type] || system.system_type} hex={SYSTEM_TYPE_HEX[system.system_type]} />
+                  <Badge label={SYSTEM_STATUS_LABELS[system.status] || system.status} hex={STATUS_HEX[system.status] || '#78716c'} />
+                  {system.owner_name && <span>· Owner {system.owner_name}</span>}
+                </span>
+              )}
+              actions={canEditSystem ? <button data-tour="hyd-sysd-edit-btn" type="button" style={secondaryBtnStyle} onClick={() => { setSaved(false); setEditOpen(true) }}>Edit</button> : undefined}
+            />
+            <DetailGroup title="Where it is used">
+              <DetailRow label="Application">{system.application}</DetailRow>
               {system.order_project_number && (
-                <div>
-                  <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Order project</p>
+                <DetailRow label="Order project">
                   <OrderProjectChip opNumber={system.order_project_number} elementNo={system.order_project_element_no} label={system.order_project_element_label}
                     onClick={() => router.push(recordPath('/dashboard/projects/order-projects', system, 'order_project_id'))} />
-                </div>
+                </DetailRow>
               )}
-              <InfoRow label="ERP Project" value={system.project_label || '—'} />
-              <InfoRow label="Plant" value={system.branch_name || '—'} />
-              <InfoRow label="Owner" value={system.owner_name || '—'} />
-              <InfoRow label="Loco / Machine Serial" value={system.equipment_ref || '—'} />
-            </div>
-            <p style={{ fontSize: 12, fontWeight: 600, color: TEXT.secondary, margin: '16px 0 8px' }}>Design Parameters</p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px' }}>
-              <InfoRow label="Working Pressure (bar)" value={numText(system.working_pressure_bar)} />
-              <InfoRow label="Max Pressure (bar)" value={numText(system.max_pressure_bar)} />
-              <InfoRow label={`Flow Rate (${flowUnit(system.system_type)})`} value={numText(system.flow_rate)} />
-              <InfoRow label={system.system_type === 'pneumatic' ? 'Air Receiver Volume (L)' : 'Reservoir Volume (L)'} value={numText(system.reservoir_capacity_l)} />
-              <InfoRow label="Motor / Compressor Power (kW)" value={numText(system.prime_mover_kw)} />
-              <InfoRow label="Fluid / Medium" value={system.fluid_medium || '—'} />
-              <InfoRow label="Filtration (micron)" value={numText(system.filtration_micron)} />
-              <InfoRow label="Cleanliness Target" value={system.cleanliness_target || '—'} />
-              <InfoRow label="Operating Temp (°C)" value={system.operating_temp_min_c != null || system.operating_temp_max_c != null ? `${numText(system.operating_temp_min_c)} to ${numText(system.operating_temp_max_c)}` : '—'} />
-            </div>
-            {(system.description || system.remarks) && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px', marginTop: 16 }}>
-                {system.description && <div style={{ flex: '1 1 300px' }}><InfoRow label="Description" value={system.description} /></div>}
-                {system.remarks && <div style={{ flex: '1 1 300px' }}><InfoRow label="Remarks" value={system.remarks} /></div>}
-              </div>
+              <DetailRow label="ERP project">{system.project_label}</DetailRow>
+              <DetailRow label="Plant">{system.branch_name}</DetailRow>
+              <DetailRow label="Loco / machine serial">{system.equipment_ref}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="Design parameters" last={!system.remarks}>
+              <DetailRow label="Working pressure">{dash(withUnit(system.working_pressure_bar, 'bar'))}</DetailRow>
+              <DetailRow label="Max pressure">{dash(withUnit(system.max_pressure_bar, 'bar'))}</DetailRow>
+              <DetailRow label="Flow rate">{dash(withUnit(system.flow_rate, flowUnit(system.system_type)))}</DetailRow>
+              <DetailRow label={system.system_type === 'pneumatic' ? 'Air receiver volume' : 'Reservoir volume'}>{dash(withUnit(system.reservoir_capacity_l, 'L'))}</DetailRow>
+              <DetailRow label="Motor / compressor power">{dash(withUnit(system.prime_mover_kw, 'kW'))}</DetailRow>
+              <DetailRow label="Fluid / medium">{system.fluid_medium}</DetailRow>
+              <DetailRow label="Filtration">{dash(withUnit(system.filtration_micron, 'micron'))}</DetailRow>
+              <DetailRow label="Cleanliness target">{system.cleanliness_target}</DetailRow>
+              <DetailRow label="Operating temperature">
+                {system.operating_temp_min_c != null || system.operating_temp_max_c != null ? `${numText(system.operating_temp_min_c)} to ${numText(system.operating_temp_max_c)} °C` : null}
+              </DetailRow>
+            </DetailGroup>
+            {system.remarks && (
+              <DetailGroup last>
+                <DetailRow label="Remarks">{system.remarks}</DetailRow>
+              </DetailGroup>
             )}
-          </div>
+          </DetailCard>
           {editOpen && (
             <SystemForm
               mode="sheet"

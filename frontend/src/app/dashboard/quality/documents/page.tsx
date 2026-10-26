@@ -5,9 +5,9 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { qualityApi } from '@/lib/api'
 import { QualityDocument, QualityDocumentType, QualityStandard } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, FileDropZone, Req, Optional } from '@/components/shared/FormSheet'
-import { ErrorBanner } from '@/components/quality/QualityBits'
+import { ErrorBanner, fmtDate } from '@/components/quality/QualityBits'
 import QualityNav from '@/components/quality/QualityNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -249,9 +249,9 @@ export default function QualityDocumentsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['Title', 'Type', 'Version', 'File', 'Size', 'Uploaded By', 'Uploaded On', ''].map((h) => (
+              {['Title', 'Type', 'Version', 'File', 'Size', 'Uploaded By', 'Uploaded On', ''].map((h, i) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{i === 0 && <RowCount count={documents.length} />}
                 </th>
               ))}
             </tr>
@@ -260,21 +260,19 @@ export default function QualityDocumentsPage() {
             {loading ? (
               <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : documents.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No documents found.</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No documents match — use + Upload Document to add one.</td></tr>
             ) : (
               documents.map((d) => (
                 <tr key={d.id}>
                   <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600, color: TEXT.heading, borderTop: `1px solid ${BORDER.light}` }}>{d.title}</td>
                   <td style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${DOC_TYPE_HEX[d.doc_type]}1a`, color: DOC_TYPE_HEX[d.doc_type], whiteSpace: 'nowrap' }}>
-                      {DOC_TYPE_LABELS[d.doc_type] || d.doc_type}
-                    </span>
+                    <Pill label={DOC_TYPE_LABELS[d.doc_type] || d.doc_type} hex={DOC_TYPE_HEX[d.doc_type]} />
                   </td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{d.version || '—'}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{d.file_name}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{formatBytes(d.file_size)}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{d.uploaded_by_name || '—'}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{d.created_at ? d.created_at.slice(0, 10) : '—'}</td>
+                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{fmtDate(d.created_at)}</td>
                   <td onClick={(e) => e.stopPropagation()} style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}`, whiteSpace: 'nowrap' }}>
                     <span onClick={() => handleView(d)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer', marginRight: 14 }}>View</span>
                     {canDelete('quality', 'documents', d.uploaded_by_id ?? null) && <span onClick={() => setDeletingDoc(d)} style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', cursor: 'pointer' }}>Delete</span>}

@@ -5,7 +5,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { erpApi } from '@/lib/api'
 import ErpNav from '@/components/erp/ErpNav'
-import { Section } from '@/components/shared/ui'
+import { Section, smallPrimaryBtnStyle } from '@/components/shared/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
@@ -146,7 +146,7 @@ function RecycleRow({ primary, secondary, deletedAt, onRestore }: { primary: str
         <button
           data-tour="erp-bin-restore-btn"
           onClick={onRestore}
-          style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 16px', borderRadius: 9, border: 'none', background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}
+          style={smallPrimaryBtnStyle}
         >
           Restore
         </button>

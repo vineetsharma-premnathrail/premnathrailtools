@@ -9,7 +9,8 @@ import { CrmActivityAttachment } from '@/types'
 import { crmApi } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
-import { inputStyle, primaryBtnStyle, secondaryBtnStyle, smallPrimaryBtnStyle, smallSecondaryBtnStyle, smallBtnSize } from '@/components/shared/ui'
+import { inputStyle, primaryBtnStyle, secondaryBtnStyle, smallPrimaryBtnStyle, smallSecondaryBtnStyle, smallBtnSize, pillStyle, DetailRow } from '@/components/shared/ui'
+import { placePopover } from '@/lib/popover'
 
 // A plain "×" character renders as a colored circular emoji glyph on some
 // systems/fonts instead of a typographic X — this SVG is the drop-in
@@ -103,7 +104,7 @@ export function RevisionSelector({ revisions, selectedId, onSelect, tourId }: { 
   const toggle = () => {
     if (!open && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect()
-      setPos({ top: rect.bottom + 6, left: rect.left })
+      setPos(placePopover(rect, { width: 220, height: 300 }))
     }
     setOpen((v) => !v)
   }
@@ -231,7 +232,7 @@ export function StageProgress({ stage, stages, canModify, allowBackward = false,
           <span style={{ fontSize: 12.5, fontWeight: 700, color: COLORS.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stage}</span>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <span style={{ fontSize: 10, fontWeight: 700, color: BRAND.primary, background: BRAND.primarySoft, padding: '2px 7px', borderRadius: 999 }}>{Math.round(pct)}%</span>
+          <span style={{ ...pillStyle(BRAND.primary), fontSize: 10, padding: '2px 7px', background: BRAND.primarySoft }}>{Math.round(pct)}%</span>
           <span style={{ fontSize: 12, color: COLORS.textFaint2, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>▾</span>
         </div>
       </div>
@@ -303,7 +304,7 @@ export function ComboBox({
 
   const measure = useCallback(() => {
     const rect = wrapperRef.current?.getBoundingClientRect()
-    if (rect) setPos({ top: rect.bottom + 6, left: rect.left, width: rect.width })
+    if (rect) setPos({ ...placePopover(rect, { width: rect.width, height: 260 }), width: rect.width })
   }, [])
 
   const openDropdown = () => {
@@ -425,6 +426,17 @@ export function SpecInfoRow({ label, value, change }: { label: string; value: st
     <div style={{ borderRadius: 8, padding: '4px 8px', margin: '-4px -8px', background: 'rgba(255,122,69,0.06)', border: '1px dashed rgba(255,122,69,0.3)' }}>
       <p className="info-row-label" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: COLORS.textFaint2, margin: '0 0 2px' }}>{label}</p>
       <DiffValue oldVal={change.old} newVal={change.new} />
+    </div>
+  )
+}
+
+/** A DetailRow (label left, value right) that, when the selected revision changed
+ * this field, shows the word-level diff instead of the plain value. */
+export function SpecDetailRow({ label, value, change }: { label: string; value: ReactNode; change?: { old: unknown; new: unknown } }) {
+  if (!change) return <DetailRow label={label}>{value}</DetailRow>
+  return (
+    <div style={{ borderRadius: 8, padding: '0 8px', margin: '2px -8px', background: 'rgba(255,122,69,0.06)', border: '1px dashed rgba(255,122,69,0.3)' }}>
+      <DetailRow label={`${label} (changed)`}><DiffValue oldVal={change.old} newVal={change.new} /></DetailRow>
     </div>
   )
 }

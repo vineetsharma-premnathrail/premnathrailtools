@@ -7,7 +7,7 @@ import { rolesApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
 import { Role } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { inputStyle, primaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, primaryBtnStyle, chipBtnStyle, RowCount } from '@/components/shared/ui'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import { recordPath } from '@/lib/recordRef'
 import TourButton from '@/components/tour/TourButton'
@@ -85,11 +85,7 @@ export default function OrganizationRolesPage() {
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search roles…" style={{ ...inputStyle, maxWidth: 280 }} data-tour="org-roles-search" />
         <div data-tour="org-roles-filter" style={{ display: 'flex', gap: 6 }}>
           {([['custom', 'Custom roles'], ['builtin', 'Built-in presets'], ['all', 'All']] as [Filter, string][]).map(([k, label]) => (
-            <button key={k} type="button" onClick={() => setFilter(k)} style={{
-              padding: '6px 12px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              border: `1px solid ${filter === k ? '#F4713B' : BORDER.normal}`, background: filter === k ? 'rgba(244,113,59,0.1)' : '#fff',
-              color: filter === k ? '#F4713B' : TEXT.secondary,
-            }}>{label}</button>
+            <button key={k} type="button" onClick={() => setFilter(k)} style={chipBtnStyle(filter === k)}>{label}</button>
           ))}
         </div>
       </div>
@@ -99,8 +95,8 @@ export default function OrganizationRolesPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
             <thead>
               <tr style={{ background: 'rgba(0,0,0,0.02)' }}>
-                {['Role', 'Description', 'Type', 'Users'].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                {['Role', 'Description', 'Type', 'Users'].map((h, hi) => (
+                  <th key={h} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}{hi === 0 && <RowCount count={visible.length} />}</th>
                 ))}
               </tr>
             </thead>

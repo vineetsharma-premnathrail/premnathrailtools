@@ -15,6 +15,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { chipBtnStyle } from '@/components/shared/ui'
 
 const textArea: React.CSSProperties = { ...sheetInput, minHeight: 60, resize: 'vertical' }
 
@@ -250,9 +251,9 @@ export default function NewRfqPage() {
                     return (
                       <button key={sg.vendor_id} type="button" disabled={off} onClick={() => addVendor(sg.vendor_id)}
                         title={!active ? `${sg.vendor_name} is not Active in Procurement › Vendors` : sg.items.join(', ')}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, padding: '4px 10px', borderRadius: 9999, background: added ? '#dbeafe' : '#fff', border: '1px solid rgba(37,99,235,0.2)', color: '#1e3a8a', fontFamily: 'inherit', cursor: off ? 'default' : 'pointer', opacity: active ? 1 : 0.55 }}>
+                        style={{ ...chipBtnStyle(added), cursor: off ? 'default' : 'pointer', opacity: active ? 1 : 0.55 }}>
                         <SheetIcon name={added ? 'check' : 'plus'} size={12} />
-                        {added ? 'Added' : 'Add'} · {sg.vendor_name} · {sg.items.length} item{sg.items.length === 1 ? '' : 's'}{sg.total != null ? ` · ₹${sg.total.toLocaleString()}` : ''}
+                        {added ? 'Added' : 'Add'} · {sg.vendor_name} · {sg.items.length} item{sg.items.length === 1 ? '' : 's'}{sg.total != null ? ` · ₹${sg.total.toLocaleString('en-IN')}` : ''}
                       </button>
                     )
                   })}

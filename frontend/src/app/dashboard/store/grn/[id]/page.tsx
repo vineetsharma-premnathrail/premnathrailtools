@@ -7,14 +7,14 @@ import { goodsReceiptsApi, vendorReturnsApi } from '@/lib/api'
 import { P2PGoodsReceipt, P2PVendorReturn } from '@/types'
 import PromptDialog from '@/components/erp/PromptDialog'
 import DateField from '@/components/erp/DateField'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, SUCCESS, DANGER } from '@/lib/theme'
-import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, BORDER, SUCCESS, DANGER } from '@/lib/theme'
+import { secondaryBtnStyle, smallSecondaryBtnStyle, primaryBtnStyle, RowCount, Pill, pillStyle, TableScroll, thStyle, tdStyle, numThStyle, numTdStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRecordId } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
-import { formatDate } from '@/lib/format'
+import { formatDate, formatDateTime } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
@@ -28,10 +28,10 @@ const inputStyle: React.CSSProperties = {
   padding: '8px 10px', borderRadius: 8, border: `1px solid ${BORDER.normal}`,
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
 }
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 20px', borderRadius: 10, border: 'none', cursor: 'pointer',
-  background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600,
-}
+const primaryBtn = primaryBtnStyle
+const STATUS_LABELS: Record<string, string> = { draft: 'Pending Inspection', completed: 'Completed', reversed: 'Reversed' }
+const STATUS_HEX: Record<string, string> = { draft: '#d97706', completed: '#16a34a', reversed: '#dc2626' }
+const qty = (v?: number | null) => (v == null ? '—' : v.toLocaleString('en-IN', { maximumFractionDigits: 3 }))
 
 const QUALITY_OPTIONS = [
   { value: 'passed', label: 'Passed' },
@@ -221,7 +221,7 @@ export default function StoreGrnDetailPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
         <div>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            Store & Inventory Module
+            Store & Inventory · Goods Receipt
           </p>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{grn.grn_number}</h1>
         </div>
@@ -276,46 +276,52 @@ export default function StoreGrnDetailPage() {
         </div>
       )}
 
-      <div data-tour="store-grn-detail-header" style={sectionStyle}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, fontSize: 13 }}>
-          <div><span style={{ color: TEXT.muted }}>PO Number: </span><strong style={{ color: TEXT.heading }}>{grn.po_number}</strong></div>
-          <div><span style={{ color: TEXT.muted }}>PR Number: </span><strong style={{ color: TEXT.heading }}>{grn.p2p_number || '—'}</strong></div>
-          <div><span style={{ color: TEXT.muted }}>Vendor: </span><strong style={{ color: TEXT.heading }}>{grn.vendor_name || '—'}</strong></div>
-          <div><span style={{ color: TEXT.muted }}>Received Date: </span><strong style={{ color: TEXT.heading }}>{formatDate(grn.received_date)}</strong></div>
-          <div><span style={{ color: TEXT.muted }}>Store Location: </span><strong style={{ color: TEXT.heading }}>{grn.store_location_name || '—'}</strong></div>
-          <div><span style={{ color: TEXT.muted }}>Received By: </span><strong style={{ color: TEXT.heading }}>{grn.received_by_name || '—'}</strong></div>
-          {grn.status === 'completed' && (
-            <div><span style={{ color: TEXT.muted }}>Inspected By: </span><strong style={{ color: TEXT.heading }}>{grn.inspected_by_name || '—'}</strong></div>
-          )}
+      <DetailCard tour="store-grn-detail-header">
+        <DetailSummary
+          title={grn.grn_number}
+          text={`Goods received${grn.vendor_name ? ` from ${grn.vendor_name}` : ''} against ${grn.po_number || 'the purchase order'}${grn.store_location_name ? ` into ${grn.store_location_name}` : ''}.`}
+          meta={<>
+            <Pill label={STATUS_LABELS[grn.status] || grn.status} hex={STATUS_HEX[grn.status] || '#64748b'} />
+            <span>· Received {formatDate(grn.received_date)}</span>
+            {grn.received_by_name && <span>· by <strong style={{ color: TEXT.heading }}>{grn.received_by_name}</strong></span>}
+            {grn.status === 'completed' && grn.inspected_by_name && <span>· Inspected by <strong style={{ color: TEXT.heading }}>{grn.inspected_by_name}</strong></span>}
+          </>}
+        />
+        <DetailGroup title="Order">
+          <DetailRow label="PO Number">{grn.po_number}</DetailRow>
+          <DetailRow label="PR Number">{grn.p2p_number}</DetailRow>
+          <DetailRow label="Vendor">{grn.vendor_name}</DetailRow>
+          <DetailRow label="Store Location">{grn.store_location_name}</DetailRow>
+        </DetailGroup>
+        <div data-tour="store-grn-detail-docs">
+          <DetailGroup title="Delivery Documents" last={!grn.remarks}>
+            <DetailRow label="Gate Entry">{[grn.gate_entry_number, grn.gate_entry_at ? formatDateTime(grn.gate_entry_at) : null].filter(Boolean).join(' · ') || null}</DetailRow>
+            <DetailRow label="Vendor Invoice">{grn.vendor_invoice_number ? `${grn.vendor_invoice_number}${grn.vendor_invoice_date ? ` dt. ${formatDate(grn.vendor_invoice_date)}` : ''}` : null}</DetailRow>
+            <DetailRow label="Delivery Challan">{grn.delivery_challan_number ? `${grn.delivery_challan_number}${grn.delivery_challan_date ? ` dt. ${formatDate(grn.delivery_challan_date)}` : ''}` : null}</DetailRow>
+            <DetailRow label="E-way Bill">{grn.eway_bill_number}</DetailRow>
+            <DetailRow label="Vehicle / Transporter">{[grn.vehicle_number, grn.transporter_name].filter(Boolean).join(' · ') || null}</DetailRow>
+            <DetailRow label="LR No.">{grn.lr_number}</DetailRow>
+          </DetailGroup>
         </div>
-        {(() => {
-          const docs: [string, string | null | undefined][] = [
-            ['Gate Entry', [grn.gate_entry_number, grn.gate_entry_at ? grn.gate_entry_at.slice(0, 16).replace('T', ' ') : null].filter(Boolean).join(' · ')],
-            ['Vendor Invoice', grn.vendor_invoice_number ? `${grn.vendor_invoice_number}${grn.vendor_invoice_date ? ` dt. ${formatDate(grn.vendor_invoice_date)}` : ''}` : null],
-            ['Delivery Challan', grn.delivery_challan_number ? `${grn.delivery_challan_number}${grn.delivery_challan_date ? ` dt. ${formatDate(grn.delivery_challan_date)}` : ''}` : null],
-            ['E-way Bill', grn.eway_bill_number], ['Vehicle', grn.vehicle_number], ['Transporter', grn.transporter_name], ['LR No.', grn.lr_number],
-          ]
-          const shown = docs.filter(([, v]) => v)
-          return shown.length > 0 && (
-            <div data-tour="store-grn-detail-docs" style={{ display: 'flex', flexWrap: 'wrap', gap: 24, fontSize: 13, marginTop: 12, paddingTop: 12, borderTop: `1px solid ${BORDER.normal}` }}>
-              {shown.map(([k, v]) => <div key={k}><span style={{ color: TEXT.muted }}>{k}: </span><strong style={{ color: TEXT.heading }}>{v}</strong></div>)}
-            </div>
-          )
-        })()}
-        {grn.remarks && <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '12px 0 0' }}>Remarks: {grn.remarks}</p>}
-      </div>
+        {grn.remarks && (
+          <DetailGroup last>
+            <DetailRow label="Remarks">{grn.remarks}</DetailRow>
+          </DetailGroup>
+        )}
+      </DetailCard>
 
       <div style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>
           {isDraft ? 'Quality Inspection' : 'Inspection Result'}
         </h2>
-        <div data-tour="store-grn-detail-lines" style={{ overflow: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+        <div data-tour="store-grn-detail-lines">
+          <TableScroll maxHeight="none" minWidth={900}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                {['Item', 'Ordered', 'Invoice Qty', 'Received', 'Accepted', 'Rejected', 'Returned', 'Quality Status', 'Rejection Reason'].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, borderBottom: `1px solid ${BORDER.normal}` }}>{h}</th>
-                ))}
+                <th style={thStyle}>Item <RowCount count={grn.items.length} /></th>
+                {['Ordered', 'Invoice Qty', 'Received', 'Accepted', 'Rejected'].map((h) => <th key={h} style={numThStyle}>{h}</th>)}
+                {['Returned', 'Quality Status', 'Rejection Reason'].map((h) => <th key={h} style={thStyle}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -324,7 +330,8 @@ export default function StoreGrnDetailPage() {
                 const editable = canInspect && isDraft && it.quality_status === 'pending'
                 return (
                   <tr key={it.id}>
-                    <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>
+                    <td style={tdStyle}>
+                      {it.item_code && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{it.item_code}</div>}
                       {it.item_name}{it.unit ? ` (${it.unit})` : ''}
                       {it.bin_code && <div style={{ fontSize: 11.5, color: TEXT.muted }}>Bin {it.bin_code}</div>}
                       {!!it.serial_numbers?.length && <div style={{ fontSize: 11.5, color: TEXT.muted }}>S/N {it.serial_numbers.join(', ')}</div>}
@@ -332,64 +339,63 @@ export default function StoreGrnDetailPage() {
                         <div style={{ marginTop: 4 }}><OrderProjectChip opNumber={it.order_project_number} elementNo={it.order_project_element_no} label={it.order_project_element_label} /></div>
                       )}
                     </td>
-                    <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>{it.ordered_quantity}</td>
-                    <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>{it.invoice_quantity ?? '—'}</td>
-                    <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>
-                      {it.received_quantity}
+                    <td style={numTdStyle}>{qty(it.ordered_quantity)}</td>
+                    <td style={numTdStyle}>{qty(it.invoice_quantity)}</td>
+                    <td style={numTdStyle}>
+                      {qty(it.received_quantity)}
                       {it.receipt_variance != null && it.receipt_variance !== 0 && (
                         <div style={{ fontSize: 11, fontWeight: 600, color: it.receipt_variance < 0 ? DANGER.text : '#d97706' }}>
-                          {it.receipt_variance < 0 ? `Short ${-it.receipt_variance} vs bill` : `Excess ${it.receipt_variance} vs bill`}
+                          {it.receipt_variance < 0 ? `Short ${qty(-it.receipt_variance)} vs bill` : `Excess ${qty(it.receipt_variance)} vs bill`}
                         </div>
                       )}
                     </td>
-                    <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
+                    <td style={numTdStyle}>
                       {editable ? (
                         <input type="number" min={0} max={it.received_quantity} step="any" value={r.accepted_quantity}
                           onChange={(e) => setRow(it.id, { accepted_quantity: e.target.value })} style={{ ...inputStyle, width: 80 }} />
                       ) : (
-                        <span style={{ fontWeight: 600, color: SUCCESS.text }}>{it.accepted_quantity ?? '—'}</span>
+                        <span style={{ fontWeight: 600, color: SUCCESS.text }}>{qty(it.accepted_quantity)}</span>
                       )}
                     </td>
-                    <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
+                    <td style={numTdStyle}>
                       {editable ? (
                         <>
                         <input type="number" min={0} max={it.received_quantity} step="any" value={r.rejected_quantity}
                           onChange={(e) => setRow(it.id, { rejected_quantity: e.target.value })} style={{ ...inputStyle, width: 80 }} />
                         {!!it.serial_numbers?.length && r.quality_status === 'partial' && (
-                          <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4, maxWidth: 220 }}>
+                          <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4, maxWidth: 220, marginLeft: 'auto', whiteSpace: 'normal', textAlign: 'left' }}>
                             <span style={{ fontSize: 11, color: TEXT.muted, width: '100%' }}>Tap the rejected serial(s):</span>
                             {it.serial_numbers.map((s) => {
                               const on = r.rejected_serials.includes(s)
                               return (
-                                <span key={s} onClick={() => setRow(it.id, { rejected_serials: on ? r.rejected_serials.filter((x) => x !== s) : [...r.rejected_serials, s] })}
-                                  style={{ cursor: 'pointer', fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 9999,
-                                    background: on ? 'rgba(220,38,38,0.12)' : 'rgba(0,0,0,0.05)', color: on ? DANGER.text : TEXT.body }}>{s}</span>
+                                <button type="button" key={s} aria-pressed={on} onClick={() => setRow(it.id, { rejected_serials: on ? r.rejected_serials.filter((x) => x !== s) : [...r.rejected_serials, s] })}
+                                  style={{ ...pillStyle(on ? '#dc2626' : '#57534e'), border: 'none', cursor: 'pointer' }}>{s}</button>
                               )
                             })}
                           </div>
                         )}
                         </>
                       ) : (
-                        <span style={{ fontWeight: 600, color: it.rejected_quantity ? DANGER.text : TEXT.muted }}>{it.rejected_quantity ?? '—'}</span>
+                        <span style={{ fontWeight: 600, color: it.rejected_quantity ? DANGER.text : TEXT.muted }}>{qty(it.rejected_quantity)}</span>
                       )}
                     </td>
-                    <td style={{ padding: '8px 10px', fontSize: 12.5, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>
+                    <td style={{ ...tdStyle, fontSize: 12.5, whiteSpace: 'nowrap' }}>
                       {(it.returned_quantity || 0) + (it.rejected_returned_quantity || 0) > 0
-                        ? [it.returned_quantity ? `${it.returned_quantity} accepted` : '', it.rejected_returned_quantity ? `${it.rejected_returned_quantity} rejected` : ''].filter(Boolean).join(' · ')
+                        ? [it.returned_quantity ? `${qty(it.returned_quantity)} accepted` : '', it.rejected_returned_quantity ? `${qty(it.rejected_returned_quantity)} rejected` : ''].filter(Boolean).join(' · ')
                         : '—'}
                     </td>
-                    <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
+                    <td style={tdStyle}>
                       {editable ? (
                         <Select value={r.quality_status} onChange={(e) => setRow(it.id, { quality_status: e.target.value })} style={{ ...inputStyle, width: 150 }}>
                           {QUALITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </Select>
                       ) : (
-                        <span style={{ fontSize: 12, fontWeight: 600, color: it.quality_status === 'passed' ? SUCCESS.text : it.quality_status === 'failed' ? DANGER.text : TEXT.body }}>
-                          {it.quality_status === 'in_quality' ? QUALITY_LOT_LABEL : QUALITY_OPTIONS.find((o) => o.value === it.quality_status)?.label || it.quality_status}
-                        </span>
+                        <Pill
+                          label={it.quality_status === 'in_quality' ? QUALITY_LOT_LABEL : QUALITY_OPTIONS.find((o) => o.value === it.quality_status)?.label || (it.quality_status === 'pending' ? 'Pending' : it.quality_status)}
+                          hex={it.quality_status === 'passed' ? '#16a34a' : it.quality_status === 'failed' ? '#dc2626' : it.quality_status === 'partial' ? '#d97706' : '#64748b'} />
                       )}
                     </td>
-                    <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
+                    <td style={tdStyle}>
                       {editable && r.quality_status !== 'passed' ? (
                         <input value={r.rejection_reason} onChange={(e) => setRow(it.id, { rejection_reason: e.target.value })} style={{ ...inputStyle, width: 180 }} placeholder="Reason" />
                       ) : (
@@ -401,6 +407,7 @@ export default function StoreGrnDetailPage() {
               })}
             </tbody>
           </table>
+          </TableScroll>
         </div>
 
         {isDraft && grn.items.some((it) => it.quality_status === 'in_quality') && (
@@ -443,8 +450,8 @@ export default function StoreGrnDetailPage() {
               <div style={{ overflow: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 10 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
                   <thead><tr style={{ background: SHEET.SOFT }}>
-                    {['Item', 'Accepted left', 'Return accepted', 'Rejected left', 'Return rejected'].map((h) => (
-                      <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', color: SHEET.MUTED }}>{h}</th>
+                    {['Item', 'Accepted left', 'Return accepted', 'Rejected left', 'Return rejected'].map((h, hi) => (
+                      <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', color: SHEET.MUTED }}>{h}{hi === 0 && <RowCount count={returnable.length} />}</th>
                     ))}
                   </tr></thead>
                   <tbody>
@@ -495,25 +502,38 @@ export default function StoreGrnDetailPage() {
       {seeReturns && returns.length > 0 && (
         <div data-tour="store-grn-detail-returns" style={sectionStyle}>
           <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 12px' }}>Returns to Vendor</h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {returns.map((r) => (
-              <div key={r.id} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.6)' }}>
-                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 13 }}>
-                  <strong style={{ color: TEXT.heading }}>{r.rtv_number}</strong>
-                  <span style={{ color: TEXT.muted }}>{formatDate(r.return_date)}</span>
-                  <span>{r.reason_label || r.reason}</span>
-                  {seeValues && r.total_value != null && <span style={{ color: TEXT.secondary }}>Value ₹{r.total_value.toLocaleString('en-IN')}</span>}
-                  {r.vehicle_number && <span style={{ color: TEXT.muted }}>Vehicle {r.vehicle_number}</span>}
-                  {r.created_by_name && <span style={{ color: TEXT.muted }}>by {r.created_by_name}</span>}
-                </div>
-                <p style={{ fontSize: 12.5, color: TEXT.body, margin: '6px 0 0' }}>
-                  {r.items.map((i) => `${i.item_name}: ${i.quantity} ${i.unit || ''} (${i.source})`).join(' · ')}
-                </p>
-                {r.debit_note_message && <p style={{ fontSize: 12, color: TEXT.muted, margin: '4px 0 0' }}>{r.debit_note_message}</p>}
-                {r.remarks && <p style={{ fontSize: 12, color: TEXT.muted, margin: '4px 0 0' }}>Remarks: {r.remarks}</p>}
-              </div>
-            ))}
-          </div>
+          <TableScroll maxHeight="none" minWidth={760}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Return No. <RowCount count={returns.length} /></th>
+                  <th style={thStyle}>Date</th>
+                  <th style={thStyle}>Reason</th>
+                  <th style={thStyle}>Goods sent back</th>
+                  {seeValues && <th style={numThStyle}>Value</th>}
+                  <th style={thStyle}>Vehicle</th>
+                  <th style={thStyle}>By</th>
+                </tr>
+              </thead>
+              <tbody>
+                {returns.map((r) => (
+                  <tr key={r.id}>
+                    <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{r.rtv_number}</td>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(r.return_date)}</td>
+                    <td style={tdStyle}>{r.reason_label || RETURN_REASONS.find((x) => x.value === r.reason)?.label || r.reason}</td>
+                    <td style={{ ...tdStyle, fontSize: 12.5 }}>
+                      {r.items.map((i, k) => <div key={k}>{i.item_name}: {qty(i.quantity)} {i.unit || ''} ({i.source})</div>)}
+                      {r.debit_note_message && <div style={{ fontSize: 12, color: TEXT.muted, marginTop: 4 }}>{r.debit_note_message}</div>}
+                      {r.remarks && <div style={{ fontSize: 12, color: TEXT.muted, marginTop: 2 }}>Remarks: {r.remarks}</div>}
+                    </td>
+                    {seeValues && <td style={numTdStyle}>{r.total_value != null ? `₹${r.total_value.toLocaleString('en-IN')}` : '—'}</td>}
+                    <td style={tdStyle}>{r.vehicle_number || '—'}</td>
+                    <td style={tdStyle}>{r.created_by_name || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
         </div>
       )}
     </div>

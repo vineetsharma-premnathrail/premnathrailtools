@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from 'react'
 import SearchableSelect from '@/components/erp/SearchableSelect'
-import { Section, Row, InfoRow } from '@/components/shared/ui'
+import { Section, RowCount, Pill, TableScroll, thStyle, tdStyle, numTdStyle, numThStyle, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { SheetSection, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import { storeApi } from '@/lib/api'
 import { formatDate } from '@/lib/format'
@@ -237,59 +237,51 @@ export function ItemErpForm({ values, onChange, meta, itemType, uom, effective }
 const num = (v?: number | null, unit?: string | null) => (v == null ? '—' : `${v.toLocaleString('en-IN')}${unit ? ` ${unit}` : ''}`)
 const yesNo = (v?: boolean) => (v ? 'Yes' : 'No')
 
+/** The item's purchasing / tax / stock / quality facts as DetailGroups — render
+ * inside the item page's DetailCard (one label–value list, no separate cards). */
 export function ItemErpInfo({ item }: { item: StoreItem }) {
   const isService = item.item_type === 'service'
   const ledger = (name?: string | null, source?: string | null) =>
-    name ? `${name}${source && source !== 'item' ? ` (${SOURCE_TEXT[source]})` : ''}` : source === 'none' ? SOURCE_TEXT.none : '—'
+    name ? `${name}${source && source !== 'item' ? ` (${SOURCE_TEXT[source]})` : ''}` : source === 'none' ? SOURCE_TEXT.none : null
   return (
     <>
-      <Section title="Purchasing" style={{ marginBottom: 20 }}>
-        <div data-tour="item-detail-purchasing">
-          <Row>
-            <InfoRow label="Preferred vendor" value={item.preferred_vendor_name || (item.preferred_supplier ? `${item.preferred_supplier} (not linked to the vendor master — pick it again)` : '—')} />
-            <InfoRow label="Minimum order qty" value={num(item.min_order_qty, item.uom)} />
-            {!isService && <InfoRow label="Make / Manufacturer" value={[item.make, item.manufacturer].filter(Boolean).join(' · ') || '—'} />}
-            {!isService && <InfoRow label="Manufacturer part no." value={item.manufacturer_part_number || '—'} />}
-          </Row>
-        </div>
-      </Section>
-      <Section title="Tax & Accounts" style={{ marginBottom: 20 }}>
-        <div data-tour="item-detail-accounts">
-          <Row>
-            <InfoRow label={isService ? 'SAC code' : 'HSN code'} value={item.hsn_sac_code || 'Not set — needed on GST invoices'} />
-            <InfoRow label="GST rate" value={item.gst_rate != null ? `${item.gst_rate}%` : 'Not set'} />
-            <InfoRow label="Purchase ledger" value={ledger(item.effective_purchase_gl, item.effective_purchase_gl_source)} />
-            <InfoRow label="Sales ledger" value={ledger(item.effective_sales_gl, item.effective_sales_gl_source)} />
-          </Row>
-        </div>
-      </Section>
+      <div data-tour="item-detail-purchasing">
+        <DetailGroup title="Purchasing">
+          <DetailRow label="Preferred vendor">{item.preferred_vendor_name || (item.preferred_supplier ? `${item.preferred_supplier} (not linked to the vendor master — pick it again)` : null)}</DetailRow>
+          <DetailRow label="Minimum order qty">{item.min_order_qty == null ? null : num(item.min_order_qty, item.uom)}</DetailRow>
+          {!isService && <DetailRow label="Make / Manufacturer">{[item.make, item.manufacturer].filter(Boolean).join(' · ') || null}</DetailRow>}
+          {!isService && <DetailRow label="Manufacturer part no.">{item.manufacturer_part_number}</DetailRow>}
+        </DetailGroup>
+      </div>
+      <div data-tour="item-detail-accounts">
+        <DetailGroup title="Tax & Accounts" last={isService}>
+          <DetailRow label={isService ? 'SAC code' : 'HSN code'}>{item.hsn_sac_code || 'Not set — needed on GST invoices'}</DetailRow>
+          <DetailRow label="GST rate">{item.gst_rate != null ? `${item.gst_rate}%` : 'Not set'}</DetailRow>
+          <DetailRow label="Purchase ledger">{ledger(item.effective_purchase_gl, item.effective_purchase_gl_source)}</DetailRow>
+          <DetailRow label="Sales ledger">{ledger(item.effective_sales_gl, item.effective_sales_gl_source)}</DetailRow>
+        </DetailGroup>
+      </div>
       {!isService && (
-        <Section title="Stock Levels" style={{ marginBottom: 20 }}>
-          <Row>
-            <InfoRow label="Reorder level / qty" value={`${num(item.reorder_level, item.uom)} / ${num(item.reorder_quantity, item.uom)}`} />
-            <InfoRow label="Safety stock" value={num(item.safety_stock, item.uom)} />
-            <InfoRow label="Min / Max stock" value={`${num(item.minimum_stock)} / ${num(item.maximum_stock, item.uom)}`} />
-          </Row>
-        </Section>
+        <DetailGroup title="Stock Levels">
+          <DetailRow label="Reorder level / qty">{`${num(item.reorder_level, item.uom)} / ${num(item.reorder_quantity, item.uom)}`}</DetailRow>
+          <DetailRow label="Safety stock">{item.safety_stock == null ? null : num(item.safety_stock, item.uom)}</DetailRow>
+          <DetailRow label="Min / Max stock">{`${num(item.minimum_stock, item.uom)} / ${num(item.maximum_stock, item.uom)}`}</DetailRow>
+        </DetailGroup>
       )}
       {!isService && (
-        <Section title="Quality & Tracking" style={{ marginBottom: 20 }}>
-          <div data-tour="item-detail-quality">
-            <Row>
-              <InfoRow label="Inspection on receipt" value={item.inspection_on_receipt ? 'Yes — GRN / production receipts go to Quality stock and get an inspection lot' : 'No — receipts go straight to Free stock'} />
-              <InfoRow label="Test certificate required" value={item.test_certificate_required ? "Yes — an incoming lot can't be accepted without the MTC / test certificate" : 'No'} />
-              <InfoRow label="Batch / Serial tracked" value={`${yesNo(item.batch_controlled)} / ${yesNo(item.serial_controlled)}`} />
-              <InfoRow label="Expiry" value={item.expiry_controlled ? `Yes — shelf life ${item.shelf_life_days ?? '?'} day(s)` : 'No'} />
-            </Row>
-          </div>
-        </Section>
+        <div data-tour="item-detail-quality">
+          <DetailGroup title="Quality & Tracking" last>
+            <DetailRow label="Inspection on receipt">{item.inspection_on_receipt ? 'Yes — GRN / production receipts go to Quality stock and get an inspection lot' : 'No — receipts go straight to Free stock'}</DetailRow>
+            <DetailRow label="Test certificate required">{item.test_certificate_required ? "Yes — an incoming lot can't be accepted without the MTC / test certificate" : 'No'}</DetailRow>
+            <DetailRow label="Batch / Serial tracked">{`${yesNo(item.batch_controlled)} / ${yesNo(item.serial_controlled)}`}</DetailRow>
+            <DetailRow label="Expiry">{item.expiry_controlled ? (item.shelf_life_days != null ? `Yes — shelf life ${item.shelf_life_days.toLocaleString('en-IN')} day(s)` : 'Yes — shelf life not set') : 'No'}</DetailRow>
+          </DetailGroup>
+        </div>
       )}
     </>
   )
 }
 
-const th: React.CSSProperties = { textAlign: 'left', fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, padding: '6px 10px', position: 'sticky', top: 0, background: '#fdf1e6' }
-const td: React.CSSProperties = { fontSize: 13, color: TEXT.body, padding: '8px 10px', borderTop: '1px solid rgba(0,0,0,0.06)' }
 const rupees = (v?: number | null, unit?: string | null) => (v == null ? '—' : `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })}${unit ? ` / ${unit}` : ''}`)
 
 export function ItemVendorSuggestions({ itemId }: { itemId: number }) {
@@ -311,32 +303,41 @@ export function ItemVendorSuggestions({ itemId }: { itemId: number }) {
           </div>
         )}
         <span style={hint}>Preferred vendor first, then vendors we bought it from (latest first), then vendors whose catalog lists it. Matched by item / part code, or the exact item name.</span>
-        <div style={{ overflow: 'auto', maxHeight: 320, marginTop: 8 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
+        <TableScroll maxHeight={320} minWidth={680} style={{ marginTop: 8 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr>{['Vendor', 'Last PO rate', 'Last PO', 'POs / Qty bought', 'Catalog price', 'Catalog lead time'].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
+              <tr>
+                <th style={thStyle}>Vendor <RowCount count={rows?.length ?? 0} /></th>
+                <th style={numThStyle}>Last PO rate</th>
+                <th style={thStyle}>Last PO</th>
+                <th style={numThStyle}>POs / Qty bought</th>
+                <th style={numThStyle}>Catalog price</th>
+                <th style={numThStyle}>Catalog lead time</th>
+              </tr>
             </thead>
             <tbody>
               {rows === null ? (
-                <tr><td colSpan={6} style={td}>Loading…</td></tr>
+                <tr><td colSpan={6} style={tdStyle}>Loading…</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={6} style={td}>No vendor has supplied or listed this item yet. Pick a preferred vendor, or add it to a vendor&apos;s catalog in Procurement → Vendors.</td></tr>
+                <tr><td colSpan={6} style={{ ...tdStyle, color: TEXT.muted }}>No vendor has supplied or listed this item yet. Pick a preferred vendor, or add it to a vendor&apos;s catalog in Procurement → Vendors.</td></tr>
               ) : rows.map((r) => (
                 <tr key={`${r.vendor_id ?? ''}-${r.vendor_name}`}>
-                  <td style={td}>
-                    {r.vendor_name}
-                    {r.preferred && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: '#16a34a1a', color: '#16a34a' }}>Preferred</span>}
+                  <td style={tdStyle}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {r.vendor_name}
+                      {r.preferred && <Pill label="Preferred" hex="#16a34a" />}
+                    </span>
                   </td>
-                  <td style={td}>{rupees(r.last_po_rate, r.last_po_unit)}</td>
-                  <td style={td}>{r.last_po_number ? `${r.last_po_number} · ${formatDate(r.last_po_date)}` : '—'}</td>
-                  <td style={td}>{r.po_count ? `${r.po_count} / ${r.total_qty.toLocaleString('en-IN')}` : '—'}</td>
-                  <td style={td}>{rupees(r.catalog_price, r.catalog_unit)}</td>
-                  <td style={td}>{r.catalog_lead_time_days != null ? `${r.catalog_lead_time_days} day(s)` : '—'}</td>
+                  <td style={numTdStyle}>{rupees(r.last_po_rate, r.last_po_unit)}</td>
+                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{r.last_po_number ? `${r.last_po_number} · ${formatDate(r.last_po_date)}` : '—'}</td>
+                  <td style={numTdStyle}>{r.po_count ? `${r.po_count.toLocaleString('en-IN')} / ${r.total_qty.toLocaleString('en-IN')}` : '—'}</td>
+                  <td style={numTdStyle}>{rupees(r.catalog_price, r.catalog_unit)}</td>
+                  <td style={numTdStyle}>{r.catalog_lead_time_days != null ? `${r.catalog_lead_time_days} day(s)` : '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
       </div>
     </Section>
   )

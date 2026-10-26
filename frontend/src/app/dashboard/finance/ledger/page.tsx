@@ -24,6 +24,7 @@ import {
   Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, useFinanceSubTabs, PageHeader, TableWrap, EmptyRow, StatCard, ledgerOptions,
   ApprovalBadge, submitAfterSave,
 } from '@/components/finance/financeUi'
+import { RowCount } from '@/components/shared/ui'
 import { recordHref, useRecordId } from '@/lib/recordRef'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -241,7 +242,7 @@ function JournalVouchers({ masters, userId, canReverse }: { masters: Masters; us
       <TableWrap minWidth={1150} tour="fin-jv-table">
         <thead>
           <tr>
-            <th style={thStyle}>Entry No.</th>
+            <th style={thStyle}>Entry No. <RowCount count={entries.length} /></th>
             <th style={thStyle}>Date</th>
             <th style={thStyle}>Voucher</th>
             <th style={thStyle}>Posting Type</th>
@@ -324,7 +325,7 @@ function JournalVouchers({ masters, userId, canReverse }: { masters: Masters; us
                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead>
                           <tr>
-                            {['Ledger', 'Cost Centre', 'Internal Order', 'Party', 'Remarks'].map((h) => <th key={h} style={{ ...thStyle, position: 'static', background: 'transparent', padding: '6px 10px' }}>{h}</th>)}
+                            {['Ledger', 'Cost Centre', 'Internal Order', 'Party', 'Remarks'].map((h, i) => <th key={h} style={{ ...thStyle, position: 'static', background: 'transparent', padding: '6px 10px' }}>{h}{i === 0 && <RowCount count={e.lines.length} />}</th>)}
                             <th style={{ ...numTh, position: 'static', background: 'transparent', padding: '6px 10px' }}>Dr (₹)</th>
                             <th style={{ ...numTh, position: 'static', background: 'transparent', padding: '6px 10px' }}>Cr (₹)</th>
                           </tr>
@@ -338,13 +339,13 @@ function JournalVouchers({ masters, userId, canReverse }: { masters: Masters; us
                               <td style={{ ...tdStyle, padding: '6px 10px' }}>
                                 {l.vendor_id ? `Vendor: ${vendorName(l.vendor_id) || `#${l.vendor_id}`}` : l.customer_id ? `Customer: ${customerName(l.customer_id) || `#${l.customer_id}`}` : '—'}
                               </td>
-                              <td style={{ ...tdStyle, padding: '6px 10px', color: TEXT.secondary }}>{l.remarks || ''}</td>
+                              <td style={{ ...tdStyle, padding: '6px 10px', color: TEXT.secondary }}>{l.remarks || '—'}</td>
                               <td style={{ ...numTd, padding: '6px 10px' }}>{inr(l.debit_amount, { blankZero: true })}</td>
                               <td style={{ ...numTd, padding: '6px 10px' }}>{inr(l.credit_amount, { blankZero: true })}</td>
                             </tr>
                           ))}
                           <tr>
-                            <td colSpan={4} style={{ ...tdStyle, padding: '6px 10px', fontWeight: 700 }}>Total</td>
+                            <td colSpan={5} style={{ ...tdStyle, padding: '6px 10px', fontWeight: 700 }}>Total</td>
                             <td style={{ ...numTd, padding: '6px 10px', fontWeight: 700 }}>{inr(e.total_debit)}</td>
                             <td style={{ ...numTd, padding: '6px 10px', fontWeight: 700 }}>{inr(e.total_credit)}</td>
                           </tr>
@@ -572,8 +573,8 @@ function JournalForm({ masters, onCancel, onCreated }: { masters: Masters; onCan
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1280 }}>
               <thead>
                 <tr>
-                  {['Ledger', 'Party (control a/c)', 'Cost Centre', 'Internal Order', 'Debit (₹)', 'Credit (₹)', 'Remarks', ''].map((h) => (
-                    <th key={h} style={{ ...thStyle, position: 'static', background: 'transparent', padding: '6px 6px' }}>{h}</th>
+                  {['Ledger', 'Party (control a/c)', 'Cost Centre', 'Internal Order', 'Debit (₹)', 'Credit (₹)', 'Remarks', ''].map((h, i) => (
+                    <th key={h} style={{ ...thStyle, position: 'static', background: 'transparent', padding: '6px 6px', textAlign: i === 4 || i === 5 ? 'right' : 'left' }}>{h}{i === 0 && <RowCount count={lines.length} />}</th>
                   ))}
                 </tr>
               </thead>
@@ -717,7 +718,7 @@ function DayBookTab() {
       <TableWrap minWidth={950} tour="fin-daybook-table">
         <thead>
           <tr>
-            <th style={thStyle}>Date</th>
+            <th style={thStyle}>Date <RowCount count={data?.entries.length ?? 0} /></th>
             <th style={thStyle}>Voucher No.</th>
             <th style={thStyle}>Type</th>
             <th style={thStyle}>Particulars</th>
@@ -809,10 +810,10 @@ function LedgerStatementTab({ ledgers }: { ledgers: GLAccount[] }) {
 
       {data && (
         <div data-tour="fin-ledstmt-stats" style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 16 }}>
-          <StatCard label="Opening" value={drcr(data.opening_balance)} />
-          <StatCard label="Total Dr" value={inr(data.total_debit)} />
-          <StatCard label="Total Cr" value={inr(data.total_credit)} />
-          <StatCard label="Closing" value={drcr(data.closing_balance)} />
+          <StatCard label="Opening" value={`₹ ${drcr(data.opening_balance)}`} />
+          <StatCard label="Total Dr" value={`₹ ${inr(data.total_debit)}`} />
+          <StatCard label="Total Cr" value={`₹ ${inr(data.total_credit)}`} />
+          <StatCard label="Closing" value={`₹ ${drcr(data.closing_balance)}`} />
         </div>
       )}
 
@@ -826,7 +827,7 @@ function LedgerTable({ data, loading, emptyText, drLabel = 'Dr (₹)', crLabel =
     <TableWrap minWidth={900} tour="fin-ledstmt-table">
       <thead>
         <tr>
-          <th style={thStyle}>Date</th>
+          <th style={thStyle}>Date <RowCount count={data?.rows.length ?? 0} /></th>
           <th style={thStyle}>Voucher No.</th>
           <th style={thStyle}>Type</th>
           <th style={thStyle}>Particulars</th>
@@ -963,7 +964,7 @@ function PeriodCloseTab({ canClose, closesDirectly, isAdmin }: { canClose: boole
       <TableWrap minWidth={800} tour="fin-period-table">
         <thead>
           <tr>
-            <th style={thStyle}>Period</th>
+            <th style={thStyle}>Period <RowCount count={periods.length} /></th>
             <th style={thStyle}>Status</th>
             <th style={thStyle}>Closed By</th>
             <th style={thStyle}>Notes</th>

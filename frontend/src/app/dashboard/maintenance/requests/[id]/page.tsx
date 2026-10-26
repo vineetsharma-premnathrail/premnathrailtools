@@ -7,7 +7,7 @@ import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { maintenanceApi } from '@/lib/api'
 import { MaintenanceLookups, MaintenanceRequest } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, primaryBtnStyle, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -22,11 +22,12 @@ import { useCan } from '@/lib/permissions'
 import { SheetSection, Optional, Req, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import { formatDateTime } from '@/lib/format'
 import {
-  PRIORITY_LABELS, REQUEST_STATUS_LABELS, REQUEST_TYPE_LABELS, WO_STATUS_LABELS, WO_TYPE_LABELS, formatMinutes,
+  CRITICALITY_LABELS, PRIORITY_LABELS, REQUEST_STATUS_LABELS, REQUEST_TYPE_LABELS, WO_STATUS_LABELS, WO_TYPE_LABELS, formatMinutes,
 } from '@/components/maintenance/labels'
 import Select from '@/components/shared/Select'
 
 const STATUS_HEX: Record<string, string> = { open: '#F59E0B', acknowledged: '#2563EB', converted: '#0f766e', rejected: '#DC2626', duplicate: '#78716c' }
+const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
 const WO_STATUS_HEX: Record<string, string> = { draft: '#78716c', assigned: '#2563EB', in_progress: '#F59E0B', on_hold: '#9333EA', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
 // Mirrors the backend's REQUEST_WO_TYPE default mapping.
 const DEFAULT_WO_TYPE: Record<string, string> = { breakdown: 'breakdown', abnormality: 'corrective', improvement: 'improvement', safety: 'corrective' }
@@ -36,7 +37,6 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }
-const gridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16 }
 const primaryBtn: React.CSSProperties = primaryBtnStyle
 
 export default function MaintenanceRequestDetailPage() {
@@ -161,14 +161,8 @@ export default function MaintenanceRequestDetailPage() {
           </p>
           <h1 data-tour="maint-reqd-status" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             {req?.request_number || 'Request'}
-            {req && (
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[req.status]}1a`, color: STATUS_HEX[req.status], whiteSpace: 'nowrap' }}>
-                {REQUEST_STATUS_LABELS[req.status] || req.status}
-              </span>
-            )}
-            {req?.machine_down && (
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: '#DC26261a', color: '#DC2626' }}>Machine down</span>
-            )}
+            {req && <Pill label={REQUEST_STATUS_LABELS[req.status] || req.status} hex={STATUS_HEX[req.status] || '#78716c'} />}
+            {req?.machine_down && <Pill label="Machine down" hex="#DC2626" />}
           </h1>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -217,53 +211,50 @@ export default function MaintenanceRequestDetailPage() {
 
       {req && (
         <>
-          <div data-tour="maint-reqd-problem" style={sectionStyle}>
-            <p style={sectionTitle}>Problem</p>
-            <p style={{ fontSize: 14, color: TEXT.body, margin: '0 0 16px', whiteSpace: 'pre-wrap' }}>{req.problem_description}</p>
-            <div style={gridStyle}>
-              <div onClick={isMaintenanceUser ? () => router.push(recordPath('/dashboard/maintenance/assets', req, 'asset_id')) : undefined} style={{ cursor: isMaintenanceUser ? 'pointer' : 'default' }}>
-                <InfoRow label="Asset" value={`${req.asset_code || ''} — ${req.asset_name || ''}`} />
-              </div>
-              <InfoRow label="Plant" value={req.branch_name || '—'} />
-              <InfoRow label="Type" value={REQUEST_TYPE_LABELS[req.request_type] || req.request_type} />
-              <InfoRow label="Priority" value={PRIORITY_LABELS[req.priority] || req.priority} />
-              <InfoRow label="Happened At" value={formatDateTime(req.reported_at)} />
-              <InfoRow label="Raised By" value={req.raised_by_name || '—'} />
-              <InfoRow label="Acknowledged" value={req.acknowledged_at ? `${req.acknowledged_by_name || ''} · ${formatDateTime(req.acknowledged_at)}` : '—'} />
-              <InfoRow label="Asset Criticality" value={req.asset_criticality || '—'} />
-            </div>
-            {req.rejection_reason && (
-              <div style={{ marginTop: 16 }}>
-                <InfoRow label={req.status === 'duplicate' ? 'Duplicate Of / Reason' : 'Rejection Reason'} value={req.rejection_reason} />
+          <DetailCard tour="maint-reqd-problem">
+            <DetailSummary
+              title={`${(REQUEST_TYPE_LABELS[req.request_type] || req.request_type).split(' (')[0]} — ${[req.asset_code, req.asset_name].filter(Boolean).join(' ')}`}
+              text={req.problem_description}
+              meta={<>
+                <Pill label={`${PRIORITY_LABELS[req.priority] || req.priority} priority`} hex={PRIORITY_HEX[req.priority] || '#78716c'} />
+                <span>· Happened {formatDateTime(req.reported_at)}</span>
+                <span>· Raised by <strong style={{ color: TEXT.heading }}>{req.raised_by_name || '—'}</strong></span>
+              </>}
+            />
+            <DetailGroup title="Problem" last={!wo}>
+              <DetailRow label="Asset">
+                <span onClick={isMaintenanceUser ? () => router.push(recordPath('/dashboard/maintenance/assets', req, 'asset_id')) : undefined}
+                  style={{ fontWeight: 600, color: isMaintenanceUser ? '#FF6A2A' : TEXT.heading, cursor: isMaintenanceUser ? 'pointer' : 'default' }}>
+                  {[req.asset_code, req.asset_name].filter(Boolean).join(' — ')}
+                </span>
+              </DetailRow>
+              <DetailRow label="Asset Criticality">{req.asset_criticality ? CRITICALITY_LABELS[req.asset_criticality] || req.asset_criticality : null}</DetailRow>
+              <DetailRow label="Plant">{req.branch_name}</DetailRow>
+              <DetailRow label="Type">{REQUEST_TYPE_LABELS[req.request_type] || req.request_type}</DetailRow>
+              <DetailRow label="Acknowledged">{req.acknowledged_at ? `${req.acknowledged_by_name || '—'} · ${formatDateTime(req.acknowledged_at)}` : null}</DetailRow>
+              {req.rejection_reason && <DetailRow label={req.status === 'duplicate' ? 'Duplicate Of / Reason' : 'Rejection Reason'}>{req.rejection_reason}</DetailRow>}
+            </DetailGroup>
+            {wo && (
+              <div data-tour="maint-reqd-wo">
+                <DetailGroup title="Work Order" last>
+                  <DetailRow label="Work Order">
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span onClick={isMaintenanceUser ? () => router.push(recordPath('/dashboard/maintenance/work-orders', wo)) : undefined}
+                        style={{ fontWeight: 700, color: isMaintenanceUser ? '#FF6A2A' : TEXT.heading, cursor: isMaintenanceUser ? 'pointer' : 'default' }}>
+                        {wo.wo_number}
+                      </span>
+                      <Pill label={WO_STATUS_LABELS[wo.status] || wo.status} hex={WO_STATUS_HEX[wo.status] || '#78716c'} />
+                    </span>
+                  </DetailRow>
+                  <DetailRow label="Technician">{wo.assigned_to_name || 'Not assigned yet'}</DetailRow>
+                  <DetailRow label="Downtime">{wo.downtime_minutes != null ? formatMinutes(wo.downtime_minutes) : null}</DetailRow>
+                  {wo.root_cause && <DetailRow label="Root Cause">{wo.root_cause}</DetailRow>}
+                  {wo.action_taken && <DetailRow label="Action Taken">{wo.action_taken}</DetailRow>}
+                  <DetailRow label={req.raised_by_id != null && req.raised_by_id === user?.id ? 'Confirmed By You' : 'Requester Confirmed'}>{wo.requester_confirmed_at ? formatDateTime(wo.requester_confirmed_at) : null}</DetailRow>
+                </DetailGroup>
               </div>
             )}
-          </div>
-
-          {wo && (
-            <div data-tour="maint-reqd-wo" style={sectionStyle}>
-              <p style={sectionTitle}>Work Order</p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-                <span onClick={isMaintenanceUser ? () => router.push(recordPath('/dashboard/maintenance/work-orders', wo)) : undefined}
-                  style={{ fontSize: 15, fontWeight: 700, color: isMaintenanceUser ? '#FF6A2A' : TEXT.heading, cursor: isMaintenanceUser ? 'pointer' : 'default' }}>
-                  {wo.wo_number}
-                </span>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${WO_STATUS_HEX[wo.status]}1a`, color: WO_STATUS_HEX[wo.status] }}>
-                  {WO_STATUS_LABELS[wo.status] || wo.status}
-                </span>
-              </div>
-              <div style={gridStyle}>
-                <InfoRow label="Technician" value={wo.assigned_to_name || 'Not assigned yet'} />
-                <InfoRow label="Downtime" value={formatMinutes(wo.downtime_minutes)} />
-                <InfoRow label={req.raised_by_id != null && req.raised_by_id === user?.id ? 'Confirmed By You' : 'Requester Confirmed'} value={wo.requester_confirmed_at ? formatDateTime(wo.requester_confirmed_at) : '—'} />
-              </div>
-              {(wo.root_cause || wo.action_taken) && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 16 }}>
-                  {wo.root_cause && <InfoRow label="Root Cause" value={wo.root_cause} />}
-                  {wo.action_taken && <InfoRow label="Action Taken" value={wo.action_taken} />}
-                </div>
-              )}
-            </div>
-          )}
+          </DetailCard>
 
           <div data-tour="maint-reqd-files" style={sectionStyle}>
             <p style={sectionTitle}>Photos &amp; Files</p>

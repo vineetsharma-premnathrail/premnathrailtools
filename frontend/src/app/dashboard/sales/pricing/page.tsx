@@ -18,7 +18,7 @@ import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { sectionStyle, inputStyle, labelStyle, thStyle, tdStyle, Pill, ErrorBanner, PageHeader } from '@/components/sales/SalesUi'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { formatINR } from '@/components/sales/labels'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetSection, SheetIcon, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
@@ -186,7 +186,7 @@ export default function SalesPricingPage() {
 
       <div style={{ ...sectionStyle, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-          <thead><tr>{['Type', 'For', 'Customer', 'Value', 'Min. price', 'Valid from', 'Valid to', 'Remarks', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Type', 'For', 'Customer', 'Value', 'Min. price', 'Valid from', 'Valid to', 'Remarks', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
             {loading && <tr><td colSpan={9} style={{ ...tdStyle, color: '#a8a29e' }}>Loading…</td></tr>}
             {!loading && rows.length === 0 && <tr><td colSpan={9} style={{ ...tdStyle, color: '#a8a29e' }}>No pricing conditions{currentOnly ? ' valid today' : ''}.</td></tr>}

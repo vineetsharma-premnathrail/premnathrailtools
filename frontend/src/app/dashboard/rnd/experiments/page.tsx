@@ -6,7 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import { RndExperiment, RndProject } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, RowCount, inputStyle as sharedInputStyle, pillStyle } from '@/components/shared/ui'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import RndNav from '@/components/rnd/RndNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -14,6 +15,7 @@ import { recordPath } from '@/lib/recordRef'
 import { projectLinkHref, useUrlProjectId } from '@/components/rnd/projectLink'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import { formatDate } from '@/lib/format'
 
 const STATUS_LABELS: Record<string, string> = { planned: 'Planned', in_progress: 'In Progress', completed: 'Completed', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { planned: '#78716c', in_progress: '#2563EB', completed: '#16A34A', cancelled: '#DC2626' }
@@ -21,10 +23,8 @@ const RESULT_LABELS: Record<string, string> = { pass: 'Pass', fail: 'Fail', inco
 const RESULT_HEX: Record<string, string> = { pass: '#16A34A', fail: '#DC2626', inconclusive: '#F59E0B' }
 const TYPE_LABELS: Record<string, string> = { research: 'Research', lab_test: 'Lab Test', field_trial: 'Field Trial', simulation: 'Simulation', validation: 'Validation' }
 
-const inputStyle: React.CSSProperties = {
-  padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
-}
+// Shared 34px control scale; list filters keep their own width.
+const inputStyle: React.CSSProperties = { ...sharedInputStyle, width: 'auto', background: 'rgba(255,255,255,.7)' }
 
 export default function RndExperimentsListPage() {
   return (
@@ -92,11 +92,7 @@ function RndExperimentsListPageInner() {
           <button
             data-tour="rnd-exp-new-btn"
             onClick={() => router.push(newHref)}
-            style={{
-              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-            }}
+            style={primaryBtnStyle}
           >
             + New Experiment
           </button>
@@ -158,9 +154,9 @@ function RndExperimentsListPageInner() {
         <table data-tour="rnd-exp-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['Experiment No.', 'Title', 'Project', 'Type', 'Status', 'Result', 'Date', ''].map((h) => (
+              {['Experiment No.', 'Title', 'Project', 'Type', 'Status', 'Result', 'Date', ''].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={experiments.length} />}
                 </th>
               ))}
             </tr>
@@ -178,18 +174,18 @@ function RndExperimentsListPageInner() {
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, whiteSpace: 'nowrap' }} title={x.project_title || undefined}>{x.project_number || '—'}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, whiteSpace: 'nowrap' }}>{TYPE_LABELS[x.experiment_type] || x.experiment_type}</td>
                   <td style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[x.status]}1a`, color: STATUS_HEX[x.status], whiteSpace: 'nowrap' }}>
+                    <span style={pillStyle(STATUS_HEX[x.status])}>
                       {STATUS_LABELS[x.status] || x.status}
                     </span>
                   </td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.muted, borderTop: `1px solid ${BORDER.light}` }}>
                     {x.result ? (
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${RESULT_HEX[x.result]}1a`, color: RESULT_HEX[x.result], whiteSpace: 'nowrap' }}>
+                      <span style={pillStyle(RESULT_HEX[x.result])}>
                         {RESULT_LABELS[x.result] || x.result}
                       </span>
                     ) : '—'}
                   </td>
-                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, whiteSpace: 'nowrap' }}>{x.experiment_date || '—'}</td>
+                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, whiteSpace: 'nowrap' }}>{x.experiment_date ? formatDate(x.experiment_date) : '—'}</td>
                   <td onClick={(e) => e.stopPropagation()} style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
                     <span onClick={() => router.push(recordPath('/dashboard/rnd/experiments', x))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>

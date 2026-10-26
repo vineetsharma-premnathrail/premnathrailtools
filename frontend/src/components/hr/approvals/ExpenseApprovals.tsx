@@ -6,7 +6,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import type { HrExpenseClaim } from '@/types'
 import PromptDialog from '@/components/erp/PromptDialog'
-import { dangerBtnStyle } from '@/components/shared/ui'
+import { dangerBtnStyle, RowCount } from '@/components/shared/ui'
 import { EXPENSE_CATEGORY_LABELS } from '@/components/hr/admin/ClaimDetail'
 import { ErrorBanner, SuccessBanner, Pill, sectionStyle, primaryActionStyle, linkActionStyle, thStyle, tdStyle, fmtDate, fmtDateTime, fmtINR } from '@/components/hr/admin/adminUi'
 import { TEXT, BORDER } from '@/lib/theme'
@@ -97,7 +97,7 @@ export default function ExpenseApprovals() {
                 {open && (
                   <div style={{ overflowX: 'auto', marginTop: 10 }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
-                      <thead><tr>{['Date', 'Category', 'Description', 'Amount', 'Receipt'].map((h) => <th key={h} style={{ ...thStyle, position: 'static', textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}</th>)}</tr></thead>
+                      <thead><tr>{['Date', 'Category', 'Description', 'Amount', 'Receipt'].map((h, hi) => <th key={h} style={{ ...thStyle, position: 'static', textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}{hi === 0 && <RowCount count={(c.items || []).length} />}</th>)}</tr></thead>
                       <tbody>
                         {(c.items || []).map((i) => (
                           <tr key={i.id}>

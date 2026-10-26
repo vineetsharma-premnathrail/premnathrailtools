@@ -2,6 +2,7 @@
 
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { TimeDay, hhmm } from '@/components/hr/safety/types'
+import { RowCount, pillStyle } from '@/components/shared/ui'
 
 const OT_LABELS: Record<string, string> = { pending: 'OT pending', approved: 'OT approved', rejected: 'OT rejected', cancelled: 'OT cancelled' }
 const OT_HEX: Record<string, string> = { pending: '#F59E0B', approved: '#16A34A', rejected: '#DC2626', cancelled: '#78716C' }
@@ -23,7 +24,7 @@ export default function TimeDaysTable({ days, onClaim }: { days: TimeDay[]; onCl
     <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
         <thead>
-          <tr>{['Date', 'Status', 'In – Out', 'Planned', 'Worked', 'Short', 'Late', 'Early', 'Overtime', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
+          <tr>{['Date', 'Status', 'In – Out', 'Planned', 'Worked', 'Short', 'Late', 'Early', 'Overtime', ''].map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={shown.length} />}</th>)}</tr>
         </thead>
         <tbody>
           {shown.length === 0 ? (
@@ -42,7 +43,7 @@ export default function TimeDaysTable({ days, onClaim }: { days: TimeDay[]; onCl
                 {d.ot_minutes ? <b style={{ color: TEXT.heading }}>{hhmm(d.ot_minutes)}</b> : '—'}
                 {d.ot_weekly_minutes ? <span style={{ color: TEXT.muted }}> (48 h week)</span> : null}
                 {d.ot_status && (
-                  <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 9999, background: `${OT_HEX[d.ot_status]}1a`, color: OT_HEX[d.ot_status] }}>
+                  <span style={{ ...pillStyle(OT_HEX[d.ot_status]), marginLeft: 6 }}>
                     {OT_LABELS[d.ot_status] || d.ot_status}{d.ot_status === 'approved' && d.ot_approved_minutes != null ? ` ${hhmm(d.ot_approved_minutes)}` : ''}
                   </span>
                 )}

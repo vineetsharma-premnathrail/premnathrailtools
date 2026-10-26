@@ -11,12 +11,13 @@ import { OrganizationDetail, Inquiry, Tender, OrgContact } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages, isValidEmail } from '@/lib/validation'
-import { orgTypeHasRailwayFields } from '@/components/crm/constants'
-import { Card, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, handleEnterAsTab, smallSecondaryBtnStyle } from '@/components/crm/ui'
+import { orgTypeHasRailwayFields, inquiryStatusColor, tenderStatusColor } from '@/components/crm/constants'
+import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, handleEnterAsTab, smallSecondaryBtnStyle } from '@/components/crm/ui'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import { recordPath, refOf } from '@/lib/recordRef'
-import { formatDateTime } from '@/lib/format'
+import { formatDateTime, formatDate } from '@/lib/format'
 import { AddMoreButton, RemoveValueButton, ValueRow, canAddMore } from '@/components/shared/MoreValuesButtons'
+import { segmentBtnStyle, RowCount, Pill, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 
 const TABS = ['Overview', 'Contacts', 'Inquiries', 'Tenders', 'Audit Trail'] as const
 
@@ -104,7 +105,7 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
         </div>
       </div>
 
-      <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, padding: 4, borderRadius: 999, background: 'rgba(0,0,0,0.05)', overflowX: 'auto', overflowY: 'visible' }}>
+      <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, overflowX: 'auto', overflowY: 'visible' }}>
         {TABS.filter(seeTab).map((t) => {
           const count = t === 'Inquiries' ? org.inquiry_count : t === 'Tenders' ? org.tender_count : t === 'Contacts' ? org.contacts.length : null
           return (
@@ -113,24 +114,11 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
               onClick={() => setTab(t)}
               data-tour={`orgdetail-tab-${t}`}
               className="org-detail-tab"
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
-                padding: '9px 16px', border: 'none', borderRadius: 999, whiteSpace: 'nowrap',
-                background: tab === t ? '#fff' : 'transparent',
-                boxShadow: tab === t ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
-                color: tab === t ? '#FF7A45' : '#78716c', fontWeight: 600, fontSize: 13, cursor: 'pointer',
-                transition: 'background .15s, box-shadow .15s, color .15s',
-              }}
+              style={{ ...segmentBtnStyle(tab === t), flexShrink: 0, transition: 'background .15s, color .15s' }}
             >
               {t}
               {count !== null && (
-                <span
-                  style={{
-                    fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 9999,
-                    background: tab === t ? 'rgba(255,122,69,0.15)' : 'rgba(0,0,0,0.06)',
-                    color: tab === t ? '#FF7A45' : '#78716c',
-                  }}
-                >
+                <span style={{ ...pillStyle(tab === t ? '#FF7A45' : '#78716c'), fontSize: 11, padding: '1px 7px' }}>
                   {count}
                 </span>
               )}
@@ -160,30 +148,40 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
 function OverviewTab({ org }: { org: OrganizationDetail }) {
   // Keep the rows for legacy records that carry a value under a non-railway type.
   const showRailwayFields = orgTypeHasRailwayFields(org.org_type) || !!org.railway_zone || !!org.division_workshop
+  const place = [org.city, org.state].filter(Boolean).join(', ')
+  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+  const dot = <span style={{ color: '#cbd5e1' }}>·</span>
+  // One card, same order as the organization form: details, address, contact & registration.
   return (
-    <div data-tour="orgdetail-overview" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-      <Card title="Customer Organization Details">
-        <InfoRow label="Customer Organization Code" value={org.org_code || 'Not provided'} />
-        <InfoRow label="Type" value={org.org_type || 'Not provided'} />
-        {showRailwayFields && <InfoRow label="Railway Zone" value={org.railway_zone || 'Not provided'} />}
-        {showRailwayFields && <InfoRow label="Division / Workshop" value={org.division_workshop || 'Not provided'} />}
-      </Card>
-      <Card title="Location">
-        <InfoRow label="Address" value={org.address || 'Not provided'} />
-        <InfoRow label="City" value={org.city || 'Not provided'} />
-        <InfoRow label="State" value={org.state || 'Not provided'} />
-        <InfoRow label="PIN Code" value={org.pin_code || 'Not provided'} />
-        <InfoRow label="Country" value={org.country || 'Not provided'} />
-      </Card>
-      <Card title="Contact & Registration">
-        <InfoRow label="GST Number" value={org.gst_number || 'Not provided'} />
-        <InfoRow label="PAN" value={org.pan || 'Not provided'} />
-        <InfoRow label="GST State Code (place of supply)" value={org.gst_state_code || 'Not provided'} />
-        <InfoRow label="Official Phone" value={[org.official_phone, ...(org.additional_phones || [])].filter(Boolean).join(', ') || 'Not provided'} />
-        <InfoRow label="Official Email" value={[org.official_email, ...(org.additional_emails || [])].filter(Boolean).join(', ') || 'Not provided'} />
-        <InfoRow label="Website" value={org.website || 'Not provided'} />
-      </Card>
-    </div>
+    <DetailCard tour="orgdetail-overview">
+      <DetailSummary
+        title={org.name}
+        text={`${org.org_type || 'Customer'} organization${place ? ` in ${place}` : ''} — ${plural(org.contacts.length, 'contact')}, ${org.inquiry_count} ${org.inquiry_count === 1 ? 'inquiry' : 'inquiries'}, ${plural(org.tender_count, 'tender')}.`}
+        meta={<>
+          <span>Code: <strong style={{ color: '#0f172a' }}>{org.org_code || '—'}</strong></span>
+          {org.created_at && <>{dot}<span>Added {formatDate(org.created_at)}{org.created_by_name ? ` by ${org.created_by_name}` : ''}</span></>}
+        </>}
+      />
+      <DetailGroup title="Customer Organization Details">
+        <DetailRow label="Type">{org.org_type}</DetailRow>
+        {showRailwayFields && <DetailRow label="Railway zone">{org.railway_zone}</DetailRow>}
+        {showRailwayFields && <DetailRow label="Division / Workshop">{org.division_workshop}</DetailRow>}
+      </DetailGroup>
+      <DetailGroup title="Address">
+        <DetailRow label="Address">{org.address}</DetailRow>
+        <DetailRow label="City / State">{place || null}</DetailRow>
+        <DetailRow label="PIN code">{org.pin_code}</DetailRow>
+        <DetailRow label="Country">{org.country}</DetailRow>
+      </DetailGroup>
+      <DetailGroup title="Contact & Registration" last>
+        <DetailRow label="Official phone">{[org.official_phone, ...(org.additional_phones || [])].filter(Boolean).join(', ') || null}</DetailRow>
+        <DetailRow label="Official email">{[org.official_email, ...(org.additional_emails || [])].filter(Boolean).join(', ') || null}</DetailRow>
+        <DetailRow label="Website">{org.website}</DetailRow>
+        <DetailRow label="GST number">{org.gst_number}</DetailRow>
+        <DetailRow label="PAN">{org.pan}</DetailRow>
+        <DetailRow label="GST state code (place of supply)">{org.gst_state_code}</DetailRow>
+      </DetailGroup>
+    </DetailCard>
   )
 }
 
@@ -205,8 +203,8 @@ function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: Organizati
   const [tenders, setTenders] = useState<Tender[]>([])
 
   useEffect(() => {
-    crmApi.listInquiries({ org_id: org.id }).then(setInquiries).catch(() => setInquiries([]))
-    crmApi.listTenders({ org_id: org.id }).then(setTenders).catch(() => setTenders([]))
+    crmApi.listInquiries({ org_id: org.id, limit: 10000 }).then(setInquiries).catch(() => setInquiries([]))
+    crmApi.listTenders({ org_id: org.id, limit: 10000 }).then(setTenders).catch(() => setTenders([]))
   }, [org.id])
 
   const startEdit = (c: OrganizationDetail['contacts'][number]) => {
@@ -314,7 +312,7 @@ function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: Organizati
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                     <div style={{ flex: '1 1 200px' }}>
                       <div data-tour="orgdetail-contact-mobile"><label style={sheetLabel}>Mobile</label>
-                        <ValueRow button={<AddMoreButton label="Add another mobile" extras={extraMobiles} onClick={() => canAddMore(extraMobiles) && setExtraMobiles((v) => [...v, ''])} />}>
+                        <ValueRow button={<AddMoreButton label="Add another mobile" extras={extraMobiles} primary={form.mobile} onClick={() => canAddMore(extraMobiles, form.mobile) && setExtraMobiles((v) => [...v, ''])} />}>
                           <input
                             value={form.mobile}
                             onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))}
@@ -333,7 +331,7 @@ function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: Organizati
                     </div>
                     <div style={{ flex: '1 1 240px' }}>
                       <div data-tour="orgdetail-contact-email"><label style={sheetLabel}>Email</label>
-                        <ValueRow button={<AddMoreButton label="Add another email" extras={extraEmails} onClick={() => canAddMore(extraEmails) && setExtraEmails((v) => [...v, ''])} />}>
+                        <ValueRow button={<AddMoreButton label="Add another email" extras={extraEmails} primary={form.email} onClick={() => canAddMore(extraEmails, form.email) && setExtraEmails((v) => [...v, ''])} />}>
                           <input
                             value={form.email}
                             onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
@@ -359,7 +357,7 @@ function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: Organizati
       )}
 
       {org.contacts.length === 0 ? (
-        <p style={{ fontSize: 13, color: '#a8a29e' }}>No contacts added yet.</p>
+        <p style={{ fontSize: 13, color: '#a8a29e' }}>No contacts added yet{canCreate ? ' — use + Add Contact.' : '.'}</p>
       ) : (
         <div data-tour="orgdetail-contacts-list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {org.contacts.map((c) => {
@@ -380,12 +378,8 @@ function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: Organizati
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <p style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108', margin: 0 }}>{c.name}</p>
-                    {c.designation && (
-                      <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: '#FF7A45' }}>{c.designation}</span>
-                    )}
-                    {c.department && (
-                      <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(0,0,0,0.05)', color: '#78716c' }}>{c.department}</span>
-                    )}
+                    {c.designation && <Pill label={c.designation} hex="#FF7A45" title="Designation" />}
+                    {c.department && <Pill label={c.department} hex="#78716c" title="Department" />}
                   </div>
                   {(c.mobile || c.email) && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
@@ -413,22 +407,26 @@ function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: Organizati
               {(linkedInquiries.length > 0 || linkedTenders.length > 0) && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 50 }}>
                   {linkedInquiries.map((i) => (
-                    <span
+                    <button
+                      type="button"
                       key={`inq-${i.id}`}
+                      title="Open this inquiry"
                       onClick={() => router.push(`/dashboard/crm/inquiries/${refOf(i)}${backSuffix}`)}
-                      style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 9999, background: 'rgba(59,130,246,0.1)', color: '#3b82f6', cursor: 'pointer', fontFamily: 'monospace' }}
+                      style={{ ...pillStyle('#3b82f6'), border: 'none', cursor: 'pointer', fontFamily: 'monospace' }}
                     >
                       Inquiry {i.universal_id || `#${i.id}`}
-                    </span>
+                    </button>
                   ))}
                   {linkedTenders.map((t) => (
-                    <span
+                    <button
+                      type="button"
                       key={`tnd-${t.id}`}
+                      title="Open this tender"
                       onClick={() => router.push(`/dashboard/crm/tenders/${refOf(t)}${backSuffix}`)}
-                      style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: '#f4713b', cursor: 'pointer', fontFamily: 'monospace' }}
+                      style={{ ...pillStyle('#f4713b'), border: 'none', cursor: 'pointer', fontFamily: 'monospace' }}
                     >
                       Tender {t.universal_id || `#${t.id}`}
-                    </span>
+                    </button>
                   ))}
                 </div>
               )}
@@ -458,12 +456,8 @@ function TabLoadError({ message }: { message: string | string[] }) {
   )
 }
 
-function StatusPill({ value }: { value: string }) {
-  return (
-    <span style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 9px', borderRadius: 8, background: 'rgba(0,0,0,0.05)', color: '#57534e', whiteSpace: 'nowrap' }}>
-      {value}
-    </span>
-  )
+function StatusPill({ value, hex = '#57534e' }: { value: string; hex?: string }) {
+  return <Pill label={value || '—'} hex={hex} />
 }
 
 function InquiriesTab({ orgId, orgRef, canModify, contacts }: { orgId: number; orgRef: string; canModify: boolean; contacts: OrgContact[] }) {
@@ -492,15 +486,15 @@ function InquiriesTab({ orgId, orgRef, canModify, contacts }: { orgId: number; o
       )}
 
       {inquiries.length === 0 ? (
-        <p style={{ fontSize: 13, color: '#a8a29e' }}>No inquiries for this customer organization.</p>
+        <p style={{ fontSize: 13, color: '#a8a29e' }}>No inquiries for this customer organization yet{canModify ? ' — use + Add Inquiry.' : '.'}</p>
       ) : (
         <div data-tour="orgdetail-inquiries-table" style={{ borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
           <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#fffaf5' }}>
-                {['ID', 'Product', 'Contact Person', 'Status', 'Priority', 'Follow-up'].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fffaf5', zIndex: 1 }}>{h}</th>
+                {['ID', 'Product', 'Contact Person', 'Status', 'Priority', 'Follow-up'].map((h, hi) => (
+                  <th key={h} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fffaf5', zIndex: 1 }}>{h}{hi === 0 && <RowCount count={inquiries.length} />}</th>
                 ))}
               </tr>
             </thead>
@@ -510,9 +504,9 @@ function InquiriesTab({ orgId, orgRef, canModify, contacts }: { orgId: number; o
                   <td style={{ padding: '10px 16px', fontFamily: 'monospace', fontSize: 12, color: '#FF7A45', fontWeight: 600 }}>{i.universal_id || '—'}</td>
                   <td style={{ padding: '10px 16px', color: '#1f1108', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.product || '—'}</td>
                   <td style={{ padding: '10px 16px', color: '#57534e', whiteSpace: 'nowrap' }}>{contactName(i.org_contact_id) || '—'}</td>
-                  <td style={{ padding: '10px 16px' }}><StatusPill value={i.status} /></td>
-                  <td style={{ padding: '10px 16px' }}><StatusPill value={i.priority} /></td>
-                  <td style={{ padding: '10px 16px', color: '#57534e', whiteSpace: 'nowrap' }}>{i.next_followup_date || '—'}</td>
+                  <td style={{ padding: '10px 16px' }}><StatusPill value={i.status} hex={inquiryStatusColor(i.status).text} /></td>
+                  <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: '#57534e' }}>{i.priority || '—'}</td>
+                  <td style={{ padding: '10px 16px', color: '#57534e', whiteSpace: 'nowrap' }}>{i.next_followup_date ? formatDate(i.next_followup_date) : '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -549,15 +543,15 @@ function TendersTab({ orgId, orgRef, canModify }: { orgId: number; orgRef: strin
       )}
 
       {tenders.length === 0 ? (
-        <p style={{ fontSize: 13, color: '#a8a29e' }}>No tenders for this customer organization.</p>
+        <p style={{ fontSize: 13, color: '#a8a29e' }}>No tenders for this customer organization yet{canModify ? ' — use + Add Tender.' : '.'}</p>
       ) : (
         <div data-tour="orgdetail-tenders-table" style={{ borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
           <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#fffaf5' }}>
-                {['ID', 'Tender No.', 'Name', 'Status', 'Submission'].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fffaf5', zIndex: 1 }}>{h}</th>
+                {['ID', 'Tender No.', 'Name', 'Status', 'Submission'].map((h, hi) => (
+                  <th key={h} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fffaf5', zIndex: 1 }}>{h}{hi === 0 && <RowCount count={tenders.length} />}</th>
                 ))}
               </tr>
             </thead>
@@ -573,8 +567,8 @@ function TendersTab({ orgId, orgRef, canModify }: { orgId: number; orgRef: strin
                   <td style={{ padding: '10px 16px', fontFamily: 'monospace', fontSize: 12, color: '#FF7A45', fontWeight: 600 }}>{t.universal_id || '—'}</td>
                   <td style={{ padding: '10px 16px', color: '#57534e' }}>{t.tender_number || '—'}</td>
                   <td style={{ padding: '10px 16px', color: '#1f1108', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.tender_name || '—'}</td>
-                  <td style={{ padding: '10px 16px' }}><StatusPill value={t.status} /></td>
-                  <td style={{ padding: '10px 16px', color: '#57534e', whiteSpace: 'nowrap' }}>{t.submission_date || '—'}</td>
+                  <td style={{ padding: '10px 16px' }}><StatusPill value={t.status} hex={tenderStatusColor(t.status).text} /></td>
+                  <td style={{ padding: '10px 16px', color: '#57534e', whiteSpace: 'nowrap' }}>{t.submission_date ? formatDate(t.submission_date) : '—'}</td>
                 </tr>
               ))}
             </tbody>

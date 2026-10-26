@@ -8,7 +8,8 @@ import { useCan } from '@/lib/permissions'
 import { hydraulicApi } from '@/lib/api'
 import { recordPath } from '@/lib/recordRef'
 import { HydSystem } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, segmentBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import { SYSTEM_TYPE_LABELS, SYSTEM_TYPE_HEX, SYSTEM_STATUS_LABELS, withUnit } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
@@ -74,11 +75,7 @@ export default function HydSystemsPage() {
           <button
             data-tour="hyd-sys-new-btn"
             onClick={() => router.push(newHref)}
-            style={{
-              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-            }}
+            style={primaryBtnStyle}
           >
             + New {systemType ? SYSTEM_TYPE_LABELS[systemType] : ''} System
           </button>
@@ -101,11 +98,7 @@ export default function HydSystemsPage() {
                 key={t.value || 'all'}
                 type="button"
                 onClick={() => setSystemType(t.value)}
-                style={{
-                  padding: '7px 18px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                  background: active ? '#fff' : 'transparent', color: active ? hex : '#78716c',
-                  boxShadow: active ? '0 2px 8px rgba(0,0,0,0.08)' : 'none',
-                }}
+                style={{ ...segmentBtnStyle(active), ...(active ? { color: hex, borderColor: hex } : {}) }}
               >
                 {t.label}
               </button>
@@ -127,9 +120,9 @@ export default function HydSystemsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['System No.', 'Name', 'Type', 'Application', 'Project', 'Working Pressure', 'Status', ''].map((h) => (
+              {['System No.', 'Name', 'Type', 'Application', 'Project', 'Working Pressure', 'Status', ''].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={systems.length} />}
                 </th>
               ))}
             </tr>
@@ -149,17 +142,13 @@ export default function HydSystemsPage() {
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{s.system_number}</td>
                   <td style={cellStyle}>{s.name}</td>
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${SYSTEM_TYPE_HEX[s.system_type]}1a`, color: SYSTEM_TYPE_HEX[s.system_type], whiteSpace: 'nowrap' }}>
-                      {SYSTEM_TYPE_LABELS[s.system_type] || s.system_type}
-                    </span>
+                    <Pill label={SYSTEM_TYPE_LABELS[s.system_type] || s.system_type} hex={SYSTEM_TYPE_HEX[s.system_type] || '#78716c'} />
                   </td>
                   <td style={cellStyle}>{s.application || '—'}</td>
                   <td style={cellStyle}>{s.project_label || '—'}</td>
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{withUnit(s.working_pressure_bar, 'bar')}</td>
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[s.status]}1a`, color: STATUS_HEX[s.status], whiteSpace: 'nowrap' }}>
-                      {SYSTEM_STATUS_LABELS[s.status] || s.status}
-                    </span>
+                    <Pill label={SYSTEM_STATUS_LABELS[s.status] || s.status} hex={STATUS_HEX[s.status] || '#78716c'} />
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
                     <span onClick={() => router.push(recordPath('/dashboard/hydraulic/systems', s))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>

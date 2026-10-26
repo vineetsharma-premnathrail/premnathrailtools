@@ -1,12 +1,12 @@
 'use client'
 
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, chipBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { designApi } from '@/lib/api'
 import { DesignCustomerSubmission, DesignLookupOption, DesignMyTasks, DesignTaskItem } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import { useDesignMe } from '@/components/design/useDesignMe'
 import { SUBMISSION_STATUS_LABELS } from '@/components/design/designMeta'
@@ -49,7 +49,7 @@ const tdStyle: React.CSSProperties = { padding: '9px 10px', fontSize: 12.5, colo
 const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, whiteSpace: 'nowrap' }
 
 function pill(label: string, hex: string) {
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
+  return <span style={pillStyle(hex)}>{label}</span>
 }
 
 function taskHref(t: DesignTaskItem): string | null {
@@ -159,7 +159,7 @@ export default function DesignReviewsPage() {
               <div style={{ overflowX: 'auto', maxHeight: 360, overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
                   <thead>
-                    <tr>{['Step', 'Drawing / BOM', 'Rev', 'From', 'Waiting'].map((h) => <th key={h} style={{ ...thStyle, position: 'sticky', top: 0, zIndex: 1 }}>{h}</th>)}</tr>
+                    <tr>{['Step', 'Drawing / BOM', 'Rev', 'From', 'Waiting'].map((h, hi) => <th key={h} style={{ ...thStyle, position: 'sticky', top: 0, zIndex: 1 }}>{h}{hi === 0 && <RowCount count={queueRows.length} />}</th>)}</tr>
                   </thead>
                   <tbody>
                     {queueRows.map(({ q, t }, idx) => {
@@ -220,20 +220,12 @@ export default function DesignReviewsPage() {
         {STATUS_TABS.map((t) => {
           const active = statusTab === t.key
           return (
-            <button key={t.label} type="button" onClick={() => setStatusTab(t.key)} style={{
-              padding: '6px 14px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              border: `1px solid ${active ? '#FF6A2A' : BORDER.normal}`, background: active ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,.6)',
-              color: active ? '#FF6A2A' : TEXT.secondary,
-            }}>
+            <button key={t.label} type="button" onClick={() => setStatusTab(t.key)} style={chipBtnStyle(active)}>
               {t.label}
             </button>
           )
         })}
-        <button type="button" data-tour="design-subs-overdue" onClick={() => setOverdue((v) => !v)} style={{
-          padding: '6px 14px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer', marginLeft: 6,
-          border: `1px solid ${overdue ? '#DC2626' : BORDER.normal}`, background: overdue ? 'rgba(220,38,38,0.08)' : 'rgba(255,255,255,.6)',
-          color: overdue ? '#DC2626' : TEXT.secondary,
-        }}>
+        <button type="button" data-tour="design-subs-overdue" onClick={() => setOverdue((v) => !v)} style={{ ...chipBtnStyle(overdue), marginLeft: 6, ...(overdue ? { background: '#DC2626' } : {}) }}>
           {overdue ? '✓ ' : ''}Overdue only
         </button>
       </div>
@@ -248,9 +240,9 @@ export default function DesignReviewsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
           <thead>
             <tr>
-              {['Submission', 'Customer', 'Project', 'Drawings', 'Sent', 'Due', 'Waiting', 'Response', 'Turnaround', 'Open comments', 'Status', ''].map((h) => (
+              {['Submission', 'Customer', 'Project', 'Drawings', 'Sent', 'Due', 'Waiting', 'Response', 'Turnaround', 'Open comments', 'Status', ''].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={rows.length} />}
                 </th>
               ))}
             </tr>
@@ -259,7 +251,7 @@ export default function DesignReviewsPage() {
             {loading ? (
               <tr><td colSpan={12} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={12} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No customer submissions here.</td></tr>
+              <tr><td colSpan={12} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No customer submissions here — use + New submission to send approved drawings to a customer.</td></tr>
             ) : (
               rows.map((s) => (
                 <tr key={s.id} onClick={() => router.push(recordPath('/dashboard/design/reviews/submissions', s))} style={{ cursor: 'pointer' }}>

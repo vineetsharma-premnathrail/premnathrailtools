@@ -14,7 +14,7 @@ import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
-import { primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 
 const VISIT_STATUSES = ['assigned', 'scheduled', 'in_progress', 'pending_parts', 'on_hold', 'work_completed']
 const inputStyle: React.CSSProperties = {
@@ -39,7 +39,7 @@ const toIso = (v: string) => (v ? new Date(v).toISOString() : null)
 export function SlaBadge({ label, state }: { label: string; state: string | null | undefined }) {
   if (!state) return null
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${SLA_STATE_HEX[state] || '#78716c'}1a`, color: SLA_STATE_HEX[state] || '#78716c', whiteSpace: 'nowrap' }}>
+    <span style={pillStyle(SLA_STATE_HEX[state] || '#78716c')}>
       {label}: {SLA_STATE_LABELS[state] || state}
     </span>
   )
@@ -164,7 +164,7 @@ export default function ServiceVisitsTab({ srId, srStatus, assignedId, onChanged
 
       <div style={{ ...cardStyle, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-          <thead><tr>{['Date', 'Engineer', 'On site', 'Hours', 'Travel', 'Expenses', 'Work done', 'Customer sign-off', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Date', 'Engineer', 'On site', 'Hours', 'Travel', 'Expenses', 'Work done', 'Customer sign-off', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={data?.visits.length ?? 0} />}</th>)}</tr></thead>
           <tbody>
             {data && data.visits.length === 0 && <tr><td colSpan={9} style={{ ...tdStyle, color: '#78716c' }}>No visits logged yet.</td></tr>}
             {data?.visits.map((v) => (

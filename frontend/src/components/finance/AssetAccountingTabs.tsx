@@ -18,6 +18,7 @@ import {
   inputStyle, sectionStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, Field, ErrorBanner, InfoBanner, StatusPill, TableWrap, EmptyRow, StatCard, ledgerOptions,
 } from '@/components/finance/financeUi'
+import { RowCount } from '@/components/shared/ui'
 import {
   assetAccountingApi, CapitalisationQueue, CapitalisationLine, CapitalOrderOpen, AssetReconciliation, AssetRetirement,
   ITAssetBlock, ITSchedule, DeferredTaxReport,
@@ -137,7 +138,7 @@ export function CapitalisationTab({ canManage }: { canManage: boolean }) {
       <h3 style={{ fontSize: 14, fontWeight: 800, color: TEXT.heading, margin: '6px 0 10px' }}>Purchase lines to capitalise</h3>
       <TableWrap minWidth={980} maxHeight="none">
         <thead><tr>
-          <th style={thStyle}>Invoice</th><th style={thStyle}>Date</th><th style={thStyle}>Vendor</th><th style={thStyle}>Line</th><th style={thStyle}>Ledger</th>
+          <th style={thStyle}>Invoice <RowCount count={queue?.invoice_lines.length ?? 0} /></th><th style={thStyle}>Date</th><th style={thStyle}>Vendor</th><th style={thStyle}>Line</th><th style={thStyle}>Ledger</th>
           <th style={numTh}>Line value</th><th style={numTh}>Capitalised</th><th style={numTh}>Open</th><th style={thStyle}></th>
         </tr></thead>
         <tbody>
@@ -156,7 +157,7 @@ export function CapitalisationTab({ canManage }: { canManage: boolean }) {
 
       <h3 style={{ fontSize: 14, fontWeight: 800, color: TEXT.heading, margin: '6px 0 10px' }}>Capital orders (CWIP) with unsettled spend</h3>
       <TableWrap minWidth={760} maxHeight="none">
-        <thead><tr><th style={thStyle}>Order</th><th style={thStyle}>Name</th><th style={thStyle}>Status</th><th style={numTh}>Spend to settle</th><th style={numTh}>Already settled</th><th style={thStyle}></th></tr></thead>
+        <thead><tr><th style={thStyle}>Order <RowCount count={queue?.capital_orders.length ?? 0} /></th><th style={thStyle}>Name</th><th style={thStyle}>Status</th><th style={numTh}>Spend to settle</th><th style={numTh}>Already settled</th><th style={thStyle}></th></tr></thead>
         <tbody>
           {!queue ? <EmptyRow colSpan={6} text="Loading…" /> : queue.capital_orders.length === 0 ? <EmptyRow colSpan={6} text="No capital order has unsettled spend." /> :
             queue.capital_orders.map((o) => (
@@ -174,7 +175,7 @@ export function CapitalisationTab({ canManage }: { canManage: boolean }) {
           <h3 style={{ fontSize: 14, fontWeight: 800, color: TEXT.heading, margin: '6px 0 10px' }}>Asset PO lines received, bill not posted yet</h3>
           <InfoBanner tone="warning">These were received on a GRN (asset item category — no store stock). They can be capitalised once the vendor&apos;s bill is booked and posted under Finance › Purchase.</InfoBanner>
           <TableWrap minWidth={760} maxHeight="none">
-            <thead><tr><th style={thStyle}>PO</th><th style={thStyle}>Vendor</th><th style={thStyle}>Item</th><th style={numTh}>Qty received, not billed</th><th style={numTh}>Value at PO rate</th></tr></thead>
+            <thead><tr><th style={thStyle}>PO <RowCount count={queue.received_not_invoiced.length} /></th><th style={thStyle}>Vendor</th><th style={thStyle}>Item</th><th style={numTh}>Qty received, not billed</th><th style={numTh}>Value at PO rate</th></tr></thead>
             <tbody>
               {queue.received_not_invoiced.map((r) => (
                 <tr key={r.po_item_id}><td style={tdStyle}>{r.po_number}</td><td style={tdStyle}>{r.vendor_name}</td><td style={tdStyle}>{r.description}</td>
@@ -290,7 +291,7 @@ export function RetirementsTab({ canManage }: { canManage: boolean }) {
       {canManage && <div style={{ marginBottom: 12 }}><button style={primaryBtnStyle} onClick={() => setOpen(true)}>Retire / sell an asset</button></div>}
       <TableWrap minWidth={1100}>
         <thead><tr>
-          <th style={thStyle}>Date</th><th style={thStyle}>Asset</th><th style={thStyle}>Type</th><th style={numTh}>Share</th><th style={numTh}>Cost retired</th>
+          <th style={thStyle}>Date <RowCount count={rows?.length ?? 0} /></th><th style={thStyle}>Asset</th><th style={thStyle}>Type</th><th style={numTh}>Share</th><th style={numTh}>Cost retired</th>
           <th style={numTh}>Dep. retired</th><th style={numTh}>Sale value</th><th style={numTh}>Gain / (loss)</th><th style={thStyle}>Buyer / invoice</th><th style={thStyle}>Journal</th>
         </tr></thead>
         <tbody>
@@ -419,7 +420,7 @@ export function AssetReconciliationTab() {
       <InfoBanner>Register figures are the current register; run it as of today (or after the last posting) for an exact match. A difference explained by purchases waiting to be capitalised clears once they are registered on the Capitalisation tab.</InfoBanner>
       <ErrorBanner error={error} />
       <TableWrap minWidth={980}>
-        <thead><tr><th style={thStyle}>Ledger</th><th style={thStyle}>What</th><th style={numTh}>Ledger balance</th><th style={numTh}>Register</th><th style={numTh}>Difference</th><th style={numTh}>Awaiting capitalisation</th><th style={numTh}>Unexplained</th></tr></thead>
+        <thead><tr><th style={thStyle}>Ledger <RowCount count={data?.rows.length ?? 0} /></th><th style={thStyle}>What</th><th style={numTh}>Ledger balance</th><th style={numTh}>Register</th><th style={numTh}>Difference</th><th style={numTh}>Awaiting capitalisation</th><th style={numTh}>Unexplained</th></tr></thead>
         <tbody>
           {!data ? <EmptyRow colSpan={7} text="Loading…" /> : data.rows.length === 0 ? <EmptyRow colSpan={7} text="No fixed-asset ledger has a balance." /> : data.rows.map((r) => (
             <tr key={`${r.kind}-${r.gl_account_id}`}>
@@ -486,7 +487,7 @@ export function TaxDepreciationTab({ canEdit }: { canEdit: boolean }) {
       <ErrorBanner error={error} />
       <TableWrap minWidth={1200} maxHeight="none">
         <thead><tr>
-          <th style={thStyle}>Block</th><th style={numTh}>Rate</th><th style={numTh}>Opening WDV</th><th style={numTh}>Additions ≥180 d</th><th style={numTh}>Additions &lt;180 d</th>
+          <th style={thStyle}>Block <RowCount count={sched?.blocks.length ?? 0} /></th><th style={numTh}>Rate</th><th style={numTh}>Opening WDV</th><th style={numTh}>Additions ≥180 d</th><th style={numTh}>Additions &lt;180 d</th>
           <th style={numTh}>Sales</th><th style={numTh}>Depreciation</th><th style={numTh}>Closing WDV</th><th style={numTh}>STCG / STCL (s.50)</th><th style={thStyle}></th>
         </tr></thead>
         <tbody>
@@ -529,13 +530,13 @@ export function TaxDepreciationTab({ canEdit }: { canEdit: boolean }) {
         <>
           <h3 style={{ fontSize: 14, fontWeight: 800, color: TEXT.heading, margin: '6px 0 10px' }}>Deferred tax on fixed assets — {dt.fy_code} (as of {dmy(dt.as_of)})</h3>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-            <StatCard label="Book WDV (Schedule II)" value={inr(dt.total_book_wdv)} />
-            <StatCard label="Tax WDV" value={inr(dt.total_tax_wdv)} />
-            <StatCard label={dt.net_deferred_tax >= 0 ? 'Net deferred tax liability' : 'Net deferred tax asset'} value={inr(Math.abs(dt.net_deferred_tax))} />
+            <StatCard label="Book WDV (Schedule II)" value={`₹ ${inr(dt.total_book_wdv)}`} />
+            <StatCard label="Tax WDV" value={`₹ ${inr(dt.total_tax_wdv)}`} />
+            <StatCard label={dt.net_deferred_tax >= 0 ? 'Net deferred tax liability' : 'Net deferred tax asset'} value={`₹ ${inr(Math.abs(dt.net_deferred_tax))}`} />
             <StatCard label={`Charge / (credit) vs ${dt.previous_fy_code}`} value={dt.movement >= 0 ? inr(dt.movement) : `(${inr(-dt.movement)})`} />
           </div>
           <TableWrap minWidth={900} maxHeight="none">
-            <thead><tr><th style={thStyle}>Block</th><th style={numTh}>Book WDV</th><th style={numTh}>Tax WDV</th><th style={numTh}>Timing difference</th><th style={numTh}>Deferred tax @ {dt.tax_rate_pct}%</th><th style={thStyle}>Nature</th></tr></thead>
+            <thead><tr><th style={thStyle}>Block <RowCount count={dt.rows.length} /></th><th style={numTh}>Book WDV</th><th style={numTh}>Tax WDV</th><th style={numTh}>Timing difference</th><th style={numTh}>Deferred tax @ {dt.tax_rate_pct}%</th><th style={thStyle}>Nature</th></tr></thead>
             <tbody>
               {dt.rows.map((r) => (
                 <tr key={r.block_id}><td style={tdStyle}>{r.block_code} — {r.block_name}</td><td style={numTd}>{inr(r.book_wdv)}</td><td style={numTd}>{inr(r.tax_wdv)}</td>

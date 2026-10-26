@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { maintenanceApi } from '@/lib/api'
 import { MaintenanceLookups, MaintenanceWorkOrder } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
@@ -82,11 +83,7 @@ export default function MaintenanceWorkOrdersPage() {
         {can('maintenance', 'work_orders', 'create') && <button
           data-tour="maint-wo-new-btn"
           onClick={() => router.push('/dashboard/maintenance/work-orders/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
+          style={primaryBtnStyle}
         >
           + New Work Order
         </button>}
@@ -131,9 +128,9 @@ export default function MaintenanceWorkOrdersPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1150 }}>
           <thead>
             <tr>
-              {['Number', 'Asset', 'Title', 'Type', 'Priority', 'Technician', 'Planned', 'Downtime', 'Cost', 'Status', ''].map((h) => (
+              {['Number', 'Asset', 'Title', 'Type', 'Priority', 'Technician', 'Planned', 'Downtime', 'Cost', 'Status', ''].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={orders.length} />}
                 </th>
               ))}
             </tr>
@@ -155,9 +152,7 @@ export default function MaintenanceWorkOrdersPage() {
                     <td style={{ ...cellStyle, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={w.title}>{w.title}</td>
                     <td style={cellStyle}>{WO_TYPE_LABELS[w.wo_type] || w.wo_type}</td>
                     <td style={cellStyle}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PRIORITY_HEX[w.priority]}1a`, color: PRIORITY_HEX[w.priority] }}>
-                        {PRIORITY_LABELS[w.priority] || w.priority}
-                      </span>
+                      <Pill label={PRIORITY_LABELS[w.priority] || w.priority} hex={PRIORITY_HEX[w.priority]} />
                     </td>
                     <td style={cellStyle}>{w.assigned_to_name || <span style={{ color: '#b45309' }}>Unassigned</span>}</td>
                     <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{formatDate(w.planned_start)}</td>
@@ -166,9 +161,7 @@ export default function MaintenanceWorkOrdersPage() {
                     </td>
                     <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{w.total_cost ? formatINR(w.total_cost) : '—'}</td>
                     <td style={cellStyle}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[w.status]}1a`, color: STATUS_HEX[w.status], whiteSpace: 'nowrap' }}>
-                        {WO_STATUS_LABELS[w.status] || w.status}
-                      </span>
+                      <Pill label={WO_STATUS_LABELS[w.status] || w.status} hex={STATUS_HEX[w.status]} />
                       {w.awaiting_confirmation && <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#F59E0B', marginTop: 4 }}>Awaiting requester</span>}
                     </td>
                     <td onClick={(e) => e.stopPropagation()} style={cellStyle}>

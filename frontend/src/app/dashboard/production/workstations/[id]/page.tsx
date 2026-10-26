@@ -5,8 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { productionApi } from '@/lib/api'
 import { ProductionWorkstation } from '@/types'
-import { TEXT, DANGER, GLASS, SHADOWS } from '@/lib/theme'
-import { secondaryBtnStyle, InfoRow } from '@/components/shared/ui'
+import { TEXT, DANGER } from '@/lib/theme'
+import { secondaryBtnStyle, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import ProductionNav from '@/components/production/ProductionNav'
 import WorkstationForm, { WORKSTATION_TYPE_LABELS } from '@/components/production/WorkstationForm'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -16,6 +16,7 @@ import { useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 
 const STATUS_LABELS: Record<string, string> = { active: 'Active', under_maintenance: 'Under Maintenance', inactive: 'Inactive' }
+const STATUS_HEX: Record<string, string> = { active: '#16A34A', under_maintenance: '#F59E0B', inactive: '#78716c' }
 
 export default function WorkstationDetailPage() {
   const { isAuthorized, isLoading } = useRequireApp('production')
@@ -87,27 +88,29 @@ export default function WorkstationDetailPage() {
 
       {ws && (
         <>
-          <p data-tour="production-ws-open-ops" style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 14px' }}>
-            {ws.open_operations > 0
-              ? `${ws.open_operations} open operation(s) are queued here on released or in-progress work orders.`
-              : 'No open operations are queued on this workstation right now.'}
-          </p>
-          <div data-tour="production-ws-summary" style={{
-            borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-            border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-          }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
-              <InfoRow label="Code" value={ws.code} />
-              <InfoRow label="Name" value={ws.name} />
-              <InfoRow label="Type" value={WORKSTATION_TYPE_LABELS[ws.workstation_type] || ws.workstation_type} />
-              <InfoRow label="Status" value={STATUS_LABELS[ws.status] || ws.status} />
-              <InfoRow label="Plant" value={ws.branch_name || '—'} />
-              <InfoRow label="Department" value={ws.department_name || '—'} />
-              <InfoRow label="Capacity / day" value={`${ws.capacity_hours_per_day} h`} />
-              <InfoRow label="Hourly Rate" value={`₹${ws.hourly_rate.toLocaleString('en-IN')}`} />
-            </div>
-            {ws.description && <div style={{ marginTop: 14 }}><InfoRow label="Description" value={ws.description} /></div>}
-          </div>
+          {/* One record card: what the workstation is, key facts, then details. */}
+          <DetailCard tour="production-ws-summary">
+            <DetailSummary
+              title={ws.name}
+              text={ws.description || `${WORKSTATION_TYPE_LABELS[ws.workstation_type] || ws.workstation_type} where routing operations are planned and their hours booked.`}
+              meta={<>
+                <Pill label={STATUS_LABELS[ws.status] || ws.status} hex={STATUS_HEX[ws.status] || '#78716c'} />
+                <span>· {ws.code}</span>
+                <span>· {WORKSTATION_TYPE_LABELS[ws.workstation_type] || ws.workstation_type}</span>
+                <span data-tour="production-ws-open-ops">· {ws.open_operations > 0
+                  ? `${ws.open_operations} open operation(s) queued on released / in-progress work orders`
+                  : 'No open operations queued right now'}</span>
+              </>}
+            />
+            <DetailGroup title="Where">
+              <DetailRow label="Plant">{ws.branch_name}</DetailRow>
+              <DetailRow label="Department">{ws.department_name}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="Capacity & cost" last>
+              <DetailRow label="Capacity per day">{`${ws.capacity_hours_per_day} h`}</DetailRow>
+              <DetailRow label="Hourly rate">{`₹${ws.hourly_rate.toLocaleString('en-IN')}`}</DetailRow>
+            </DetailGroup>
+          </DetailCard>
         </>
       )}
 

@@ -16,6 +16,7 @@ import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
 import Select from '@/components/shared/Select'
+import { RowCount } from '@/components/shared/ui'
 
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '9px 12px', fontSize: 11.5, fontWeight: 600, color: SHEET.MUTED, background: SHEET.SOFT, borderBottom: `1px solid ${SHEET.LINE}`, whiteSpace: 'nowrap' }
 const tdStyle: React.CSSProperties = { padding: '9px 12px', fontSize: 13, color: SHEET.BODY, borderBottom: `1px solid ${SHEET.LINE}` }
@@ -245,7 +246,7 @@ export default function NewWorkOrderPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div style={{ overflowX: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 12 }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
-                    <thead><tr>{['Component', 'Required Qty', 'UOM'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                    <thead><tr>{['Component', 'Required Qty', 'UOM'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={bom.items.length} />}</th>)}</tr></thead>
                     <tbody>
                       {bom.items.map((i) => (
                         <tr key={i.id}>
@@ -259,7 +260,7 @@ export default function NewWorkOrderPage() {
                 </div>
                 <div style={{ overflowX: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 12 }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
-                    <thead><tr>{['Seq', 'Operation', 'Workstation', 'Planned Hours'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                    <thead><tr>{['Seq', 'Operation', 'Workstation', 'Planned Hours'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={bom.operations.length} />}</th>)}</tr></thead>
                     <tbody>
                       {bom.operations.map((o) => (
                         <tr key={o.id}>

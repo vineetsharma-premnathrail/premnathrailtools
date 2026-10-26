@@ -7,7 +7,7 @@ import { approvalsApi, usersApi } from '@/lib/api'
 import { ApprovalDelegationInfo, ApprovalTransactionType, DirectoryUser } from '@/types'
 import { BORDER, GLASS, SHADOWS, TEXT } from '@/lib/theme'
 import OrganizationNav from '@/components/organization/OrganizationNav'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import DelegationForm from '@/components/organization/DelegationForm'
 import { extractErrorMessages } from '@/lib/validation'
 
@@ -82,7 +82,7 @@ export default function DelegationsPage() {
           <input type="checkbox" checked={showEnded} onChange={(e) => setShowEnded(e.target.checked)} /> Show ended
         </label>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-          <thead><tr>{['Away', 'Delegate', 'From', 'To', 'For', 'Reason', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Away', 'Delegate', 'From', 'To', 'For', 'Reason', 'Status', ''].map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={visible.length} />}</th>)}</tr></thead>
           <tbody>
             {visible.length === 0 && <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>No delegations.</td></tr>}
             {visible.map((d) => (

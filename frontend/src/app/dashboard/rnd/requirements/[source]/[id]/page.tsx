@@ -6,18 +6,18 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { RndRequirementDetail } from '@/types'
-import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
+import { TEXT } from '@/lib/theme'
 import RndNav from '@/components/rnd/RndNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRecordId } from '@/lib/recordRef'
-import RequirementMovementTab from '@/components/crm/RequirementMovementTab'
+import RndRequestBlock from '@/components/crm/RndRequestBlock'
 import RequirementDiscussionTab from '@/components/crm/RequirementDiscussionTab'
 import RequirementTasksTab from '@/components/rnd/RequirementTasksTab'
 import RequirementDocumentsTab from '@/components/rnd/RequirementDocumentsTab'
 import RequirementTechnicalOffersTab from '@/components/rnd/RequirementTechnicalOffersTab'
 import RequirementAccessTab from '@/components/rnd/RequirementAccessTab'
-import RequirementProjectsCard from '@/components/rnd/RequirementProjectsCard'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle, pillStyle, DetailCard, DetailGroup, DetailRow } from '@/components/shared/ui'
+import { SheetIcon } from '@/components/shared/FormSheet'
 import { rndRequestBadge } from '@/components/crm/RndRequestBlock'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
@@ -29,27 +29,6 @@ const TAB_FEATURE: Partial<Record<typeof TABS[number], string>> = {
   'Tasks & Departments': 'tasks', 'Technical Offers': 'technical_offers', Documents: 'documents', Discussion: 'discussion', Access: 'access',
 }
 const TAB_PARAMS: Record<string, typeof TABS[number]> = { discussion: 'Discussion', tasks: 'Tasks & Departments', departments: 'Tasks & Departments', documents: 'Documents', 'technical-offers': 'Technical Offers', access: 'Access' }
-
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 16,
-}
-const sectionTitle: React.CSSProperties = { fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.heading, margin: '0 0 12px' }
-const labelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 2px' }
-
-// Long free-text fields span the full row and keep their line breaks.
-const WIDE_FIELDS = new Set(['Specification', 'Requirement Summary', 'Project Details'])
-
-function Info({ label, value, wide }: { label: string; value: string | null | undefined; wide?: boolean }) {
-  return (
-    <div style={{ gridColumn: wide ? '1 / -1' : undefined }}>
-      <p style={labelStyle}>{label}</p>
-      <p style={{ fontSize: 13, color: value ? TEXT.heading : TEXT.muted, margin: 0, whiteSpace: 'pre-wrap' }}>{value || 'Not provided'}</p>
-    </div>
-  )
-}
-
-const grid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14 }
 
 // An explicit ?tab= deep link (e.g. from a notification) always wins over the auto-jump.
 const hasTabParam = () => typeof window !== 'undefined' && !!TAB_PARAMS[new URLSearchParams(window.location.search).get('tab') || '']
@@ -135,7 +114,6 @@ export default function RndRequirementDetailPage() {
             <span style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45' }}>{data.offer_number}</span>
             <span style={{ fontSize: 11, color: '#d6d3d1' }}>·</span>
             <span style={{ fontSize: 11, fontWeight: 600, color: TEXT.muted }}>{data.source === 'inquiry' ? 'Inquiry' : 'Tender'} {data.universal_id}</span>
-            {data.priority && <><span style={{ fontSize: 11, color: '#d6d3d1' }}>·</span><span style={{ fontSize: 11, fontWeight: 600, color: TEXT.muted }}>{data.priority}</span></>}
           </div>
           <h1 style={{ fontSize: 20, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{data.title}</h1>
           <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '4px 0 0' }}>
@@ -150,32 +128,69 @@ export default function RndRequirementDetailPage() {
         const team = currentReq.assigned_to_id == null
         // Team requests: whoever has the Respond right (head, or granted in Access).
         const mine = team ? canRespond : currentReq.assigned_to_id === user?.id
+        // Days to the due date (negative = overdue), for the "due in / overdue" note.
+        const today = new Date(); today.setHours(0, 0, 0, 0)
+        const daysLeft = Math.round((new Date(currentReq.due_date + 'T00:00:00').getTime() - today.getTime()) / 86400000)
+        const open = currentReq.status === 'open'
+        const title = !open
+          ? 'Response sent to CRM'
+          : mine ? 'CRM is waiting for your response'
+          : team ? 'Waiting for the R&D head to respond'
+          : `Waiting for ${currentReq.assigned_to || 'the assigned engineer'} to respond`
+        const dueNote = !open ? null
+          : daysLeft < 0 ? `${-daysLeft} day${daysLeft === -1 ? '' : 's'} overdue`
+          : daysLeft === 0 ? 'due today'
+          : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`
         return (
-          <div data-tour="rnd-req-assignment" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: `${badge.hex}12`, border: `1px solid ${badge.hex}40`, fontSize: 12.5, color: TEXT.heading }}>
-            <span>
-              {team ? <>Sent to the <strong>R&amp;D head</strong>{canRespond ? ' — you can respond' : ''}</> : mine ? <strong>Assigned to you</strong> : <>Assigned to <strong>{currentReq.assigned_to}</strong></>}
-              {' · '}response due <strong>{formatDate(currentReq.due_date)}</strong>
-              {currentReq.requested_by && <> · requested by {currentReq.requested_by}</>}
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 9999, background: `${badge.hex}1a`, color: badge.hex }}>{badge.label}</span>
-              {mine && currentReq.status === 'open' && shownTab !== 'Requirement' && see('crm_request') && (
-                <button data-tour="rnd-reqd-respond-btn" type="button" onClick={() => setTab('Requirement')} style={{ ...secondaryBtnStyle, padding: '6px 14px' }}>Respond →</button>
+          <div data-tour="rnd-req-assignment" style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
+            padding: '12px 16px', marginBottom: 16, borderRadius: 12, background: '#fff',
+            border: '1px solid rgba(15,23,42,0.08)', borderLeft: `4px solid ${badge.hex}`, boxShadow: '0 2px 8px rgba(15,23,42,0.05)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+              <span style={{ width: 36, height: 36, borderRadius: 10, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${badge.hex}14`, color: badge.hex }}>
+                <SheetIcon name={open ? 'send' : 'check'} size={18} />
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: TEXT.heading }}>{title}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 12.5, color: TEXT.muted }}>
+                  {currentReq.requested_by ? <>Requested by <strong style={{ color: TEXT.body }}>{currentReq.requested_by}</strong> · </> : null}
+                  Due <strong style={{ color: TEXT.body }}>{formatDate(currentReq.due_date)}</strong>
+                  {dueNote && <span style={{ color: daysLeft < 0 ? '#DC2626' : daysLeft <= 1 ? '#D97706' : TEXT.muted, fontWeight: daysLeft <= 1 ? 600 : 400 }}> ({dueNote})</span>}
+                </p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={pillStyle(badge.hex)}>{badge.label}</span>
+              {mine && open && see('crm_request') && (
+                <RndRequestBlock
+                  request={currentReq}
+                  canRespond={canAnswerCrm}
+                  onOpenDoc={() => {}}
+                  onResponded={() => load()}
+                  buttonOnly
+                  renderButton={(openForm) => (
+                    <button data-tour="rnd-reqd-respond-btn" type="button" onClick={openForm} style={primaryBtnStyle}>
+                      <SheetIcon name="send" size={15} />Respond to CRM
+                    </button>
+                  )}
+                />
               )}
-            </span>
+            </div>
           </div>
         )
       })()}
 
       {data.edited_after_send && (
         <div data-tour="rnd-reqd-edited" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(234,88,12,0.08)', border: '1px solid rgba(234,88,12,0.25)', color: '#9a3412', fontSize: 12.5 }}>
-          CRM has edited this requirement since it was last sent to R&amp;D. The Requirement tab shows the <strong>current</strong> CRM values;
-          the Technical Offer Request card shows exactly what R&amp;D received (expand &ldquo;View requirement as sent&rdquo;). Ask the BD owner{data.bd_owner ? ` (${data.bd_owner})` : ''} to re-send if the changes affect the offer.
+          CRM has edited this requirement since it was last sent to R&amp;D. The Requirement tab shows the <strong>current</strong> CRM values.
+          Ask the BD owner{data.bd_owner ? ` (${data.bd_owner})` : ''} to re-send if the changes affect the offer.
         </div>
       )}
 
       <div className="hide-scrollbar" style={{ display: 'flex', gap: 4, marginBottom: 16, padding: 4, borderRadius: 999, background: 'rgba(0,0,0,0.05)', overflowX: 'auto', width: 'fit-content', maxWidth: '100%' }}>
         {visibleTabs.map((t) => (
+          // ui-audit-ignore-next-line custom-button — page tab bar (navigation between tabs, not an action button)
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -191,65 +206,41 @@ export default function RndRequirementDetailPage() {
         ))}
       </div>
 
-      {shownTab === 'Requirement' && (
-        <>
-          {see('projects') && <RequirementProjectsCard source={data.source} recordId={data.record_id} isHead={data.my_access.is_head} />}
-          {/* CRM's request, what was sent, and the "Respond to CRM" form (the answer marks the request Responded for CRM). */}
-          {see('crm_request') && data.movements.length > 0 && (
-            <div style={{ marginBottom: 16 }}>
-              <RequirementMovementTab
-                module={data.source}
-                recordId={data.record_id}
-                movements={data.movements}
-                responder={user ? { userId: user.id, isAdmin: user.role === 'admin', canRespond: canAnswerCrm } : undefined}
-                onChanged={() => load()}
-                latestOnly
-              />
-            </div>
-          )}
-          {/* Only the Technical Offer button: first click opens the Word template, then a menu (edit / download / send). */}
-          {see('technical_offers') && (
-            <div style={{ marginBottom: 16 }}>
-              <RequirementTechnicalOffersTab source={data.source} recordId={data.record_id} access={data.my_access} embedded />
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'stretch' }}>
-            {see('customer') && <div data-tour="rnd-reqd-customer" style={{ ...sectionStyle, flex: '1 1 320px' }}>
-              <p style={sectionTitle}>Customer</p>
-              <div style={grid}>
-                <Info label="Organization" value={data.organization.name} />
-                <Info label="Type" value={data.organization.type} />
-                <Info label="City / State" value={[data.organization.city, data.organization.state].filter(Boolean).join(', ')} />
-              </div>
-              {data.contact && (
-                <>
-                  <p style={{ ...sectionTitle, margin: '16px 0 12px' }}>Contact Person</p>
-                  <div style={grid}>
-                    <Info label="Name" value={data.contact.name} />
-                    <Info label="Designation" value={data.contact.designation} />
-                    <Info label="Department" value={data.contact.department} />
-                    <Info label="Mobile" value={data.contact.mobile} />
-                    <Info label="Email" value={data.contact.email} />
-                  </div>
-                </>
-              )}
-            </div>}
-            {see('crm_info') && <div data-tour="rnd-reqd-crm" style={{ ...sectionStyle, flex: '0 1 280px' }}>
-              <p style={sectionTitle}>From CRM</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <Info label="BD Owner" value={data.bd_owner} />
-                <Info label="CRM Status" value={data.crm_status} />
-                <Info label="Priority" value={data.priority} />
-              </div>
-            </div>}
-          </div>
-          {see('product_requirement') && <div data-tour="rnd-reqd-requirement" style={sectionStyle}>
-            <p style={sectionTitle}>{data.source === 'inquiry' ? 'Product Requirement' : 'Tender Details'}</p>
-            <div style={grid}>
-              {data.requirement.map((f) => <Info key={f.label} label={f.label} value={f.value} wide={WIDE_FIELDS.has(f.label)} />)}
-            </div>
+      {shownTab === 'Requirement' && (see('customer') || see('crm_info') || see('product_requirement')) && (
+        // One card, every detail as label–value rows (same layout as R&D › Project › Overview).
+        <DetailCard>
+          {see('product_requirement') && <div data-tour="rnd-reqd-requirement">
+            <DetailGroup title={data.source === 'inquiry' ? 'Product Requirement' : 'Tender Details'}>
+              {data.requirement.length === 0
+                ? <DetailRow label="Details">{null}</DetailRow>
+                : data.requirement.map((f) => <DetailRow key={f.label} label={f.label}>{f.value}</DetailRow>)}
+            </DetailGroup>
           </div>}
-        </>
+          {see('customer') && <div data-tour="rnd-reqd-customer">
+            <DetailGroup title="Customer" last={!data.contact && !see('crm_info')}>
+              <DetailRow label="Organization">{data.organization.name}</DetailRow>
+              <DetailRow label="Type">{data.organization.type}</DetailRow>
+              <DetailRow label="City / State">{[data.organization.city, data.organization.state].filter(Boolean).join(', ')}</DetailRow>
+            </DetailGroup>
+            {data.contact && (
+              <DetailGroup title="Contact Person" last={!see('crm_info')}>
+                <DetailRow label="Name">{data.contact.name}</DetailRow>
+                <DetailRow label="Designation">{data.contact.designation}</DetailRow>
+                <DetailRow label="Department">{data.contact.department}</DetailRow>
+                <DetailRow label="Mobile">{data.contact.mobile}</DetailRow>
+                <DetailRow label="Email">{data.contact.email}</DetailRow>
+              </DetailGroup>
+            )}
+          </div>}
+          {see('crm_info') && <div data-tour="rnd-reqd-crm">
+            <DetailGroup title="From CRM" last>
+              <DetailRow label="BD Owner">{data.bd_owner}</DetailRow>
+              <DetailRow label="CRM Status">{data.crm_status}</DetailRow>
+              <DetailRow label="Priority">{data.priority}</DetailRow>
+              <DetailRow label="Last sent to R&D">{data.last_sent_at ? formatDateTime(data.last_sent_at) : null}</DetailRow>
+            </DetailGroup>
+          </div>}
+        </DetailCard>
       )}
 
       {shownTab === 'Tasks & Departments' && user && <RequirementTasksTab source={data.source} recordId={data.record_id} userId={user.id} access={data.my_access} gates={taskGates} />}

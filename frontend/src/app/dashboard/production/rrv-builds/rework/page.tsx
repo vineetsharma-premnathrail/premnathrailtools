@@ -7,10 +7,11 @@ import { rrvApi } from '@/lib/api'
 import { ProductionReworkOrder } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import ProductionNav from '@/components/production/ProductionNav'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, smallSecondaryBtnStyle, chipBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
+import Checkbox from '@/components/Checkbox'
 
 const STATUS_LABELS: Record<string, string> = { open: 'Open', in_progress: 'In Progress', done: 'Awaiting Verification', verified: 'Verified', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { open: '#DC2626', in_progress: '#F59E0B', done: '#7C3AED', verified: '#16A34A', cancelled: '#a8a29e' }
@@ -72,18 +73,16 @@ export default function ReworkOrdersPage() {
         {STATUS_TABS.map((t) => {
           const active = statusTab === t.key
           return (
-            <button key={t.label} type="button" onClick={() => setStatusTab(t.key)} style={{
-              padding: '6px 14px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              border: `1px solid ${active ? '#FF6A2A' : BORDER.normal}`, background: active ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,.6)',
-              color: active ? '#FF6A2A' : TEXT.secondary,
-            }}>
+            <button key={t.label} type="button" onClick={() => setStatusTab(t.key)} style={chipBtnStyle(active)}>
               {t.label}
             </button>
           )
         })}
-        <label data-tour="production-rework-mine-filter" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.secondary, cursor: 'pointer', marginLeft: 8 }}>
-          <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Assigned to me
-        </label>
+        {/* Checkbox renders its own <label>; a label around it would toggle twice per click. */}
+        <div data-tour="production-rework-mine-filter" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.secondary, marginLeft: 8 }}>
+          <Checkbox checked={mine} onChange={(e) => setMine(e.target.checked)} />
+          <span onClick={() => setMine((v) => !v)} style={{ cursor: 'pointer', userSelect: 'none' }}>Assigned to me</span>
+        </div>
       </div>
 
       <div data-tour="production-rework-table" style={{
@@ -93,9 +92,9 @@ export default function ReworkOrdersPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr>
-              {['Rework', 'Build', 'What needs fixing', 'Source', 'Assigned to', 'Due', 'Status', ''].map((h) => (
+              {['Rework', 'Build', 'What needs fixing', 'Source', 'Assigned to', 'Due', 'Status', ''].map((h, i) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{i === 0 && <RowCount count={rows.length} />}
                 </th>
               ))}
             </tr>
@@ -104,23 +103,21 @@ export default function ReworkOrdersPage() {
             {loading ? (
               <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No rework orders here.</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>{mine ? 'No rework assigned to you in this view.' : 'No rework orders in this view.'} Rework is raised from a build’s Tests or Rework tab, or automatically when a test or inspection fails.</td></tr>
             ) : (
               rows.map((r) => (
                 <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/production/rrv-builds', r, 'build_id'))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{r.rework_number}</td>
                   <td style={cellStyle}>{r.build_number}<div style={{ fontSize: 12, color: TEXT.muted }}>{r.rrv_model}</div></td>
-                  <td style={{ ...cellStyle, maxWidth: 320 }}>{r.title}</td>
+                  <td style={{ ...cellStyle, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.title}>{r.title}</td>
                   <td style={cellStyle}>{r.source_label}{r.inspection_number ? <div style={{ fontSize: 12, color: TEXT.muted }}>{r.inspection_number}</div> : null}</td>
                   <td style={cellStyle}>{r.assigned_to_name || '—'}</td>
-                  <td style={{ ...cellStyle, color: r.is_overdue ? '#DC2626' : TEXT.body, fontWeight: r.is_overdue ? 600 : 400 }}>{formatDate(r.due_date)}{r.is_overdue ? ' · overdue' : ''}</td>
+                  <td style={{ ...cellStyle, color: r.is_overdue ? '#DC2626' : TEXT.body, fontWeight: r.is_overdue ? 600 : 400 }}><span style={{ whiteSpace: 'nowrap' }}>{formatDate(r.due_date)}{r.is_overdue ? ' · overdue' : ''}</span></td>
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[r.status]}1a`, color: STATUS_HEX[r.status], whiteSpace: 'nowrap' }}>
-                      {STATUS_LABELS[r.status] || r.status}
-                    </span>
+                    <Pill label={STATUS_LABELS[r.status] || r.status} hex={STATUS_HEX[r.status] || '#78716c'} />
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/production/rrv-builds', r, 'build_id'))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>Open build</span>
+                    <button type="button" onClick={() => router.push(recordPath('/dashboard/production/rrv-builds', r, 'build_id'))} style={{ ...smallSecondaryBtnStyle, whiteSpace: 'nowrap' }}>Open build</button>
                   </td>
                 </tr>
               ))

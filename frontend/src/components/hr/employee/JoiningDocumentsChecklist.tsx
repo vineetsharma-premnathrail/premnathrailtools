@@ -15,6 +15,7 @@ import { useCan } from '@/lib/permissions'
 import { todayIso } from '@/components/hr/admin/adminUi'
 import { extractErrorMessages } from '@/lib/validation'
 import { ErrorBanner, StatusPill, linkActionStyle, dangerActionStyle, formatDate, VERIFICATION_HEX } from '@/components/hr/masters/masterUi'
+import { RowCount } from '@/components/shared/ui'
 
 /** Who the documents belong to: a portal account, an HR record without one,
  *  or nothing yet (a new record — files are staged and uploaded after save). */
@@ -227,7 +228,7 @@ export default function JoiningDocumentsChecklist({ rules, ctx, owner, staged, o
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760, fontSize: 12.5 }}>
                 <thead>
                   <tr style={{ background: '#fdf1e6' }}>
-                    {['Type', 'File', 'Ref. No.', 'Issue', 'Expiry', 'Verification', ''].map((h) => <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11.5, color: TEXT.secondary, fontWeight: 700 }}>{h}</th>)}
+                    {['Type', 'File', 'Ref. No.', 'Issue', 'Expiry', 'Verification', ''].map((h, hi) => <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11.5, color: TEXT.secondary, fontWeight: 700 }}>{h}{hi === 0 && <RowCount count={typed.length} />}</th>)}
                   </tr>
                 </thead>
                 <tbody>

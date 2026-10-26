@@ -1,6 +1,7 @@
 'use client'
 
 import Select from '@/components/shared/Select'
+import { RowCount } from '@/components/shared/ui'
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -227,7 +228,7 @@ function NewRndExperimentPageInner() {
               <table data-tour="rnd-ef-params" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                 <thead>
                   <tr>
-                    <th style={thStyle}>Parameter *</th>
+                    <th style={thStyle}>Parameter * <RowCount count={rows.length} /></th>
                     <th style={thStyle}>Specification</th>
                     <th style={thStyle}>Measured</th>
                     <th style={{ ...thStyle, width: 110 }}>Unit</th>

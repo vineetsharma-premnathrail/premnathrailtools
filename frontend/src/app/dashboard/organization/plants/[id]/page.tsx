@@ -5,24 +5,19 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { organizationApi, storeApi, costCentersApi } from '@/lib/api'
 import { Branch, BranchAddress, BranchUserAssignment, BranchDocument, Department, StoreLocation, CostCenter } from '@/types'
-import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
+import { TEXT, BRAND, BORDER } from '@/lib/theme'
+import OrgListItem, { orgEmptyStyle } from '@/components/organization/OrgListItem'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRecordId } from '@/lib/recordRef'
 import { PLANT_STATUS_LABELS, PLANT_STATUS_HEX } from '@/components/organization/PlantForm'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
+import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import { formatDate } from '@/lib/format'
 
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
-const labelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }
-const valueStyle: React.CSSProperties = { fontSize: 14, color: TEXT.body, marginBottom: 16 }
-const cardRowStyle: React.CSSProperties = {
-  display: 'flex', flexDirection: 'column', gap: 8, padding: '14px 16px', borderRadius: 12,
-  background: 'rgba(255,255,255,.5)', border: `1px solid ${BORDER.normal}`,
-}
+const emptyStyle = orgEmptyStyle
+const ListItem = OrgListItem
 
 const TABS = ['Basic', 'Address', 'Operational Configuration', 'Branch Users', 'Branch Departments', 'Branch Stores', 'Branch Cost Centers', 'Branch Documents'] as const
 
@@ -35,6 +30,18 @@ const DETAIL_TAB_TOUR_IDS: Record<typeof TABS[number], string> = {
   'Branch Stores': 'org-plant-detail-tab-warehouses',
   'Branch Cost Centers': 'org-plant-detail-tab-costcenters',
   'Branch Documents': 'org-plant-detail-tab-documents',
+}
+
+// Inside a branch every tab is about that branch, so the "Branch " prefix is dropped on screen.
+const TAB_LABELS: Record<typeof TABS[number], string> = {
+  'Basic': 'Basic',
+  'Address': 'Address',
+  'Operational Configuration': 'Operations',
+  'Branch Users': 'Users',
+  'Branch Departments': 'Departments',
+  'Branch Stores': 'Stores',
+  'Branch Cost Centers': 'Cost Centers',
+  'Branch Documents': 'Documents',
 }
 
 export default function PlantDetailPage() {
@@ -74,7 +81,7 @@ export default function PlantDetailPage() {
       .then(([p, a, u, d, w, cc, docs]) => {
         setPlant(p); setAddresses(a); setAssignments(u); setDepartments(d); setWarehouses(w); setCostCenters(cc); setDocuments(docs)
       })
-      .catch(() => setError('Failed to load branch.'))
+      .catch((err: unknown) => setError(extractErrorMessages(err, 'Could not load this branch. Reload the page; if it keeps failing, check you still have access to Organization › Branches.').join(' ')))
   }
 
   useEffect(() => {
@@ -101,34 +108,53 @@ export default function PlantDetailPage() {
 
   if (!plant) return null
 
+  const primaryAddress = addresses.find((a) => a.is_primary && a.is_active) || addresses.find((a) => a.is_active)
+  const titleCase = (v?: string | null) => (v ? v.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()) : '')
+  const canEdit = can('organization', 'branches', 'edit')
+  // Small count next to each list tab so the user sees what is inside before clicking.
+  const COUNTED: Partial<Record<typeof TABS[number], number>> = {
+    'Address': addresses.length,
+    'Branch Users': assignments.length,
+    'Branch Departments': departments.length,
+    'Branch Stores': warehouses.length,
+    'Branch Cost Centers': costCenters.length,
+    'Branch Documents': documents.length,
+  }
+
   return (
     <div>
       <OrganizationNav />
 
-      <div style={{ padding: '20px 24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{plant.name}</h1>
-              <span data-tour="org-plant-detail-status" style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PLANT_STATUS_HEX[plant.status]}1a`, color: PLANT_STATUS_HEX[plant.status] }}>
-                {PLANT_STATUS_LABELS[plant.status] || plant.status}
-              </span>
-            </div>
-            <p style={{ fontSize: 12, color: TEXT.secondary, margin: '8px 0 0 0' }}>Code: {plant.code}</p>
-          </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button onClick={() => router.push('/dashboard/organization/plants')} type="button" data-tour="org-plant-detail-back" style={secondaryBtnStyle}>← Back</button>
-            {can('organization', 'branches', 'edit') && <button
-              onClick={() => router.push(`/dashboard/organization/plants/${ref}/edit`)}
-              data-tour="org-plant-detail-edit-btn"
-              style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', boxShadow: `0 4px 14px ${BRAND.primaryGlow}` }}
-            >
-              Edit
-            </button>}
-          </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ minWidth: 0 }}>
+          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Organization › Branches</p>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Branch Details</h1>
         </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {can('organization', 'branches', 'edit') && <button
+            onClick={() => router.push(`/dashboard/organization/plants/${ref}/edit`)}
+            data-tour="org-plant-detail-edit-btn"
+            style={primaryBtnStyle}
+          >
+            Edit
+          </button>}
+          <button onClick={() => router.push('/dashboard/organization/plants')} type="button" data-tour="org-plant-detail-back" style={secondaryBtnStyle}>← Back</button>
+        </div>
+      </div>
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: `1px solid ${BORDER.normal}`, flexWrap: 'wrap' }}>
+      <DetailCard>
+        <DetailSummary
+          title={plant.name}
+          text={plant.description || (primaryAddress ? [primaryAddress.city, primaryAddress.state].filter(Boolean).join(', ') || undefined : undefined)}
+          meta={<>
+            <span data-tour="org-plant-detail-status"><Pill label={PLANT_STATUS_LABELS[plant.status] || plant.status} hex={PLANT_STATUS_HEX[plant.status] || '#64748b'} /></span>
+            <span>·</span><span>Code {plant.code}</span>
+            {plant.plant_type && <><span>·</span><span>{plant.plant_type}</span></>}
+            {plant.manager_user_name && <><span>·</span><span>Manager: {plant.manager_user_name}</span></>}
+          </>}
+        />
+
+        <div style={{ display: 'flex', gap: 8, margin: '4px 0', borderBottom: `1px solid ${BORDER.normal}`, flexWrap: 'wrap' }}>
           {TABS.filter(seeTab).map((t) => (
             <button
               key={t}
@@ -140,186 +166,136 @@ export default function PlantDetailPage() {
                 color: tab === t ? BRAND.primary : TEXT.secondary, fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap',
               }}
             >
-              {t}
+              {TAB_LABELS[t]}
+              {COUNTED[t] !== undefined && <span style={{ marginLeft: 6, fontSize: 11.5, color: TEXT.muted, fontWeight: 600 }}>{COUNTED[t]}</span>}
             </button>
           ))}
         </div>
 
         {(tab === 'Basic' || !seeTab(tab)) && (
-          <div style={sectionStyle}>
-            <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Basic Information</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 10px))), 1fr))', gap: 20 }}>
-              <div><div style={labelStyle}>Company</div><div style={valueStyle}>{plant.company_name || '—'}</div></div>
-              <div><div style={labelStyle}>Branch Type</div><div style={valueStyle}>{plant.plant_type || '—'}</div></div>
-              <div><div style={labelStyle}>Branch Head</div><div style={valueStyle}>{plant.head_user_name || '—'}</div></div>
-              <div><div style={labelStyle}>Branch Manager</div><div style={valueStyle}>{plant.manager_user_name || '—'}</div></div>
-              <div><div style={labelStyle}>Established Date</div><div style={valueStyle}>{plant.established_date || '—'}</div></div>
-              <div><div style={labelStyle}>Industry / Function</div><div style={valueStyle}>{plant.industry_function || '—'}</div></div>
-              <div><div style={labelStyle}>Active From</div><div style={valueStyle}>{plant.active_from || '—'}</div></div>
-              <div style={{ gridColumn: '1 / -1' }}><div style={labelStyle}>Description</div><div style={valueStyle}>{plant.description || '—'}</div></div>
-              <div style={{ gridColumn: '1 / -1' }}><div style={labelStyle}>Remarks</div><div style={valueStyle}>{plant.remarks || '—'}</div></div>
-            </div>
-          </div>
+          <>
+            <DetailGroup title="Basic information">
+              <DetailRow label="Company">{plant.company_name}</DetailRow>
+              <DetailRow label="Branch type">{plant.plant_type}</DetailRow>
+              <DetailRow label="Industry / function">{plant.industry_function}</DetailRow>
+              <DetailRow label="Established on">{plant.established_date ? formatDate(plant.established_date) : null}</DetailRow>
+              <DetailRow label="Active from">{plant.active_from ? formatDate(plant.active_from) : null}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="People">
+              <DetailRow label="Branch head">{plant.head_user_name}</DetailRow>
+              <DetailRow label="Branch manager">{plant.manager_user_name}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="Notes" last>
+              <DetailRow label="Description">{plant.description}</DetailRow>
+              <DetailRow label="Remarks">{plant.remarks}</DetailRow>
+            </DetailGroup>
+          </>
         )}
 
         {tab === 'Address' && (
-          <div style={sectionStyle}>
-            <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Addresses</h2>
+          <div style={{ paddingTop: 8 }}>
             {addresses.length === 0 ? (
-              <p style={{ fontSize: 13, color: TEXT.muted }}>No addresses added yet.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {addresses.map((a) => (
-                  <div key={a.id} style={cardRowStyle}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{a.address_type || 'Address'}</span>
-                      {a.is_primary && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(16,185,129,0.12)', color: '#047857' }}>PRIMARY</span>}
-                      {!a.is_active && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(220,38,38,0.1)', color: '#b91c1c' }}>INACTIVE</span>}
-                    </div>
-                    <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>
-                      {[a.address_line1, a.address_line2, a.landmark, a.city, a.district, a.state, a.country, a.pincode].filter(Boolean).join(', ')}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
+              <p style={emptyStyle}>No addresses added yet{canEdit ? ' — use Edit › Address to add this branch’s address.' : '.'}</p>
+            ) : addresses.map((a, i) => (
+              <ListItem key={a.id} last={i === addresses.length - 1}
+                title={a.address_type || 'Address'}
+                tags={<>{a.is_primary && <Pill label="Primary" hex="#047857" />}{!a.is_active && <Pill label="Inactive" hex="#b91c1c" />}</>}
+                body={[a.address_line1, a.address_line2, a.landmark, a.city, a.district, a.state, a.country, a.pincode].filter(Boolean).join(', ')} />
+            ))}
           </div>
         )}
 
         {tab === 'Operational Configuration' && (
-          <div style={sectionStyle}>
-            <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Operational Configuration</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 10px))), 1fr))', gap: 20 }}>
-              <div><div style={labelStyle}>Working Calendar</div><div style={valueStyle}>{plant.working_calendar || '—'}</div></div>
-              <div><div style={labelStyle}>Working Days</div><div style={valueStyle}>{plant.working_days || '—'}</div></div>
-              <div><div style={labelStyle}>Working Hours</div><div style={valueStyle}>{plant.working_hours || '—'}</div></div>
-              <div><div style={labelStyle}>Time Zone</div><div style={valueStyle}>{plant.timezone || '—'}</div></div>
-              <div><div style={labelStyle}>Default Store</div><div style={valueStyle}>{plant.default_warehouse_name || '—'}</div></div>
-              <div><div style={labelStyle}>Default Cost Center</div><div style={valueStyle}>{plant.default_cost_center_name || '—'}</div></div>
-              <div><div style={labelStyle}>Default Profit Center</div><div style={valueStyle}>{plant.default_profit_center || '—'}</div></div>
-              <div><div style={labelStyle}>Currency</div><div style={valueStyle}>{plant.currency || '—'}</div></div>
-              <div><div style={labelStyle}>GSTIN / State</div><div style={valueStyle}>{plant.gstin || '—'}{plant.state_code ? ` · ${plant.state_code}` : ''}</div></div>
-            </div>
-          </div>
+          <>
+            <DetailGroup title="Working time">
+              <DetailRow label="Working calendar">{plant.working_calendar}</DetailRow>
+              <DetailRow label="Working days">{plant.working_days}</DetailRow>
+              <DetailRow label="Working hours">{plant.working_hours}</DetailRow>
+              <DetailRow label="Time zone">{plant.timezone}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="Defaults">
+              <DetailRow label="Default store">{plant.default_warehouse_name}</DetailRow>
+              <DetailRow label="Default cost center">{plant.default_cost_center_name}</DetailRow>
+              <DetailRow label="Default profit center">{plant.default_profit_center}</DetailRow>
+              <DetailRow label="Currency">{plant.currency}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="GST" last>
+              <DetailRow label="GSTIN">{plant.gstin}</DetailRow>
+              <DetailRow label="State code">{plant.state_code}</DetailRow>
+            </DetailGroup>
+          </>
         )}
 
         {tab === 'Branch Users' && seeUsers && (
-          <div style={sectionStyle}>
-            <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Branch Users</h2>
+          <div style={{ paddingTop: 8 }}>
             {assignments.length === 0 ? (
-              <p style={{ fontSize: 13, color: TEXT.muted }}>No users assigned yet.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {assignments.map((a) => (
-                  <div key={a.id} style={cardRowStyle}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{a.user_name || `User #${a.user_id}`}</span>
-                      {a.role && <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: BRAND.primary }}>{a.role}</span>}
-                      {a.is_primary_branch && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(16,185,129,0.12)', color: '#047857' }}>PRIMARY</span>}
-                    </div>
-                    <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>
-                      {[a.designation, a.department_name, a.access_level, a.employee_id].filter(Boolean).join(' · ') || '—'}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
+              <p style={emptyStyle}>No users assigned to this branch yet{canEdit ? ' — use Edit › Users to assign people.' : '.'}</p>
+            ) : assignments.map((a, i) => (
+              <ListItem key={a.id} last={i === assignments.length - 1}
+                title={a.user_name || `User #${a.user_id}`}
+                sub={a.role || undefined}
+                tags={a.is_primary_branch ? <Pill label="Primary branch" hex="#047857" /> : null}
+                body={[a.designation, a.department_name, a.access_level, a.employee_id].filter(Boolean).join(' · ') || '—'} />
+            ))}
           </div>
         )}
 
         {tab === 'Branch Departments' && (
-          <div style={sectionStyle}>
-            <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Branch Departments</h2>
-            <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '0 0 12px' }}>Managed from Organization &gt; Department.</p>
+          <div style={{ paddingTop: 8 }}>
+            <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 4px' }}>Departments are managed from Organization › Department.</p>
             {departments.length === 0 ? (
-              <p style={{ fontSize: 13, color: TEXT.muted }}>No departments under this branch yet.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {departments.map((d) => (
-                  <div key={d.id} style={cardRowStyle}>
-                    <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{d.name}</span>
-                    <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>{[d.code, d.head_user_name].filter(Boolean).join(' · ') || '—'}</p>
-                  </div>
-                ))}
-              </div>
-            )}
+              <p style={emptyStyle}>No departments under this branch yet.</p>
+            ) : departments.map((d, i) => (
+              <ListItem key={d.id} last={i === departments.length - 1}
+                title={d.name}
+                sub={d.code || undefined}
+                body={d.head_user_name ? `Head: ${d.head_user_name}` : 'No head set'} />
+            ))}
           </div>
         )}
 
         {tab === 'Branch Stores' && (
-          <div style={sectionStyle}>
-            <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Branch Stores</h2>
+          <div style={{ paddingTop: 8 }}>
             {warehouses.length === 0 ? (
-              <p style={{ fontSize: 13, color: TEXT.muted }}>No stores added yet.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {warehouses.map((w) => (
-                  <div key={w.id} style={cardRowStyle}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{w.name}</span>
-                      {plant.default_warehouse_id === w.id && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(16,185,129,0.12)', color: '#047857' }}>DEFAULT</span>}
-                    </div>
-                    <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>
-                      {[w.code, w.warehouse_type, w.manager_user_name, w.status].filter(Boolean).join(' · ') || '—'}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
+              <p style={emptyStyle}>No stores under this branch yet — stores are added from the Store module.</p>
+            ) : warehouses.map((w, i) => (
+              <ListItem key={w.id} last={i === warehouses.length - 1}
+                title={w.name}
+                sub={w.code || undefined}
+                tags={plant.default_warehouse_id === w.id ? <Pill label="Default" hex="#047857" /> : null}
+                body={[titleCase(w.warehouse_type), w.manager_user_name ? `Manager: ${w.manager_user_name}` : '', titleCase(w.status)].filter(Boolean).join(' · ') || '—'} />
+            ))}
           </div>
         )}
 
         {tab === 'Branch Cost Centers' && (
-          <div style={sectionStyle}>
-            <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Branch Cost Centers</h2>
+          <div style={{ paddingTop: 8 }}>
             {costCenters.length === 0 ? (
-              <p style={{ fontSize: 13, color: TEXT.muted }}>No cost centers added yet.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {costCenters.map((cc) => (
-                  <div key={cc.id} style={cardRowStyle}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{cc.name}</span>
-                      {plant.default_cost_center_id === cc.id && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(16,185,129,0.12)', color: '#047857' }}>DEFAULT</span>}
-                    </div>
-                    <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>
-                      {[cc.code, cc.cost_center_type, cc.department_name, cc.head_user_name].filter(Boolean).join(' · ') || '—'}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
+              <p style={emptyStyle}>No cost centers under this branch yet.</p>
+            ) : costCenters.map((cc, i) => (
+              <ListItem key={cc.id} last={i === costCenters.length - 1}
+                title={cc.name}
+                sub={cc.code || undefined}
+                tags={plant.default_cost_center_id === cc.id ? <Pill label="Default" hex="#047857" /> : null}
+                body={[titleCase(cc.cost_center_type), cc.department_name, cc.head_user_name ? `Head: ${cc.head_user_name}` : ''].filter(Boolean).join(' · ') || '—'} />
+            ))}
           </div>
         )}
 
         {tab === 'Branch Documents' && seeDocs && (
-          <div style={sectionStyle}>
-            <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Branch Documents</h2>
+          <div style={{ paddingTop: 8 }}>
             {documents.length === 0 ? (
-              <p style={{ fontSize: 13, color: TEXT.muted }}>No documents uploaded yet.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {documents.map((d) => (
-                  <div key={d.id} style={cardRowStyle}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{d.document_name}</span>
-                          <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: BRAND.primary }}>{d.document_type}</span>
-                        </div>
-                        <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>
-                          {d.filename}{d.expiry_date ? ` · Expires ${d.expiry_date}` : ''}{d.version ? ` · v${d.version}` : ''}
-                        </p>
-                      </div>
-                      {d.sharepoint_url && canFeature('organization', 'branches', 'documents', 'export') && <a href={d.sharepoint_url} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, fontWeight: 600, color: BRAND.primaryActive }}>Open</a>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+              <p style={emptyStyle}>No documents uploaded yet{canEdit ? ' — use Edit › Documents to upload licences and certificates.' : '.'}</p>
+            ) : documents.map((d, i) => (
+              <ListItem key={d.id} last={i === documents.length - 1}
+                title={d.document_name}
+                sub={d.document_type}
+                body={[d.filename, d.expiry_date ? `Expires ${formatDate(d.expiry_date)}` : '', d.version ? `v${d.version}` : ''].filter(Boolean).join(' · ')}
+                action={d.sharepoint_url && canFeature('organization', 'branches', 'documents', 'export') ? <a href={d.sharepoint_url} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, fontWeight: 600, color: BRAND.primaryActive }}>Open</a> : null} />
+            ))}
           </div>
         )}
-      </div>
+      </DetailCard>
     </div>
   )
 }

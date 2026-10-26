@@ -6,6 +6,7 @@
 // lot / NCR statuses show on five pages.
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { FormSheet, SheetIcon, SheetIconName, SheetSection, sheetBtn, SHEET } from '@/components/shared/FormSheet'
+import { Pill as SharedPill } from '@/components/shared/ui'
 
 export const INSPECTION_TYPE_LABELS: Record<string, string> = {
   incoming: 'Incoming (GRN)', job_work: 'Job work receipt', first_article: 'First article (FAI)', in_process: 'In-process',
@@ -35,6 +36,7 @@ export const APPROVAL_ROLE_LABELS: Record<string, string> = {
 export const DISPOSITION_TYPE_LABELS: Record<string, string> = {
   use_as_is: 'Use as is', rework: 'Rework', repair: 'Repair', return_to_vendor: 'Return to vendor', scrap: 'Scrap',
 }
+export const PLAN_STATUS_LABELS: Record<string, string> = { draft: 'Draft', pending_approval: 'Waiting for approval', approved: 'Approved', obsolete: 'Obsolete' }
 export const PLAN_STATUS_HEX: Record<string, string> = { draft: '#78716c', pending_approval: '#F59E0B', approved: '#16A34A', obsolete: '#a8a29e' }
 
 // Phase 3 — CAPA (8D), customer complaints, approved vendor list.
@@ -65,12 +67,7 @@ export function fmtMoney(v?: number | null) {
 }
 
 export function Pill({ text, hex }: { text: string; hex?: string }) {
-  const c = hex || '#78716c'
-  return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${c}1a`, color: c, whiteSpace: 'nowrap' }}>
-      {text}
-    </span>
-  )
+  return <SharedPill label={text} hex={hex || '#78716c'} />
 }
 
 export function PageHeader({ title, subtitle, children }: { title: string; subtitle?: string; children?: React.ReactNode }) {
@@ -117,7 +114,7 @@ export function fmtQty(q?: number | null, uom?: string | null) {
 export function fmtDate(d?: string | null) {
   if (!d) return '—'
   const s = d.slice(0, 10).split('-')
-  return s.length === 3 ? `${s[2]}-${s[1]}-${s[0]}` : d
+  return s.length === 3 ? `${s[2]}/${s[1]}/${s[0]}` : d
 }
 
 /**

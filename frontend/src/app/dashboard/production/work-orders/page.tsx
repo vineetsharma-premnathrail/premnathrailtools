@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { productionApi } from '@/lib/api'
 import { ProductionWorkOrder } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import ProductionNav from '@/components/production/ProductionNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
 import { useCan } from '@/lib/permissions'
 import Select from '@/components/shared/Select'
+import { chipBtnStyle, primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', released: 'Released', in_progress: 'In Progress', completed: 'Completed', closed: 'Closed', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', released: '#2563EB', in_progress: '#F59E0B', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
@@ -82,11 +83,7 @@ export default function ProductionWorkOrdersPage() {
         {can('production', 'work_orders', 'create') && <button
           data-tour="production-wo-new-btn"
           onClick={() => router.push('/dashboard/production/work-orders/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
+          style={primaryBtnStyle}
         >
           + New Work Order
         </button>}
@@ -102,11 +99,7 @@ export default function ProductionWorkOrdersPage() {
         {STATUS_TABS.map((t) => {
           const active = statusTab === t.key
           return (
-            <button key={t.label} type="button" onClick={() => setStatusTab(t.key)} style={{
-              padding: '6px 14px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              border: `1px solid ${active ? '#FF6A2A' : BORDER.normal}`, background: active ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,.6)',
-              color: active ? '#FF6A2A' : TEXT.secondary,
-            }}>
+            <button key={t.label} type="button" onClick={() => setStatusTab(t.key)} style={chipBtnStyle(active)}>
               {t.label}
             </button>
           )
@@ -131,9 +124,9 @@ export default function ProductionWorkOrdersPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
           <thead>
             <tr>
-              {['WO Number', 'Product', 'Machine / Project', 'Qty', 'Progress', 'Priority', 'Planned End', 'Status', ''].map((h) => (
+              {['WO Number', 'Product', 'Machine / Project', 'Qty', 'Progress', 'Priority', 'Planned End', 'Status', ''].map((h, i) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{i === 0 && <RowCount count={orders.length} />}
                 </th>
               ))}
             </tr>
@@ -142,7 +135,7 @@ export default function ProductionWorkOrdersPage() {
             {loading ? (
               <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : orders.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No work orders found.</td></tr>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No work orders match this view — change the filters, or use “+ New Work Order” to raise one from an active BOM.</td></tr>
             ) : (
               orders.map((o) => (
                 <tr key={o.id} onClick={() => router.push(recordPath('/dashboard/production/work-orders', o))} style={{ cursor: 'pointer' }}>
@@ -157,17 +150,13 @@ export default function ProductionWorkOrdersPage() {
                     <span style={{ fontSize: 11, color: TEXT.muted }}>{o.progress_percent}%</span>
                   </td>
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PRIORITY_HEX[o.priority]}1a`, color: PRIORITY_HEX[o.priority], whiteSpace: 'nowrap' }}>
-                      {PRIORITY_LABELS[o.priority] || o.priority}
-                    </span>
+                    <Pill label={PRIORITY_LABELS[o.priority] || o.priority} hex={PRIORITY_HEX[o.priority]} />
                   </td>
                   <td style={{ ...cellStyle, color: o.is_overdue ? '#DC2626' : TEXT.body, fontWeight: o.is_overdue ? 600 : 400 }}>
                     {o.planned_end_date ? formatDate(o.planned_end_date) : '—'}{o.is_overdue ? ' · overdue' : ''}
                   </td>
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[o.status]}1a`, color: STATUS_HEX[o.status], whiteSpace: 'nowrap' }}>
-                      {STATUS_LABELS[o.status] || o.status}
-                    </span>
+                    <Pill label={STATUS_LABELS[o.status] || o.status} hex={STATUS_HEX[o.status]} />
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
                     <span onClick={() => router.push(recordPath('/dashboard/production/work-orders', o))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>

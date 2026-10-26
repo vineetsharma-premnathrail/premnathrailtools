@@ -11,7 +11,7 @@ import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import MaintenanceAssetPicker from '@/components/maintenance/MaintenanceAssetPicker'
 import { extractErrorMessages } from '@/lib/validation'
-import { PRIORITY_LABELS, REQUEST_TYPE_LABELS, localInputToIso, nowLocalInput } from '@/components/maintenance/labels'
+import { ASSET_STATUS_LABELS, PRIORITY_LABELS, REQUEST_TYPE_LABELS, localInputToIso, nowLocalInput } from '@/components/maintenance/labels'
 import Select from '@/components/shared/Select'
 
 export default function NewMaintenanceRequestPage() {
@@ -126,7 +126,7 @@ export default function NewMaintenanceRequestPage() {
                 <MaintenanceAssetPicker value={assetId} onChange={(v) => setAssetId(v)} onSelectedOption={setSelected} rejectDecommissioned />
                 {selected && selected.status !== 'operational' && selected.status !== 'standby' && (
                   <p style={{ fontSize: 12, color: '#b45309', margin: '6px 0 0' }}>
-                    This asset is already marked {selected.status.replace('_', ' ')} — check its open requests before raising another one.
+                    This asset is already marked {(ASSET_STATUS_LABELS[selected.status] || selected.status).toLowerCase()} — check its open requests before raising another one.
                   </p>
                 )}
               </div>

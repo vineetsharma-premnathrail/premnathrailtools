@@ -7,7 +7,7 @@ import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { useCan } from '@/lib/permissions'
 import { physicalCountsApi, storeApi, usersApi } from '@/lib/api'
 import { DirectoryUser, StoreItem, StorePhysicalCount } from '@/types'
-import { BORDER, DANGER, SUCCESS } from '@/lib/theme'
+import { DANGER, SUCCESS } from '@/lib/theme'
 import StoreNav from '@/components/store/StoreNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import PromptDialog from '@/components/erp/PromptDialog'
@@ -17,9 +17,10 @@ import { FormPage, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLa
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useRecordId, recordPath } from '@/lib/recordRef'
+import { RowCount, Pill, TableScroll, thStyle, tdStyle, numThStyle, numTdStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 
-const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', color: SHEET.MUTED, borderBottom: `1px solid ${BORDER.normal}` }
-const td: React.CSSProperties = { padding: '8px 10px', fontSize: 13, color: SHEET.INK, borderBottom: `1px solid ${BORDER.normal}` }
+const qty = (v?: number | null) => (v == null ? '—' : v.toLocaleString('en-IN', { maximumFractionDigits: 3 }))
+const ADJ_STATUS_LABELS: Record<string, string> = { pending_approval: 'Pending Approval', approved: 'Approved', rejected: 'Rejected', cancelled: 'Withdrawn' }
 
 const STATUS_LABELS: Record<string, string> = { counting: 'Counting — stock frozen', submitted: 'Awaiting Store Manager approval', posted: 'Posted', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { counting: '#d97706', submitted: '#2563eb', posted: '#16a34a', cancelled: '#94a3b8' }
@@ -117,52 +118,64 @@ export default function PhysicalCountDetailPage() {
         onConfirm={(v) => { setCancelling(false); run(() => physicalCountsApi.cancel(count.id, v), 'Count cancelled.') }} onCancel={() => setCancelling(false)} />
 
       <div style={{ padding: '20px 24px' }}>
-        <SheetSection icon="building" title="Count Details" extra={<span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[count.status]}1a`, color: STATUS_HEX[count.status] }}>{STATUS_LABELS[count.status]}</span>}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, fontSize: 13, color: SHEET.BODY }}>
-            <div><span style={{ color: SHEET.MUTED }}>Store: </span><strong>{count.location_name}</strong></div>
-            <div><span style={{ color: SHEET.MUTED }}>Date: </span><strong>{formatDate(count.count_date)}</strong></div>
-            <div><span style={{ color: SHEET.MUTED }}>Scope: </span><strong>{count.scope || '—'}</strong></div>
-            <div><span style={{ color: SHEET.MUTED }}>Counted: </span><strong>{count.lines_counted}/{count.lines_total}</strong></div>
-            {count.lines_with_difference != null && <div><span style={{ color: SHEET.MUTED }}>With difference: </span><strong>{count.lines_with_difference}</strong></div>}
+        {/* One record view: what is being counted, its state, then every fact as label–value rows. */}
+        <DetailCard>
+          <DetailSummary
+            title={count.count_number}
+            text={`Physical count of ${count.scope || 'all stocked items'} at ${count.location_name} — ${count.lines_counted.toLocaleString('en-IN')} of ${count.lines_total.toLocaleString('en-IN')} lines counted${count.book_hidden ? ' (blind count)' : ''}.`}
+            meta={<>
+              <Pill label={STATUS_LABELS[count.status] || count.status} hex={STATUS_HEX[count.status] || '#94a3b8'} />
+              <span>· {formatDate(count.count_date)}</span>
+            </>}
+          />
+          <DetailGroup last={!counting}>
+            <DetailRow label="Store">{count.location_name}</DetailRow>
+            <DetailRow label="Scope">{count.scope || 'All stocked items'}</DetailRow>
+            <DetailRow label="Lines counted">{`${count.lines_counted.toLocaleString('en-IN')} of ${count.lines_total.toLocaleString('en-IN')}`}</DetailRow>
+            {count.lines_with_difference != null && <DetailRow label="Lines with difference">{count.lines_with_difference.toLocaleString('en-IN')}</DetailRow>}
             {count.adjustment_number && (
-              <div><span style={{ color: SHEET.MUTED }}>Adjustment: </span>
-                <a href={recordPath('/dashboard/store/adjustments', { id: count.adjustment_id })} style={{ fontWeight: 700, color: '#2563eb' }}>{count.adjustment_number}</a> ({count.adjustment_status})
-              </div>
+              <DetailRow label="Stock Adjustment">
+                <a href={recordPath('/dashboard/store/adjustments', { id: count.adjustment_id })} style={{ fontWeight: 700, color: '#2563eb' }}>{count.adjustment_number}</a>
+                {count.adjustment_status ? ` (${ADJ_STATUS_LABELS[count.adjustment_status] || count.adjustment_status})` : ''}
+              </DetailRow>
             )}
-            {count.cancel_reason && <div><span style={{ color: SHEET.MUTED }}>Cancelled: </span>{count.cancel_reason}</div>}
-          </div>
+            {count.cancel_reason && <DetailRow label="Cancelled because">{count.cancel_reason}</DetailRow>}
+          </DetailGroup>
           {counting && (
             <p style={{ fontSize: 12.5, color: '#b45309', margin: '12px 0 0' }}>
               These items can&apos;t be received, issued or transferred at {count.location_name} until this count is submitted or cancelled.
               {count.book_hidden ? ' Blind count — book stock is hidden; count what is physically there, and enter 0 for anything not found.' : ''}
             </p>
           )}
-        </SheetSection>
+        </DetailCard>
 
         <div data-tour="store-count-lines">
           <SheetSection icon="box" title="Count Lines">
-            <div style={{ overflow: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 12 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
-                <thead><tr style={{ background: SHEET.SOFT }}>
-                  {['Item', 'UOM', 'Book', 'Counted', 'First count', 'Difference', 'Remarks'].map((h) => <th key={h} style={th}>{h}</th>)}
+            <TableScroll maxHeight="none" minWidth={820}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr>
+                  <th style={thStyle}>Item <RowCount count={count.items.length} /></th>
+                  <th style={thStyle}>UOM</th>
+                  {['Book', 'Counted', 'First count', 'Difference'].map((h) => <th key={h} style={numThStyle}>{h}</th>)}
+                  <th style={thStyle}>Remarks</th>
                 </tr></thead>
                 <tbody>
                   {count.items.map((l) => (
                     <tr key={l.id}>
-                      <td style={td}><strong>{l.item_code}</strong> — {l.item_name}</td>
-                      <td style={td}>{l.uom || '—'}</td>
-                      <td style={td}>{l.book_quantity ?? <span style={{ color: SHEET.MUTED }}>hidden</span>}</td>
-                      <td style={td}>
+                      <td style={tdStyle}><strong>{l.item_code}</strong> — {l.item_name}</td>
+                      <td style={tdStyle}>{l.uom || '—'}</td>
+                      <td style={numTdStyle}>{l.book_quantity != null ? qty(l.book_quantity) : <span style={{ color: SHEET.MUTED }}>hidden</span>}</td>
+                      <td style={numTdStyle}>
                         {editable ? (
                           <input type="number" min={0} step="any" value={entries[l.id]?.qty ?? ''} style={{ ...sheetInput, width: 100, padding: '7px 10px' }}
                             onChange={(e) => setEntries((s) => ({ ...s, [l.id]: { ...s[l.id], qty: e.target.value } }))} />
-                        ) : (l.counted_quantity ?? '—')}
+                        ) : qty(l.counted_quantity)}
                       </td>
-                      <td style={td}>{l.count_rounds > 1 ? l.first_counted_quantity : '—'}</td>
-                      <td style={{ ...td, fontWeight: 700, color: l.difference ? (l.difference > 0 ? SUCCESS.text : DANGER.text) : SHEET.MUTED }}>
-                        {l.difference == null ? '—' : l.difference > 0 ? `+${l.difference}` : l.difference}
+                      <td style={numTdStyle}>{l.count_rounds > 1 ? qty(l.first_counted_quantity) : '—'}</td>
+                      <td style={{ ...numTdStyle, fontWeight: 700, color: l.difference ? (l.difference > 0 ? SUCCESS.text : DANGER.text) : SHEET.MUTED }}>
+                        {l.difference == null ? '—' : l.difference > 0 ? `+${qty(l.difference)}` : qty(l.difference)}
                       </td>
-                      <td style={td}>
+                      <td style={tdStyle}>
                         {editable ? (
                           <input value={entries[l.id]?.remarks ?? ''} style={{ ...sheetInput, width: 180, padding: '7px 10px' }} placeholder="e.g. 2 pcs damaged"
                             onChange={(e) => setEntries((s) => ({ ...s, [l.id]: { ...s[l.id], remarks: e.target.value } }))} />
@@ -172,7 +185,7 @@ export default function PhysicalCountDetailPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableScroll>
             {editable && (
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 14 }}>
                 <div style={{ flex: '0 1 340px', minWidth: 240 }}>

@@ -8,6 +8,7 @@ import { formatDate, formatDateTime } from '@/lib/format'
 import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import { RowCount, DetailGroup, DetailRow } from '@/components/shared/ui'
 
 /**
  * One manual stock entry (SE-…): its lines and supporting documents.
@@ -61,12 +62,12 @@ export default function StockEntryDialog({ entryNumber, entry: initial, canAttac
     }
   }
 
-  const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6' }
+  const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', whiteSpace: 'nowrap' }
   const td: React.CSSProperties = { padding: '8px 10px', fontSize: 12.5, color: TEXT.secondary, borderTop: '1px solid rgba(0,0,0,0.05)' }
 
   return (
     <FormSheet width={760} icon="doc" title={entry ? entry.entry_number : entryNumber || 'Stock Entry'}
-      subtitle={entry ? `${entry.entry_type_label || entry.entry_type} · ${entry.location_name} · ${formatDate(entry.entry_date)} · by ${entry.created_by_name || '—'}` : 'Loading…'}
+      subtitle={entry ? `${entry.entry_type_label || entry.entry_type.replace(/_/g, ' ')} · ${entry.location_name || '—'} · ${formatDate(entry.entry_date)} · by ${entry.created_by_name || '—'}` : 'Loading…'}
       onClose={onClose} busy={busy}
       footer={<>
         {entry && canAttach && (
@@ -86,25 +87,27 @@ export default function StockEntryDialog({ entryNumber, entry: initial, canAttac
         ) : (
           <>
             {(entry.vendor_name || entry.invoice_number || entry.remarks) && (
-              <p style={{ fontSize: 12.5, color: SHEET.BODY, margin: '0 0 16px' }}>
-                {entry.vendor_name && <>Vendor: <b>{entry.vendor_name}</b> · </>}
-                {entry.invoice_number && <>Invoice / challan: <b>{entry.invoice_number}</b> · </>}
-                {entry.remarks}
-              </p>
+              <div style={{ marginBottom: 12 }}>
+                <DetailGroup last>
+                  {entry.vendor_name && <DetailRow label="Vendor">{entry.vendor_name}</DetailRow>}
+                  {entry.invoice_number && <DetailRow label="Invoice / challan">{entry.invoice_number}</DetailRow>}
+                  {entry.remarks && <DetailRow label="Remarks">{entry.remarks}</DetailRow>}
+                </DetailGroup>
+              </div>
             )}
 
             <SheetSection icon="box" title="Lines">
               <div style={{ overflow: 'auto', borderRadius: 10, border: `1px solid ${SHEET.LINE}` }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
-                  <thead><tr>{['Item', 'Qty', 'Batch', ...(seeValues ? ['Rate', 'Value'] : [])].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Item', 'Qty', 'Batch', ...(seeValues ? ['Rate', 'Value'] : [])].map((h, hi) => <th key={h} style={hi === 0 || h === 'Batch' ? th : { ...th, textAlign: 'right' }}>{h}{hi === 0 && <RowCount count={entry.lines.length} />}</th>)}</tr></thead>
                   <tbody>
                     {entry.lines.map((l) => (
                       <tr key={l.id}>
                         <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{l.item_code} — {l.item_name}</td>
-                        <td style={td}>{l.quantity} {l.uom}</td>
+                        <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{Number(l.quantity).toLocaleString('en-IN', { maximumFractionDigits: 3 })} {l.uom || ''}</td>
                         <td style={td}>{l.batch_number || '—'}</td>
-                        {seeValues && <td style={td}>{l.unit_cost != null ? `₹ ${l.unit_cost.toLocaleString('en-IN')}` : '—'}</td>}
-                        {seeValues && <td style={td}>{l.value != null ? `₹ ${l.value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : '—'}</td>}
+                        {seeValues && <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{l.unit_cost != null ? `₹ ${l.unit_cost.toLocaleString('en-IN')}` : '—'}</td>}
+                        {seeValues && <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{l.value != null ? `₹ ${l.value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : '—'}</td>}
                       </tr>
                     ))}
                   </tbody>

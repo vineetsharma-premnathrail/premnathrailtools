@@ -10,7 +10,8 @@ import { DirectoryUser, RndExperiment, RndExperimentParameter, RndExperimentResu
 import { TEXT, DANGER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow, TableScroll, thStyle as uiTh, tdStyle as uiTd, numThStyle as uiNumTh, numTdStyle as uiNumTd } from '@/components/shared/ui'
+import { formatDate } from '@/lib/format'
 import RndNav from '@/components/rnd/RndNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -25,6 +26,7 @@ const STATUS_LABELS: Record<string, string> = { planned: 'Planned', in_progress:
 const STATUS_HEX: Record<string, string> = { planned: '#78716c', in_progress: '#2563EB', completed: '#16A34A', cancelled: '#DC2626' }
 const RESULT_LABELS: Record<string, string> = { pass: 'Pass', fail: 'Fail', inconclusive: 'Inconclusive' }
 const RESULT_HEX: Record<string, string> = { pass: '#16A34A', fail: '#DC2626', inconclusive: '#F59E0B' }
+const TYPE_LABELS: Record<string, string> = { research: 'Research', lab_test: 'Lab Test', field_trial: 'Field Trial', simulation: 'Simulation', validation: 'Validation' }
 
 type ParamRow = { parameter: string; specification: string; measured: string; unit: string; result: '' | 'pass' | 'fail' }
 const emptyRow = (): ParamRow => ({ parameter: '', specification: '', measured: '', unit: '', result: '' })
@@ -41,7 +43,6 @@ const inputStyle = sheetInput
 const cellInputStyle: React.CSSProperties = { ...inputStyle, padding: '8px 10px', fontSize: 13 }
 const labelStyle = sheetLabel
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 8px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted }
-const pillStyle = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
 
 export default function RndExperimentDetailPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('rnd')
@@ -77,6 +78,9 @@ export default function RndExperimentDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  // Read-only view by default; Edit opens the full form (same as R&D › Project).
+  const [editing, setEditing] = useState(false)
+  const [saved, setSaved] = useState(false)
 
   const applyExperiment = (x: RndExperiment) => {
     setExperiment(x)
@@ -163,6 +167,8 @@ export default function RndExperimentDetailPage() {
         parameters,
       })
       applyExperiment(updated)
+      setEditing(false)
+      setSaved(true)
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save experiment.'))
     } finally {
@@ -213,18 +219,171 @@ export default function RndExperimentDetailPage() {
   }
 
   const canEdit = can('rnd', 'experiments', 'edit')
+  const canDeleteExp = canDelete('rnd', 'experiments', (experiment as { created_by_id?: number | null }).created_by_id ?? null)
+  const startEdit = () => { setError(''); setSaved(false); applyExperiment(experiment); setEditing(true) }
+  const discardEdit = () => { setError(''); applyExperiment(experiment); setEditing(false) }
 
+  if (!editing || !canEdit) {
+    const testParams = experiment.parameters || []
+    const pPass = testParams.filter((p) => p.result === 'pass').length
+    const pFail = testParams.filter((p) => p.result === 'fail').length
+    const statusHex = STATUS_HEX[experiment.status] || '#78716c'
+    const projectLabel = `${experiment.project_number || `#${experiment.project_id}`}${experiment.project_title ? ` — ${experiment.project_title}` : ''}`
+    return (
+      <div style={{ width: '100%' }}>
+        <RndNav />
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
+              R&amp;D Module · Experiment
+            </p>
+            <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>{experiment.experiment_number}</h1>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {canEdit && <button data-tour="rnd-ed-edit-btn" type="button" onClick={startEdit} style={secondaryBtnStyle}>Edit</button>}
+            {canDeleteExp && (
+              <button data-tour="rnd-ed-delete-btn" type="button" onClick={() => setConfirmOpen(true)} disabled={deleting} style={{ ...dangerBtnStyle, opacity: deleting ? 0.6 : 1 }}>
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            )}
+            <button data-tour="rnd-ed-back-btn" type="button" onClick={() => router.push('/dashboard/rnd/experiments')} style={secondaryBtnStyle}>← Back</button>
+          </div>
+        </div>
+
+        {error && (
+          <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+            {Array.isArray(error) ? error.join(' ') : error}
+          </div>
+        )}
+        {saved && (
+          <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', color: '#15803d', fontSize: 13 }}>
+            Changes saved.
+          </div>
+        )}
+
+        {/* Summary on top (what was tested and the verdict), then every detail as one label–value list. */}
+        <DetailCard tour="rnd-ed-overview">
+          <DetailSummary
+            title={experiment.title}
+            text={experiment.objective || undefined}
+            meta={<span data-tour="rnd-ed-badges" style={{ display: 'inline-flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Pill label={STATUS_LABELS[experiment.status] || experiment.status} hex={statusHex} />
+              {experiment.result && <Pill label={`Result: ${RESULT_LABELS[experiment.result] || experiment.result}`} hex={RESULT_HEX[experiment.result] || '#78716c'} />}
+              <span>·</span>
+              <span>{TYPE_LABELS[experiment.experiment_type] || experiment.experiment_type}</span>
+              <span>·</span>
+              <span>{experiment.experiment_date ? formatDate(experiment.experiment_date) : 'Date not set'}</span>
+              <span>·</span>
+              <span>By <strong style={{ color: SHEET.INK }}>{experiment.conducted_by_name || '—'}</strong></span>
+            </span>}
+          />
+
+          <div data-tour="rnd-ed-details">
+            <DetailGroup>
+              <DetailRow label="R&D Project">
+                <Link href={recordPath('/dashboard/rnd/projects', experiment, 'project_id')} style={{ color: '#2563EB', fontWeight: 600, textDecoration: 'none' }}>{projectLabel}</Link>
+              </DetailRow>
+              <DetailRow label="Prototype">
+                {experiment.prototype_id ? (
+                  <Link href={recordPath('/dashboard/rnd/prototypes', experiment, 'prototype_id')} style={{ color: '#2563EB', fontWeight: 600, textDecoration: 'none' }}>{experiment.prototype_number || `#${experiment.prototype_id}`}</Link>
+                ) : null}
+              </DetailRow>
+              <DetailRow label="Type">{TYPE_LABELS[experiment.experiment_type] || experiment.experiment_type}</DetailRow>
+              <div data-tour="rnd-ed-status">
+                <DetailRow label="Status"><Pill label={STATUS_LABELS[experiment.status] || experiment.status} hex={statusHex} /></DetailRow>
+              </div>
+              <div data-tour="rnd-ed-result">
+                <DetailRow label="Result">
+                  {experiment.result ? <Pill label={RESULT_LABELS[experiment.result] || experiment.result} hex={RESULT_HEX[experiment.result] || '#78716c'} /> : null}
+                </DetailRow>
+              </div>
+              <DetailRow label="Experiment Date">{experiment.experiment_date ? formatDate(experiment.experiment_date) : null}</DetailRow>
+              <DetailRow label="Conducted By">{experiment.conducted_by_name}</DetailRow>
+            </DetailGroup>
+          </div>
+
+          <DetailGroup>
+            <DetailRow label="Method / Procedure">{experiment.method}</DetailRow>
+          </DetailGroup>
+
+          <div data-tour="rnd-ed-params">
+            <DetailGroup title={`Test Parameters · ${testParams.length} measured · ${pPass} pass · ${pFail} fail`}>
+              {testParams.length === 0 ? (
+                <p style={{ fontSize: 13, color: SHEET.MUTED, margin: '6px 0' }}>
+                  No test parameters recorded{canEdit ? ' — use Edit to add each measured value against its specification.' : '.'}
+                </p>
+              ) : (
+                <TableScroll maxHeight="none" style={{ margin: '6px 0' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+                    <thead>
+                      <tr>
+                        <th style={uiTh}>Parameter <RowCount count={testParams.length} /></th>
+                        <th style={uiTh}>Specification</th>
+                        <th style={uiNumTh}>Measured</th>
+                        <th style={uiTh}>Unit</th>
+                        <th style={uiTh}>Result</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {testParams.map((p, i) => (
+                        <tr key={i}>
+                          <td style={{ ...uiTd, fontWeight: 600, color: TEXT.heading }}>{p.parameter}</td>
+                          <td style={uiTd}>{p.specification || '—'}</td>
+                          <td style={uiNumTd}>{p.measured || '—'}</td>
+                          <td style={uiTd}>{p.unit || '—'}</td>
+                          <td style={uiTd}>{p.result ? <Pill label={RESULT_LABELS[p.result] || p.result} hex={RESULT_HEX[p.result] || '#78716c'} /> : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </TableScroll>
+              )}
+            </DetailGroup>
+          </div>
+
+          <div data-tour="rnd-ed-conclusion">
+            <DetailGroup last>
+              <DetailRow label="Observations">{experiment.observations}</DetailRow>
+              <DetailRow label="Conclusion">{experiment.conclusion}</DetailRow>
+            </DetailGroup>
+          </div>
+
+          {experiment.created_at && <p style={{ fontSize: 12, color: SHEET.MUTED, margin: '10px 0 0' }}>Created {formatDate(experiment.created_at)}</p>}
+        </DetailCard>
+
+        <RndDocumentsPanel
+          key={experiment.project_id}
+          projectId={experiment.project_id}
+          experimentId={experiment.id}
+          title="Test Reports & Documents"
+          currentUserId={user?.id}
+          isAdmin={user?.role === 'admin'}
+        />
+
+        <ConfirmDialog
+          open={confirmOpen}
+          title="Delete this experiment?"
+          message={`This deletes "${experiment.experiment_number}" and its test parameters, and removes it from the project's experiment list.`}
+          confirmLabel="Delete"
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmOpen(false)}
+        />
+      </div>
+    )
+  }
+
+  // Edit: the full experiment form — Save returns to the view above.
   return (
     <div style={{ width: '100%' }}>
       <FormPage
         tour="rnd-ed-form"
         nav={<RndNav />}
         icon="flag"
-        title={experiment.experiment_number}
+        title={`Edit ${experiment.experiment_number}`}
         subtitle={experiment.title}
-        onBack={() => router.push('/dashboard/rnd/experiments')} backTour="rnd-ed-back-btn"
+        onBack={discardEdit} backTour="rnd-ed-back-btn"
         footer={<>
-          {canDelete('rnd', 'experiments', (experiment as { created_by_id?: number | null }).created_by_id ?? null) && (
+          {canDeleteExp && (
             <button
               data-tour="rnd-ed-delete-btn"
               onClick={() => setConfirmOpen(true)}
@@ -235,7 +394,7 @@ export default function RndExperimentDetailPage() {
               <SheetIcon name="trash" size={15} />{deleting ? 'Deleting…' : 'Delete Experiment'}
             </button>
           )}
-          <button type="button" onClick={() => router.push('/dashboard/rnd/experiments')} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+          <button type="button" onClick={discardEdit} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Discard</button>
           {canEdit && (
             <button data-tour="rnd-ed-save-btn" onClick={handleSave} disabled={saving} type="button" style={sheetBtn('primary', SHEET.BLUE, saving)}>
               <SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save Changes'}
@@ -245,10 +404,8 @@ export default function RndExperimentDetailPage() {
       >
         <div style={{ padding: '16px 24px 0' }}>
           <div data-tour="rnd-ed-badges" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span style={pillStyle(STATUS_HEX[experiment.status] || '#78716c')}>{STATUS_LABELS[experiment.status] || experiment.status}</span>
-            {experiment.result && (
-              <span style={pillStyle(RESULT_HEX[experiment.result] || '#78716c')}>{RESULT_LABELS[experiment.result] || experiment.result}</span>
-            )}
+            <Pill label={STATUS_LABELS[experiment.status] || experiment.status} hex={STATUS_HEX[experiment.status] || '#78716c'} />
+            {experiment.result && <Pill label={RESULT_LABELS[experiment.result] || experiment.result} hex={RESULT_HEX[experiment.result] || '#78716c'} />}
             <span style={{ fontSize: 13, color: SHEET.MUTED }}>
               Project:{' '}
               <Link href={recordPath('/dashboard/rnd/projects', experiment, 'project_id')} style={{ color: '#FF6A2A', fontWeight: 600, textDecoration: 'none' }}>
@@ -341,7 +498,7 @@ export default function RndExperimentDetailPage() {
                   </div>
                 </div>
                 <p style={sheetHint}>
-                  Conducted by {experiment.conducted_by_name || '—'}{experiment.created_at ? ` · created ${experiment.created_at.slice(0, 10)}` : ''}
+                  Conducted by {experiment.conducted_by_name || '—'}{experiment.created_at ? ` · created ${formatDate(experiment.created_at)}` : ''}
                 </p>
               </SheetSection>
             </div>
@@ -368,7 +525,7 @@ export default function RndExperimentDetailPage() {
               <table data-tour="rnd-ed-params" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                 <thead>
                   <tr>
-                    <th style={thStyle}>Parameter *</th>
+                    <th style={thStyle}>Parameter * <RowCount count={rows.length} /></th>
                     <th style={thStyle}>Specification</th>
                     <th style={thStyle}>Measured</th>
                     <th style={{ ...thStyle, width: 110 }}>Unit</th>
@@ -434,17 +591,6 @@ export default function RndExperimentDetailPage() {
           </SheetSection>
         </div>
       </FormPage>
-
-      <div style={{ marginTop: 20 }}>
-        <RndDocumentsPanel
-          key={experiment.project_id}
-          projectId={experiment.project_id}
-          experimentId={experiment.id}
-          title="Test Reports & Documents"
-          currentUserId={user?.id}
-          isAdmin={user?.role === 'admin'}
-        />
-      </div>
 
       <ConfirmDialog
         open={confirmOpen}

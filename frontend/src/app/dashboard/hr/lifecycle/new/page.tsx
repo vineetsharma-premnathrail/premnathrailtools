@@ -107,6 +107,7 @@ function NewEventInner() {
                 {TYPES.map((t) => {
                   const active = t.value === type
                   return (
+                    // ui-audit-ignore-next-line custom-button — selectable event-type tile (title + hint card), not a pill
                     <button
                       key={t.value}
                       type="button"

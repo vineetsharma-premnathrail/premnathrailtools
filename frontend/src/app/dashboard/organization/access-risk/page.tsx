@@ -11,6 +11,7 @@ import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
 import { BORDER, GLASS, SHADOWS, TEXT } from '@/lib/theme'
 import { usePermissionWords } from '@/lib/permissionWords'
+import { chipBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 
 // Organization › Access Risk (SAP GRC Access Risk Analysis). The ruleset is
 // coded (backend core/sod_rules.py); this page reports who / which role
@@ -27,7 +28,7 @@ const RISK_HEX: Record<string, string> = { high: '#DC2626', medium: '#F59E0B' }
 const TABS = [{ key: 'users', label: 'Users in conflict' }, { key: 'roles', label: 'Roles in conflict' }, { key: 'mitigations', label: 'Mitigations' }, { key: 'rules', label: 'Ruleset' }] as const
 
 function Risk({ risk }: { risk: string }) {
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${RISK_HEX[risk]}1a`, color: RISK_HEX[risk], whiteSpace: 'nowrap' }}>{RISK_LABELS[risk] || risk}</span>
+  return <Pill label={RISK_LABELS[risk] || risk} hex={RISK_HEX[risk] || '#78716c'} />
 }
 
 export default function AccessRiskPage() {
@@ -83,14 +84,14 @@ export default function AccessRiskPage() {
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
         {TABS.map((t) => (
-          <button key={t.key} type="button" onClick={() => setTab(t.key)} style={{ padding: '7px 14px', borderRadius: 9999, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: `1px solid ${tab === t.key ? '#FF7A45' : BORDER.normal}`, background: tab === t.key ? 'rgba(255,122,69,0.1)' : '#fff', color: tab === t.key ? '#c2410c' : TEXT.secondary }}>{t.label}</button>
+          <button key={t.key} type="button" onClick={() => setTab(t.key)} style={chipBtnStyle(tab === t.key)}>{t.label}</button>
         ))}
       </div>
 
       <div style={{ ...cardStyle, overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         {tab === 'users' && (
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-            <thead><tr><th style={th}>User</th><th style={th}>Rule</th><th style={th}>Risk</th><th style={th}>Holds</th><th style={th}>Mitigation</th></tr></thead>
+            <thead><tr><th style={th}>User <RowCount count={(report?.users ?? []).reduce((n, u) => n + u.conflicts.length, 0)} /></th><th style={th}>Rule</th><th style={th}>Risk</th><th style={th}>Holds</th><th style={th}>Mitigation</th></tr></thead>
             <tbody>
               {report && report.users.length === 0 && <tr><td style={td} colSpan={5}>No user holds conflicting duties.</td></tr>}
               {report?.users.flatMap((u) => u.conflicts.map((c, i) => (
@@ -107,7 +108,7 @@ export default function AccessRiskPage() {
         )}
         {tab === 'roles' && (
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-            <thead><tr><th style={th}>Role</th><th style={th}>Rule</th><th style={th}>Risk</th><th style={th}>Grants both</th></tr></thead>
+            <thead><tr><th style={th}>Role <RowCount count={(report?.roles ?? []).reduce((n, r) => n + r.conflicts.length, 0)} /></th><th style={th}>Rule</th><th style={th}>Risk</th><th style={th}>Grants both</th></tr></thead>
             <tbody>
               {report && report.roles.length === 0 && <tr><td style={td} colSpan={4}>No role on its own combines conflicting duties.</td></tr>}
               {report?.roles.flatMap((r) => r.conflicts.map((c) => (
@@ -122,7 +123,7 @@ export default function AccessRiskPage() {
         )}
         {tab === 'mitigations' && (
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
-            <thead><tr><th style={th}>User</th><th style={th}>Rule</th><th style={th}>Mitigating control</th><th style={th}>Valid to</th><th style={th}>Accepted by</th><th style={th}></th></tr></thead>
+            <thead><tr><th style={th}>User <RowCount count={mitigations.length} /></th><th style={th}>Rule</th><th style={th}>Mitigating control</th><th style={th}>Valid to</th><th style={th}>Accepted by</th><th style={th}></th></tr></thead>
             <tbody>
               {mitigations.length === 0 && <tr><td style={td} colSpan={6}>No SoD risk has been accepted yet.</td></tr>}
               {mitigations.map((m) => (
@@ -138,7 +139,7 @@ export default function AccessRiskPage() {
         )}
         {tab === 'rules' && (
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-            <thead><tr><th style={th}>Rule</th><th style={th}>Risk</th><th style={th}>Duty A</th><th style={th}>Duty B</th></tr></thead>
+            <thead><tr><th style={th}>Rule <RowCount count={rules.length} /></th><th style={th}>Risk</th><th style={th}>Duty A</th><th style={th}>Duty B</th></tr></thead>
             <tbody>
               {rules.map((r) => (
                 <tr key={r.rule_id}>

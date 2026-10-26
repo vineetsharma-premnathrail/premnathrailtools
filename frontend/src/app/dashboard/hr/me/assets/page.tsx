@@ -10,6 +10,7 @@ import MyHrTabs from '@/components/hr/MyHrTabs'
 import { ASSET_CATEGORY_LABELS, ASSET_CONDITION_LABELS } from '@/components/hr/admin/AssetDialogs'
 import { PageHeader, ErrorBanner, EmptyRow, Pill, sectionStyle, tableWrapStyle, thStyle, tdStyle, fmtDate, todayIso } from '@/components/hr/admin/adminUi'
 import { TEXT } from '@/lib/theme'
+import { RowCount } from '@/components/shared/ui'
 
 export default function MyAssetsPage() {
   // Self-service: any logged-in user.
@@ -78,9 +79,9 @@ export default function MyAssetsPage() {
           <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '8px 0 10px' }}>Previously held</p>
           <div data-tour="hr-myassets-history" style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
-              <thead><tr>{['Asset', 'Category', 'Issued', 'Returned', 'Condition on return'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Asset', 'Category', 'Issued', 'Returned', 'Condition on return'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={history.length} />}</th>)}</tr></thead>
               <tbody>
-                {history.length === 0 ? <EmptyRow colSpan={5} text="Nothing yet." /> : history.map((r) => (
+                {history.length === 0 ? <EmptyRow colSpan={5} text="No assets returned yet." /> : history.map((r) => (
                   <tr key={r.id}>
                     <td style={tdStyle}><b>{r.asset_code}</b> — {r.asset_name}</td>
                     <td style={tdStyle}>{r.asset_category ? ASSET_CATEGORY_LABELS[r.asset_category] || r.asset_category : '—'}</td>

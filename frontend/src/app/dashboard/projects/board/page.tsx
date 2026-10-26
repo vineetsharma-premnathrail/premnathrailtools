@@ -11,6 +11,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import ProjectsNav from '@/components/projects/ProjectsNav'
 import { ErrorBanner, MILESTONE_HEX, MILESTONE_LABELS, PROJECT_HEX, PROJECT_LABELS, Pill, sectionStyle, tdStyle, thStyle } from '@/components/projects/work/pmUi'
 import { recordPath } from '@/lib/recordRef'
+import { RowCount } from '@/components/shared/ui'
 
 // Projects × departments: each cell shows that department's milestones on the
 // project, coloured by status, so management sees where every order stands.
@@ -40,7 +41,7 @@ export default function DepartmentBoardPage() {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ borderCollapse: 'collapse', minWidth: 260 + board.departments.length * 170 }}>
               <thead><tr>
-                <th style={{ ...thStyle, left: 0, zIndex: 2, minWidth: 220 }}>Project</th>
+                <th style={{ ...thStyle, left: 0, zIndex: 2, minWidth: 220 }}>Project<RowCount count={board.rows.length} /></th>
                 {board.departments.map((d) => <th key={d.id} style={{ ...thStyle, minWidth: 160 }}>{d.name}</th>)}
               </tr></thead>
               <tbody>

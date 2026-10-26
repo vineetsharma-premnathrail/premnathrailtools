@@ -8,7 +8,8 @@ import { useCan } from '@/lib/permissions'
 import { hydraulicApi } from '@/lib/api'
 import { recordPath } from '@/lib/recordRef'
 import { HydComponent } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import { COMPONENT_CATEGORY_LABELS, MEDIA_TYPE_LABELS, SYSTEM_TYPE_HEX, useHydCosts } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
@@ -77,11 +78,7 @@ export default function HydComponentsPage() {
           <button
             data-tour="hyd-comp-new-btn"
             onClick={() => router.push('/dashboard/hydraulic/components/new')}
-            style={{
-              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-            }}
+            style={primaryBtnStyle}
           >
             + New Component
           </button>
@@ -118,9 +115,9 @@ export default function HydComponentsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr>
-              {['Code', 'Name', 'Category', 'Medium', 'Make / Model', 'Rating', ...(seeCosts ? ['Unit Cost'] : []), 'Used In', 'Status', ''].map((h) => (
+              {['Code', 'Name', 'Category', 'Medium', 'Make / Model', 'Rating', ...(seeCosts ? ['Unit Cost'] : []), 'Used In', 'Status', ''].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={components.length} />}
                 </th>
               ))}
             </tr>
@@ -137,18 +134,14 @@ export default function HydComponentsPage() {
                   <td style={cellStyle}>{c.name}</td>
                   <td style={cellStyle}>{COMPONENT_CATEGORY_LABELS[c.category] || c.category}</td>
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${SYSTEM_TYPE_HEX[c.system_type]}1a`, color: SYSTEM_TYPE_HEX[c.system_type], whiteSpace: 'nowrap' }}>
-                      {MEDIA_TYPE_LABELS[c.system_type] || c.system_type}
-                    </span>
+                    <Pill label={MEDIA_TYPE_LABELS[c.system_type] || c.system_type} hex={SYSTEM_TYPE_HEX[c.system_type] || '#78716c'} />
                   </td>
                   <td style={cellStyle}>{[c.manufacturer, c.model_number].filter(Boolean).join(' ') || '—'}</td>
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{ratingSummary(c)}</td>
                   {seeCosts && <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{c.unit_cost == null ? '—' : `₹${c.unit_cost.toLocaleString('en-IN')}`}</td>}
                   <td style={cellStyle}>{c.bom_usage_count ? `${c.bom_usage_count} BOM${c.bom_usage_count > 1 ? 's' : ''}` : '—'}</td>
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[c.status]}1a`, color: STATUS_HEX[c.status], whiteSpace: 'nowrap' }}>
-                      {STATUS_LABELS[c.status] || c.status}
-                    </span>
+                    <Pill label={STATUS_LABELS[c.status] || c.status} hex={STATUS_HEX[c.status] || '#78716c'} />
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
                     <span onClick={() => router.push(recordPath('/dashboard/hydraulic/components', c))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>

@@ -5,7 +5,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi, storeMaterialDocsApi } from '@/lib/api'
 import { StoreItem, StoreLocation, StoreStockTransaction } from '@/types'
 import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
-import { inputStyle, secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, secondaryBtnStyle, smallSecondaryBtnStyle, chipBtnStyle, RowCount, Pill, pillStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { formatDate } from '@/lib/format'
@@ -166,7 +166,8 @@ export default function StoreMovementsPage() {
 
   if (isLoading || !isAuthorized) return null
 
-  const th = { position: 'sticky' as const, top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left' as const, padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase' as const, color: TEXT.muted }
+  const th = { position: 'sticky' as const, top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left' as const, padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase' as const, color: TEXT.muted, whiteSpace: 'nowrap' as const }
+  const NUM_COLS = new Set(['Quantity', 'Value'])
   const td = { padding: '12px 16px', fontSize: 13, color: TEXT.secondary }
 
   return (
@@ -191,12 +192,7 @@ export default function StoreMovementsPage() {
             <button
               key={x.key}
               onClick={() => setTab(x.key)}
-              style={{
-                padding: '7px 14px', borderRadius: 9999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-                border: `1px solid ${active ? BRAND.primary : 'rgba(0,0,0,0.1)'}`,
-                background: active ? `${BRAND.primary}1a` : '#fff',
-                color: active ? BRAND.primaryActive : TEXT.secondary,
-              }}
+              style={chipBtnStyle(active)}
             >
               {x.label} <span style={{ opacity: 0.7, marginLeft: 4 }}>{loading ? '' : count}</span>
             </button>
@@ -238,7 +234,7 @@ export default function StoreMovementsPage() {
         )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, fontSize: 12.5, color: TEXT.muted }}>
-        <span>{total} movement(s){total > PAGE_SIZE ? ` — page ${page + 1} of ${pages}` : ''}</span>
+        <span>{total.toLocaleString('en-IN')} movement{total === 1 ? '' : 's'}{total > PAGE_SIZE ? ` — page ${page + 1} of ${pages}` : ''}</span>
         {total > PAGE_SIZE && (
           <>
             <button disabled={page === 0} onClick={() => setPage((p) => p - 1)} style={smallSecondaryBtnStyle}>‹ Prev</button>
@@ -251,36 +247,34 @@ export default function StoreMovementsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['Date', 'Item', 'Store', 'Bin', 'Type', 'Quantity', 'Value', 'Batch', 'Vendor', 'Invoice / Document', 'By'].map((h) => <th key={h} style={th}>{h}</th>)}
+              {['Date', 'Item', 'Store', 'Bin', 'Type', 'Quantity', 'Value', 'Batch', 'Vendor', 'Invoice / Document', 'By'].map((h, hi) => <th key={h} style={NUM_COLS.has(h) ? { ...th, textAlign: 'right' as const } : th}>{h}{hi === 0 && <RowCount count={search.trim() || filterCategory || tab !== 'all' ? rows.length : total} />}</th>)}
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={11} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={11} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters || tab !== 'all' ? 'No movements match the filters.' : 'No stock movements yet.'}</td></tr>
+              <tr><td colSpan={11} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters || tab !== 'all' ? 'No movements match these filters — clear a filter to see more.' : 'No stock movements yet — they appear here as GRNs, issues, transfers and adjustments are posted.'}</td></tr>
             )}
             {!loading && rows.map((t) => {
               const sign = INBOUND.has(t.transaction_type) ? '+' : OUTBOUND.has(t.transaction_type) ? '−' : ''
               return (
                 <tr key={t.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>{formatDate(t.transaction_date)}</td>
-                  <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{t.item_code} — {t.item_name}</td>
-                  <td style={td}>{t.location_name}</td>
+                  <td style={{ ...td, fontWeight: 600, color: TEXT.body, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${t.item_code || ''} — ${t.item_name || ''}`}>{t.item_code || '—'} — {t.item_name || '—'}</td>
+                  <td style={td}>{t.location_name || '—'}</td>
                   <td style={td}>{t.bin_code || '—'}</td>
                   <td style={{ padding: '12px 16px' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: sign === '+' ? '#15803d1a' : sign === '−' ? '#b91c1c1a' : 'rgba(100,116,139,0.12)', color: sign === '+' ? '#15803d' : sign === '−' ? '#b91c1c' : TEXT.secondary, whiteSpace: 'nowrap' }}>
-                      {t.entry_type_label || TXN_TYPE_LABELS[t.transaction_type] || t.transaction_type}
-                    </span>
+                    <Pill label={t.entry_type_label || TXN_TYPE_LABELS[t.transaction_type] || t.transaction_type.replace(/_/g, ' ')} hex={sign === '+' ? '#15803d' : sign === '−' ? '#b91c1c' : TEXT.secondary} />
                   </td>
-                  <td style={{ ...td, fontWeight: 600, whiteSpace: 'nowrap', color: sign === '+' ? '#15803d' : sign === '−' ? '#b91c1c' : TEXT.secondary }}>{sign}{t.quantity}</td>
-                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{t.value != null ? `₹${Number(t.value).toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : '—'}</td>
+                  <td style={{ ...td, fontWeight: 600, whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: sign === '+' ? '#15803d' : sign === '−' ? '#b91c1c' : TEXT.secondary }}>{sign}{Number(t.quantity).toLocaleString('en-IN', { maximumFractionDigits: 3 })}</td>
+                  <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{t.value != null ? `₹${Number(t.value).toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : '—'}</td>
                   <td style={td}>{t.batch_number || '—'}</td>
                   <td style={td}>{t.vendor_name || '—'}</td>
                   <td style={td}>
                     {t.reference_number ? (
                       <span style={{ whiteSpace: 'nowrap' }}>
                         {t.reference_type && REF_TYPE_LABELS[t.reference_type] && (
-                          <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 9999, background: 'rgba(59,130,246,0.1)', color: '#2563eb', marginRight: 6 }}>{REF_TYPE_LABELS[t.reference_type]}</span>
+                          <span style={{ ...pillStyle('#2563eb'), fontSize: 10.5, padding: '1px 7px', marginRight: 6 }}>{REF_TYPE_LABELS[t.reference_type]}</span>
                         )}
                         {t.reference_type === 'stock_entry' ? (
                           <span title="Open the entry and its documents" onClick={() => setOpenEntry(t.reference_number || null)}

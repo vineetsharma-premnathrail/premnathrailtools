@@ -81,14 +81,17 @@ export const SHADOWS = {
 } as const
 
 /** One size scale for every form control and button, app-wide. Heights come
- * from padding + lineHeight + 1px border (10 + 16 + 10 + 2 = 38), not a fixed
+ * from padding + lineHeight + 1px border (8 + 16 + 8 + 2 = 34), not a fixed
  * `height`, so a textarea using the same input style still grows. Every
  * module's inputStyle / button style spreads the shared ones built from this
  * (components/shared/ui.tsx), so an input, a dropdown, a date field and a
  * button in one row always line up. */
 export const CONTROL = {
-  height: 38,
-  heightSm: 30,
+  height: 34,
+  heightSm: 28,
+  /** Vertical padding that gives `height` (and `heightSm`) with the 16px line + border. */
+  padY: 8,
+  padYSm: 5,
   radius: 10,
   fontSize: 13,
   fontSizeSm: 12,

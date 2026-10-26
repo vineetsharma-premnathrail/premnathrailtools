@@ -163,7 +163,10 @@ async def create_tender(
             raise HTTPException(status_code=409, detail="A tender with this number already exists for this zone/division")
 
     universal_id = _generate_universal_id(db)
-    tender = Tender(**payload.model_dump(), universal_id=universal_id, created_by_id=user.id)
+    data = payload.model_dump()
+    # The BD owner is always the person who logs the tender — not picked on the form.
+    data["bd_owner"] = user.name or user.email
+    tender = Tender(**data, universal_id=universal_id, created_by_id=user.id)
     db.add(tender)
     db.flush()
 
@@ -233,6 +236,13 @@ async def update_tender(
         raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this tender.")
 
     updates = payload.model_dump(exclude_unset=True, exclude={"stage_reason"})
+    # BD owner = the creator, fixed for the tender's life. The form sends the
+    # current value back (fine); asking for a different owner is refused.
+    if updates.get("bd_owner") and updates["bd_owner"] != tender.bd_owner:
+        raise HTTPException(status_code=422, detail=(
+            f"The BD owner of tender {tender.universal_id} is the person who created it "
+            f"({tender.bd_owner or 'not recorded'}) and can't be changed."))
+    updates.pop("bd_owner", None)
     _check_choice(updates, tender, "current_stage", TND_STAGES, "tender stage")
     _check_choice(updates, tender, "status", TND_STATUSES, "tender status")
     drop_money_updates(user, updates, TENDER_MONEY_FIELDS)

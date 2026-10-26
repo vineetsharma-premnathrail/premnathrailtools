@@ -2,7 +2,7 @@
 
 import { HrAttendanceCounts, HrAttendanceDay } from '@/types'
 import { TEXT, BORDER, GLASS, SHADOWS } from '@/lib/theme'
-import { iconBtnStyle } from '@/components/shared/ui'
+import { iconBtnStyle, pillStyle } from '@/components/shared/ui'
 
 // Month grid of attendance statuses, shared by My Attendance, the HR month
 // view and the employee-detail Attendance tab. Days without a stored row show
@@ -24,13 +24,13 @@ export function AttendanceLegend({ counts }: { counts?: HrAttendanceCounts | nul
   return (
     <div data-tour="hr-att-legend" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
       {keys.map((k) => (
-        <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[k]}1a`, color: k === 'unmarked' ? TEXT.muted : STATUS_HEX[k] }}>
-          <span style={{ width: 8, height: 8, borderRadius: 9999, background: STATUS_HEX[k] }} />
+        <span key={k} style={{ ...pillStyle(k === 'unmarked' ? '#64748B' : STATUS_HEX[k]), gap: 6 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_HEX[k] }} />
           {STATUS_LABELS[k]}{counts ? ` · ${counts[k]}` : ''}
         </span>
       ))}
       {counts && counts.late_days > 0 && (
-        <span style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: '#DC26261a', color: '#DC2626' }}>
+        <span style={pillStyle('#DC2626')}>
           Late · {counts.late_days}
         </span>
       )}

@@ -32,7 +32,7 @@ export default function MyClaimDetailPage() {
       <MyHrTabs />
 
       <PageHeader
-        title={claim ? `${claim.claim_no} — ${claim.title}` : 'Expense claim'}
+        title={claim ? `Expense claim ${claim.claim_no}` : 'Expense claim'}
         subtitle={claim?.can_edit ? 'Add every expense as a line, attach receipts, then submit for approval.' : undefined}
         actions={<button onClick={() => router.push('/dashboard/hr/me/claims')} type="button" style={secondaryBtnStyle}>← Back</button>}
       />

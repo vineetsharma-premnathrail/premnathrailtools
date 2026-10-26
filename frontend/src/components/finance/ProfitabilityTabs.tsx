@@ -23,6 +23,7 @@ import {
   inr, dmy, todayIso, fyStartIso, inputStyle, labelStyle, sectionStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle,
   thStyle, tdStyle, numTd, numTh, ErrorBanner, InfoBanner, StatusPill, TableWrap, EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
+import { RowCount } from '@/components/shared/ui'
 
 const PC_STATUS_HEX: Record<string, string> = { active: '#16a34a', inactive: '#64748b' }
 const RED = '#dc2626'
@@ -104,7 +105,7 @@ export function ProfitCentresTab() {
       </div>
       <TableWrap minWidth={1100} maxHeight="calc(100vh - 460px)" tour="pc-list">
         <thead><tr>
-          <th style={thStyle}>Code</th><th style={thStyle}>Name</th><th style={thStyle}>Business line</th><th style={thStyle}>Plant</th><th style={thStyle}>Parent</th>
+          <th style={thStyle}>Code <RowCount count={rows.length} /></th><th style={thStyle}>Name</th><th style={thStyle}>Business line</th><th style={thStyle}>Plant</th><th style={thStyle}>Parent</th>
           <th style={thStyle}>Validity</th><th style={thStyle}>Cost centres</th><th style={thStyle}>Status</th><th style={thStyle}></th>
         </tr></thead>
         <tbody>
@@ -270,7 +271,7 @@ export function ProfitCentrePLTab() {
       {data?.unassigned_lines && <InfoBanner tone="warning">Some posted lines have no profit centre (column &quot;Unassigned&quot;). Set a company default profit centre and use &quot;Fill blanks on past postings&quot; under Profit Centres.</InfoBanner>}
       {data && (
         <TableWrap minWidth={300 + cols.length * 140} maxHeight="calc(100vh - 340px)" tour="pc-pl">
-          <thead><tr><th style={thStyle}>Head / ledger</th>{cols.map((c) => <th key={c.key} style={numTh}>{c.label}</th>)}<th style={numTh}>Total</th></tr></thead>
+          <thead><tr><th style={thStyle}>Head / ledger <RowCount count={data.rows.length} /></th>{cols.map((c) => <th key={c.key} style={numTh}>{c.label}</th>)}<th style={numTh}>Total</th></tr></thead>
           <tbody>
             {data.rows.length === 0 ? <EmptyRow colSpan={cols.length + 2} text="No income or expense posted in this period." /> : (
               <>
@@ -357,14 +358,14 @@ export function ProfitabilityTab() {
       {data && (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 14 }}>
-            <StatCard label="Revenue" value={inr(data.total_revenue)} />
-            <StatCard label="Cost" value={inr(data.total_cost)} />
-            <StatCard label="Contribution margin" value={inr(data.total_margin)} tone={data.total_margin < 0 ? RED : GREEN} />
+            <StatCard label="Revenue" value={`₹ ${inr(data.total_revenue)}`} />
+            <StatCard label="Cost" value={`₹ ${inr(data.total_cost)}`} />
+            <StatCard label="Contribution margin" value={`₹ ${inr(data.total_margin)}`} tone={data.total_margin < 0 ? RED : GREEN} />
             <StatCard label="Margin %" value={data.total_margin_pct == null ? '—' : `${data.total_margin_pct}%`} />
           </div>
           <TableWrap minWidth={isSO ? 1400 : 1000} maxHeight="calc(100vh - 420px)" tour="copa-list">
             <thead><tr>
-              <th style={thStyle}>{GROUPS.find((g) => g.value === groupBy)?.label}</th><th style={numTh}>Revenue</th><th style={numTh}>Production</th>
+              <th style={thStyle}>{GROUPS.find((g) => g.value === groupBy)?.label} <RowCount count={data.rows.length} /></th><th style={numTh}>Revenue</th><th style={numTh}>Production</th>
               <th style={numTh}>Direct material</th><th style={numTh}>Service</th><th style={numTh}>Total cost</th><th style={numTh}>Margin</th><th style={numTh}>Margin %</th>
               {isSO && <><th style={numTh}>Quoted value</th><th style={numTh}>Planned cost</th><th style={numTh}>Quoted %</th><th style={numTh}>Δ % pts</th></>}
               <th style={thStyle}></th>
@@ -400,7 +401,7 @@ export function ProfitabilityTab() {
             <button style={secondaryBtnStyle} onClick={() => setItems(null)}>Close</button>
           </div>
           <TableWrap minWidth={700} maxHeight="320px">
-            <thead><tr><th style={thStyle}>Type</th><th style={thStyle}>Document</th><th style={thStyle}>Date</th><th style={numTh}>Amount</th></tr></thead>
+            <thead><tr><th style={thStyle}>Type <RowCount count={items.rows.length} /></th><th style={thStyle}>Document</th><th style={thStyle}>Date</th><th style={numTh}>Amount</th></tr></thead>
             <tbody>{items.rows.length === 0 ? <EmptyRow colSpan={4} text="No items." /> : items.rows.map((i, n) => (
               <tr key={n}><td style={tdStyle}>{KIND_LABELS[i.kind] || i.kind}</td><td style={tdStyle}>{i.ref}</td><td style={tdStyle}>{i.date ? dmy(i.date) : '—'}</td>
                 <td style={{ ...numTd, color: i.kind === 'revenue' ? GREEN : TEXT.body }}>{inr(i.amount)}</td></tr>

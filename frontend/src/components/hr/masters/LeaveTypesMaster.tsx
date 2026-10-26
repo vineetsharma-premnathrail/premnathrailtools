@@ -13,6 +13,7 @@ import {
   sectionStyle, tableWrapStyle, thStyle, tdStyle, linkActionStyle, mutedActionStyle,
   ErrorBanner, ActiveBadge, Modal, MasterToolbar,
 } from './masterUi'
+import { RowCount } from '@/components/shared/ui'
 
 type Form = {
   id: number | null
@@ -249,7 +250,7 @@ export default function LeaveTypesMaster() {
       <div data-tour="hr-mst-lt-table" style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead>
-            <tr>{['Code', 'Name', 'Quota / yr', 'Paid', 'Rules', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+            <tr>{['Code', 'Name', 'Quota / yr', 'Paid', 'Rules', 'Status', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={visible.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={7} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted, padding: 24 }}>Loading…</td></tr>}

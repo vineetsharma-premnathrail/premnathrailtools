@@ -6,7 +6,8 @@
 
 import { createPortal } from 'react-dom'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { inputStyle as sharedInput, thStyle as sharedTh, tdStyle as sharedTd, btnBase, smallBtnSize } from '@/components/shared/ui'
+import { inputStyle as sharedInput, thStyle as sharedTh, tdStyle as sharedTd, btnBase, smallBtnSize, pillStyle } from '@/components/shared/ui'
+import { formatDate } from '@/lib/format'
 import { PermissionAction, useCan } from '@/lib/permissions'
 
 /** Project Management features (backend core/features/projects.py, all on
@@ -56,7 +57,7 @@ export function Pill({ value, labels, hex }: { value?: string | null; labels: Re
   if (!value) return null
   const color = hex[value] || '#64748b'
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${color}1a`, color, whiteSpace: 'nowrap' }}>
+    <span style={pillStyle(color)}>
       {labels[value] || value}
     </span>
   )
@@ -64,7 +65,7 @@ export function Pill({ value, labels, hex }: { value?: string | null; labels: Re
 
 export function FlagPill({ text, color }: { text: string; color: string }) {
   return (
-    <span style={{ fontSize: 10.5, fontWeight: 800, padding: '3px 8px', borderRadius: 9999, background: `${color}1a`, color, whiteSpace: 'nowrap', letterSpacing: '.03em', textTransform: 'uppercase' }}>
+    <span style={{ ...pillStyle(color), fontSize: 10.5, fontWeight: 800, letterSpacing: '.03em', textTransform: 'uppercase' }}>
       {text}
     </span>
   )
@@ -140,7 +141,7 @@ export function FilePicker({ files, onChange, label = 'Attach files' }: { files:
       {files.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
           {files.map((f, i) => (
-            <span key={`${f.name}-${i}`} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 9999, background: 'rgba(0,0,0,0.05)', color: TEXT.body }}>
+            <span key={`${f.name}-${i}`} style={{ ...pillStyle('#44403c'), fontSize: 12, fontWeight: 500, background: 'rgba(0,0,0,0.05)', color: TEXT.body }}>
               {f.name}
               <button type="button" aria-label={`Remove ${f.name}`} onClick={() => onChange(files.filter((_, j) => j !== i))}
                 style={{ border: 'none', background: 'none', cursor: 'pointer', fontWeight: 700, marginLeft: 4, color: TEXT.muted }}>×</button>
@@ -186,7 +187,7 @@ export function AttachmentList({ files, onOpen, onDelete, canDelete }: {
             {f.title && f.title !== f.file_name ? `${f.title} — ${f.file_name}` : f.file_name}
           </a>
           {f.doc_type && f.doc_type !== 'other' && <span style={{ fontSize: 10.5, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase' }}>{DOC_TYPE_LABELS[f.doc_type] || f.doc_type}</span>}
-          <span style={{ fontSize: 11.5, color: TEXT.muted, marginLeft: 'auto' }}>{[f.uploaded_by_name, f.created_at ? new Date(f.created_at).toLocaleDateString('en-GB') : ''].filter(Boolean).join(' · ')}</span>
+          <span style={{ fontSize: 11.5, color: TEXT.muted, marginLeft: 'auto' }}>{[f.uploaded_by_name, f.created_at ? formatDate(f.created_at) : ''].filter(Boolean).join(' · ')}</span>
           {onDelete && (!canDelete || canDelete(f)) && (
             <button type="button" onClick={() => onDelete(f.id)} style={{ ...smallActionBtn('danger') }}>Remove</button>
           )}

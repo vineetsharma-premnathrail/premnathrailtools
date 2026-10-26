@@ -4,13 +4,14 @@
 
 import { useEffect, useState } from 'react'
 import { crmApi } from '@/lib/api'
-import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallDangerBtnStyle, smallSecondaryBtnStyle } from '@/components/crm/ui'
+import { primaryBtnStyle, smallDangerBtnStyle, smallSecondaryBtnStyle } from '@/components/crm/ui'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import { RowCount } from '@/components/shared/ui'
 
 interface Product {
   created_by_id?: number | null
@@ -168,8 +169,8 @@ export default function ProductsManager() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
           <thead>
             <tr>
-              {['Name', 'Model No.', 'Category', 'Unit', 'Default Price', ''].map((h) => (
-                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '10px 14px', fontSize: 12, fontWeight: 700, color: TEXT.secondary }}>{h}</th>
+              {['Name', 'Model No.', 'Category', 'Unit', 'Default Price', ''].map((h, hi) => (
+                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '10px 14px', fontSize: 12, fontWeight: 700, color: TEXT.secondary }}>{h}{hi === 0 && <RowCount count={products.length} />}</th>
               ))}
             </tr>
           </thead>
@@ -185,7 +186,7 @@ export default function ProductsManager() {
                   <td style={{ padding: '10px 14px', fontSize: 13 }}>{p.model_number || '—'}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13 }}>{p.category || '—'}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13 }}>{p.unit || '—'}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 13 }}>{p.default_price != null ? p.default_price.toLocaleString() : '—'}</td>
+                  <td style={{ padding: '10px 14px', fontSize: 13 }}>{p.default_price != null ? p.default_price.toLocaleString('en-IN') : '—'}</td>
                   <td style={{ padding: '10px 14px', display: 'flex', gap: 8 }}>
                     {canRemove(p.created_by_id) && <button onClick={() => startEdit(p)} data-tour={rowIdx === 0 ? 'prod-row-edit-btn' : undefined} style={{ ...smallSecondaryBtnStyle }}>Edit</button>}
                     {canRemove(p.created_by_id) && <button onClick={() => setPendingDelete(p)} data-tour={rowIdx === 0 ? 'prod-row-delete-btn' : undefined} style={{ ...smallDangerBtnStyle }}>Delete</button>}

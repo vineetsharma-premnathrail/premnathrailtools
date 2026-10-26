@@ -6,10 +6,10 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { designApi } from '@/lib/api'
 import { DesignBom, DesignLookupOption, DesignNewItemRequest, DesignWhereUsed } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
-import { secondaryBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle, chipBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import { BOM_STATUS_LABELS, toOptions } from '@/components/design/designMeta'
 import { useDesignMe } from '@/components/design/useDesignMe'
 import { extractErrorMessages } from '@/lib/validation'
@@ -48,7 +48,7 @@ const linkStyle: React.CSSProperties = { color: '#FF6A2A', fontWeight: 600, curs
 function pill(status: string) {
   const hex = STATUS_HEX[status] || '#78716c'
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
+    <span style={pillStyle(hex)}>
       {BOM_STATUS_LABELS[status] || status}
     </span>
   )
@@ -179,7 +179,7 @@ export default function DesignBomsPage() {
             <div style={{ overflowX: 'auto', marginTop: 12 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                 <thead>
-                  <tr>{['BOM', 'New item', 'Specification', 'UOM', 'Requested by', 'Requested'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                  <tr>{['BOM', 'New item', 'Specification', 'UOM', 'Requested by', 'Requested'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={newItems.length} />}</th>)}</tr>
                 </thead>
                 <tbody>
                   {newItems.map((n) => (
@@ -205,11 +205,7 @@ export default function DesignBomsPage() {
         {STATUS_TABS.map((t) => {
           const active = statusTab === t.key
           return (
-            <button key={t.label} type="button" onClick={() => setStatusTab(t.key)} style={{
-              padding: '6px 14px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              border: `1px solid ${active ? '#FF6A2A' : BORDER.normal}`, background: active ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,.6)',
-              color: active ? '#FF6A2A' : TEXT.secondary,
-            }}>
+            <button key={t.label} type="button" onClick={() => setStatusTab(t.key)} style={chipBtnStyle(active)}>
               {t.label}
             </button>
           )
@@ -231,9 +227,9 @@ export default function DesignBomsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
           <thead>
             <tr>
-              {['BOM No.', 'Product item', 'Title', 'Project', 'Released Rev', 'Work in Progress', 'Lines', 'Owner', 'Status', ''].map((h) => (
+              {['BOM No.', 'Product item', 'Title', 'Project', 'Released Rev', 'Work in Progress', 'Lines', 'Owner', 'Status', ''].map((h, i) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{i === 0 && <RowCount count={boms.length} />}
                 </th>
               ))}
             </tr>
@@ -243,7 +239,7 @@ export default function DesignBomsPage() {
               <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : boms.length === 0 ? (
               <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
-                No BOMs match these filters.{statusTab !== '' && ' Try the “All” tab.'}
+                No BOMs match these filters.{statusTab !== '' ? ' Try the “All” tab.' : ' Use + New BOM to create one.'}
               </td></tr>
             ) : (
               boms.map((b) => (
@@ -318,7 +314,7 @@ export default function DesignBomsPage() {
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                 <thead>
-                  <tr>{['Used in BOM', 'Revision', 'Product', 'Qty', 'Project / machine'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                  <tr>{['Used in BOM', 'Revision', 'Product', 'Qty', 'Project / machine'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={wuResult.boms.length} />}</th>)}</tr>
                 </thead>
                 <tbody>
                   {wuResult.boms.length === 0 ? (

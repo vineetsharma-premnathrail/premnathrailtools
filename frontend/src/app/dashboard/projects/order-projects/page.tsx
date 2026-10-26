@@ -14,6 +14,7 @@ import { inputStyle, thStyle, tdStyle, Pill, ErrorBanner, PageHeader } from '@/c
 import { recordPath } from '@/lib/recordRef'
 import { useCan } from '@/lib/permissions'
 import { OP_STATUS_LABELS, OP_STATUS_HEX } from '@/components/sales/OrderProjectTable'
+import { RowCount } from '@/components/shared/ui'
 
 export default function OrderProjectsPage() {
   const { isAuthorized, isLoading } = useRequireApp('projects')
@@ -61,7 +62,7 @@ export default function OrderProjectsPage() {
       <div data-tour="sales-op-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1050 }}>
           <thead>
-            <tr>{['Project', 'Sales order', 'Customer', 'Customer PO', 'Vehicles', 'Project manager', 'Planned end', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+            <tr>{['Project', 'Sales order', 'Customer', 'Customer PO', 'Vehicles', 'Project manager', 'Planned end', 'Status', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={projects.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {loading && canView ? (
@@ -81,7 +82,7 @@ export default function OrderProjectsPage() {
                   {p.lots_total ? <span style={{ color: TEXT.muted }}> · {p.lots_total} lot{p.lots_total === 1 ? '' : 's'}</span> : null}
                 </td>
                 <td style={tdStyle}>{p.project_manager_name || <span style={{ color: TEXT.muted }}>Not assigned</span>}</td>
-                <td style={tdStyle}>{formatDate(p.planned_end)}</td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(p.planned_end)}</td>
                 <td style={tdStyle}><Pill label={OP_STATUS_LABELS[p.status] || p.status} hex={OP_STATUS_HEX[p.status] || '#78716c'} /></td>
                 <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
                   <span onClick={() => router.push(recordPath('/dashboard/projects/order-projects', p))} style={{ color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>View</span>

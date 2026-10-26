@@ -12,9 +12,14 @@ const config: TourConfig = {
       options: [...RND_EXP_STATUS_OPTIONS, ...RND_EXP_RESULT_OPTIONS],
     },
     {
-      target: 'rnd-ed-form',
-      title: 'Experiment form',
-      purpose: 'The whole experiment is one form: details, objective & method, test parameters and results; Delete / Cancel / Save are at the bottom.',
+      target: 'rnd-ed-overview',
+      title: 'Experiment overview',
+      purpose: 'Title, objective, status, result, date and who ran it on top; then the details, the test parameters (how many measured, passed, failed) and the conclusion.',
+    },
+    {
+      target: 'rnd-ed-edit-btn',
+      title: 'Edit',
+      purpose: 'Opens the full form: details, objective & method, test parameters and results. Add parameter and Save appear there.',
     },
     {
       target: 'rnd-ed-back-btn',

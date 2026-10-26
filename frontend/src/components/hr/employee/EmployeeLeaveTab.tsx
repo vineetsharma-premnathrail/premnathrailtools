@@ -7,6 +7,7 @@ import { hrApi } from '@/lib/api'
 import { HrLeaveBalance, HrLeaveRequest } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
+import { RowCount, pillStyle } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<string, string> = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { pending: '#F59E0B', approved: '#16A34A', rejected: '#DC2626', cancelled: '#64748B' }
@@ -24,7 +25,7 @@ function num(v: string | number | null | undefined) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1)
 }
 function dmy(iso: string | null) {
-  return iso ? `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}` : '—'
+  return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—'
 }
 
 // Leave balances and recent requests for one employee (HR employee detail).
@@ -87,7 +88,7 @@ export default function EmployeeLeaveTab({ userId }: { userId: number }) {
 
           <div data-tour="hr-emp-leave-requests" style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)', borderRadius: 12, border: `1px solid ${BORDER.light}` }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
-              <thead><tr>{['Request', 'Type', 'Dates', 'Days', 'Status', 'Decided by'].map((h) => <th key={h} style={h === 'Days' ? { ...th, textAlign: 'right' } : th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Request', 'Type', 'Dates', 'Days', 'Status', 'Decided by'].map((h, hi) => <th key={h} style={h === 'Days' ? { ...th, textAlign: 'right' } : th}>{h}{hi === 0 && <RowCount count={requests.length} />}</th>)}</tr></thead>
               <tbody>
                 {requests.length === 0 ? (
                   <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: TEXT.muted, padding: 16 }}>No leave requests in {year}.</td></tr>
@@ -98,7 +99,7 @@ export default function EmployeeLeaveTab({ userId }: { userId: number }) {
                     <td style={td}>{dmy(r.from_date)}{SESSION_SHORT[r.from_session]}{r.to_date !== r.from_date && <> → {dmy(r.to_date)}{SESSION_SHORT[r.to_session]}</>}</td>
                     <td style={{ ...td, textAlign: 'right' }}>{num(r.days)}</td>
                     <td style={td}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[r.status]}1a`, color: STATUS_HEX[r.status], whiteSpace: 'nowrap' }}>{STATUS_LABELS[r.status]}</span>
+                      <span style={pillStyle(STATUS_HEX[r.status])}>{STATUS_LABELS[r.status]}</span>
                     </td>
                     <td style={{ ...td, fontSize: 12.5 }}>{r.status === 'pending' ? `Waiting: ${r.approver_name || 'HR'}` : r.decided_by_name || '—'}</td>
                   </tr>

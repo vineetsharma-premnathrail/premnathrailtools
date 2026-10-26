@@ -22,7 +22,7 @@ export default function MilestonePage() {
 
   return (
     <div>
-      <PmPageHeader page="WBS" tourBack="pm-mw-back" />
+      <PmPageHeader page="Milestone" tourBack="pm-mw-back" />
       <MilestoneWorkspace milestoneId={milestoneId} />
     </div>
   )

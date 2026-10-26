@@ -3,8 +3,10 @@
 import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { rndApi } from '@/lib/api'
+import { formatDate } from '@/lib/format'
 import { RndDocument, RndDocumentType, RndProject } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, pillStyle } from '@/components/shared/ui'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
@@ -164,7 +166,7 @@ export default function RndDocumentsPanel({
             data-tour="rnd-docpanel-upload-toggle"
             type="button"
             onClick={() => { setShowUpload(true); setUploadError('') }}
-            style={{ padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 12.5, fontWeight: 600 }}
+            style={primaryBtnStyle}
           >
             + Upload Document
           </button>
@@ -245,7 +247,7 @@ export default function RndDocumentsPanel({
               : canManageFiles && can('rnd', 'documents', 'delete')
             return (
               <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,.5)', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${TYPE_HEX[d.doc_type]}1a`, color: TYPE_HEX[d.doc_type], whiteSpace: 'nowrap', flex: 'none' }}>
+                <span style={pillStyle(TYPE_HEX[d.doc_type] || '#78716c')}>
                   {TYPE_LABELS[d.doc_type] || d.doc_type}
                 </span>
                 <div style={{ flex: '1 1 220px', minWidth: 0 }}>
@@ -257,7 +259,7 @@ export default function RndDocumentsPanel({
                   </div>
                 </div>
                 <span style={{ fontSize: 11.5, color: TEXT.muted, flex: 'none' }}>
-                  {d.uploaded_by_name || '—'}{d.created_at ? ` · ${d.created_at.slice(0, 10)}` : ''}
+                  {d.uploaded_by_name || '—'}{d.created_at ? ` · ${formatDate(d.created_at)}` : ''}
                 </span>
                 <span style={{ display: 'flex', gap: 12, flex: 'none' }}>
                   <span onClick={() => handleView(d)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>

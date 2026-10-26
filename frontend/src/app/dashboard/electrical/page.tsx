@@ -7,14 +7,13 @@ import { useCan } from '@/lib/permissions'
 import { electricalApi } from '@/lib/api'
 import { recordPath } from '@/lib/recordRef'
 import { ElectricalDashboard, ElectricalJob } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, Pill } from '@/components/shared/ui'
+import { JOB_STATUS_LABELS as STATUS_LABELS, JOB_STATUS_HEX as STATUS_HEX, PHASE_HEX } from '@/components/electrical/shared'
 import ElectricalNav from '@/components/electrical/ElectricalNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 
-const STATUS_LABELS: Record<string, string> = { draft: 'Draft', in_progress: 'In Progress', on_hold: 'On Hold', handed_over: 'Handed Over', closed: 'Closed', cancelled: 'Cancelled' }
-const STATUS_HEX: Record<string, string> = { draft: '#78716c', in_progress: '#F59E0B', on_hold: '#9333EA', handed_over: '#2563EB', closed: '#16A34A', cancelled: '#a8a29e' }
-const PHASE_HEX: Record<string, string> = { design: '#2563EB', procurement: '#9333EA', build: '#F59E0B', test_qc: '#0d9488', handover: '#16A34A' }
 
 const cardStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -40,15 +39,13 @@ function JobRows({ rows, empty, onOpen }: { rows: ElectricalJob[]; empty: string
         <div key={j.id} onClick={() => onOpen(j)} style={{
           display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: `1px solid ${BORDER.light}`, cursor: 'pointer', flexWrap: 'wrap',
         }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, minWidth: 110 }}>{j.job_number}</span>
-          <span style={{ fontSize: 13, color: TEXT.body, flex: '1 1 160px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, minWidth: 110, whiteSpace: 'nowrap' }}>{j.job_number}</span>
+          <span title={[j.title, j.current_stage_label].filter(Boolean).join(' · ')} style={{ fontSize: 13, color: TEXT.body, flex: '1 1 160px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {j.title}{j.current_stage_label ? <span style={{ color: TEXT.muted }}> · {j.current_stage_label}</span> : null}
           </span>
-          <span style={{ fontSize: 12, color: TEXT.muted }}>{j.done_stages}/{j.total_stages}</span>
-          <span style={{ fontSize: 12, color: j.is_overdue ? '#DC2626' : TEXT.muted, minWidth: 90 }}>{j.target_handover_date ? formatDate(j.target_handover_date) : '—'}</span>
-          <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[j.status]}1a`, color: STATUS_HEX[j.status], whiteSpace: 'nowrap' }}>
-            {STATUS_LABELS[j.status] || j.status}
-          </span>
+          <span title="Stages done" style={{ fontSize: 12, color: TEXT.muted, whiteSpace: 'nowrap', minWidth: 72, textAlign: 'right' }}>{j.done_stages}/{j.total_stages} stages</span>
+          <span title={j.is_overdue ? 'Target handover — overdue' : 'Target handover'} style={{ fontSize: 12, color: j.is_overdue ? '#DC2626' : TEXT.muted, fontWeight: j.is_overdue ? 600 : 400, minWidth: 80, whiteSpace: 'nowrap' }}>{j.target_handover_date ? formatDate(j.target_handover_date) : '—'}</span>
+          <Pill label={STATUS_LABELS[j.status] || j.status} hex={STATUS_HEX[j.status]} />
         </div>
       ))}
     </div>
@@ -85,16 +82,15 @@ export default function ElectricalDashboardPage() {
             Electrical Module
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Electrical Dashboard</h1>
+          <p style={{ fontSize: 13, color: TEXT.muted, margin: '6px 0 0' }}>
+            Where every RRV electrical job stands — click a tile or a job to open it.
+          </p>
         </div>
         {can('electrical', 'jobs', 'create') && (
           <button
             data-tour="elec-dash-new-job-btn"
             onClick={() => router.push('/dashboard/electrical/jobs/new')}
-            style={{
-              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-            }}
+            style={primaryBtnStyle}
           >
             + New RRV Electrical Job
           </button>
@@ -107,16 +103,18 @@ export default function ElectricalDashboardPage() {
         </div>
       )}
 
+      {!data && !error && <p style={{ fontSize: 13, color: TEXT.muted }}>Loading the electrical dashboard…</p>}
+
       {k && data && (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 14 }}>
             <Kpi tour="elec-dash-kpi-active" label="Active Jobs" value={k.in_progress} sub={`${k.draft} draft · ${k.on_hold} on hold`} hex="#F59E0B" onClick={() => router.push('/dashboard/electrical/jobs')} />
             <Kpi tour="elec-dash-kpi-overdue" label="Overdue" value={k.overdue} sub="Past target handover" hex={k.overdue ? '#DC2626' : undefined} />
             <Kpi tour="elec-dash-kpi-handed-over" label="Handed Over" value={k.handed_over} sub="Awaiting as-built / close" hex="#2563EB" />
             <Kpi tour="elec-dash-kpi-awaiting-qc" label="Awaiting QC" value={k.awaiting_qc} sub="Inspections pending in Quality" hex={k.awaiting_qc ? '#2563EB' : undefined} />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 20 }}>
-            <Kpi tour="elec-dash-kpi-drawings" label="Drawings to Approve" value={k.drawings_pending_approval} hex={k.drawings_pending_approval ? '#F59E0B' : undefined} onClick={() => router.push('/dashboard/electrical/drawings')} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 20 }}>
+            <Kpi tour="elec-dash-kpi-drawings" label="Drawings to Approve" value={k.drawings_pending_approval} sub="Revisions awaiting a decision" hex={k.drawings_pending_approval ? '#F59E0B' : undefined} onClick={() => router.push('/dashboard/electrical/drawings')} />
             <Kpi tour="elec-dash-kpi-to-buy" label="Components to Buy" value={k.purchase_pending} sub="BOM lines with no PR yet" hex={k.purchase_pending ? '#DC2626' : undefined} onClick={() => router.push('/dashboard/electrical/purchase')} />
             <Kpi tour="elec-dash-kpi-failed-tests" label="Failed Tests" value={k.open_failures} sub="Awaiting a passing retest" hex={k.open_failures ? '#DC2626' : undefined} onClick={() => router.push('/dashboard/electrical/testing')} />
             <Kpi tour="elec-dash-kpi-open-issues" label="Open Issues" value={k.open_issues} sub={k.critical_issues ? `${k.critical_issues} critical` : 'Troubleshooting log'} hex={k.critical_issues ? '#DC2626' : undefined} onClick={() => router.push('/dashboard/electrical/troubleshooting')} />
@@ -127,8 +125,8 @@ export default function ElectricalDashboardPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {data.by_phase.map((p) => (
                 <div key={p.phase} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span style={{ fontSize: 13, color: TEXT.body, width: 190, flex: 'none' }}>{p.label}</span>
-                  <div style={{ flex: 1, height: 10, borderRadius: 5, background: 'rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+                  <span title={p.label} style={{ fontSize: 13, color: TEXT.body, flex: '0 1 190px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.label}</span>
+                  <div style={{ flex: '1 1 80px', minWidth: 60, height: 10, borderRadius: 5, background: 'rgba(0,0,0,0.06)', overflow: 'hidden' }}>
                     <div style={{ width: `${(p.jobs / maxPhase) * 100}%`, height: '100%', background: PHASE_HEX[p.phase] }} />
                   </div>
                   <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, width: 28, textAlign: 'right' }}>{p.jobs}</span>

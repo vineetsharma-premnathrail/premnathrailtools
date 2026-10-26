@@ -4,7 +4,8 @@ import Select from '@/components/shared/Select'
 import { useEffect, useRef, useState } from 'react'
 import { hydraulicApi } from '@/lib/api'
 import { HydDocument, HydDocumentEntity } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, Pill } from '@/components/shared/ui'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 import { useCan } from '@/lib/permissions'
@@ -151,7 +152,7 @@ export default function HydDocumentsPanel({
             data-tour="hyd-docs-upload-btn"
             type="button"
             onClick={() => { setDocTitle(''); setDescription(''); setFiles([]); setDocType(defaultDocType); setUploadError(''); setShowUpload(true) }}
-            style={{ padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 12.5, fontWeight: 600 }}
+            style={primaryBtnStyle}
           >
             + Upload
           </button>
@@ -171,9 +172,7 @@ export default function HydDocumentsPanel({
             const canDelete = !locked && canRemove && (isAdmin || (currentUserId != null && d.uploaded_by_id === currentUserId))
             return (
               <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,.5)', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${TYPE_HEX[d.doc_type] || '#78716c'}1a`, color: TYPE_HEX[d.doc_type] || '#78716c', whiteSpace: 'nowrap', flex: 'none' }}>
-                  {DOCUMENT_TYPE_LABELS[d.doc_type] || d.doc_type}
-                </span>
+                <Pill label={DOCUMENT_TYPE_LABELS[d.doc_type] || d.doc_type} hex={TYPE_HEX[d.doc_type] || '#78716c'} />
                 <div style={{ flex: '1 1 220px', minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.title}</div>
                   <div style={{ fontSize: 11.5, color: TEXT.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

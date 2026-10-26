@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { StoreItem, StoreLocation, StoreStockReservation } from '@/types'
 import { TEXT, SUCCESS, DANGER, INFO, GLASS, SHADOWS } from '@/lib/theme'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, segmentBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
@@ -18,6 +18,7 @@ import { useCan } from '@/lib/permissions'
 import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/OrderProjectPicker'
 import { recordPath } from '@/lib/recordRef'
 import Select from '@/components/shared/Select'
+import { formatDate } from '@/lib/format'
 
 const STATUS_LABELS: Record<string, string> = { active: 'Active', fulfilled: 'Fulfilled', cancelled: 'Cancelled' }
 const STATUS_COLORS: Record<string, string> = { active: INFO.primary, fulfilled: SUCCESS.primary, cancelled: TEXT.muted }
@@ -231,11 +232,10 @@ export default function StoreStockReservationsPage() {
       )}
 
       <div data-tour="res-filters" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-        <div style={{ display: 'inline-flex', borderRadius: 9999, border: '1px solid rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+        <div style={{ display: 'inline-flex', gap: 4 }}>
           {([['all', 'All reservations'], ['project', 'Project stock']] as const).map(([k, lbl]) => (
             <button key={k} type="button" onClick={() => { setView(k); if (k === 'all') setFilterProject(null) }}
-              style={{ padding: '7px 14px', fontSize: 12.5, fontWeight: 600, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-                background: view === k ? INFO.primary : 'transparent', color: view === k ? '#fff' : TEXT.secondary }}>{lbl}</button>
+              style={segmentBtnStyle(view === k)}>{lbl}</button>
           ))}
         </div>
         {view === 'project' && (
@@ -250,22 +250,22 @@ export default function StoreStockReservationsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['Reservation #', 'Item', 'Store', 'Quantity', 'Project / PO', 'Required Date', 'Status', ''].map((h) => (
-                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+              {['Reservation #', 'Item', 'Store', 'Quantity', 'Project / PO', 'Required Date', 'Status', ''].map((h, hi) => (
+                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap', ...(h === 'Quantity' ? { textAlign: 'right' as const } : {}) }}>{h}{hi === 0 && <RowCount count={reservations.length} />}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && reservations.length === 0 && (
-              <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No stock reservations yet.</td></tr>
+              <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{view === 'project' || filterProject ? 'No project stock reservations match this filter.' : 'No stock reservations yet — use + New Reservation to earmark stock for a project or production order.'}</td></tr>
             )}
             {reservations.map((r, idx) => (
               <tr key={r.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{r.reservation_number}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{r.item_code} — {r.item_name}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{r.location_name}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{r.quantity} {r.uom}</td>
+                <td title={`${r.item_code || ''} — ${r.item_name || ''}`} style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.item_code || '—'} — {r.item_name || '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{r.location_name || '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{Number(r.quantity).toLocaleString('en-IN', { maximumFractionDigits: 3 })} {r.uom || ''}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>
                   {r.op_number ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
@@ -275,18 +275,16 @@ export default function StoreStockReservationsPage() {
                     </div>
                   ) : ([r.project, r.production_order].filter(Boolean).join(' / ') || '—')}
                 </td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{r.required_date || '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{r.required_date ? formatDate(r.required_date) : '—'}</td>
                 <td style={{ padding: '12px 16px' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_COLORS[r.status]}1a`, color: STATUS_COLORS[r.status] }}>
-                    {STATUS_LABELS[r.status] || r.status}
-                  </span>
+                  <Pill label={STATUS_LABELS[r.status] || r.status} hex={STATUS_COLORS[r.status] || TEXT.muted} />
                 </td>
-                <td style={{ padding: '12px 16px', display: 'flex', gap: 10 }}>
+                <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
                   {r.status === 'active' && can('store', 'reservations', 'edit') && (
-                    <>
+                    <span style={{ display: 'inline-flex', gap: 10 }}>
                       <span {...(idx === 0 ? { 'data-tour': 'res-fulfill-btn' } : {})} onClick={() => setConfirmAction({ id: r.id, type: 'fulfill' })} style={{ color: SUCCESS.primary, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Fulfill</span>
                       <span {...(idx === 0 ? { 'data-tour': 'res-cancel-btn' } : {})} onClick={() => setConfirmAction({ id: r.id, type: 'cancel' })} style={{ color: DANGER.primary, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Cancel</span>
-                    </>
+                    </span>
                   )}
                 </td>
               </tr>

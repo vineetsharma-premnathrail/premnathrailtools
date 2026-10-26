@@ -307,6 +307,15 @@ export const usersApi = {
     const { data } = await apiClient.get(`/users/${id}/effective-permissions`)
     return data
   },
+  /** The user's personal notification overrides: "<module>.<event>" -> channels ([] = off; no entry = follow roles). */
+  getNotificationOverrides: async (id: number): Promise<Record<string, string[]>> => {
+    const { data } = await apiClient.get(`/users/${id}/notification-overrides`)
+    return data.overrides || {}
+  },
+  saveNotificationOverrides: async (id: number, overrides: Record<string, string[]>): Promise<Record<string, string[]>> => {
+    const { data } = await apiClient.put(`/users/${id}/notification-overrides`, { overrides })
+    return data.overrides || {}
+  },
   listPermissionHistory: async (id: number) => {
     const { data } = await apiClient.get(`/users/${id}/permission-history`)
     return data
@@ -342,7 +351,7 @@ export const crmApi = {
 
   // Organizations
   // picker: true = every organization (dropdowns), not limited to the user's CRM data scope
-  listOrganizations: async (params: { search?: string; railway_zone?: string; picker?: boolean } = {}) => {
+  listOrganizations: async (params: { search?: string; railway_zone?: string; picker?: boolean; limit?: number } = {}) => {
     const { data } = await apiClient.get('/crm/organizations', { params })
     return data
   },
@@ -398,7 +407,7 @@ export const crmApi = {
   },
 
   // Inquiries
-  listInquiries: async (params: { search?: string; status?: string; org_id?: number } = {}) => {
+  listInquiries: async (params: { search?: string; status?: string; org_id?: number; limit?: number } = {}) => {
     const { data } = await apiClient.get('/crm/inquiries', { params })
     return data
   },
@@ -461,7 +470,7 @@ export const crmApi = {
   },
 
   // Tenders
-  listTenders: async (params: { search?: string; status?: string; org_id?: number } = {}) => {
+  listTenders: async (params: { search?: string; status?: string; org_id?: number; limit?: number } = {}) => {
     const { data } = await apiClient.get('/crm/tenders', { params })
     return data
   },
@@ -519,7 +528,7 @@ export const crmApi = {
   },
 
   // Activities
-  listActivities: async (params: { search?: string; status?: string; org_id?: number; related_module?: string; related_id?: number; overdue?: boolean; due_today?: boolean } = {}) => {
+  listActivities: async (params: { search?: string; status?: string; org_id?: number; related_module?: string; related_id?: number; overdue?: boolean; due_today?: boolean; limit?: number } = {}) => {
     const { data } = await apiClient.get('/crm/activities', { params })
     return data
   },
@@ -3176,7 +3185,6 @@ export const rndApi = {
   },
   // R&D Settings (team: head / member)
   getSettings: async (): Promise<import('@/types').RndSettings> => { const { data } = await apiClient.get('/rnd/settings'); return data },
-  saveSettings: async (payload: { creator_ids: number[]; viewer_ids: number[] }): Promise<import('@/types').RndSettings> => { const { data } = await apiClient.put('/rnd/settings', payload); return data },
   people: async (): Promise<import('@/types').RndPerson[]> => { const { data } = await apiClient.get('/rnd/settings/people'); return data },
   // Prototype / Research projects linked to a requirement (R&D head links / unlinks)
   linkedProjects: async (source: string, id: number): Promise<import('@/types').RndLinkedProject[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/projects`); return data },
@@ -3302,12 +3310,21 @@ export const rndApi = {
   // Project (Prototype / Research) tasks — same RndTask shape as requirement tasks.
   projectTaskAccess: async (projectId: number): Promise<{ can_manage: boolean; people: import('@/types').RndPerson[]; team: import('@/types').RndPerson[] }> => { const { data } = await apiClient.get(`/rnd/projects/${projectId}/task-access`); return data },
   listProjectTasks: async (projectId: number): Promise<import('@/types').RndTask[]> => { const { data } = await apiClient.get(`/rnd/projects/${projectId}/tasks`); return data },
+  // Project Plan & Milestones (same plan as Project Management) and the project's History tab.
+  listMilestones: async (projectId: number): Promise<import('@/types').RndMilestone[]> => { const { data } = await apiClient.get(`/rnd/projects/${projectId}/milestones`); return data },
+  milestonePeople: async (projectId: number): Promise<{ id: number; name: string; department?: string | null; designation?: string | null; team_role: string }[]> => { const { data } = await apiClient.get(`/rnd/projects/${projectId}/milestone-people`); return data },
+  createMilestone: async (projectId: number, p: import('@/types').RndMilestoneInput): Promise<import('@/types').RndMilestone> => { const { data } = await apiClient.post(`/rnd/projects/${projectId}/milestones`, p); return data },
+  editMilestone: async (projectId: number, milestoneId: number, p: Partial<import('@/types').RndMilestoneInput>): Promise<import('@/types').RndMilestone> => { const { data } = await apiClient.patch(`/rnd/projects/${projectId}/milestones/${milestoneId}`, p); return data },
+  milestoneStatus: async (projectId: number, milestoneId: number, action: 'done' | 'reopen' | 'cancel', reason?: string): Promise<import('@/types').RndMilestone> => { const { data } = await apiClient.post(`/rnd/projects/${projectId}/milestones/${milestoneId}/status`, { action, reason }); return data },
+  deleteMilestone: async (projectId: number, milestoneId: number): Promise<{ message: string }> => { const { data } = await apiClient.delete(`/rnd/projects/${projectId}/milestones/${milestoneId}`); return data },
+  projectHistory: async (projectId: number): Promise<import('@/types').RndProjectHistoryEntry[]> => { const { data } = await apiClient.get(`/rnd/projects/${projectId}/history`); return data },
   createProjectTask: async (projectId: number, p: import('@/types').RndTaskCreateInput, parentTaskId?: number): Promise<import('@/types').RndTask> => {
     const form = new FormData()
     form.append('title', p.title)
     form.append('assigned_to_id', String(p.assigned_to_id))
     form.append('due_date', p.due_date)
     if (p.remarks) form.append('remarks', p.remarks)
+    if (p.milestone_id && !parentTaskId) form.append('milestone_id', String(p.milestone_id))
     appendTaskPlanning(form, p)
     for (const f of p.files) form.append('files', f)
     const url = parentTaskId ? `/rnd/project-tasks/${parentTaskId}/subtasks` : `/rnd/projects/${projectId}/tasks`
@@ -4851,7 +4868,7 @@ export const securityApi = {
   revokeSession: async (id: number) => { const { data } = await apiClient.post(`/organization/security/sessions/${id}/revoke`); return data },
   revokeAll: async (userId: number): Promise<{ revoked: number }> => { const { data } = await apiClient.post(`/organization/security/users/${userId}/revoke-all`); return data },
   sendAppPasswordReset: async (userId: number): Promise<{ sent_to: string }> => { const { data } = await apiClient.post(`/organization/security/users/${userId}/app-password-reset`); return data },
-  signIns: async (params: { user_id?: number; failed_only?: boolean } = {}): Promise<import('@/types').SignInEvent[]> => { const { data } = await apiClient.get('/organization/security/sign-ins', { params }); return data },
+  signIns: async (params: { user_id?: number; failed_only?: boolean; limit?: number } = {}): Promise<import('@/types').SignInEvent[]> => { const { data } = await apiClient.get('/organization/security/sign-ins', { params }); return data },
   userDataScopes: async (userId: number): Promise<import('@/types').UserDataScopeRow[]> => { const { data } = await apiClient.get(`/users/${userId}/data-scopes`); return data },
   saveUserDataScopes: async (userId: number, overrides: Record<string, string>): Promise<import('@/types').UserDataScopeRow[]> => { const { data } = await apiClient.put(`/users/${userId}/data-scopes`, { overrides }); return data },
 }

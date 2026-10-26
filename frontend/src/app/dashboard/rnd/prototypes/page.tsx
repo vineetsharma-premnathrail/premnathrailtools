@@ -6,7 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import { RndProject, RndPrototype } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle, RowCount, inputStyle as sharedInputStyle, pillStyle } from '@/components/shared/ui'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import RndNav from '@/components/rnd/RndNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -18,10 +19,8 @@ import { useCan } from '@/lib/permissions'
 const STATUS_LABELS: Record<string, string> = { design: 'Design', building: 'Building', testing: 'Testing', validated: 'Validated', rejected: 'Rejected' }
 const STATUS_HEX: Record<string, string> = { design: '#78716c', building: '#2563EB', testing: '#7C3AED', validated: '#16A34A', rejected: '#DC2626' }
 
-const inputStyle: React.CSSProperties = {
-  padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
-}
+// Shared 34px control scale; list filters keep their own width.
+const inputStyle: React.CSSProperties = { ...sharedInputStyle, width: 'auto', background: 'rgba(255,255,255,.7)' }
 
 // null = hidden by the server (R&D › Prototypes › BOM costs).
 const formatInr = (n: number | null | undefined) =>
@@ -95,11 +94,7 @@ function RndPrototypesListPageInner() {
           <button
             data-tour="rnd-proto-new-btn"
             onClick={() => router.push(newHref)}
-            style={{
-              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-            }}
+            style={primaryBtnStyle}
           >
             + New Prototype
           </button>
@@ -150,7 +145,7 @@ function RndPrototypesListPageInner() {
             <tr>
               {['Prototype No.', 'Name', 'Version', 'Project', 'Status', 'BOM Cost', 'Experiments', ''].map((h, i) => (
                 <th key={h || `col-${i}`} style={{ textAlign: h === 'BOM Cost' || h === 'Experiments' ? 'right' : 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{i === 0 && <RowCount count={prototypes.length} />}
                 </th>
               ))}
             </tr>
@@ -168,7 +163,7 @@ function RndPrototypesListPageInner() {
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{p.version}</td>
                   <td title={p.project_title || undefined} style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, whiteSpace: 'nowrap' }}>{p.project_number || '—'}</td>
                   <td style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[p.status]}1a`, color: STATUS_HEX[p.status], whiteSpace: 'nowrap' }}>
+                    <span style={pillStyle(STATUS_HEX[p.status])}>
                       {STATUS_LABELS[p.status] || p.status}
                     </span>
                   </td>

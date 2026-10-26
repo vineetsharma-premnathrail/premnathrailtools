@@ -22,8 +22,9 @@ import FinanceAttachments, { ProofPicker, PickedProof, uploadPickedProof, usePro
 import {
   inputStyle, labelStyle, primaryBtnStyle, linkBtnStyle, dangerLinkStyle,
   thStyle, tdStyle, numTd, numTh, inr, dmy, todayIso, Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, useFinanceSubTabs, PageHeader,
-  TableWrap, EmptyRow, TaxLinesEditor, EditableTaxLine, newTaxLine, toLinePayload, previewTax, ApprovalBadge, submitAfterSave,
+  TableWrap, EmptyRow, TaxLinesEditor, EditableTaxLine, newTaxLine, toLinePayload, previewTax, ApprovalBadge, submitAfterSave, RecordFacts,
 } from '@/components/finance/financeUi'
+import { RowCount, pillStyle, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { recordHref } from '@/lib/recordRef'
 import { useDocCurrency } from '@/components/finance/DocCurrencyFields'
 import Select from '@/components/shared/Select'
@@ -85,7 +86,7 @@ function toEditableLines(lines: TaxLine[]): EditableTaxLine[] {
 }
 
 function Badge({ label, hex }: { label: string; hex: string }) {
-  return <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
+  return <span style={pillStyle(hex)}>{label}</span>
 }
 
 function LinesTable({ lines, interstate }: { lines: TaxLine[]; interstate: boolean }) {
@@ -97,7 +98,7 @@ function LinesTable({ lines, interstate }: { lines: TaxLine[]; interstate: boole
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead>
         <tr>
-          <th style={th}>#</th><th style={th}>Description</th><th style={th}>HSN/SAC</th>
+          <th style={th}># <RowCount count={lines.length} /></th><th style={th}>Description</th><th style={th}>HSN/SAC</th>
           <th style={{ ...th, textAlign: 'right' }}>Qty</th><th style={{ ...th, textAlign: 'right' }}>Rate</th>
           <th style={{ ...th, textAlign: 'right' }}>Discount</th><th style={{ ...th, textAlign: 'right' }}>Taxable</th>
           <th style={{ ...th, textAlign: 'right' }}>GST %</th>
@@ -282,7 +283,7 @@ function InvoicesTab(ctx: Ctx) {
       <TableWrap minWidth={1450} tour="fin-sinv-table">
         <thead>
           <tr>
-            <th style={thStyle}>Invoice no.</th><th style={thStyle}>Date</th><th style={thStyle}>Due</th><th style={thStyle}>Customer</th>
+            <th style={thStyle}>Invoice no. <RowCount count={loading ? 0 : rows.length} /></th><th style={thStyle}>Date</th><th style={thStyle}>Due</th><th style={thStyle}>Customer</th>
             <th style={thStyle}>GSTIN</th><th style={thStyle}>POS</th><th style={numTh}>Taxable (₹)</th><th style={numTh}>Tax (₹)</th>
             <th style={numTh}>Total (₹)</th><th style={numTh}>Due (₹)</th><th style={numTh}>Overdue</th><th style={thStyle}>E-docs</th>
             <th style={thStyle}>Status</th><th style={thStyle}></th>
@@ -352,32 +353,29 @@ function InvoicesTab(ctx: Ctx) {
                     <td colSpan={COLS} style={{ padding: '12px 18px', background: 'rgba(148,163,184,0.06)', borderTop: `1px solid ${BORDER.normal}` }}>
                       <ApprovalPanel entityType="accounts_ar_transaction" entityId={t.id} onChanged={() => load()} />
                       <LinesTable lines={t.lines} interstate={t.is_interstate} />
-                      <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', marginTop: 12, fontSize: 12, color: TEXT.secondary }}>
-                        <div style={{ lineHeight: 1.7, maxWidth: 520 }}>
-                          {t.is_interstate
-                            ? <div>IGST {inr(t.igst_amount)}</div>
-                            : <div>CGST {inr(t.cgst_amount)} · SGST {inr(t.sgst_amount)}</div>}
-                          {t.round_off !== 0 && <div>Round-off: {inr(t.round_off)}</div>}
-                          {t.customer_po_number && <div>Customer PO: {t.customer_po_number}{t.customer_po_date ? ` dt. ${dmy(t.customer_po_date)}` : ''}</div>}
-                          {t.billing_address && <div style={{ whiteSpace: 'pre-line' }}><b>Bill to:</b> {t.billing_address}</div>}
-                          {t.shipping_address && <div style={{ whiteSpace: 'pre-line' }}><b>Ship to:</b> {t.shipping_address}</div>}
-                          {t.narration && <div>Narration: {t.narration}</div>}
-                          {t.cancelled_reason && <div style={{ color: '#b91c1c' }}>Cancelled: {t.cancelled_reason}</div>}
-                          <div>Drafted by {t.created_by_name || '—'}</div>
-                        </div>
-                        <div style={{ lineHeight: 1.7 }}>
-                          <div style={{ ...labelStyle, marginBottom: 4 }}>E-invoice / e-way bill</div>
-                          <div>IRN: {t.irn ? <span style={{ fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all' }}>{t.irn}</span> : '—'}</div>
-                          <div>Ack no.: {t.ack_no || '—'} · Ack date: {dmy(t.ack_date)}</div>
-                          <div>E-way bill: {t.eway_bill_no || '—'} · Date: {dmy(t.eway_bill_date)} · Vehicle: {t.vehicle_no || '—'}</div>
-                        </div>
+                      <RecordFacts>
+                        <DetailGroup title="Customer & amounts" last>
+                          {t.customer_po_number && <DetailRow label="Customer PO">{`${t.customer_po_number}${t.customer_po_date ? ` dated ${dmy(t.customer_po_date)}` : ''}`}</DetailRow>}
+                          <DetailRow label="Bill to">{t.billing_address || null}</DetailRow>
+                          <DetailRow label="Ship to">{t.shipping_address || null}</DetailRow>
+                          <DetailRow label={t.is_interstate ? 'IGST' : 'CGST + SGST'}>{t.is_interstate ? `₹ ${inr(t.igst_amount)}` : `₹ ${inr(t.cgst_amount)} + ₹ ${inr(t.sgst_amount)}`}</DetailRow>
+                          {t.round_off !== 0 && <DetailRow label="Round-off">₹ {inr(t.round_off)}</DetailRow>}
+                          <DetailRow label="Narration">{t.narration || null}</DetailRow>
+                          {t.cancelled_reason && <DetailRow label="Cancelled because"><span style={{ color: '#b91c1c' }}>{t.cancelled_reason}</span></DetailRow>}
+                          <DetailRow label="Drafted by">{t.created_by_name || null}</DetailRow>
+                        </DetailGroup>
+                        <DetailGroup title="E-invoice / e-way bill" last>
+                          <DetailRow label="IRN">{t.irn ? <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{t.irn}</span> : null}</DetailRow>
+                          <DetailRow label="Acknowledgement">{t.ack_no ? `${t.ack_no}${t.ack_date ? ` · ${dmy(t.ack_date)}` : ''}` : null}</DetailRow>
+                          <DetailRow label="E-way bill">{t.eway_bill_no ? `${t.eway_bill_no}${t.eway_bill_date ? ` · ${dmy(t.eway_bill_date)}` : ''}` : null}</DetailRow>
+                          <DetailRow label="Vehicle">{t.vehicle_no || null}</DetailRow>
+                        </DetailGroup>
                         {t.status === 'posted' && seeSettlements && (
-                          <div>
-                            <div style={{ ...labelStyle, marginBottom: 4 }}>Receipt history</div>
-                            <SettlementList rows={settlements[t.id]} />
-                          </div>
+                          <DetailGroup title="Receipt history" last>
+                            <div style={{ padding: '6px 0' }}><SettlementList rows={settlements[t.id]} /></div>
+                          </DetailGroup>
                         )}
-                      </div>
+                      </RecordFacts>
                       <div style={{ marginTop: 14 }}>
                         <FinanceAttachments label={<div style={{ ...labelStyle, marginBottom: 4 }}>Supporting documents</div>} entityType="ar_transaction" entityId={t.id} tabKey="sales_invoices"
                           locked={t.status !== 'pending'} closed={t.status === 'cancelled'} />
@@ -708,13 +706,13 @@ function CreditNotesTab(ctx: Ctx) {
       <TableWrap minWidth={1150} tour="fin-cn-table">
         <thead>
           <tr>
-            <th style={thStyle}>Note no.</th><th style={thStyle}>Date</th><th style={thStyle}>Customer</th><th style={thStyle}>Against invoice</th>
+            <th style={thStyle}>Note no. <RowCount count={loading ? 0 : rows.length} /></th><th style={thStyle}>Date</th><th style={thStyle}>Customer</th><th style={thStyle}>Against invoice</th>
             <th style={thStyle}>Reason</th><th style={numTh}>Taxable (₹)</th><th style={numTh}>GST (₹)</th><th style={numTh}>Total (₹)</th>
             <th style={numTh}>Unadjusted (₹)</th><th style={thStyle}>Status</th><th style={thStyle}></th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <EmptyRow colSpan={COLS} text="Loading…" /> : rows.length === 0 ? <EmptyRow colSpan={COLS} text="No credit notes yet." /> : rows.map((n) => {
+          {loading ? <EmptyRow colSpan={COLS} text="Loading…" /> : rows.length === 0 ? <EmptyRow colSpan={COLS} text="No credit notes yet — use + Issue credit note for a return, rate difference or discount." /> : rows.map((n) => {
             const isMaker = userId != null && n.created_by_id === userId
             return (
               <Fragment key={n.id}>
@@ -758,11 +756,17 @@ function CreditNotesTab(ctx: Ctx) {
                     <td colSpan={COLS} style={{ padding: '12px 18px', background: 'rgba(148,163,184,0.06)', borderTop: `1px solid ${BORDER.normal}` }}>
                       <ApprovalPanel entityType="accounts_party_note" entityId={n.id} onChanged={() => load()} />
                       <LinesTable lines={n.lines} interstate={n.is_interstate} />
-                      <div style={{ fontSize: 12, color: TEXT.secondary, marginTop: 10, lineHeight: 1.7 }}>
-                        <div>Customer GSTIN: <b>{n.party_gstin || '—'}</b> · Place of supply: <b>{n.place_of_supply_state_code || '—'}</b>{n.round_off !== 0 && ` · Round-off ${inr(n.round_off)}`}</div>
-                        {n.narration && <div>Narration: {n.narration}</div>}
-                        <div>Raised by {n.created_by_name || '—'}</div>
-                      </div>
+                      <RecordFacts>
+                        <DetailGroup title="Tax" last>
+                          <DetailRow label="Customer GSTIN">{n.party_gstin ? <span style={{ fontFamily: 'monospace' }}>{n.party_gstin}</span> : null}</DetailRow>
+                          <DetailRow label="Place of supply">{n.place_of_supply_state_code || null}</DetailRow>
+                          {n.round_off !== 0 && <DetailRow label="Round-off">₹ {inr(n.round_off)}</DetailRow>}
+                        </DetailGroup>
+                        <DetailGroup title="Record" last>
+                          <DetailRow label="Narration">{n.narration || null}</DetailRow>
+                          <DetailRow label="Raised by">{n.created_by_name || null}</DetailRow>
+                        </DetailGroup>
+                      </RecordFacts>
                       <div style={{ marginTop: 14 }}>
                         <FinanceAttachments label={<div style={{ ...labelStyle, marginBottom: 4 }}>Supporting documents</div>} entityType="party_note" entityId={n.id} tabKey="credit_notes"
                           locked={n.status !== 'pending'} closed={n.status === 'cancelled'} />

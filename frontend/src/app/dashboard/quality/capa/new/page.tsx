@@ -1,5 +1,6 @@
 'use client'
 
+import { pillStyle } from '@/components/shared/ui'
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -141,7 +142,7 @@ export default function NewCapaPage() {
                 {ncrIds.map((id) => {
                   const n = ncrs.find((x) => x.id === id)
                   return (
-                    <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: '#FF6A2A1a', color: '#c2410c' }}>
+                    <span key={id} style={{ ...pillStyle('#c2410c'), gap: 4, fontSize: 12, fontWeight: 600, padding: '4px 10px', background: '#FF6A2A1a' }}>
                       {n ? n.ncr_number : `NCR #${id}`}
                       <button type="button" aria-label="Remove NCR" onClick={() => setNcrIds(ncrIds.filter((x) => x !== id))} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, color: 'inherit', display: 'inline-flex' }}><SheetIcon name="x" size={12} /></button>
                     </span>

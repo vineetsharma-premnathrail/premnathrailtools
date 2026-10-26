@@ -379,6 +379,59 @@ async def update_user_data_scopes(
     return _data_scope_rows(target)
 
 
+class UserNotificationOverridesUpdate(BaseModel):
+    # "<module>.<event>" -> channels; [] = off for this user; missing = follow roles.
+    overrides: dict[str, list[str]] = {}
+
+
+@router.get("/{user_id}/notification-overrides")
+async def get_user_notification_overrides(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_feature_action("organization", "roles", "notifications", "view")),
+):
+    """The user's personal notification overrides (replace their roles' channels per event)."""
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"overrides": dict(target.notification_overrides or {})}
+
+
+@router.put("/{user_id}/notification-overrides")
+async def update_user_notification_overrides(
+    user_id: int,
+    payload: UserNotificationOverridesUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_feature_action("organization", "roles", "notifications", "edit")),
+):
+    from app.core.notification_events import EVENTS
+
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    _ensure_may_manage(admin, target, own_access=True)
+    clean: dict[str, list[str]] = {}
+    for key, chans in payload.overrides.items():
+        module, _, event = key.partition(".")
+        if event not in EVENTS.get(module, {}):
+            raise HTTPException(status_code=422, detail=f"'{key}' is not a notification event any more — reload the page.")
+        bad = [c for c in chans if c not in ("bell", "email", "teams")]
+        if bad:
+            raise HTTPException(status_code=422, detail=f"Unknown channel {', '.join(bad)} for {key} — use bell, email or teams.")
+        clean[key] = sorted(set(chans))
+    before = dict(target.notification_overrides or {})
+    target.notification_overrides = clean
+    if before != clean:
+        db.add(AuditLog(
+            entity_type="user_permissions", entity_id=user_id, action="update", module_key="organization",
+            summary=f"{admin.name} set personal notifications for {target.name}: "
+                    + (", ".join(f"{k} = {'+'.join(v) or 'off'}" for k, v in sorted(clean.items())) or "follow roles"),
+            old_value=json.dumps(before), new_value=json.dumps(clean), performed_by_id=admin.id,
+        ))
+    db.commit()
+    return {"overrides": clean}
+
+
 @router.get("/{user_id}/effective-permissions")
 async def get_user_effective_permissions(
     user_id: int,

@@ -99,6 +99,8 @@ def test_features_are_well_formed():
             for fk, f in feats.items():
                 assert "view" in f["actions"], f"{mk}:{tk}.{fk} has no view"
                 for a, legacy in f["inherit"].items():
+                    if legacy is None:  # explicit-only: never inherited
+                        continue
                     assert legacy in m["actions"][tk], f"{mk}:{tk}.{fk}:{a} inherits '{legacy}', which {mk}:{tk} does not have"
 
 
@@ -130,3 +132,16 @@ def test_feature_inheritance_keeps_current_access():
     finally:
         reg.MODULES.pop("_t", None)
         reg.FEATURES.pop("_t", None)
+
+
+def test_explicit_only_feature_is_never_inherited_or_preset_granted():
+    """R&D › Requirements › Technical Offer team replaced a hand-picked list:
+    no preset (wildcards) and no tab inheritance may hand it out."""
+    from app.core.permission_registry import expand_grants
+    view, create = "rnd:requirements.offer_team:view", "rnd:requirements.offer_team:create"
+    for preset in (["rnd:*:*"], ["rnd:*:view", "rnd:*:create", "rnd:*:edit"], ["rnd:requirements:view", "rnd:requirements:create"]):
+        got = expand_grants(preset)
+        assert view not in got and create not in got, preset
+        assert "rnd:requirements.technical_offers:view" in got  # ordinary features still inherit
+    ticked = expand_grants(["rnd:requirements:view", create])
+    assert create in ticked and "rnd:requirements:view" in ticked

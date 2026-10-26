@@ -10,10 +10,8 @@ import { TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
-import {
-  ErrorBanner, FlagPill, MILESTONE_HEX, MILESTONE_LABELS, PRIORITY_HEX, PRIORITY_LABELS, PROJECT_HEX, PROJECT_LABELS, Pill,
-  ProgressBar, TASK_HEX, TASK_LABELS, actionBtn, smallActionBtn, inputStyle, sectionStyle, tdStyle, thStyle, todayIso,
-} from './pmUi'
+import { ErrorBanner, FlagPill, MILESTONE_HEX, MILESTONE_LABELS, PRIORITY_HEX, PRIORITY_LABELS, PROJECT_HEX, PROJECT_LABELS, Pill, ProgressBar, TASK_HEX, TASK_LABELS, smallActionBtn, inputStyle, sectionStyle, tdStyle, thStyle, todayIso } from './pmUi'
+import { RowCount } from '@/components/shared/ui'
 
 /** Shared task table — milestone workspace, department work and My Tasks. */
 export function TaskTable({ tasks, onOpen, showAssignee = true, showProject = false, actions }: {
@@ -23,11 +21,11 @@ export function TaskTable({ tasks, onOpen, showAssignee = true, showProject = fa
   showProject?: boolean
   actions?: (t: PmProjectTask) => React.ReactNode
 }) {
-  const cols = ['Task', ...(showProject ? ['Project / WBS'] : []), ...(showAssignee ? ['Assigned to'] : []), 'Status', 'Priority', 'Due', 'Progress', ...(actions ? [''] : [])]
+  const cols = ['Task', ...(showProject ? ['Project / Milestone'] : []), ...(showAssignee ? ['Assigned to'] : []), 'Status', 'Priority', 'Due', 'Progress', ...(actions ? [''] : [])]
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
-        <thead><tr>{cols.map((c) => <th key={c} style={thStyle}>{c}</th>)}</tr></thead>
+        <thead><tr>{cols.map((c, i) => <th key={c} style={thStyle}>{c}{i === 0 && <RowCount count={tasks.length} />}</th>)}</tr></thead>
         <tbody>
           {tasks.map((t) => (
             <tr key={t.id} onClick={() => onOpen(t)} style={{ cursor: 'pointer', opacity: t.status === 'cancelled' ? 0.55 : 1 }}>
@@ -130,7 +128,7 @@ export default function DepartmentWork({ departments, between }: { departments?:
     <>
       <ErrorBanner error={error} />
       {between}
-      <div style={sectionStyle}><p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>You are not on any WBS here yet. When a project manager makes you a WBS lead or assistant, it shows up on this page.</p></div>
+      <div style={sectionStyle}><p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>You are not on any milestone here yet. When a project manager makes you a milestone lead or assistant, it shows up on this page.</p></div>
     </>
   )
 
@@ -159,7 +157,7 @@ export default function DepartmentWork({ departments, between }: { departments?:
             </label>
           </div>
         </div>
-        {shown.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: '8px 0 0' }}>No open WBS elements for you.</p> : shown.map((p) => (
+        {shown.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: '8px 0 0' }}>No open milestones for you.</p> : shown.map((p) => (
           <div key={p.project.id} style={{ borderTop: '1px solid rgba(0,0,0,0.07)', paddingTop: 12, marginTop: 12 }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
               {canOpenProject ? (
@@ -186,15 +184,15 @@ export default function DepartmentWork({ departments, between }: { departments?:
       {leads && (teamEmpty ? (
         <div data-tour="pm-dw-workload" style={sectionStyle}>
           <h2 style={{ fontSize: 16, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Team</h2>
-          <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No open team tasks. Open a WBS above and assign its tasks — workload and open tasks show up here.</p>
+          <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No open team tasks. Open a milestone above and assign its tasks — workload and open tasks show up here.</p>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: 20 }}>
           <div data-tour="pm-dw-workload" style={{ ...sectionStyle, marginBottom: 0 }}>
             <h2 style={{ fontSize: 16, fontWeight: 700, color: TEXT.heading, margin: '0 0 12px' }}>Team workload</h2>
             {workload.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No open tasks.</p> : (
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr>{['Person', 'Open', 'In progress', 'Blocked', 'Overdue', 'Est. h', 'Logged h'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Person', 'Open', 'In progress', 'Blocked', 'Overdue', 'Est. h', 'Logged h'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={workload.length} />}</th>)}</tr></thead>
                 <tbody>
                   {workload.map((w) => (
                     <tr key={w.user_id ?? 0}>

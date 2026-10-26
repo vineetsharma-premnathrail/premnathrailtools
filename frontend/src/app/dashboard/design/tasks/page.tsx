@@ -10,7 +10,7 @@ import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { smallSecondaryBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import { PRIORITY_LABELS, toOptions } from '@/components/design/designMeta'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
@@ -76,7 +76,7 @@ function delivHref(d: DesignRequestDeliverable) {
 
 function smallPill(label: string, hex: string) {
   return (
-    <span style={{ fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
+    <span style={pillStyle(hex)}>{label}</span>
   )
 }
 
@@ -190,7 +190,7 @@ export default function DesignTasksPage() {
       <div data-tour="design-tasks-work" style={{ ...sectionStyle, marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
           <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#FF6A2A', margin: 0 }}>My project tasks</p>
-          {work && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: '#FF6A2A1a', color: '#FF6A2A' }}>{work.length}</span>}
+          {work && <span style={pillStyle('#FF6A2A')}>{work.length}</span>}
           <span style={{ fontSize: 12, color: TEXT.muted, flex: 1 }}>Tasks assigned to you in Project Management — link the drawings and BOMs that deliver each one.</span>
           <label data-tour="design-tasks-include-done" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: TEXT.secondary, cursor: 'pointer' }}>
             <input type="checkbox" checked={includeDone} onChange={(e) => setIncludeDone(e.target.checked)} /> Show closed tasks
@@ -207,7 +207,7 @@ export default function DesignTasksPage() {
           <div data-tour="design-tasks-work-table" style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
               <thead>
-                <tr>{['Project / WBS', 'Task', 'Due', 'Status', 'Deliverables', ''].map((h, i) => <th key={`${h}-${i}`} style={thStyle}>{h}</th>)}</tr>
+                <tr>{['Project / WBS', 'Task', 'Due', 'Status', 'Deliverables', ''].map((h, i) => <th key={`${h}-${i}`} style={thStyle}>{h}{i === 0 && <RowCount count={work.length} />}</th>)}</tr>
               </thead>
               <tbody>
                 {work.map((t) => {
@@ -285,7 +285,7 @@ export default function DesignTasksPage() {
               <div key={g.key} data-tour={`design-tasks-group-${g.key}`} style={sectionStyle}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
                   <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: g.hex, margin: 0 }}>{g.title}</p>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: `${g.hex}1a`, color: g.hex }}>{rows.length}</span>
+                  <span style={pillStyle(g.hex)}>{rows.length}</span>
                   <span style={{ fontSize: 12, color: TEXT.muted }}>{g.hint}</span>
                 </div>
                 {rows.length === 0 ? (

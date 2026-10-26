@@ -1,6 +1,7 @@
 'use client'
 
 import { BORDER, GLASS, SHADOWS, TEXT } from '@/lib/theme'
+import { pillStyle } from '@/components/shared/ui'
 
 export const PRODUCT_TYPE_LABELS: Record<string, string> = {
   vehicle: 'Rail-road vehicle', machine: 'Machine', equipment: 'Equipment', attachment: 'Attachment / accessory',
@@ -14,11 +15,7 @@ export const PRODUCT_STATUS_HEX: Record<string, string> = {
 
 export function Pill({ text, hex }: { text: string; hex?: string }) {
   const c = hex || '#78716c'
-  return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${c}1a`, color: c, whiteSpace: 'nowrap' }}>
-      {text}
-    </span>
-  )
+  return <span style={pillStyle(c)}>{text}</span>
 }
 
 export function PageHeader({ title, subtitle, children }: { title: string; subtitle?: string; children?: React.ReactNode }) {

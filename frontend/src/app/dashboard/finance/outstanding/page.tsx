@@ -18,6 +18,7 @@ import {
   sectionStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, fyStartIso, Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, PageHeader, TableWrap, EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
+import { RowCount, DetailSummary } from '@/components/shared/ui'
 import { recordHref } from '@/lib/recordRef'
 
 const TABS = ['Receivables (customers)', 'Payables (vendors)'] as const
@@ -106,16 +107,16 @@ export default function OutstandingPage() {
       <ErrorBanner error={error} />
 
       <div data-tour="fin-os-stats" style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 20 }}>
-        <StatCard label="Total outstanding" value={inr(totals.outstanding ?? 0)} />
-        <StatCard label="Overdue" value={inr(totals.overdue ?? 0)} tone={(totals.overdue ?? 0) > 0 ? '#b91c1c' : undefined} />
-        <StatCard label={partyType === 'vendor' ? 'Advances paid' : 'Advances received'} value={inr(totals.advances ?? 0)} tone="#b45309" />
-        <StatCard label="Net" value={inr(totals.net ?? 0)} />
+        <StatCard label="Total outstanding" value={`₹ ${inr(totals.outstanding ?? 0)}`} />
+        <StatCard label="Overdue" value={`₹ ${inr(totals.overdue ?? 0)}`} tone={(totals.overdue ?? 0) > 0 ? '#b91c1c' : undefined} />
+        <StatCard label={partyType === 'vendor' ? 'Advances paid' : 'Advances received'} value={`₹ ${inr(totals.advances ?? 0)}`} tone="#b45309" />
+        <StatCard label="Net" value={`₹ ${inr(totals.net ?? 0)}`} />
       </div>
 
       <TableWrap minWidth={1150} maxHeight={selected ? '380px' : undefined} tour="fin-os-table">
         <thead>
           <tr>
-            <th style={thStyle}>{partyType === 'vendor' ? 'Vendor' : 'Customer'}</th>
+            <th style={thStyle}>{partyType === 'vendor' ? 'Vendor' : 'Customer'} <RowCount count={rows.length} /></th>
             <th style={numTh}>Open bills</th>
             <th style={numTh}>Outstanding (₹)</th>
             {BUCKETS.map((b) => <th key={b} style={numTh}>{BUCKET_LABELS[b]}</th>)}
@@ -204,19 +205,23 @@ function PartyDetail({ partyType, party, asOf, onClose }: { partyType: PartyType
 
   return (
     <div style={sectionStyle} data-tour="fin-os-party">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-        <div>
-          <h2 style={{ fontSize: 16, fontWeight: 800, color: TEXT.heading, margin: 0 }}>{party.party_name}</h2>
-          <div style={{ fontSize: 12.5, color: TEXT.secondary, marginTop: 4 }}>
-            Outstanding {inr(party.outstanding)} · Overdue {inr(party.overdue)} · Advances {inr(party.advances)} · Net {inr(party.net)}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Link href={payHref} data-tour="fin-os-record-btn" style={{ ...primaryBtnStyle, textDecoration: 'none' }}>
-            {partyType === 'vendor' ? 'Record payment' : 'Record receipt'}
-          </Link>
-          <button data-tour="fin-os-close" style={secondaryBtnStyle} onClick={onClose}>Close</button>
-        </div>
+      <div style={{ marginBottom: 14 }}>
+        <DetailSummary
+          title={party.party_name}
+          text={partyType === 'vendor' ? 'What we owe this vendor: open bills, advances and debit notes not yet set off, and the account statement.' : 'What this customer owes us: open invoices, advances and credit notes not yet set off, and the account statement.'}
+          meta={<>
+            <span>Outstanding <strong style={{ color: TEXT.heading }}>₹ {inr(party.outstanding)}</strong></span>
+            <span>·</span><span>Overdue <strong style={{ color: party.overdue > 0 ? '#b91c1c' : TEXT.heading }}>₹ {inr(party.overdue)}</strong></span>
+            <span>·</span><span>Advances <strong style={{ color: TEXT.heading }}>₹ {inr(party.advances)}</strong></span>
+            <span>·</span><span>Net <strong style={{ color: TEXT.heading }}>₹ {inr(party.net)}</strong></span>
+          </>}
+          actions={<>
+            <Link href={payHref} data-tour="fin-os-record-btn" style={{ ...primaryBtnStyle, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+              {partyType === 'vendor' ? 'Record payment' : 'Record receipt'}
+            </Link>
+            <button data-tour="fin-os-close" style={secondaryBtnStyle} onClick={onClose}>Close</button>
+          </>}
+        />
       </div>
       <ErrorBanner error={error} />
 
@@ -224,14 +229,14 @@ function PartyDetail({ partyType, party, asOf, onClose }: { partyType: PartyType
       <TableWrap minWidth={820} maxHeight="320px" tour="fin-os-bills">
         <thead>
           <tr>
-            <th style={thStyle}>Bill no.</th><th style={thStyle}>Date</th><th style={thStyle}>Due date</th>
+            <th style={thStyle}>Bill no. <RowCount count={docs.length} /></th><th style={thStyle}>Date</th><th style={thStyle}>Due date</th>
             <th style={numTh}>Days overdue</th><th style={thStyle}>Bucket</th>
             <th style={numTh}>Bill total (₹)</th><th style={numTh}>Settled (₹)</th><th style={numTh}>Due (₹)</th>
           </tr>
         </thead>
         <tbody>
           {billsLoading ? <EmptyRow colSpan={8} text="Loading…" />
-            : docs.length === 0 ? <EmptyRow colSpan={8} text="No open bills." />
+            : docs.length === 0 ? <EmptyRow colSpan={8} text={partyType === 'vendor' ? 'No open bills — everything booked for this vendor is paid or set off.' : 'No open invoices — everything billed to this customer is received or set off.'} />
             : docs.map((d) => (
               <tr key={`${d.target_type}-${d.id}`}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{d.doc_number}</td>
@@ -256,7 +261,7 @@ function PartyDetail({ partyType, party, asOf, onClose }: { partyType: PartyType
           <TableWrap minWidth={640} maxHeight="240px" tour="fin-os-credits">
             <thead>
               <tr>
-                <th style={thStyle}>Document</th><th style={thStyle}>Kind</th><th style={thStyle}>Date</th>
+                <th style={thStyle}>Document <RowCount count={credits.length} /></th><th style={thStyle}>Kind</th><th style={thStyle}>Date</th>
                 <th style={numTh}>Amount (₹)</th><th style={numTh}>Available to allocate (₹)</th><th style={thStyle}></th>
               </tr>
             </thead>
@@ -300,7 +305,7 @@ function PartyDetail({ partyType, party, asOf, onClose }: { partyType: PartyType
       <TableWrap minWidth={900} maxHeight="480px" tour="fin-os-statement">
         <thead>
           <tr>
-            <th style={thStyle}>Date</th><th style={thStyle}>Voucher no.</th><th style={thStyle}>Type</th><th style={thStyle}>Description</th>
+            <th style={thStyle}>Date <RowCount count={statement?.rows.length ?? 0} /></th><th style={thStyle}>Voucher no.</th><th style={thStyle}>Type</th><th style={thStyle}>Description</th>
             <th style={numTh}>Debit (₹)</th><th style={numTh}>Credit (₹)</th><th style={numTh}>Balance (₹)</th>
           </tr>
         </thead>

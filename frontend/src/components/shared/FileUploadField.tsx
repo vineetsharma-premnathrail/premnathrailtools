@@ -3,6 +3,7 @@
 import { useRef } from 'react'
 import { TEXT, BORDER } from '@/lib/theme'
 import { UploadSimple, File as FileIcon } from '@phosphor-icons/react'
+import { smallDangerBtnStyle } from '@/components/shared/ui'
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -50,6 +51,7 @@ export default function FileUploadField({
         onChange={(e) => onChange(e.target.files?.[0] || null)}
       />
       {!name ? (
+        // ui-audit-ignore-next-line custom-button — full-width dashed file-picker drop zone styled as an input, not an action pill
         <button
           type="button"
           disabled={disabled}
@@ -92,7 +94,7 @@ export default function FileUploadField({
                   disabled={disabled}
                   onClick={onRemove}
                   title="Remove"
-                  style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 8, border: '1px solid rgba(220,38,38,0.25)', background: 'rgba(220,38,38,0.06)', color: '#b91c1c', cursor: disabled ? 'not-allowed' : 'pointer' }}
+                  style={{ ...smallDangerBtnStyle, cursor: disabled ? 'not-allowed' : 'pointer' }}
                 >
                   Remove
                 </button>

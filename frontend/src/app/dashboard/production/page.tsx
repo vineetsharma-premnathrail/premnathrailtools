@@ -5,12 +5,13 @@ import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { productionApi } from '@/lib/api'
 import { ProductionDashboard, ProductionScheduleEntry } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import ProductionNav from '@/components/production/ProductionNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
 import { useCan } from '@/lib/permissions'
+import { primaryBtnStyle, Pill } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', released: 'Released', in_progress: 'In Progress', completed: 'Completed', closed: 'Closed', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', released: '#2563EB', in_progress: '#F59E0B', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
@@ -43,9 +44,7 @@ function OrderRows({ rows, empty, onOpen }: { rows: ProductionScheduleEntry[]; e
           <span style={{ fontSize: 13, color: TEXT.body, flex: '1 1 160px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.product_name}</span>
           <span style={{ fontSize: 12, color: TEXT.muted }}>{r.quantity_completed}/{r.quantity_planned}</span>
           <span style={{ fontSize: 12, color: r.is_overdue ? '#DC2626' : TEXT.muted, minWidth: 90 }}>{r.planned_end_date ? formatDate(r.planned_end_date) : '—'}</span>
-          <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[r.status]}1a`, color: STATUS_HEX[r.status], whiteSpace: 'nowrap' }}>
-            {STATUS_LABELS[r.status] || r.status}
-          </span>
+          <Pill label={STATUS_LABELS[r.status] || r.status} hex={STATUS_HEX[r.status]} />
         </div>
       ))}
     </div>
@@ -85,11 +84,7 @@ export default function ProductionDashboardPage() {
         {can('production', 'work_orders', 'create') && <button
           data-tour="production-dash-new-wo-btn"
           onClick={() => router.push('/dashboard/production/work-orders/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
+          style={primaryBtnStyle}
         >
           + New Work Order
         </button>}

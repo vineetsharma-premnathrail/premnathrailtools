@@ -13,6 +13,7 @@ import {
   sectionStyle, tableWrapStyle, thStyle, tdStyle, linkActionStyle, dangerActionStyle, mutedActionStyle,
   ErrorBanner, ActiveBadge, Modal, MasterToolbar,
 } from './masterUi'
+import { RowCount } from '@/components/shared/ui'
 
 type Form = { id: number | null; code: string; name: string; level: string; description: string; is_active: boolean }
 const EMPTY: Form = { id: null, code: '', name: '', level: '1', description: '', is_active: true }
@@ -176,7 +177,7 @@ export default function GradesMaster() {
       <div data-tour="hr-mst-grade-table" style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
           <thead>
-            <tr>{['Level', 'Code', 'Name', 'Employees', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+            <tr>{['Level', 'Code', 'Name', 'Employees', 'Status', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={visible.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted, padding: 24 }}>Loading…</td></tr>}

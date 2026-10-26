@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { storeBatchesApi } from '@/lib/api'
 import { inputStyle } from '@/components/shared/ui'
 import { TEXT } from '@/lib/theme'
+import { formatDate } from '@/lib/format'
 import Select from '@/components/shared/Select'
 
 interface AvailableBatch {
@@ -37,7 +38,7 @@ export default function BatchPicker({ itemId, locationId, quantity, value, onCha
   }, [itemId, locationId, quantity])
 
   const label = (b: AvailableBatch) =>
-    `${b.batch_number}${b.heat_number ? ` · heat ${b.heat_number}` : ''} — ${b.free_qty} free${b.expiry_date ? ` · exp ${b.expiry_date.split('-').reverse().join('-')}` : ''}${b.issuable ? '' : ` (${b.reason})`}`
+    `${b.batch_number}${b.heat_number ? ` · heat ${b.heat_number}` : ''} — ${b.free_qty.toLocaleString('en-IN')} free${b.expiry_date ? ` · exp ${formatDate(b.expiry_date)}` : ''}${b.issuable ? '' : ` (${b.reason})`}`
 
   return (
     <div>

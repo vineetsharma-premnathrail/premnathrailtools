@@ -7,7 +7,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { hrApi } from '@/lib/api'
 import { HrDirectoryEntry } from '@/types'
 import { TEXT, BORDER, BRAND } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, pillStyle } from '@/components/shared/ui'
 import HrNav from '@/components/hr/HrNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { sectionStyle, searchInputStyle, linkActionStyle, ErrorBanner, Avatar } from '@/components/hr/masters/masterUi'
@@ -148,14 +148,14 @@ export default function HrOrgChartPage() {
               {isHr
                 ? <span onClick={() => router.push(recordPath('/dashboard/hr/employees', n))} style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading, cursor: 'pointer' }}>{n.name}</span>
                 : <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{n.name}</span>}
-              {isMe && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 9999, background: '#2563EB1a', color: '#2563EB' }}>You</span>}
+              {isMe && <span style={pillStyle('#2563EB')}>You</span>}
             </div>
             <div style={{ fontSize: 12, color: TEXT.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {[n.designation, n.department, n.branch].filter(Boolean).join(' · ') || '—'}
             </div>
           </div>
           {allKids > 0 && (
-            <span data-tour="hr-org-team-count" title={`${tree.descendants.get(n.id) || 0} people in this team in total`} style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: 'rgba(0,0,0,0.05)', color: TEXT.secondary, whiteSpace: 'nowrap', flex: 'none' }}>
+            <span data-tour="hr-org-team-count" title={`${tree.descendants.get(n.id) || 0} people in this team in total`} style={pillStyle('#475569')}>
               {allKids} direct{(tree.descendants.get(n.id) || 0) > allKids ? ` · ${tree.descendants.get(n.id)} total` : ''}
             </span>
           )}

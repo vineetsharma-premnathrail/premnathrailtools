@@ -5,8 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { maintenanceApi } from '@/lib/api'
 import { MaintenanceAsset, MaintenanceAssetHistoryEntry, MaintenancePmPlan } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
+import { secondaryBtnStyle, dangerBtnStyle, primaryBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow, thStyle, tdStyle, numThStyle, numTdStyle } from '@/components/shared/ui'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -35,8 +35,7 @@ const sectionStyle: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }
-const gridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16 }
-const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
+const cellStyle: React.CSSProperties = tdStyle
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
@@ -112,20 +111,13 @@ export default function MaintenanceAssetDetailPage() {
           </p>
           <h1 data-tour="maint-assetd-status" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             {asset ? `${asset.asset_code} — ${asset.name}` : 'Asset'}
-            {asset && (
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[asset.status]}1a`, color: STATUS_HEX[asset.status], whiteSpace: 'nowrap' }}>
-                {ASSET_STATUS_LABELS[asset.status] || asset.status}
-              </span>
-            )}
+            {asset && <Pill label={ASSET_STATUS_LABELS[asset.status] || asset.status} hex={STATUS_HEX[asset.status] || '#78716c'} />}
           </h1>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {asset && asset.status !== 'decommissioned' && (
             <>
-              <button data-tour="maint-assetd-report-btn" type="button" onClick={() => router.push(`/dashboard/maintenance/requests/new?asset=${ref}`)} style={{
-                padding: '9px 18px', borderRadius: 12, border: 'none', cursor: 'pointer',
-                background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600,
-              }}>Report Breakdown</button>
+              <button data-tour="maint-assetd-report-btn" type="button" onClick={() => router.push(`/dashboard/maintenance/requests/new?asset=${ref}`)} style={primaryBtnStyle}>Report Breakdown</button>
               {can('maintenance', 'work_orders', 'create') && <button data-tour="maint-assetd-new-wo-btn" type="button" onClick={() => router.push(`/dashboard/maintenance/work-orders/new?asset=${ref}`)} style={secondaryBtnStyle}>New Work Order</button>}
             </>
           )}
@@ -167,48 +159,52 @@ export default function MaintenanceAssetDetailPage() {
           </div>
 
           {tab === 'overview' && (
-            <>
-              <div data-tour="maint-assetd-details" style={sectionStyle}>
-                <p style={sectionTitle}>Details</p>
-                <div style={gridStyle}>
-                  <InfoRow label="Category" value={ASSET_CATEGORY_LABELS[asset.category] || asset.category} />
-                  <InfoRow label="Criticality" value={CRITICALITY_LABELS[asset.criticality] || asset.criticality} />
-                  <InfoRow label="Plant" value={asset.branch_name || '—'} />
-                  <InfoRow label="Department" value={asset.department_name || '—'} />
-                  <InfoRow label="Location" value={asset.location_text || '—'} />
-                  <InfoRow label="Part Of" value={asset.parent_asset_code || '—'} />
-                  <InfoRow label="Workstation" value={asset.workstation_code ? `${asset.workstation_code}${asset.workstation_status ? ` (${asset.workstation_status.replace('_', ' ')})` : ''}` : 'Not linked'} />
-                  <InfoRow label="Open Work Orders" value={String(asset.open_work_orders)} />
-                </div>
+            <DetailCard tour="maint-assetd-details">
+              <DetailSummary
+                title={`${asset.asset_code} — ${asset.name}`}
+                text={asset.description || `${ASSET_CATEGORY_LABELS[asset.category] || asset.category}${asset.make || asset.model ? ` — ${[asset.make, asset.model].filter(Boolean).join(' ')}` : ''}.`}
+                meta={<>
+                  <span>Criticality <strong style={{ color: TEXT.heading }}>{CRITICALITY_LABELS[asset.criticality] || asset.criticality}</strong></span>
+                  <span>· {asset.open_work_orders} open work order{asset.open_work_orders === 1 ? '' : 's'}</span>
+                  {asset.branch_name && <span>· {asset.branch_name}</span>}
+                </>}
+              />
+              <DetailGroup title="Identification">
+                <DetailRow label="Asset Code">{asset.asset_code}</DetailRow>
+                <DetailRow label="Category">{ASSET_CATEGORY_LABELS[asset.category] || asset.category}</DetailRow>
+              </DetailGroup>
+              <DetailGroup title="Location">
+                <DetailRow label="Plant">{asset.branch_name}</DetailRow>
+                <DetailRow label="Department">{asset.department_name}</DetailRow>
+                <DetailRow label="Location">{asset.location_text}</DetailRow>
+                <DetailRow label="Part Of">{asset.parent_asset_code}</DetailRow>
+                <DetailRow label="Production Workstation">{asset.workstation_code ? `${asset.workstation_code}${asset.workstation_status ? ` (${asset.workstation_status.replace(/_/g, ' ')})` : ''}` : 'Not linked'}</DetailRow>
+              </DetailGroup>
+              <div data-tour="maint-assetd-make">
+                <DetailGroup title="Make & Purchase">
+                  <DetailRow label="Make">{asset.make}</DetailRow>
+                  <DetailRow label="Model">{asset.model}</DetailRow>
+                  <DetailRow label="Serial Number">{asset.serial_number}</DetailRow>
+                  <DetailRow label="Year Built">{asset.year_of_manufacture ? String(asset.year_of_manufacture) : null}</DetailRow>
+                  <DetailRow label="Supplier">{asset.supplier_vendor_name}</DetailRow>
+                  <DetailRow label="Purchase Date">{asset.purchase_date ? formatDate(asset.purchase_date) : null}</DetailRow>
+                  <DetailRow label="Purchase Cost">{asset.purchase_cost != null ? formatINR(asset.purchase_cost) : null}</DetailRow>
+                  <DetailRow label="Commissioned On">{asset.commissioned_on ? formatDate(asset.commissioned_on) : null}</DetailRow>
+                  {asset.status === 'decommissioned' && <DetailRow label="Decommissioned On">{asset.decommissioned_on ? formatDate(asset.decommissioned_on) : null}</DetailRow>}
+                </DetailGroup>
+                <DetailGroup title="Warranty, AMC & Meter" last={!asset.remarks}>
+                  <DetailRow label="Warranty Expiry">{asset.warranty_expiry ? formatDate(asset.warranty_expiry) : null}</DetailRow>
+                  <DetailRow label="AMC Vendor">{asset.amc_vendor_name}</DetailRow>
+                  <DetailRow label="AMC Expiry">{asset.amc_expiry ? formatDate(asset.amc_expiry) : null}</DetailRow>
+                  <DetailRow label="Current Meter Reading">{asset.current_meter_reading != null ? `${asset.current_meter_reading.toLocaleString('en-IN')} ${asset.meter_unit || ''}`.trim() : null}</DetailRow>
+                </DetailGroup>
               </div>
-              <div data-tour="maint-assetd-make" style={sectionStyle}>
-                <p style={sectionTitle}>Make, Purchase &amp; Warranty</p>
-                <div style={gridStyle}>
-                  <InfoRow label="Make" value={asset.make || '—'} />
-                  <InfoRow label="Model" value={asset.model || '—'} />
-                  <InfoRow label="Serial Number" value={asset.serial_number || '—'} />
-                  <InfoRow label="Year Built" value={asset.year_of_manufacture ? String(asset.year_of_manufacture) : '—'} />
-                  <InfoRow label="Supplier" value={asset.supplier_vendor_name || '—'} />
-                  <InfoRow label="Purchase Date" value={formatDate(asset.purchase_date)} />
-                  <InfoRow label="Purchase Cost" value={formatINR(asset.purchase_cost)} />
-                  <InfoRow label="Commissioned On" value={formatDate(asset.commissioned_on)} />
-                  <InfoRow label="Warranty Expiry" value={formatDate(asset.warranty_expiry)} />
-                  <InfoRow label="AMC Vendor" value={asset.amc_vendor_name || '—'} />
-                  <InfoRow label="AMC Expiry" value={formatDate(asset.amc_expiry)} />
-                  <InfoRow label="Meter" value={asset.current_meter_reading != null ? `${asset.current_meter_reading} ${asset.meter_unit || ''}`.trim() : '—'} />
-                  {asset.status === 'decommissioned' && <InfoRow label="Decommissioned On" value={formatDate(asset.decommissioned_on)} />}
-                </div>
-              </div>
-              {(asset.description || asset.remarks) && (
-                <div style={sectionStyle}>
-                  <p style={sectionTitle}>Notes</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    {asset.description && <InfoRow label="Description / Specs" value={asset.description} />}
-                    {asset.remarks && <InfoRow label="Remarks" value={asset.remarks} />}
-                  </div>
-                </div>
+              {asset.remarks && (
+                <DetailGroup title="Notes" last>
+                  <DetailRow label="Remarks">{asset.remarks}</DetailRow>
+                </DetailGroup>
               )}
-            </>
+            </DetailCard>
           )}
 
           {tab === 'history' && (
@@ -216,8 +212,8 @@ export default function MaintenanceAssetDetailPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                 <thead>
                   <tr>
-                    {['Date', 'Number', 'Title', 'Status', 'Downtime', ...(showCosts ? ['Cost'] : [])].map((h) => (
-                      <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }}>{h}</th>
+                    {['Date', 'Number', 'Title', 'Status', 'Downtime', ...(showCosts ? ['Cost'] : [])].map((h, hi) => (
+                      <th key={h} style={h === 'Downtime' || h === 'Cost' ? numThStyle : thStyle}>{h}{hi === 0 && <RowCount count={history?.length ?? 0} />}</th>
                     ))}
                   </tr>
                 </thead>
@@ -229,16 +225,14 @@ export default function MaintenanceAssetDetailPage() {
                   ) : history.map((h) => (
                     <tr key={`${h.kind}-${h.id}`} style={{ cursor: 'pointer' }}
                       onClick={() => router.push(recordPath(h.kind === 'request' ? '/dashboard/maintenance/requests' : '/dashboard/maintenance/work-orders', h))}>
-                      <td style={cellStyle}>{formatDate(h.date)}</td>
+                      <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{formatDate(h.date)}</td>
                       <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading }}>{h.number}</td>
-                      <td style={cellStyle}>{h.title}</td>
+                      <td style={{ ...cellStyle, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={h.title}>{h.title}</td>
                       <td style={cellStyle}>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${HISTORY_STATUS_HEX[h.status] || '#78716c'}1a`, color: HISTORY_STATUS_HEX[h.status] || '#78716c', whiteSpace: 'nowrap' }}>
-                          {(h.kind === 'request' ? REQUEST_STATUS_LABELS : WO_STATUS_LABELS)[h.status] || h.status}
-                        </span>
+                        <Pill label={(h.kind === 'request' ? REQUEST_STATUS_LABELS : WO_STATUS_LABELS)[h.status] || h.status} hex={HISTORY_STATUS_HEX[h.status] || '#78716c'} />
                       </td>
-                      <td style={cellStyle}>{formatMinutes(h.downtime_minutes)}</td>
-                      {showCosts && <td style={cellStyle}>{h.total_cost ? formatINR(h.total_cost) : '—'}</td>}
+                      <td style={numTdStyle}>{formatMinutes(h.downtime_minutes)}</td>
+                      {showCosts && <td style={numTdStyle}>{h.total_cost ? formatINR(h.total_cost) : '—'}</td>}
                     </tr>
                   ))}
                 </tbody>
@@ -257,8 +251,8 @@ export default function MaintenanceAssetDetailPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                 <thead>
                   <tr>
-                    {['Plan', 'Title', 'Every', 'Basis', 'Next Due', 'Last Done', 'Status'].map((h) => (
-                      <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }}>{h}</th>
+                    {['Plan', 'Title', 'Every', 'Basis', 'Next Due', 'Last Done', 'Status'].map((h, hi) => (
+                      <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={pmPlans?.length ?? 0} />}</th>
                     ))}
                   </tr>
                 </thead>
@@ -280,9 +274,7 @@ export default function MaintenanceAssetDetailPage() {
                         <td style={{ ...cellStyle, color: overdue ? '#DC2626' : TEXT.body, fontWeight: overdue ? 600 : 400 }}>{formatDate(p.next_due_date)}</td>
                         <td style={cellStyle}>{formatDate(p.last_done_date)}</td>
                         <td style={cellStyle}>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${dueHex}1a`, color: dueHex, whiteSpace: 'nowrap' }}>
-                            {PM_DUE_STATE_LABELS[dueState] || dueState}
-                          </span>
+                          <Pill label={PM_DUE_STATE_LABELS[dueState] || dueState} hex={dueHex} />
                         </td>
                       </tr>
                     )

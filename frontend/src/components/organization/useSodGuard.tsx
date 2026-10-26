@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { grcApi, SodConflict } from '@/lib/basisApi'
+import { Pill } from '@/components/shared/ui'
 
 const RISK_HEX: Record<string, string> = { high: '#DC2626', medium: '#F59E0B' }
 
@@ -66,7 +67,7 @@ export function useSodGuard() {
               <div key={c.rule_id} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${SHEET.LINE}`, background: SHEET.SOFT }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <b style={{ fontSize: 13, color: SHEET.INK }}>{c.rule_id} {c.title}</b>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: `${RISK_HEX[c.risk] || '#78716c'}1a`, color: RISK_HEX[c.risk] || '#78716c' }}>{c.risk} risk</span>
+                  <Pill label={`${c.risk.charAt(0).toUpperCase()}${c.risk.slice(1)} risk`} hex={RISK_HEX[c.risk] || '#78716c'} />
                 </div>
                 <p style={{ fontSize: 12.5, color: SHEET.BODY, margin: '4px 0 0' }}>{c.why}</p>
               </div>

@@ -26,6 +26,7 @@ import {
   inputStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, Field, ErrorBanner, StatusPill, PageHeader, TableWrap, EmptyRow,
 } from '@/components/finance/financeUi'
+import { RowCount } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Draft', submitted: 'Waiting approval', approved: 'Approved — ready to pay', executed: 'Paid', rejected: 'Rejected', cancelled: 'Cancelled',
@@ -221,13 +222,13 @@ export default function PaymentRunsPage() {
       <TableWrap minWidth={1100}>
         <thead>
           <tr>
-            <th style={thStyle}></th><th style={thStyle}>Run no.</th><th style={thStyle}>Run date</th><th style={thStyle}>Due by</th>
+            <th style={thStyle}></th><th style={thStyle}>Run no. <RowCount count={loading ? 0 : runs.length} /></th><th style={thStyle}>Run date</th><th style={thStyle}>Due by</th>
             <th style={thStyle}>Bank / mode</th><th style={numTh}>Vendors</th><th style={numTh}>To pay (₹)</th><th style={thStyle}>Status</th><th style={thStyle}></th>
           </tr>
         </thead>
         <tbody>
           {loading ? <EmptyRow colSpan={COLS} text="Loading payment runs…" />
-            : runs.length === 0 ? <EmptyRow colSpan={COLS} text="No payment runs yet." />
+            : runs.length === 0 ? <EmptyRow colSpan={COLS} text="No payment runs yet — use + New payment run to pay due vendor bills together." />
             : runs.map((r) => {
               const open = expanded === r.id
               const editable = r.status === 'draft' || r.status === 'rejected'
@@ -276,8 +277,8 @@ export default function PaymentRunsPage() {
                         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
                           <thead>
                             <tr>
-                              {['Vendor', 'Bill', 'Due', 'Due amount', 'Notes/advances set off', 'Discount', 'Pay (₹)', 'Status', ''].map((h) => (
-                                <th key={h} style={{ ...thStyle, position: 'static', background: 'transparent' }}>{h}</th>))}
+                              {['Vendor', 'Bill', 'Due', 'Due amount', 'Notes/advances set off', 'Discount', 'Pay (₹)', 'Status', ''].map((h, i) => (
+                                <th key={h} style={{ ...thStyle, position: 'static', background: 'transparent' }}>{h}{i === 0 && <> <RowCount count={r.lines.length} /></>}</th>))}
                             </tr>
                           </thead>
                           <tbody>

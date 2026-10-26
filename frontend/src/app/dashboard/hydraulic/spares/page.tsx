@@ -1,6 +1,7 @@
 'use client'
 
 import Select from '@/components/shared/Select'
+import { RowCount, Pill } from '@/components/shared/ui'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -104,9 +105,9 @@ export default function HydSparePartsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1150 }}>
           <thead>
             <tr>
-              {['Part Code', 'Name', 'Category', 'For Component', 'Criticality', 'Available / Min', 'Used (12 m)', 'Lead Time', 'Stock', ''].map((h) => (
+              {['Part Code', 'Name', 'Category', 'For Component', 'Criticality', 'Available / Min', 'Used (12 m)', 'Lead Time', 'Stock', ''].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={spares.length} />}
                 </th>
               ))}
             </tr>
@@ -130,9 +131,7 @@ export default function HydSparePartsPage() {
                     <td style={cellStyle}>{SPARE_CATEGORY_LABELS[s.category] || s.category}</td>
                     <td style={cellStyle}>{s.component_code ? <><span style={{ fontWeight: 600 }}>{s.component_code}</span><span style={{ display: 'block', fontSize: 12, color: TEXT.muted }}>{s.component_name}</span></> : '—'}</td>
                     <td style={cellStyle}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${CRITICALITY_HEX[s.criticality]}1a`, color: CRITICALITY_HEX[s.criticality], whiteSpace: 'nowrap' }}>
-                        {CRITICALITY_LABELS[s.criticality] || s.criticality}
-                      </span>
+                      <Pill label={CRITICALITY_LABELS[s.criticality] || s.criticality} hex={CRITICALITY_HEX[s.criticality] || '#78716c'} />
                     </td>
                     <td style={{ ...cellStyle, whiteSpace: 'nowrap', color: stockColor, fontWeight: stockColor === TEXT.body ? 400 : 600 }}>
                       {s.stock_status === 'not_linked' || s.available_qty == null ? '—' : `${qty(s.available_qty)} / ${qty(s.min_stock_qty)} ${s.uom}`}
@@ -140,9 +139,7 @@ export default function HydSparePartsPage() {
                     <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{s.used_last_12m ? `${qty(s.used_last_12m)} ${s.uom}` : '—'}</td>
                     <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{s.lead_time_days != null ? `${s.lead_time_days} d` : '—'}</td>
                     <td style={cellStyle}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STOCK_HEX[s.stock_status]}1a`, color: STOCK_HEX[s.stock_status], whiteSpace: 'nowrap' }}>
-                        {STOCK_LABELS[s.stock_status] || s.stock_status}
-                      </span>
+                      <Pill label={STOCK_LABELS[s.stock_status] || s.stock_status} hex={STOCK_HEX[s.stock_status] || '#78716c'} />
                     </td>
                     <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
                       <span onClick={() => router.push(recordPath('/dashboard/hydraulic/spares', s))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>

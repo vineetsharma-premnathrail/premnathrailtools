@@ -5,7 +5,7 @@
 // re-declare the same maps. Built from lib/theme like every other module.
 import { useCallback, useState } from 'react'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, DANGER } from '@/lib/theme'
-import { secondaryBtnStyle, inputStyle as sharedInput, primaryBtnStyle as sharedPrimary, smallSecondaryBtnStyle, tableWrapStyle, thStyle as sharedTh, tdStyle as sharedTd } from '@/components/shared/ui'
+import { secondaryBtnStyle, pillStyle, inputStyle as sharedInput, primaryBtnStyle as sharedPrimary, smallSecondaryBtnStyle, tableWrapStyle, thStyle as sharedTh, tdStyle as sharedTd } from '@/components/shared/ui'
 import { ElectricalLookupOption } from '@/types'
 import { extractErrorMessages } from '@/lib/validation'
 import { FormSheet, SheetIcon, SheetIconName, SHEET, sheetBtn, sheetLabel, Req, Optional } from '@/components/shared/FormSheet'
@@ -39,7 +39,11 @@ export const linkStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, c
 export const tableWrap: React.CSSProperties = tableWrapStyle
 export const mutedText: React.CSSProperties = { fontSize: 13, color: TEXT.muted, margin: 0 }
 
-export const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap', display: 'inline-block' })
+/** The app-wide pill (shared/ui pillStyle) — kept under this name for the tabs. */
+export const pill = (hex: string): React.CSSProperties => pillStyle(hex)
+
+/** A raw status key from another module (e.g. a PR's `pending_approval`) as words: "Pending Approval". */
+export const humanize = (key: string) => key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 
 export function Pill({ value, labels, hex }: { value: string | null | undefined; labels: Record<string, string>; hex: Record<string, string> }) {
   if (!value) return <span style={{ color: TEXT.muted }}>—</span>

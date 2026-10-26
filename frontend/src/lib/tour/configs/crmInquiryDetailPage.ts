@@ -136,7 +136,7 @@ const steps: TourStep[] = [
     // who never opens the form never sees steps for fields they can't see.
     target: 'inq-edit-btn',
     title: 'Edit',
-    purpose: 'Switches the Info tab into the full Inquiry form, pre-filled with this inquiry\'s current values.',
+    purpose: 'Switches the Info tab into the full Inquiry form, pre-filled with this inquiry\'s current values. Once the inquiry is sent to Sales (a sales order is raised from it) Edit, Delete and Send to R&D disappear for everyone — the order is now the reference; cancel it in Sales to change the inquiry.',
     after: 'Click it yourself, then start the tour again for a field-by-field walkthrough of the edit form.',
   },
 ]

@@ -7,21 +7,16 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { electricalApi } from '@/lib/api'
 import { recordPath } from '@/lib/recordRef'
 import { ElectricalMeta, ElectricalTest } from '@/types'
-import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import ElectricalNav from '@/components/electrical/ElectricalNav'
 import {
-  inputStyle, thStyle, tdStyle, linkStyle, pill, Pill, ErrorBanner, useLookupErrors,
+  inputStyle, thStyle, tdStyle, Pill, ErrorBanner, useLookupErrors,
   TEST_RESULT_LABELS, TEST_RESULT_HEX, TEST_PHASE_LABELS,
 } from '@/components/electrical/shared'
+import { RowCount, Pill as UiPill, segmentBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
 
-const toggleStyle = (active: boolean): React.CSSProperties => ({
-  padding: '9px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
-  border: `1px solid ${active ? '#DC2626' : BORDER.normal}`,
-  background: active ? 'rgba(220,38,38,0.08)' : 'rgba(255,255,255,.7)',
-  color: active ? '#b91c1c' : TEXT.secondary,
-})
 
 const COLS = ['Test No.', 'Job', 'Phase', 'Type', 'Circuit', 'Measured', 'Result', 'Date', 'Tested by', '']
 
@@ -96,11 +91,11 @@ export default function ElectricalTestRegisterPage() {
           <option value="">All test types</option>
           {Object.entries(meta?.test_types || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </Select>
-        <button data-tour="elec-treg-retest-toggle" type="button" onClick={() => setNeedsRetest((v) => !v)} style={toggleStyle(needsRetest)} aria-pressed={needsRetest}>
+        <button data-tour="elec-treg-retest-toggle" type="button" onClick={() => setNeedsRetest((v) => !v)} style={segmentBtnStyle(needsRetest)} aria-pressed={needsRetest}>
           {needsRetest ? '✓ ' : ''}Needs retest only
         </button>
         <span data-tour="elec-treg-count" style={{ fontSize: 12.5, color: TEXT.muted, marginLeft: 'auto' }}>
-          {tests.length} {tests.length === 1 ? 'test' : 'tests'}{openFailures ? ` · ${openFailures} awaiting retest` : ''}
+          {openFailures ? <strong style={{ color: '#DC2626' }}>{openFailures} awaiting retest</strong> : 'No failed test awaiting a retest'}
         </span>
       </div>
 
@@ -110,7 +105,7 @@ export default function ElectricalTestRegisterPage() {
       }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
-            <tr>{COLS.map((h, i) => <th key={`${h}-${i}`} style={thStyle}>{h}</th>)}</tr>
+            <tr>{COLS.map((h, i) => <th key={`${h}-${i}`} style={thStyle}>{h}{i === 0 && <RowCount count={tests.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {loading ? (
@@ -131,7 +126,7 @@ export default function ElectricalTestRegisterPage() {
                 </td>
                 <td style={tdStyle}>
                   <div style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{t.job_number || '—'}</div>
-                  {t.job_title && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{t.job_title}</div>}
+                  {t.job_title && <div title={t.job_title} style={{ fontSize: 11.5, color: TEXT.muted, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.job_title}</div>}
                 </td>
                 <td style={tdStyle}>{TEST_PHASE_LABELS[t.phase] || t.phase}</td>
                 <td style={tdStyle}>{typeLabel(t.test_type)}</td>
@@ -145,13 +140,13 @@ export default function ElectricalTestRegisterPage() {
                 <td style={tdStyle}>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     <Pill value={t.result} labels={TEST_RESULT_LABELS} hex={TEST_RESULT_HEX} />
-                    {t.needs_retest && <span style={pill('#DC2626')}>Needs retest</span>}
+                    {t.needs_retest && <UiPill label="Needs retest" hex="#DC2626" />}
                   </div>
                 </td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(t.test_date)}</td>
                 <td style={tdStyle}>{t.tested_by_name || '—'}</td>
                 <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                  <span onClick={() => go(t)} style={linkStyle}>View</span>
+                  <button type="button" onClick={() => go(t)} style={smallSecondaryBtnStyle}>View</button>
                 </td>
               </tr>
             ))}

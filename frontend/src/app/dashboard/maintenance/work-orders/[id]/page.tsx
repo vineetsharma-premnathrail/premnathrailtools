@@ -7,7 +7,7 @@ import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { approvalsApi, maintenanceApi } from '@/lib/api'
 import { MaintenanceLookups, MaintenanceStoreItemOption, MaintenanceWorkOrder, MaintenanceWorkOrderSpare, MaintenanceWorkOrderTask } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, InfoRow, primaryBtnStyle, smallSecondaryBtnStyle, chipBtnStyle, smallDangerBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -56,7 +56,9 @@ const inputStyle: React.CSSProperties = {
 const smallInput: React.CSSProperties = { ...inputStyle, padding: '7px 10px', fontSize: 13 }
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, zIndex: 1 }
 const tdStyle: React.CSSProperties = { padding: '8px 10px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
-const linkStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer', marginRight: 10 }
+const numThStyle: React.CSSProperties = { ...thStyle, textAlign: 'right' }
+const numTdStyle: React.CSSProperties = { ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }
+const NUM_HEADS = new Set(['Planned', 'Issued', 'Returned', 'In Stock', 'Cost', 'Hours', 'Rate'])
 const primaryBtn: React.CSSProperties = primaryBtnStyle
 const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 
@@ -83,8 +85,8 @@ function TaskRow({ task, editable, onSave, onDelete }: {
           const active = task.result === o.value
           return (
             <button key={o.value} type="button" disabled={!editable} onClick={() => onSave({ result: active ? null : o.value })} style={{
-              fontSize: 11.5, fontWeight: 700, padding: '4px 10px', marginRight: 4, borderRadius: 9999, cursor: editable ? 'pointer' : 'default',
-              border: `1px solid ${active ? o.hex : BORDER.normal}`, background: active ? `${o.hex}1a` : 'transparent', color: active ? o.hex : TEXT.muted,
+              ...chipBtnStyle(false), marginRight: 4, cursor: editable ? 'pointer' : 'default',
+              borderColor: active ? o.hex : BORDER.normal, background: active ? `${o.hex}1a` : 'transparent', color: active ? o.hex : TEXT.muted,
             }}>{o.label}</button>
           )
         })}
@@ -101,8 +103,8 @@ function TaskRow({ task, editable, onSave, onDelete }: {
             onBlur={() => { if (remarks !== (task.remarks || '')) onSave({ remarks: remarks || null }) }} placeholder="Remarks" />
         ) : (task.remarks || '—')}
       </td>
-      <td style={{ ...tdStyle, fontSize: 12, color: TEXT.muted, whiteSpace: 'nowrap' }}>{task.done_by_name || ''}</td>
-      <td style={tdStyle}>{editable && <span onClick={onDelete} style={{ ...linkStyle, color: '#DC2626' }}>Remove</span>}</td>
+      <td style={{ ...tdStyle, fontSize: 12, color: TEXT.muted, whiteSpace: 'nowrap' }}>{task.done_by_name || '—'}</td>
+      <td style={tdStyle}>{editable && <button type="button" onClick={onDelete} style={smallDangerBtnStyle}>Remove</button>}</td>
     </tr>
   )
 }
@@ -360,23 +362,8 @@ export default function MaintenanceWorkOrderDetailPage() {
           </p>
           <h1 data-tour="maint-wod-status" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             {wo?.wo_number || 'Work Order'}
-            {wo && (
-              <>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[s]}1a`, color: STATUS_HEX[s] }}>{WO_STATUS_LABELS[s] || s}</span>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PRIORITY_HEX[wo.priority]}1a`, color: PRIORITY_HEX[wo.priority] }}>{PRIORITY_LABELS[wo.priority] || wo.priority}</span>
-              </>
-            )}
+            {wo && <Pill label={WO_STATUS_LABELS[s] || s} hex={STATUS_HEX[s] || '#78716c'} />}
           </h1>
-          {wo && <p style={{ fontSize: 14, color: TEXT.body, margin: '6px 0 0' }}>{wo.title}</p>}
-          {wo?.pm_plan_id && (
-            <p data-tour="maint-wod-pm-plan" style={{ fontSize: 12.5, color: TEXT.muted, margin: '4px 0 0' }}>
-              From PM plan{' '}
-              <span onClick={() => router.push(recordPath('/dashboard/maintenance/schedule', wo, 'pm_plan_id'))} style={{ fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>
-                {wo.pm_plan_code || `#${wo.pm_plan_id}`}
-              </span>
-              {wo.pm_due_date && ` · due ${new Date(`${wo.pm_due_date}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`}
-            </p>
-          )}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {wo && mayEdit && wf('assign', 'edit') && s === 'draft' && <button data-tour="maint-wo-assign-btn" type="button" disabled={busy} onClick={() => { setAssignTo(''); setDialogError(''); setAssignOpen(true) }} style={primaryBtn}>Assign Technician</button>}
@@ -458,36 +445,59 @@ export default function MaintenanceWorkOrderDetailPage() {
             </div>
           )}
 
-          <div data-tour="maint-wod-summary" style={sectionStyle}>
-            <div style={gridStyle}>
-              <div onClick={() => router.push(recordPath('/dashboard/maintenance/assets', wo, 'asset_id'))} style={{ cursor: 'pointer' }}>
-                <InfoRow label="Asset" value={`${wo.asset_code || ''} — ${wo.asset_name || ''}`} />
-              </div>
-              <InfoRow label="Plant" value={wo.branch_name || '—'} />
-              <InfoRow label="Type" value={WO_TYPE_LABELS[wo.wo_type] || wo.wo_type} />
-              <InfoRow label="Technician" value={wo.assigned_to_name || 'Unassigned'} />
-              {wo.request_id ? (
-                <div onClick={() => router.push(recordPath('/dashboard/maintenance/requests', wo, 'request_id'))} style={{ cursor: 'pointer' }}>
-                  <InfoRow label="From Request" value={`${wo.request_number || ''} · ${wo.requester_name || ''}`} />
+          <DetailCard tour="maint-wod-summary">
+            <DetailSummary
+              title={wo.title}
+              text={wo.description || undefined}
+              meta={<>
+                <Pill label={PRIORITY_LABELS[wo.priority] || wo.priority} hex={PRIORITY_HEX[wo.priority] || '#78716c'} />
+                <span>· {WO_TYPE_LABELS[wo.wo_type] || wo.wo_type}</span>
+                <span>· Technician <strong style={{ color: TEXT.heading }}>{wo.assigned_to_name || 'Unassigned'}</strong></span>
+                {wo.machine_down && <span style={{ color: '#DC2626', fontWeight: 600 }}>· Machine down {formatMinutes(downtime)}</span>}
+              </>}
+            />
+            <DetailGroup title="Asset & Source">
+              <DetailRow label="Asset">
+                <span onClick={() => router.push(recordPath('/dashboard/maintenance/assets', wo, 'asset_id'))} style={{ fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>
+                  {[wo.asset_code, wo.asset_name].filter(Boolean).join(' — ')}
+                </span>
+              </DetailRow>
+              <DetailRow label="Plant">{wo.branch_name}</DetailRow>
+              <DetailRow label="From Request">
+                {wo.request_id ? (
+                  <span onClick={() => router.push(recordPath('/dashboard/maintenance/requests', wo, 'request_id'))} style={{ fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>
+                    {wo.request_number || 'Request'}{wo.requester_name ? ` · raised by ${wo.requester_name}` : ''}
+                  </span>
+                ) : null}
+              </DetailRow>
+              {wo.pm_plan_id && (
+                <div data-tour="maint-wod-pm-plan">
+                  <DetailRow label="From PM Plan">
+                    <span onClick={() => router.push(recordPath('/dashboard/maintenance/schedule', wo, 'pm_plan_id'))} style={{ fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>
+                      {wo.pm_plan_code || `#${wo.pm_plan_id}`}
+                    </span>
+                    {wo.pm_due_date && ` · due ${formatDate(wo.pm_due_date)}`}
+                  </DetailRow>
                 </div>
-              ) : <InfoRow label="From Request" value="—" />}
-              <InfoRow label="Planned" value={wo.planned_start ? `${formatDate(wo.planned_start)}${wo.planned_end ? ` → ${formatDate(wo.planned_end)}` : ''}` : '—'} />
-              <InfoRow label="Est. Hours" value={wo.estimated_hours != null ? String(wo.estimated_hours) : '—'} />
-              <InfoRow label="Started" value={formatDateTime(wo.actual_start)} />
-              <InfoRow label="Finished" value={formatDateTime(wo.actual_end)} />
-              {wo.machine_down && <InfoRow label="Down Since" value={formatDateTime(wo.downtime_start)} />}
-              {wo.machine_down && <InfoRow label={wo.downtime_minutes != null ? 'Downtime' : 'Down For (live)'} value={formatMinutes(downtime)} />}
-              {wo.verified_at && <InfoRow label="Closed By" value={`${wo.verified_by_name || ''} · ${formatDateTime(wo.verified_at)}`} />}
-            </div>
-            {wo.description && <div style={{ marginTop: 16 }}><InfoRow label="Instructions" value={wo.description} /></div>}
+              )}
+            </DetailGroup>
+            <DetailGroup title="Schedule & Time" last={!(wo.failure_category || wo.root_cause || wo.action_taken)}>
+              <DetailRow label="Planned">{wo.planned_start ? `${formatDate(wo.planned_start)}${wo.planned_end ? ` → ${formatDate(wo.planned_end)}` : ''}` : null}</DetailRow>
+              <DetailRow label="Estimated Hours">{wo.estimated_hours != null ? `${wo.estimated_hours} h` : null}</DetailRow>
+              <DetailRow label="Started">{wo.actual_start ? formatDateTime(wo.actual_start) : null}</DetailRow>
+              <DetailRow label="Finished">{wo.actual_end ? formatDateTime(wo.actual_end) : null}</DetailRow>
+              {wo.machine_down && <DetailRow label="Machine Down Since">{wo.downtime_start ? formatDateTime(wo.downtime_start) : null}</DetailRow>}
+              {wo.machine_down && <DetailRow label={wo.downtime_minutes != null ? 'Downtime' : 'Down For (live)'}>{formatMinutes(downtime)}</DetailRow>}
+              {wo.verified_at && <DetailRow label="Closed By">{`${wo.verified_by_name || '—'} · ${formatDateTime(wo.verified_at)}`}</DetailRow>}
+            </DetailGroup>
             {(wo.failure_category || wo.root_cause || wo.action_taken) && (
-              <div style={{ ...gridStyle, marginTop: 16 }}>
-                <InfoRow label="Failure Category" value={wo.failure_category ? FAILURE_CATEGORY_LABELS[wo.failure_category] || wo.failure_category : '—'} />
-                <InfoRow label="Root Cause" value={wo.root_cause || '—'} />
-                <InfoRow label="Action Taken" value={wo.action_taken || '—'} />
-              </div>
+              <DetailGroup title="Failure Analysis" last>
+                <DetailRow label="Failure Category">{wo.failure_category ? FAILURE_CATEGORY_LABELS[wo.failure_category] || wo.failure_category : null}</DetailRow>
+                <DetailRow label="Root Cause">{wo.root_cause}</DetailRow>
+                <DetailRow label="Action Taken">{wo.action_taken}</DetailRow>
+              </DetailGroup>
             )}
-          </div>
+          </DetailCard>
 
           {wf('checklist') && <div data-tour="maint-wod-checklist" style={sectionStyle}>
             <div style={sectionHead}>
@@ -497,7 +507,7 @@ export default function MaintenanceWorkOrderDetailPage() {
             {wo.tasks.length > 0 && (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-                  <thead><tr>{['#', 'Check', 'Result', 'Measured', 'Remarks', 'By', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['#', 'Check', 'Result', 'Measured', 'Remarks', 'By', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={wo.tasks.length} />}</th>)}</tr></thead>
                   <tbody>
                     {wo.tasks.map((t) => (
                       <TaskRow key={`${t.id}-${t.measured_value ?? ""}-${t.remarks ?? ""}`} task={t} editable={editable && wf('checklist', 'edit')}
@@ -533,7 +543,7 @@ export default function MaintenanceWorkOrderDetailPage() {
             ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
-                  <thead><tr>{['Item', 'Store', 'Planned', 'Issued', 'Returned', 'In Stock', ...(showCosts ? ['Cost'] : []), ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Item', 'Store', 'Planned', 'Issued', 'Returned', 'In Stock', ...(showCosts ? ['Cost'] : []), ''].map((h, hi) => <th key={h} style={NUM_HEADS.has(h) ? numThStyle : thStyle}>{h}{hi === 0 && <RowCount count={wo.spares.length} />}</th>)}</tr></thead>
                   <tbody>
                     {wo.spares.map((sp2) => {
                       const outstanding = sp2.qty_issued - sp2.qty_returned
@@ -544,19 +554,18 @@ export default function MaintenanceWorkOrderDetailPage() {
                             {sp2.remarks && <span style={{ display: 'block', fontSize: 11.5, color: TEXT.muted }}>{sp2.remarks}</span>}
                           </td>
                           <td style={tdStyle}>{sp2.location_name || '—'}</td>
-                          <td style={tdStyle}>{fmtQty(sp2.qty_planned)} {sp2.uom || ''}</td>
-                          <td style={tdStyle}>{fmtQty(sp2.qty_issued)}</td>
-                          <td style={tdStyle}>{fmtQty(sp2.qty_returned)}</td>
-                          <td style={{ ...tdStyle, color: sp2.available_qty != null && sp2.available_qty < sp2.qty_planned - sp2.qty_issued ? '#DC2626' : TEXT.body }}>
+                          <td style={numTdStyle}>{fmtQty(sp2.qty_planned)} {sp2.uom || ''}</td>
+                          <td style={numTdStyle}>{fmtQty(sp2.qty_issued)}</td>
+                          <td style={numTdStyle}>{fmtQty(sp2.qty_returned)}</td>
+                          <td style={{ ...numTdStyle, color: sp2.available_qty != null && sp2.available_qty < sp2.qty_planned - sp2.qty_issued ? '#DC2626' : TEXT.body }}>
                             {sp2.available_qty != null ? fmtQty(sp2.available_qty) : '—'}
                           </td>
-                          {showCosts && <td style={tdStyle}>{formatINR(sp2.net_cost)}</td>}
+                          {showCosts && <td style={numTdStyle}>{formatINR(sp2.net_cost)}</td>}
                           <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                            {canIssue && wf('spares', 'create') && <span onClick={() => openSpare('issue', sp2)} style={linkStyle}>Issue</span>}
-                            {editable && wf('spares', 'edit') && outstanding > 0 && <span onClick={() => { setReturnQty(fmtQty(outstanding)); setDialogError(''); setReturnSpare(sp2) }} style={linkStyle}>Return</span>}
+                            {canIssue && wf('spares', 'create') && <button type="button" onClick={() => openSpare('issue', sp2)} style={{ ...smallBtn, marginRight: 6 }}>Issue</button>}
+                            {editable && wf('spares', 'edit') && outstanding > 0 && <button type="button" onClick={() => { setReturnQty(fmtQty(outstanding)); setDialogError(''); setReturnSpare(sp2) }} style={{ ...smallBtn, marginRight: 6 }}>Return</button>}
                             {editable && wf('spares', 'delete') && sp2.qty_issued === 0 && (
-                              <span onClick={() => setConfirm({ title: 'Remove spare line?', message: `${sp2.item_code} ${sp2.item_name || ''}`, label: 'Remove', run: () => maintenanceApi.deleteSpare(id, sp2.id) })}
-                                style={{ ...linkStyle, color: '#DC2626' }}>Remove</span>
+                              <button type="button" onClick={() => setConfirm({ title: 'Remove spare line?', message: `${sp2.item_code} ${sp2.item_name || ''}`, label: 'Remove', run: () => maintenanceApi.deleteSpare(id, sp2.id) })} style={smallDangerBtnStyle}>Remove</button>
                             )}
                           </td>
                         </tr>
@@ -574,25 +583,24 @@ export default function MaintenanceWorkOrderDetailPage() {
               {canLabour && wf('labour', 'create') && <button data-tour="maint-wo-log-time-btn" type="button" disabled={busy} onClick={openLabour} style={smallBtn}>+ Log Time</button>}
             </div>
             {wo.labour_logs.length === 0 ? (
-              <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No time logged yet.</p>
+              <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No time logged yet.{canLabour && wf('labour', 'create') ? ' Use + Log Time to record hours spent on this job.' : ''}</p>
             ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
-                  <thead><tr>{['Technician', 'From', 'To', 'Hours', ...(showCosts ? ['Rate', 'Cost'] : []), 'Remarks', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Technician', 'From', 'To', 'Hours', ...(showCosts ? ['Rate', 'Cost'] : []), 'Remarks', ''].map((h, hi) => <th key={h} style={NUM_HEADS.has(h) ? numThStyle : thStyle}>{h}{hi === 0 && <RowCount count={wo.labour_logs.length} />}</th>)}</tr></thead>
                   <tbody>
                     {wo.labour_logs.map((l) => (
                       <tr key={l.id}>
                         <td style={tdStyle}>{l.technician_name || '—'}</td>
                         <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDateTime(l.start_time)}</td>
                         <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDateTime(l.end_time)}</td>
-                        <td style={tdStyle}>{fmtQty(l.hours)}</td>
-                        {showCosts && <td style={tdStyle}>{l.hourly_rate ? formatINR(l.hourly_rate) : '—'}</td>}
-                        {showCosts && <td style={tdStyle}>{l.cost ? formatINR(l.cost) : '—'}</td>}
-                        <td style={tdStyle}>{l.remarks || ''}</td>
+                        <td style={numTdStyle}>{fmtQty(l.hours)}</td>
+                        {showCosts && <td style={numTdStyle}>{l.hourly_rate ? formatINR(l.hourly_rate) : '—'}</td>}
+                        {showCosts && <td style={numTdStyle}>{l.cost ? formatINR(l.cost) : '—'}</td>}
+                        <td style={tdStyle}>{l.remarks || '—'}</td>
                         <td style={tdStyle}>
                           {editable && wf('labour', 'delete') && (
-                            <span onClick={() => setConfirm({ title: 'Delete labour entry?', message: `${fmtQty(l.hours)} h by ${l.technician_name || 'technician'}`, label: 'Delete', run: () => maintenanceApi.deleteLabour(id, l.id) })}
-                              style={{ ...linkStyle, color: '#DC2626' }}>Delete</span>
+                            <button type="button" onClick={() => setConfirm({ title: 'Delete labour entry?', message: `${fmtQty(l.hours)} h by ${l.technician_name || 'technician'}`, label: 'Delete', run: () => maintenanceApi.deleteLabour(id, l.id) })} style={smallDangerBtnStyle}>Delete</button>
                           )}
                         </td>
                       </tr>
@@ -746,7 +754,7 @@ export default function MaintenanceWorkOrderDetailPage() {
             </div>
           </div>
         </SheetSection>
-        <SheetSection icon="truck" title="Outside Service" extra={<Optional />}>
+        <SheetSection icon="tool" title="Outside Service" extra={<Optional />}>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <div data-tour="maint-wodt-vendor" style={{ flex: '1 1 220px' }}>
               <label style={sheetLabel}>External Service Vendor</label>

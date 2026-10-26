@@ -40,8 +40,8 @@ export default function DocumentsTab({ project }: { project: PmProject }) {
   const groups = [
     { key: 'task', title: 'Milestone & task documents', rows: shown.filter((d) => src(d) === 'task') },
     { key: 'project', title: 'Project documents', rows: dept || milestone ? [] : shown.filter((d) => src(d) === 'project') },
-    { key: 'evidence', title: 'WBS evidence', rows: shown.filter((d) => src(d) === 'evidence') },
-    { key: 'chat', title: 'Sent in WBS chats', rows: shown.filter((d) => src(d) === 'chat') },
+    { key: 'evidence', title: 'Milestone evidence', rows: shown.filter((d) => src(d) === 'evidence') },
+    { key: 'chat', title: 'Sent in milestone chats', rows: shown.filter((d) => src(d) === 'chat') },
   ]
   // "R&D · Step 1 GA drawing › Prepare BOM · title" — who it came from, at a glance.
   const where = (d: PmProjectDocument) => {

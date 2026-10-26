@@ -14,7 +14,7 @@ import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 import {
-  AttachmentList, DOC_TYPE_LABELS, ErrorBanner, FlagPill, MILESTONE_HEX, MILESTONE_LABELS, Notice, PRIORITY_LABELS, Pill,
+  AttachmentList, DOC_TYPE_LABELS, ErrorBanner, FlagPill, MILESTONE_HEX, MILESTONE_LABELS, Notice, PRIORITY_LABELS, PROJECT_LABELS, Pill,
   ProgressBar, actionBtn, smallActionBtn, inputStyle, sectionStyle, todayIso,
 } from './pmUi'
 import { FormSheet, Optional, Req, SHEET, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
@@ -24,6 +24,7 @@ import PmChat from './PmChat'
 import WorkBreakdown from './WorkBreakdown'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import { recordPath } from '@/lib/recordRef'
+import { pillStyle } from '@/components/shared/ui'
 
 type TaskForm = { id?: number; title: string; description: string; assignee_id: string; due_date: string; priority: string; estimated_hours: string }
 const emptyTask = (): TaskForm => ({ title: '', description: '', assignee_id: '', due_date: '', priority: 'medium', estimated_hours: '' })
@@ -63,7 +64,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
   }, [milestoneId, milestoneStatus])
 
   const load = useCallback(() => {
-    pmWorkApi.milestone(milestoneId).then((d: PmMilestoneWorkspace) => { setWs(d); setError('') }).catch((err) => setError(extractErrorMessages(err, 'Failed to load the WBS.')))
+    pmWorkApi.milestone(milestoneId).then((d: PmMilestoneWorkspace) => { setWs(d); setError('') }).catch((err) => setError(extractErrorMessages(err, 'Failed to load the milestone.')))
   }, [milestoneId])
   useEffect(() => { load() }, [load])
   useEffect(() => {
@@ -104,7 +105,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
     if (!form.title.trim()) missing.push('Task name is required.')
     if (!selfTask && !form.assignee_id) missing.push('Assign the task to someone on the team.')
     if (!form.due_date) missing.push('Due date is required.')
-    if (form.due_date && form.due_date > m.target_date) missing.push(`Due date must be on or before the WBS date (${formatDate(m.target_date)}).`)
+    if (form.due_date && form.due_date > m.target_date) missing.push(`Due date must be on or before the milestone date (${formatDate(m.target_date)}).`)
     if (missing.length) { setError(missing); return }
     const payload = {
       title: form.title.trim(), description: form.description.trim() || null,
@@ -165,7 +166,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
           )}
         </div>
         {teamEdit !== null && (
-          <FormSheet width={580} icon="users" title="Edit Team" subtitle={`WBS '${m.title}' — lead ${m.lead_name || '—'}.`} onClose={() => setTeamEdit(null)} busy={busy}
+          <FormSheet width={580} icon="users" title="Edit Team" subtitle={`Milestone '${m.title}' — lead ${m.lead_name || '—'}.`} onClose={() => setTeamEdit(null)} busy={busy}
             footer={<>
               <button type="button" onClick={() => setTeamEdit(null)} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
               <button type="button" disabled={busy} onClick={() => { const ids = teamEdit; act(async () => { await pmWorkApi.updateTeam(m.id, ids); setTeamEdit(null) }, 'Could not update the team.') }} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Save team'}</button>
@@ -175,7 +176,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
               <SheetSection icon="users" title="Assistants">
                 <label style={sheetLabel}>Assistants <Optional /></label>
                 <PeoplePicker people={candidates} value={teamEdit} exclude={m.lead_user_id ? [m.lead_user_id] : []} onChange={setTeamEdit} />
-                <p style={sheetHint}>Assistants see the WBS, their own tasks, and can add tasks for themselves.</p>
+                <p style={sheetHint}>Assistants see the milestone, their own tasks, and can add tasks for themselves.</p>
               </SheetSection>
             </div>
           </FormSheet>
@@ -184,21 +185,21 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
         {ws.role === 'member' && (
           <div style={{ marginTop: 12 }}>
             <Notice tone="info">
-              {live.length ? `Your tasks: ${doneCount} of ${live.length} done` : 'No tasks for you yet'} · WBS stage: {MILESTONE_LABELS[m.status] || m.status}
+              {live.length ? `Your tasks: ${doneCount} of ${live.length} done` : 'No tasks for you yet'} · Milestone stage: {MILESTONE_LABELS[m.status] || m.status}
               {['not_started', 'in_progress'].includes(m.status) && live.length > 0 && doneCount < live.length ? ' — the lead can submit only when your tasks are Done.' : ''}
             </Notice>
           </div>
         )}
         {m.is_locked && <div style={{ marginTop: 12 }}><Notice tone="warn">Locked — step {m.waiting_for_sequence} &quot;{m.waiting_for_title}&quot; must be achieved before work here can start. You can already plan tasks and use the team chat.</Notice></div>}
-        {ws.role === 'guest' && <div style={{ marginTop: 12 }}><Notice tone="info">You were tagged in this WBS&apos;s chat — you can read and reply below.</Notice></div>}
-        {m.project_status !== 'active' && <div style={{ marginTop: 12 }}><Notice tone="warn">The project is {m.project_status?.replace('_', ' ')} — work can&apos;t be recorded right now.</Notice></div>}
+        {ws.role === 'guest' && <div style={{ marginTop: 12 }}><Notice tone="info">You were tagged in this milestone&apos;s chat — you can read and reply below.</Notice></div>}
+        {m.project_status !== 'active' && <div style={{ marginTop: 12 }}><Notice tone="warn">The project is {(PROJECT_LABELS[m.project_status || ''] || m.project_status || '').toLowerCase()} — work can&apos;t be recorded right now.</Notice></div>}
         {m.status === 'in_progress' && m.return_reason && <div style={{ marginTop: 12 }}><Notice tone="bad">Rejected by management: {m.return_reason}</Notice></div>}
         {m.status === 'submitted' && <div style={{ marginTop: 12 }}><Notice tone="info">Submitted by {m.submitted_by_name}: {m.submission_note}</Notice></div>}
         {m.status === 'cancelled' && <div style={{ marginTop: 12 }}><Notice tone="bad">Cancelled: {m.cancel_reason}</Notice></div>}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12, justifyContent: 'flex-end', alignItems: 'center' }}>
           {ws.can_manage && m.status === 'submitted' && engineRequest === false && (
             <>
-              <button data-tour="pm-mw-accept-btn" type="button" disabled={busy} onClick={() => { setAcceptDate(todayIso()); setAcceptOpen(true) }} style={actionBtn('primary', busy)}>Accept WBS</button>
+              <button data-tour="pm-mw-accept-btn" type="button" disabled={busy} onClick={() => { setAcceptDate(todayIso()); setAcceptOpen(true) }} style={actionBtn('primary', busy)}>Accept Milestone</button>
               <button data-tour="pm-mw-reject-btn" type="button" disabled={busy} onClick={() => setReasonFor({ kind: 'reject' })} style={actionBtn('danger', busy)}>Reject</button>
             </>
           )}
@@ -206,7 +207,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
             <>
               {submitBlocker && <span style={{ fontSize: 12, color: TEXT.muted }}>{submitBlocker}</span>}
               <button data-tour="pm-mw-submit-btn" type="button" disabled={busy || !!submitBlocker} onClick={() => { setNote(''); setSubmitOpen(true) }} style={actionBtn('primary', busy || !!submitBlocker)}>
-                Submit WBS
+                Submit Milestone
               </button>
             </>
           )}
@@ -228,7 +229,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
         </div>
         {form && (
           <FormSheet width={580} icon={form.id ? 'edit' : 'plus'} title={form.id ? 'Edit Task' : selfTask ? 'Add My Task' : 'Assign Task'}
-            subtitle={`WBS '${m.title}' — tasks must be due by ${formatDate(m.target_date)}.`} onClose={() => { setForm(null); setError('') }} busy={busy}
+            subtitle={`Milestone '${m.title}' — tasks must be due by ${formatDate(m.target_date)}.`} onClose={() => { setForm(null); setError('') }} busy={busy}
             footer={<>
               <button data-tour="pm-task-form-cancel" type="button" onClick={() => { setForm(null); setError('') }} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
               <button data-tour="pm-task-form-save" type="button" onClick={saveTask} disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name={form.id ? 'check' : 'plus'} size={16} />{busy ? 'Saving…' : form.id ? 'Save' : selfTask ? 'Add my task' : 'Create & assign'}</button>
@@ -250,7 +251,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
                   <label style={sheetLabel}>Assigned to <Req /></label>
                   <Select style={sheetInput} value={form.assignee_id} onChange={(e) => setForm({ ...form, assignee_id: e.target.value })}>
                     <option value="">Select…</option>
-                    <optgroup label="WBS team">
+                    <optgroup label="Milestone team">
                       {teamIds.map((id) => <option key={id} value={id}>{teamPeople.find((p) => p.id === id)?.name || teamNames.get(id) || `User #${id}`}{id === m.lead_user_id ? ' (lead)' : ''}</option>)}
                     </optgroup>
                     {deptPeople.length > 0 && (
@@ -276,13 +277,13 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
                     <input type="number" min={0} step="0.5" style={sheetInput} value={form.estimated_hours} onChange={(e) => setForm({ ...form, estimated_hours: e.target.value })} />
                   </div>
                 </div>
-                <p style={sheetHint}>Due on or before the WBS date ({formatDate(m.target_date)}).</p>
+                <p style={sheetHint}>Due on or before the milestone date ({formatDate(m.target_date)}).</p>
               </SheetSection>
             </div>
           </FormSheet>
         )}
         {ws.tasks.length === 0 ? (
-          <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No tasks yet.{canPlan ? ' Break the WBS into tasks and assign each to someone on the team.' : canAddOwn ? ' Your lead will assign tasks; you can also add your own.' : ''}</p>
+          <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No tasks yet.{canPlan ? ' Break the milestone into tasks and assign each to someone on the team.' : canAddOwn ? ' Your lead will assign tasks; you can also add your own.' : ''}</p>
         ) : (
           <TaskTable
             tasks={ws.tasks}
@@ -333,10 +334,10 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
       {full && <WorkBreakdown refreshKey={ws.tasks.map((t) => `${t.id}:${t.status}`).join(',')} milestoneId={m.id} />}
 
       {submitOpen && (
-        <FormSheet width={580} icon="send" title="Submit WBS" subtitle={`'${m.title}' goes to management to accept or reject.`} onClose={() => setSubmitOpen(false)} busy={busy}
+        <FormSheet width={580} icon="send" title="Submit Milestone" subtitle={`'${m.title}' goes to management to accept or reject.`} onClose={() => setSubmitOpen(false)} busy={busy}
           footer={<>
             <button type="button" onClick={() => setSubmitOpen(false)} style={sheetBtn('secondary', SHEET.INK)}>Cancel</button>
-            <button type="button" disabled={!note.trim()} onClick={() => { setSubmitOpen(false); act(() => pmWorkApi.submitMilestone(m.id, note.trim()), 'Could not submit the WBS.') }} style={sheetBtn('primary', SHEET.BLUE, !note.trim())}><SheetIcon name="send" size={16} />Submit</button>
+            <button type="button" disabled={!note.trim()} onClick={() => { setSubmitOpen(false); act(() => pmWorkApi.submitMilestone(m.id, note.trim()), 'Could not submit the milestone.') }} style={sheetBtn('primary', SHEET.BLUE, !note.trim())}><SheetIcon name="send" size={16} />Submit</button>
           </>}>
           <div style={{ padding: '20px 24px' }}>
             <SheetSection icon="doc" title="Handover">
@@ -348,10 +349,10 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
         </FormSheet>
       )}
       {acceptOpen && (
-        <FormSheet width={580} icon="check" iconColor="#16a34a" title="Accept WBS" subtitle={`Accept '${m.title}' as achieved.`} onClose={() => setAcceptOpen(false)} busy={busy}
+        <FormSheet width={580} icon="check" iconColor="#16a34a" title="Accept Milestone" subtitle={`Accept '${m.title}' as achieved.`} onClose={() => setAcceptOpen(false)} busy={busy}
           footer={<>
             <button type="button" onClick={() => setAcceptOpen(false)} style={sheetBtn('secondary', SHEET.INK)}>Cancel</button>
-            <button type="button" onClick={() => { setAcceptOpen(false); act(() => projectsApi.acceptMilestone(m.project_id, m.id, acceptDate), 'Could not accept the WBS.') }} style={sheetBtn('primary', '#16a34a')}><SheetIcon name="check" size={16} />Accept</button>
+            <button type="button" onClick={() => { setAcceptOpen(false); act(() => projectsApi.acceptMilestone(m.project_id, m.id, acceptDate), 'Could not accept the milestone.') }} style={sheetBtn('primary', '#16a34a')}><SheetIcon name="check" size={16} />Accept</button>
           </>}>
           <div style={{ padding: '20px 24px' }}>
             <SheetSection icon="calendar" title="Achievement">
@@ -373,7 +374,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
         onConfirm={(v) => {
           const r = reasonFor!
           setReasonFor(null)
-          if (r.kind === 'reject') act(() => projectsApi.rejectMilestone(m.project_id, m.id, v), 'Could not reject the WBS.')
+          if (r.kind === 'reject') act(() => projectsApi.rejectMilestone(m.project_id, m.id, v), 'Could not reject the milestone.')
           else if (r.kind === 'reopen') act(() => pmWorkApi.reopenTask(r.task!.id, v), 'Could not reopen the task.')
           else act(() => pmWorkApi.cancelTask(r.task!.id, v), 'Could not cancel the task.')
         }}
@@ -409,7 +410,7 @@ function WbsStepper({ status, hasTasks, allDone, hasEvidence }: { status: string
         const color = x.done ? '#16a34a' : i === current ? '#6366f1' : '#94a3b8'
         return (
           <span key={x.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: i === current ? 700 : 600, color, border: `1px solid ${color}55`, background: i === current ? 'rgba(99,102,241,0.08)' : 'transparent' }}>
+            <span style={{ ...pillStyle(color), gap: 6, fontSize: 12, fontWeight: i === current ? 700 : 600, border: `1px solid ${color}55`, background: i === current ? 'rgba(99,102,241,0.08)' : 'transparent' }}>
               {x.done ? '✓' : i + 1} {x.label}
             </span>
             {i < steps.length - 1 && <span style={{ color: '#cbd5e1', fontSize: 12 }}>→</span>}

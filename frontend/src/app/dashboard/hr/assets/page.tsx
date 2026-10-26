@@ -17,6 +17,7 @@ import {
 } from '@/components/hr/admin/adminUi'
 import { TEXT } from '@/lib/theme'
 import { recordPath } from '@/lib/recordRef'
+import { RowCount } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<string, string> = { in_stock: 'In Stock', issued: 'Issued', under_repair: 'Under Repair', retired: 'Retired', lost: 'Lost' }
 const STATUS_HEX: Record<string, string> = { in_stock: '#16A34A', issued: '#2563EB', under_repair: '#F59E0B', retired: '#64748B', lost: '#DC2626' }
@@ -140,8 +141,8 @@ export default function HrAssetsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr>
-              {['Code', 'Asset', 'Category', 'Serial', 'Plant', 'Status', 'Held by', 'Condition', ''].map((h) => (
-                <th key={h} style={thStyle}>{h}</th>
+              {['Code', 'Asset', 'Category', 'Serial', 'Plant', 'Status', 'Held by', 'Condition', ''].map((h, i) => (
+                <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={assets.length} />}</th>
               ))}
             </tr>
           </thead>

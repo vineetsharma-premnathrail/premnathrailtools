@@ -11,7 +11,7 @@ import { primaryBtnStyle } from '@/components/shared/ui'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import HrNav from '@/components/hr/HrNav'
 import MyHrTabs from '@/components/hr/MyHrTabs'
-import EmployeeProfileView from '@/components/hr/employee/EmployeeProfileView'
+import EmployeeProfileView, { EmployeeHeaderSummary } from '@/components/hr/employee/EmployeeProfileView'
 import EmployeeDocumentsTab from '@/components/hr/employee/EmployeeDocumentsTab'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
@@ -111,9 +111,9 @@ export default function MyHrProfilePage() {
               {me?.name || user.name}
               {me?.has_profile && statusKey && <StatusPill label={EMPLOYMENT_STATUS_LABELS[statusKey] || statusKey} hex={EMPLOYMENT_STATUS_HEX[statusKey] || '#64748B'} />}
             </h1>
-            <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>
-              {me ? [me.designation_name, me.department_name, me.branch_name].filter(Boolean).join(' · ') || 'Your employee details, manager, documents and emergency contact.' : 'Your employee details, manager, documents and emergency contact.'}
-            </p>
+            {me
+              ? <EmployeeHeaderSummary p={me} />
+              : <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>Your employee details, manager, documents and emergency contact.</p>}
           </div>
         </div>
         {me && !editing && can('hr', 'me', 'edit') && <button type="button" data-tour="hr-me-edit-btn" style={primaryBtnStyle} onClick={startEdit}>Edit My Details</button>}
@@ -188,11 +188,8 @@ export default function MyHrProfilePage() {
             </FormSheet>
           )}
 
-          <EmployeeProfileView
-            p={me}
-            audience="self"
-            personalAction={!editing && can('hr', 'me', 'edit') ? <button type="button" data-tour="hr-me-card-edit" style={linkActionStyle} onClick={startEdit}>Edit</button> : undefined}
-          />
+          {/* One Edit button — "Edit My Details" in the header (the per-card Edit links duplicated it). */}
+          <EmployeeProfileView p={me} audience="self" />
 
           <EmployeeDocumentsTab userId={me.user_id ?? 0} mode="self" />
         </>

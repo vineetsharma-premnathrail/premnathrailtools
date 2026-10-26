@@ -10,7 +10,7 @@ import { MaintenanceContractList, MaintenanceContractStatus, MaintenanceLookups 
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import { recordPath } from '@/lib/recordRef'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
 
@@ -203,7 +203,7 @@ export default function MaintenanceContractsPage() {
             <tr>
               {headers.map((h, i) => (
                 <th key={i} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{i === 0 && <RowCount count={items.length} />}
                 </th>
               ))}
             </tr>
@@ -229,26 +229,18 @@ export default function MaintenanceContractsPage() {
                     </td>
                     <td style={cellStyle}>{r.branch_name || '—'}</td>
                     <td style={cellStyle}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${CRIT_HEX[r.criticality] || '#78716c'}1a`, color: CRIT_HEX[r.criticality] || '#78716c' }}>
-                        {r.criticality}
-                      </span>
+                      <Pill label={r.criticality} hex={CRIT_HEX[r.criticality] || '#78716c'} />
                     </td>
                     <td style={cellStyle}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${KIND_HEX[r.kind]}1a`, color: KIND_HEX[r.kind], whiteSpace: 'nowrap' }}>
-                        {KIND_LABELS[r.kind]}
-                      </span>
+                      <Pill label={KIND_LABELS[r.kind]} hex={KIND_HEX[r.kind]} />
                     </td>
                     <td style={cellStyle}>{r.vendor_name || <span style={{ color: TEXT.muted }}>—</span>}</td>
                     <td style={cellStyle}>{fmtDate(r.expiry_date)}</td>
                     <td style={cellStyle}>
-                      <span style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
-                        {daysLeftText(r.days_left)}
-                      </span>
+                      <Pill label={daysLeftText(r.days_left)} hex={hex} />
                     </td>
                     <td style={cellStyle}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
-                        {STATUS_LABELS[r.status] || r.status}
-                      </span>
+                      <Pill label={STATUS_LABELS[r.status] || r.status} hex={hex} />
                     </td>
                     <td style={cellStyle} onClick={(e) => e.stopPropagation()}>
                       <span onClick={go} style={{ color: '#ea580c', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }}>View</span>

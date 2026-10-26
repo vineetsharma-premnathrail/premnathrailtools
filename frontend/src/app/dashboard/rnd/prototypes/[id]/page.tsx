@@ -10,7 +10,8 @@ import { RndExperiment, RndProject, RndPrototype, RndPrototypeBomItem, RndProtot
 import { TEXT, GLASS, SHADOWS, BORDER, DANGER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow, TableScroll, thStyle, tdStyle, numThStyle, numTdStyle, RowCount } from '@/components/shared/ui'
+import { formatDate } from '@/lib/format'
 import RndNav from '@/components/rnd/RndNav'
 import AnchoredPopover from '@/components/rnd/AnchoredPopover'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -287,6 +288,9 @@ export default function RndPrototypeDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  // Read-only view by default; Edit opens the full form (same as R&D › Project).
+  const [editing, setEditing] = useState(false)
+  const [saved, setSaved] = useState(false)
 
   const hydrate = (p: RndPrototype) => {
     setProto(p)
@@ -344,6 +348,8 @@ export default function RndPrototypeDetailPage() {
         ...(frozen ? {} : { bom_items: bom.items }),
       })
       hydrate(updated)
+      setEditing(false)
+      setSaved(true)
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save prototype.'))
     } finally {
@@ -396,18 +402,213 @@ export default function RndPrototypeDetailPage() {
   const canAddExperiment = can('rnd', 'experiments', 'create')
   const frozen = isReleased(proto)
   const draftTotal = bomLines.reduce((sum, l) => sum + lineCost(l), 0)
+  const canDeleteProto = canDelete('rnd', 'prototypes', (proto as { created_by_id?: number | null }).created_by_id ?? null)
+  const startEdit = () => { setError(''); setSaved(false); hydrate(proto); setEditing(true) }
+  const discardEdit = () => { setError(''); hydrate(proto); setEditing(false) }
 
+  if (!editing || !canEdit) {
+    const projectLabel = `${proto.project_number || `#${proto.project_id}`}${proto.project_title ? ` — ${proto.project_title}` : ''}`
+    const statusHex = STATUS_HEX[proto.status] || '#78716c'
+    return (
+      <div style={{ width: '100%' }}>
+        <RndNav />
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
+              R&amp;D Module · Prototype
+            </p>
+            <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>{proto.prototype_number}</h1>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {canEdit && <button data-tour="rnd-ptd-edit-btn" type="button" onClick={startEdit} style={secondaryBtnStyle}>Edit</button>}
+            {canDeleteProto && (
+              <button data-tour="rnd-ptd-delete-btn" type="button" onClick={() => setConfirmOpen(true)} disabled={deleting} style={{ ...dangerBtnStyle, opacity: deleting ? 0.6 : 1 }}>
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            )}
+            <button data-tour="rnd-ptd-back-btn" type="button" onClick={() => router.push('/dashboard/rnd/prototypes')} style={secondaryBtnStyle}>← Back</button>
+          </div>
+        </div>
+
+        {error && (
+          <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+            {Array.isArray(error) ? error.join(' ') : error}
+          </div>
+        )}
+        {saved && (
+          <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', color: '#15803d', fontSize: 13 }}>
+            Changes saved.
+          </div>
+        )}
+
+        {/* Summary on top (what the prototype is), then every detail as one label–value list. */}
+        <DetailCard tour="rnd-ptd-overview">
+          <DetailSummary
+            title={`${proto.name} · ${proto.version}`}
+            text={proto.description || undefined}
+            meta={<span data-tour="rnd-ptd-badges" style={{ display: 'inline-flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Pill label={STATUS_LABELS[proto.status] || proto.status} hex={statusHex} />
+              <span>·</span>
+              <span>Built {proto.build_date ? formatDate(proto.build_date) : '— not yet'}</span>
+              <span>·</span>
+              <span>Project <Link href={recordPath('/dashboard/rnd/projects', proto, 'project_id')} style={{ color: '#2563EB', fontWeight: 600, textDecoration: 'none' }}>{proto.project_number || `#${proto.project_id}`}</Link></span>
+            </span>}
+          />
+
+          <div data-tour="rnd-ptd-details">
+            <DetailGroup>
+              <DetailRow label="R&D Project">
+                <Link href={recordPath('/dashboard/rnd/projects', proto, 'project_id')} style={{ color: '#2563EB', fontWeight: 600, textDecoration: 'none' }}>{projectLabel}</Link>
+              </DetailRow>
+              <DetailRow label="Version">{proto.version}</DetailRow>
+              <div data-tour="rnd-ptd-status">
+                <DetailRow label="Status"><Pill label={STATUS_LABELS[proto.status] || proto.status} hex={statusHex} /></DetailRow>
+              </div>
+              <DetailRow label="Build Date">{proto.build_date ? formatDate(proto.build_date) : null}</DetailRow>
+              {/* The Release to Production panel below shows this when the user can see it. */}
+              {proto.production_bom_number && !canFeature('rnd', 'prototypes', 'release_production', 'view') && (
+                <DetailRow label="Released to Production">
+                  {proto.production_bom_number}{proto.released_at ? ` on ${formatDate(proto.released_at)}` : ''}{proto.released_by_name ? ` by ${proto.released_by_name}` : ''}
+                </DetailRow>
+              )}
+            </DetailGroup>
+          </div>
+
+          <div data-tour="rnd-ptd-findings">
+            <DetailGroup>
+              <DetailRow label="Findings">{proto.findings}</DetailRow>
+            </DetailGroup>
+          </div>
+
+          <div data-tour="rnd-ptd-bom">
+            <DetailGroup title="Prototype BOM" last>
+              {frozen && (
+                <p style={{ fontSize: 12.5, fontWeight: 600, color: '#0891B2', margin: '4px 0 8px' }}>
+                  Frozen — released to Production as {proto.production_bom_number}. Create a new prototype version for design changes.
+                </p>
+              )}
+              {proto.bom_items.length === 0 ? (
+                <p style={{ fontSize: 13, color: SHEET.MUTED, margin: '6px 0' }}>
+                  No parts listed yet{canEdit ? ' — use Edit to add the parts this prototype needs.' : '.'}
+                </p>
+              ) : (
+                <TableScroll maxHeight="none" style={{ marginTop: 6 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>Item Code <RowCount count={proto.bom_items.length} /></th>
+                        <th style={thStyle}>Item</th>
+                        <th style={numThStyle}>Qty</th>
+                        <th style={thStyle}>UOM</th>
+                        {seeCosts && <th style={numThStyle}>Unit Cost</th>}
+                        {seeCosts && <th style={numThStyle}>Line Cost</th>}
+                        <th style={thStyle}>Remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {proto.bom_items.map((l) => (
+                        <tr key={l.id}>
+                          <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 600, color: TEXT.heading }}>{l.item_code || '—'}</td>
+                          <td style={tdStyle}>{l.item_name}</td>
+                          <td style={numTdStyle}>{l.quantity.toLocaleString('en-IN')}</td>
+                          <td style={tdStyle}>{l.uom || '—'}</td>
+                          {seeCosts && <td style={numTdStyle}>{formatInr(l.unit_cost)}</td>}
+                          {seeCosts && <td style={numTdStyle}>{formatInr(l.line_cost)}</td>}
+                          <td style={{ ...tdStyle, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={l.remarks || undefined}>{l.remarks || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </TableScroll>
+              )}
+              {seeCosts && proto.bom_items.length > 0 && (
+                <p style={{ fontSize: 13.5, fontWeight: 700, color: TEXT.heading, margin: '10px 0 0', textAlign: 'right' }}>BOM Total: {formatInr(proto.bom_cost)}</p>
+              )}
+            </DetailGroup>
+          </div>
+
+          {proto.created_at && <p style={{ fontSize: 12, color: SHEET.MUTED, margin: '10px 0 0' }}>Created {formatDate(proto.created_at)}</p>}
+        </DetailCard>
+
+        {canFeature('rnd', 'prototypes', 'release_production', 'view') && (
+          <div style={{ marginBottom: 20 }}>
+            <ReleaseToProductionPanel proto={proto} onReleased={hydrate} />
+          </div>
+        )}
+
+        <div data-tour="rnd-ptd-experiments" style={sectionStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Experiments run on this prototype ({experiments.length})</h2>
+            {canAddExperiment && (
+              <Link
+                data-tour="rnd-ptd-new-exp-link"
+                href={recordHref('/dashboard/rnd/experiments/new', proto, 'project_id', undefined, 'project_id')}
+                style={{ fontSize: 13, fontWeight: 600, color: '#FF6A2A', textDecoration: 'none' }}
+              >
+                + New Experiment
+              </Link>
+            )}
+          </div>
+          {experiments.length === 0 ? (
+            <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No experiments have been run on this prototype yet{canAddExperiment ? ' — use + New Experiment to record a test.' : '.'}</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {experiments.map((x) => {
+                const hex = x.result ? EXP_RESULT_HEX[x.result] : '#78716c'
+                const label = x.result ? (EXP_RESULT_LABELS[x.result] || x.result) : (EXP_STATUS_LABELS[x.status] || x.status)
+                return (
+                  <Link
+                    key={x.id}
+                    href={recordPath('/dashboard/rnd/experiments', x)}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                      padding: '10px 14px', borderRadius: 10, border: `1px solid ${BORDER.light}`,
+                      background: 'rgba(255,255,255,.5)', textDecoration: 'none',
+                    }}
+                  >
+                    <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, flex: '0 0 auto', whiteSpace: 'nowrap' }}>{x.experiment_number}</span>
+                    <span style={{ fontSize: 12.5, color: TEXT.muted, flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={x.title}>{x.title}</span>
+                    {x.experiment_date && <span style={{ fontSize: 12, color: TEXT.muted, whiteSpace: 'nowrap' }}>{formatDate(x.experiment_date)}</span>}
+                    <Pill label={label} hex={hex} />
+                  </Link>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        <RndDocumentsPanel
+          projectId={proto.project_id}
+          prototypeId={proto.id}
+          title="Prototype Documents"
+          currentUserId={user?.id}
+          isAdmin={user?.role === 'admin'}
+        />
+
+        <ConfirmDialog
+          open={confirmOpen}
+          title="Delete this prototype?"
+          message={`This deletes "${proto.prototype_number}" and its BOM from the R&D record.`}
+          confirmLabel="Delete"
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmOpen(false)}
+        />
+      </div>
+    )
+  }
+
+  // Edit: the full prototype form (details, findings, BOM) — Save returns to the view above.
   return (
     <div style={{ width: '100%' }}>
       <FormPage
         tour="rnd-ptd-form"
         nav={<RndNav />}
         icon="box"
-        title={`${proto.prototype_number} · ${proto.version}`}
+        title={`Edit ${proto.prototype_number} · ${proto.version}`}
         subtitle={proto.name}
-        onBack={() => router.push('/dashboard/rnd/prototypes')} backTour="rnd-ptd-back-btn"
+        onBack={discardEdit} backTour="rnd-ptd-back-btn"
         footer={<>
-          {canDelete('rnd', 'prototypes', (proto as { created_by_id?: number | null }).created_by_id ?? null) && (
+          {canDeleteProto && (
             <button
               data-tour="rnd-ptd-delete-btn"
               onClick={() => setConfirmOpen(true)}
@@ -418,7 +619,7 @@ export default function RndPrototypeDetailPage() {
               <SheetIcon name="trash" size={15} />{deleting ? 'Deleting…' : 'Delete Prototype'}
             </button>
           )}
-          <button type="button" onClick={() => router.push('/dashboard/rnd/prototypes')} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+          <button type="button" onClick={discardEdit} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Discard</button>
           {canEdit && (
             <button data-tour="rnd-ptd-save-btn" onClick={handleSave} disabled={saving} type="button" style={sheetBtn('primary', SHEET.BLUE, saving)}>
               <SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save Changes'}
@@ -428,9 +629,7 @@ export default function RndPrototypeDetailPage() {
       >
         <div style={{ padding: '16px 24px 0' }}>
           <div data-tour="rnd-ptd-badges" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[proto.status]}1a`, color: STATUS_HEX[proto.status], whiteSpace: 'nowrap' }}>
-              {STATUS_LABELS[proto.status] || proto.status}
-            </span>
+            <Pill label={STATUS_LABELS[proto.status] || proto.status} hex={STATUS_HEX[proto.status] || '#78716c'} />
             <span style={{ fontSize: 13, color: SHEET.MUTED }}>
               Project:{' '}
               <Link href={recordPath('/dashboard/rnd/projects', proto, 'project_id')} style={{ color: '#FF6A2A', fontWeight: 600, textDecoration: 'none' }}>
@@ -501,7 +700,7 @@ export default function RndPrototypeDetailPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>BOM lines</span><b>{frozen ? proto.bom_items.length : bomLines.filter((l) => !isEmptyLine(l)).length}</b></div>
                 {seeCosts && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>BOM total</span><b>{formatInr(frozen ? proto.bom_cost : draftTotal)}</b></div>}
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Experiments</span><b>{experiments.length}</b></div>
-                {proto.created_at && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Created on</span><b>{proto.created_at.slice(0, 10)}</b></div>}
+                {proto.created_at && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Created on</span><b>{formatDate(proto.created_at)}</b></div>}
               </div>
             </SheetSection>
           </>}
@@ -533,62 +732,6 @@ export default function RndPrototypeDetailPage() {
           </SheetSection>
         </div>
       </FormPage>
-
-      {canFeature('rnd', 'prototypes', 'release_production', 'view') && (
-        <div style={{ marginTop: 20 }}>
-          <ReleaseToProductionPanel proto={proto} onReleased={hydrate} />
-        </div>
-      )}
-
-      <div data-tour="rnd-ptd-experiments" style={sectionStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Experiments run on this prototype</h2>
-          {canAddExperiment && (
-            <Link
-              data-tour="rnd-ptd-new-exp-link"
-              href={recordHref('/dashboard/rnd/experiments/new', proto, 'project_id', undefined, 'project_id')}
-              style={{ fontSize: 13, fontWeight: 600, color: '#FF6A2A', textDecoration: 'none' }}
-            >
-              + New Experiment
-            </Link>
-          )}
-        </div>
-        {experiments.length === 0 ? (
-          <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No experiments have been run on this prototype yet.</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {experiments.map((x) => {
-              const hex = x.result ? EXP_RESULT_HEX[x.result] : '#78716c'
-              const label = x.result ? (EXP_RESULT_LABELS[x.result] || x.result) : (EXP_STATUS_LABELS[x.status] || x.status)
-              return (
-                <Link
-                  key={x.id}
-                  href={recordPath('/dashboard/rnd/experiments', x)}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-                    padding: '10px 14px', borderRadius: 10, border: `1px solid ${BORDER.light}`,
-                    background: 'rgba(255,255,255,.5)', textDecoration: 'none',
-                  }}
-                >
-                  <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading }}>{x.experiment_number}</span>
-                  <span style={{ fontSize: 12.5, color: TEXT.muted, flex: '1 1 auto', minWidth: 0 }}>{x.title}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
-                    {label}
-                  </span>
-                </Link>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      <RndDocumentsPanel
-        projectId={proto.project_id}
-        prototypeId={proto.id}
-        title="Prototype Documents"
-        currentUserId={user?.id}
-        isAdmin={user?.role === 'admin'}
-      />
 
       <ConfirmDialog
         open={confirmOpen}

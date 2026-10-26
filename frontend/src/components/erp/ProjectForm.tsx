@@ -306,6 +306,8 @@ export default function ProjectForm({
             style={{
               padding: '12px 6px',
               marginRight: 16,
+              // Sit the active underline on the tab bar's divider, not 1px above it.
+              marginBottom: -1,
               border: 'none',
               background: 'transparent',
               borderBottom: tabIndex === i ? `2px solid ${SHEET.BLUE}` : '2px solid transparent',

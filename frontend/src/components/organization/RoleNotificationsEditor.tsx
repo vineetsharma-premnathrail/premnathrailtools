@@ -6,6 +6,7 @@ import Checkbox from '@/components/Checkbox'
 import { SHEET, SheetIcon, sheetInput } from '@/components/shared/FormSheet'
 import { expandGrants } from '@/components/organization/PermissionMatrixEditor'
 import { permissionWords } from '@/lib/permissionWords'
+import { RowCount, pillStyle } from '@/components/shared/ui'
 
 /**
  * A role's notification subscriptions (Organization › Roles › Notifications):
@@ -44,9 +45,14 @@ interface Props {
   value: Record<string, string[]>
   onChange?: (next: Record<string, string[]>) => void
   readOnly?: boolean
+  /** Personal mode (one user): what the user's roles give per event. `value` then
+   * holds only the user's overrides — an entry replaces the roles' channels, an
+   * empty list switches the event off for that user, no entry follows the roles. */
+  fromRoles?: Record<string, string[]>
 }
 
-export default function RoleNotificationsEditor({ catalog, registry, permissions, value, onChange, readOnly }: Props) {
+export default function RoleNotificationsEditor({ catalog, registry, permissions, value, onChange, readOnly, fromRoles }: Props) {
+  const personal = !!fromRoles
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState<Record<string, boolean>>({})
   const granted = useMemo(() => expandGrants(registry, permissions), [registry, permissions])
@@ -55,13 +61,21 @@ export default function RoleNotificationsEditor({ catalog, registry, permissions
   const setEvent = (key: string, chans: string[]) => {
     if (readOnly) return
     const next = { ...value }
-    if (chans.length) next[key] = channels.map((c) => c.key).filter((c) => chans.includes(c))
+    if (chans.length || personal) next[key] = channels.map((c) => c.key).filter((c) => chans.includes(c))
     else delete next[key]
     onChange?.(next)
   }
+  // What applies for an event: the personal entry if there is one, else the roles'.
+  const shown = (key: string) => (key in value ? value[key] : personal ? (fromRoles?.[key] || []) : [])
   const toggle = (key: string, channel: string) => {
-    const cur = value[key] || []
+    const cur = shown(key)
     setEvent(key, cur.includes(channel) ? cur.filter((c) => c !== channel) : [...cur, channel])
+  }
+  const followRoles = (key: string) => {
+    if (readOnly) return
+    const next = { ...value }
+    delete next[key]
+    onChange?.(next)
   }
   const permLabel = (id: string) => permissionWords(registry, id)
 
@@ -77,19 +91,25 @@ export default function RoleNotificationsEditor({ catalog, registry, permissions
     <div data-tour="org-role-notifications">
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search module or event…" style={{ ...sheetInput, maxWidth: 280 }} />
-        <span style={{ fontSize: 12, color: SHEET.MUTED }}>{Object.keys(value).length} event{Object.keys(value).length === 1 ? '' : 's'} subscribed</span>
+        <span style={{ fontSize: 12, color: SHEET.MUTED }}>
+          {personal
+            ? `${Object.keys(value).length} personal change${Object.keys(value).length === 1 ? '' : 's'} · faded ticks come from this user's roles`
+            : `${Object.keys(value).length} event${Object.keys(value).length === 1 ? '' : 's'} subscribed`}
+        </span>
       </div>
       {modules.map(([mk, m]) => {
         const evs = Object.entries(m.events)
-        const on = evs.filter(([ek]) => value[`${mk}.${ek}`]?.length).length
+        const shownEvs = evs.filter(([, e]) => !q || e.label.toLowerCase().includes(q) || m.label.toLowerCase().includes(q))
+        const on = evs.filter(([ek]) => shown(`${mk}.${ek}`).length).length
         const isOpen = !!open[mk] || !!q
         return (
           <div key={mk} style={{ marginBottom: 12, borderRadius: 12, border: `1px solid ${SHEET.LINE}`, overflow: 'hidden', background: '#fff' }}>
+            {/* ui-audit-ignore-next-line custom-button — full-width accordion section header, not an action pill */}
             <button type="button" onClick={() => setOpen((o) => ({ ...o, [mk]: !isOpen }))}
               style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 14px', background: 'rgba(244,113,59,0.06)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
               <span style={{ fontSize: 11, color: SHEET.MUTED, width: 10 }}>{isOpen ? '▾' : '▸'}</span>
               <span style={{ fontSize: 13, fontWeight: 700, color: SHEET.INK }}>{m.label}</span>
-              <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: on ? 'rgba(16,185,129,0.12)' : 'rgba(0,0,0,0.05)', color: on ? '#047857' : SHEET.MUTED }}>
+              <span style={{ ...pillStyle(on ? '#047857' : '#64748b'), fontWeight: 600 }}>
                 {on ? `${on} / ${evs.length}` : 'None'}
               </span>
             </button>
@@ -98,14 +118,15 @@ export default function RoleNotificationsEditor({ catalog, registry, permissions
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
                   <thead>
                     <tr style={{ background: 'rgba(0,0,0,0.02)' }}>
-                      <th style={th('left')}>Event</th>
+                      <th style={th('left')}>Event <RowCount count={shownEvs.length} /></th>
                       {channels.map((c) => <th key={c.key} style={th('center')}>{c.label}</th>)}
                     </tr>
                   </thead>
                   <tbody>
-                    {evs.filter(([, e]) => !q || e.label.toLowerCase().includes(q) || m.label.toLowerCase().includes(q)).map(([ek, e]) => {
+                    {shownEvs.map(([ek, e]) => {
                       const key = `${mk}.${ek}`
-                      const cur = value[key] || []
+                      const cur = shown(key)
+                      const own = personal && key in value
                       const kind = KIND[e.kind] || KIND.info
                       const canReceive = granted.has(e.access)
                       return (
@@ -113,10 +134,20 @@ export default function RoleNotificationsEditor({ catalog, registry, permissions
                           <td style={{ padding: '8px 14px', fontSize: 12.5, color: SHEET.BODY }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                               <span style={{ fontWeight: 600, color: SHEET.INK }}>{e.label}</span>
-                              <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 9999, background: kind.bg, color: kind.c }}>{kind.text}</span>
-                              {!readOnly && !cur.length && (
+                              <span style={{ ...pillStyle(kind.c), background: kind.bg, fontSize: 10.5, padding: '1px 7px' }}>{kind.text}</span>
+                              {!readOnly && !cur.length && !own && (
                                 <button type="button" onClick={() => setEvent(key, e.default_channels)} style={{ fontSize: 11.5, fontWeight: 600, color: SHEET.BLUE, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
                                   + Subscribe
+                                </button>
+                              )}
+                              {own && (
+                                <span style={{ ...pillStyle('#1d4ed8'), fontSize: 10.5, padding: '1px 7px' }}>
+                                  {cur.length ? 'Only for this user' : 'Off for this user'}
+                                </span>
+                              )}
+                              {own && !readOnly && (
+                                <button type="button" onClick={() => followRoles(key)} style={{ fontSize: 11.5, fontWeight: 600, color: SHEET.BLUE, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+                                  Follow roles
                                 </button>
                               )}
                             </div>
@@ -124,13 +155,13 @@ export default function RoleNotificationsEditor({ catalog, registry, permissions
                             {cur.length > 0 && !canReceive && (
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: '#b45309', marginTop: 3 }}>
                                 <SheetIcon name="alert" size={13} color="#b45309" />
-                                This role doesn&apos;t grant that permission — members get it only if another role or an extra grant gives it.
+                                {personal ? 'This user doesn’t hold that permission, so they won’t receive it.' : <>This role doesn&apos;t grant that permission — members get it only if another role or an extra grant gives it.</>}
                               </div>
                             )}
                           </td>
                           {channels.map((c) => (
                             <td key={c.key} style={{ padding: 6, textAlign: 'center' }}>
-                              <div style={{ display: 'inline-flex' }}>
+                              <div style={{ display: 'inline-flex', opacity: personal && !own && cur.includes(c.key) ? 0.55 : 1 }} title={personal && !own && cur.includes(c.key) ? 'From this user’s roles — click to change it for this user only' : undefined}>
                                 <Checkbox checked={cur.includes(c.key)} disabled={readOnly} onChange={() => toggle(key, c.key)} />
                               </div>
                             </td>

@@ -1,13 +1,13 @@
 'use client'
 
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, chipBtnStyle, segmentBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { designApi } from '@/lib/api'
 import { DesignChangeNotice, DesignChangeRequest } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import { useDesignMe } from '@/components/design/useDesignMe'
 import { ECN_REASON_LABELS, ECN_STATUS_LABELS, ECR_SOURCE_LABELS, ECR_STATUS_LABELS, ECR_URGENCY_LABELS } from '@/components/design/designMeta'
@@ -52,16 +52,12 @@ const tableWrap: React.CSSProperties = {
 const bigBtn: React.CSSProperties = primaryBtnStyle
 
 function pill(label: string, hex: string) {
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
+  return <span style={pillStyle(hex)}>{label}</span>
 }
 
 function chip(active: boolean, label: string, onClick: () => void, key?: string) {
   return (
-    <button key={key ?? label} type="button" onClick={onClick} style={{
-      padding: '6px 14px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-      border: `1px solid ${active ? '#FF6A2A' : BORDER.normal}`, background: active ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,.6)',
-      color: active ? '#FF6A2A' : TEXT.secondary,
-    }}>
+    <button key={key ?? label} type="button" onClick={onClick} style={chipBtnStyle(active)}>
       {label}
     </button>
   )
@@ -151,10 +147,7 @@ export default function DesignChangesPage() {
         {([['ecr', 'Change requests (ECR)'], ['ecn', 'Change notices (ECN)']] as const).map(([k, label]) => {
           const active = section === k
           return (
-            <button key={k} type="button" data-tour={`design-changes-section-${k}`} onClick={() => switchSection(k)} style={{
-              padding: '8px 16px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
-              background: active ? GRADIENTS.primary : 'transparent', color: active ? '#fff' : TEXT.secondary,
-            }}>
+            <button key={k} type="button" data-tour={`design-changes-section-${k}`} onClick={() => switchSection(k)} style={segmentBtnStyle(active)}>
               {label}
             </button>
           )
@@ -171,11 +164,7 @@ export default function DesignChangesPage() {
         <>
           <div data-tour="design-ecrs-status-tabs" style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             {ECR_TABS.map((t) => chip(ecrTab === t.key, t.label, () => setEcrTab(t.key)))}
-            <button type="button" data-tour="design-ecrs-mine" onClick={() => setMine((v) => !v)} style={{
-              padding: '6px 14px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer', marginLeft: 6,
-              border: `1px solid ${mine ? '#FF6A2A' : BORDER.normal}`, background: mine ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,.6)',
-              color: mine ? '#FF6A2A' : TEXT.secondary,
-            }}>
+            <button type="button" data-tour="design-ecrs-mine" onClick={() => setMine((v) => !v)} style={{ ...chipBtnStyle(mine), marginLeft: 6 }}>
               {mine ? '✓ ' : ''}Raised by me
             </button>
           </div>
@@ -190,13 +179,13 @@ export default function DesignChangesPage() {
           <div data-tour="design-ecrs-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
               <thead>
-                <tr>{['ECR', 'Title', 'Source', 'Urgency', 'Items', 'Raised by', 'Status', 'Votes', 'Days open', 'ECN', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                <tr>{['ECR', 'Title', 'Source', 'Urgency', 'Items', 'Raised by', 'Status', 'Votes', 'Days open', 'ECN', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={ecrs.length} />}</th>)}</tr>
               </thead>
               <tbody>
                 {ecrLoading ? (
                   <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
                 ) : ecrs.length === 0 ? (
-                  <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No change requests here.</td></tr>
+                  <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No change requests here — use + Raise ECR to ask for a change to a released drawing or BOM.</td></tr>
                 ) : (
                   ecrs.map((r) => (
                     <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/design/change-requests', r))} style={{ cursor: 'pointer' }}>
@@ -249,13 +238,13 @@ export default function DesignChangesPage() {
           <div data-tour="design-ecns-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1240 }}>
               <thead>
-                <tr>{['ECN', 'Title', 'ECR', 'Reason', 'Priority', 'Items', 'Raised by', 'Target', 'Acknowledged', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                <tr>{['ECN', 'Title', 'ECR', 'Reason', 'Priority', 'Items', 'Raised by', 'Target', 'Acknowledged', 'Status', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={ecns.length} />}</th>)}</tr>
               </thead>
               <tbody>
                 {ecnLoading ? (
                   <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
                 ) : ecns.length === 0 ? (
-                  <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No change notices here.</td></tr>
+                  <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No change notices here — they are created from an approved change request (“Create ECN”).</td></tr>
                 ) : (
                   ecns.map((e) => {
                     const total = (e.documents?.length ?? e.document_count) + (e.boms?.length ?? 0)

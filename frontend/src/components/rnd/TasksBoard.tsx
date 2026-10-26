@@ -27,7 +27,7 @@ import { TEXT, BORDER } from '@/lib/theme'
 import { formatDate, formatDateTime } from '@/lib/format'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { dangerBtnStyle, smallSecondaryBtnStyle, btnBase, smallBtnSize } from '@/components/shared/ui'
+import { dangerBtnStyle, smallSecondaryBtnStyle, btnBase, smallBtnSize, chipBtnStyle, RowCount, inputStyle as sharedInputStyle, pillStyle } from '@/components/shared/ui'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, SheetIconName, FileDropZone, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
 import { useAuthStore } from '@/store/authStore'
@@ -158,6 +158,7 @@ function ActivityFeed({ events, userName }: { events: RndTask['events']; userNam
         return (
           <div key={i} style={{ display: 'flex', gap: 12 }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 'none', width: 30 }}>
+              {/* ui-audit-ignore-next-line custom-pill — round avatar initials, not a pill */}
               <span title={e.by} style={{ width: 30, height: 30, borderRadius: 9999, background: `${meta.hex}1a`, color: meta.hex, border: `1.5px solid ${meta.hex}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>
                 {initials(e.by)}
               </span>
@@ -173,11 +174,11 @@ function ActivityFeed({ events, userName }: { events: RndTask['events']; userNam
               {(e.old_due_date || e.new_due_date) && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
                   {e.old_due_date && e.new_due_date ? (
-                    <span style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 10px', borderRadius: 9999, background: 'rgba(217,119,6,0.1)', color: '#b45309' }}>
+                    <span style={{ ...pillStyle('#b45309'), fontSize: 11.5, fontWeight: 600, padding: '3px 10px' }}>
                       Due <span style={{ textDecoration: 'line-through', opacity: 0.7 }}>{formatDate(e.old_due_date)}</span> → {formatDate(e.new_due_date)}
                     </span>
                   ) : e.new_due_date && (
-                    <span style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 10px', borderRadius: 9999, background: 'rgba(37,99,235,0.08)', color: '#1d4ed8' }}>Due {formatDate(e.new_due_date)}</span>
+                    <span style={{ ...pillStyle('#1d4ed8'), fontSize: 11.5, fontWeight: 600, padding: '3px 10px' }}>Due {formatDate(e.new_due_date)}</span>
                   )}
                 </div>
               )}
@@ -197,10 +198,8 @@ function ActivityFeed({ events, userName }: { events: RndTask['events']; userNam
 const APPROVAL_LABELS: Record<string, string> = { pending: 'Waiting for decision', approved: 'Approved', rejected: 'Rejected', withdrawn: 'Withdrawn' }
 const APPROVAL_HEX: Record<string, string> = { pending: '#D97706', approved: '#16A34A', rejected: '#DC2626', withdrawn: '#78716c' }
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
-}
+// Shared 34px control scale; list filters keep their own width.
+const inputStyle: React.CSSProperties = { ...sharedInputStyle, background: 'rgba(255,255,255,.7)' }
 const smallLabel: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }
 const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 
@@ -214,7 +213,7 @@ function DocChips({ docs, onOpen }: { docs: RndWorkDocument[]; onOpen: (d: RndWo
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
       {docs.map((d) => (
         <button key={d.id} type="button" onClick={() => onOpen(d)} title={d.uploaded_by ? `Uploaded by ${d.uploaded_by}` : 'Open document'}
-          style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 999, border: '1px solid rgba(0,0,0,0.08)', background: 'rgba(0,0,0,0.03)', color: '#57534e', cursor: 'pointer' }}>
+          style={chipBtnStyle(false)}>
           📄 {d.name}
         </button>
       ))}
@@ -260,7 +259,7 @@ function ApprovalList({ approvals, canDecide, userId, api, onChanged, onOpen }: 
             <div key={a.id} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${pending ? 'rgba(217,119,6,0.35)' : BORDER.light}`, background: pending ? 'rgba(217,119,6,0.05)' : 'rgba(255,255,255,0.5)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12, color: TEXT.muted }}>{a.requested_by}{a.requested_by_id === userId ? ' (you)' : ''} · {formatDateTime(a.requested_at)}</span>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${hex}1a`, color: hex }}>{APPROVAL_LABELS[a.status] || a.status}</span>
+                <span style={pillStyle(hex)}>{APPROVAL_LABELS[a.status] || a.status}</span>
               </div>
               <p style={{ fontSize: 13, color: TEXT.body, margin: '6px 0 0', whiteSpace: 'pre-wrap' }}>{a.request}</p>
               {a.documents.length > 0 && <div style={{ marginTop: 6 }}><DocChips docs={a.documents} onOpen={onOpen} /></div>}
@@ -457,7 +456,7 @@ const card: React.CSSProperties = { background: '#fff', border: `1px solid ${LIN
 const th: React.CSSProperties = { textAlign: 'left', padding: '10px 12px', fontSize: 11.5, fontWeight: 600, color: MUTED, borderBottom: `1px solid ${LINE}`, background: SOFT, whiteSpace: 'nowrap' }
 const td: React.CSSProperties = { padding: '11px 12px', fontSize: 13, color: BODY, borderBottom: `1px solid ${LINE}`, verticalAlign: 'middle' }
 
-/** A flat underline tab — every border side set explicitly so the app-wide <button> style doesn't show through. */
+/** A flat underline tab — every border side set explicitly so the app-wide button element style doesn't show through. */
 function tabStyle(active: boolean): React.CSSProperties {
   return {
     display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 12px', marginBottom: -1,
@@ -481,9 +480,10 @@ const taskPercent = (t: RndTask) => (isDoneTask(t) ? 100 : t.checklist?.length ?
 const docCount = (t: RndTask) => t.brief_documents.length + t.work_documents.length + (t.approvals || []).reduce((n, a) => n + a.documents.length, 0)
 
 function Chip({ text, c, bg }: { text: string; c: string; bg: string }) {
-  return <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: bg, color: c, whiteSpace: 'nowrap' }}>{text}</span>
+  return <span style={{ ...pillStyle(c), fontSize: 11.5, padding: '3px 9px', background: bg }}>{text}</span>
 }
 function Bar({ value, color = BLUE }: { value: number; color?: string }) {
+  // ui-audit-ignore-next-line custom-pill — progress bar track, not a pill
   return <span style={{ flex: 1, minWidth: 40, height: 8, borderRadius: 999, background: '#eef2f7', overflow: 'hidden', display: 'block' }}><span style={{ display: 'block', height: '100%', width: `${Math.max(0, Math.min(100, value))}%`, background: color, borderRadius: 999 }} /></span>
 }
 const AV_COLORS = ['#2563eb', '#16a34a', '#db2777', '#7c3aed', '#ea580c', '#0891b2']
@@ -716,12 +716,12 @@ function TaskView({
       {viewError && <div style={{ padding: '0 18px' }}><SheetError error={viewError} /></div>}
 
       {/* Tabs */}
-      <div role="tablist" style={{ display: 'flex', gap: 2, padding: '0 12px', borderBottom: `1px solid ${LINE}`, overflowX: 'auto' }}>
+      <div role="tablist" style={{ display: 'flex', flexWrap: 'wrap', gap: 2, padding: '0 12px', borderBottom: `1px solid ${LINE}` }}>
         {tabs.map((x) => (
           <button key={x.k} role="tab" aria-selected={tab === x.k} type="button" onClick={() => setTab(x.k)} style={tabStyle(tab === x.k)}>
             <SheetIcon name={x.icon} size={14} color={tab === x.k ? BLUE : MUTED} />{x.t}
             {x.n !== undefined && (
-              <span style={{ fontSize: 11, fontWeight: 700, lineHeight: '16px', padding: '0 6px', borderRadius: 999, minWidth: 18, textAlign: 'center', background: tab === x.k ? `${BLUE}1a` : '#f1f5f9', color: tab === x.k ? BLUE : MUTED }}>{x.n}</span>
+              <span style={{ ...pillStyle(MUTED), justifyContent: 'center', padding: '0 6px', minWidth: 18, textAlign: 'center', background: tab === x.k ? `${BLUE}1a` : '#f1f5f9', color: tab === x.k ? BLUE : MUTED }}>{x.n}</span>
             )}
           </button>
         ))}
@@ -797,7 +797,7 @@ function TaskView({
             {subtasks.length === 0 ? <p style={{ fontSize: 13, color: MUTED }}>No sub-tasks yet.</p> : (
               <div style={{ border: `1px solid ${LINE}`, borderRadius: 12, overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
-                  <thead><tr><th style={th}>Sub-task</th><th style={th}>Assignee</th><th style={th}>Due Date</th><th style={th}>Status</th><th style={{ ...th, width: 130 }}>Progress</th></tr></thead>
+                  <thead><tr><th style={th}>Sub-task <RowCount count={subtasks.length} /></th><th style={th}>Assignee</th><th style={th}>Due Date</th><th style={th}>Status</th><th style={{ ...th, width: 130 }}>Progress</th></tr></thead>
                   <tbody>
                     {subtasks.map((s) => {
                       const ss = taskState(s)
@@ -946,7 +946,7 @@ function TaskView({
 
 type Filter = 'all' | 'pending' | 'completed' | 'overdue' | 'mine' | 'given'
 
-export default function TasksBoard({ api, userId, canManage, canCreate = canManage, rights: rightsIn, departmentFilter, labels, reloadKey }: {
+export default function TasksBoard({ api, userId, canManage, canCreate = canManage, rights: rightsIn, departmentFilter, labels, reloadKey, onTasksChange }: {
   api: TaskApi
   userId: number
   /** Head / lead: create top-level tasks and review every task. */
@@ -960,6 +960,8 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
   labels: TaskLabels
   /** Change to reload (e.g. when the caller's record changes). */
   reloadKey?: string | number
+  /** Called with the list after every load / change (e.g. to refresh milestone progress). */
+  onTasksChange?: (tasks: RndTask[]) => void
 }) {
   const [tasks, setTasks] = useState<RndTask[] | null>(null)
   const [people, setPeople] = useState<RndPerson[]>([])
@@ -982,6 +984,11 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
     if (api.team) api.team().then(setTeam).catch(() => setTeam([]))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadKey, canCreate])
+
+  useEffect(() => {
+    if (tasks && onTasksChange) onTasksChange(tasks)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks])
 
   const list = tasks || []
   const ids = new Set(list.map((t) => t.id))
@@ -1058,8 +1065,7 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
         {list.length > 0 && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {chips.filter((c) => c.k === 'all' || c.c > 0 || filter === c.k).map((c) => (
-              <button key={c.k} type="button" onClick={() => setFilter(c.k)} style={{ padding: '6px 12px', borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-                border: `1px solid ${filter === c.k ? BLUE : LINE}`, background: filter === c.k ? '#eff6ff' : '#fff', color: filter === c.k ? BLUE : BODY }}>{c.t} ({c.c})</button>
+              <button key={c.k} type="button" onClick={() => setFilter(c.k)} style={{ ...chipBtnStyle(filter === c.k), borderColor: filter === c.k ? BLUE : LINE, background: filter === c.k ? '#eff6ff' : '#fff', color: filter === c.k ? BLUE : BODY }}>{c.t} ({c.c})</button>
             ))}
           </div>
         )}
@@ -1081,8 +1087,7 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
           {[{ key: 'all', label: 'All' }, ...(departmentFilter.mine.length ? [{ key: 'mine', label: 'My department' }] : []), ...departmentFilter.options].map((c) => {
             const active = dept === c.key
             return (
-              <button key={c.key} type="button" onClick={() => setDept(c.key)} style={{ padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-                border: `1px solid ${active ? (DEPT_HEX[c.key] || BLUE) : LINE}`, background: active ? `${DEPT_HEX[c.key] || BLUE}14` : '#fff', color: active ? (DEPT_HEX[c.key] || BLUE) : BODY }}>
+              <button key={c.key} type="button" onClick={() => setDept(c.key)} style={{ ...chipBtnStyle(active), borderColor: active ? (DEPT_HEX[c.key] || BLUE) : LINE, background: active ? `${DEPT_HEX[c.key] || BLUE}14` : '#fff', color: active ? (DEPT_HEX[c.key] || BLUE) : BODY }}>
                 {c.label} ({list.filter((t) => inDept(t, c.key)).length})
               </button>
             )
@@ -1107,6 +1112,7 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
               const active = t.id === openTask.id
               const ss = taskState(t)
               return (
+                // ui-audit-ignore-next-line custom-button — task list row in the split view (navigation row), not a pill button
                 <button key={t.id} type="button" onClick={() => setOpen({ id: t.id })}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: `10px 12px 10px ${depth ? 28 : 12}px`, borderTop: '0', borderRight: '0', borderBottom: `1px solid ${LINE}`, borderLeft: `3px solid ${active ? BLUE : 'transparent'}`, borderRadius: 0, boxShadow: 'none', transform: 'none', background: active ? '#eff6ff' : '#fff', color: INK, cursor: 'pointer', fontFamily: 'inherit' }}>
                   <span style={{ width: 22, height: 22, borderRadius: '50%', background: isDoneTask(t) ? '#16a34a' : '#e2e8f0', color: BODY, fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -1132,7 +1138,7 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
             <thead>
               <tr>
-                <th style={{ ...th, width: 36 }}>#</th>
+                <th style={{ ...th, width: 36, whiteSpace: 'nowrap' }}># <RowCount count={rows.length} /></th>
                 <th style={th}>Task Name</th>
                 <th style={th}>Assignee</th>
                 <th style={th}>Given by</th>
@@ -1163,7 +1169,7 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
                     <td style={{ ...td, paddingLeft: depth ? 32 : 12 }}>
                       <div style={{ fontWeight: 600, color: INK }}>{depth ? <span style={{ color: '#7C3AED', marginRight: 6 }}>↳</span> : null}{t.title}</div>
                       <div style={{ display: 'flex', gap: 10, fontSize: 11.5, color: MUTED, marginTop: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-                        {t.department_label && <span style={{ padding: '1px 7px', borderRadius: 999, background: `${DEPT_HEX[t.department || 'rnd'] || '#57534e'}14`, color: DEPT_HEX[t.department || 'rnd'] || '#57534e', fontWeight: 600 }}>{t.department_label}</span>}
+                        {t.department_label && <span style={{ ...pillStyle(DEPT_HEX[t.department || 'rnd'] || '#57534e'), fontSize: 'inherit', fontWeight: 600, padding: '1px 7px', background: `${DEPT_HEX[t.department || 'rnd'] || '#57534e'}14` }}>{t.department_label}</span>}
                         {kids.length > 0 && <span>Sub-tasks {kids.filter(isDoneTask).length}/{kids.length}</span>}
                         {t.checklist?.length > 0 && <span>☑ {t.checklist_done}/{t.checklist.length}</span>}
                         {files > 0 && <span>📎 {files}</span>}

@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react'
 import { storeApi, storeSerialsApi } from '@/lib/api'
 import { TEXT, BORDER } from '@/lib/theme'
 import Select from '@/components/shared/Select'
+import { pillStyle } from '@/components/shared/ui'
 
 type Bin = { id: number; code: string; name?: string | null; is_active?: boolean }
 
@@ -57,11 +58,10 @@ export default function BinSerialPicker({
             {units.map((u) => {
               const on = serials.includes(u.serial_no)
               return (
-                <span key={u.id} onClick={() => onChange({ serials: on ? serials.filter((s) => s !== u.serial_no) : [...serials, u.serial_no] })}
-                  style={{ cursor: 'pointer', fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 9999,
-                    background: on ? 'rgba(22,163,74,0.14)' : 'rgba(0,0,0,0.05)', color: on ? '#15803d' : TEXT.body }}>
+                <button type="button" key={u.id} aria-pressed={on} onClick={() => onChange({ serials: on ? serials.filter((s) => s !== u.serial_no) : [...serials, u.serial_no] })}
+                  style={{ ...pillStyle(on ? '#15803d' : '#57534e'), border: 'none', cursor: 'pointer' }}>
                   {u.serial_no}
-                </span>
+                </button>
               )
             })}
           </div>

@@ -12,6 +12,7 @@ import {
   linkBtnStyle, thStyle, tdStyle, numTd, numTh, inr, dmy, todayIso, ErrorBanner, TableWrap, EmptyRow,
 } from '@/components/finance/financeUi'
 import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetHint } from '@/components/shared/FormSheet'
+import { RowCount } from '@/components/shared/ui'
 
 export type CreditSource = {
   source_type: 'payment' | 'advance' | 'party_note' | 'journal'
@@ -97,7 +98,7 @@ export default function AllocateCreditDialog({ partyType, partyId, partyName, so
           <TableWrap minWidth={640} maxHeight="50vh">
             <thead>
               <tr>
-                <th style={thStyle}>Bill no.</th><th style={thStyle}>Date</th><th style={thStyle}>Due</th>
+                <th style={thStyle}>Bill no. <RowCount count={docs.length} /></th><th style={thStyle}>Date</th><th style={thStyle}>Due</th>
                 <th style={numTh}>Due amount</th><th style={numTh}>Set off</th><th style={thStyle}></th>
               </tr>
             </thead>

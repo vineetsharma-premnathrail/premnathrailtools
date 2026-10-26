@@ -7,7 +7,7 @@ import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { storeApi } from '@/lib/api'
 import { StoreDocType, StoreDocTypeKind } from '@/types'
 import { TEXT, GLASS, SHADOWS, SUCCESS } from '@/lib/theme'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import StoreSettingsNav from '@/components/store/StoreSettingsNav'
@@ -39,7 +39,7 @@ const RULE_SHORT: Record<string, string> = {
 type Form = { label: string; stock_effect: string; requires_issue: boolean; approver_rule: string; approver_user_ids: number[]; is_active: boolean }
 const EMPTY: Form = { label: '', stock_effect: '', requires_issue: false, approver_rule: 'none', approver_user_ids: [], is_active: true }
 
-const th = { position: 'sticky' as const, top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left' as const, padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase' as const, color: TEXT.muted }
+const th = { position: 'sticky' as const, top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left' as const, padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase' as const, color: TEXT.muted, whiteSpace: 'nowrap' as const }
 const td = { padding: '12px 16px', fontSize: 13, color: TEXT.secondary }
 
 /** One Store → Settings list of configurable types. Each kind carries the
@@ -234,31 +234,29 @@ export default function DocTypeSettings({ kind, title, noun, intro }: { kind: St
 
       <div data-tour={`doctype-${kind}-table`} style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
-          <thead><tr>{headers.map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <thead><tr>{headers.map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
             {loading && <tr><td colSpan={headers.length} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={headers.length} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No {noun}s yet.</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={headers.length} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No {noun}s yet{canCreate ? ` — use + Add ${noun.replace(/^\w/, (c) => c.toUpperCase())} to create the first one` : ''}.</td></tr>}
             {!loading && rows.map((t) => (
               <tr key={t.value} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', opacity: t.is_active ? 1 : 0.55 }}>
                 <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{t.label}</td>
                 {effects && (
                   <td style={td}>
-                    {t.stock_effect && <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${EFFECT_HEX[t.stock_effect]}1a`, color: EFFECT_HEX[t.stock_effect], whiteSpace: 'nowrap' }}>{EFFECT_LABELS[t.stock_effect]}</span>}
+                    {t.stock_effect ? <Pill label={EFFECT_LABELS[t.stock_effect] || t.stock_effect} hex={EFFECT_HEX[t.stock_effect] || '#64748b'} /> : '—'}
                   </td>
                 )}
                 {kind === 'return_source' && <td style={td}>{t.requires_issue ? 'Required' : '—'}</td>}
                 {hasApproval && (
                   <td style={td}>
-                    {t.approver_rule === 'none' ? 'None' : <>Default: {RULE_SHORT[t.approver_rule]}</>}
+                    {t.approver_rule === 'none' ? 'None' : <>Default: {RULE_SHORT[t.approver_rule] || t.approver_rule.replace(/_/g, ' ')}</>}
                     {t.approver_rule !== 'none' && (
                       <div style={{ fontSize: 12 }}><Link href={WORKFLOWS_HREF} style={{ color: '#FF6A2A' }}>Set in Approval Workflows</Link></div>
                     )}
                   </td>
                 )}
                 <td style={td}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: t.is_active ? `${SUCCESS.primary}1a` : 'rgba(100,116,139,0.12)', color: t.is_active ? SUCCESS.hover : TEXT.muted }}>
-                    {t.is_active ? 'Active' : 'Inactive'}
-                  </span>
+                  <Pill label={t.is_active ? 'Active' : 'Inactive'} hex={t.is_active ? SUCCESS.hover : TEXT.muted} />
                 </td>
                 <td style={{ padding: '0 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                   {canEdit && <span data-tour="store-doctype-edit-link" onClick={() => open(t)} style={{ color: '#FF6A2A', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Edit</span>}

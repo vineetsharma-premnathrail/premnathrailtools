@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
 import { HydLookupOption, HydServiceRecord } from '@/types'
 import { TEXT, DANGER, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle, RowCount, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -40,28 +40,11 @@ const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 12px', f
 const tdStyle: React.CSSProperties = { padding: '9px 12px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'middle' }
 const primaryBtn: React.CSSProperties = { ...primaryBtnStyle, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }
 const dangerBtn: React.CSSProperties = { ...secondaryBtnStyle, color: DANGER.primary, borderColor: DANGER.border }
-const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
+const pill = pillStyle
 // Amounts are null when the role lacks Hydraulic › BOM › Prices & costs (backend blanks them).
 const inr = (n: number | null | undefined) => (n == null ? '—' : `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`)
 
-function Info({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div style={{ flex: '0 1 200px', minWidth: 160 }}>
-      <p style={statLabel}>{label}</p>
-      <p style={{ fontSize: 13.5, color: TEXT.body, margin: 0 }}>{value || '—'}</p>
-    </div>
-  )
-}
-
-function TextBlock({ label, value }: { label: string; value?: string | null }) {
-  if (!value) return null
-  return (
-    <div style={{ flex: '1 1 300px' }}>
-      <p style={statLabel}>{label}</p>
-      <p style={{ fontSize: 13.5, color: TEXT.body, margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{value}</p>
-    </div>
-  )
-}
+const linkStyle: React.CSSProperties = { fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }
 
 export default function HydServiceRecordDetailPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('hydraulic')
@@ -150,7 +133,7 @@ export default function HydServiceRecordDetailPage() {
             Hydraulic &amp; Pneumatic · Service Record
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>
-            {rec ? `${rec.record_number} — ${SERVICE_TYPE_LABELS[rec.service_type] || rec.service_type}` : 'Service Record'}
+            {rec ? (editable ? `${rec.record_number} — ${SERVICE_TYPE_LABELS[rec.service_type] || rec.service_type}` : rec.record_number) : 'Service Record'}
           </h1>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -175,7 +158,7 @@ export default function HydServiceRecordDetailPage() {
 
       {rec && (
         <>
-          <div data-tour="hyd-svcd-summary" style={cardStyle}>
+          {editable && <div data-tour="hyd-svcd-summary" style={cardStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
               <span data-tour="hyd-svcd-status" style={pill(STATUS_HEX[rec.status])}>{STATUS_LABELS[rec.status] || rec.status}</span>
               <span onClick={() => router.push(recordPath('/dashboard/hydraulic/systems', rec, 'system_id'))} style={{ fontSize: 13, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>
@@ -196,7 +179,7 @@ export default function HydServiceRecordDetailPage() {
               <div><p style={statLabel}>Total cost</p><p style={{ ...statValue, color: '#FF6A2A' }}>{inr(rec.total_cost)}</p></div>
               <div><p style={statLabel}>Downtime</p><p style={statValue}>{rec.downtime_hours ? `${rec.downtime_hours.toLocaleString('en-IN')} h` : '—'}</p></div>
             </div>
-          </div>
+          </div>}
 
           {completeOpen && editable && (
             <div style={{ ...cardStyle, border: `1px solid ${BORDER.normal}`, borderLeft: '4px solid #16A34A' }}>
@@ -272,35 +255,64 @@ export default function HydServiceRecordDetailPage() {
             />
           ) : (
             <>
-              <div data-tour="hyd-svcd-job-details" style={cardStyle}>
-                <p style={sectionTitle}>Job Details</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-                  <Info label="Service type" value={SERVICE_TYPE_LABELS[rec.service_type] || rec.service_type} />
-                  <Info label="Performed by" value={rec.performed_by_name} />
-                  <Info label="External agency" value={rec.external_agency} />
-                  <Info label="Running hours" value={rec.running_hours != null ? `${rec.running_hours.toLocaleString('en-IN')} h` : null} />
-                  <Info label="Fluid added" value={rec.fluid_added_l ? `${rec.fluid_added_l.toLocaleString('en-IN')} L` : null} />
-                  <Info label="Oil / air condition" value={rec.oil_condition} />
-                  <Info label="Next service date" value={rec.next_service_date ? formatDate(rec.next_service_date) : null} />
-                  {rec.status === 'completed' && (
-                    <Info label="Completed by" value={rec.completed_by_name ? `${rec.completed_by_name}${rec.completed_at ? ` · ${formatDateTime(rec.completed_at)}` : ''}` : null} />
+              <DetailCard tour="hyd-svcd-summary">
+                <DetailSummary
+                  title={`${SERVICE_TYPE_LABELS[rec.service_type] || rec.service_type} service`}
+                  text={rec.reported_problem || undefined}
+                  meta={(
+                    <>
+                      <span data-tour="hyd-svcd-status" style={pill(STATUS_HEX[rec.status] || '#78716c')}>{STATUS_LABELS[rec.status] || rec.status}</span>
+                      <span>· Service date {formatDate(rec.service_date)}</span>
+                      {rec.completed_on && <span>· Completed {formatDate(rec.completed_on)}</span>}
+                    </>
                   )}
-                </div>
+                />
                 {rec.status === 'cancelled' && (
-                  <div style={{ marginTop: 16, padding: '10px 14px', borderRadius: 10, background: 'rgba(120,113,108,0.08)', border: '1px solid rgba(120,113,108,0.2)', fontSize: 13, color: TEXT.body }}>
+                  <div style={{ marginTop: 14, padding: '10px 14px', borderRadius: 10, background: 'rgba(120,113,108,0.08)', border: '1px solid rgba(120,113,108,0.2)', fontSize: 13, color: TEXT.body }}>
                     <strong>Cancelled:</strong> {rec.cancel_reason || 'No reason recorded.'}
                   </div>
                 )}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 16 }}>
-                  <TextBlock label="Reported problem" value={rec.reported_problem} />
-                  <TextBlock label="Root cause" value={rec.root_cause} />
+                <DetailGroup title="Linked to">
+                  <DetailRow label="System">
+                    <span onClick={() => router.push(recordPath('/dashboard/hydraulic/systems', rec, 'system_id'))} title="Open system" style={linkStyle}>
+                      {rec.system_number}{rec.system_name ? ` — ${rec.system_name}` : ''} →
+                    </span>
+                  </DetailRow>
+                  {rec.plan_id && (
+                    <DetailRow label="Maintenance plan">
+                      <span onClick={() => router.push(recordPath('/dashboard/hydraulic/maintenance', rec, 'plan_id'))} title="Open plan" style={linkStyle}>
+                        {rec.plan_number}{rec.plan_title ? ` · ${rec.plan_title}` : ''} →
+                      </span>
+                    </DetailRow>
+                  )}
+                </DetailGroup>
+                <div data-tour="hyd-svcd-job-details">
+                  <DetailGroup title="Job">
+                    <DetailRow label="Performed by">{rec.performed_by_name}</DetailRow>
+                    <DetailRow label="External agency">{rec.external_agency}</DetailRow>
+                    <DetailRow label="Running hours">{rec.running_hours != null ? `${rec.running_hours.toLocaleString('en-IN')} h` : null}</DetailRow>
+                    <DetailRow label="Downtime">{rec.downtime_hours ? `${rec.downtime_hours.toLocaleString('en-IN')} h` : null}</DetailRow>
+                    <DetailRow label="Fluid added">{rec.fluid_added_l ? `${rec.fluid_added_l.toLocaleString('en-IN')} L` : null}</DetailRow>
+                    <DetailRow label="Oil / air condition">{rec.oil_condition}</DetailRow>
+                    <DetailRow label="Next service date">{rec.next_service_date ? formatDate(rec.next_service_date) : null}</DetailRow>
+                    {rec.status === 'completed' && (
+                      <DetailRow label="Completed by">{rec.completed_by_name ? `${rec.completed_by_name}${rec.completed_at ? ` · ${formatDateTime(rec.completed_at)}` : ''}` : null}</DetailRow>
+                    )}
+                  </DetailGroup>
+                  <DetailGroup title="What was done">
+                    <DetailRow label="Root cause">{rec.root_cause}</DetailRow>
+                    <DetailRow label="Work done">{rec.work_done}</DetailRow>
+                    <DetailRow label="Checklist">{rec.checklist}</DetailRow>
+                    {rec.remarks && <DetailRow label="Remarks">{rec.remarks}</DetailRow>}
+                  </DetailGroup>
+                  <DetailGroup title="Cost" last>
+                    <DetailRow label="Spares">{inr(rec.parts_cost)}</DetailRow>
+                    <DetailRow label="Labour">{inr(rec.labour_cost)}</DetailRow>
+                    <DetailRow label="Other">{inr(rec.other_cost)}</DetailRow>
+                    <DetailRow label="Total"><strong>{inr(rec.total_cost)}</strong></DetailRow>
+                  </DetailGroup>
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 16 }}>
-                  <TextBlock label="Work done" value={rec.work_done} />
-                  <TextBlock label="Checklist" value={rec.checklist} />
-                </div>
-                {rec.remarks && <div style={{ display: 'flex', marginTop: 16 }}><TextBlock label="Remarks" value={rec.remarks} /></div>}
-              </div>
+              </DetailCard>
 
               <div data-tour="hyd-svcd-parts" style={cardStyle}>
                 <p style={sectionTitle}>Spare Parts Used ({rec.parts.length})</p>
@@ -311,7 +323,7 @@ export default function HydServiceRecordDetailPage() {
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                       <thead>
                         <tr>
-                          {['Code', 'Name', 'Qty', 'Unit Cost', 'Line Cost', 'Issued From', 'Remarks'].map((h) => <th key={h} style={thStyle}>{h}</th>)}
+                          {['Code', 'Name', 'Qty', 'Unit Cost', 'Line Cost', 'Issued From', 'Remarks'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rec.parts.length} />}</th>)}
                         </tr>
                       </thead>
                       <tbody>
@@ -335,12 +347,6 @@ export default function HydServiceRecordDetailPage() {
                     </table>
                   </div>
                 )}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 28, marginTop: 16, justifyContent: 'flex-end' }}>
-                  <div><p style={statLabel}>Spares</p><p style={statValue}>{inr(rec.parts_cost)}</p></div>
-                  <div><p style={statLabel}>Labour</p><p style={statValue}>{inr(rec.labour_cost)}</p></div>
-                  <div><p style={statLabel}>Other</p><p style={statValue}>{inr(rec.other_cost)}</p></div>
-                  <div><p style={statLabel}>Total</p><p style={{ ...statValue, color: '#FF6A2A' }}>{inr(rec.total_cost)}</p></div>
-                </div>
               </div>
             </>
           )}

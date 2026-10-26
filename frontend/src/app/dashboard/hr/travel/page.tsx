@@ -18,7 +18,7 @@ import {
   tableWrapStyle, thStyle, tdStyle, linkActionStyle, fmtDate, fmtINR,
 } from '@/components/hr/admin/adminUi'
 import { TEXT } from '@/lib/theme'
-import { smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { smallSecondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { recordPath } from '@/lib/recordRef'
 
 type Tab = 'travel' | 'claims'
@@ -166,7 +166,7 @@ export default function HrTravelPage() {
         <div data-tour="hr-travel-table" style={tableWrapStyle}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
             <thead>
-              <tr>{['Request', 'Employee', 'Trip', 'Dates', 'Mode', 'Est. / Advance', 'Approver', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+              <tr>{['Request', 'Employee', 'Trip', 'Dates', 'Mode', 'Est. / Advance', 'Approver', 'Status', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={travel.length} />}</th>)}</tr>
             </thead>
             <tbody>
               {travelLoading ? <EmptyRow colSpan={9} text="Loading…" /> : travel.length === 0 ? <EmptyRow colSpan={9} text="No travel requests match these filters." /> : travel.map((t) => (
@@ -210,7 +210,7 @@ export default function HrTravelPage() {
           <div data-tour="hr-claims-table" style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
               <thead>
-                <tr>{['Claim', 'Employee', 'Title', 'Date', 'Trip', 'Amount', 'Approver', 'Status', ''].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}</th>)}</tr>
+                <tr>{['Claim', 'Employee', 'Title', 'Date', 'Trip', 'Amount', 'Approver', 'Status', ''].map((h, hi) => <th key={h} style={{ ...thStyle, textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}{hi === 0 && <RowCount count={claims.length} />}</th>)}</tr>
               </thead>
               <tbody>
                 {claimsLoading ? <EmptyRow colSpan={9} text="Loading…" /> : claims.length === 0 ? <EmptyRow colSpan={9} text="No claims match these filters. Drafts stay private until the employee submits them." /> : claims.map((c) => (

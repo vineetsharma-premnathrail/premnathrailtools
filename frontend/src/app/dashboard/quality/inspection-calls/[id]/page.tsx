@@ -11,7 +11,7 @@ import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import PromptDialog from '@/components/erp/PromptDialog'
 import DateField from '@/components/erp/DateField'
-import { Section, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { Section, InfoRow, DetailCard, DetailSummary, DetailGroup, DetailRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
 import { Pill, PageHeader, ErrorBanner, ActionSheet, fmtDate, fmtQty } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
@@ -113,39 +113,44 @@ export default function InspectionCallDetailPage() {
         confirmLabel="Cancel call" danger onCancel={() => setCancelOpen(false)}
         onConfirm={(reason) => { setCancelOpen(false); run(() => qualityApi.inspectionCallAction(id, 'cancel', { reason }), 'Failed to cancel the call.') }} />
       <PageHeader title={call.call_number} subtitle={`Quality · ${call.agency_label || call.agency} inspection call`}>
-        <Pill text={STATUS_LABELS[call.status] || call.status} hex={STATUS_HEX[call.status]} />
-        {call.op_number && (
-          <OrderProjectChip opNumber={call.op_number} elementNo={call.element_no} label={call.element_label}
-            onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', call, 'order_project_id')) : undefined} />
-        )}
         {back}
       </PageHeader>
       {!sheet && <ErrorBanner error={error} />}
-      <Section title="Call" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
-          <InfoRow label="Order" value={call.order_reference || '—'} />
-          <InfoRow label="Machine / contract" value={call.project_label || '—'} />
-          <InfoRow label="Customer" value={call.customer_name || '—'} />
-          <InfoRow label="Item" value={`${call.item_code ? `${call.item_code} — ` : ''}${call.item_name}`} />
-          <InfoRow label="Offered" value={fmtQty(call.quantity, call.uom)} />
-          <InfoRow label="Batch / serial" value={call.batch_number || '—'} />
-          <InfoRow label="Our final lot" value={call.lot_number || '—'} />
-          <InfoRow label="Agency" value={`${call.agency_label || call.agency}${call.so_number ? ` · from Sales Order ${call.so_number}${call.so_third_party_inspection_required ? ' (required before dispatch)' : ''}` : ''}`} />
-          <InfoRow label="Raised" value={`${fmtDate(call.requested_date)} · ${call.created_by_name || ''}`} />
-          <InfoRow label="Inspection date" value={call.call_date ? `${fmtDate(call.call_date)}${call.days_to_call != null ? ` (in ${call.days_to_call} d)` : ''}` : 'Not fixed yet'} />
-          <InfoRow label="Inspector" value={call.inspector_name || '—'} />
-          {call.remarks && <InfoRow label="Remarks" value={call.remarks} />}
-        </div>
-        {open && canEdit && (
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+      <DetailCard>
+        <DetailSummary
+          title={`${call.item_code ? `${call.item_code} — ` : ''}${call.item_name}`}
+          text={`${fmtQty(call.quantity, call.uom)} offered to ${call.agency_label || call.agency} for inspection${call.customer_name ? ` for ${call.customer_name}` : ''}.`}
+          meta={<>
+            <Pill text={STATUS_LABELS[call.status] || call.status} hex={STATUS_HEX[call.status]} />
+            {call.op_number && (
+              <OrderProjectChip opNumber={call.op_number} elementNo={call.element_no} label={call.element_label}
+                onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', call, 'order_project_id')) : undefined} />
+            )}
+            <span>·</span><span>Raised {fmtDate(call.requested_date)}{call.created_by_name ? ` by ${call.created_by_name}` : ''}</span>
+            <span>·</span><span>{call.call_date ? `Inspection ${fmtDate(call.call_date)}${call.days_to_call != null ? ` (in ${call.days_to_call} days)` : ''}` : 'Inspection date not fixed yet'}</span>
+          </>}
+          actions={open && canEdit ? <>
             <button type="button" disabled={busy} style={secondaryBtnStyle}
               onClick={() => { setSched({ call_date: call.call_date || '', inspector_name: call.inspector_name || '' }); openSheet('schedule') }}>
               {call.status === 'scheduled' ? 'Reschedule' : 'Schedule'}
             </button>
             <button type="button" disabled={busy} style={dangerBtnStyle} onClick={() => setCancelOpen(true)}>Cancel call</button>
-          </div>
-        )}
-      </Section>
+          </> : undefined}
+        />
+        <DetailGroup title="Order">
+          <DetailRow label="Order">{call.order_reference}</DetailRow>
+          <DetailRow label="Machine / contract">{call.project_label}</DetailRow>
+          <DetailRow label="Customer">{call.customer_name}</DetailRow>
+          {call.so_number && <DetailRow label="Sales order">{`${call.so_number}${call.so_third_party_inspection_required ? ' (inspection required before dispatch)' : ''}`}</DetailRow>}
+        </DetailGroup>
+        <DetailGroup title="Inspection" last>
+          <DetailRow label="Agency">{call.agency_label || call.agency}</DetailRow>
+          <DetailRow label="Inspector">{call.inspector_name}</DetailRow>
+          <DetailRow label="Batch / serial">{call.batch_number}</DetailRow>
+          <DetailRow label="Our final lot">{call.lot_number}</DetailRow>
+          {call.remarks && <DetailRow label="Remarks">{call.remarks}</DetailRow>}
+        </DetailGroup>
+      </DetailCard>
 
       {open ? (
         <Section title="Result" style={{ marginBottom: 20 }}>

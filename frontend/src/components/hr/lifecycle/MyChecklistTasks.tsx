@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { hrApi } from '@/lib/api'
 import { HrChecklistTask } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { smallSecondaryBtnStyle, pillStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 
@@ -65,7 +65,7 @@ export default function MyChecklistTasks({ compact = false }: { compact?: boolea
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: compact ? 220 : 420, overflowY: 'auto' }}>
         {tasks.map((t) => (
           <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 12, border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,0.6)', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 10.5, fontWeight: 700, padding: '3px 8px', borderRadius: 9999, background: `${TYPE_HEX[t.event_type || ''] || '#78716C'}1a`, color: TYPE_HEX[t.event_type || ''] || '#78716C' }}>
+            <span style={pillStyle(TYPE_HEX[t.event_type || ''] || '#78716C')}>
               {TYPE_LABELS[t.event_type || ''] || t.event_type}
             </span>
             <div style={{ flex: '1 1 240px', minWidth: 0 }}>

@@ -18,6 +18,7 @@ import {
   inputStyle, sectionStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle,
   thStyle, tdStyle, numTd, numTh, inr, dmy, todayIso, Field, ErrorBanner, InfoBanner, TableWrap, EmptyRow, StatCard,
 } from '@/components/finance/financeUi'
+import { RowCount } from '@/components/shared/ui'
 
 const BUCKET_LABEL = (cp: CashPosition, key: string) =>
   key === 'overdue' ? 'Overdue / past due' : key === 'later' ? 'Later' : key === 'unscheduled' ? 'Not scheduled'
@@ -65,9 +66,9 @@ export default function CashPositionTab() {
       <ErrorBanner error={error} />
       {cp && (
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 16, alignItems: 'flex-end' }}>
-          <StatCard label="Bank & Cash Today" value={inr(cp.opening_balance)} tour="fin-bk-forecast-cash" />
-          <StatCard label={`Projected after ${cp.horizon_weeks} weeks`} value={inr(cp.columns[cp.columns.length - 1]?.closing_balance)} />
-          <StatCard label="Lowest Projected Balance" value={inr(cp.lowest_balance)} tone={cp.lowest_balance < 0 ? '#dc2626' : undefined} />
+          <StatCard label="Bank & Cash Today" value={`₹ ${inr(cp.opening_balance)}`} tour="fin-bk-forecast-cash" />
+          <StatCard label={`Projected after ${cp.horizon_weeks} weeks`} value={`₹ ${inr(cp.columns[cp.columns.length - 1]?.closing_balance)}`} />
+          <StatCard label="Lowest Projected Balance" value={`₹ ${inr(cp.lowest_balance)}`} tone={cp.lowest_balance < 0 ? '#dc2626' : undefined} />
           <Field label="Horizon" style={{ flex: '0 1 140px' }}>
             <Select style={inputStyle} value={weeks} onChange={(e) => setWeeks(Number(e.target.value))}>
               {[4, 8, 13, 26].map((w) => <option key={w} value={w}>{w} weeks</option>)}
@@ -84,7 +85,7 @@ export default function CashPositionTab() {
       <TableWrap minWidth={340 + keys.length * 110 + 220} tour="fin-bk-forecast-table">
         <thead>
           <tr>
-            <th style={{ ...thStyle, position: 'sticky', left: 0, zIndex: 2, minWidth: 260 }}>Cash flow</th>
+            <th style={{ ...thStyle, position: 'sticky', left: 0, zIndex: 2, minWidth: 260 }}>Cash flow <RowCount count={groupRows('in').length + groupRows('out').length} /></th>
             {cp && keys.map((k) => <th key={k} style={{ ...numTh, whiteSpace: 'nowrap', color: k === 'overdue' ? '#b91c1c' : undefined }}>{BUCKET_LABEL(cp, k)}</th>)}
             <th style={numTh}>Later</th>
             <th style={numTh}>Not scheduled</th>
@@ -127,7 +128,7 @@ export default function CashPositionTab() {
             <button type="button" style={secondaryBtnStyle} onClick={() => setCell(null)}>Close</button>
           </div>
           <TableWrap minWidth={760} maxHeight="360px">
-            <thead><tr><th style={thStyle}>Expected</th><th style={thStyle}>Document</th><th style={thStyle}>Party</th><th style={thStyle}>Note</th><th style={numTh}>Amount (₹)</th></tr></thead>
+            <thead><tr><th style={thStyle}>Expected <RowCount count={drill.length} /></th><th style={thStyle}>Document</th><th style={thStyle}>Party</th><th style={thStyle}>Note</th><th style={numTh}>Amount (₹)</th></tr></thead>
             <tbody>
               {drill.length === 0 && <EmptyRow colSpan={5} text="Nothing in this cell." />}
               {drill.map((i, n) => (
@@ -271,7 +272,7 @@ function PlannedItems({ items, cats, canCreate, canEdit, canDelete, onChanged }:
       )}
       <TableWrap minWidth={820} maxHeight="320px">
         <thead><tr>
-          <th style={thStyle}>Category</th><th style={thStyle}>Description</th><th style={thStyle}>In / Out</th><th style={thStyle}>From</th>
+          <th style={thStyle}>Category <RowCount count={items.length} /></th><th style={thStyle}>Description</th><th style={thStyle}>In / Out</th><th style={thStyle}>From</th>
           <th style={thStyle}>Repeat</th><th style={numTh}>Amount (₹)</th><th style={thStyle}></th>
         </tr></thead>
         <tbody>

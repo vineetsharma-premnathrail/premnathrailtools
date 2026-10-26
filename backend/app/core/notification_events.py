@@ -112,7 +112,9 @@ def notify_event(
     skip_user_ids: set[int] | None = None,
 ) -> set[int]:
     """Send `module.event` to every member of a role subscribed to it who may
-    act on it. Bell / Teams rows are added to `db` (caller commits); emails go
+    act on it — and to anyone whose personal override (User.notification_overrides)
+    subscribes them; a personal entry replaces the role channels for that user
+    (an empty list switches the event off for them). Bell / Teams rows are added to `db` (caller commits); emails go
     out after the response via background_tasks. Returns the user ids reached,
     so callers can skip them in their own direct notify_user calls.
     Never raises — a notification must not break the business action."""
@@ -123,8 +125,6 @@ def notify_event(
         return set()
     try:
         roles = [r for r in db.query(Role).filter(Role.is_active.is_(True)).all() if key in (r.notification_events or {})]
-        if not roles:
-            return set()
         channels_by_user: dict[int, set[str]] = {}
         everyone = set()
         for r in roles:
@@ -137,6 +137,16 @@ def notify_event(
         if everyone:
             for (uid,) in db.query(User.id).filter(User.is_active.is_(True)).all():
                 channels_by_user.setdefault(uid, set()).update(everyone)
+        # Personal overrides beat the roles for this one user.
+        for uid, ov in db.query(User.id, User.notification_overrides).filter(User.is_active.is_(True)).all():
+            if ov and key in ov:
+                chans = {c for c in (ov.get(key) or []) if c in ("bell", "email", "teams")}
+                if chans:
+                    channels_by_user[uid] = chans
+                else:
+                    channels_by_user.pop(uid, None)
+        if not channels_by_user:
+            return set()
         skip = set(skip_user_ids or set())
         if actor is not None:
             skip.add(actor.id)

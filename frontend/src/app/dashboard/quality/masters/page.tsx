@@ -6,7 +6,7 @@ import { qualityApi } from '@/lib/api'
 import { QualityCharacteristic, QualityDefectCode, QualityDispositionCode } from '@/types'
 import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
-import { Field, Section, inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { Field, Section, inputStyle, primaryBtnStyle, secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { sheetInput, sheetLabel, sheetHint, Req, Optional, SheetIconName } from '@/components/shared/FormSheet'
 import { useCan } from '@/lib/permissions'
 import { Pill, PageHeader, ErrorBanner, ActionSheet, sheetGap, tableWrapStyle, thStyle, tdStyle, SEVERITY_HEX, DISPOSITION_TYPE_LABELS } from '@/components/quality/QualityBits'
@@ -129,7 +129,7 @@ export default function QualityMastersPage() {
         <>
           <div style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
-              <thead><tr>{['Code', 'Name', 'Type', 'Unit', 'Method', 'Gauge type', 'Class', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Code', 'Name', 'Type', 'Unit', 'Method', 'Gauge type', 'Class', 'Status', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={chars.length} />}</th>)}</tr></thead>
               <tbody>
                 {chars.length === 0 && <tr><td colSpan={9} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No characteristics yet.</td></tr>}
                 {chars.map((c) => (
@@ -155,7 +155,7 @@ export default function QualityMastersPage() {
         <>
           <div style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
-              <thead><tr>{['Code', 'Name', 'Category', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Code', 'Name', 'Category', 'Status', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={defects.length} />}</th>)}</tr></thead>
               <tbody>
                 {defects.length === 0 && <tr><td colSpan={5} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No defect codes yet — results that fail need one.</td></tr>}
                 {defects.map((d) => (
@@ -177,7 +177,7 @@ export default function QualityMastersPage() {
         <>
           <div style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
-              <thead><tr>{['Code', 'Name', 'Acts as', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Code', 'Name', 'Acts as', 'Status', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={dispositions.length} />}</th>)}</tr></thead>
               <tbody>
                 {dispositions.map((d) => (
                   <tr key={d.id} style={{ opacity: d.is_active ? 1 : 0.55 }}>
@@ -218,7 +218,7 @@ export default function QualityMastersPage() {
           </div>
           <div style={tableWrapStyle}>
             <table style={{ borderCollapse: 'collapse', minWidth: 900 }}>
-              <thead><tr><th style={thStyle}>Code</th>{aqls.map((a) => <th key={a} style={thStyle}>{a}</th>)}</tr></thead>
+              <thead><tr><th style={thStyle}>Code<RowCount count={letters.length} /></th>{aqls.map((a) => <th key={a} style={thStyle}>{a}</th>)}</tr></thead>
               <tbody>
                 {letters.map((L) => (
                   <tr key={L}>

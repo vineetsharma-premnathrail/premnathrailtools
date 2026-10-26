@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AmendmentContext, POAmendment, POVersion, poAmendmentsApi } from '@/lib/mmPurchasingApi'
 import { TEXT, BORDER } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount, secondaryBtnStyle, smallSecondaryBtnStyle, Pill } from '@/components/shared/ui'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import SearchableSelect from '@/components/erp/SearchableSelect'
@@ -19,6 +19,7 @@ import { storeApi } from '@/lib/api'
 import { StoreItem } from '@/types'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
+import { formatDate } from '@/lib/format'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
@@ -31,7 +32,7 @@ const STATUS_HEX: Record<string, string> = { pending_approval: '#d97706', approv
 type Edit = { quantity: string; unit_price: string; tax_rate: string; delivery_date: string; remove: boolean }
 type NewLine = { store_item_id: string; quantity: string; unit_price: string; tax_rate: string; delivery_date: string }
 
-const fmt = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : String(v))
+const rupees = (v: number | null | undefined) => (v == null ? '—' : `₹${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
 
 export default function POAmendmentPanel({ poId, canEdit, onChanged }: { poId: number; canEdit: boolean; onChanged?: () => void }) {
   const router = useRouter()
@@ -65,21 +66,19 @@ export default function POAmendmentPanel({ poId, canEdit, onChanged }: { poId: n
       {history.length === 0 ? <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>No amendments yet.</p> : (
         <div style={{ overflow: 'auto', border: `1px solid ${BORDER.normal}`, borderRadius: 10 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
-            <thead><tr>{['No.', 'Reason', 'Changes', 'Value', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['No.', 'Reason', 'Changes', 'PO Value', 'Status', ''].map((h, i) => <th key={h} style={h === 'PO Value' ? { ...th, textAlign: 'right' } : th}>{h}{i === 0 && <RowCount count={history.length} />}</th>)}</tr></thead>
             <tbody>
               {history.map((a) => (
                 <tr key={a.id}>
                   <td style={td}>A{a.amendment_no}</td>
                   <td style={td}>{a.reason}<div style={{ color: TEXT.muted, fontSize: 11 }}>{a.requested_by_name}</div></td>
-                  <td style={td}>{a.changes.length} change(s)</td>
-                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmt(a.old_total?.toFixed(2))} → {fmt(a.new_total?.toFixed(2))}</td>
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{a.changes.length} change{a.changes.length === 1 ? '' : 's'}</td>
+                  <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right' }}>{rupees(a.old_total)} → {rupees(a.new_total)}</td>
                   <td style={td}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[a.status]}1a`, color: STATUS_HEX[a.status], whiteSpace: 'nowrap' }}>
-                      {STATUS_LABELS[a.status] || a.status}
-                    </span>
+                    <Pill label={STATUS_LABELS[a.status] || a.status} hex={STATUS_HEX[a.status] || '#78716c'} />
                     {a.waiting_on.length > 0 && <div style={{ color: TEXT.muted, fontSize: 11, marginTop: 4 }}>Waiting on {a.waiting_on.join(', ')}</div>}
                   </td>
-                  <td style={td}><span style={{ color: '#2563eb', cursor: 'pointer' }} onClick={() => router.push(recordPath('/dashboard/p2p/purchase-orders/amendments', a))}>View</span></td>
+                  <td style={{ ...td, textAlign: 'right' }}><button type="button" style={smallSecondaryBtnStyle} onClick={() => router.push(recordPath('/dashboard/p2p/purchase-orders/amendments', a))}>View</button></td>
                 </tr>
               ))}
             </tbody>
@@ -94,9 +93,9 @@ export default function POAmendmentPanel({ poId, canEdit, onChanged }: { poId: n
               <div style={{ fontSize: 13, fontWeight: 700 }}>{v.label}{v.approved_by_name ? ` · approved by ${v.approved_by_name}` : ''}</div>
               {v.reason && <div style={{ fontSize: 12, color: TEXT.muted }}>{v.reason}</div>}
               <div style={{ fontSize: 12.5, marginTop: 4 }}>
-                {(v.snapshot.lines || []).map((l) => `${l.item_name}: ${l.quantity} × ${fmt(l.unit_price)}${l.delivery_date ? ` by ${l.delivery_date}` : ''}`).join(' · ')}
+                {(v.snapshot.lines || []).map((l) => `${l.item_name}: ${l.quantity} × ${rupees(l.unit_price)}${l.delivery_date ? ` by ${formatDate(l.delivery_date)}` : ''}`).join(' · ')}
               </div>
-              <div style={{ fontSize: 12, marginTop: 2 }}>Value: <b>{fmt(v.snapshot.total_value?.toFixed(2))}</b></div>
+              <div style={{ fontSize: 12, marginTop: 2 }}>Value: <b>{rupees(v.snapshot.total_value)}</b></div>
             </div>
           ))}
         </div>
@@ -192,14 +191,14 @@ function AmendDialog({ ctx, onClose, onDone }: { ctx: AmendmentContext; onClose:
         <SheetSection icon="list" title="Lines" extra={<button type="button" style={{ ...sheetBtn('ghost'), marginLeft: 'auto' }} onClick={() => setAdds((s) => [...s, { store_item_id: '', quantity: '1', unit_price: '', tax_rate: '18', delivery_date: '' }])}><SheetIcon name="plus" size={14} />Add line</button>}>
         <div style={{ overflow: 'auto', border: `1px solid ${BORDER.normal}`, borderRadius: 10 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
-            <thead><tr>{['Item', 'Received / invoiced', 'Qty', 'Unit price', 'GST %', 'Delivery date', 'Delete'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Item', 'Received / invoiced', 'Qty', 'Unit price', 'GST %', 'Delivery date', 'Delete'].map((h, i) => <th key={h} style={th}>{h}{i === 0 && <RowCount count={ctx.lines.length + adds.length} />}</th>)}</tr></thead>
             <tbody>
               {ctx.lines.map((l) => {
                 const e = edits[l.po_item_id]
                 const changed = Number(e.quantity) !== l.quantity || (e.unit_price !== '' && Number(e.unit_price) !== l.unit_price)
                 return (
                   <tr key={l.po_item_id} style={{ opacity: e.remove ? 0.45 : 1, background: changed ? 'rgba(255,122,69,0.05)' : undefined }}>
-                    <td style={td}>{l.item_code ? `${l.item_code} · ` : ''}{l.item_name}<div style={{ fontSize: 11, color: TEXT.muted }}>was {l.quantity} × {fmt(l.unit_price)}</div></td>
+                    <td style={td}>{l.item_code ? `${l.item_code} · ` : ''}{l.item_name}<div style={{ fontSize: 11, color: TEXT.muted }}>was {l.quantity} × {rupees(l.unit_price)}</div></td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>{l.received_qty} / {l.invoiced_qty} {l.unit || ''}</td>
                     <td style={{ ...td, width: 100 }}><input type="number" min={l.min_quantity} step="any" value={e.quantity} disabled={e.remove} onChange={(ev) => set(l.po_item_id, { quantity: ev.target.value })} style={cellInput} />
                       {l.min_quantity > 0 && <div style={{ fontSize: 10.5, color: TEXT.muted }}>min {l.min_quantity}</div>}</td>
@@ -244,13 +243,13 @@ function AmendDialog({ ctx, onClose, onDone }: { ctx: AmendmentContext; onClose:
         }
         right={
           <SheetSection icon="rupee" title="PO value (incl. GST)">
-            <p style={{ fontSize: 13, margin: 0, color: SHEET.BODY }}><b>{fmt(ctx.total_value?.toFixed(2))}</b> → <b style={{ color: SHEET.INK }}>{newTotal.toFixed(2)}</b></p>
+            <p style={{ fontSize: 13, margin: 0, color: SHEET.BODY }}><b>{rupees(ctx.total_value)}</b> → <b style={{ color: SHEET.INK }}>{rupees(newTotal)}</b></p>
             <p style={sheetHint}>Quantity can&apos;t go below what is received / invoiced; an invoiced line&apos;s price is locked.</p>
           </SheetSection>
         }
       />
       <ConfirmDialog open={confirm} title="Send this amendment for approval?"
-        message={`PO ${ctx.po_number} value ${fmt(ctx.total_value?.toFixed(2))} → ${newTotal.toFixed(2)}. The PO approvers, then any one Partner, approve it; only then is the PO changed.`}
+        message={`PO ${ctx.po_number} value ${rupees(ctx.total_value)} → ${rupees(newTotal)}. The PO approvers, then any one Partner, approve it; only then is the PO changed.`}
         onConfirm={submit} onCancel={() => setConfirm(false)} />
     </FormSheet>
   )

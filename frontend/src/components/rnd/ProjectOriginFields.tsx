@@ -14,6 +14,7 @@ import { RndImprovementReason, RndProject, RndProjectOrigin, RndProjectSourceKin
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { Req, Optional, SHEET, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
+import { segmentBtnStyle } from '@/components/shared/ui'
 
 export interface OriginDraft {
   origin: RndProjectOrigin | ''
@@ -155,7 +156,7 @@ function Toggle<T extends string>({ value, options, onChange }: { value: T | '';
         const on = o.value === value
         return (
           <button key={o.value} type="button" onClick={() => onChange(o.value)}
-            style={{ padding: '8px 16px', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: on ? SHEET.BLUE : '#fff', color: on ? '#fff' : SHEET.BODY }}>
+            style={{ ...segmentBtnStyle(on), border: 'none', borderRadius: 0, background: on ? SHEET.BLUE : '#fff', color: on ? '#fff' : SHEET.BODY }}>
             {o.label}
           </button>
         )
@@ -190,6 +191,7 @@ export default function ProjectOriginFields({ value, onChange, creating }: {
           const on = d.origin === o.value
           const Icon = o.icon
           return (
+            // ui-audit-ignore-next-line custom-button — origin option card (icon + title + description tile), not a pill button
             <button key={o.value} type="button" aria-pressed={on}
               onClick={() => { if (!on) onChange({ ...EMPTY_ORIGIN, origin: o.value, note: d.note, sourceKind: o.value === 'customer_requirement' ? 'inquiry' : '' }) }}
               style={{

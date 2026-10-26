@@ -25,6 +25,7 @@ import {
   primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, ErrorBanner, InfoBanner, StatusPill, PageHeader, TableWrap, EmptyRow, SubTabs, ledgerOptions,
 } from '@/components/finance/financeUi'
+import { RowCount } from '@/components/shared/ui'
 
 const TABS = ['Open advances', 'Write-offs'] as const
 type Tab = typeof TABS[number]
@@ -182,7 +183,7 @@ export default function AdvancesWriteOffsPage() {
           <TableWrap minWidth={1050}>
             <thead>
               <tr>
-                <th style={thStyle}>Voucher</th><th style={thStyle}>Date</th><th style={thStyle}>Type</th><th style={thStyle}>Party</th>
+                <th style={thStyle}>Voucher <RowCount count={advLoading ? 0 : advances.length} /></th><th style={thStyle}>Date</th><th style={thStyle}>Type</th><th style={thStyle}>Party</th>
                 <th style={thStyle}>Against</th><th style={numTh}>Advance (₹)</th><th style={numTh}>Adjusted (₹)</th><th style={numTh}>Open (₹)</th><th style={thStyle}></th>
               </tr>
             </thead>
@@ -273,7 +274,7 @@ export default function AdvancesWriteOffsPage() {
           <TableWrap minWidth={900}>
             <thead>
               <tr>
-                <th style={thStyle}>Date</th><th style={thStyle}>Bill</th><th style={thStyle}>Reason</th><th style={thStyle}>Ledger</th>
+                <th style={thStyle}>Date <RowCount count={woLoading ? 0 : writeOffs.length} /></th><th style={thStyle}>Bill</th><th style={thStyle}>Reason</th><th style={thStyle}>Ledger</th>
                 <th style={numTh}>Amount (₹)</th><th style={thStyle}>Remarks</th><th style={thStyle}>Status</th><th style={thStyle}></th>
               </tr>
             </thead>

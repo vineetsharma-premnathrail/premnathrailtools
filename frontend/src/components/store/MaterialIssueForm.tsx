@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi, salesApi } from '@/lib/api'
 import { StoreItem, StoreLocation, StoreDocType, StoreIssueFormStandard, StoreStockBalance } from '@/types'
-import { TEXT } from '@/lib/theme'
+import { CONTROL, TEXT } from '@/lib/theme'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import BatchPicker from '@/components/store/BatchPicker'
@@ -17,6 +17,7 @@ import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
 import Select from '@/components/shared/Select'
+import { RowCount } from '@/components/shared/ui'
 
 const inputStyle = sheetInput
 const smallBtn = (): React.CSSProperties => ({ ...sheetBtn('secondary', SHEET.INK), padding: '6px 12px', minHeight: 30, fontSize: 12 })
@@ -491,8 +492,8 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
             <thead>
               <tr>
-                {['#', 'Item', 'Quantity', 'Available in store', 'Batch / bin / serial', 'Remarks', ''].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '8px 6px', fontSize: 11, fontWeight: 700, color: SHEET.MUTED, background: SHEET.SOFT, textTransform: 'uppercase', letterSpacing: '.04em' }}>{h}</th>
+                {['#', 'Item', 'Quantity', 'Available in store', 'Batch / bin / serial', 'Remarks', ''].map((h, hi) => (
+                  <th key={h} style={{ textAlign: 'left', padding: '8px 6px', fontSize: 11, fontWeight: 700, color: SHEET.MUTED, background: SHEET.SOFT, textTransform: 'uppercase', letterSpacing: '.04em' }}>{h}{hi === 0 && <RowCount count={lines.length} />}</th>
                 ))}
               </tr>
             </thead>
@@ -520,12 +521,12 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
                       {!locationId || !line.itemId ? <span style={{ color: TEXT.muted }}>—</span> : (
                         <>
                           <span style={{ fontWeight: 700, color: st === 'out' ? '#b91c1c' : st === 'short' ? '#b91c1c' : '#15803d' }}>
-                            {(b?.available || 0)} {item?.uom || ''} available
+                            {(b?.available || 0).toLocaleString('en-IN')} {item?.uom || ''} available
                           </span>
                           {st === 'out' && <div style={{ color: '#b91c1c' }}>Not in stock</div>}
-                          {st === 'short' && <div style={{ color: '#b91c1c' }}>Short by {+(need - (b?.available || 0)).toFixed(4)}{need !== Number(line.quantity) ? ' (all lines of this item)' : ''}</div>}
-                          {b && b.reserved > 0 && <div style={{ color: TEXT.muted, fontSize: 11.5 }}>{b.onHand} on hand, {b.reserved} reserved</div>}
-                          {b && b.held > 0 && <div style={{ color: '#d97706', fontSize: 11.5 }}>{b.held} held in Quality / Blocked</div>}
+                          {st === 'short' && <div style={{ color: '#b91c1c' }}>Short by {(+(need - (b?.available || 0)).toFixed(4)).toLocaleString('en-IN')}{need !== Number(line.quantity) ? ' (all lines of this item)' : ''}</div>}
+                          {b && b.reserved > 0 && <div style={{ color: TEXT.muted, fontSize: 11.5 }}>{b.onHand.toLocaleString('en-IN')} on hand, {b.reserved.toLocaleString('en-IN')} reserved</div>}
+                          {b && b.held > 0 && <div style={{ color: '#d97706', fontSize: 11.5 }}>{b.held.toLocaleString('en-IN')} held in Quality / Blocked</div>}
                         </>
                       )}
                     </td>
@@ -547,7 +548,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
                     </td>
                     <td style={{ padding: '6px', width: 44 }}>
                       <button type="button" title="Remove this line" onClick={() => removeLine(idx)}
-                        aria-label="Remove line" style={{ ...sheetBtn('secondary', SHEET.INK), padding: 0, width: 38, height: 38, justifyContent: 'center', color: bad ? '#b91c1c' : undefined }}><SheetIcon name="trash" size={15} /></button>
+                        aria-label="Remove line" style={{ ...sheetBtn('secondary', SHEET.INK), padding: 0, width: CONTROL.height, height: CONTROL.height, justifyContent: 'center', color: bad ? '#b91c1c' : undefined }}><SheetIcon name="trash" size={15} /></button>
                     </td>
                   </tr>
                 )

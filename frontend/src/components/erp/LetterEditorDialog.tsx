@@ -8,6 +8,7 @@ import { Project, ProjectLetter, ProjectLetterType } from '@/types'
 import DateField from '@/components/erp/DateField'
 import { FormSheet, SHEET, SheetIcon, Req, sheetBtn, sheetInput, sheetLabel, sheetHint, type SheetIconName } from '@/components/shared/FormSheet'
 import { openRecordInWord } from '@/components/shared/ManagedDocumentPanel'
+import { iconBtnStyle, chipBtnStyle } from '@/components/shared/ui'
 
 const inputStyle = sheetInput
 const labelStyle = sheetLabel
@@ -258,7 +259,7 @@ export default function LetterEditorDialog({
   )
   const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 14 }
   const smallBtn: React.CSSProperties = sheetBtn('ghost')
-  const removeBtn: React.CSSProperties = { fontSize: 16, lineHeight: 1, padding: '6px 10px', borderRadius: 8, border: `1px solid ${SHEET.LINE}`, background: '#fff', color: '#b91c1c', cursor: 'pointer', alignSelf: 'flex-start' }
+  const removeBtn: React.CSSProperties = { ...iconBtnStyle, color: '#b91c1c', alignSelf: 'flex-start' }
 
   const heading = letter ? `Edit ${letter.letter_no}` : type ? `New ${letterTypeTitle(type)}` : 'Create Document'
 
@@ -296,6 +297,7 @@ export default function LetterEditorDialog({
         {!type && (
           <div data-tour="erp-letter-types" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 18 }}>
             {CREATABLE_LETTER_TYPES.map((t) => (
+              // ui-audit-ignore-next-line custom-button — document-type tile (title + description card), not a pill
               <button
                 key={t.key}
                 type="button"
@@ -448,7 +450,7 @@ export default function LetterEditorDialog({
 
         {type && <SheetHeading icon="user" title="Signatory" />}
         {type && (
-          <div data-tour="erp-letter-signatory" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 18 }}>
+          <div data-tour="erp-letter-signatory" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 14, marginBottom: 18 }}>
             <div>
               <label style={labelStyle}>Signatory Name</label>
               <input style={inputStyle} value={signatoryName} onChange={(e) => setSignatoryName(e.target.value)} />
@@ -466,7 +468,7 @@ export default function LetterEditorDialog({
                       key={p.name}
                       type="button"
                       onClick={() => { setSignatoryName(p.name); setSignatoryDesignation(p.designation) }}
-                      style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 10px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${signatoryName === p.name ? SHEET.BLUE : SHEET.LINE}`, background: signatoryName === p.name ? '#eff6ff' : '#fff', color: signatoryName === p.name ? SHEET.BLUE : SHEET.BODY }}
+                      style={chipBtnStyle(signatoryName === p.name)}
                     >
                       {p.name}
                     </button>

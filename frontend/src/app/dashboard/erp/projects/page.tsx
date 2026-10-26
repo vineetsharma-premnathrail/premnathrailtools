@@ -9,12 +9,13 @@ import { useCan } from '@/lib/permissions'
 import { erpApi } from '@/lib/api'
 import { Project, ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
-import { inputStyle, Field, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, Field, primaryBtnStyle, secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import BulkImportDialog from '@/components/erp/BulkImportDialog'
 import ExportDialog from '@/components/erp/ExportDialog'
 import { recordPath } from '@/lib/recordRef'
+import { formatDate } from '@/lib/format'
 
 interface FilterOptions {
   statuses: string[]
@@ -44,7 +45,7 @@ const APPLICATION_TYPE_FILTER_OPTIONS = [
 
 function warrantyLabel(project: Project) {
   if (!project.warranty_start_date || !project.warranty_end_date) return 'No'
-  return `${project.warranty_start_date} → ${project.warranty_end_date}`
+  return `${formatDate(project.warranty_start_date)} → ${formatDate(project.warranty_end_date)}`
 }
 
 export default function ProjectsRegistryPage() {
@@ -85,7 +86,7 @@ export default function ProjectsRegistryPage() {
           application_type: (params?.application_type ?? applicationType) !== 'all' ? (params?.application_type ?? applicationType) : undefined,
           client_company: (params?.client_company ?? clientCompany) !== 'all' ? (params?.client_company ?? clientCompany) : undefined,
           customer_id: (params?.customer_id ?? customerId) !== 'all' ? Number(params?.customer_id ?? customerId) : undefined,
-          limit: 5000,
+          limit: 10000,
         }),
         erpApi.listServiceRequests({ limit: 1000 }),
       ])
@@ -169,7 +170,7 @@ export default function ProjectsRegistryPage() {
             style={{
               fontSize: 13.5,
               fontWeight: 600,
-              padding: '10px 20px',
+              padding: '10px 14px',
               borderRadius: 10,
               background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)',
               color: '#fff',
@@ -279,9 +280,9 @@ export default function ProjectsRegistryPage() {
         <table data-tour="erp-proj-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-              {['Serial No.', 'Model', 'Machine Type', 'Application Type', 'Client', 'Site', 'Year of Mfg.', 'Dispatch Date', 'Commissioning Date', 'Status', 'SRs', 'Warranty', 'Actions'].map((h) => (
+              {['Serial No.', 'Model', 'Machine Type', 'Application Type', 'Client', 'Site', 'Year of Mfg.', 'Dispatch Date', 'Commissioning Date', 'Status', 'SRs', 'Warranty', 'Actions'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={pagedProjects.length} />}
                 </th>
               ))}
             </tr>
@@ -310,8 +311,8 @@ export default function ProjectsRegistryPage() {
                 <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{p.client_company || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{p.site_name || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{p.year_of_manufacture || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{p.delivery_date || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{p.commissioning_date || '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{p.delivery_date ? formatDate(p.delivery_date) : '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{p.commissioning_date ? formatDate(p.commissioning_date) : '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 12, color: '#57534e', textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{p.status.replace(/_/g, ' ')}</td>
                 <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#57534e' }}>{srCountByProject.get(p.id) || 0}</td>
                 <td style={{ padding: '12px 16px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(p)}</td>

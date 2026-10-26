@@ -12,7 +12,7 @@ import { TEXT } from '@/lib/theme'
 import ProductsNav from '@/components/products/ProductsNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ProductSalesPanels from '@/components/products/ProductSalesPanels'
-import { InfoRow, Section, dangerBtnStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { Section, DetailCard, DetailSummary, DetailGroup, DetailRow, dangerBtnStyle, primaryBtnStyle, secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import {
   ErrorBanner, PageHeader, Pill, PRODUCT_STATUS_HEX, PRODUCT_STATUS_LABELS, PRODUCT_TYPE_LABELS, tableWrapStyle, tdStyle, thStyle,
 } from '@/components/products/ProductBits'
@@ -62,30 +62,36 @@ export default function ProductDetailPage() {
 
       {p && (
         <>
-          <Section title="Product" style={{ marginBottom: 16 }}>
-            <div style={{ marginBottom: 12 }}><Pill text={PRODUCT_STATUS_LABELS[p.status] || p.status} hex={PRODUCT_STATUS_HEX[p.status]} /></div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-              <InfoRow label="Type" value={PRODUCT_TYPE_LABELS[p.product_type] || p.product_type} />
-              <InfoRow label="Model number" value={p.model_number || '—'} />
-              <InfoRow label="Unit" value={p.uom} />
-              <InfoRow label="HSN code" value={p.hsn_code || '—'} />
-              <InfoRow label="Warranty" value={p.warranty_months != null ? `${p.warranty_months} months` : '—'} />
-              <InfoRow label="Store item" value={p.store_item_code ? `${p.store_item_code} — ${p.store_item_name}` : 'Not linked'} />
-              <InfoRow label="Created by" value={p.created_by_name || '—'} />
-            </div>
-            {p.short_description && <p style={{ fontSize: 13.5, color: TEXT.body, margin: '14px 0 0', fontWeight: 600 }}>{p.short_description}</p>}
-            {p.description && <p style={{ fontSize: 13, color: TEXT.body, margin: '8px 0 0', whiteSpace: 'pre-wrap' }}>{p.description}</p>}
-          </Section>
-
-          <Section title="Applications" style={{ marginBottom: 16 }}>
-            {p.applications.length === 0 ? (
-              <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No applications tagged yet.</p>
-            ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {p.applications.map((a) => <Pill key={a.id} text={a.is_active ? a.name : `${a.name} (retired)`} hex="#7c3aed" />)}
-              </div>
-            )}
-          </Section>
+          {/* One card: what the product is, then its master data and applications. */}
+          <DetailCard>
+            <DetailSummary
+              title={p.name}
+              text={p.short_description || undefined}
+              meta={<>
+                <Pill text={PRODUCT_STATUS_LABELS[p.status] || p.status} hex={PRODUCT_STATUS_HEX[p.status]} />
+                <span style={{ color: '#cbd5e1' }}>·</span><span>Code <strong style={{ color: '#0f172a' }}>{p.code}</strong></span>
+                <span style={{ color: '#cbd5e1' }}>·</span><span>{PRODUCT_TYPE_LABELS[p.product_type] || p.product_type}</span>
+                {p.created_by_name && <><span style={{ color: '#cbd5e1' }}>·</span><span>Created by {p.created_by_name}</span></>}
+              </>}
+            />
+            <DetailGroup title="Master data">
+              <DetailRow label="Model number">{p.model_number}</DetailRow>
+              <DetailRow label="Unit">{p.uom}</DetailRow>
+              <DetailRow label="HSN code">{p.hsn_code}</DetailRow>
+              <DetailRow label="Warranty">{p.warranty_months != null ? `${p.warranty_months} months` : null}</DetailRow>
+              <DetailRow label="Store item">{p.store_item_code ? `${p.store_item_code} — ${p.store_item_name}` : 'Not linked'}</DetailRow>
+            </DetailGroup>
+            <DetailGroup title="Description & applications" last>
+              <DetailRow label="Description">{p.description}</DetailRow>
+              <DetailRow label="Applications">
+                {p.applications.length === 0 ? null : (
+                  <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {p.applications.map((a) => <Pill key={a.id} text={a.is_active ? a.name : `${a.name} (retired)`} hex="#7c3aed" />)}
+                  </span>
+                )}
+              </DetailRow>
+            </DetailGroup>
+          </DetailCard>
 
           {canFeature('sales', 'products', 'specifications', 'view') && <Section title="Technical specifications" style={{ marginBottom: 16 }}>
             {p.specifications.length === 0 ? (
@@ -93,7 +99,7 @@ export default function ProductDetailPage() {
             ) : (
               <div style={{ ...tableWrapStyle, maxHeight: 'none' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
-                  <thead><tr>{['Parameter', 'Value', 'Unit'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Parameter', 'Value', 'Unit'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={p.specifications.length} />}</th>)}</tr></thead>
                   <tbody>
                     {p.specifications.map((s) => (
                       <tr key={s.id}>

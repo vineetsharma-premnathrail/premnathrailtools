@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { maintenanceApi } from '@/lib/api'
 import { MaintenanceLookups, MaintenanceSpare } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import { recordPath } from '@/lib/recordRef'
-import { secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { smallSecondaryBtnStyle, primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
 
@@ -146,11 +146,7 @@ export default function MaintenanceSparesPage() {
             onClick={raisePrForSelected}
             disabled={!selected.length}
             title={selected.length ? '' : 'Tick the spares to order first'}
-            style={{
-              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: selected.length ? 'pointer' : 'not-allowed',
-              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: selected.length ? 1 : 0.5,
-              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-            }}
+            style={{ ...primaryBtnStyle, cursor: selected.length ? 'pointer' : 'not-allowed', opacity: selected.length ? 1 : 0.5 }}
           >
             Raise PR for selected{selected.length ? ` (${selected.length})` : ''}
           </button>
@@ -200,7 +196,7 @@ export default function MaintenanceSparesPage() {
                       type="checkbox" title="Select every below-minimum spare" checked={allBelowSelected} disabled={!belowRows.length}
                       onChange={() => setSelected(allBelowSelected ? [] : belowRows.map((s) => s.store_item_id))}
                     />
-                  ) : h}
+                  ) : h}{i === 1 && <RowCount count={spares.length} />}
                 </th>
               ))}
             </tr>
@@ -231,7 +227,7 @@ export default function MaintenanceSparesPage() {
                           <span style={{ color: TEXT.muted, marginRight: 6 }}>{open ? '▾' : '▸'}</span>
                           {s.item_code}
                           {s.is_critical && (
-                            <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: '#DC26261a', color: '#DC2626' }}>Critical</span>
+                            <span style={{ marginLeft: 8 }}><Pill label="Critical" hex="#DC2626" /></span>
                           )}
                         </div>
                         <div style={{ fontSize: 12.5, color: TEXT.secondary }}>
@@ -242,9 +238,7 @@ export default function MaintenanceSparesPage() {
                       <td style={{ ...cellStyle, fontWeight: 600 }}>{fmtQty(s.on_hand_total)} <span style={{ fontWeight: 400, color: TEXT.muted }}>{s.uom || ''}</span></td>
                       <td style={cellStyle}>{fmtQty(s.minimum_stock)} / {fmtQty(s.reorder_level)}</td>
                       <td style={cellStyle}>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STOCK_HEX[state]}1a`, color: STOCK_HEX[state], whiteSpace: 'nowrap' }}>
-                          {STOCK_LABELS[state]}
-                        </span>
+                        <Pill label={STOCK_LABELS[state]} hex={STOCK_HEX[state]} />
                       </td>
                       <td style={cellStyle}>{s.consumed_90d ? fmtQty(s.consumed_90d) : '—'}</td>
                       <td style={cellStyle} onClick={(e) => e.stopPropagation()}>

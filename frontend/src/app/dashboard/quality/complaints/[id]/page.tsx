@@ -13,7 +13,7 @@ import QualityNav from '@/components/quality/QualityNav'
 import PromptDialog from '@/components/erp/PromptDialog'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
-import { Field, Section, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { Field, Section, InfoRow, DetailCard, DetailSummary, DetailGroup, DetailRow, pillStyle, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RowCount } from '@/components/shared/ui'
 import {
   Pill, PageHeader, ErrorBanner, fmtDate, fmtQty, fmtMoney, COMPLAINT_STATUS_LABELS, COMPLAINT_STATUS_HEX, SEVERITY_HEX,
   CAPA_STATUS_LABELS, INSPECTION_TYPE_LABELS, DECISION_LABELS,
@@ -25,6 +25,7 @@ import { sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/s
 
 const STEPS = ['open', 'under_investigation', 'response_sent', 'customer_accepted', 'closed']
 const linkStyle: React.CSSProperties = { color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }
+const linkBtn: React.CSSProperties = { ...linkStyle, padding: 0, border: 'none', background: 'none', fontSize: 13.5, textAlign: 'left' }
 const miniTh: React.CSSProperties = { textAlign: 'left', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, padding: '6px 8px', whiteSpace: 'nowrap' }
 const miniNum: React.CSSProperties = { textAlign: 'right' }
 const miniTd: React.CSSProperties = { fontSize: 12.5, padding: '6px 8px', borderTop: '1px solid rgba(0,0,0,0.06)', color: TEXT.body }
@@ -135,9 +136,6 @@ export default function ComplaintDetailPage() {
         onConfirm={(remarks) => { setNotSatisfied(false); run(() => qualityApi.complaintAction(c.id, 'feedback', { accepted: false, remarks }), 'Failed to record the feedback.') }} />
 
       <PageHeader title={c.complaint_number} subtitle="Quality · Customer complaint">
-        <Pill text={c.severity} hex={SEVERITY_HEX[c.severity]} />
-        <Pill text={COMPLAINT_STATUS_LABELS[c.status] || c.status} hex={COMPLAINT_STATUS_HEX[c.status]} />
-        {c.repeat_of_number && <Pill text="Repeat" hex="#DC2626" />}
         <button type="button" onClick={() => router.push('/dashboard/quality/complaints')} style={secondaryBtnStyle}>← Back</button>
       </PageHeader>
       {!sheet && <ErrorBanner error={error} />}
@@ -149,39 +147,55 @@ export default function ComplaintDetailPage() {
         <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
           {STEPS.map((s, i) => {
             const reached = STEPS.indexOf(c.status) >= i
-            return <span key={s} style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 10px', borderRadius: 9999, background: reached ? '#16A34A1a' : 'rgba(0,0,0,0.04)', color: reached ? '#15803d' : TEXT.muted }}>{i + 1}. {COMPLAINT_STATUS_LABELS[s]}</span>
+            return <span key={s} style={{ ...pillStyle(reached ? '#15803d' : '#64748b'), background: reached ? '#16A34A1a' : 'rgba(0,0,0,0.04)' }}>{i + 1}. {COMPLAINT_STATUS_LABELS[s]}</span>
           })}
         </div>
       )}
 
-      <Section title="Complaint" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
-          <InfoRow label="Customer" value={c.customer_name} />
-          <InfoRow label="Machine / order" value={c.project_label || '—'} />
-          <InfoRow label="Contact" value={c.contact_person || '—'} />
-          <InfoRow label="Source" value={`${c.source.replace(/_/g, ' ')}${c.source_reference ? ` · ${c.source_reference}` : ''}`} />
-          <InfoRow label="Item" value={`${c.item_code ? `${c.item_code} — ` : ''}${c.item_name || '—'}`} />
-          <InfoRow label="Serial / batch" value={[c.serial_number, c.batch_number].filter(Boolean).join(' / ') || '—'} />
-          <InfoRow label="Qty affected" value={fmtQty(c.quantity_affected)} />
-          <InfoRow label="Category" value={c.category_label || '—'} />
-          <InfoRow label="Defect" value={c.defect_code_label || '—'} />
-          <InfoRow label="Logged" value={`${fmtDate(c.complaint_date)} · ${c.received_by_name || '—'}`} />
-          <InfoRow label="Owner" value={c.owner_name || '—'} />
-          <InfoRow label="Response time" value={c.response_days != null ? `${c.response_days} days` : `open ${c.age_days} days`} />
-        </div>
-        {c.repeat_of_id && (
-          <p style={{ fontSize: 13, color: '#b91c1c', margin: 0 }}>Repeat of <span style={linkStyle} onClick={() => router.push(recordPath('/dashboard/quality/complaints', c, 'repeat_of_id'))}>{c.repeat_of_number}</span> (same customer and item).</p>
-        )}
-        <InfoRow label="Description" value={c.description} />
-        {c.rejection_reason && <InfoRow label="Rejected because" value={c.rejection_reason} />}
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {c.photos.map((p) => <Photo key={p.id} complaintId={c.id} photoId={p.id} name={p.file_name} />)}
-        </div>
-        {live && canEdit && (
-          <div><button type="button" disabled={busy} style={secondaryBtnStyle} onClick={() => { setPhotos([]); openSheet('photos') }}>+ Add photos</button></div>
-        )}
+      <DetailCard>
+        <DetailSummary
+          title={`Complaint from ${c.customer_name}`}
+          text={c.description}
+          meta={<>
+            <Pill text={COMPLAINT_STATUS_LABELS[c.status] || c.status} hex={COMPLAINT_STATUS_HEX[c.status]} />
+            <Pill text={c.severity.charAt(0).toUpperCase() + c.severity.slice(1)} hex={SEVERITY_HEX[c.severity]} />
+            {c.repeat_of_number && <Pill text="Repeat" hex="#DC2626" />}
+            <span>·</span><span>Logged {fmtDate(c.complaint_date)}{c.received_by_name ? ` by ${c.received_by_name}` : ''}</span>
+            {c.owner_name && <><span>·</span><span>Owner {c.owner_name}</span></>}
+            <span>·</span><span>{c.response_days != null ? `Answered in ${c.response_days} days` : `Open ${c.age_days} days`}</span>
+          </>}
+        />
+        <DetailGroup title="Customer">
+          <DetailRow label="Contact person">{c.contact_person}</DetailRow>
+          <DetailRow label="Machine / order">{c.project_label}</DetailRow>
+          <DetailRow label="Came in through">{`${c.source.replace(/_/g, ' ').replace(/^./, (x) => x.toUpperCase())}${c.source_reference ? ` · ${c.source_reference}` : ''}`}</DetailRow>
+        </DetailGroup>
+        <DetailGroup title="What failed">
+          <DetailRow label="Item">{c.item_name ? `${c.item_code ? `${c.item_code} — ` : ''}${c.item_name}` : null}</DetailRow>
+          <DetailRow label="Serial / batch">{[c.serial_number, c.batch_number].filter(Boolean).join(' / ') || null}</DetailRow>
+          <DetailRow label="Qty affected">{fmtQty(c.quantity_affected)}</DetailRow>
+          <DetailRow label="Category">{c.category_label}</DetailRow>
+          <DetailRow label="Defect">{c.defect_code_label}</DetailRow>
+          {c.repeat_of_id && (
+            <DetailRow label="Repeat of">
+              <button type="button" style={linkBtn} onClick={() => router.push(recordPath('/dashboard/quality/complaints', c, 'repeat_of_id'))}>{c.repeat_of_number}</button>
+              <span style={{ color: '#b91c1c' }}> (same customer and item)</span>
+            </DetailRow>
+          )}
+          {c.rejection_reason && <DetailRow label="Rejected because">{c.rejection_reason}</DetailRow>}
+        </DetailGroup>
+        <DetailGroup last>
+          <DetailRow label="Photos">
+            {c.photos.length > 0 || (live && canEdit) ? (
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                {c.photos.map((p) => <Photo key={p.id} complaintId={c.id} photoId={p.id} name={p.file_name} />)}
+                {live && canEdit && <button type="button" disabled={busy} style={secondaryBtnStyle} onClick={() => { setPhotos([]); openSheet('photos') }}>+ Add photos</button>}
+              </div>
+            ) : null}
+          </DetailRow>
+        </DetailGroup>
         {c.status === 'open' && (canEdit || canApprove) && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: 12 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', borderTop: '1px solid #e2e8f0', paddingTop: 14, marginTop: 4 }}>
             {canEdit && (
               <button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => openSheet('investigate')}>
                 Start investigation (raise NCR + CAPA)
@@ -190,7 +204,7 @@ export default function ComplaintDetailPage() {
             {canApprove && <button type="button" disabled={busy} style={dangerBtnStyle} onClick={() => setRejectOpen(true)}>Not a valid complaint</button>}
           </div>
         )}
-      </Section>
+      </DetailCard>
 
       {(c.ncr_id || c.capa_id) && (
         <Section title="Investigation" style={{ marginBottom: 20 }}>
@@ -216,7 +230,7 @@ export default function ComplaintDetailPage() {
               {cont.in_stock.length === 0 ? <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>None in any store.</p> : (
                 <div style={{ overflowX: 'auto', maxWidth: 640 }}>
                 <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-                  <thead><tr>{['Store', 'Free', 'Quality', 'Blocked'].map((h, i) => <th key={h} style={i ? { ...miniTh, ...miniNum } : miniTh}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Store', 'Free', 'Quality', 'Blocked'].map((h, i) => <th key={h} style={i ? { ...miniTh, ...miniNum } : miniTh}>{h}{i === 0 && <RowCount count={cont.in_stock.length} />}</th>)}</tr></thead>
                   <tbody>{cont.in_stock.map((s) => (
                     <tr key={s.location_id}><td style={miniTd}>{s.location_name}</td><td style={{ ...miniTd, ...miniNum }}>{s.free}</td><td style={{ ...miniTd, ...miniNum }}>{s.quality}</td><td style={{ ...miniTd, ...miniNum }}>{s.blocked}</td></tr>
                   ))}</tbody>
@@ -229,7 +243,7 @@ export default function ComplaintDetailPage() {
               {cont.delivered.length === 0 ? <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>No issue or dispatch of this batch recorded.</p> : (
                 <div style={{ overflowX: 'auto' }}>
                 <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-                  <thead><tr>{['Issue', 'Type', 'Date', 'Qty', 'To'].map((h) => <th key={h} style={h === 'Qty' ? { ...miniTh, ...miniNum } : miniTh}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Issue', 'Type', 'Date', 'Qty', 'To'].map((h, i) => <th key={h} style={h === 'Qty' ? { ...miniTh, ...miniNum } : miniTh}>{h}{i === 0 && <RowCount count={cont.delivered.length} />}</th>)}</tr></thead>
                   <tbody>{cont.delivered.map((d, i) => (
                     <tr key={i}><td style={miniTd}>{d.issue_number}</td><td style={miniTd}>{d.issue_type || '—'}</td><td style={miniTd}>{fmtDate(d.issue_date)}</td><td style={{ ...miniTd, ...miniNum }}>{d.quantity}</td><td style={miniTd}>{d.to || '—'}</td></tr>
                   ))}</tbody>
@@ -243,7 +257,7 @@ export default function ComplaintDetailPage() {
                 {tr.lots.length === 0 ? <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>No inspection lot carries this batch / serial.</p> : (
                   <div style={{ overflowX: 'auto' }}>
                   <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-                    <thead><tr>{['Lot', 'Inspection', 'Source', 'Vendor', 'Decision', 'Date'].map((h) => <th key={h} style={miniTh}>{h}</th>)}</tr></thead>
+                    <thead><tr>{['Lot', 'Inspection', 'Source', 'Vendor', 'Decision', 'Date'].map((h, i) => <th key={h} style={miniTh}>{h}{i === 0 && <RowCount count={tr.lots.length} />}</th>)}</tr></thead>
                     <tbody>{tr.lots.map((l) => (
                       <tr key={l.id}>
                         <td style={miniTd}><span style={linkStyle} onClick={() => router.push(recordPath('/dashboard/quality/lots', l))}>{l.lot_number}</span></td>

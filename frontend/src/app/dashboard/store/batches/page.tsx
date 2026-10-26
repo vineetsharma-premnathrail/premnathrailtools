@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeBatchesApi } from '@/lib/api'
 import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
-import { inputStyle } from '@/components/shared/ui'
+import { inputStyle, RowCount, Pill } from '@/components/shared/ui'
+import { formatDate } from '@/lib/format'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { recordPath } from '@/lib/recordRef'
@@ -25,7 +26,11 @@ const STATUS_LABELS: Record<string, string> = { active: 'Active', blocked: 'Bloc
 const STATUS_HEX: Record<string, string> = { active: '#16a34a', blocked: '#dc2626' }
 const th: React.CSSProperties = { position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap' }
 const td: React.CSSProperties = { padding: '12px 16px', fontSize: 13, color: TEXT.secondary }
-const fmtDate = (d?: string | null) => (d ? d.split('-').reverse().join('-') : '—')
+const thNum: React.CSSProperties = { ...th, textAlign: 'right' }
+const tdNum: React.CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }
+const fmtDate = (d?: string | null) => (d ? formatDate(d) : '—')
+const fmtQty = (n?: number | null) => (n ? n.toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '—')
+const NUM_COLS = new Set(['Free', 'Quality', 'Blocked', 'With vendor'])
 
 export default function StoreBatchesPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
@@ -67,25 +72,25 @@ export default function StoreBatchesPage() {
       </div>
       <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1150 }}>
-          <thead><tr>{['Batch', 'Heat no.', 'Item', 'Vendor / GRN', 'Received', 'Mill TC', 'Free', 'Quality', 'Blocked', 'With vendor', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Batch', 'Heat no.', 'Item', 'Vendor / GRN', 'Received', 'Mill TC', 'Free', 'Quality', 'Blocked', 'With vendor', 'Status', ''].map((h, hi) => <th key={h} style={NUM_COLS.has(h) ? thNum : th}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
             {loading && <tr><td colSpan={12} style={{ ...td, textAlign: 'center' }}>Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={12} style={{ ...td, textAlign: 'center' }}>No batches{q ? ' match the search' : ''}.</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={12} style={{ ...td, textAlign: 'center' }}>{q || inStock ? `No batches${q ? ' match this search' : ' with stock'}${inStock ? ' — untick “Only batches with stock” to see all.' : '.'}` : 'No batches yet — batches are created when a GRN receives a batch-tracked item.'}</td></tr>}
             {!loading && rows.map((b) => (
               <tr key={b.id} onClick={() => router.push(recordPath('/dashboard/store/batches', b))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{b.batch_number}</td>
                 <td style={td}>{b.heat_number || '—'}</td>
-                <td style={td}>{b.item_code} — {b.item_name}</td>
+                <td style={{ ...td, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${b.item_code || ''} — ${b.item_name || ''}`}>{b.item_code || '—'} — {b.item_name || '—'}</td>
                 <td style={td}>{b.vendor_name || '—'}{b.grn_number && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{b.grn_number}</div>}</td>
-                <td style={td}>{b.received_qty} {b.uom} · {fmtDate(b.received_date)}{b.expiry_date && <div style={{ fontSize: 11.5, color: TEXT.muted }}>Expires {fmtDate(b.expiry_date)}</div>}</td>
+                <td style={{ ...td, whiteSpace: 'nowrap' }}>{(b.received_qty ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 3 })} {b.uom || ''} · {fmtDate(b.received_date)}{b.expiry_date && <div style={{ fontSize: 11.5, color: TEXT.muted }}>Expires {fmtDate(b.expiry_date)}</div>}</td>
                 <td style={td}>{b.tc_number || '—'}{b.has_tc_document ? ' · scan' : ''}</td>
-                <td style={{ ...td, fontWeight: 600, color: BRAND.primaryActive }}>{b.total.free || '—'}</td>
-                <td style={td}>{b.total.quality || '—'}</td>
-                <td style={td}>{b.total.blocked || '—'}</td>
-                <td style={td}>{b.total.vendor || '—'}</td>
-                <td style={td}><span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[b.status]}1a`, color: STATUS_HEX[b.status], whiteSpace: 'nowrap' }}>{STATUS_LABELS[b.status] || b.status}</span></td>
+                <td style={{ ...tdNum, fontWeight: 600, color: BRAND.primaryActive }}>{fmtQty(b.total.free)}</td>
+                <td style={tdNum}>{fmtQty(b.total.quality)}</td>
+                <td style={tdNum}>{fmtQty(b.total.blocked)}</td>
+                <td style={tdNum}>{fmtQty(b.total.vendor)}</td>
+                <td style={td}><Pill label={STATUS_LABELS[b.status] || b.status} hex={STATUS_HEX[b.status] || '#64748b'} /></td>
                 <td onClick={(e) => e.stopPropagation()}>
-                  <span onClick={() => router.push(recordPath('/dashboard/store/batches', b))} style={{ padding: '0 16px', color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Trace</span>
+                  <span onClick={() => router.push(recordPath('/dashboard/store/batches', b))} style={{ padding: '0 16px', whiteSpace: 'nowrap', color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Trace</span>
                 </td>
               </tr>
             ))}

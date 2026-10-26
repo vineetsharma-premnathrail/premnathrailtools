@@ -6,7 +6,7 @@ import { hrPeriodApi } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { extractErrorMessages } from '@/lib/validation'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import PromptDialog from '@/components/erp/PromptDialog'
 import { Banner, Pill, downloadBlob, h3, hint, inputStyle, labelStyle, sectionStyle, tableWrap, td, th } from '@/components/hr/hcmUi'
@@ -79,7 +79,7 @@ export default function PeriodsPanel() {
 
       <div style={tableWrap}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
-          <thead><tr><th style={th}>Month</th><th style={th}>Plant</th><th style={th}>Status</th><th style={th}>Locked by</th><th style={th}>Last unlock</th><th style={th}></th></tr></thead>
+          <thead><tr><th style={th}>Month <RowCount count={items.length} /></th><th style={th}>Plant</th><th style={th}>Status</th><th style={th}>Locked by</th><th style={th}>Last unlock</th><th style={th}></th></tr></thead>
           <tbody>
             {!items.length && <tr><td style={td} colSpan={6}>No period of {year} has been locked yet.</td></tr>}
             {items.map((p) => (

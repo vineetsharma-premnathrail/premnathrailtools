@@ -25,6 +25,7 @@ import {
 import { useCan } from '@/lib/permissions'
 import { SheetColumns, SheetSection, SHEET, sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 import { useRecordId } from '@/lib/recordRef'
+import { RowCount } from '@/components/shared/ui'
 
 const DRAWING_ACCEPT = '.pdf,.dwg,.dxf,.png,.jpg,.jpeg'
 
@@ -392,7 +393,7 @@ export default function DrawingsTab({ job, meta, canEdit, onChanged }: { job: El
                         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
                           <thead>
                             <tr>
-                              {['Rev', 'Status', 'Change summary', 'File', 'Prepared by', 'Submitted', 'Decision', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}
+                              {['Rev', 'Status', 'Change summary', 'File', 'Prepared by', 'Submitted', 'Decision', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={d.revisions.length} />}</th>)}
                             </tr>
                           </thead>
                           <tbody>

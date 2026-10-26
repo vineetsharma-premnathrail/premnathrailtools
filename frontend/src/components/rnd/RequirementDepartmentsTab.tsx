@@ -16,7 +16,7 @@ import { TEXT, BORDER, GLASS, SHADOWS } from '@/lib/theme'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import DateField from '@/components/erp/DateField'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, chipBtnStyle, pillStyle } from '@/components/shared/ui'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetSection, SheetIcon, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
@@ -41,7 +41,7 @@ export function shareBadge(s: RndRequirementShare): { label: string; hex: string
 }
 
 export function Chip({ label, hex }: { label: string; hex: string }) {
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>{label}</span>
+  return <span style={pillStyle(hex)}>{label}</span>
 }
 
 export default function RequirementDepartmentsTab({ source, recordId, isHead, onSharesChange }: {
@@ -130,11 +130,7 @@ export default function RequirementDepartmentsTab({ source, recordId, isHead, on
                   type="button"
                   title={busy ? `${d.label} hasn't replied yet — sharing again replaces that request with this note and date` : undefined}
                   onClick={() => setPicked((p) => (on ? p.filter((x) => x !== d.key) : [...p, d.key]))}
-                  style={{
-                    padding: '7px 14px', borderRadius: 9999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-                    color: on ? '#fff' : '#57534e', background: on ? '#FF7A45' : 'rgba(255,255,255,.6)',
-                    border: `1px solid ${on ? '#FF7A45' : 'rgba(0,0,0,0.1)'}`,
-                  }}
+                  style={chipBtnStyle(on)}
                 >
                   {on ? '✓ ' : ''}{d.label}{busy ? ' · awaiting reply' : ''}
                 </button>

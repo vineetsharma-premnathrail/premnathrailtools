@@ -60,6 +60,7 @@ const chipStyle = (active: boolean, bad = false): React.CSSProperties => ({
 
 function Switch({ on, disabled, onChange, label }: { on: boolean; disabled?: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
+    // ui-audit-ignore-next-line custom-button — on/off toggle switch (track + knob), not an action pill
     <button type="button" role="switch" aria-checked={on} aria-label={label} disabled={disabled}
       onClick={(e) => { e.stopPropagation(); onChange(!on) }}
       style={{

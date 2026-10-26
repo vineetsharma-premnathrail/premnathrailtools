@@ -9,7 +9,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { grcApi, monitorApi, DenialRow, DenialSummaryRow, JobRow, JobRunRow, SystemErrorRow } from '@/lib/basisApi'
 import { extractErrorMessages } from '@/lib/validation'
 import { BORDER, GLASS, SHADOWS, TEXT } from '@/lib/theme'
-import { inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, secondaryBtnStyle, chipBtnStyle, smallSecondaryBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import { FormSheet, SheetIconName, sheetBtn } from '@/components/shared/FormSheet'
 import { usePermissionWords } from '@/lib/permissionWords'
 
@@ -33,7 +33,7 @@ function fmt(d?: string | null) {
   return `${x.toLocaleDateString('en-GB')} ${x.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`
 }
 function Pill({ s }: { s: string }) {
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[s] || '#78716c'}1a`, color: STATUS_HEX[s] || '#78716c', whiteSpace: 'nowrap' }}>{STATUS_LABELS[s] || s}</span>
+  return <span style={pillStyle(STATUS_HEX[s] || '#78716c')}>{STATUS_LABELS[s] || s}</span>
 }
 
 /** Read-only detail popup (run history, error trace) in the app-wide sheet style. */
@@ -70,11 +70,11 @@ export default function SystemMonitorPage() {
 
   const loadJobs = useCallback(() => { monitorApi.jobs().then(setJobs).catch(fail('Could not load background jobs.')) }, [])
   const loadErrors = useCallback(() => {
-    monitorApi.errors({ days, q: errQuery.trim() || undefined }).then(setErrors).catch(fail('Could not load system errors.'))
+    monitorApi.errors({ days, q: errQuery.trim() || undefined, limit: 1000 }).then(setErrors).catch(fail('Could not load system errors.'))
     monitorApi.errorSummary(days).then(setErrSummary).catch(() => {})
   }, [days, errQuery])
   const loadDenials = useCallback(() => {
-    grcApi.denials({ days, permission: denialKey || undefined }).then(setDenials).catch(fail('Could not load denied requests.'))
+    grcApi.denials({ days, permission: denialKey || undefined, limit: 1000 }).then(setDenials).catch(fail('Could not load denied requests.'))
     grcApi.denialSummary(days).then(setDenialSummary).catch(() => {})
   }, [days, denialKey])
 
@@ -114,7 +114,7 @@ export default function SystemMonitorPage() {
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
         {TABS.map((t) => (
-          <button key={t.key} type="button" onClick={() => { setTab(t.key); setError(''); setNotice('') }} style={{ padding: '7px 14px', borderRadius: 9999, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: `1px solid ${tab === t.key ? '#FF7A45' : BORDER.normal}`, background: tab === t.key ? 'rgba(255,122,69,0.1)' : '#fff', color: tab === t.key ? '#c2410c' : TEXT.secondary }}>{t.label}</button>
+          <button key={t.key} type="button" onClick={() => { setTab(t.key); setError(''); setNotice('') }} style={chipBtnStyle(tab === t.key)}>{t.label}</button>
         ))}
         {tab !== 'jobs' && (
           <Select value={days} onChange={(e) => setDays(Number(e.target.value))} style={{ ...inputStyle, width: 130, marginLeft: 'auto' }}>
@@ -126,7 +126,7 @@ export default function SystemMonitorPage() {
       {tab === 'jobs' && (
         <div style={{ ...cardStyle, overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
-            <thead><tr><th style={th}>Job</th><th style={th}>Schedule</th><th style={th}>Next run</th><th style={th}>Last run</th><th style={th}>Result</th><th style={th}>Fails (7d)</th><th style={th}></th></tr></thead>
+            <thead><tr><th style={th}>Job <RowCount count={jobs.length} /></th><th style={th}>Schedule</th><th style={th}>Next run</th><th style={th}>Last run</th><th style={th}>Result</th><th style={th}>Fails (7d)</th><th style={th}></th></tr></thead>
             <tbody>
               {jobs.length === 0 && <tr><td style={td} colSpan={7}>No jobs are registered on this server (the scheduler may not have started).</td></tr>}
               {jobs.map((j) => (
@@ -169,7 +169,7 @@ export default function SystemMonitorPage() {
               <button type="button" style={secondaryBtnStyle} onClick={loadErrors}>Search</button>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
-              <thead><tr><th style={th}>When</th><th style={th}>Reference</th><th style={th}>Request</th><th style={th}>Error</th><th style={th}>User</th></tr></thead>
+              <thead><tr><th style={th}>When <RowCount count={errors.length} /></th><th style={th}>Reference</th><th style={th}>Request</th><th style={th}>Error</th><th style={th}>User</th></tr></thead>
               <tbody>
                 {errors.length === 0 && <tr><td style={td} colSpan={5}>No server errors in this period.</td></tr>}
                 {errors.map((e) => (
@@ -196,7 +196,7 @@ export default function SystemMonitorPage() {
               {denialSummary.slice(0, 12).map((s) => {
                 const active = denialKey === s.permission_key
                 return (
-                  <button key={s.permission_key || 'none'} type="button" onClick={() => setDenialKey(active ? null : s.permission_key)} style={{ fontSize: 11.5, padding: '6px 10px', borderRadius: 10, cursor: 'pointer', border: `1px solid ${active ? '#FF7A45' : BORDER.normal}`, background: active ? 'rgba(255,122,69,0.1)' : '#fff', textAlign: 'left' }}>
+                  <button key={s.permission_key || 'none'} type="button" onClick={() => setDenialKey(active ? null : s.permission_key)} style={{ ...smallSecondaryBtnStyle, ...(active ? { border: '1px solid #FF7A45', background: 'rgba(255,122,69,0.1)' } : {}), whiteSpace: 'normal', textAlign: 'left' }}>
                     <b>{s.count}×</b> {s.permission_key ? permLabel(s.permission_key) : (s.permission_label || 'Record-level rule')} <span style={{ color: TEXT.muted }}>· {s.users} user(s)</span>
                   </button>
                 )
@@ -205,7 +205,7 @@ export default function SystemMonitorPage() {
           </div>
           <div style={{ ...cardStyle, overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
-              <thead><tr><th style={th}>When</th><th style={th}>User</th><th style={th}>Missing permission (why)</th><th style={th}>Request</th><th style={th}>Times</th><th style={th}>Fix: a role that grants it</th></tr></thead>
+              <thead><tr><th style={th}>When <RowCount count={denials.length} /></th><th style={th}>User</th><th style={th}>Missing permission (why)</th><th style={th}>Request</th><th style={th}>Times</th><th style={th}>Fix: a role that grants it</th></tr></thead>
               <tbody>
                 {denials.length === 0 && <tr><td style={td} colSpan={6}>No denied requests.</td></tr>}
                 {denials.map((d) => (
@@ -227,7 +227,7 @@ export default function SystemMonitorPage() {
       {runsFor && (
         <Modal icon="history" title={`${runsFor.label} — run history`} subtitle={`Background job ${runsFor.job_id}${runsFor.schedule ? ` · ${runsFor.schedule}` : ''}`} onClose={() => setRunsFor(null)}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-            <thead><tr><th style={th}>Started</th><th style={th}>Status</th><th style={th}>Duration</th><th style={th}>Rows</th><th style={th}>By</th><th style={th}>Result / error</th></tr></thead>
+            <thead><tr><th style={th}>Started <RowCount count={runs.length} /></th><th style={th}>Status</th><th style={th}>Duration</th><th style={th}>Rows</th><th style={th}>By</th><th style={th}>Result / error</th></tr></thead>
             <tbody>
               {runs.length === 0 && <tr><td style={td} colSpan={6}>No runs recorded yet.</td></tr>}
               {runs.map((r) => (

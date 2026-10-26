@@ -9,6 +9,7 @@ import InquiryForm from '@/components/crm/InquiryForm'
 import TenderForm from '@/components/crm/TenderForm'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { segmentBtnStyle } from '@/components/shared/ui'
 
 type Kind = 'inquiry' | 'tender'
 
@@ -32,25 +33,14 @@ export default function NewInquiryOrTenderPage() {
   const nav = (
     <>
       <CrmNav />
-      <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(0,0,0,0.05)', marginBottom: 16 }}>
+      <div style={{ display: 'inline-flex', gap: 4, marginBottom: 16 }}>
         {(['inquiry', 'tender'] as Kind[]).map((k) => (
           <button
             key={k}
             type="button"
             onClick={() => setType(k)}
             data-tour={`new-record-tab-${k}`}
-            style={{
-              padding: '8px 20px',
-              borderRadius: 9,
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: 600,
-              textTransform: 'capitalize',
-              background: type === k ? '#fff' : 'transparent',
-              color: type === k ? '#2563eb' : '#64748b',
-              boxShadow: type === k ? '0 2px 8px rgba(0,0,0,0.08)' : 'none',
-            }}
+            style={{ ...segmentBtnStyle(type === k), textTransform: 'capitalize' }}
           >
             {k}
           </button>

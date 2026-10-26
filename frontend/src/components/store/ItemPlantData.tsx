@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { itemPlantsApi, ItemPlantRow, ItemPlantsPayload } from '@/lib/mmLogisticsApi'
 import { extractErrorMessages } from '@/lib/validation'
 import { TEXT } from '@/lib/theme'
-import { Section, inputStyle, secondaryBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { Section, inputStyle, secondaryBtnStyle, smallSecondaryBtnStyle, RowCount, TableScroll } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput } from '@/components/shared/FormSheet'
 import Select from '@/components/shared/Select'
 
@@ -69,11 +69,11 @@ export default function ItemPlantData({ itemId, canEdit }: { itemId: number; can
     </div>
   ) : null
   const grid = (ed: boolean) => (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
+    <TableScroll maxHeight="none" minWidth={980}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr>
-            <th style={th}>Plant</th><th style={th}>MRP type</th><th style={th}>Make / buy</th>
+            <th style={th}>Plant <RowCount count={rows.length} /></th><th style={th}>MRP type</th><th style={th}>Make / buy</th>
             {NUM_FIELDS.map((f) => <th key={f.key} style={th}>{f.label}</th>)}
             <th style={th}>Default store</th><th style={th}>Purch. blocked</th>{ed && <th style={th} />}
           </tr>
@@ -101,7 +101,7 @@ export default function ItemPlantData({ itemId, canEdit }: { itemId: number; can
                   {ed ? (
                     <input type="number" min={0} step="any" style={{ ...cell, width: f.width }} value={(r[f.key] as number | null) ?? ''}
                       onChange={(e) => set(i, { [f.key]: num(e.target.value) } as Partial<ItemPlantRow>)} />
-                  ) : <span style={{ fontSize: 13 }}>{(r[f.key] as number | null) ?? '—'}</span>}
+                  ) : <span style={{ fontSize: 13 }}>{(r[f.key] as number | null)?.toLocaleString('en-IN') ?? '—'}</span>}
                 </td>
               ))}
               <td style={td}>
@@ -126,7 +126,7 @@ export default function ItemPlantData({ itemId, canEdit }: { itemId: number; can
           ))}
         </tbody>
       </table>
-    </div>
+    </TableScroll>
   )
   const cancelEdit = () => { setRows(data.plants); setEditing(false); setError('') }
 

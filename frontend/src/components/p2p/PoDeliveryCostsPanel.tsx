@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { landedCostApi, PoChargesView } from '@/lib/mmLogisticsApi'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { primaryBtnStyle, smallSecondaryBtnStyle, TableScroll } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount, smallSecondaryBtnStyle, TableScroll } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -93,7 +93,7 @@ export default function PoDeliveryCostsPanel({ poId, onChanged }: { poId: number
       {view.charges.length > 0 && (
         <TableScroll style={{ marginBottom: 12 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr>{['Planned cost', 'Basis', 'Amount', 'GST (credit)', ''].map((h, i) => <th key={h} style={i === 2 || i === 3 ? numHead : head}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Planned cost', 'Basis', 'Amount', 'GST (credit)', ''].map((h, i) => <th key={h} style={i === 2 || i === 3 ? numHead : head}>{h}{i === 0 && <RowCount count={view.charges.length} />}</th>)}</tr></thead>
           <tbody>
             {view.charges.map((c) => (
               <tr key={c.id} style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
@@ -111,7 +111,7 @@ export default function PoDeliveryCostsPanel({ poId, onChanged }: { poId: number
 
       <TableScroll style={{ marginBottom: 12 }}>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead><tr>{['Line', 'Qty', 'PO rate', 'Delivery cost', 'Landed rate'].map((h, i) => <th key={h} style={i === 0 ? head : numHead}>{h}</th>)}</tr></thead>
+        <thead><tr>{['Line', 'Qty', 'PO rate', 'Delivery cost', 'Landed rate'].map((h, i) => <th key={h} style={i === 0 ? head : numHead}>{h}{i === 0 && <RowCount count={view.lines.length} />}</th>)}</tr></thead>
         <tbody>
           {view.lines.map((l) => (
             <tr key={l.po_item_id} style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
@@ -129,7 +129,7 @@ export default function PoDeliveryCostsPanel({ poId, onChanged }: { poId: number
       {view.vouchers.length > 0 && (
         <TableScroll style={{ marginBottom: 12 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr>{['Voucher', 'Date', 'Cost', 'Amount', 'Into stock', 'Consumed share'].map((h, i) => <th key={h} style={i >= 3 ? numHead : head}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Voucher', 'Date', 'Cost', 'Amount', 'Into stock', 'Consumed share'].map((h, i) => <th key={h} style={i >= 3 ? numHead : head}>{h}{i === 0 && <RowCount count={view.vouchers.length} />}</th>)}</tr></thead>
           <tbody>
             {view.vouchers.map((v) => (
               <tr key={v.id} style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>

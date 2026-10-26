@@ -21,6 +21,7 @@ import {
   primaryBtnStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh, inr, dmy,
   ErrorBanner, InfoBanner, StatusPill, PageHeader, TableWrap, EmptyRow, StatCard, SubTabs,
 } from '@/components/finance/financeUi'
+import { RowCount } from '@/components/shared/ui'
 
 const REASONS: Record<string, string> = {
   quality: 'Quality claim', quantity: 'Quantity / short supply', price: 'Price / rate', ld: 'LD (liquidated damages)',
@@ -77,20 +78,20 @@ export default function DisputesPage() {
       <ErrorBanner error={error} />
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 20 }}>
         <StatCard label="Open disputes" value={String(open.length)} />
-        <StatCard label="Disputed amount (open)" value={inr(open.reduce((s, r) => s + r.disputed_amount, 0))} tone="#7c3aed" />
+        <StatCard label="Disputed amount (open)" value={`₹ ${inr(open.reduce((s, r) => s + r.disputed_amount, 0))}`} tone="#7c3aed" />
       </div>
       <SubTabs tabs={FILTERS} value={filter} onChange={setFilter} />
       <TableWrap minWidth={1200} tour="fin-disp-table">
         <thead>
           <tr>
-            <th style={thStyle}>Dispute</th><th style={thStyle}>Customer</th><th style={thStyle}>Invoice</th><th style={numTh}>Disputed (₹)</th>
+            <th style={thStyle}>Dispute <RowCount count={rows.length} /></th><th style={thStyle}>Customer</th><th style={thStyle}>Invoice</th><th style={numTh}>Disputed (₹)</th>
             <th style={numTh}>Invoice due (₹)</th><th style={thStyle}>Reason</th><th style={thStyle}>Description</th><th style={thStyle}>Owner</th>
             <th style={thStyle}>Status</th><th style={thStyle}></th>
           </tr>
         </thead>
         <tbody>
           {loading ? <EmptyRow colSpan={10} text="Loading…" />
-            : rows.length === 0 ? <EmptyRow colSpan={10} text="No disputes." />
+            : rows.length === 0 ? <EmptyRow colSpan={10} text="No disputes — use Raise dispute when a customer contests an invoice." />
             : rows.map((d) => (
               <tr key={d.id}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{d.dispute_number}<div style={{ fontSize: 11, color: TEXT.muted }}>{dmy(d.raised_on)}</div></td>

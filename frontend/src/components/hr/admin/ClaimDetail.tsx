@@ -10,7 +10,7 @@ import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
-import { secondaryBtnStyle, dangerBtnStyle, smallPrimaryBtnStyle, InfoRow } from '@/components/shared/ui'
+import { secondaryBtnStyle, dangerBtnStyle, smallPrimaryBtnStyle, RowCount, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import {
   ErrorBanner, SuccessBanner, Pill, EmptyRow, FormDialog, primaryActionStyle, sectionStyle,
   thStyle, tdStyle, linkActionStyle, fmtDate, fmtDateTime, fmtINR, todayIso,
@@ -299,43 +299,42 @@ export default function ClaimDetail({ claimId, onChanged }: { claimId: number; o
       <ErrorBanner error={error} />
       <SuccessBanner message={notice} />
 
-      <div data-tour="hr-claim-summary" style={{ ...sectionStyle, display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <div style={{ flex: '1 1 320px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14 }}>
-          <div>
-            <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Status</p>
+      {/* One record card: what the claim is, its key facts on one line, the
+          actions for its current stage, then the approval / payment trail. */}
+      <DetailCard tour="hr-claim-summary">
+        <DetailSummary
+          title={claim.title}
+          text={`Expense claim by ${claim.user_name || 'the employee'}${claim.user_department ? ` (${claim.user_department})` : ''} — ${items.length} expense line${items.length === 1 ? '' : 's'} totalling ${fmtINR(claim.total_amount)}.`}
+          meta={<>
             <Pill hex={CLAIM_STATUS_HEX[claim.status] || '#64748B'} label={CLAIM_STATUS_LABELS[claim.status] || claim.status} />
-          </div>
-          <InfoRow label="Employee" value={`${claim.user_name || '—'}${claim.user_department ? ` · ${claim.user_department}` : ''}`} />
-          <InfoRow label="Claim date" value={fmtDate(claim.claim_date)} />
-          <InfoRow label="Linked trip" value={claim.travel_request_no ? `${claim.travel_request_no} · ${claim.travel_route}` : '—'} />
-          <InfoRow label="Approver" value={claim.decided_by_name || claim.approver_name || (claim.status === 'draft' ? 'Set when submitted' : 'HR')} />
-          {claim.submitted_at && <InfoRow label="Submitted" value={fmtDateTime(claim.submitted_at)} />}
-          {claim.decided_at && <InfoRow label="Decided" value={fmtDateTime(claim.decided_at)} />}
-          {claim.paid_on && <InfoRow label="Paid" value={`${fmtDate(claim.paid_on)} · ref ${claim.payment_reference || '—'}${claim.paid_by_name ? ` · by ${claim.paid_by_name}` : ''}`} />}
-        </div>
-        <div style={{ flex: '0 0 auto', textAlign: 'right' }}>
-          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Total</p>
-          <p style={{ fontSize: 26, fontWeight: 800, color: TEXT.heading, margin: 0 }}>{fmtINR(claim.total_amount)}</p>
-          <p style={{ fontSize: 12, color: TEXT.muted, margin: '2px 0 0' }}>{items.length} line{items.length === 1 ? '' : 's'}</p>
-        </div>
-      </div>
-
-      {claim.decision_remarks && (
-        <div style={{ ...sectionStyle, borderLeft: `4px solid ${claim.status === 'rejected' ? '#DC2626' : '#2563EB'}` }}>
-          <InfoRow label={claim.status === 'rejected' ? 'Why it was rejected' : 'Remarks'} value={claim.decision_remarks} />
-          {claim.status === 'rejected' && editable && <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '8px 0 0' }}>Fix the lines below, then submit again.</p>}
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
-        {editable && <button type="button" data-tour="hr-claim-submit-btn" style={primaryActionStyle} disabled={busy} onClick={() => setConfirmSubmit(true)}>{claim.status === 'rejected' ? 'Resubmit for approval' : 'Submit for approval'}</button>}
-        {editable && <button type="button" data-tour="hr-claim-edit-header-btn" style={secondaryBtnStyle} onClick={() => setHeaderOpen(true)}>Edit title / trip</button>}
-        {/* Claims submitted before the central approval engine keep the old buttons; engine-routed ones are decided in the Approval panel below. */}
-        {claim.can_decide && !claim.approval_request_id && <button type="button" data-tour="hr-claim-approve-btn" style={primaryActionStyle} disabled={busy} onClick={() => setDecision('approve')}>Approve</button>}
-        {claim.can_decide && !claim.approval_request_id && <button type="button" data-tour="hr-claim-reject-btn" style={dangerBtnStyle} disabled={busy} onClick={() => setDecision('reject')}>Reject</button>}
-        {claim.can_mark_paid && <button type="button" data-tour="hr-claim-paid-btn" style={primaryActionStyle} disabled={busy} onClick={() => setPayOpen(true)}>Mark paid</button>}
-        {claim.can_cancel && <button type="button" data-tour="hr-claim-cancel-btn" style={dangerBtnStyle} disabled={busy} onClick={() => setDecision('cancel')}>{claim.status === 'submitted' ? 'Withdraw claim' : 'Cancel claim'}</button>}
-      </div>
+            <span>·</span><span>{claim.claim_no}</span>
+            <span>·</span><span>Claim date {fmtDate(claim.claim_date)}</span>
+            <span>·</span><strong style={{ color: TEXT.heading, fontSize: 14 }}>{fmtINR(claim.total_amount)}</strong>
+          </>}
+          actions={<>
+            {editable && <button type="button" data-tour="hr-claim-submit-btn" style={primaryActionStyle} disabled={busy} onClick={() => setConfirmSubmit(true)}>{claim.status === 'rejected' ? 'Resubmit for approval' : 'Submit for approval'}</button>}
+            {editable && <button type="button" data-tour="hr-claim-edit-header-btn" style={secondaryBtnStyle} onClick={() => setHeaderOpen(true)}>Edit title / trip</button>}
+            {/* Claims submitted before the central approval engine keep the old buttons; engine-routed ones are decided in the Approval panel below. */}
+            {claim.can_decide && !claim.approval_request_id && <button type="button" data-tour="hr-claim-approve-btn" style={primaryActionStyle} disabled={busy} onClick={() => setDecision('approve')}>Approve</button>}
+            {claim.can_decide && !claim.approval_request_id && <button type="button" data-tour="hr-claim-reject-btn" style={dangerBtnStyle} disabled={busy} onClick={() => setDecision('reject')}>Reject</button>}
+            {claim.can_mark_paid && <button type="button" data-tour="hr-claim-paid-btn" style={primaryActionStyle} disabled={busy} onClick={() => setPayOpen(true)}>Mark paid</button>}
+            {claim.can_cancel && <button type="button" data-tour="hr-claim-cancel-btn" style={dangerBtnStyle} disabled={busy} onClick={() => setDecision('cancel')}>{claim.status === 'submitted' ? 'Withdraw claim' : 'Cancel claim'}</button>}
+          </>}
+        />
+        <DetailGroup last>
+          <DetailRow label="Linked trip">{claim.travel_request_no ? `${claim.travel_request_no} · ${claim.travel_route}` : 'Not linked to a trip'}</DetailRow>
+          <DetailRow label="Approver">{claim.decided_by_name || claim.approver_name || (claim.status === 'draft' ? 'Set when submitted' : 'HR')}</DetailRow>
+          {claim.submitted_at && <DetailRow label="Submitted">{fmtDateTime(claim.submitted_at)}</DetailRow>}
+          {claim.decided_at && <DetailRow label="Decided">{fmtDateTime(claim.decided_at)}</DetailRow>}
+          {claim.decision_remarks && (
+            <DetailRow label={claim.status === 'rejected' ? 'Why it was rejected' : 'Approver remarks'}>
+              <span style={{ color: claim.status === 'rejected' ? '#B91C1C' : undefined }}>{claim.decision_remarks}</span>
+              {claim.status === 'rejected' && editable && <span style={{ display: 'block', fontSize: 12.5, color: TEXT.muted, marginTop: 4 }}>Fix the lines below, then submit again.</span>}
+            </DetailRow>
+          )}
+          {claim.paid_on && <DetailRow label="Paid">{`${fmtDate(claim.paid_on)} · ref ${claim.payment_reference || '—'}${claim.paid_by_name ? ` · by ${claim.paid_by_name}` : ''}`}</DetailRow>}
+        </DetailGroup>
+      </DetailCard>
 
       {claim.approval_request_id && (
         <ApprovalPanel
@@ -357,10 +356,10 @@ export default function ClaimDetail({ claimId, onChanged }: { claimId: number; o
         <div style={{ overflow: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 12 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
-            <tr>{['Date', 'Category', 'Description', 'Amount', 'Receipt', ''].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}</th>)}</tr>
+            <tr>{['Date', 'Category', 'Description', 'Amount', 'Receipt', ''].map((h, hi) => <th key={h} style={{ ...thStyle, textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}{hi === 0 && <RowCount count={items.length} />}</th>)}</tr>
           </thead>
           <tbody>
-            {items.length === 0 && !editable && <EmptyRow colSpan={6} text="No expense lines." />}
+            {items.length === 0 && !editable && <EmptyRow colSpan={6} text="No expense lines on this claim." />}
             {items.map((it) => editId === it.id ? (
               <tr key={it.id} style={{ background: 'rgba(255,106,42,0.04)' }}>
                 {lineInputs(editLine, setEditLine)}

@@ -1,13 +1,13 @@
 'use client'
 
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, chipBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { designApi } from '@/lib/api'
 import { DesignDocument } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import DesignNav from '@/components/design/DesignNav'
 import { useDesignMe } from '@/components/design/useDesignMe'
 import { DOC_TYPE_LABELS, DISCIPLINE_LABELS } from '@/components/design/designMeta'
@@ -108,11 +108,7 @@ export default function DesignDocumentsPage() {
         {STATUS_TABS.map((t) => {
           const active = statusTab === t.key
           return (
-            <button key={t.label} type="button" onClick={() => setStatusTab(t.key)} style={{
-              padding: '6px 14px', borderRadius: 9999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              border: `1px solid ${active ? '#FF6A2A' : BORDER.normal}`, background: active ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,.6)',
-              color: active ? '#FF6A2A' : TEXT.secondary,
-            }}>
+            <button key={t.label} type="button" onClick={() => setStatusTab(t.key)} style={chipBtnStyle(active)}>
               {t.label}
             </button>
           )
@@ -139,9 +135,9 @@ export default function DesignDocumentsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1260 }}>
           <thead>
             <tr>
-              {['Doc Number', 'Title', 'Type', 'Discipline', 'Customer', 'Controlled Rev', 'Work in Progress', 'Owner', 'Status', ''].map((h) => (
+              {['Doc Number', 'Title', 'Type', 'Discipline', 'Customer', 'Controlled Rev', 'Work in Progress', 'Owner', 'Status', ''].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{hi === 0 && <RowCount count={docs.length} />}
                 </th>
               ))}
             </tr>
@@ -151,7 +147,7 @@ export default function DesignDocumentsPage() {
               <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : docs.length === 0 ? (
               <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
-                No documents match these filters.{statusTab !== '' && ' Try the “All” tab.'}
+                No documents match these filters.{statusTab !== '' ? ' Try the “All” tab.' : ' Use + New Document to create one.'}
               </td></tr>
             ) : (
               docs.map((d) => (
@@ -190,7 +186,7 @@ export default function DesignDocumentsPage() {
                   </td>
                   <td style={cellStyle}>{d.owner_name || '—'}</td>
                   <td style={cellStyle}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[d.display_status]}1a`, color: STATUS_HEX[d.display_status], whiteSpace: 'nowrap' }}>
+                    <span style={pillStyle(STATUS_HEX[d.display_status])}>
                       {STATUS_LABELS[d.display_status] || d.display_status}
                     </span>
                   </td>

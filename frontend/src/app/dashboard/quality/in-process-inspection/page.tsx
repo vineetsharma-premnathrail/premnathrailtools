@@ -13,7 +13,7 @@ import LotList from '@/components/quality/LotList'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import Select from '@/components/shared/Select'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<string, string> = { pending: 'Pending', in_progress: 'In Progress', passed: 'Passed', failed: 'Failed', conditionally_passed: 'Conditionally Passed' }
 const STATUS_HEX: Record<string, string> = { pending: '#F59E0B', in_progress: '#2563EB', passed: '#16A34A', failed: '#DC2626', conditionally_passed: '#7C3AED' }
@@ -112,9 +112,9 @@ export default function InProcessInspectionListPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 920 }}>
           <thead>
             <tr>
-              {['Inspection #', 'Item', 'Batch', 'Project', 'Qty Inspected', 'Date', 'Status', ''].map((h) => (
+              {['Inspection #', 'Item', 'Batch', 'Project', 'Qty Inspected', 'Date', 'Status', ''].map((h, i) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
+                  {h}{i === 0 && <RowCount count={inspections.length} />}
                 </th>
               ))}
             </tr>
@@ -134,9 +134,7 @@ export default function InProcessInspectionListPage() {
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{insp.quantity_inspected ?? '—'}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{formatDate(insp.inspection_date)}</td>
                   <td style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[insp.status]}1a`, color: STATUS_HEX[insp.status], whiteSpace: 'nowrap' }}>
-                      {STATUS_LABELS[insp.status] || insp.status}
-                    </span>
+                    <Pill label={STATUS_LABELS[insp.status] || insp.status} hex={STATUS_HEX[insp.status]} />
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
                     <span onClick={() => router.push(recordPath('/dashboard/quality/in-process-inspection', insp))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>

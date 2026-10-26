@@ -10,8 +10,8 @@ import { TEXT, GLASS } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import ProjectsNav from '@/components/projects/ProjectsNav'
-import { sectionStyle, h2Style, Pill, ErrorBanner, PageHeader, Fact } from '@/components/sales/SalesUi'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { sectionStyle, h2Style, Pill, ErrorBanner, PageHeader } from '@/components/sales/SalesUi'
+import { secondaryBtnStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { formatINR } from '@/components/sales/labels'
 import OrderProjectTable, { OP_STATUS_LABELS, OP_STATUS_HEX } from '@/components/sales/OrderProjectTable'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -67,7 +67,6 @@ export default function OrderProjectDetailPage() {
       <PageHeader
         moduleLabel="Project Management"
         title={<span>{project.op_number} <span style={{ verticalAlign: 'middle' }}><Pill label={OP_STATUS_LABELS[project.status] || project.status} hex={OP_STATUS_HEX[project.status] || '#78716c'} /></span></span>}
-        subtitle={project.title}
         backHref="/dashboard/projects/order-projects"
       >
         <div data-tour="sales-op-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -79,32 +78,38 @@ export default function OrderProjectDetailPage() {
       <ErrorBanner error={error} />
       {notice && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', color: '#15803d', fontSize: 13 }}>{notice}</div>}
 
-      <div data-tour="sales-op-summary" style={sectionStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
-          <h2 style={{ ...h2Style, margin: 0 }}>Project</h2>
-          {canEdit && (
+      {/* Same layout as R&D › Project › Overview: what the order project is and its
+          key facts on top, then the order details as label–value rows. */}
+      <DetailCard tour="sales-op-summary">
+        <DetailSummary
+          title={project.title}
+          text={`Tracks every vehicle and spares lot of ${project.so_number || 'the sales order'} for ${project.customer_name || 'the customer'} — from design to delivery.`}
+          meta={<>
+            <span>{formatDate(project.planned_start)} → {formatDate(project.planned_end)}</span>
+            <span>·</span>
+            <span>PM <strong style={{ color: TEXT.heading }}>{project.project_manager_name || 'Not assigned'}</strong></span>
+            <span>·</span>
+            <span><strong style={{ color: TEXT.heading }}>{project.vehicles_delivered} of {vehicles.length}</strong> vehicles delivered</span>
+          </>}
+          actions={canEdit ? (
             <button type="button" data-tour="sales-op-edit" onClick={() => setEditOpen(true)} style={{ ...secondaryBtnStyle, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <PencilSimple size={15} /> Edit project
             </button>
-          )}
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-          <Fact label="Customer" value={project.customer_name} />
-          <Fact label="Sales order" value={project.so_number ? (
+          ) : undefined}
+        />
+        <DetailGroup title="Order" last>
+          <DetailRow label="Customer">{project.customer_name}</DetailRow>
+          <DetailRow label="Sales order">{project.so_number ? (
             <button type="button" onClick={() => router.push(recordPath('/dashboard/sales/orders', project, 'sales_order_id'))}
-              style={{ background: 'none', border: 'none', padding: 0, color: '#FF6A2A', fontWeight: 600, cursor: 'pointer', fontSize: 13.5, fontFamily: 'inherit' }}>
+              style={{ background: 'none', border: 'none', padding: 0, color: '#2563EB', fontWeight: 600, cursor: 'pointer', fontSize: 13.5, fontFamily: 'inherit' }}>
               {project.so_number} →
             </button>
-          ) : null} />
-          <Fact label="Customer PO" value={`${project.customer_po_number || '—'}${project.customer_po_date ? ` · ${formatDate(project.customer_po_date)}` : ''}`} />
-          {project.order_value !== null && <Fact label="Order value (incl. GST)" value={formatINR(project.order_value)} />}
-          <Fact label="Project manager" value={project.project_manager_name || <span style={{ color: TEXT.muted }}>Not assigned</span>} />
-          <Fact label="Planned start" value={formatDate(project.planned_start)} />
-          <Fact label="Planned end" value={formatDate(project.planned_end)} />
-          <Fact label="Vehicles delivered" value={`${project.vehicles_delivered} of ${vehicles.length}`} />
-          {project.branch_name && <Fact label="Unit" value={project.branch_name} />}
-        </div>
-      </div>
+          ) : null}</DetailRow>
+          <DetailRow label="Customer PO">{project.customer_po_number ? `${project.customer_po_number}${project.customer_po_date ? ` dated ${formatDate(project.customer_po_date)}` : ''}` : null}</DetailRow>
+          {project.order_value !== null && <DetailRow label="Order value (incl. GST)">{formatINR(project.order_value)}</DetailRow>}
+          {project.branch_name && <DetailRow label="Unit">{project.branch_name}</DetailRow>}
+        </DetailGroup>
+      </DetailCard>
 
       <div style={{ ...sectionStyle, padding: 0 }}>
         <div style={{ padding: '16px 20px 8px' }}>

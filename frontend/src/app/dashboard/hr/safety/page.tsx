@@ -6,12 +6,12 @@ import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { hrSafetyApi } from '@/lib/api'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 import HrNav from '@/components/hr/HrNav'
 import DateField from '@/components/erp/DateField'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { SafetyIncidentRow, SafetyStats, TYPE_LABELS, downloadBlob } from '@/components/hr/safety/types'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -145,10 +145,7 @@ export default function HrSafetyPage() {
               : 'Report an accident, near miss or unsafe occurrence. Incidents you reported or are involved in, and safety actions assigned to you, are listed here.'}
           </p>
         </div>
-        <button type="button" onClick={() => router.push('/dashboard/hr/safety/new')} style={{
-          padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary,
-          color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-        }}>+ Report incident</button>
+        <button type="button" onClick={() => router.push('/dashboard/hr/safety/new')} style={primaryBtnStyle}>+ Report incident</button>
       </div>
 
       {error.length > 0 && <div style={errorBox}>{error.join(' ')}</div>}
@@ -216,7 +213,7 @@ export default function HrSafetyPage() {
       {view === 'register' && isEhs ? (
         <div style={tableWrap}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
-            <thead><tr>{['No.', 'Date & time', 'Plant / place', 'Type', 'Persons injured', 'Injury', 'Days lost', 'Form 18', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['No.', 'Date & time', 'Plant / place', 'Type', 'Persons injured', 'Injury', 'Days lost', 'Form 18', 'Status', ''].map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={registerRows.length} />}</th>)}</tr></thead>
             <tbody>
               {loading ? <tr><td colSpan={10} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
                 : registerRows.length === 0 ? <tr><td colSpan={10} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>No incidents in this period.</td></tr>
@@ -240,7 +237,7 @@ export default function HrSafetyPage() {
       ) : (
         <div style={tableWrap}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-            <thead><tr>{['No.', 'Incident', 'Type', 'Severity', 'Happened', 'Injured / lost days', 'CAPA', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['No.', 'Incident', 'Type', 'Severity', 'Happened', 'Injured / lost days', 'CAPA', 'Status', ''].map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
             <tbody>
               {loading ? <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
                 : rows.length === 0 ? <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>{isEhs ? 'No incidents match these filters.' : 'You have not reported or been involved in any incident.'}</td></tr>

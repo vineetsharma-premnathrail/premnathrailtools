@@ -20,6 +20,7 @@ import {
   inputStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, currentPeriod, Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, useFinanceSubTabs, PageHeader, TableWrap, EmptyRow, StatCard, ledgerOptions,
 } from '@/components/finance/financeUi'
+import { RowCount } from '@/components/shared/ui'
 import { recordHref } from '@/lib/recordRef'
 import { CapitalisationTab, RetirementsTab, AssetReconciliationTab, TaxDepreciationTab } from '@/components/finance/AssetAccountingTabs'
 import Select from '@/components/shared/Select'
@@ -256,22 +257,22 @@ function RegisterTab({ canManage }: { canManage: boolean }) {
 
       {assets.length > 0 && (
         <div data-tour="fin-fa-stats" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-          <StatCard label="Cost" value={inr(totals.cost)} />
-          <StatCard label="Accumulated depreciation" value={inr(totals.acc)} />
-          <StatCard label="Net book value" value={inr(totals.bv)} />
+          <StatCard label="Cost" value={`₹ ${inr(totals.cost)}`} />
+          <StatCard label="Accumulated depreciation" value={`₹ ${inr(totals.acc)}`} />
+          <StatCard label="Net book value" value={`₹ ${inr(totals.bv)}`} />
         </div>
       )}
 
       <TableWrap minWidth={1400} tour="fin-fa-table">
         <thead>
           <tr>
-            <th style={thStyle}>Code</th><th style={thStyle}>Name</th><th style={thStyle}>Cost ledger</th><th style={thStyle}>Put to use</th>
+            <th style={thStyle}>Code <RowCount count={assets.length} /></th><th style={thStyle}>Name</th><th style={thStyle}>Cost ledger</th><th style={thStyle}>Put to use</th>
             <th style={numTh}>Cost (₹)</th><th style={thStyle}>Method</th><th style={numTh}>Acc. dep. (₹)</th><th style={numTh}>Book value (₹)</th>
             <th style={thStyle}>Depreciated to</th><th style={thStyle}>Status</th><th style={thStyle}></th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <EmptyRow colSpan={11} text="Loading…" /> : assets.length === 0 ? <EmptyRow colSpan={11} text="No assets in the register." />
+          {loading ? <EmptyRow colSpan={11} text="Loading…" /> : assets.length === 0 ? <EmptyRow colSpan={11} text="No assets in the register — use + Register asset." />
             : assets.map((a) => (
               <tr key={a.id}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{a.asset_code}</td>
@@ -491,7 +492,7 @@ function DepreciationTab({ canManage, canRequest, canReverse }: { canManage: boo
       <TableWrap minWidth={900} maxHeight="420px" tour="fin-dep-preview">
         <thead>
           <tr>
-            <th style={thStyle}>Asset</th><th style={thStyle}>From</th><th style={thStyle}>To</th><th style={numTh}>Days</th>
+            <th style={thStyle}>Asset <RowCount count={preview?.length ?? 0} /></th><th style={thStyle}>From</th><th style={thStyle}>To</th><th style={numTh}>Days</th>
             <th style={numTh}>Depreciation (₹)</th><th style={numTh}>Book value now (₹)</th>
           </tr>
         </thead>
@@ -517,7 +518,7 @@ function DepreciationTab({ canManage, canRequest, canReverse }: { canManage: boo
       <TableWrap minWidth={800} tour="fin-dep-runs">
         <thead>
           <tr>
-            <th style={thStyle}>Month</th><th style={thStyle}>Run date</th><th style={numTh}>Amount (₹)</th><th style={numTh}>Assets</th>
+            <th style={thStyle}>Month <RowCount count={runs.length} /></th><th style={thStyle}>Run date</th><th style={numTh}>Amount (₹)</th><th style={numTh}>Assets</th>
             <th style={thStyle}>Status</th><th style={thStyle}>Journal</th><th style={thStyle}></th>
           </tr>
         </thead>
@@ -533,7 +534,7 @@ function DepreciationTab({ canManage, canRequest, canReverse }: { canManage: boo
                   <td style={numTd}>{r.lines.length}</td>
                   <td style={tdStyle}><StatusPill status={r.status} labels={STATUS_LABELS} colors={STATUS_HEX} /></td>
                   <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
-                    {r.journal_entry_id ? <Link href={recordHref('/dashboard/finance/ledger', r, 'journal_entry_id', undefined, 'entry')} style={linkBtnStyle}>JE #{r.journal_entry_id}</Link> : '—'}
+                    {r.journal_entry_id ? <Link href={recordHref('/dashboard/finance/ledger', r, 'journal_entry_id', undefined, 'entry')} style={linkBtnStyle}>Open voucher</Link> : '—'}
                   </td>
                   <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
                     {canReverse && latestPosted?.id === r.id && <button style={dangerLinkStyle} onClick={() => setReverseTarget(r)}>Reverse</button>}
@@ -548,7 +549,7 @@ function DepreciationTab({ canManage, canRequest, canReverse }: { canManage: boo
                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead>
                           <tr>
-                            <th style={{ ...thStyle, position: 'static', background: 'transparent' }}>Asset</th>
+                            <th style={{ ...thStyle, position: 'static', background: 'transparent' }}>Asset <RowCount count={r.lines.length} /></th>
                             <th style={{ ...numTh, position: 'static', background: 'transparent' }}>Days</th>
                             <th style={{ ...numTh, position: 'static', background: 'transparent' }}>Book value before (₹)</th>
                             <th style={{ ...numTh, position: 'static', background: 'transparent' }}>Depreciation (₹)</th>

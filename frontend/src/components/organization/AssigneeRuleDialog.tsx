@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { TEXT, BORDER, BRAND } from '@/lib/theme'
-import { inputStyle } from '@/components/shared/ui'
+import { inputStyle, pillStyle } from '@/components/shared/ui'
 
 /**
  * Who a role's members may pick in one "Assign to" field (backend
@@ -118,7 +118,7 @@ function ChipPicker({ label, options, value, onChange, readOnly }: {
       {value.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
           {value.map((id) => (
-            <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: BRAND.primaryActive }}>
+            <span key={id} style={{ ...pillStyle(BRAND.primaryActive), gap: 6, fontSize: 12, fontWeight: 600, padding: '3px 10px' }}>
               {byId.get(id)?.label || `#${id}`}
               {!readOnly && <span style={{ cursor: 'pointer' }} onClick={() => onChange(value.filter((x) => x !== id))}>×</span>}
             </span>
@@ -146,7 +146,7 @@ function ChipPicker({ label, options, value, onChange, readOnly }: {
 
 function btn(primary: boolean): React.CSSProperties {
   return {
-    padding: '9px 18px', borderRadius: 9999, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+    padding: '10px 14px', borderRadius: 9999, fontSize: 13, fontWeight: 600, cursor: 'pointer',
     border: primary ? 'none' : `1px solid ${BORDER.normal}`, background: primary ? BRAND.primary : '#fff', color: primary ? '#fff' : TEXT.body,
   }
 }

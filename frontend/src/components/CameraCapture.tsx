@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { primaryBtnStyle } from '@/components/shared/ui'
 
 // Live in-browser camera capture (getUserMedia), for platforms where the
 // `capture` attribute on a file input has no effect — every desktop browser
@@ -100,7 +101,7 @@ export default function CameraCapture({
               type="button"
               onClick={capture}
               disabled={!ready}
-              style={{ flex: 2, padding: '10px 16px', borderRadius: 10, border: 'none', background: ready ? 'linear-gradient(140deg,#FF7A45,#ffe3d0)' : 'rgba(255,255,255,0.2)', color: '#fff', fontSize: 13.5, fontWeight: 600, cursor: ready ? 'pointer' : 'wait' }}
+              style={{ ...primaryBtnStyle, flex: 2, ...(ready ? {} : { background: 'rgba(255,255,255,0.2)' }), cursor: ready ? 'pointer' : 'wait' }}
             >
               📷 Capture
             </button>

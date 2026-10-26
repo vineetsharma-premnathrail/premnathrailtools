@@ -229,6 +229,7 @@ from app.modules.rnd.models.requirement_work import RndTeamMember, RndRequiremen
 from app.modules.rnd.models.task_approval import RndTaskApproval
 from app.modules.rnd.models.technical_offer import RndTechnicalOffer
 from app.modules.rnd.models.project_task import RndProjectTask, RndProjectTaskEvent
+from app.modules.rnd.models.project_milestone import RndProjectMilestone
 from app.modules.hr.models.masters import HrGrade, HrDesignation, HrShift
 from app.modules.hr.models.holiday import HrHoliday
 from app.modules.hr.models.employee_profile import HrEmployeeProfile
