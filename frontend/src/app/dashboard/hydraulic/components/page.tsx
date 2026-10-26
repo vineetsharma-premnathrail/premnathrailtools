@@ -115,7 +115,7 @@ export default function HydComponentsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr>
-              {['Code', 'Name', 'Category', 'Medium', 'Make / Model', 'Rating', ...(seeCosts ? ['Unit Cost'] : []), 'Used In', 'Status', ''].map((h, hi) => (
+              {['Code', 'Name', 'Category', 'Medium', 'Make / Model', 'Rating', ...(seeCosts ? ['Unit Cost'] : []), 'Used In', 'Status'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{hi === 0 && <RowCount count={components.length} />}
                 </th>
@@ -124,9 +124,9 @@ export default function HydComponentsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={seeCosts ? 10 : 9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={seeCosts ? 9 : 8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : components.length === 0 ? (
-              <tr><td colSpan={seeCosts ? 10 : 9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No components match. Add the pumps, valves, cylinders and fittings your circuits and BOMs use.</td></tr>
+              <tr><td colSpan={seeCosts ? 9 : 8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No components match. Add the pumps, valves, cylinders and fittings your circuits and BOMs use.</td></tr>
             ) : (
               components.map((c) => (
                 <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/components', c))} style={{ cursor: 'pointer' }}>
@@ -142,9 +142,6 @@ export default function HydComponentsPage() {
                   <td style={cellStyle}>{c.bom_usage_count ? `${c.bom_usage_count} BOM${c.bom_usage_count > 1 ? 's' : ''}` : '—'}</td>
                   <td style={cellStyle}>
                     <Pill label={STATUS_LABELS[c.status] || c.status} hex={STATUS_HEX[c.status] || '#78716c'} />
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/hydraulic/components', c))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

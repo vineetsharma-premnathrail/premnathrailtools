@@ -48,7 +48,7 @@ export default function InspectionPlansPage() {
   }, [isAuthorized, status, type, search])
 
   if (isLoading || !isAuthorized) return null
-  const cols = ['Plan', 'Item', 'Inspection type', 'Rev', 'Sampling', 'Lines', 'Status', 'Approved', '']
+  const cols = ['Plan', 'Item', 'Inspection type', 'Rev', 'Sampling', 'Lines', 'Status', 'Approved']
 
   return (
     <div>
@@ -88,9 +88,6 @@ export default function InspectionPlansPage() {
                 <td style={tdStyle}>{p.line_count}</td>
                 <td style={tdStyle}><Pill text={PLAN_STATUS_LABELS[p.status] || p.status} hex={PLAN_STATUS_HEX[p.status]} /></td>
                 <td style={tdStyle}>{p.approved_at ? `${fmtDate(p.approved_at)} · ${p.approved_by_name || ''}` : '—'}</td>
-                <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                  <span onClick={() => router.push(recordPath('/dashboard/quality/inspection-plans', p))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                </td>
               </tr>
             ))}
           </tbody>

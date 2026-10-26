@@ -39,7 +39,7 @@ const config: TourConfig = {
       target: 'hr-myclaims-table',
       title: 'My claims',
       purpose: 'Each claim with its number, title (and rejection reason if any), date, linked trip, number of lines, total amount and status. Click a row to open it.',
-      after: 'The row shows "Edit" while the claim is a draft or rejected, otherwise "View".',
+      after: 'Drafts and rejected claims can be edited once opened.',
     },
   ],
 }

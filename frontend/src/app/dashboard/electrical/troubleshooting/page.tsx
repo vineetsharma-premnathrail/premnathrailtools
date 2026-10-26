@@ -15,7 +15,7 @@ import {
   inputStyle, thStyle, tdStyle, Pill, ErrorBanner,
   SEVERITY_LABELS, SEVERITY_HEX, ISSUE_STATUS_LABELS, ISSUE_STATUS_HEX,
 } from '@/components/electrical/shared'
-import { RowCount, segmentBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { RowCount, segmentBtnStyle } from '@/components/shared/ui'
 
 // 'open' is the API's shorthand for open + investigating (every unresolved issue).
 const STATUS_FILTERS: { value: string; label: string }[] = [
@@ -32,7 +32,7 @@ const chipStyle = (hex: string): React.CSSProperties => ({
   background: `${hex}14`, border: `1px solid ${hex}33`, color: hex,
 })
 
-const COLS = ['Issue No.', 'Job', 'Title', 'Severity', 'Status', 'Linked', 'Assigned to', 'Reported', '']
+const COLS = ['Issue No.', 'Job', 'Title', 'Severity', 'Status', 'Linked', 'Assigned to', 'Reported']
 
 export default function ElectricalTroubleshootingPage() {
   const { isAuthorized, isLoading } = useRequireApp('electrical')
@@ -147,9 +147,6 @@ export default function ElectricalTroubleshootingPage() {
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                     {formatDate(i.created_at)}
                     {i.reported_by_name && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{i.reported_by_name}</div>}
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                    <button type="button" onClick={() => go(i)} style={smallSecondaryBtnStyle}>View</button>
                   </td>
                 </tr>
               )

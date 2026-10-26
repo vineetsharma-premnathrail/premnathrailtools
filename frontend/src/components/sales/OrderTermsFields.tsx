@@ -5,7 +5,7 @@
 
 import Select from '@/components/shared/Select'
 import DateField from '@/components/erp/DateField'
-import { PRICE_BASIS_LABELS, LD_PERIOD_LABELS, LD_BASIS_LABELS, WARRANTY_RULE_LABELS, ORDER_TYPE_LABELS } from '@/components/sales/labels'
+import { PRICE_BASIS_LABELS, LD_PERIOD_LABELS, LD_BASIS_LABELS, WARRANTY_RULE_LABELS, ORDER_TYPE_OPTIONS, ORDER_TYPE_LABELS, CURRENCY_OPTIONS } from '@/components/sales/labels'
 import { SheetSection, Req, SHEET, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 
 export type OrderTerms = Record<string, string | number | boolean | null>
@@ -37,9 +37,16 @@ export default function OrderTermsFields({ v, set, agencies }: {
     <div>
       <SheetSection icon="doc" title="Customer PO & Contract">
       <div style={row}>
-        <F label="Order type" w={170}>
-          <Select style={inputStyle} value={txt('order_type') || 'rrv_supply'} onChange={(e) => set({ order_type: e.target.value })}>
-            {Object.entries(ORDER_TYPE_LABELS).filter(([k]) => k !== 'service').map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
+        <F label="Order type" w={200}>
+          <Select style={inputStyle} value={txt('order_type') || 'road_rail_vehicle'} onChange={(e) => set({ order_type: e.target.value })}>
+            {Object.entries(ORDER_TYPE_OPTIONS).map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
+            {txt('order_type') && !(txt('order_type') in ORDER_TYPE_OPTIONS) && <option value={txt('order_type')}>{ORDER_TYPE_LABELS[txt('order_type')] || txt('order_type')}</option>}
+          </Select>
+        </F>
+        <F label="Currency" w={200} tour="sales-form-currency">
+          <Select searchable style={inputStyle} value={txt('currency') || 'INR'} onChange={(e) => set({ currency: e.target.value })}>
+            {CURRENCY_OPTIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            {txt('currency') && !CURRENCY_OPTIONS.some((c) => c.value === txt('currency')) && <option value={txt('currency')}>{txt('currency')}</option>}
           </Select>
         </F>
         <F label="Customer PO no. *" w={200} tour="sales-form-po">
@@ -47,12 +54,15 @@ export default function OrderTermsFields({ v, set, agencies }: {
         </F>
         <F label="PO date *" w={160}><DateField value={txt('customer_po_date')} onChange={(x) => set({ customer_po_date: x || null })} /></F>
         <F label="PO received on" w={160}><DateField value={txt('customer_po_received_date')} onChange={(x) => set({ customer_po_received_date: x || null })} /></F>
-        <F label="LOA no." w={180}><input style={inputStyle} value={txt('loa_number')} onChange={(e) => set({ loa_number: e.target.value })} /></F>
-        <F label="LOA date" w={160}><DateField value={txt('loa_date')} onChange={(x) => set({ loa_date: x || null })} /></F>
       </div>
+      {!!txt('currency') && txt('currency') !== 'INR' && (
+        <div role="note" style={{ margin: '-4px 0 14px', padding: '8px 12px', borderRadius: 8, fontSize: 12.5, lineHeight: 1.5, background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E' }}>
+          Currency is recorded as a label only. Billing plan, invoices and Finance reports use the amounts as entered, without conversion.
+        </div>
+      )}
       <div style={row}>
         <F label="Contract agreement ref." w={200}><input style={inputStyle} value={txt('contract_reference')} onChange={(e) => set({ contract_reference: e.target.value })} /></F>
-        <F label="Purchaser (who placed the order)" w={240} grow><input style={inputStyle} value={txt('purchaser_name')} onChange={(e) => set({ purchaser_name: e.target.value })} placeholder="e.g. COS, Central Railway" /></F>
+        <F label="Purchase Person Name" w={240} grow><input style={inputStyle} value={txt('purchaser_name')} onChange={(e) => set({ purchaser_name: e.target.value })} placeholder="Name of the person who placed the order" /></F>
         <F label="Paying authority" w={240} grow><input style={inputStyle} value={txt('paying_authority')} onChange={(e) => set({ paying_authority: e.target.value })} placeholder="e.g. FA&CAO, Central Railway" /></F>
       </div>
       </SheetSection>

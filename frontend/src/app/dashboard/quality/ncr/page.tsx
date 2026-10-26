@@ -51,7 +51,7 @@ export default function QualityNcrListPage() {
   }, [isAuthorized, statusFilter, severityFilter, search, mine])
 
   if (isLoading || !isAuthorized) return null
-  const cols = ['NCR', 'Item', 'Qty', 'Severity', 'Source', 'Disposition', 'Status', 'NCR date', '']
+  const cols = ['NCR', 'Item', 'Qty', 'Severity', 'Source', 'Disposition', 'Status', 'NCR date']
 
   return (
     <div>
@@ -97,9 +97,6 @@ export default function QualityNcrListPage() {
                 </td>
                 <td style={tdStyle}><Pill text={NCR_STATUS_LABELS[n.status] || n.status} hex={NCR_STATUS_HEX[n.status]} /></td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtDate(n.ncr_date)}</td>
-                <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                  <span onClick={() => router.push(recordPath('/dashboard/quality/ncr', n))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                </td>
               </tr>
             ))}
           </tbody>

@@ -120,7 +120,7 @@ export default function HydSystemsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['System No.', 'Name', 'Type', 'Application', 'Project', 'Working Pressure', 'Status', ''].map((h, hi) => (
+              {['System No.', 'Name', 'Type', 'Application', 'Project', 'Working Pressure', 'Status'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }}>
                   {h}{hi === 0 && <RowCount count={systems.length} />}
                 </th>
@@ -129,9 +129,9 @@ export default function HydSystemsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : systems.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 {filtered
                   ? 'No systems match these filters — clear the search or status filter.'
                   : `No ${systemType ? `${SYSTEM_TYPE_LABELS[systemType].toLowerCase()} ` : ''}systems yet. Add a system (a power pack, brake unit or actuation circuit) to hang its circuits, BOMs and tests on.`}
@@ -149,9 +149,6 @@ export default function HydSystemsPage() {
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{withUnit(s.working_pressure_bar, 'bar')}</td>
                   <td style={cellStyle}>
                     <Pill label={SYSTEM_STATUS_LABELS[s.status] || s.status} hex={STATUS_HEX[s.status] || '#78716c'} />
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/hydraulic/systems', s))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

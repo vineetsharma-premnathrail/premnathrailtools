@@ -30,7 +30,7 @@ WITH_DELETE = [
 
 
 def make_org(client, user, name):
-    resp = client.post(f"{API}/organizations", json={"org_type": "Customer", "name": name}, headers=auth(user))
+    resp = client.post(f"{API}/organizations", json={"org_scope": "domestic", "org_type": "Customer", "name": name}, headers=auth(user))
     assert resp.status_code == 201, resp.text
     return resp.json()
 
@@ -56,7 +56,7 @@ def test_view_only_user_can_read_but_not_write(client, db):
     assert client.get(f"{API}/inquiries/{inq['id']}", headers=h).status_code == 200
     assert client.get(f"{API}/dashboard", headers=h).status_code == 200
 
-    r = client.post(f"{API}/organizations", json={"org_type": "Customer", "name": "Nope"}, headers=h)
+    r = client.post(f"{API}/organizations", json={"org_scope": "domestic", "org_type": "Customer", "name": "Nope"}, headers=h)
     assert r.status_code == 403 and "'Create' permission on CRM › Customer Organizations" in r.json()["detail"], r.text
     r = client.patch(f"{API}/organizations/{org['id']}", json={"city": "Delhi"}, headers=h)
     assert r.status_code == 403 and "'Edit' permission on CRM › Customer Organizations" in r.json()["detail"], r.text

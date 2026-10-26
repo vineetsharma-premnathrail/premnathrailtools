@@ -37,7 +37,7 @@ def test_rules_notify_selected_people_only(client, db):
     for ev in ("organization_create", "inquiry_create", "tender_create"):
         rule(client, admin, ev, [watcher])
 
-    org = client.post("/api/v1/crm/organizations", json={"name": "Rule Test Org", "org_type": "Customer"}, headers=auth(bd))
+    org = client.post("/api/v1/crm/organizations", json={"org_scope": "domestic", "name": "Rule Test Org", "org_type": "Customer"}, headers=auth(bd))
     assert org.status_code == 201, org.text
     oid = org.json()["id"]
     contact = client.post(f"/api/v1/crm/organizations/{oid}/contacts", json={"name": "SSE"}, headers=auth(bd)).json()

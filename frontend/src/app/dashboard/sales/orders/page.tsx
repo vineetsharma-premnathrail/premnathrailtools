@@ -1,6 +1,6 @@
 'use client'
 
-import { primaryBtnStyle, secondaryBtnStyle, segmentBtnStyle, smallSecondaryBtnStyle, numThStyle, numTdStyle, RowCount } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, segmentBtnStyle, numThStyle, numTdStyle, RowCount } from '@/components/shared/ui'
 import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -78,13 +78,13 @@ export default function SalesOrdersPage() {
       <div data-tour="sales-orders-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
-            <tr>{['Order', 'Customer', 'Customer PO', 'Value (incl. GST)', 'Units delivered', 'Next due', 'Risk', 'Status', 'Actions'].map((h, hi) => <th key={h} style={{ ...(hi === 3 || hi === 4 ? numThStyle : thStyle), ...(hi === 8 ? { position: 'sticky', right: 0, zIndex: 3, background: '#fdf1e6', boxShadow: '-6px 0 8px -6px rgba(15,23,42,.18)' } : {}), ...(hi === 1 ? { minWidth: 200 } : {}) }}>{h}{hi === 0 && <RowCount count={orders.length} />}</th>)}</tr>
+            <tr>{['Order', 'Customer', 'Customer PO', 'Value (incl. GST)', 'Units delivered', 'Next due', 'Risk', 'Status'].map((h, hi) => <th key={h} style={{ ...(hi === 3 || hi === 4 ? numThStyle : thStyle), ...(hi === 1 ? { minWidth: 200 } : {}) }}>{h}{hi === 0 && <RowCount count={orders.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: '#57534e' }}>Loading…</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: '#57534e' }}>Loading…</td></tr>
             ) : orders.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 {search || status || mine || atRisk || month ? 'No orders match these filters.' : 'No sales orders yet. Create one from a won inquiry or tender, or directly from a customer PO.'}
               </td></tr>
             ) : orders.map((o) => (
@@ -101,9 +101,6 @@ export default function SalesOrdersPage() {
                 <td style={tdStyle}>
                   <Pill label={SO_STATUS_LABELS[o.status] || o.status} hex={SO_STATUS_HEX[o.status] || '#78716c'} />
                   {(o.approval_stage || o.next_approval_level) && <div style={{ fontSize: 12, color: '#57534e', marginTop: 3 }}>with {o.approval_stage || LEVEL_LABELS[o.next_approval_level || '']}</div>}
-                </td>
-                <td style={{ ...tdStyle, position: 'sticky', right: 0, background: '#fff9f3', boxShadow: '-6px 0 8px -6px rgba(15,23,42,.18)' }} onClick={(e) => e.stopPropagation()}>
-                  <button type="button" onClick={() => router.push(recordPath('/dashboard/sales/orders', o))} style={smallSecondaryBtnStyle}>View</button>
                 </td>
               </tr>
             ))}

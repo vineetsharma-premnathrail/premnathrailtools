@@ -148,6 +148,7 @@ def _pm_setup(client, db):
     db.commit()
     p = client.post(f"{API}/projects", headers=h(partner), json={
         "project_code": "CA-39", "name": "RRV", "client_name": "IRCON", "project_manager_id": pm.id,
+        "customer_po_ref": "PO-CA", "sales_order_ref": "SO-CA",
         "start_date": str(TODAY), "target_handover_date": str(TODAY + timedelta(days=60))}).json()
     m = client.post(f"{API}/projects/{p['id']}/milestones", headers=h(pm), json={
         "title": "GA drawing", "department_id": dept.id, "lead_user_id": head.id,

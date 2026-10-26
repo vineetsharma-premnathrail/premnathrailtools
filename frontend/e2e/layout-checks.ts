@@ -168,6 +168,29 @@ export async function checkTables(page: Page): Promise<Problem[]> {
   })
 }
 
+/** Tables fit their card: the nearest horizontal scroll box around a table must not scroll sideways (TableFit keeps them fitted). */
+export async function checkTableHorizontalScroll(page: Page): Promise<Problem[]> {
+  return page.evaluate(() => {
+    const out: { rule: string; detail: string }[] = []
+    // phones: a table with many columns cannot be readable in 390px, TableFit leaves those scrolling on purpose
+    if (document.documentElement.clientWidth < 700) return out
+    if (/^\/dashboard\/rnd\/(braking|hydraulic|load-distribution|qmax|spline|tractive-effort|vehicle-performance|tools)(\/|$)/.test(window.location.pathname)) return out
+    const tables = Array.from(document.querySelectorAll<HTMLTableElement>('table'))
+    tables.forEach((t, i) => {
+      if (t.closest('[data-table-fit="off"]')) return
+      if (t.querySelector('input, select, textarea, [contenteditable]')) return // editing tables keep their widths
+      const r = t.getBoundingClientRect()
+      if (r.width === 0 || r.height === 0) return
+      let box: HTMLElement | null = t.parentElement
+      while (box && !/(auto|scroll)/.test(getComputedStyle(box).overflowX)) box = box.parentElement
+      if (box && box.scrollWidth > box.clientWidth + 2) {
+        out.push({ rule: 'table-horizontal-scroll', detail: `table #${i + 1} (${t.rows.length} rows, ${t.rows[0]?.cells.length ?? 0} columns) makes its card scroll sideways (${box.scrollWidth}px of content in ${box.clientWidth}px) - TableFit did not fit it` })
+      }
+    })
+    return out
+  })
+}
+
 /** Horizontal page overflow. */
 export async function checkPageOverflow(page: Page): Promise<Problem[]> {
   return page.evaluate(() => {

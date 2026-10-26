@@ -172,7 +172,7 @@ export default function MaintenanceAssetsPage() {
               <th style={{ width: 36, padding: '10px 0 10px 14px', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                 <input type="checkbox" aria-label="Select all assets on this page" checked={allOnPageSelected} onChange={toggleAllOnPage} disabled={pageIds.length === 0} />
               </th>
-              {['Code', 'Name', 'Category', 'Plant', 'Location', 'Crit.', 'Open WOs', 'Status', ''].map((h, hi) => (
+              {['Code', 'Name', 'Category', 'Plant', 'Location', 'Crit.', 'Open WOs', 'Status'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{hi === 0 && <RowCount count={assets.length} />}
                 </th>
@@ -181,9 +181,9 @@ export default function MaintenanceAssetsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : assets.length === 0 ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 {search || statusFilter || categoryFilter || criticalityFilter || branchFilter
                   ? 'No assets match these filters.'
                   : 'No assets yet. Add the machines, cranes, compressors and other plant equipment you maintain.'}
@@ -208,9 +208,6 @@ export default function MaintenanceAssetsPage() {
                   <td style={cellStyle}>{a.open_work_orders || '—'}</td>
                   <td style={cellStyle}>
                     <Pill label={ASSET_STATUS_LABELS[a.status] || a.status} hex={STATUS_HEX[a.status]} />
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/maintenance/assets', a))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

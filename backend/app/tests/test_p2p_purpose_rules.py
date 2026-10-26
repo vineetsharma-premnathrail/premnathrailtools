@@ -46,7 +46,7 @@ def test_defaults_reproduce_the_code_dicts(client, db):
     user = _requester(db, "rules.req0@premnathrail.com")
     meta = _meta(client, user)
     assert meta["department"]["default_category"] == "ADM" and meta["department"]["category_locked"] is False
-    assert meta["customer_order"]["charged_to_kinds"] == ["order_project"] and meta["customer_order"]["charged_required"] is True
+    assert meta["customer_order"]["charged_to_kinds"] == ["work_order", "internal_order", "sales_order", "order_project"] and meta["customer_order"]["charged_required"] is False
 
 
 def test_override_is_applied_to_meta_and_locks_single_options(client, db):
@@ -132,7 +132,7 @@ def test_charged_to_override_changes_what_the_server_accepts(client, db):
     item = master_item(db, "Floor cleaner", code="HK-FC-78", item_type="consumable")
     # Development normally needs an internal order; make the charge optional.
     r = _post(client, db, req, item, purpose="development", category_code="RAW")
-    assert r.status_code == 400 and "internal order" in r.json()["detail"], r.text
+    assert r.status_code == 400 and "R&D project" in r.json()["detail"], r.text
     assert _put(client, admin, "development", charged_required=False).status_code == 200
     r = _post(client, db, req, item, purpose="development", category_code="RAW")
     assert r.status_code == 200, r.text

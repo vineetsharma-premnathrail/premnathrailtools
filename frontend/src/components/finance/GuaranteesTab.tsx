@@ -105,12 +105,12 @@ export default function GuaranteesTab({ initialId }: { initialId?: number | null
           <tr>
             <th style={thStyle}>BG No. <RowCount count={rows.length} /></th><th style={thStyle}>Type</th><th style={thStyle}>Beneficiary / Applicant</th><th style={thStyle}>Linked To</th>
             <th style={thStyle}>Bank / Instrument No.</th><th style={numTh}>Amount (₹)</th><th style={thStyle}>Expiry</th><th style={thStyle}>Claim Until</th>
-            <th style={thStyle}>Margin</th><th style={thStyle}>Status</th><th style={thStyle}></th>
+            <th style={thStyle}>Margin</th><th style={thStyle}>Status</th>
           </tr>
         </thead>
         <tbody>
-          {loading && <EmptyRow colSpan={11} text="Loading…" />}
-          {!loading && rows.length === 0 && <EmptyRow colSpan={11} text="No instruments in this view." />}
+          {loading && <EmptyRow colSpan={10} text="Loading…" />}
+          {!loading && rows.length === 0 && <EmptyRow colSpan={10} text="No instruments in this view." />}
           {!loading && rows.map((r) => (
             <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setDetailId(r.id)}>
               <td style={{ ...tdStyle, fontWeight: 700, whiteSpace: 'nowrap' }}>{r.bg_number}<div style={{ fontSize: 10.5, color: TEXT.muted }}>{r.direction === 'issued' ? 'Issued' : 'Received'}</div></td>
@@ -125,7 +125,6 @@ export default function GuaranteesTab({ initialId }: { initialId?: number | null
               <td style={tdStyle}>{dmy(r.claim_expiry_date)}</td>
               <td style={tdStyle}>{r.margin_amount ? `${inr(r.margin_amount)} · ${MARGIN_LABELS[r.margin_status]}` : '—'}</td>
               <td style={tdStyle}><StatusPill status={r.status} labels={STATUS_LABELS} colors={STATUS_HEX} />{r.status === 'submitted' && <div style={{ marginTop: 3 }}><ApprovalBadge status={r.approval_status} stage={r.approval_stage} /></div>}</td>
-              <td style={tdStyle} onClick={(e) => e.stopPropagation()}><span style={linkBtnStyle} onClick={() => setDetailId(r.id)}>View</span></td>
             </tr>
           ))}
         </tbody>

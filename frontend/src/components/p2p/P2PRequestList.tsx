@@ -14,7 +14,18 @@ import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
 import Select from '@/components/shared/Select'
-import { RowCount, pillStyle, smallSecondaryBtnStyle, smallDangerBtnStyle, inputStyle } from '@/components/shared/ui'
+import { RowCount, pillStyle, smallSecondaryBtnStyle, smallDangerBtnStyle, inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { Funnel } from '@phosphor-icons/react'
+import Checkbox from '@/components/Checkbox'
+
+// One-row text longer than 25 characters is cut with "…" (full text in the title); two-row columns cut at 50.
+const clip = (v?: string | null, max = 25) => (!v ? '—' : v.length > max ? `${v.slice(0, max).trimEnd()}…` : v)
+const clip2 = (v?: string | null) => clip(v, 50)
+
+// Statuses counted as "in progress" on the counter row (approved, then sourcing / PO / receiving).
+const IN_PROGRESS = ['approved', 'vendor_quotations', 'technical_evaluation', 'commercial_evaluation', 'vendor_selected', 'po_drafted', 'po_raised', 'po_approved', 'partially_received']
+
+export type P2PListStats = { total: number; pending: number; inProgress: number; closed: number }
 
 const STATUS_LABELS: Record<string, string> = {
   submitted: 'Pending Approval',
@@ -69,9 +80,14 @@ function displayStatus(pr: P2PRequest): { label: string; hex: string } {
   return { label: STATUS_LABELS[pr.status] || pr.status, hex: STATUS_HEX[pr.status] || '#64748b' }
 }
 
-const filterSelectStyle: React.CSSProperties = { ...inputStyle, flex: '1 1 180px', maxWidth: 240, width: 'auto' }
-
-export default function P2PRequestList({ statuses, emptyLabel, context, queue, onlyPendingForViewer, showFilters }: { statuses?: string[]; emptyLabel: string; context?: string; queue?: string; onlyPendingForViewer?: boolean; showFilters?: boolean }) {
+export default function P2PRequestList({ statuses, emptyLabel, context, queue, onlyPendingForViewer, showFilters, onlyMine, mineToggle, toolbarLeft, toolbarRight, onStats }: {
+  statuses?: string[]; emptyLabel: string; context?: string; queue?: string; onlyPendingForViewer?: boolean; showFilters?: boolean;
+  /** Only the requisitions this user raised (the My Requisitions tab). */ onlyMine?: boolean;
+  /** Adds a "Raised by me" switch to the Filters popup. */ mineToggle?: boolean;
+  /** Registry toolbar (only with showFilters): left = create button, right = Export / Import after the Filters button. */
+  toolbarLeft?: React.ReactNode; toolbarRight?: React.ReactNode;
+  /** Counter numbers for the rows shown (they follow the search and filters). */
+  onStats?: (s: P2PListStats) => void }) {
   const router = useRouter()
   const { user } = useAuth()
   const [prs, setPrs] = useState<P2PRequest[]>([])
@@ -91,6 +107,9 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
   const [sortAsc, setSortAsc] = useState(true)
   // Order Project filter (server-side): a whole project or one vehicle / lot.
   const [opFilter, setOpFilter] = useState<OrderProjectValue | null>(null)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [mineOnly, setMineOnly] = useState(false)
+  const [draft, setDraft] = useState<{ status: string; category: string; buyer: string; op: OrderProjectValue | null; mine: boolean }>({ status: '', category: '', buyer: '', op: null, mine: false })
   const detailHref = (pr: object) => (context ? `${recordPath('/dashboard/p2p', pr)}?from=${context}` : recordPath('/dashboard/p2p', pr))
 
   const load = async () => {
@@ -138,19 +157,33 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
     .sort((a, b) => a[1].localeCompare(b[1]))
   const q = search.trim().toLowerCase()
   const visiblePrs = prs.filter(pendingOnViewer).filter((pr) =>
-    (!categoryFilter || pr.category_code === categoryFilter)
+    ((!onlyMine && !mineOnly) || pr.requested_by_id === user?.id)
+    && (!categoryFilter || pr.category_code === categoryFilter)
     && (!statusFilter || pr.status === statusFilter)
     && (!q || [pr.p2p_number, pr.category_label, pr.project_label, pr.requested_by_name, pr.assigned_buyer_name].some((x) => (x || '').toLowerCase().includes(q)))
     && (!buyerFilter || (buyerFilter === 'none' ? pr.assigned_buyer_id == null : String(pr.assigned_buyer_id) === buyerFilter)))
     .sort((a, b) => (sortAsc ? 1 : -1) * (a.p2p_number || '').localeCompare(b.p2p_number || '', undefined, { numeric: true }))
-  const filtersActive = !!(categoryFilter || buyerFilter || statusFilter || q || opFilter)
+  const filtersActive = !!(categoryFilter || buyerFilter || statusFilter || q || opFilter || mineOnly)
+  // Filters-popup count (search is outside the popup and not counted).
+  const activeFilterCount = [categoryFilter, buyerFilter, statusFilter].filter(Boolean).length + (opFilter ? 1 : 0) + (mineOnly ? 1 : 0)
+  const clearPopupFilters = () => { setCategoryFilter(''); setBuyerFilter(''); setStatusFilter(''); setOpFilter(null); setMineOnly(false); setFilterOpen(false) }
+  const openFilters = () => { setDraft({ status: statusFilter, category: categoryFilter, buyer: buyerFilter, op: opFilter, mine: mineOnly }); setFilterOpen(true) }
+  const applyFilters = () => { setStatusFilter(draft.status); setCategoryFilter(draft.category); setBuyerFilter(draft.buyer); setOpFilter(draft.op); setMineOnly(draft.mine); setFilterOpen(false) }
+  const statTotal = visiblePrs.length
+  const statPending = visiblePrs.filter((pr) => pr.status === 'submitted').length
+  const statProgress = visiblePrs.filter((pr) => IN_PROGRESS.includes(pr.status)).length
+  const statClosed = visiblePrs.filter((pr) => pr.status === 'received' || pr.status === 'closed').length
+  useEffect(() => {
+    onStats?.({ total: statTotal, pending: statPending, inProgress: statProgress, closed: statClosed })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statTotal, statPending, statProgress, statClosed])
 
   const isAdmin = user?.role === 'admin'
   // Matrix PRs: the PO goes to the people picked per role plus every Director,
   // and ALL roles must approve (any one Director clears the Director slot);
   // legacy PRs keep the Purchase Head / Director / Partner chain.
   const showPoValue = context === 'po-approval'
-  const columns = ['PR No.', 'Category', 'Project', 'Required By', 'Priority', ...(showPoValue ? ['PO Value'] : []), 'Status', '']
+  const columns = ['PR No.', 'Category', 'Project', 'Required By', 'Priority', ...(showPoValue ? ['PO Value'] : []), 'Status', ...(showPoValue ? [''] : [])]
   // Engine-routed POs: the backend's can_decide; older in-flight POs: the old role check.
   const enginePo = (pr: P2PRequest) => pr.engine_approval?.entity_type === 'p2p_purchase_order' && pr.engine_approval.status === 'pending'
   const canApprovePoInline = (pr: P2PRequest) =>
@@ -241,36 +274,70 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
         )
       })()}
       {showFilters && (
-        <div data-tour="p2p-list-filters" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 14 }}>
-          <input aria-label="Search requisitions" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search PR no., project, requester…" style={{ ...inputStyle, flex: '1 1 220px', maxWidth: 300, width: 'auto' }} />
-          <Select aria-label="Filter by status" style={filterSelectStyle} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="">All statuses</option>
-            {statusOptions.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-          </Select>
-          <Select aria-label="Filter by category" style={filterSelectStyle} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-            <option value="">All categories</option>
-            {categoryOptions.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-          </Select>
-          <Select aria-label="Filter by buyer" style={filterSelectStyle} value={buyerFilter} onChange={(e) => setBuyerFilter(e.target.value)}>
-            <option value="">All buyers</option>
-            {buyerOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-            <option value="none">No buyer assigned</option>
-          </Select>
-          <div aria-label="Filter by order project" style={{ flex: '0 1 300px', minWidth: 240 }}>
-            <OrderProjectPicker value={opFilter} onChange={(v) => setOpFilter(v)} requireElement={false} placeholder="All order projects" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+          {toolbarLeft}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <input aria-label="Search requisitions" data-tour="p2p-list-search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search PR no., project, requester…" style={{ ...inputStyle, width: 280, maxWidth: '100%' }} />
+            <button type="button" onClick={openFilters} data-tour="p2p-filter-btn" aria-label="Filters" title="Filters"
+              style={{ ...secondaryBtnStyle, display: 'inline-flex', alignItems: 'center', gap: 6, ...(activeFilterCount ? { borderColor: '#ea580c', color: '#c2410c' } : {}) }}>
+              <Funnel size={16} weight={activeFilterCount ? 'fill' : 'regular'} />
+              Filters
+              {activeFilterCount > 0 && <span style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: '#ea580c', color: '#fff', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{activeFilterCount}</span>}
+            </button>
+            {activeFilterCount > 0 && <button type="button" onClick={clearPopupFilters} style={secondaryBtnStyle} data-tour="p2p-clear-btn">Clear</button>}
+            {toolbarRight}
           </div>
-          {filtersActive && (
-            <span onClick={() => { setCategoryFilter(''); setBuyerFilter(''); setStatusFilter(''); setSearch(''); setOpFilter(null) }} style={{ fontSize: 12.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>Clear filters</span>
-          )}
         </div>
+      )}
+      {showFilters && filterOpen && (
+        <FormSheet icon="search" title="Filters" subtitle="Narrow the requisitions, then press Apply." width={560} busy={false} onClose={() => setFilterOpen(false)} tour="p2p-filter-sheet"
+          footer={<>
+            <button type="button" onClick={clearPopupFilters} style={sheetBtn('secondary', SHEET.INK)}>Clear Filters</button>
+            <button type="button" onClick={applyFilters} style={sheetBtn('primary', SHEET.BLUE)} data-tour="p2p-apply-btn"><SheetIcon name="check" size={16} />Apply Filters</button>
+          </>}>
+          <div data-tour="p2p-list-filters" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={sheetLabel}>Status</label>
+              <Select aria-label="Filter by status" style={sheetInput} value={draft.status} onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))}>
+                <option value="">All statuses</option>
+                {statusOptions.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+              </Select>
+            </div>
+            <div>
+              <label style={sheetLabel}>Category</label>
+              <Select aria-label="Filter by category" style={sheetInput} value={draft.category} onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))}>
+                <option value="">All categories</option>
+                {categoryOptions.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+              </Select>
+            </div>
+            <div>
+              <label style={sheetLabel}>Buyer</label>
+              <Select aria-label="Filter by buyer" style={sheetInput} value={draft.buyer} onChange={(e) => setDraft((d) => ({ ...d, buyer: e.target.value }))}>
+                <option value="">All buyers</option>
+                {buyerOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                <option value="none">No buyer assigned</option>
+              </Select>
+            </div>
+            {mineToggle && (
+              <label data-tour="p2p-mine-toggle" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#57534e', cursor: 'pointer' }}>
+                <Checkbox checked={draft.mine} onChange={(e) => setDraft((d) => ({ ...d, mine: e.target.checked }))} />
+                Raised by me
+              </label>
+            )}
+            <div aria-label="Filter by order project">
+              <label style={sheetLabel}>Order project</label>
+              <OrderProjectPicker value={draft.op} onChange={(v) => setDraft((d) => ({ ...d, op: v }))} requireElement={false} placeholder="All order projects" />
+            </div>
+          </div>
+        </FormSheet>
       )}
       <div data-tour="p2p-list-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: `${BRAND.primary}0d` }}>
               {columns.map((h, i) => (
-                <th key={h} aria-sort={i === 0 ? (sortAsc ? 'ascending' : 'descending') : undefined} style={{ textAlign: h === 'PO Value' ? 'right' : 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                <th key={h || 'actions'} data-fit-min={60} data-fit-cut={h === 'Project' ? '' : undefined} aria-sort={i === 0 ? (sortAsc ? 'ascending' : 'descending') : undefined} style={{ textAlign: h === 'PO Value' ? 'right' : 'left', padding: '10px 8px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {i === 0
                     ? <button type="button" onClick={() => setSortAsc(!sortAsc)} title={`Sorted by PR number, ${sortAsc ? 'lowest first' : 'highest first'} — click to reverse`}
                         style={{ background: 'none', border: 'none', padding: 0, margin: 0, font: 'inherit', color: 'inherit', textTransform: 'inherit', letterSpacing: 'inherit', cursor: 'pointer' }}>{h} {sortAsc ? '↑' : '↓'}</button>
@@ -291,24 +358,23 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
               const status = displayStatus(pr)
               return (
               <tr key={pr.id} onClick={() => router.push(detailHref(pr))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
-                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>{pr.p2p_number}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{pr.category_label || pr.category_code || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{pr.project_label || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(pr.required_date)}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, textTransform: 'capitalize' }}>{pr.priority ? pr.priority.replace(/_/g, ' ') : '—'}</td>
+                <td style={{ padding: '10px 8px', fontSize: 13, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{pr.p2p_number}</td>
+                <td title={pr.category_label || pr.category_code || undefined} style={{ padding: '10px 8px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{clip(pr.category_label || pr.category_code)}</td>
+                <td data-fit-clamp style={{ padding: '10px 8px', fontSize: 13, color: TEXT.secondary }}><div title={pr.project_label || undefined}>{clip2(pr.project_label)}</div></td>
+                <td style={{ padding: '10px 8px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(pr.required_date)}</td>
+                <td style={{ padding: '10px 8px', fontSize: 13, color: TEXT.secondary, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{pr.priority ? pr.priority.replace(/_/g, ' ') : '—'}</td>
                 {showPoValue && (
-                  <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap', textAlign: 'right' }}>
+                  <td style={{ padding: '10px 8px', fontSize: 13, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap', textAlign: 'right' }}>
                     {pr.po_value != null ? `₹ ${pr.po_value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                   </td>
                 )}
-                <td style={{ padding: '12px 16px' }}>
+                <td style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>
                   <span data-tour="p2p-list-status" style={pillStyle(status.hex)}>
                     {status.label}
                   </span>
                 </td>
-                <td style={{ padding: '12px 16px' }} onClick={(e) => e.stopPropagation()}>
+                {showPoValue && <td style={{ padding: '10px 8px' }} onClick={(e) => e.stopPropagation()}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, whiteSpace: 'nowrap' }}>
-                    <button type="button" data-tour="p2p-list-view" onClick={() => router.push(detailHref(pr))} style={smallSecondaryBtnStyle}>View</button>
                     {canApprovePoInline(pr) && (
                       <button type="button" data-tour="p2p-list-approve" onClick={() => openDecision('approve', pr.id)} style={{ ...smallSecondaryBtnStyle, color: '#15803d' }}>Approve</button>
                     )}
@@ -316,7 +382,7 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
                       <button type="button" data-tour="p2p-list-reject" onClick={() => openDecision('reject', pr.id)} style={smallDangerBtnStyle}>Reject</button>
                     )}
                   </div>
-                </td>
+                </td>}
               </tr>
               )
             })}

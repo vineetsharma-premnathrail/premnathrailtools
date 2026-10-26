@@ -18,6 +18,7 @@ from app.modules.crm.models.organization import Organization, OrgContact
 from app.modules.crm.services.org_code import generate_org_code
 from app.modules.crm.services.customer_master import apply_to_org as apply_tax_ids, check_contact_address
 from app.modules.crm.services.cascade import cascade_delete_organization
+from app.modules.crm.services.org_scope import clear_other_scope, domestic_country_message, wrong_scope_message
 from app.modules.crm.models.inquiry import Inquiry
 from app.modules.crm.models.tender import Tender
 from app.modules.crm.schemas.organization import (
@@ -58,6 +59,7 @@ def _check_contact_duplicates(
 async def list_organizations(
     search: str | None = None,
     railway_zone: str | None = None,
+    org_scope: str | None = None,
     skip: int = 0,
     limit: int = 200,
     # picker=true: dropdown lookup (Inquiry/Tender forms, Finance customer
@@ -75,6 +77,11 @@ async def list_organizations(
         query = apply_scope(query, _user, Organization)
     if railway_zone:
         query = query.filter(Organization.railway_zone == railway_zone)
+    if org_scope:
+        scope = org_scope.strip().lower()
+        if scope not in ("domestic", "international"):
+            raise HTTPException(status_code=422, detail=f"Organization Scope filter '{org_scope}' isn't valid. Use 'domestic' or 'international'.")
+        query = query.filter(Organization.org_scope == scope)
     if search:
         like = f"%{search}%"
         creator_ids_matching = db.query(User.id).filter(
@@ -86,6 +93,7 @@ async def list_organizations(
             | (Organization.address.ilike(like)) | (Organization.country.ilike(like)) | (Organization.state.ilike(like))
             | (Organization.city.ilike(like)) | (Organization.pin_code.ilike(like))
             | (Organization.website.ilike(like))
+            | (Organization.tax_vat_id.ilike(like)) | (Organization.company_registration_no.ilike(like))
             | (cast(Organization.created_at, SAString).ilike(like))
             | (Organization.created_by_id.in_(creator_ids_matching))
         )
@@ -182,6 +190,37 @@ def _check_gst_free(db: Session, gst_number: str, org_id: int | None) -> None:
         f"A customer organization with this GST number already exists: '{clash.name}' — use that customer organization, or correct the GST number."))
 
 
+def _check_tax_vat_free(db: Session, tax_vat_id: str, country: str | None, org_id: int | None) -> None:
+    """One Tax / VAT ID per country among International organizations â€” name the holder."""
+    q = db.query(Organization).filter(
+        Organization.org_scope == "international", Organization.is_deleted == False,  # noqa: E712
+        func.lower(Organization.tax_vat_id) == tax_vat_id.strip().lower(),
+        func.lower(func.coalesce(Organization.country, "")) == (country or "").strip().lower(),
+    )
+    if org_id is not None:
+        q = q.filter(Organization.id != org_id)
+    clash = q.first()
+    if clash:
+        where = f" in {clash.country}" if clash.country else ""
+        raise HTTPException(status_code=409, detail=(
+            f"A customer organization with this Tax / VAT ID already exists{where}: '{clash.name}' "
+            f"({clash.org_code or f'#{clash.id}'}) â€” use that customer organization, or correct the Tax / VAT ID."))
+
+
+_SCOPE_AUDIT_LABELS = {
+    "org_scope": "Scope", "tax_vat_id": "Tax / VAT ID", "company_registration_no": "Company Registration Number",
+}
+
+
+def _scope_audit_text(org: Organization) -> str:
+    parts = [f"Scope: {org.org_scope}"]
+    if org.tax_vat_id:
+        parts.append(f"Tax / VAT ID: {org.tax_vat_id}")
+    if org.company_registration_no:
+        parts.append(f"Company Registration Number: {org.company_registration_no}")
+    return "; ".join(parts)
+
+
 @router.post("", response_model=OrganizationResponse, status_code=201)
 async def create_organization(
     payload: OrganizationCreate,
@@ -194,8 +233,10 @@ async def create_organization(
     ).first()
     if name_clash:
         raise HTTPException(status_code=409, detail="A customer organization with this name already exists")
-    if payload.gst_number:
+    if payload.org_scope == "domestic" and payload.gst_number:
         _check_gst_free(db, payload.gst_number, None)
+    if payload.org_scope == "international" and payload.tax_vat_id:
+        _check_tax_vat_free(db, payload.tax_vat_id, payload.country, None)
     if payload.official_email:
         email_clash = db.query(Organization).filter(
             Organization.is_deleted == False, func.lower(Organization.official_email) == payload.official_email.strip().lower()  # noqa: E712
@@ -204,14 +245,15 @@ async def create_organization(
             raise HTTPException(status_code=409, detail="Official Email is already used by another customer organization")
 
     org = Organization(**payload.model_dump(), org_code=generate_org_code(db), created_by_id=user.id)
-    apply_tax_ids(org)  # PAN / GST state code from the GSTIN (customer master)
+    if org.org_scope == "domestic":
+        apply_tax_ids(org)  # PAN / GST state code from the GSTIN (customer master)
     db.add(org)
     try:
         db.flush()
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="A customer organization with this name already exists")
-    _write_audit(db, org.id, "created", user, summary=f"Customer Organization {org.name} created by {user.name or user.email}.")
+    _write_audit(db, org.id, "created", user, summary=f"Customer Organization {org.name} created by {user.name or user.email} ({_scope_audit_text(org)}).")
     broadcast_notification(
         db, title="New Customer Organization Added",
         message=f"Customer Organization '{org.name}' was added by {user.name or user.email}.",
@@ -292,8 +334,26 @@ async def update_organization(
             raise HTTPException(status_code=409, detail=(
                 f"A customer organization named '{name_clash.name}' already exists ({name_clash.org_code or f'#{name_clash.id}'}) — "
                 f"pick a different name, or use that customer organization instead."))
-    if payload.gst_number:
-        _check_gst_free(db, payload.gst_number, org_id)
+    updates = payload.model_dump(exclude_unset=True)
+    if "org_scope" in updates and not updates["org_scope"]:
+        raise HTTPException(status_code=422, detail="Organization Scope can't be empty. Choose Domestic or International, or leave it unchanged.")
+    new_scope = updates.get("org_scope") or org.org_scope
+    scope_changed = new_scope != org.org_scope
+    msg = wrong_scope_message(new_scope, **{k: v for k, v in updates.items() if k != "org_scope"})
+    if msg:
+        raise HTTPException(status_code=422, detail=msg)
+    if new_scope == "domestic":
+        country_msg = domestic_country_message(updates["country"] if "country" in updates else org.country)
+        if country_msg:
+            raise HTTPException(status_code=422, detail=country_msg)
+        if "country" in updates and not updates["country"]:
+            updates["country"] = "India"
+    if new_scope == "domestic" and updates.get("gst_number"):
+        _check_gst_free(db, updates["gst_number"], org_id)
+    if new_scope == "international":
+        vat = updates.get("tax_vat_id", None if scope_changed else org.tax_vat_id)
+        if vat and ("tax_vat_id" in updates or "country" in updates or scope_changed):
+            _check_tax_vat_free(db, vat, updates.get("country", org.country), org_id)
     if payload.official_email:
         email_clash = db.query(Organization).filter(
             Organization.is_deleted == False, func.lower(Organization.official_email) == payload.official_email.strip().lower(),  # noqa: E712
@@ -302,14 +362,21 @@ async def update_organization(
         if email_clash:
             raise HTTPException(status_code=409, detail="Official Email is already used by another customer organization")
 
-    updates = payload.model_dump(exclude_unset=True)
-    changed = [f for f, v in updates.items() if str(getattr(org, f, None)) != str(v)]
+    tracked = set(updates) | {"org_scope", "tax_vat_id", "company_registration_no", "gst_number", "pan", "gst_state_code"}
+    before = {f: getattr(org, f, None) for f in tracked}
     for field, value in updates.items():
         setattr(org, field, value)
-    if {"gst_number", "pan", "state", "gst_state_code"} & set(updates):
+    if scope_changed:
+        clear_other_scope(org, new_scope)  # switching scope drops the other scope's tax fields
+    if new_scope == "domestic" and (scope_changed or {"gst_number", "pan", "state", "gst_state_code"} & set(updates)):
         apply_tax_ids(org)
+    changed = [f for f in tracked if before[f] != getattr(org, f, None)]
     if changed:
-        _write_audit(db, org.id, "updated", user, summary=f"{user.name or user.email} updated: {', '.join(changed[:5])}.")
+        # Scope and the foreign tax ids first, with their values, so they are never cut off the summary.
+        first = [f for f in _SCOPE_AUDIT_LABELS if f in changed]
+        rest = sorted(f for f in changed if f not in _SCOPE_AUDIT_LABELS)
+        text = [f"{_SCOPE_AUDIT_LABELS[f]}: {before[f] or '-'} -> {getattr(org, f) or '-'}" for f in first] + rest[:5]
+        _write_audit(db, org.id, "updated", user, summary=f"{user.name or user.email} updated: {', '.join(text)}.")
     db.commit()
     db.refresh(org)
     return org
@@ -433,6 +500,7 @@ async def create_org_contact(
     check_contact_address(db, org_id, payload.address_id)
     contact = OrgContact(**payload.model_dump(), org_id=org_id, created_by_id=user.id, created_at=datetime.now(timezone.utc))
     db.add(contact)
+    _write_audit(db, org_id, "contact_added", user, summary=f"{user.name or user.email} added contact person {contact.name} to {org.name}.")
     db.commit()
     db.refresh(contact)
     return contact

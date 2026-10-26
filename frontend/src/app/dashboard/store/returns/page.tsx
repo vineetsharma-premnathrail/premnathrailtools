@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { StoreMaterialReturn } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { primaryBtnStyle, smallSecondaryBtnStyle, RowCount, Pill, thStyle, numThStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount, Pill, thStyle, numThStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
 import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -58,15 +58,15 @@ export default function StoreMaterialReturnsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead>
             <tr>
-              {['Return #', 'Store', 'Source', 'Date', 'Items', 'Status', ''].map((h, hi) => (
+              {['Return #', 'Store', 'Source', 'Date', 'Items', 'Status'].map((h, hi) => (
                 <th key={h} style={h === 'Items' ? numThStyle : thStyle}>{h}{hi === 0 && <RowCount count={returns.length} />}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
+            {loading && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && returns.length === 0 && (
-              <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No material returns yet{can('store', 'returns', 'create') ? ' — use + New Return when material comes back to a store.' : '.'}</td></tr>
+              <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No material returns yet{can('store', 'returns', 'create') ? ' — use + New Return when material comes back to a store.' : '.'}</td></tr>
             )}
             {returns.map((r) => (
               <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/store/returns', r))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
@@ -77,9 +77,6 @@ export default function StoreMaterialReturnsPage() {
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, textAlign: 'right' }}>{r.items.length}</td>
                 <td style={{ padding: '12px 16px' }}>
                   <Pill label={`${STATUS_LABELS[r.status] || r.status}${r.can_act ? ' · your action' : ''}`} hex={STATUS_HEX[r.status] || '#78716c'} />
-                </td>
-                <td onClick={(e) => e.stopPropagation()} style={{ padding: '8px 16px' }}>
-                  <button type="button" onClick={() => router.push(recordPath('/dashboard/store/returns', r))} style={smallSecondaryBtnStyle}>View</button>
                 </td>
               </tr>
             ))}

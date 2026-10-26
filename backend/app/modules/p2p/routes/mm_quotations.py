@@ -344,6 +344,10 @@ def create_split_pos(rfq_id: int, payload: POSplitPayload, db: Session = Depends
             ship_to_location_id=g.ship_to_location_id or payload.ship_to_location_id, vendor_quotation_id=vq.id if vq else None,
         )
         po.terms_conditions = _po_terms(db, rfq, vendor.id)
+        # The PR's internal order (for a New development purchase: the one behind its R&D project) carries to the PO,
+        # the same as on the single-vendor PO draft in rfq.py.
+        if getattr(pr, "internal_order_id", None) and not po.internal_order_id:
+            po.internal_order_id = pr.internal_order_id
         db.add(po)
         db.flush()
         notes = []

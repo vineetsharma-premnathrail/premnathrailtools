@@ -6,7 +6,7 @@ from app.db.base import Base
 from app.db.mixins import TimestampMixin
 from app.modules.accounts.models._types import Money
 
-INTERNAL_ORDER_TYPES = ("capital", "maintenance", "it", "training")
+INTERNAL_ORDER_TYPES = ("capital", "maintenance", "it", "training", "development")
 INTERNAL_ORDER_STATUSES = ("open", "in_progress", "completed", "closed")
 
 

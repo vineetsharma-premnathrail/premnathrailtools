@@ -120,6 +120,7 @@ async def list_projects(
         like = f"%{search}%"
         query = query.filter(
             (PmProject.name.ilike(like)) | (PmProject.project_code.ilike(like)) | (PmProject.client_name.ilike(like))
+            | (PmProject.customer_po_ref.ilike(like)) | (PmProject.sales_order_ref.ilike(like))
         )
     cache = views.names(db)
     rows = [views.project_response(db, p, user, cache) for p in query.order_by(PmProject.created_at.desc()).all()]
@@ -231,7 +232,8 @@ async def create_project(
 
     project = PmProject(
         project_code=code, name=payload.name.strip(), client_name=payload.client_name.strip(),
-        customer_po_ref=(payload.customer_po_ref or "").strip() or None, description=payload.description,
+        customer_po_ref=payload.customer_po_ref, sales_order_ref=payload.sales_order_ref,
+        description=payload.description,
         project_manager_id=pm_id, start_date=payload.start_date,
         target_handover_date=payload.target_handover_date, priority=payload.priority,
         status="planning", created_by_id=user.id,

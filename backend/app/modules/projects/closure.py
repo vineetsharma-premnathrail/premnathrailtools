@@ -120,7 +120,7 @@ def report_context(db: Session, project: PmProject) -> dict:
     target = project.target_handover_date
     variance = (end - target).days if end and target else None
     return {
-        "code": project.project_code, "name": project.name, "client": project.client_name, "po": project.customer_po_ref,
+        "code": project.project_code, "name": project.name, "client": project.client_name, "po": project.customer_po_ref, "so": project.sales_order_ref,
         "pm": wf.name_of(db, project.project_manager_id) or "—", "scope": project.description,
         "start": _d(project.start_date), "released": _d(project.released_at.date() if project.released_at else None),
         "target": _d(target), "completed": _d(end), "closed": _d(project.closure_date),

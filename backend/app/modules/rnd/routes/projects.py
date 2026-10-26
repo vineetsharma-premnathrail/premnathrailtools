@@ -319,6 +319,10 @@ async def update_project(project_id: int, payload: RndProjectUpdate, db: Session
     for field, val in updates.items():
         setattr(project, field, val)
     db.flush()
+    # Finance's internal order for the project (opened by the first purchase
+    # charged to it) follows the project's budget and dates.
+    from app.modules.rnd.internal_order_link import sync_internal_order
+    sync_internal_order(db, project)
     project_origin.link_requirement(db, user, project)
     db.commit()
     db.refresh(project)

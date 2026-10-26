@@ -5,6 +5,11 @@ const config: TourConfig = {
   pageTitle: 'Inquiries & Tenders List',
   steps: [
     {
+      target: 'crm-inq-stats',
+      title: 'Counters',
+      purpose: 'Small numbers under the title: Inquiries, Tenders, Open (not closed or cancelled), Won (closed as ordered), Lost (closed as not ordered) and Follow-ups overdue (open inquiries whose next follow-up date has passed). They count exactly the rows in the table, so Search, Show and the column filters change them.',
+    },
+    {
       target: 'iq-add-btn',
       title: '+ New inquiry or tender',
       purpose: 'Creates a new Inquiry — this button always opens the Inquiry form, not a Tender.',

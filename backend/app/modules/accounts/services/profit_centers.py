@@ -31,7 +31,9 @@ from app.modules.organization.models.profit_center import (
 )
 
 # Sales order type → business line.
-SO_TYPE_SEGMENT = {"rrv_supply": "machines", "spares": "spares", "service": "service", "other": None}
+SO_TYPE_SEGMENT = {"road_rail_vehicle": "machines", "rail_bound_vehicle": "machines", "accessories": "spares", "other": None,
+                   # legacy values, kept until every old row is migrated
+                   "rrv_supply": "machines", "spares": "spares", "service": "service"}
 UNASSIGNED = "unassigned"
 
 

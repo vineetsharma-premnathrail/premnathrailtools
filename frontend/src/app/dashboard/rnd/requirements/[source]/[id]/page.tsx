@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
@@ -12,7 +12,10 @@ import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRecordId } from '@/lib/recordRef'
 import RndRequestBlock from '@/components/crm/RndRequestBlock'
 import RequirementDiscussionTab from '@/components/crm/RequirementDiscussionTab'
-import RequirementTasksTab from '@/components/rnd/RequirementTasksTab'
+import { REQUIREMENT_TASK_LABELS, requirementTaskApi } from '@/components/rnd/RequirementTasksTab'
+import RequirementDepartmentsTab from '@/components/rnd/RequirementDepartmentsTab'
+import RndMilestonePlan, { MilestoneApi, MilestonePlanTexts } from '@/components/rnd/RndMilestonePlan'
+import RndProjectHistory from '@/components/rnd/RndProjectHistory'
 import RequirementDocumentsTab from '@/components/rnd/RequirementDocumentsTab'
 import RequirementTechnicalOffersTab from '@/components/rnd/RequirementTechnicalOffersTab'
 import RequirementAccessTab from '@/components/rnd/RequirementAccessTab'
@@ -22,13 +25,26 @@ import { rndRequestBadge } from '@/components/crm/RndRequestBlock'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 
-// Tasks and the departments the requirement is shared with live in one tab.
-const TABS = ['Requirement', 'Tasks & Departments', 'Technical Offers', 'Documents', 'Discussion', 'Access'] as const
+// Milestones hold the tasks of the plan and the departments the requirement is shared with.
+const TABS = ['Requirement', 'Milestones', 'Technical Offers', 'Documents', 'Discussion', 'History', 'Access'] as const
+
+// Milestone plan wording for a requirement (the plan component is shared with R&D projects).
+const MILESTONE_TEXTS: MilestonePlanTexts = {
+  teamHint: 'People from R&D and from the departments this requirement is shared with are listed. Everyone here is notified, can add the milestone\'s tasks and mark it achieved once its tasks are done.',
+  emptyManager: 'Lay out the requirement as milestones — each with a responsible person and an expected date — then add tasks inside each one.',
+  emptyOther: 'The R&D head lays out the plan as milestones; their tasks then show here.',
+  noTaskRights: 'Your role can\'t see requirement tasks (R&D › Requirements › Tasks).',
+  looseHint: 'Given before this requirement had milestones, or by a department. New tasks are added inside a milestone.',
+  formSubtitle: 'Add a new milestone to this requirement\'s plan.',
+  peopleLoading: 'Loading the people of R&D and the shared departments…',
+  peopleError: 'Could not load the people for this requirement. Refresh the page; if it keeps failing, check you can still open this requirement.',
+  targetEndPrefix: 'The response is due to CRM on',
+}
 // Sub-tab → its R&D › Requirements feature (Organization › Role & Permissions).
 const TAB_FEATURE: Partial<Record<typeof TABS[number], string>> = {
-  'Tasks & Departments': 'tasks', 'Technical Offers': 'technical_offers', Documents: 'documents', Discussion: 'discussion', Access: 'access',
+  Milestones: 'milestones', History: 'history', 'Technical Offers': 'technical_offers', Documents: 'documents', Discussion: 'discussion', Access: 'access',
 }
-const TAB_PARAMS: Record<string, typeof TABS[number]> = { discussion: 'Discussion', tasks: 'Tasks & Departments', departments: 'Tasks & Departments', documents: 'Documents', 'technical-offers': 'Technical Offers', access: 'Access' }
+const TAB_PARAMS: Record<string, typeof TABS[number]> = { milestones: 'Milestones', history: 'History', discussion: 'Discussion', tasks: 'Milestones', departments: 'Milestones', documents: 'Documents', 'technical-offers': 'Technical Offers', access: 'Access' }
 
 // An explicit ?tab= deep link (e.g. from a notification) always wins over the auto-jump.
 const hasTabParam = () => typeof window !== 'undefined' && !!TAB_PARAMS[new URLSearchParams(window.location.search).get('tab') || '']
@@ -66,6 +82,15 @@ export default function RndRequirementDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, source, id])
 
+  const milestoneApi = useMemo<MilestoneApi>(() => ({
+    list: () => rndApi.listRequirementMilestones(source, id),
+    people: () => rndApi.requirementMilestonePeople(source, id),
+    create: (p) => rndApi.createRequirementMilestone(source, id, p),
+    edit: (mid, p) => rndApi.editRequirementMilestone(source, id, mid, p),
+    status: (mid, action, reason) => rndApi.requirementMilestoneStatus(source, id, mid, action, reason),
+    remove: (mid) => rndApi.deleteRequirementMilestone(source, id, mid),
+  }), [source, id])
+  const taskApi = useMemo(() => requirementTaskApi(source, id), [source, id])
   if (isLoading || !isAuthorized) return null
   if (linkError) return (<div><RndNav /><InvalidRecordLink message={linkError} listHref="/dashboard/rnd/requirements" listLabel="Back to requirements" /></div>)
 
@@ -88,7 +113,7 @@ export default function RndRequirementDetailPage() {
   const canRespond = data.my_access.respond && canFeature('rnd', 'requirements', 'crm_request', 'submit')
   // The answer form: the head / Respond-right holders for team requests, the named engineer for older assigned ones.
   const canAnswerCrm = canFeature('rnd', 'requirements', 'crm_request', 'submit') && (data.my_access.respond || (currentReq?.assigned_to_id != null && currentReq.assigned_to_id === user?.id))
-  const visibleTabs = TABS.filter((t) => (t !== 'Access' || data.my_access.is_head) && (!TAB_FEATURE[t] || see(TAB_FEATURE[t] as string)))
+  const visibleTabs = TABS.filter((t) => (t !== 'Access' || data.my_access.is_head) && (t === 'Milestones' ? (see('milestones') || see('tasks') || see('departments')) : (!TAB_FEATURE[t] || see(TAB_FEATURE[t] as string))))
   const shownTab = visibleTabs.includes(tab) ? tab : 'Requirement'
   const docAccess = {
     ...data.my_access,
@@ -243,10 +268,35 @@ export default function RndRequirementDetailPage() {
         </DetailCard>
       )}
 
-      {shownTab === 'Tasks & Departments' && user && <RequirementTasksTab source={data.source} recordId={data.record_id} userId={user.id} access={data.my_access} gates={taskGates} />}
+      {shownTab === 'Milestones' && user && (
+        <div data-tour="rnd-req-milestones">
+          {/* Departments the requirement is shared with: share form, replies, access for their people. */}
+          {taskGates.departments && (
+            <div data-tour="rnd-req-departments">
+              <RequirementDepartmentsTab source={data.source} recordId={data.record_id} isHead={data.my_access.is_head && taskGates.share} />
+            </div>
+          )}
+          <RndMilestonePlan
+            looseCreate={data.my_access.view && taskGates.tasks.create}
+            canMoveTasks={data.my_access.is_head}
+            key={`${data.source}-${data.record_id}`}
+            plan={{ key: `${data.source}-${data.record_id}`, heading: 'Requirement Plan & Milestones', subtitle: `${data.offer_number} · ${data.title}` }}
+            userId={user.id} isManager={data.my_access.is_head} taskApi={taskApi} labels={REQUIREMENT_TASK_LABELS}
+            milestoneApi={milestoneApi} featureTab="requirements" ownerRuleKey="rnd:requirements.milestones" texts={MILESTONE_TEXTS}
+          />
+        </div>
+      )}
       {shownTab === 'Technical Offers' && <RequirementTechnicalOffersTab source={data.source} recordId={data.record_id} access={data.my_access} />}
       {shownTab === 'Documents' && <RequirementDocumentsTab source={data.source} recordId={data.record_id} access={docAccess} />}
       {shownTab === 'Discussion' && <RequirementDiscussionTab source={data.source} recordId={data.record_id} side="rnd" />}
+      {shownTab === 'History' && (
+        <RndProjectHistory
+          projectId={`${data.source}-${data.record_id}`}
+          load={() => rndApi.requirementHistory(data.source, data.record_id)}
+          tour="rnd-req-history"
+          errorText="Could not load the requirement history. Refresh the page; if it keeps failing, check you can still open this requirement."
+        />
+      )}
       {shownTab === 'Access' && data.my_access.is_head && <RequirementAccessTab source={data.source} recordId={data.record_id} canEdit={canFeature('rnd', 'requirements', 'access', 'edit')} />}
 
     </div>

@@ -52,7 +52,7 @@ export default function QualityCapaListPage() {
   }, [isAuthorized, statusFilter, trigger, search, mine, overdue])
 
   if (isLoading || !isAuthorized) return null
-  const cols = ['CAPA', 'Title', 'Raised for', 'Severity', 'Owner', 'Open actions', 'Status', 'Opened', '']
+  const cols = ['CAPA', 'Title', 'Raised for', 'Severity', 'Owner', 'Open actions', 'Status', 'Opened']
 
   return (
     <div>
@@ -99,9 +99,6 @@ export default function QualityCapaListPage() {
                 <td style={tdStyle}>{c.open_actions}{c.overdue ? <span style={{ color: '#DC2626', fontWeight: 600 }}> · overdue</span> : null}</td>
                 <td style={tdStyle}><Pill text={CAPA_STATUS_LABELS[c.status] || c.status} hex={CAPA_STATUS_HEX[c.status]} /></td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtDate(c.created_at)}</td>
-                <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                  <span onClick={() => router.push(recordPath('/dashboard/quality/capa', c))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                </td>
               </tr>
             ))}
           </tbody>

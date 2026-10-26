@@ -1501,6 +1501,7 @@ function InternalOrdersSection() {
                       <option value="maintenance">Maintenance</option>
                       <option value="it">IT</option>
                       <option value="training">Training</option>
+                      <option value="development">Development (R&amp;D)</option>
                     </Select>
                   </SF>
                   {!editingId && (

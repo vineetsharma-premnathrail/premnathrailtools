@@ -40,7 +40,7 @@ const config: TourConfig = {
     {
       target: 'rnd-proj-table',
       title: 'Project list',
-      purpose: 'Project No., title, priority and status badges, lead and target end date. Click any row (or View) to open the project.',
+      purpose: 'Project No., title, priority and status badges, lead and target end date. Click any row to open the project.',
     },
   ],
 }

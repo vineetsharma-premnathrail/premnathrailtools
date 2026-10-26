@@ -21,7 +21,7 @@ import { useCan } from '@/lib/permissions'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetHint } from '@/components/shared/FormSheet'
 import OrderTermsFields, { OrderTerms } from '@/components/sales/OrderTermsFields'
 import { LinesEditor, ScheduleEditor, BillingPlanEditor, lineTotals, syncVehicleRows } from '@/components/sales/OrderEditors'
-import { LEVEL_LABELS, DEVIATION_LABELS, formatINR } from '@/components/sales/labels'
+import { LEVEL_LABELS, DEVIATION_LABELS, formatINR, formatMoney } from '@/components/sales/labels'
 
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', pending_approval: '#F59E0B', approved: '#16A34A', rejected: '#DC2626', cancelled: '#9ca3af' }
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', pending_approval: 'Pending approval', approved: 'Approved', rejected: 'Rejected', cancelled: 'Cancelled' }
@@ -124,8 +124,8 @@ export default function AmendmentPanel({ order, userId, onApplied }: { order: Sa
               right={
                 <SheetSection icon="rupee" title="Summary">
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: SHEET.BODY }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Current order value</span><b>{formatINR(order.grand_total)}</b></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Proposed value</span><b>{formatINR(Math.round(total * 100) / 100)}</b></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Current order value</span><b>{formatMoney(order.grand_total, order.currency)}</b></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Proposed value</span><b>{formatMoney(Math.round(total * 100) / 100, order.currency)}</b></div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Lines</span><b>{lines.length}</b></div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Delivery rows</span><b>{rows.length}</b></div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Changes so far</span><b>{draft.changes.length}</b></div>
@@ -136,7 +136,7 @@ export default function AmendmentPanel({ order, userId, onApplied }: { order: Sa
             />
             <div style={{ padding: '20px 24px 4px', borderTop: `1px solid ${SHEET.LINE}` }}>
               <SheetSection icon="list" title="Lines">
-                <LinesEditor lines={lines} onChange={(next) => { setLines(next); setRows((r) => syncVehicleRows(next, r, order.customer_name || '')) }} />
+                <LinesEditor currency={order.currency} lines={lines} onChange={(next) => { setLines(next); setRows((r) => syncVehicleRows(next, r, order.customer_name || '')) }} />
               </SheetSection>
             </div>
             <div style={{ padding: '20px 24px 4px', borderTop: `1px solid ${SHEET.LINE}` }}>
@@ -146,7 +146,7 @@ export default function AmendmentPanel({ order, userId, onApplied }: { order: Sa
             </div>
             <div style={{ padding: '20px 24px 4px', borderTop: `1px solid ${SHEET.LINE}` }}>
               <SheetSection icon="rupee" title="Billing plan">
-                <BillingPlanEditor rows={billing} onChange={setBilling} grandTotal={total} />
+                <BillingPlanEditor rows={billing} onChange={setBilling} grandTotal={total} currency={order.currency} />
               </SheetSection>
             </div>
             <div style={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>

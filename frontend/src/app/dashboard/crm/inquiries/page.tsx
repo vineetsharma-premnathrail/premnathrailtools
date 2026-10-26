@@ -12,7 +12,7 @@ import CrmNav from '@/components/crm/CrmNav'
 import InquiryDetailPanel from '@/components/crm/InquiryDetailPanel'
 import TenderDetailPanel from '@/components/crm/TenderDetailPanel'
 import { secondaryBtnStyle, primaryBtnStyle, inputStyle } from '@/components/crm/ui'
-import { RowCount } from '@/components/shared/ui'
+import { RowCount, StatChip } from '@/components/shared/ui'
 import { CONTROL, BRAND, TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -253,6 +253,21 @@ export default function InquiriesPage() {
     return [...pinned, ...rest]
   }, [filteredRows, pinnedKeys, sortKey, sortDir])
 
+  // Header counters: computed from the rows the table shows (search, type and column filters already applied).
+  const stats = useMemo(() => {
+    const today = new Date().toLocaleDateString('en-CA') // local date (IST), not UTC
+    const isClosed = (r: CombinedRow) => r.status.startsWith('Closed')
+    const notOrdered = (r: CombinedRow) => /not ordered/i.test(r.status)
+    return {
+      inquiries: filteredRows.filter((r) => r.kind === 'inquiry').length,
+      tenders: filteredRows.filter((r) => r.kind === 'tender').length,
+      open: filteredRows.filter((r) => !isClosed(r) && r.status !== 'Tender Cancelled').length,
+      won: filteredRows.filter((r) => isClosed(r) && !notOrdered(r)).length,
+      lost: filteredRows.filter((r) => isClosed(r) && notOrdered(r)).length,
+      overdue: filteredRows.filter((r) => r.kind === 'inquiry' && !isClosed(r) && r.date !== 'Not provided' && r.date.slice(0, 10) < today).length,
+    }
+  }, [filteredRows])
+
   const openRow = (row: CombinedRow) => {
     router.push(recordHref('/dashboard/crm/inquiries', row.record, 'id', { type: row.kind }))
   }
@@ -268,6 +283,16 @@ export default function InquiriesPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Inquiries &amp; Tenders</h1>
           <p style={{ fontSize: 13, color: '#57534e', margin: '4px 0 0' }}>{loading ? 'Loading…' : `${sortedRows.length} found`}</p>
         </div>
+        {!loading && (
+          <div data-tour="crm-inq-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0 14px' }}>
+            <StatChip label="Inquiries" value={stats.inquiries} color="#3b82f6" />
+            <StatChip label="Tenders" value={stats.tenders} color="#3b82f6" />
+            <StatChip label="Open" value={stats.open} color="#ca8a04" />
+            <StatChip label="Won" value={stats.won} color="#16a34a" />
+            <StatChip label="Lost" value={stats.lost} color="#78716c" />
+            <StatChip label="Follow-ups overdue" value={stats.overdue} color="#ea580c" />
+          </div>
+        )}
         {/* One toolbar row: add, search + type filter, then export / import; wraps on narrow screens. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {can('crm', 'inquiries_tenders', 'create') && <Link

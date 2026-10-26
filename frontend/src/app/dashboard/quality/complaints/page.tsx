@@ -62,7 +62,7 @@ export default function QualityComplaintsPage() {
   }, [isAuthorized, statusFilter, severity, search])
 
   if (isLoading || !isAuthorized) return null
-  const cols = ['Complaint', 'Customer', 'Item / serial-batch', 'Severity', 'NCR / CAPA', 'Response', ...(seeCosts ? ['Cost'] : []), 'Status', 'Date', '']
+  const cols = ['Complaint', 'Customer', 'Item / serial-batch', 'Severity', 'NCR / CAPA', 'Response', ...(seeCosts ? ['Cost'] : []), 'Status', 'Date']
 
   return (
     <div>
@@ -117,9 +117,6 @@ export default function QualityComplaintsPage() {
                 {seeCosts && <td style={tdStyle}>{c.total_cost ? fmtMoney(c.total_cost) : '—'}</td>}
                 <td style={tdStyle}><Pill text={COMPLAINT_STATUS_LABELS[c.status] || c.status} hex={COMPLAINT_STATUS_HEX[c.status]} /></td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtDate(c.complaint_date)}</td>
-                <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                  <span onClick={() => router.push(recordPath('/dashboard/quality/complaints', c))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                </td>
               </tr>
             ))}
           </tbody>

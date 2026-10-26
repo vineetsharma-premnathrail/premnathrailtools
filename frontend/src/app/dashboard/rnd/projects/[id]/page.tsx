@@ -16,7 +16,7 @@ import { recordPath, useRecordId } from '@/lib/recordRef'
 import TeamMemberPicker from '@/components/rnd/TeamMemberPicker'
 import RndDocumentsPanel from '@/components/rnd/RndDocumentsPanel'
 import { TaskApi, TaskLabels } from '@/components/rnd/TasksBoard'
-import RndMilestonePlan from '@/components/rnd/RndMilestonePlan'
+import RndMilestonePlan, { MilestoneApi, MilestonePlanTexts } from '@/components/rnd/RndMilestonePlan'
 import RndProjectHistory from '@/components/rnd/RndProjectHistory'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
@@ -41,6 +41,19 @@ const TASK_LABELS: TaskLabels = {
   assignPlaceholder: 'Select team member…',
   emptyManager: 'No tasks yet — use “+ New task” to hand work to a team member. Only people under Team Members can be assigned.',
   emptyOther: 'You have no tasks on this project.',
+}
+
+// Milestone plan wording for a project (the plan component is shared with requirements).
+const MILESTONE_TEXTS: MilestonePlanTexts = {
+  teamHint: 'Only people on the project team (Project Leads / Team Members) are listed. Everyone here is notified, can add the milestone\'s tasks and mark it achieved once its tasks are done.',
+  emptyManager: 'Lay out the project as milestones — each with a responsible person and an expected date — then add tasks inside each one.',
+  emptyOther: 'A project lead lays out the plan as milestones; their tasks then show here.',
+  noTaskRights: 'Your role can\'t see project tasks (R&D › Prototype / Research › Project tasks).',
+  looseHint: 'Given before this project had milestones. New tasks are added inside a milestone.',
+  formSubtitle: '',
+  peopleLoading: 'Loading the project team…',
+  peopleError: 'Could not load the project team.',
+  targetEndPrefix: 'The project\'s target end is',
 }
 
 // Same layout as a Project Management project: Overview · Milestones · Documents · History.
@@ -184,6 +197,15 @@ export default function RndProjectDetailPage() {
     reopen: rndApi.reopenProjectTask,
     cancel: rndApi.cancelProjectTask,
     openDoc: async (d) => { window.open(URL.createObjectURL(await rndApi.getDocumentContent(d.id)), '_blank') },
+  }), [projectId])
+
+  const milestoneApi = useMemo<MilestoneApi>(() => ({
+    list: () => rndApi.listMilestones(projectId),
+    people: () => rndApi.milestonePeople(projectId),
+    create: (p) => rndApi.createMilestone(projectId, p),
+    edit: (mid, p) => rndApi.editMilestone(projectId, mid, p),
+    status: (mid, action, reason) => rndApi.milestoneStatus(projectId, mid, action, reason),
+    remove: (mid) => rndApi.deleteMilestone(projectId, mid),
   }), [projectId])
 
   const applyProject = (p: RndProjectDetail) => {
@@ -513,7 +535,12 @@ export default function RndProjectDetailPage() {
 
       {tab === 'Milestones' && user && (
         <div id="tasks" data-tour="rnd-pd-tasks" style={{ scrollMarginTop: 16 }}>
-          <RndMilestonePlan key={`${project.id}-${project.updated_at || ''}`} project={project} userId={user.id} isManager={isManager} taskApi={taskApi} labels={TASK_LABELS} />
+          <RndMilestonePlan
+            key={`${project.id}-${project.updated_at || ''}`}
+            plan={{ key: project.id, heading: 'Project Plan & Milestones', subtitle: `${project.project_number} · ${project.title}`, startDate: project.start_date, targetEndDate: project.target_end_date }}
+            userId={user.id} isManager={isManager} taskApi={taskApi} labels={TASK_LABELS}
+            milestoneApi={milestoneApi} featureTab="projects" ownerRuleKey="rnd:projects.milestones" texts={{ ...MILESTONE_TEXTS, formSubtitle: `Add a new milestone to ${project.project_number}'s plan.` }}
+          />
         </div>
       )}
 

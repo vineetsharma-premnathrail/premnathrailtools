@@ -73,10 +73,10 @@ export default function ServiceContractsPage() {
       {error && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{error}</div>}
       <div style={{ borderRadius: 16, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
-          <thead><tr>{['Contract', 'Type', 'Customer', 'Period', 'Machines', 'Visits', 'Value', 'Billing', 'Status', ''].map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
+          <thead><tr>{['Contract', 'Type', 'Customer', 'Period', 'Machines', 'Visits', 'Value', 'Billing', 'Status'].map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={10} style={{ ...td, color: '#a8a29e' }}>Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={10} style={{ ...td, color: '#a8a29e' }}>No service contracts.</td></tr>}
+            {loading && <tr><td colSpan={9} style={{ ...td, color: '#a8a29e' }}>Loading…</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={9} style={{ ...td, color: '#a8a29e' }}>No service contracts.</td></tr>}
             {rows.map((c) => (
               <tr key={c.id} onClick={() => open(c)} style={{ cursor: 'pointer' }}>
                 <td style={{ ...td, fontWeight: 600, color: '#FF7A45', whiteSpace: 'nowrap' }}>{c.contract_number}<div style={{ fontWeight: 400, fontSize: 12, color: '#78716c' }}>{c.title || ''}</div></td>
@@ -90,7 +90,6 @@ export default function ServiceContractsPage() {
                 <td style={td}>
                   <Pill label={STATUS_LABELS[c.status] || c.status} hex={STATUS_HEX[c.status] || '#78716c'} />
                 </td>
-                <td style={td} onClick={(e) => e.stopPropagation()}><span onClick={() => open(c)} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>View</span></td>
               </tr>
             ))}
           </tbody>

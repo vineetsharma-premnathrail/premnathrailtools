@@ -5,11 +5,6 @@ const config: TourConfig = {
   pageTitle: 'Load Distribution Calculator',
   steps: [
     {
-      target: 'rnd-toolnav-load',
-      title: 'Engineering Tools row',
-      purpose: 'Jump between calculators from this row of pills.',
-    },
-    {
       target: 'rnd-load-config',
       title: 'Configuration Mode',
       purpose: 'How the vehicle’s wheels are arranged. Picking one also resets Total Load to a typical value (Bogie 28 t, Axle 19 t).',

@@ -11,7 +11,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import SalesNav from '@/components/sales/SalesNav'
 import { ErrorBanner } from '@/components/sales/SalesUi'
-import { formatINR } from '@/components/sales/labels'
+import { formatINR, formatMoney } from '@/components/sales/labels'
 import { useCan } from '@/lib/permissions'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, FileDropZone, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import OrderTermsFields, { OrderTerms } from '@/components/sales/OrderTermsFields'
@@ -23,7 +23,7 @@ type Customer = { id: number; name: string; gst_number: string | null; state: st
 type Contact = { id: number; name: string; designation: string | null }
 
 const TERM_KEYS = [
-  'order_type', 'customer_po_number', 'customer_po_date', 'customer_po_received_date', 'loa_number', 'loa_date', 'contract_reference',
+  'order_type', 'customer_po_number', 'customer_po_date', 'customer_po_received_date', 'contract_reference', 'currency',
   'purchaser_name', 'paying_authority', 'price_basis', 'freight_terms', 'insurance_terms', 'payment_terms_label', 'inspection_agency',
   'third_party_inspection_required', 'ld_applicable', 'ld_rate_percent', 'ld_rate_period', 'ld_basis', 'ld_max_percent',
   'warranty_months_from_delivery', 'warranty_months_from_commissioning', 'warranty_rule', 'warranty_terms_text',
@@ -51,7 +51,7 @@ export default function NewSalesOrderPage() {
   const [source, setSource] = useState<{ source_type: string; source_inquiry_id?: number; source_tender_id?: number; source_quotation_id?: number; label?: string; quotation?: string }>({ source_type: 'direct' })
   const [existing, setExisting] = useState<{ id: number; id_ref?: string; display_number: string } | null>(null)
   const [prefillNote, setPrefillNote] = useState('')
-  const [terms, setTerms] = useState<OrderTerms>({ order_type: 'rrv_supply', price_basis: 'for_destination', ld_applicable: true })
+  const [terms, setTerms] = useState<OrderTerms>({ order_type: 'road_rail_vehicle', currency: 'INR', price_basis: 'for_destination', ld_applicable: true })
   const [lines, setLines] = useState<SalesOrderLineInput[]>([emptyLine(1)])
   const [rows, setRows] = useState<SalesOrderScheduleInput[]>([])
   const [billing, setBilling] = useState<SalesBillingLineInput[]>([{ milestone_type: 'advance', percent: 20 }, { milestone_type: 'delivery', percent: 80 }])
@@ -204,7 +204,7 @@ export default function NewSalesOrderPage() {
                     placeholder="Pick the customer…" />
                 </div>
                 <div style={{ flex: '0 1 280px', minWidth: 200 }}>
-                  <label style={sheetLabel}>Contact person</label>
+                  <label style={sheetLabel}>Contact Person</label>
                   <Select style={sheetInput} value={contactId ?? ''} onChange={(e) => setContactId(e.target.value ? Number(e.target.value) : null)}>
                     <option value="">—</option>
                     {(customerId ? contacts : []).map((c) => <option key={c.id} value={c.id}>{c.name}{c.designation ? ` (${c.designation})` : ''}</option>)}
@@ -246,7 +246,7 @@ export default function NewSalesOrderPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Vehicles scheduled</span><b>{vehicles}</b></div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Billing plan</span><b style={{ color: Math.abs(billingSum - 100) < 0.001 ? '#16A34A' : '#DC2626' }}>{billingSum}%</b></div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8, marginTop: 4, borderTop: `1px solid ${SHEET.LINE}`, fontSize: 14 }}>
-                  <span>Order value (incl. GST)</span><b style={{ color: SHEET.INK }}>{formatINR(Math.round(grandTotal * 100) / 100)}</b>
+                  <span>Order value (incl. GST)</span><b style={{ color: SHEET.INK }}>{formatMoney(Math.round(grandTotal * 100) / 100, terms.currency as string)}</b>
                 </div>
               </div>
             </SheetSection>
@@ -255,7 +255,7 @@ export default function NewSalesOrderPage() {
 
         <div data-tour="sales-form-lines" style={block}>
           <SheetSection icon="list" title="Lines">
-            <LinesEditor lines={lines} onChange={updateLines} customerId={customerId} priceDate={(terms.customer_po_date as string) || null} />
+            <LinesEditor lines={lines} onChange={updateLines} currency={terms.currency as string} customerId={customerId} priceDate={(terms.customer_po_date as string) || null} />
           </SheetSection>
         </div>
 
@@ -267,7 +267,7 @@ export default function NewSalesOrderPage() {
 
         <div data-tour="sales-form-billing" style={block}>
           <SheetSection icon="rupee" title="Billing plan">
-            <BillingPlanEditor rows={billing} onChange={setBilling} grandTotal={grandTotal} />
+            <BillingPlanEditor rows={billing} onChange={setBilling} grandTotal={grandTotal} currency={terms.currency as string} />
           </SheetSection>
         </div>
       </FormPage>

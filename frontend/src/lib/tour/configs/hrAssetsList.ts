@@ -55,17 +55,12 @@ const config: TourConfig = {
     {
       target: 'hr-asset-table',
       title: 'Asset register',
-      purpose: 'Code, name with make/model, category, serial, plant, status, who holds it (and since when) and condition. "return overdue" in red means the expected return date has passed. Click a row to open the asset.',
+      purpose: 'Code, name with make/model, category, serial, plant, status, who holds it (and since when) and condition. "return overdue" in red means the expected return date has passed. Click a row to open the asset page to issue, receive back, edit, or see its full history.',
     },
     {
       target: 'hr-asset-status-badge',
       title: 'Status badge',
       options: HR_ASSET_STATUS_OPTIONS,
-    },
-    {
-      target: 'hr-asset-view-link',
-      title: 'View',
-      purpose: 'Opens the asset\'s page to issue, receive back, edit, or see its full history.',
     },
   ],
 }

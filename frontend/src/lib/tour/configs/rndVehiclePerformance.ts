@@ -5,11 +5,6 @@ const config: TourConfig = {
   pageTitle: 'Vehicle Performance Calculator',
   steps: [
     {
-      target: 'rnd-toolnav-vehicle',
-      title: 'Engineering Tools row',
-      purpose: 'Jump between calculators from this row of pills.',
-    },
-    {
       target: 'rnd-vp-summary',
       title: 'Traction snapshot',
       purpose: 'Shown after a calculation: Max Traction the drivetrain can generate (N), Traction (No Slip) — the most the wheels can transmit before slipping (weight × μ) — and the Status.',

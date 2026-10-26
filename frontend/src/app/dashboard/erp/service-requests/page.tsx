@@ -1,27 +1,28 @@
 'use client'
 
 import Select from '@/components/shared/Select'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { hasErpPermission, useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { erpApi } from '@/lib/api'
-import { SLA_STATE_HEX, SLA_STATE_LABELS } from '@/lib/eamApi'
 import { formatDate } from '@/lib/format'
 import { Project, ServiceRequest, SRStatus } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
-import { inputStyle, secondaryBtnStyle, RowCount, Pill, pillStyle } from '@/components/shared/ui'
+import { Funnel } from '@phosphor-icons/react'
+import { inputStyle, secondaryBtnStyle, RowCount, Pill, pillStyle, StatChip } from '@/components/shared/ui'
+import { FormSheet, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import Checkbox from '@/components/Checkbox'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import BulkImportDialog from '@/components/erp/BulkImportDialog'
 import ExportDialog from '@/components/erp/ExportDialog'
-import { SERVICE_TYPES, serviceTypeLabel } from '@/components/erp/serviceTypes'
+import { SERVICE_TYPES } from '@/components/erp/serviceTypes'
 import { recordPath } from '@/lib/recordRef'
 
 const STATUS_LABELS: Record<SRStatus, string> = {
-  open: 'Open / Reported',
+  open: 'Open',
   acknowledged: 'Acknowledged',
   assigned: 'Assigned',
   scheduled: 'Scheduled',
@@ -67,9 +68,9 @@ function resolutionDays(start?: string | null, end?: string | null) {
   return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)))
 }
 
-// Columns the user can switch on or off. SR Number, Client, Issue, Priority, Status, SLA and Actions always show.
-const OPTIONAL_COLS = ['Service Type', 'Opening Date', 'Closing Date', 'Resolution Time', 'Warranty'] as const
-const DEFAULT_HIDDEN: string[] = [...OPTIONAL_COLS]
+// Header wrap floors for TableFit (px): these columns keep the full width of their widest cell, only the header may wrap.
+// Client & Site and Issue Summary are the only columns TableFit may cut.
+const WRAP_MIN: Record<string, number> = { 'SR Number': 100, 'Machine Serial': 90, 'Client & Site': 96, 'Issue Summary': 84, Priority: 78, Status: 114, 'Opening Date': 84, 'Closing Date': 84, Age: 76, Warranty: 100 }
 
 const dayText = (n: number) => (n === 0 ? 'Same day' : `${n} day${n === 1 ? '' : 's'}`)
 
@@ -84,10 +85,6 @@ export default function ServiceRequestsPage() {
   const { can } = useCan()
   const canExport = can('erp', 'service_requests', 'export')
   const canImport = can('erp', 'service_requests', 'import') && canCreate
-  // Mirrors the backend's `_can_edit` in service_requests.py — admins always
-  // pass, everyone else must both own the SR and hold "sr_edit".
-  const canEditSr = (sr: ServiceRequest) =>
-    user?.role === 'admin' || (sr.created_by_id === user?.id && hasErpPermission(user, 'sr_edit'))
   const router = useRouter()
   const [srs, setSrs] = useState<ServiceRequest[]>([])
   const [projects, setProjects] = useState<Project[]>([])
@@ -99,26 +96,10 @@ export default function ServiceRequestsPage() {
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [serviceTypeFilter, setServiceTypeFilter] = useState('all')
   const [overdueOnly, setOverdueOnly] = useState(false)
-  const [slaFilter, setSlaFilter] = useState('all')
+  const [showFilters, setShowFilters] = useState(false)
+  const [draft, setDraft] = useState({ status: 'all', priority: 'all', service_type: 'all', overdue: false })
   const [showImport, setShowImport] = useState(false)
   const [showExport, setShowExport] = useState(false)
-  const [hiddenCols, setHiddenCols] = useState<string[]>(DEFAULT_HIDDEN)
-  const [showCols, setShowCols] = useState(false)
-  const colsRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!showCols) return
-    const onDown = (e: MouseEvent) => { if (!colsRef.current?.contains(e.target as Node)) setShowCols(false) }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowCols(false) }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
-  }, [showCols])
-  const colOn = (name: string) => !hiddenCols.includes(name)
-  // Actions stick to the right edge only when extra columns are switched on (the table then scrolls);
-  // with the default columns it must never cover a data column.
-  const stickyActions = OPTIONAL_COLS.some((c) => colOn(c))
-  const toggleCol = (name: string) =>
-    setHiddenCols((h) => (h.includes(name) ? h.filter((x) => x !== name) : [...h, name]))
 
   const load = async () => {
     setLoading(true)
@@ -130,7 +111,6 @@ export default function ServiceRequestsPage() {
           status: statusFilter !== 'all' ? statusFilter : undefined,
           priority: priorityFilter !== 'all' ? priorityFilter : undefined,
           service_type: serviceTypeFilter !== 'all' ? serviceTypeFilter : undefined,
-          sla: slaFilter !== 'all' ? slaFilter : undefined,
           limit: 1000,
         }),
         erpApi.listProjects({ limit: 5000 }),
@@ -147,7 +127,7 @@ export default function ServiceRequestsPage() {
   useEffect(() => {
     if (isAuthorized) load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthorized, statusFilter, priorityFilter, serviceTypeFilter, slaFilter])
+  }, [isAuthorized, statusFilter, priorityFilter, serviceTypeFilter])
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -161,13 +141,24 @@ export default function ServiceRequestsPage() {
   const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects])
 
   const clearFilters = () => {
-    setSearch('')
     setStatusFilter('all')
     setPriorityFilter('all')
     setServiceTypeFilter('all')
     setOverdueOnly(false)
-    setSlaFilter('all')
+    setShowFilters(false)
   }
+  const applyFilters = () => {
+    setStatusFilter(draft.status)
+    setPriorityFilter(draft.priority)
+    setServiceTypeFilter(draft.service_type)
+    setOverdueOnly(draft.overdue)
+    setShowFilters(false)
+  }
+  const openFilters = () => {
+    setDraft({ status: statusFilter, priority: priorityFilter, service_type: serviceTypeFilter, overdue: overdueOnly })
+    setShowFilters(true)
+  }
+  const activeFilterCount = [statusFilter, priorityFilter, serviceTypeFilter].filter((v) => v !== 'all').length + (overdueOnly ? 1 : 0)
 
   const filteredSrs = useMemo(
     () =>
@@ -185,37 +176,15 @@ export default function ServiceRequestsPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <ErpNav />
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Service Request Registry</h1>
-          <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{filteredSrs.length} Service Requests Found</p>
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        {canCreate && (
-          <Link
-            href="/dashboard/erp/service-requests/new"
-            data-tour="erp-sr-add-btn"
-            style={{
-              fontSize: 13.5,
-              fontWeight: 600,
-              padding: '10px 14px',
-              borderRadius: 10,
-              background: '#ea580c',
-              border: '1px solid #c2410c',
-              color: '#fff',
-              textDecoration: 'none',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            + New Service Request
-          </Link>
-        )}
-        {canExport && (
-          <button data-tour="erp-sr-export-btn" onClick={() => setShowExport(true)} style={secondaryBtnStyle}>Export</button>
-        )}
-        {canImport && (
-          <button data-tour="erp-sr-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>
-        )}
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>Service Request Registry</h1>
+          <div data-tour="erp-sr-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+            <StatChip label="Requests" value={filteredSrs.length} color="#3b82f6" />
+            <StatChip label="Open" value={filteredSrs.filter((sr) => sr.status === 'open').length} color="#ea580c" />
+            <StatChip label="In progress" value={filteredSrs.filter((sr) => sr.status === 'in_progress').length} color="#ca8a04" />
+            <StatChip label="Closed" value={filteredSrs.filter((sr) => sr.status === 'closed').length} color="#16a34a" />
+          </div>
         </div>
       </div>
 
@@ -245,67 +214,101 @@ export default function ServiceRequestsPage() {
         onAction={() => window.location.reload()}
       />
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="SR#, title, serial, client..."
-          data-tour="erp-sr-search"
-          style={{ ...inputStyle, flex: '1 1 260px', width: 'auto' }}
-        />
-        <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }} data-tour="erp-sr-status-filter">
-          <option value="all">All Statuses</option>
-          {Object.entries(STATUS_LABELS).map(([v, l]) => (
-            <option key={v} value={v}>{l}</option>
-          ))}
-        </Select>
-        <Select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }} data-tour="erp-sr-priority-filter">
-          <option value="all">All Priorities</option>
-          <option value="standard">Standard</option>
-          <option value="urgent">Urgent</option>
-        </Select>
-        <Select value={serviceTypeFilter} onChange={(e) => setServiceTypeFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }} data-tour="erp-sr-type-filter">
-          <option value="all">All Service Types</option>
-          {SERVICE_TYPES.map((t) => (
-            <option key={t.value} value={t.value}>{t.label}</option>
-          ))}
-        </Select>
-        <Select value={slaFilter} onChange={(e) => setSlaFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }}>
-          <option value="all">Any SLA</option>
-          <option value="breached">SLA breached</option>
-          <option value="at_risk">SLA at risk</option>
-          <option value="met">SLA met</option>
-        </Select>
-        <span data-tour="erp-sr-overdue" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 6px', fontSize: 13, fontWeight: 600, color: '#57534e' }}>
-          <Checkbox checked={overdueOnly} onChange={(e) => { setOverdueOnly(e.target.checked) }} />
-          Overdue Only
-        </span>
-        <button onClick={clearFilters} style={secondaryBtnStyle} data-tour="erp-sr-clear-btn">Clear</button>
-        <div ref={colsRef} style={{ position: 'relative' }}>
-          <button type="button" onClick={() => setShowCols((v) => !v)} aria-expanded={showCols} style={secondaryBtnStyle} data-tour="erp-sr-columns-btn">Columns</button>
-          {showCols && (
-            <>
-              <div role="menu" style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 41, background: '#fff', border: '1px solid #e7e5e4', borderRadius: 12, boxShadow: '0 12px 28px rgba(15,23,42,.18)', padding: 12, minWidth: 200, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ fontSize: 12, color: '#57534e', fontWeight: 600 }}>Show columns</div>
-                {OPTIONAL_COLS.map((c) => (
-                  <label key={c} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#1f1108', cursor: 'pointer' }}>
-                    <Checkbox checked={colOn(c)} onChange={() => toggleCol(c)} />
-                    {c}
-                  </label>
-                ))}
-              </div>
-            </>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        {canCreate && (
+          <Link
+            href="/dashboard/erp/service-requests/new"
+            data-tour="erp-sr-add-btn"
+            style={{
+              fontSize: 13.5,
+              fontWeight: 600,
+              padding: '10px 14px',
+              borderRadius: 10,
+              background: '#ea580c',
+              border: '1px solid #c2410c',
+              color: '#fff',
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            + New Service Request
+          </Link>
+        )}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="SR#, title, serial, client..."
+            aria-label="Search service requests"
+            data-tour="erp-sr-search"
+            style={{ ...inputStyle, width: 280, maxWidth: '100%' }}
+          />
+          <button type="button" onClick={openFilters} data-tour="erp-sr-filter-btn" aria-label="Filters" title="Filters"
+            style={{ ...secondaryBtnStyle, display: 'inline-flex', alignItems: 'center', gap: 6, ...(activeFilterCount ? { borderColor: '#ea580c', color: '#c2410c' } : {}) }}>
+            <Funnel size={16} weight={activeFilterCount ? 'fill' : 'regular'} />
+            Filters
+            {activeFilterCount > 0 && <span style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: '#ea580c', color: '#fff', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{activeFilterCount}</span>}
+          </button>
+          {activeFilterCount > 0 && (
+            <button type="button" onClick={clearFilters} style={secondaryBtnStyle} data-tour="erp-sr-clear-btn">Clear</button>
+          )}
+          {canExport && (
+            <button data-tour="erp-sr-export-btn" onClick={() => setShowExport(true)} style={secondaryBtnStyle}>Export</button>
+          )}
+          {canImport && (
+            <button data-tour="erp-sr-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>
           )}
         </div>
       </div>
+
+      {showFilters && (
+        <FormSheet icon="search" title="Filters" subtitle="Narrow the service requests, then press Apply." width={560} busy={false} onClose={() => setShowFilters(false)} tour="erp-sr-filter-sheet"
+          footer={<>
+            <button type="button" onClick={clearFilters} style={sheetBtn('secondary', SHEET.INK)}>Clear Filters</button>
+            <button type="button" onClick={applyFilters} style={sheetBtn('primary', SHEET.BLUE)} data-tour="erp-sr-apply-btn"><SheetIcon name="check" size={16} />Apply Filters</button>
+          </>}>
+          <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={sheetLabel}>Status</label>
+              <Select value={draft.status} onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))} style={sheetInput} data-tour="erp-sr-status-filter">
+                <option value="all">All Statuses</option>
+                {Object.entries(STATUS_LABELS).map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label style={sheetLabel}>Priority</label>
+              <Select value={draft.priority} onChange={(e) => setDraft((d) => ({ ...d, priority: e.target.value }))} style={sheetInput} data-tour="erp-sr-priority-filter">
+                <option value="all">All Priorities</option>
+                <option value="standard">Standard</option>
+                <option value="urgent">Urgent</option>
+              </Select>
+            </div>
+            <div>
+              <label style={sheetLabel}>Service Type</label>
+              <Select value={draft.service_type} onChange={(e) => setDraft((d) => ({ ...d, service_type: e.target.value }))} style={sheetInput} data-tour="erp-sr-type-filter">
+                <option value="all">All Service Types</option>
+                {SERVICE_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </Select>
+            </div>
+            <label data-tour="erp-sr-overdue" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#57534e', cursor: 'pointer' }}>
+              <Checkbox checked={draft.overdue} onChange={(e) => setDraft((d) => ({ ...d, overdue: e.target.checked }))} />
+              Overdue Only
+            </label>
+          </div>
+        </FormSheet>
+      )}
 
       <div style={{ borderRadius: 18, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
         <table data-tour="erp-sr-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 0 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-              {['SR Number', 'Machine Serial', 'Client & Site', 'Issue Summary', 'Service Type', 'Priority', 'Status', 'Opening Date', 'Closing Date', 'Resolution Time', 'SLA', 'Warranty', 'Actions'].filter((h) => colOn(h)).map((h, hi) => (
-                <th key={h} style={{ textAlign: 'left', padding: '12px 8px', fontSize: 12, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#57534e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: h === 'Actions' ? 3 : 1, ...(h === 'Actions' && stickyActions ? { right: 0, boxShadow: '-6px 0 8px -6px rgba(15,23,42,.18)' } : {}), ...(h === 'Client & Site' ? { minWidth: 130 } : {}), ...(h === 'Issue Summary' ? { minWidth: 100 } : {}), ...(h === 'Priority' ? { minWidth: 76, overflow: 'visible', textOverflow: 'clip' } : {}) }}>
+              {['SR Number', 'Machine Serial', 'Client & Site', 'Issue Summary', 'Priority', 'Status', 'Opening Date', 'Closing Date', 'Age', 'Warranty'].map((h, hi) => (
+                <th key={h} data-fit-min={WRAP_MIN[h]} data-fit-wrap-head data-fit-cut={h === 'Client & Site' || h === 'Issue Summary' ? '' : undefined} style={{ textAlign: 'left', padding: '12px 8px', fontSize: 12, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#57534e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, ...(WRAP_MIN[h] ? { whiteSpace: 'normal' as const } : {}), ...(h === 'Priority' ? { minWidth: 76, overflow: 'visible', textOverflow: 'clip' } : {}) }}>
                   {h}{hi === 0 && <RowCount count={filteredSrs.length} />}
                 </th>
               ))}
@@ -313,10 +316,10 @@ export default function ServiceRequestsPage() {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={13 - hiddenCols.length} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>
+              <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>
             )}
             {!loading && pagedSrs.length === 0 && (
-              <tr><td colSpan={13 - hiddenCols.length} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No service requests found.</td></tr>
+              <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No service requests found.</td></tr>
             )}
             {pagedSrs.map((sr) => {
               const statusStyle = STATUS_COLORS[sr.status] || STATUS_COLORS.open
@@ -334,15 +337,14 @@ export default function ServiceRequestsPage() {
                     </span>
                   </td>
                   <td style={{ padding: '12px 8px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.serial_number || '—'}</td>
-                  <td style={{ padding: '12px 8px', fontSize: 12.5, color: '#57534e', minWidth: 130 }}>
+                  <td style={{ padding: '12px 8px', fontSize: 12.5, color: '#57534e' }}>
                     <div>{project?.client_company || '—'}</div>
                     <div style={{ color: '#57534e', fontSize: 12 }}>{project?.site_name || ''}</div>
                   </td>
-                  <td style={{ padding: '12px 8px', fontSize: 13, color: '#57534e', width: '100%', maxWidth: 0, minWidth: 100 }}>
-                    {/* One line, cut with "…" — takes the leftover width; full text on hover and on the SR page. */}
-                    <div title={sr.issue_title} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sr.issue_title}</div>
+                  <td data-fit-clamp style={{ padding: '12px 8px', fontSize: 13, color: '#57534e' }}>
+                    {/* One line, cut with "…" by TableFit — it shares the leftover width by its real text length; full text on hover and on the SR page. */}
+                    <div title={sr.issue_title} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{sr.issue_title}</div>
                   </td>
-                  {colOn('Service Type') && <td style={{ padding: '12px 8px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{serviceTypeLabel(sr.service_type)}</td>}
                   <td style={{ padding: '12px 8px', minWidth: 76, whiteSpace: 'nowrap', overflow: 'visible', textOverflow: 'clip' }}>
                     <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', whiteSpace: 'nowrap', color: PRIORITY_COLORS[sr.priority] || '#64748b' }}>
                       {sr.priority}
@@ -353,33 +355,19 @@ export default function ServiceRequestsPage() {
                       {STATUS_LABELS[sr.status] || sr.status}
                     </span>
                   </td>
-                  {colOn('Opening Date') && <td style={{ padding: '12px 8px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>
+                  <td style={{ padding: '12px 6px', fontSize: 12.5, color: '#57534e' }}>
                     {formatDate(sr.opened_at)}
-                  </td>}
-                  {colOn('Closing Date') && <td style={{ padding: '12px 8px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>
+                  </td>
+                  <td style={{ padding: '12px 6px', fontSize: 12.5, color: '#57534e' }}>
                     {sr.closed_at ? formatDate(sr.closed_at) : 'Open'}
-                  </td>}
-                  {colOn('Resolution Time') && <td style={{ padding: '12px 8px', fontSize: 12.5, whiteSpace: 'nowrap' }}
+                  </td>
+                  <td style={{ padding: '12px 6px', fontSize: 12.5 }}
                     title={sr.closed_at ? 'Time taken from opening to closing' : 'Not closed yet — time since it was opened'}>
                     {tat === null ? '—' : sr.closed_at
                       ? <span style={{ color: '#1f1108', fontWeight: 600 }}>{dayText(tat)}</span>
-                      : <span style={{ color: '#b45309' }}>Open · {dayText(tat)}</span>}
-                  </td>}
-                  <td style={{ padding: '12px 8px', whiteSpace: 'nowrap' }}>
-                    {(() => {
-                      const st = [sr.sla_response_state, sr.sla_resolution_state].includes('breached') ? 'breached'
-                        : [sr.sla_response_state, sr.sla_resolution_state].includes('at_risk') ? 'at_risk'
-                        : sr.sla_resolution_state || sr.sla_response_state
-                      return st ? <Pill label={SLA_STATE_LABELS[st] || st} hex={SLA_STATE_HEX[st] || '#78716c'} /> : <span style={{ color: '#a8a29e' }}>—</span>
-                    })()}
+                      : <span style={{ color: '#b45309' }}>{dayText(tat)}</span>}
                   </td>
-                  {colOn('Warranty') && <td style={{ padding: '12px 8px', fontSize: 12, color: '#57534e', whiteSpace: 'nowrap' }}>{warrantyLabel(project)}</td>}
-                  <td style={{ padding: '12px 8px', whiteSpace: 'nowrap', ...(stickyActions ? { position: 'sticky', right: 0, background: '#fff9f3', boxShadow: '-6px 0 8px -6px rgba(15,23,42,.18)' } : {}) }} onClick={(e) => e.stopPropagation()}>
-                    <Link href={recordPath('/dashboard/erp/service-requests', sr)} style={{ fontSize: 12, fontWeight: 600, color: '#c2410c', marginRight: 10, textDecoration: 'none' }}>View</Link>
-                    {canEditSr(sr) && (
-                      <Link href={`${recordPath('/dashboard/erp/service-requests', sr)}/edit`} style={{ fontSize: 12, fontWeight: 600, color: '#57534e', textDecoration: 'none' }}>Edit</Link>
-                    )}
-                  </td>
+                  <td style={{ padding: '12px 8px', fontSize: 12, color: '#57534e' }}>{warrantyLabel(project)}</td>
                 </tr>
               )
             })}

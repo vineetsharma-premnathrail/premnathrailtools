@@ -27,6 +27,7 @@ class PmProject(Base, TimestampMixin):
     client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Free-text customer order / PO number. Not linked to CRM or Sales yet.
     customer_po_ref: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    sales_order_ref: Mapped[str | None] = mapped_column(String(100), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     project_manager_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)

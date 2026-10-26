@@ -21,6 +21,7 @@ MANAGER = VIEW_ONLY + [
 
 def _body(pm_id, code):
     return {"project_code": code, "name": "RBAC", "client_name": "IR", "project_manager_id": pm_id,
+            "customer_po_ref": "PO-R", "sales_order_ref": "SO-R",
             "start_date": str(TODAY), "target_handover_date": str(TODAY + timedelta(days=30))}
 
 

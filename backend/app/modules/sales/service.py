@@ -18,7 +18,7 @@ from app.modules.main.models.user import User
 from app.modules.sales.models.order import (
     SalesOrder, SalesOrderLine, SalesOrderSchedule, SalesBillingPlanLine,
     SALES_ORDER_LIVE_STATUSES, SALES_APPROVAL_LEVELS, SALES_LINE_TYPES, SALES_MILESTONE_TYPES,
-    SALES_ORDER_TYPES, SALES_PRICE_BASES, SALES_LD_PERIODS, SALES_LD_BASES, SALES_WARRANTY_RULES,
+    SALES_ORDER_TYPES, SALES_ORDER_TYPE_LABELS, SALES_CURRENCY_CODES, SALES_PRICE_BASES, SALES_LD_PERIODS, SALES_LD_BASES, SALES_WARRANTY_RULES,
     SALES_SCHEDULE_UNDELIVERED,
 )
 from app.modules.sales.models.approval import SalesApproval
@@ -201,11 +201,25 @@ def _to_date(v):
         raise SalesError(422, f"'{v}' is not a valid date — use YYYY-MM-DD.")
 
 
+def po_number(so: SalesOrder) -> str | None:
+    """The customer's PO number is THE order number (LOA and PO are one document);
+    older orders that only have an LOA number fall back to it."""
+    return (so.customer_po_number or "").strip() or (so.loa_number or "").strip() or None
+
+
+def po_date(so: SalesOrder):
+    return so.customer_po_date or so.loa_date
+
+
 def validate_header(data: dict) -> None:
     checks = (("order_type", SALES_ORDER_TYPES, "Order type"), ("price_basis", SALES_PRICE_BASES, "Price basis"),
               ("ld_rate_period", SALES_LD_PERIODS, "LD period"), ("ld_basis", SALES_LD_BASES, "LD basis"),
               ("warranty_rule", SALES_WARRANTY_RULES, "Warranty rule"))
+    if data.get("order_type") not in (None, "") and data["order_type"] not in SALES_ORDER_TYPES:
+        raise SalesError(422, f"Order type must be one of: {', '.join(SALES_ORDER_TYPE_LABELS[t] for t in SALES_ORDER_TYPES)}.")
     for key, allowed, label in checks:
+        if key == "order_type":
+            continue
         if data.get(key) not in (None, "") and data[key] not in allowed:
             raise SalesError(422, f"{label} '{data[key]}' isn't valid — use one of: {', '.join(allowed)}.")
     for key in ("ld_rate_percent", "ld_max_percent", "pbg_percent"):
@@ -214,8 +228,11 @@ def validate_header(data: dict) -> None:
     for key in ("warranty_months_from_delivery", "warranty_months_from_commissioning", "pbg_due_days"):
         if data.get(key) is not None and int(data[key]) < 0:
             raise SalesError(422, f"{key.replace('_', ' ').capitalize()} can't be negative.")
-    if data.get("currency") not in (None, "INR"):
-        raise SalesError(422, "Only INR orders are supported for now — export orders (currency, LUT) come in a later phase.")
+    if data.get("currency") not in (None, ""):
+        code = str(data["currency"]).strip().upper()
+        if code not in SALES_CURRENCY_CODES:
+            raise SalesError(422, f"Currency '{data['currency']}' is not supported. Choose one of: {', '.join(SALES_CURRENCY_CODES)}.")
+        data["currency"] = code
 
 
 def validate_line_dict(i: int, ln: dict) -> None:
@@ -530,7 +547,7 @@ def submit_problems(db: Session, so: SalesOrder) -> list[str]:
     elif not ((so.customer_gstin or org.gst_number) or (so.customer_state or org.state)):
         problems.append(f"{org.name} has neither a GSTIN nor a state in CRM, so the order couldn't be invoiced later — "
                         f"add the GSTIN (or the state for an unregistered customer) on the CRM organisation.")
-    if not (so.customer_po_number or "").strip() or not so.customer_po_date:
+    if not po_number(so) or not po_date(so):
         problems.append("Enter the customer's PO number and PO date (from the PO / LOA).")
     has_po_file = db.query(SalesAttachment.id).filter(
         SalesAttachment.entity_type == "sales_order", SalesAttachment.entity_id == so.id,

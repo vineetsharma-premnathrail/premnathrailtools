@@ -97,7 +97,7 @@ export default function ProductionBomListPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 950 }}>
           <thead>
             <tr>
-              {['BOM Number', 'Product', 'Version', 'Components', 'Operations', ...(seeCosts ? ['Std Cost / Unit'] : []), 'Work Orders', 'Status', ''].map((h, i) => (
+              {['BOM Number', 'Product', 'Version', 'Components', 'Operations', ...(seeCosts ? ['Std Cost / Unit'] : []), 'Work Orders', 'Status'].map((h, i) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{i === 0 && <RowCount count={boms.length} />}
                 </th>
@@ -106,9 +106,9 @@ export default function ProductionBomListPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : boms.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No BOMs match this view — change the filters, or use “+ New BOM” to set up a product’s material list and routing.</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No BOMs match this view — change the filters, or use “+ New BOM” to set up a product’s material list and routing.</td></tr>
             ) : (
               boms.map((b) => (
                 <tr key={b.id} onClick={() => router.push(recordPath('/dashboard/production/bom', b))} style={{ cursor: 'pointer' }}>
@@ -128,9 +128,6 @@ export default function ProductionBomListPage() {
                   <td style={cellStyle}>{b.work_order_count}</td>
                   <td style={cellStyle}>
                     <Pill label={STATUS_LABELS[b.status] || b.status} hex={STATUS_HEX[b.status]} />
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/production/bom', b))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

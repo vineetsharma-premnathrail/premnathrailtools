@@ -296,12 +296,7 @@ export default function DashboardPage() {
       </h1>
       <p style={{ fontSize: 14, color: TEXT.muted, margin: '0 0 28px' }}>{today}</p>
 
-      {allClear ? (
-        <p data-tour="dash-all-clear" style={{ fontSize: 13.5, color: '#475569', margin: '0 0 24px' }}>
-          You are all caught up. <Link href="/dashboard/organization/approvals" style={{ color: '#c2410c', fontWeight: 600 }}>My Approvals</Link>
-          {' · '}<Link href="/dashboard/projects/my-tasks" style={{ color: '#c2410c', fontWeight: 600 }}>My Tasks</Link>
-        </p>
-      ) : (
+      {!allClear && (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginBottom: 32, maxWidth: 640 }}>
         <WorkCard href="/dashboard/organization/approvals" title="My Approvals" count={waiting}
           sub={waiting == null ? 'Documents waiting for your decision' : waiting ? `${waiting} waiting for your decision` : 'Nothing waiting for you'} accent="#FF6A2A" />

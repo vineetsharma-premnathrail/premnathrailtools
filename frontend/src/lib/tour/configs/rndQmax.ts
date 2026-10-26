@@ -5,11 +5,6 @@ const config: TourConfig = {
   pageTitle: 'Qmax Calculator',
   steps: [
     {
-      target: 'rnd-toolnav-qmax',
-      title: 'Engineering Tools row',
-      purpose: 'Jump between calculators from this row of pills.',
-    },
-    {
       target: 'rnd-qmax-material',
       title: 'Material Selection (σB)',
       purpose: 'Tensile strength of the rail steel grade (σB, N/mm²). Click a tile to choose.',

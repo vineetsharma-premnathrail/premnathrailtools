@@ -96,7 +96,6 @@ export default function VendorFormDialog({ vendor, onClose, onSaved }: {
 
   return (
     <FormSheet icon={vendor ? 'edit' : 'building'} title={vendor ? `Edit ${vendor.name}` : 'Add vendor'}
-      subtitle="Shared vendor master — Finance adds bank, credit and GL details in Finance › Masters & Setup › Vendors."
       onClose={close} busy={saving}
       footer={<>
         <button type="button" onClick={close} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
@@ -169,7 +168,6 @@ export default function VendorFormDialog({ vendor, onClose, onSaved }: {
           <SheetSection icon="doc" title="Vendor's terms & conditions">
             <textarea value={form.terms_conditions} rows={4} onChange={(e) => set('terms_conditions', e.target.value)} aria-label="Vendor's terms and conditions"
               placeholder="e.g. 30 days credit, prices ex-works Pune, freight extra" style={{ ...sheetInput, resize: 'vertical' }} />
-            <p style={sheetHint}>Copied onto POs to this vendor, after the company&apos;s own terms (Procurement → Settings).</p>
           </SheetSection>
           <SheetSection icon="flag" title="Status">
             <SearchableSelect value={form.status} onChange={(v: string) => set('status', v)} options={STATUS_OPTS} placeholder="Status" ariaLabel="Status" />

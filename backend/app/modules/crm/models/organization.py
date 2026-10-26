@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
-from sqlalchemy import Boolean, String, Integer, Text, Float, ForeignKey, DateTime
+from sqlalchemy import Boolean, CheckConstraint, String, Integer, Text, Float, ForeignKey, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
@@ -14,6 +14,9 @@ if TYPE_CHECKING:
 
 class Organization(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "crm_organizations"
+    __table_args__ = (
+        CheckConstraint("org_scope IN ('domestic','international')", name="ck_crm_organizations_org_scope"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     org_code: Mapped[str | None] = mapped_column(String(30), nullable=True, unique=True, index=True)
@@ -33,6 +36,10 @@ class Organization(Base, TimestampMixin, SoftDeleteMixin):
     # of supply on sales orders / invoices for this customer.
     pan: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)
     gst_state_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    # Customer scope picked by the user (country does not decide it).
+    org_scope: Mapped[str] = mapped_column(String(15), nullable=False, default="domestic", server_default="domestic")
+    tax_vat_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    company_registration_no: Mapped[str | None] = mapped_column(String(50), nullable=True)
     official_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     official_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     additional_phones: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True, default=list)

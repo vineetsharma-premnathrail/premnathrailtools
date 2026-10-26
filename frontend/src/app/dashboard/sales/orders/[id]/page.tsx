@@ -27,7 +27,7 @@ import AmendmentPanel from '@/components/sales/AmendmentPanel'
 import ProformaPanel from '@/components/sales/ProformaPanel'
 import {
   SO_STATUS_LABELS, SO_STATUS_HEX, LEVEL_LABELS, DEVIATION_LABELS, PRICE_BASIS_LABELS, LD_PERIOD_LABELS, LD_BASIS_LABELS,
-  WARRANTY_RULE_LABELS, MILESTONE_LABELS, LINE_TYPE_LABELS, DOC_TYPE_LABELS, ORDER_TYPE_LABELS, formatINR,
+  WARRANTY_RULE_LABELS, MILESTONE_LABELS, LINE_TYPE_LABELS, DOC_TYPE_LABELS, ORDER_TYPE_LABELS, formatINR, formatMoney,
 } from '@/components/sales/labels'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
@@ -44,7 +44,7 @@ const TAB_FEATURE: Record<string, string> = {
 }
 const STEPS = ['draft', 'pending_approval', 'confirmed', 'in_execution', 'partially_delivered', 'delivered', 'closed']
 const TERM_KEYS = [
-  'order_type', 'customer_po_number', 'customer_po_date', 'customer_po_received_date', 'loa_number', 'loa_date', 'contract_reference',
+  'order_type', 'customer_po_number', 'customer_po_date', 'customer_po_received_date', 'contract_reference', 'currency',
   'purchaser_name', 'paying_authority', 'price_basis', 'freight_terms', 'insurance_terms', 'payment_terms_label', 'inspection_agency',
   'third_party_inspection_required', 'ld_applicable', 'ld_rate_percent', 'ld_rate_period', 'ld_basis', 'ld_max_percent',
   'warranty_months_from_delivery', 'warranty_months_from_commissioning', 'warranty_rule', 'warranty_terms_text',
@@ -183,7 +183,7 @@ export default function SalesOrderDetailPage() {
       <SalesNav />
       <PageHeader
         title={<span>{so.display_number} <span style={{ verticalAlign: 'middle' }}><Pill label={SO_STATUS_LABELS[so.status] || so.status} hex={SO_STATUS_HEX[so.status] || '#78716c'} /></span></span>}
-        subtitle={<>{so.customer_name} · PO {so.customer_po_number || '—'}{seePrices ? ` · ${formatINR(so.grand_total)} incl. GST` : ''}{so.amendment_no ? ` · amendment ${so.amendment_no}` : ''}</>}
+        subtitle={<>{so.customer_name} · PO {so.customer_po_number || '—'}{seePrices ? ` · ${formatMoney(so.grand_total, so.currency)} incl. GST` : ''}{so.amendment_no ? ` · amendment ${so.amendment_no}` : ''}</>}
         backHref="/dashboard/sales/orders"
       >
         <div data-tour="sales-detail-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -270,18 +270,18 @@ export default function SalesOrderDetailPage() {
               text={`${ORDER_TYPE_LABELS[so.order_type] || 'Sales'} order${so.source_label ? ` — from ${so.source_label}${so.source_quotation_number ? ` ${so.source_quotation_number}` : ''}` : ''}.`}
               meta={<>
                 <Pill label={SO_STATUS_LABELS[so.status] || so.status} hex={SO_STATUS_HEX[so.status] || '#78716c'} />
-                {seePrices && <><span style={{ color: '#cbd5e1' }}>·</span><span>Order value <strong style={{ color: '#0f172a' }}>{formatINR(so.grand_total)}</strong> incl. GST</span></>}
+                {seePrices && <><span style={{ color: '#cbd5e1' }}>·</span><span>Order value <strong style={{ color: '#0f172a' }}>{formatMoney(so.grand_total, so.currency)}</strong> incl. GST</span></>}
                 <span style={{ color: '#cbd5e1' }}>·</span><span>{so.units_delivered} of {so.units_total} units delivered</span>
                 <span style={{ color: '#cbd5e1' }}>·</span><span>Sales owner: <strong style={{ color: '#0f172a' }}>{so.sales_owner_name || '—'}</strong></span>
               </>}
             />
             <DetailGroup title="Customer">
               <DetailRow label="GSTIN">{so.customer_gstin}</DetailRow>
-              <DetailRow label="Contact person">{so.customer_contact_name}</DetailRow>
+              <DetailRow label="Contact Person">{so.customer_contact_name}</DetailRow>
               <DetailRow label="Billing address">{so.billing_address}</DetailRow>
             </DetailGroup>
             <DetailGroup title="Order" last={c.edit}>
-              {seePrices && <DetailRow label="Value">{`${formatINR(so.taxable_total)} + GST ${formatINR(so.gst_total)} = ${formatINR(so.grand_total)}`}</DetailRow>}
+              {seePrices && <DetailRow label="Value">{`${formatMoney(so.taxable_total, so.currency)} + GST ${formatMoney(so.gst_total, so.currency)} = ${formatMoney(so.grand_total, so.currency)}`}</DetailRow>}
               <DetailRow label="Confirmed">{so.confirmed_at ? `${formatDate(so.confirmed_at)}${so.confirmed_by_name ? ` by ${so.confirmed_by_name}` : ''}` : null}</DetailRow>
               <DetailRow label="Order acknowledgement issued">{so.oa_issued_at ? formatDate(so.oa_issued_at) : null}</DetailRow>
               {so.hold_reason && so.status === 'on_hold' && <DetailRow label="Hold reason">{so.hold_reason}</DetailRow>}
@@ -291,8 +291,11 @@ export default function SalesOrderDetailPage() {
             {!c.edit && (
               <DetailGroup title="Contract terms" last>
                 <DetailRow label="Customer PO">{so.customer_po_number ? `${so.customer_po_number}${so.customer_po_date ? ` · ${formatDate(so.customer_po_date)}` : ''}` : null}</DetailRow>
-                <DetailRow label="LOA">{so.loa_number ? `${so.loa_number}${so.loa_date ? ` · ${formatDate(so.loa_date)}` : ''}` : null}</DetailRow>
-                <DetailRow label="Purchaser">{so.purchaser_name}</DetailRow>
+                {!so.customer_po_number && so.loa_number && (
+                  <DetailRow label="PO / LOA no.">{`${so.loa_number}${so.loa_date ? ` · ${formatDate(so.loa_date)}` : ''}`}</DetailRow>
+                )}
+                <DetailRow label="Purchase Person Name">{so.purchaser_name}</DetailRow>
+                <DetailRow label="Currency">{so.currency && so.currency !== 'INR' ? `${so.currency} (label only, amounts not converted)` : 'INR'}</DetailRow>
                 <DetailRow label="Paying authority">{so.paying_authority}</DetailRow>
                 <DetailRow label="Price basis">{PRICE_BASIS_LABELS[so.price_basis]}</DetailRow>
                 <DetailRow label="Freight / insurance">{[so.freight_terms, so.insurance_terms].filter(Boolean).join(' / ') || null}</DetailRow>
@@ -316,7 +319,7 @@ export default function SalesOrderDetailPage() {
       {shown === 'lines' && editLines && (
         <DraftBlock icon="list" title="Lines" subtitle="Draft — products, quantities and prices as on the customer's PO." busy={busy} saveLabel="Save lines"
           onSave={() => run(() => salesApi.putLines(soId, lines), 'Lines saved — vehicle rows were added to the schedule where needed.')}>
-          <LinesEditor lines={lines} onChange={setLines} customerId={so.customer_id} priceDate={so.customer_po_date} />
+          <LinesEditor lines={lines} onChange={setLines} currency={so.currency} customerId={so.customer_id} priceDate={so.customer_po_date} />
         </DraftBlock>
       )}
       {shown === 'lines' && !editLines && (
@@ -332,8 +335,8 @@ export default function SalesOrderDetailPage() {
                   <tr key={l.id}>
                     <td style={tdStyle}>{l.line_number}</td><td style={tdStyle}>{LINE_TYPE_LABELS[l.line_type]}</td><td style={tdStyle}>{l.description}</td>
                     <td style={tdStyle}>{l.rrv_model || '—'}</td><td style={tdStyle}>{l.customer_line_ref || '—'}</td><td style={numTdStyle}>{l.quantity} {l.uom}</td>
-                    {seePrices && <><td style={numTdStyle}>{formatINR(l.unit_price)}</td><td style={numTdStyle}>{formatINR(l.taxable_amount)}</td><td style={numTdStyle}>{formatINR(l.gst_amount)} ({l.gst_rate}%)</td>
-                    <td style={numTdStyle}>{formatINR(l.line_total)}</td></>}<td style={numTdStyle}>{l.qty_delivered}/{l.qty_scheduled}</td>
+                    {seePrices && <><td style={numTdStyle}>{formatMoney(l.unit_price, so.currency)}</td><td style={numTdStyle}>{formatMoney(l.taxable_amount, so.currency)}</td><td style={numTdStyle}>{formatMoney(l.gst_amount, so.currency)} ({l.gst_rate}%)</td>
+                    <td style={numTdStyle}>{formatMoney(l.line_total, so.currency)}</td></>}<td style={numTdStyle}>{l.qty_delivered}/{l.qty_scheduled}</td>
                   </tr>))}
                 </tbody>
               </table>
@@ -360,7 +363,7 @@ export default function SalesOrderDetailPage() {
       {shown === 'billing' && editBilling && (
         <DraftBlock icon="rupee" title="Billing plan" subtitle="Draft — when each part of the order value is invoiced (must total 100%)." busy={busy} saveLabel="Save billing plan"
           onSave={() => run(() => salesApi.putBillingPlan(soId, billing), 'Billing plan saved.')}>
-          <BillingPlanEditor rows={billing} onChange={setBilling} grandTotal={so.grand_total} />
+          <BillingPlanEditor rows={billing} onChange={setBilling} grandTotal={so.grand_total} currency={so.currency} />
         </DraftBlock>
       )}
       {shown === 'billing' && !editBilling && (
@@ -368,7 +371,7 @@ export default function SalesOrderDetailPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
             <h2 style={{ ...h2Style, margin: 0 }}>Billing plan</h2>
           </div>
-          <BillingPlanEditor rows={billing} onChange={setBilling} grandTotal={so.grand_total} readOnly />
+          <BillingPlanEditor rows={billing} onChange={setBilling} grandTotal={so.grand_total} currency={so.currency} readOnly />
           {(so.so_number ? <BillingStatusPanel order={so} /> : <p style={{ fontSize: 12, color: TEXT.muted }}>Milestones start falling due once the order is confirmed. {so.billing_lines.map((b) => `${MILESTONE_LABELS[b.milestone_type] || b.milestone_type}: ${b.status.replace(/_/g, ' ')}`).join(' · ')}</p>)}
         </div>
       )}

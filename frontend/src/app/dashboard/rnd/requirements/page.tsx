@@ -126,7 +126,7 @@ export default function RndRequirementsPage() {
         <table data-tour="rnd-req-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1140 }}>
           <thead>
             <tr>
-              {['TOR No.', 'Source', 'Customer', 'Product / Tender', 'Qty', 'Priority', 'R&D Response', 'BD Owner', 'Last Sent', 'Sends', ''].map((h, hi) => (
+              {['TOR No.', 'Source', 'Customer', 'Product / Tender', 'Qty', 'Priority', 'R&D Response', 'BD Owner', 'Last Sent', 'Sends'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{hi === 0 && <RowCount count={rows.length} />}
                 </th>
@@ -135,9 +135,9 @@ export default function RndRequirementsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 {search || source || mine ? 'No requirements match your filters.' : 'No requirements yet — they arrive here when the business team sends a Technical Offer Request from CRM.'}
               </td></tr>
             ) : (
@@ -188,9 +188,6 @@ export default function RndRequirementsPage() {
                       {r.last_sent_by && <div style={{ fontSize: 11.5, color: TEXT.muted }}>by {r.last_sent_by}</div>}
                     </td>
                     <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.send_count}</td>
-                    <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                      <span onClick={() => router.push(href)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                    </td>
                   </tr>
                 )
               })

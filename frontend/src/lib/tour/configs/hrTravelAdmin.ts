@@ -85,18 +85,13 @@ const config: TourConfig = {
     {
       target: 'hr-claims-table',
       title: 'Claims',
-      purpose: 'Claim number, employee, title and number of lines, claim date, linked trip, amount, approver and status. Click a row to open the claim.',
+      purpose: 'Claim number, employee, title and number of lines, claim date, linked trip, amount, approver and status. Click a row to open the claim, then approve or reject it, or record payment once it is approved.',
     },
     {
       target: 'hr-claims-status-badge',
       title: 'Claim status',
       purpose: 'Paid claims also show the payment reference underneath.',
       options: HR_CLAIM_STATUS_OPTIONS,
-    },
-    {
-      target: 'hr-claims-open-link',
-      title: 'View / Review / Record payment',
-      purpose: '"Review" when you can approve or reject it, "Record payment" when it is approved and waiting to be paid, otherwise "View".',
     },
   ],
 }

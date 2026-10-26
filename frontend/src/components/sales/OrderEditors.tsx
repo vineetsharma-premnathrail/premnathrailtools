@@ -12,7 +12,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import { TEXT } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
 import { thStyle as salesTh, tdStyle } from '@/components/sales/SalesUi'
-import { LINE_TYPE_LABELS, MILESTONE_LABELS, formatINR } from '@/components/sales/labels'
+import { LINE_TYPE_LABELS, MILESTONE_LABELS, formatINR, formatMoney, currencySymbol } from '@/components/sales/labels'
 import { formatDate } from '@/lib/format'
 import { SheetIcon, SHEET, sheetBtn, sheetInput } from '@/components/shared/FormSheet'
 import { RowCount } from '@/components/shared/ui'
@@ -65,8 +65,10 @@ function overridden(l: SalesOrderLineInput) {
   return l.list_price != null && Math.abs((Number(l.unit_price) || 0) - Number(l.list_price)) > 0.005
 }
 
-export function LinesEditor({ lines, onChange, readOnly, customerId, priceDate }: {
+export function LinesEditor({ lines, onChange, readOnly, customerId, priceDate, currency }: {
   lines: SalesOrderLineInput[]; onChange: (l: SalesOrderLineInput[]) => void; readOnly?: boolean
+  // Order currency: a label for the amounts only (no conversion). Default INR.
+  currency?: string | null
   // Pricing conditions (Sales › Pricing): picking a product defaults its price for this customer on this date.
   customerId?: number | null; priceDate?: string | null
 }) {
@@ -94,7 +96,7 @@ export function LinesEditor({ lines, onChange, readOnly, customerId, priceDate }
     <div>
       <div style={{ overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1300 }}>
-          <thead><tr>{['#', 'Type', 'Product', 'Description (as on PO)', 'RRV model', 'Customer item ref.', 'HSN', 'Qty', 'Unit price ₹', 'Disc %', 'GST %', 'Total', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={lines.length} />}</th>)}</tr></thead>
+          <thead><tr>{['#', 'Type', 'Product', 'Description (as on PO)', 'Model', 'Customer item ref.', 'HSN', 'Qty', `Unit price ${currencySymbol(currency)}`, 'Disc %', 'GST %', 'Total', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={lines.length} />}</th>)}</tr></thead>
           <tbody>
             {lines.map((l, i) => (
               <tr key={i}>
@@ -115,7 +117,7 @@ export function LinesEditor({ lines, onChange, readOnly, customerId, priceDate }
                 <td style={{ ...tdStyle, width: 70 }}><input disabled={readOnly} type="number" min={0} style={cellInput} value={l.quantity} onChange={(e) => set(i, { quantity: Number(e.target.value) })} /></td>
                 <td style={{ ...tdStyle, width: 150 }}>
                   <input disabled={readOnly} type="number" min={0} style={cellInput} value={l.unit_price} onChange={(e) => set(i, { unit_price: Number(e.target.value) })} />
-                  {l.list_price != null && <div style={{ fontSize: 11, color: overridden(l) ? '#b45309' : TEXT.muted, marginTop: 3 }}>List {formatINR(l.list_price)}</div>}
+                  {l.list_price != null && <div style={{ fontSize: 11, color: overridden(l) ? '#b45309' : TEXT.muted, marginTop: 3 }}>List {formatMoney(l.list_price, currency)}</div>}
                   {overridden(l) && !readOnly && (
                     <input style={{ ...cellInput, marginTop: 4, borderColor: l.price_override_reason ? undefined : '#f59e0b' }} placeholder="Reason for manual price"
                       value={l.price_override_reason || ''} onChange={(e) => set(i, { price_override_reason: e.target.value })} />
@@ -123,7 +125,7 @@ export function LinesEditor({ lines, onChange, readOnly, customerId, priceDate }
                 </td>
                 <td style={{ ...tdStyle, width: 70 }}><input disabled={readOnly} type="number" min={0} max={100} style={cellInput} value={l.discount_percent} onChange={(e) => set(i, { discount_percent: Number(e.target.value) })} /></td>
                 <td style={{ ...tdStyle, width: 70 }}><input disabled={readOnly} type="number" min={0} max={28} style={cellInput} value={l.gst_rate} onChange={(e) => set(i, { gst_rate: Number(e.target.value) })} /></td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatINR(Math.round(lineTotals(l).total * 100) / 100)}</td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatMoney(Math.round(lineTotals(l).total * 100) / 100, currency)}</td>
                 <td style={{ ...tdStyle, width: 30 }}>{!readOnly && !l.id && <button type="button" style={removeBtn} title="Remove line" aria-label="Remove line" onClick={() => onChange(lines.filter((_, j) => j !== i))}><RemoveIcon /></button>}</td>
               </tr>
             ))}
@@ -132,7 +134,7 @@ export function LinesEditor({ lines, onChange, readOnly, customerId, priceDate }
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
         {!readOnly ? <button type="button" data-tour="sales-lines-add" style={smallBtn} onClick={() => onChange([...lines, emptyLine(next)])}><AddIcon />Add line</button> : <span />}
-        <span style={{ fontSize: 13, fontWeight: 700, color: TEXT.heading }}>Order value (incl. GST): {formatINR(Math.round(total * 100) / 100)}</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: TEXT.heading }}>Order value (incl. GST): {formatMoney(Math.round(total * 100) / 100, currency)}</span>
       </div>
     </div>
   )
@@ -146,7 +148,7 @@ export function ScheduleEditor({ lines, rows, onChange, readOnly }: {
   return (
     <div>
       <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 10px' }}>
-        One row per vehicle for RRV lines — each vehicle gets its own contractual date, build, LD and warranty. Spares lines are scheduled in lots.
+        One row per vehicle for RRV lines — each vehicle gets its own contractual date, build, LD and warranty. Accessory lines are scheduled in lots.
       </p>
       <div style={{ overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
@@ -190,9 +192,9 @@ export function ScheduleEditor({ lines, rows, onChange, readOnly }: {
   )
 }
 
-export function BillingPlanEditor({ rows, onChange, grandTotal, readOnly }: {
+export function BillingPlanEditor({ rows, onChange, grandTotal, readOnly, currency }: {
   // grandTotal null = hidden by the server (Sales › Sales Orders › Prices & margins).
-  rows: SalesBillingLineInput[]; onChange: (r: SalesBillingLineInput[]) => void; grandTotal: number | null; readOnly?: boolean
+  rows: SalesBillingLineInput[]; onChange: (r: SalesBillingLineInput[]) => void; grandTotal: number | null; readOnly?: boolean; currency?: string | null
 }) {
   const set = (i: number, patch: Partial<SalesBillingLineInput>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
   const sum = Math.round(rows.reduce((s, r) => s + (Number(r.percent) || 0), 0) * 1000) / 1000
@@ -212,7 +214,7 @@ export function BillingPlanEditor({ rows, onChange, grandTotal, readOnly }: {
                 </td>
                 <td style={tdStyle}><input disabled={readOnly} style={cellInput} value={r.description || ''} onChange={(e) => set(i, { description: e.target.value })} /></td>
                 <td style={{ ...tdStyle, width: 80 }}><input disabled={readOnly} type="number" min={0} max={100} style={cellInput} value={r.percent} onChange={(e) => set(i, { percent: Number(e.target.value) })} /></td>
-                <td style={{ ...tdStyle, width: 130, whiteSpace: 'nowrap' }}>{grandTotal == null ? '—' : formatINR(Math.round(grandTotal * (Number(r.percent) || 0)) / 100)}</td>
+                <td style={{ ...tdStyle, width: 130, whiteSpace: 'nowrap' }}>{grandTotal == null ? '—' : formatMoney(Math.round(grandTotal * (Number(r.percent) || 0)) / 100, currency)}</td>
                 <td style={{ ...tdStyle, width: 90 }}><input disabled={readOnly} type="checkbox" checked={!!r.per_unit} onChange={(e) => set(i, { per_unit: e.target.checked })} /></td>
                 <td style={{ ...tdStyle, width: 90 }}><input disabled={readOnly} type="number" min={0} style={cellInput} value={r.due_days ?? ''} onChange={(e) => set(i, { due_days: e.target.value === '' ? null : Number(e.target.value) })} /></td>
                 <td style={{ ...tdStyle, width: 30 }}>{!readOnly && <button type="button" style={removeBtn} title="Remove milestone" aria-label="Remove milestone" onClick={() => onChange(rows.filter((_, j) => j !== i))}><RemoveIcon /></button>}</td>

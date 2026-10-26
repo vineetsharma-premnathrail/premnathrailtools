@@ -155,17 +155,23 @@ export const numTdStyle: React.CSSProperties = { ...tdStyle, textAlign: 'right',
  * filters — not the page size), so the number always matches what the user is
  * looking at. */
 export function RowCount({ count, title }: { count: number; title?: string }) {
+  // Not shown on screen (the owner does not want a "N found" badge in table headers); kept for screen readers.
   return (
     <span
       data-row-count={count}
-      title={title ?? `${count.toLocaleString('en-IN')} ${count === 1 ? 'record' : 'records'} found with the current search and filters`}
-      style={{
-        display: 'inline-block', marginLeft: 6, padding: '1px 7px', borderRadius: 999,
-        background: 'rgba(255,122,69,0.12)', color: COLORS.brandDark, fontSize: 10.5, fontWeight: 700,
-        letterSpacing: 0, lineHeight: '16px', verticalAlign: 'middle', textTransform: 'none',
-      }}
+      style={{ position: 'absolute', width: 1, height: 1, margin: -1, padding: 0, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0 }}
     >
-      {count.toLocaleString('en-IN')} found
+      {title ?? `${count.toLocaleString('en-IN')} ${count === 1 ? 'record' : 'records'} found with the current search and filters`}
+    </span>
+  )
+}
+
+/** Small counter chip for the header of a list page: a number in colour and a label ("305 Machines"). */
+export function StatChip({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <span style={{ ...pillStyle('#57534e'), gap: 6, padding: '3px 12px', fontSize: 12, fontWeight: 600, background: 'rgba(255,255,255,.7)', border: '1px solid rgba(0,0,0,0.08)' }}>
+      <span style={{ fontSize: 15, fontWeight: 700, color }}>{value.toLocaleString('en-IN')}</span>
+      {label}
     </span>
   )
 }

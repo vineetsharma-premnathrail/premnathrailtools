@@ -523,9 +523,14 @@ export interface Organization {
   state?: string
   city?: string
   pin_code?: string
+  /** Domestic or International: asked first on the form; independent of `country`. */
+  org_scope?: 'domestic' | 'international'
   gst_number?: string
   pan?: string | null
   gst_state_code?: string | null
+  /** International organizations: Tax / VAT ID and Company Registration Number (Domestic uses GSTIN / PAN / GST State Code). */
+  tax_vat_id?: string | null
+  company_registration_no?: string | null
   official_phone?: string
   official_email?: string
   additional_phones?: string[]
@@ -1047,8 +1052,9 @@ export interface RndTask {
   record_id: number
   // Project tasks only: set on a sub-task (the parent's assignee split the work).
   parent_task_id?: number | null
-  /** Project tasks only: the plan milestone it belongs to (null on older tasks). */
+  /** The plan milestone it belongs to (project tasks and requirement tasks; null on older tasks). */
   milestone_id?: number | null
+  milestone_title?: string | null
   title: string
   remarks: string | null
   // Requirement tasks only: whose work it is (R&D or a shared department).
@@ -1108,14 +1114,17 @@ export interface RndTaskCreateInput {
   files: File[]
   /** Requirement tasks: the assignee's department. */
   department?: RndWorkDepartment
-  /** Project tasks: the milestone it goes into. */
+  /** Project and requirement tasks: the milestone it goes into. */
   milestone_id?: number
 }
 
 /** A milestone of an R&D project's plan (Project Plan & Milestones, same as PM). */
 export interface RndMilestone {
   id: number
-  project_id: number
+  /** Project milestones only; a requirement milestone carries source + record_id instead. */
+  project_id?: number
+  source?: 'inquiry' | 'tender'
+  record_id?: number
   title: string
   description: string | null
   assignee_id: number
@@ -1161,7 +1170,7 @@ export interface RndMilestoneInput {
 
 export interface RndProjectHistoryEntry {
   id: string
-  kind: 'milestone' | 'project' | 'task'
+  kind: 'milestone' | 'project' | 'task' | 'requirement'
   action: string
   summary: string
   performed_by: string
@@ -1491,6 +1500,9 @@ export interface P2PRequest {
   project_type?: 'existing' | 'new'
   /** What the purchase is for (2026-10-23): customer_order | machine_project | development | department | capital | stock. Null on older PRs. */
   purpose?: string | null
+  /** R&D project (Prototype / Research) a New development purchase is charged to; Finance's internal order is created behind it. */
+  rnd_project_id?: number | null
+  rnd_project_label?: string | null
   /** 'engine' = central approval engine (Organization › Approval Workflows, 2026-10-08);
    * 'settings' / null = older items finishing on the old Procurement approval path. */
   approval_scheme?: 'engine' | 'settings' | null
@@ -3319,7 +3331,7 @@ export interface InternalOrder {
   code: string
   name: string
   description?: string | null
-  order_type: 'capital' | 'maintenance' | 'it' | 'training'
+  order_type: 'capital' | 'maintenance' | 'it' | 'training' | 'development'
   start_date?: string | null
   end_date?: string | null
   budgeted_amount?: number | null
@@ -4852,6 +4864,8 @@ export interface PmProject {
   name: string
   client_name?: string | null
   customer_po_ref?: string | null
+  /** The sales order (SO) number this project is delivered under: typed text, required when a project is created (Project Management stays standalone: no link to Sales). */
+  sales_order_ref?: string | null
   description?: string | null
   project_manager_id?: number | null
   project_manager_name?: string | null
@@ -9485,6 +9499,8 @@ export interface SettingSpecDto {
   help: string
   locked: boolean
   per_plant: boolean
+  /** A person / value that may never be left blank (no Blank / Clear option; a missing value shows "Required"). */
+  required?: boolean
 }
 
 export interface SettingsPayload {
@@ -9495,6 +9511,83 @@ export interface SettingsPayload {
   meta: Record<string, { updated_by_name: string | null; updated_at: string | null }>
   can_edit: boolean
   editors_note: string
+}
+
+// Shared module reports framework (backend app/core/reporting, rendered by components/reports/ModuleReportsPage.tsx).
+export type ReportColType = 'text' | 'longtext' | 'int' | 'decimal' | 'money' | 'percent' | 'hours' | 'days' | 'date' | 'datetime' | 'time' | 'status' | 'bool'
+export interface ReportPreset { key: string; label: string }
+export interface ReportFilterDef {
+  key: string
+  label: string
+  type: 'select' | 'multi_select' | 'user' | 'entity' | 'text' | 'int' | 'bool'
+  options?: { value: string; label: string }[] | null
+  /** User / entity filters: values come from reportsApi.options (scoped lookup). */
+  has_lookup?: boolean
+}
+export interface ReportColumnDef {
+  key: string
+  label: string
+  type: ReportColType
+  default: boolean
+  total: 'sum' | 'avg' | 'weighted' | 'none'
+  /** [row id key, page base] - the cell opens the record through recordPath. */
+  link: [string, string] | null
+  /** Free-text column that may be cut with an ellipsis. */
+  cut: boolean
+  group_bys: string[] | null
+}
+export interface ReportKpi { key: string; label: string; type: ReportColType; value?: number | string | null; hint?: string }
+export interface ReportChartDef { key: string; label: string; kind: 'bar' | 'stacked_bar' | 'hbar' | 'line' | 'doughnut' }
+export interface ReportSeries {
+  key: string
+  label: string
+  kind: ReportChartDef['kind']
+  labels: string[]
+  datasets: { label: string; data: (number | null)[] }[]
+}
+export interface ReportDefOut {
+  key: string
+  label: string
+  description: string
+  section: string
+  order: number
+  date_basis: string
+  date_mode: 'range' | 'snapshot'
+  self_only: boolean
+  filters: ReportFilterDef[]
+  group_bys: { key: string; label: string }[]
+  default_group_by: string | null
+  columns: ReportColumnDef[]
+  kpis: ReportKpi[]
+  charts: ReportChartDef[]
+  default_sort: [string, 'asc' | 'desc'] | null
+  definitions: [string, string][]
+}
+export interface ReportCatalogue {
+  module: string
+  module_label: string
+  can_export: boolean
+  sees_money: boolean
+  sees_people: boolean
+  presets: ReportPreset[]
+  reports: ReportDefOut[]
+}
+export interface ReportResult {
+  report: string
+  label: string
+  period: { from: string; to: string; label: string; basis: string }
+  filters_applied: { key: string; label: string; value: string }[]
+  scope_label: string
+  group_by: string | null
+  columns: ReportColumnDef[]
+  kpis: ReportKpi[]
+  rows: Record<string, unknown>[]
+  totals: Record<string, number | string | null>
+  series: ReportSeries[]
+  row_count: number
+  truncated: boolean
+  notes: string[]
+  generated_at: string
 }
 
 // ---------------------------------------------------------------------------
@@ -10174,7 +10267,7 @@ export interface ApprovalContextField {
   label: string
   type: 'number' | 'text' | 'bool' | 'choice' | 'user'
   choices?: string[]
-  /** Display name per choice (e.g. purpose 'customer_order' → 'Production (customer order)'). */
+  /** Display name per choice (e.g. purpose 'customer_order' → 'Project'). */
   choice_labels?: Record<string, string>
 }
 

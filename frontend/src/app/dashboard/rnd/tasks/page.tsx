@@ -78,12 +78,12 @@ function fromRnd(t: RndTask, category: 'prototype' | 'requirement'): Row {
   const reassigned = [...t.events].reverse().find((e) => e.action === 'edited' && (e.remarks || '').includes('Assignee:'))
   return {
     key: `${category}-${t.id}`, category, title: t.title,
-    ref: t.requirement_ref || `#${t.record_id}`, refTitle: t.requirement_title || null,
+    ref: t.requirement_ref || `#${t.record_id}`, refTitle: (category === 'requirement' ? [t.requirement_title, t.milestone_title] : [t.requirement_title]).filter(Boolean).join(' · ') || null,
     due: t.due_date, assignedAt: reassigned?.at || t.created_at, assignedBy: reassigned?.by || t.created_by,
     status: t.pending_approval ? 'Approval pending' : (RND_STATUS_LABELS[t.status] || t.status),
     statusHex: t.pending_approval ? '#D97706' : (RND_STATUS_HEX[t.status] || '#78716c'),
     overdue: t.is_overdue, done,
-    href: category === 'prototype' ? `${recordPath('/dashboard/rnd/projects', t, 'record_id')}#tasks` : `${recordPath(`/dashboard/rnd/requirements/${t.source}`, t, 'record_id')}?tab=tasks`,
+    href: category === 'prototype' ? `${recordPath('/dashboard/rnd/projects', t, 'record_id')}#tasks` : `${recordPath(`/dashboard/rnd/requirements/${t.source}`, t, 'record_id')}?tab=milestones`,
   }
 }
 
@@ -174,13 +174,13 @@ export default function RndMyTasksPage() {
       <div data-tour="rnd-mytasks-table" style={tableWrap}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 920 }}>
           <thead>
-            <tr>{['Category', 'Task', 'Project / Requirement', 'Assigned', 'Due', 'Status', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={list.length} />}</th>)}</tr>
+            <tr>{['Category', 'Task', 'Project / Requirement', 'Assigned', 'Due', 'Status'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={list.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {rows === null ? (
-              <tr><td colSpan={7} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={7} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>{words.length ? `No task matches “${query.trim()}”.` : showDone ? 'No tasks.' : 'No open tasks — you are all caught up.'}</td></tr>
+              <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>{words.length ? `No task matches “${query.trim()}”.` : showDone ? 'No tasks.' : 'No open tasks — you are all caught up.'}</td></tr>
             ) : list.map((r) => (
               <tr key={r.key} onClick={() => router.push(r.href)} style={{ cursor: 'pointer', opacity: r.done ? 0.65 : 1 }}>
                 <td style={tdStyle}>{pill(CATEGORY_LABELS[r.category], CATEGORY_HEX[r.category])}</td>
@@ -197,9 +197,6 @@ export default function RndMyTasksPage() {
                   {r.due ? formatDate(r.due) : '—'}{r.overdue && !r.done ? ' · overdue' : ''}
                 </td>
                 <td style={tdStyle}>{pill(r.status, r.statusHex)}</td>
-                <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                  <span onClick={() => router.push(r.href)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>Open</span>
-                </td>
               </tr>
             ))}
           </tbody>

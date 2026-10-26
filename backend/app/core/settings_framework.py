@@ -71,6 +71,10 @@ class SettingSpec:
     per_plant: bool = False
     # user / users only: modules a picked person may hold (any one). None = the settings module's own app.
     user_apps: tuple[str, ...] | None = None
+    # required: may never be saved blank. default_resolver: computes the shown default
+    # (e.g. a standard buyer's current user id) when nothing is stored; not sent to the browser.
+    required: bool = False
+    default_resolver: Callable[[Session], Any] | None = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.type not in SETTING_TYPES:
@@ -379,7 +383,8 @@ def get_all(db: Session, module: str) -> dict:
                 "updated_at": row.updated_at.isoformat() if isinstance(row.updated_at, datetime) else None,
             }
         else:
-            values[key] = spec.default
+            resolved = spec.default_resolver(db) if spec.default_resolver is not None else None
+            values[key] = resolved if resolved is not None else spec.default
             is_default[key] = True
     return {"values": values, "is_default": is_default, "meta": meta}
 
@@ -445,6 +450,9 @@ def save(db: Session, module: str, values: dict, user: User, branch_id: int | No
             raise ValueError(f"{spec.label} is locked and can only be changed in code — ask the system administrator.")
         if branch_id is not None and not spec.per_plant:
             raise ValueError(f"{spec.label} is company-wide and can't be set per plant — change it without a plant.")
+        if spec.required and (raw is None or (isinstance(raw, str) and not raw.strip())
+                              or (isinstance(raw, (list, tuple, dict)) and not raw)):
+            raise ValueError(f"{spec.label}: pick a person — this setting can't be left blank.")
         clean[key] = coerce(spec, raw, db, app_key=defn.app_key)
 
     current = {k: get_setting(db, module, k, branch_id) for k in defn.specs}
@@ -487,6 +495,8 @@ def reset(db: Session, module: str, key: str, user: User, branch_id: int | None 
         raise ValueError(f"'{key}' is not a {defn.label} setting — reload the page and try again.")
     if spec.locked:
         raise ValueError(f"{spec.label} is locked and can only be changed in code — ask the system administrator.")
+    if spec.required and spec.default_resolver is None:
+        raise ValueError(f"{spec.label}: there is no default to go back to — pick a person instead.")
     row = _row(db, defn, key, branch_id)
     if row is not None:
         old = row.value
@@ -518,6 +528,7 @@ def _editors_note(defn: ModuleSettingsDef) -> str:
 
 def _spec_dto(spec: SettingSpec) -> dict:
     d = asdict(spec)
+    d.pop("default_resolver", None)  # a function; the browser gets the resolved value in `values`
     d["options"] = [{"value": v, "label": lbl} for v, lbl in (spec.options or [])] if spec.options else None
     return d
 

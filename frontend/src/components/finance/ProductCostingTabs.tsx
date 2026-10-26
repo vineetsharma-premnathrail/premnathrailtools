@@ -194,11 +194,11 @@ export function CostEstimatesTab() {
           <tr>
             <th style={thStyle}>Estimate <RowCount count={rows.length} /></th><th style={thStyle}>Item</th><th style={thStyle}>BOM</th><th style={thStyle}>Costing date</th>
             <th style={numTh}>Lot</th><th style={numTh}>Material</th><th style={numTh}>Job work</th><th style={numTh}>Labour</th>
-            <th style={numTh}>Overhead</th><th style={numTh}>Unit cost</th><th style={thStyle}>Status</th><th style={thStyle}>Valid</th><th style={thStyle}></th>
+            <th style={numTh}>Overhead</th><th style={numTh}>Unit cost</th><th style={thStyle}>Status</th><th style={thStyle}>Valid</th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <EmptyRow colSpan={13} text="Loading…" /> : rows.length === 0 ? <EmptyRow colSpan={13} text="No cost estimates yet — use + Run cost estimate." /> : rows.map((r) => (
+          {loading ? <EmptyRow colSpan={12} text="Loading…" /> : rows.length === 0 ? <EmptyRow colSpan={12} text="No cost estimates yet — use + Run cost estimate." /> : rows.map((r) => (
             <tr key={r.id} onClick={() => open(r.id)} style={{ cursor: 'pointer', background: selected?.id === r.id ? 'rgba(15,118,110,.06)' : undefined }}>
               <td style={{ ...tdStyle, fontWeight: 600 }}>{r.estimate_number}</td>
               <td style={tdStyle}>{r.item_code} — {r.item_name}</td>
@@ -212,7 +212,6 @@ export function CostEstimatesTab() {
               <td style={{ ...numTd, fontWeight: 700 }}>{inr(r.unit_cost)}</td>
               <td style={tdStyle}><StatusPill status={r.status} labels={EST_LABELS} colors={EST_HEX} /></td>
               <td style={tdStyle}>{r.valid_from ? `${dmy(r.valid_from)} → ${r.valid_to ? dmy(r.valid_to) : 'open'}` : '—'}</td>
-              <td style={tdStyle} onClick={(e) => e.stopPropagation()}><span style={linkBtnStyle} onClick={() => open(r.id)}>View</span></td>
             </tr>
           ))}
         </tbody>
@@ -391,10 +390,10 @@ export function OrderVarianceTab() {
       <TableWrap minWidth={1050} maxHeight="calc(100vh - 420px)" tour="order-variance-list">
         <thead><tr>
           <th style={thStyle}>Work order <RowCount count={rows.length} /></th><th style={thStyle}>Product</th><th style={thStyle}>Status</th><th style={numTh}>Planned</th><th style={numTh}>Done</th>
-          <th style={thStyle}>Plan from</th><th style={numTh}>Plan</th><th style={numTh}>Target</th><th style={numTh}>Actual</th><th style={numTh}>Variance</th><th style={thStyle}></th>
+          <th style={thStyle}>Plan from</th><th style={numTh}>Plan</th><th style={numTh}>Target</th><th style={numTh}>Actual</th><th style={numTh}>Variance</th>
         </tr></thead>
         <tbody>
-          {loading ? <EmptyRow colSpan={11} text="Loading…" /> : rows.length === 0 ? <EmptyRow colSpan={11} text="No work orders." /> : rows.map((r) => (
+          {loading ? <EmptyRow colSpan={10} text="Loading…" /> : rows.length === 0 ? <EmptyRow colSpan={10} text="No work orders." /> : rows.map((r) => (
             <tr key={r.work_order_id} onClick={() => open(r.work_order_id)} style={{ cursor: 'pointer' }}>
               <td style={{ ...tdStyle, fontWeight: 600 }}>{r.wo_number}</td><td style={tdStyle}>{r.product_label}</td>
               <td style={tdStyle}><StatusPill status={r.status} labels={WO_STATUS_LABELS} colors={WO_STATUS_HEX} /></td>
@@ -402,7 +401,6 @@ export function OrderVarianceTab() {
               <td style={tdStyle}>{r.estimate_number || PLAN_SOURCE[r.plan_source]}</td>
               <td style={numTd}>{inr(r.plan_total)}</td><td style={numTd}>{inr(r.target_total)}</td><td style={numTd}>{inr(r.actual_total)}</td>
               <td style={{ ...numTd, fontWeight: 700, color: varColor(r.total_variance) }}>{inr(r.total_variance)}{r.total_variance_pct != null ? ` (${r.total_variance_pct}%)` : ''}</td>
-              <td style={tdStyle} onClick={(e) => e.stopPropagation()}><span style={linkBtnStyle} onClick={() => open(r.work_order_id)}>View</span></td>
             </tr>
           ))}
         </tbody>

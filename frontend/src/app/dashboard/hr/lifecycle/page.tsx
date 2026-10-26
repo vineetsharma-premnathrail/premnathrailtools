@@ -151,7 +151,7 @@ export default function HrLifecyclePage() {
         <table data-tour="hr-lc-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
           <thead>
             <tr>
-              {['Event No', 'Type', 'Employee / Candidate', 'Effective', 'Checklist', 'Status', 'Raised', ''].map((h, hi) => (
+              {['Event No', 'Type', 'Employee / Candidate', 'Effective', 'Checklist', 'Status', 'Raised'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{hi === 0 && <RowCount count={events.length} />}
                 </th>
@@ -160,9 +160,9 @@ export default function HrLifecyclePage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : events.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 {debounced || typeFilter || statusFilter !== 'open' ? 'No lifecycle events match these filters.' : 'No open lifecycle events. Use + New Event to start a joining, transfer or exit.'}
               </td></tr>
             ) : (
@@ -203,9 +203,6 @@ export default function HrLifecyclePage() {
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>
                       <div>{e.created_at ? fmtDate(e.created_at.slice(0, 10)) : '—'}</div>
                       <div style={{ fontSize: 11.5, color: TEXT.muted }}>{e.created_by_name || ''}</div>
-                    </td>
-                    <td onClick={(ev) => ev.stopPropagation()} style={td}>
-                      <span onClick={() => router.push(recordPath('/dashboard/hr/lifecycle', e))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                     </td>
                   </tr>
                 )

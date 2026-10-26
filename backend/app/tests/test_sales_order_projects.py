@@ -75,7 +75,7 @@ def test_spares_only_order_gets_no_project(client, db):
     body = payload_from_prefill(client, hdr(maker), inq)
     body["lines"] = [_spares_line(no=1, qty=10)]
     body["schedule"] = [{"line_number": 1, "quantity": 10, "contract_delivery_date": str(TODAY + timedelta(days=30))}]
-    body["order_type"] = "spares"
+    body["order_type"] = "accessories"
     r = client.post(f"{BASE}/orders", json=body, headers=hdr(maker))
     assert r.status_code == 200, r.text
     so = confirm(client, db, r.json(), maker, head, director)

@@ -5,11 +5,6 @@ const config: TourConfig = {
   pageTitle: 'Tractive Effort Calculator',
   steps: [
     {
-      target: 'rnd-toolnav-tractive',
-      title: 'Engineering Tools row',
-      purpose: 'Jump between calculators from this row of pills.',
-    },
-    {
       target: 'rnd-te-mode',
       title: 'Calculation Mode',
       purpose: 'Which resistance to calculate. Click a tile.',

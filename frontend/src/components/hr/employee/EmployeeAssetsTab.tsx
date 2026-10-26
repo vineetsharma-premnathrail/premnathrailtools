@@ -43,9 +43,9 @@ export default function EmployeeAssetsTab({ userId }: { userId: number }) {
       </div>
       <div style={{ padding: error.length ? '0 20px' : 0 }}><ErrorBanner error={error} /></div>
       <table data-tour="hr-emp-assets-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
-        <thead><tr>{['Asset', 'Category', 'Serial', 'Issued', 'Returned', 'Condition (out → in)', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
+        <thead><tr>{['Asset', 'Category', 'Serial', 'Issued', 'Returned', 'Condition (out → in)'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
         <tbody>
-          {loading ? <EmptyRow colSpan={7} text="Loading…" /> : rows.length === 0 ? <EmptyRow colSpan={7} text="No assets have ever been issued to this employee." /> : rows.map((r) => (
+          {loading ? <EmptyRow colSpan={6} text="Loading…" /> : rows.length === 0 ? <EmptyRow colSpan={6} text="No assets have ever been issued to this employee." /> : rows.map((r) => (
             <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/hr/assets', r, 'asset_id'))} style={{ cursor: 'pointer' }}>
               <td style={tdStyle}><b>{r.asset_code}</b> — {r.asset_name}</td>
               <td style={tdStyle}>{r.asset_category ? ASSET_CATEGORY_LABELS[r.asset_category] || r.asset_category : '—'}</td>
@@ -54,9 +54,6 @@ export default function EmployeeAssetsTab({ userId }: { userId: number }) {
               <td style={tdStyle}>{r.returned_on ? fmtDate(r.returned_on) : <Pill hex="#2563EB" label="Holding" />}</td>
               <td style={tdStyle}>
                 {r.condition_on_issue ? ASSET_CONDITION_LABELS[r.condition_on_issue] || r.condition_on_issue : '—'} → {r.condition_on_return ? ASSET_CONDITION_LABELS[r.condition_on_return] || r.condition_on_return : '—'}
-              </td>
-              <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                <span onClick={() => router.push(recordPath('/dashboard/hr/assets', r, 'asset_id'))} style={linkActionStyle}>View</span>
               </td>
             </tr>
           ))}

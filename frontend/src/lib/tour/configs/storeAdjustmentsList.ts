@@ -14,7 +14,7 @@ const config: TourConfig = {
     {
       target: 'adjustments-table',
       title: 'Adjustment rows',
-      purpose: 'One row per adjustment: number, store, date, status, approver and how many items it covers. Click a row (or View) to open the detail page. Shows "No stock adjustments yet" until one is created.',
+      purpose: 'One row per adjustment: number, store, date, status, approver and how many items it covers. Click a row to open the detail page. Shows "No stock adjustments yet" until one is created.',
       options: [
         { value: 'Pending Approval (amber)', meaning: 'Raised but not yet decided. Stock has NOT changed yet.' },
         { value: 'Approved (green)', meaning: 'The approver accepted it — the difference has been posted to stock and appears in Movements.' },

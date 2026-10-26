@@ -124,10 +124,10 @@ export default function StoreSerialsPage() {
 
       <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-          <thead><tr>{['Serial no.', 'Item', 'Status', 'Store / bin', 'From (GRN · vendor)', 'Issued to', 'Supplier warranty', ''].map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={total} />}</th>)}</tr></thead>
+          <thead><tr>{['Serial no.', 'Item', 'Status', 'Store / bin', 'From (GRN · vendor)', 'Issued to', 'Supplier warranty'].map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={total} />}</th>)}</tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={8} style={{ ...td, textAlign: 'center', padding: 24 }}>Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={8} style={{ ...td, textAlign: 'center', padding: 24 }}>{q.trim() || status || locationId ? 'No serial numbers match these filters.' : 'No serial numbers yet — units are added when a GRN receives an item with “Serial numbers” ticked in the Item Master.'}</td></tr>}
+            {loading && <tr><td colSpan={7} style={{ ...td, textAlign: 'center', padding: 24 }}>Loading…</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={7} style={{ ...td, textAlign: 'center', padding: 24 }}>{q.trim() || status || locationId ? 'No serial numbers match these filters.' : 'No serial numbers yet — units are added when a GRN receives an item with “Serial numbers” ticked in the Item Master.'}</td></tr>}
             {!loading && rows.map((r) => (
               <tr key={r.id} onClick={() => open(r.id)} style={{ cursor: 'pointer' }}>
                 <td style={{ ...td, fontWeight: 700, color: TEXT.body }}>{r.serial_no}</td>
@@ -137,7 +137,6 @@ export default function StoreSerialsPage() {
                 <td style={td}>{r.grn_number || '—'}{r.vendor_name ? ` · ${r.vendor_name}` : ''}</td>
                 <td style={{ ...td, maxWidth: 260 }}>{r.issued_to || (r.issue_number ? r.issue_number : '—')}</td>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.vendor_warranty_until ? formatDate(r.vendor_warranty_until) : '—'}</td>
-                <td style={td} onClick={(e) => e.stopPropagation()}><span onClick={() => open(r.id)} style={{ color: '#c2410c', fontWeight: 600, cursor: 'pointer' }}>View</span></td>
               </tr>
             ))}
           </tbody>

@@ -114,7 +114,7 @@ export default function RrvBuildsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1120 }}>
           <thead>
             <tr>
-              {['Build', 'Model / Customer', 'Serial · Chassis', 'Progress', 'Current Stage', 'Rework', 'Target Handover', 'Status', ''].map((h, i) => (
+              {['Build', 'Model / Customer', 'Serial · Chassis', 'Progress', 'Current Stage', 'Rework', 'Target Handover', 'Status'].map((h, i) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{i === 0 && <RowCount count={builds.length} />}
                 </th>
@@ -123,9 +123,9 @@ export default function RrvBuildsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : builds.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No RRV builds here. Start one with “+ New RRV Build”.</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No RRV builds here. Start one with “+ New RRV Build”.</td></tr>
             ) : (
               builds.map((b) => {
                 const pct = b.stages_total ? Math.round((b.stages_done / b.stages_total) * 100) : 0
@@ -158,9 +158,6 @@ export default function RrvBuildsPage() {
                     </td>
                     <td style={cellStyle}>
                       <Pill label={STATUS_LABELS[b.status] || b.status} hex={STATUS_HEX[b.status]} />
-                    </td>
-                    <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                      <span onClick={() => router.push(recordPath('/dashboard/production/rrv-builds', b))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                     </td>
                   </tr>
                 )

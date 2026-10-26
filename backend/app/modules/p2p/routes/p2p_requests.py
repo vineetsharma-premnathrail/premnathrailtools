@@ -289,6 +289,9 @@ def _to_response(db: Session, pr: P2PRequest, *, include_po: bool = False, user:
     resp.category_label = P2P_CATEGORIES.get(pr.category_code, pr.category_code)
     from app.modules.p2p.account_assignment import label_for
     resp.account_assignment_label = label_for(db, pr)
+    if pr.rnd_project_id:
+        from app.modules.p2p.account_assignment import rnd_project_label
+        resp.rnd_project_label = rnd_project_label(db, pr)
     if pr.order_project_id:
         from app.modules.sales.models.order_project import OrderProject
         op = db.get(OrderProject, pr.order_project_id)
@@ -1968,6 +1971,13 @@ def _check_draft_complete(pr: P2PRequest, db: Session) -> None:
     missing = []
     if pr.purpose:
         problems = pr_purpose.header_problems(pr.purpose, pr.account_assignment, pr.project_label, db=db)
+        if pr.account_assignment == "rnd_project" and pr.rnd_project_id:
+            # The project may have been handed over / cancelled since the draft was saved.
+            from app.modules.p2p.account_assignment import resolve
+            try:
+                resolve(db, {"account_assignment": "rnd_project", "rnd_project_id": pr.rnd_project_id})
+            except ValueError as e:
+                problems.append(str(e))
         problems += [p for p in [pr_purpose.category_problem(pr.purpose, pr.category_code, db=db)] if p]
         if problems:
             raise HTTPException(status_code=400, detail=f"{pr.p2p_number} can't be submitted yet — {' '.join(problems)} Click Edit to complete the draft.")
@@ -2131,6 +2141,8 @@ async def create_po(
         expected_delivery=pr.expected_delivery,
         created_by_id=user.id,
         total_value=po_value,
+        # A requisition charged to an internal order (or an R&D project's) carries it to its PO.
+        internal_order_id=pr.internal_order_id,
     )
     db.add(po)
     db.flush()

@@ -14,9 +14,9 @@ import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import ElectricalNav from '@/components/electrical/ElectricalNav'
 import { inputStyle, thStyle, tdStyle, Pill, ErrorBanner, useLookupErrors, REVISION_STATUS_LABELS, REVISION_STATUS_HEX } from '@/components/electrical/shared'
-import { segmentBtnStyle, smallSecondaryBtnStyle, Pill as UiPill, RowCount } from '@/components/shared/ui'
+import { segmentBtnStyle, Pill as UiPill, RowCount } from '@/components/shared/ui'
 
-const COLUMNS = ['Drawing No.', 'Title', 'Job', 'Type', 'Latest Rev', 'Approved Rev', 'As-built', '']
+const COLUMNS = ['Drawing No.', 'Title', 'Job', 'Type', 'Latest Rev', 'Approved Rev', 'As-built']
 
 export default function ElectricalDrawingRegisterPage() {
   const { isAuthorized, isLoading } = useRequireApp('electrical')
@@ -160,9 +160,6 @@ export default function ElectricalDrawingRegisterPage() {
                   </td>
                   <td style={{ ...tdStyle, padding: '10px 14px' }}>
                     {d.is_as_built ? <UiPill label="As-built" hex="#0d9488" /> : <span style={{ color: TEXT.muted }}>No</span>}
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()} style={{ ...tdStyle, padding: '10px 14px' }}>
-                    <button type="button" onClick={() => open(d)} style={smallSecondaryBtnStyle}>View</button>
                   </td>
                 </tr>
               ))

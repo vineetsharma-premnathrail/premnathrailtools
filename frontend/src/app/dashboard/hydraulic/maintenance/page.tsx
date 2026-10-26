@@ -137,7 +137,7 @@ export default function HydMaintenancePlansPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1250 }}>
           <thead>
             <tr>
-              {['Plan No.', 'Title', 'System', 'Type', 'Frequency', 'Last Done', 'Next Due', 'Assigned To', 'Due', 'Job', ''].map((h, i) => (
+              {['Plan No.', 'Title', 'System', 'Type', 'Frequency', 'Last Done', 'Next Due', 'Assigned To', 'Due', 'Job'].map((h, i) => (
                 <th key={`${h}-${i}`} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{i === 0 && <RowCount count={plans.length} />}
                 </th>
@@ -146,9 +146,9 @@ export default function HydMaintenancePlansPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : plans.length === 0 ? (
-              <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No maintenance plans match. Add oil changes, filter changes and inspections so they show up here when they fall due.</td></tr>
+              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No maintenance plans match. Add oil changes, filter changes and inspections so they show up here when they fall due.</td></tr>
             ) : (
               plans.map((p) => (
                 <tr key={p.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/maintenance', p))} style={{ cursor: 'pointer' }}>
@@ -175,9 +175,6 @@ export default function HydMaintenancePlansPage() {
                     ) : (
                       <span style={{ fontSize: 12, color: TEXT.muted }}>—</span>
                     )}
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/hydraulic/maintenance', p))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

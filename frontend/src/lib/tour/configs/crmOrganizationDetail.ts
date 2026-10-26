@@ -10,7 +10,7 @@ const steps: TourStep[] = [
   {
     target: 'orgdetail-overview',
     title: 'Customer Organization Details / Location / Contact & Registration',
-    purpose: 'Every field from the Create/Edit Customer Organization form, laid out for quick reference. "Not provided" means that field was left blank.',
+    purpose: 'Every field from the Create/Edit Customer Organization form, laid out for quick reference. It starts with the Scope (Domestic or International); Domestic organizations show GSTIN, PAN and GST State Code, International ones show Tax / VAT ID and Company Registration Number. "Not provided" means that field was left blank.',
     after: 'Use the Edit button (top right) to change any of these values.',
   },
   {
@@ -22,7 +22,7 @@ const steps: TourStep[] = [
   {
     target: 'orgdetail-contacts-list',
     title: 'Contact cards',
-    purpose: 'One card per person: name, designation and department badges, mobile and email. The coloured chips under a card are the inquiries (blue) and tenders linked to that person. Click a chip to open that record.',
+    purpose: 'One card per person: name, designation and department badges, phone and email. The coloured chips under a card are the inquiries (blue) and tenders linked to that person. Click a chip to open that record.',
     why: 'Knowing who raised which inquiry tells you whom to call for a follow-up or a quotation clarification.',
   },
   {
@@ -61,9 +61,9 @@ const steps: TourStep[] = [
   },
   {
     target: 'orgdetail-contact-mobile',
-    title: 'Mobile',
+    title: 'Phone',
     required: false,
-    whatToEnter: 'A 10-digit mobile number, optionally with +91.',
+    whatToEnter: 'A phone number with its country code, e.g. +91 for India.',
     validExample: '+91 98765 43210',
     why: 'If another contact on this customer organization already uses this number, the box turns amber and saving is blocked. This stops duplicate contacts for the same person.',
   },
@@ -72,7 +72,7 @@ const steps: TourStep[] = [
     title: 'Email',
     required: false,
     validExample: 'rajesh.kumar@nr.railnet.gov.in',
-    why: 'The same duplicate check as Mobile applies.',
+    why: 'The same duplicate check as Phone applies.',
   },
   {
     target: 'orgdetail-contact-save',

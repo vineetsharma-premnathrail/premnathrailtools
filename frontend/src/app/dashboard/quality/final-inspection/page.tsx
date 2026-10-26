@@ -101,7 +101,7 @@ export default function FinalInspectionListPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 920 }}>
           <thead>
             <tr>
-              {['Inspection #', 'Item', 'Batch', 'Project', 'Qty Inspected', 'Date', 'Status', ''].map((h, i) => (
+              {['Inspection #', 'Item', 'Batch', 'Project', 'Qty Inspected', 'Date', 'Status'].map((h, i) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{i === 0 && <RowCount count={inspections.length} />}
                 </th>
@@ -110,9 +110,9 @@ export default function FinalInspectionListPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : inspections.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No final inspections found.</td></tr>
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No final inspections found.</td></tr>
             ) : (
               inspections.map((insp) => (
                 <tr key={insp.id} onClick={() => router.push(recordPath('/dashboard/quality/final-inspection', insp))} style={{ cursor: 'pointer' }}>
@@ -124,9 +124,6 @@ export default function FinalInspectionListPage() {
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{formatDate(insp.inspection_date)}</td>
                   <td style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
                     <Pill label={STATUS_LABELS[insp.status] || insp.status} hex={STATUS_HEX[insp.status]} />
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()} style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span onClick={() => router.push(recordPath('/dashboard/quality/final-inspection', insp))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

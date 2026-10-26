@@ -36,16 +36,6 @@ const config: TourConfig = {
       ],
     },
     {
-      target: 'org-plants-view-btn',
-      title: 'View',
-      purpose: 'Opens the read-only detail page of this branch (same as clicking the row).',
-    },
-    {
-      target: 'org-plants-edit-btn',
-      title: 'Edit',
-      purpose: 'Opens the branch\'s Edit page directly — basic details plus its Address, Operational Configuration, Users, Stores, Cost Centers, and Documents tabs.',
-    },
-    {
       target: 'org-plants-toggle-status',
       title: 'Activate / Deactivate',
       purpose: 'Quickly flips a branch between Active and Inactive without opening the Edit page.',

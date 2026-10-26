@@ -84,7 +84,7 @@ def _record(db: Session, source: str, record_id: int, user: User, side: str):
         access = ra.ensure(db, user, source, record_id, "view")
         if side in DEPT_SIDES and side not in access["departments"]:
             raise HTTPException(status_code=403, detail=f"This requirement isn't shared with {SIDE_NAMES[side]}, so {SIDE_NAMES[side]} can't open its discussion. "
-                                                        "The R&D head shares it from the requirement's Tasks & Departments tab.")
+                                                        "The R&D head shares it from the requirement's Milestones tab › Departments.")
     return record
 
 

@@ -5,6 +5,11 @@ const config: TourConfig = {
   pageTitle: 'Customer Organizations List',
   steps: [
     {
+      target: 'crm-org-stats',
+      title: 'Counter chips',
+      purpose: 'Quick counts of the customer organizations in the list: total, Domestic, International, Railway and added this month. They follow the search box and the column filters, exactly like the table.',
+    },
+    {
       target: 'orgs-add-btn',
       title: '+ Add Customer Organization',
       purpose: 'Opens the form to create a brand-new customer organization.',
@@ -41,6 +46,11 @@ const config: TourConfig = {
       target: 'orgs-col-name',
       title: 'Name (sortable)',
       purpose: 'Click the column header to sort alphabetically; click again to reverse the order (A–Z ↔ Z–A).',
+    },
+    {
+      target: 'orgs-col-org_scope',
+      title: 'Scope (filterable)',
+      purpose: 'Narrows the list to Domestic or International customer organizations. Scope is chosen on the form and is separate from the Country.',
     },
     {
       target: 'orgs-col-org_type',

@@ -228,7 +228,8 @@ def test_create_po_vendor_choice_and_word_document(client, db):
     assert r.status_code == 200, r.text
     po = r.json()
     assert po["vendor_name"] == "Fast Seals" and po["vendor_id"] == v2.id
-    assert "Ex-works Pune" in (po["terms_conditions"] or "") and "quote the Purchase Order" in (po["terms_conditions"] or "")
+    # The vendor's own terms are for the RFQ email only; the PO carries the company terms.
+    assert "Ex-works Pune" not in (po["terms_conditions"] or "") and "quote the Purchase Order" in (po["terms_conditions"] or "")
     assert "Late delivery clause:\n0.5% per week of delay, max 10%" in po["terms_conditions"]
 
     r = client.patch(f"{url}/{po['id']}", json={"items": [{"id": po["items"][0]["id"], "unit_price": 50, "tax_rate": 18,

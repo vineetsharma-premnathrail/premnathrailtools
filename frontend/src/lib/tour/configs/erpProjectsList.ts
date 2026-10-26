@@ -1,5 +1,5 @@
 import { TourConfig } from '../types'
-import { MACHINE_STATUS_OPTIONS, APPLICATION_TYPE_OPTIONS } from './erpShared'
+import { MACHINE_STATUS_OPTIONS } from './erpShared'
 
 const config: TourConfig = {
   id: 'erp-projects-list',
@@ -20,47 +20,26 @@ const config: TourConfig = {
     {
       target: 'erp-proj-stats',
       title: 'Machine counts',
-      purpose: 'Total machines in the current list, and how many are Active, Under Service and on Standby. These follow the filters you apply below.',
+      purpose: 'Small counters under the title: machines in the current list, and how many are Active, Under Service and on Standby. They follow the filters you apply.',
     },
     {
       target: 'erp-proj-search',
       title: 'Search Registry',
       purpose: 'Finds machines by serial number or model name.',
-      whatToEnter: 'Any part of the serial or model — the list refreshes automatically as you type.',
+      whatToEnter: 'Any part of the serial or model — the list refreshes automatically as you type (no Apply needed).',
       validExample: 'PNR-RR-2026',
     },
     {
-      target: 'erp-proj-status-filter',
-      title: 'Machine Status filter',
-      purpose: 'Shows only machines in one operational status.',
+      target: 'erp-proj-filter-btn',
+      title: 'Filters',
+      purpose: 'Opens the filter popup: Machine Status, Application Type, Client Company and CRM Customer. The number on the button shows how many filters are on.',
       options: MACHINE_STATUS_OPTIONS,
-      after: 'Takes effect only when you press Apply Filters.',
-    },
-    {
-      target: 'erp-proj-app-filter',
-      title: 'Application Type filter',
-      purpose: 'Shows only machines built for one kind of railway work.',
-      options: APPLICATION_TYPE_OPTIONS,
-    },
-    {
-      target: 'erp-proj-client-filter',
-      title: 'Client Company filter',
-      purpose: 'Shows only the machines supplied to one customer. The list is built from the client names already saved on machines.',
-    },
-    {
-      target: 'erp-proj-clear-btn',
-      title: 'Clear Filters',
-      purpose: 'Resets search and all three dropdowns back to "All" and reloads the full register.',
-    },
-    {
-      target: 'erp-proj-apply-btn',
-      title: 'Apply Filters',
-      purpose: 'Runs the three dropdown filters you picked. (Search applies on its own as you type.)',
+      after: 'Pick what you need and press Apply Filters; Clear Filters resets all four and reloads the full register. The Clear button next to Filters does the same.',
     },
     {
       target: 'erp-proj-table',
       title: 'Machine rows',
-      purpose: 'Each row is one machine: serial, model, type, application, client, site, year of manufacture, dispatch and commissioning dates, status, number of SRs and warranty period. Click a row to open the machine; "Edit" (if you have edit rights) goes straight to its edit form.',
+      purpose: 'Each row is one machine: serial, model, type, application, client, site, year of manufacture, dispatch and commissioning dates, status, number of SRs and warranty period. Long client and site names are cut with "…" (hover for the full text). Click a row to open the machine; Edit is on the machine page.',
       why: 'Warranty "No" means no warranty dates were recorded — service on that machine is chargeable unless an AMC covers it.',
     },
   ],

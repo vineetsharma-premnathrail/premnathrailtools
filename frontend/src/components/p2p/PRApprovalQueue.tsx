@@ -5,7 +5,7 @@
 // folded in, 2026-10-07). Approvers come from Organization › Approval Workflows.
 
 import { useState } from 'react'
-import P2PRequestList from '@/components/p2p/P2PRequestList'
+import P2PRequestList, { P2PListStats } from '@/components/p2p/P2PRequestList'
 import { segmentBtnStyle } from '@/components/shared/ui'
 
 type Bucket = 'pending' | 'approved' | 'rejected' | 'all'
@@ -23,7 +23,7 @@ const bucketFromUrl = (): Bucket => {
   return BUCKETS.some((x) => x.key === b) ? b : 'pending'
 }
 
-export default function PRApprovalQueue() {
+export default function PRApprovalQueue({ onStats, toolbarLeft, toolbarRight }: { onStats?: (s: P2PListStats) => void; toolbarLeft?: React.ReactNode; toolbarRight?: React.ReactNode }) {
   const [bucket, setBucket] = useState<Bucket>(bucketFromUrl)
   const active = BUCKETS.find((b) => b.key === bucket) || BUCKETS[0]
   return (
@@ -36,7 +36,7 @@ export default function PRApprovalQueue() {
           </button>
         ))}
       </div>
-      <P2PRequestList key={bucket} statuses={active.statuses} emptyLabel={active.emptyLabel} context="approval" queue="pr-approval" onlyPendingForViewer={bucket === 'pending'} />
+      <P2PRequestList key={bucket} showFilters onStats={onStats} toolbarLeft={toolbarLeft} toolbarRight={toolbarRight} statuses={active.statuses} emptyLabel={active.emptyLabel} context="approval" queue="pr-approval" onlyPendingForViewer={bucket === 'pending'} />
     </div>
   )
 }

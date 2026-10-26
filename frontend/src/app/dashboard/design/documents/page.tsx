@@ -135,7 +135,7 @@ export default function DesignDocumentsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1260 }}>
           <thead>
             <tr>
-              {['Doc Number', 'Title', 'Type', 'Discipline', 'Customer', 'Controlled Rev', 'Work in Progress', 'Owner', 'Status', ''].map((h, hi) => (
+              {['Doc Number', 'Title', 'Type', 'Discipline', 'Customer', 'Controlled Rev', 'Work in Progress', 'Owner', 'Status'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{hi === 0 && <RowCount count={docs.length} />}
                 </th>
@@ -144,9 +144,9 @@ export default function DesignDocumentsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : docs.length === 0 ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 No documents match these filters.{statusTab !== '' ? ' Try the “All” tab.' : ' Use + New Document to create one.'}
               </td></tr>
             ) : (
@@ -189,9 +189,6 @@ export default function DesignDocumentsPage() {
                     <span style={pillStyle(STATUS_HEX[d.display_status])}>
                       {STATUS_LABELS[d.display_status] || d.display_status}
                     </span>
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/design/documents', d))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

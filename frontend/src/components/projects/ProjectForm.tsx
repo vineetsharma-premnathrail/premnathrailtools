@@ -11,6 +11,8 @@ export type ProjectFormValues = {
   project_code: string
   name: string
   client_name: string
+  customer_po_ref: string
+  sales_order_ref: string
   description: string
   project_manager_id: string
   start_date: string
@@ -18,12 +20,13 @@ export type ProjectFormValues = {
 }
 
 export const emptyProjectForm = (): ProjectFormValues => ({
-  project_code: '', name: '', client_name: '', description: '',
+  project_code: '', name: '', client_name: '', customer_po_ref: '', sales_order_ref: '', description: '',
   project_manager_id: '', start_date: '', target_handover_date: '',
 })
 
 export const projectToForm = (p: PmProject): ProjectFormValues => ({
   project_code: p.project_code, name: p.name, client_name: p.client_name || '',
+  customer_po_ref: p.customer_po_ref || '', sales_order_ref: p.sales_order_ref || '',
   description: p.description || '', project_manager_id: p.project_manager_id ? String(p.project_manager_id) : '',
   start_date: p.start_date || '', target_handover_date: p.target_handover_date || '',
 })
@@ -35,6 +38,10 @@ export function validateProjectForm(f: ProjectFormValues, isEdit = false): strin
   if (isEdit && !f.project_code.trim()) missing.push('Project number is required, e.g. PEW-2026-0001.')
   if (!f.name.trim()) missing.push('Project name is required.')
   if (!f.client_name.trim()) missing.push('Client is required.')
+  if (!f.customer_po_ref.trim()) missing.push("Customer PO number is required. Enter the customer's purchase order number for this project.")
+  else if (f.customer_po_ref.trim().length > 100) missing.push('Customer PO number can be at most 100 characters.')
+  if (!f.sales_order_ref.trim()) missing.push('Sales order (SO) number is required. Enter the SO number this project is delivered under.')
+  else if (f.sales_order_ref.trim().length > 100) missing.push('Sales order (SO) number can be at most 100 characters.')
   if (isEdit && !f.project_manager_id) missing.push('Project manager is required — one person owns the project.')
   if (!f.start_date) missing.push('Start date is required.')
   if (!f.target_handover_date) missing.push('Closing date is required.')
@@ -44,6 +51,7 @@ export function validateProjectForm(f: ProjectFormValues, isEdit = false): strin
 
 export const formToPayload = (f: ProjectFormValues) => ({
   project_code: f.project_code.trim() || null, name: f.name.trim(), client_name: f.client_name.trim(),
+  customer_po_ref: f.customer_po_ref.trim(), sales_order_ref: f.sales_order_ref.trim(),
   description: f.description.trim() || null,
   project_manager_id: f.project_manager_id ? Number(f.project_manager_id) : null, start_date: f.start_date,
   target_handover_date: f.target_handover_date,
@@ -75,6 +83,14 @@ export default function ProjectForm({ value, onChange, codeLocked, isEdit = fals
           <div data-tour="pm-form-customer" style={{ flex: '1 1 260px', maxWidth: 400 }}>
             <label style={sheetLabel}>Client <Req /></label>
             <input style={sheetInput} value={value.client_name} onChange={(e) => set('client_name', e.target.value)} placeholder="e.g. IRCON International Limited" />
+          </div>
+          <div data-tour="pm-form-po" style={{ flex: '1 1 220px', maxWidth: 300 }}>
+            <label style={sheetLabel}>Customer PO number <Req /></label>
+            <input style={sheetInput} value={value.customer_po_ref} maxLength={100} onChange={(e) => set('customer_po_ref', e.target.value)} placeholder="e.g. 4500123456" />
+          </div>
+          <div data-tour="pm-form-so" style={{ flex: '1 1 220px', maxWidth: 300 }}>
+            <label style={sheetLabel}>Sales order (SO) number <Req /></label>
+            <input style={sheetInput} value={value.sales_order_ref} maxLength={100} onChange={(e) => set('sales_order_ref', e.target.value)} placeholder="e.g. SO-2026-0042" />
           </div>
         </div>
       </SheetSection>

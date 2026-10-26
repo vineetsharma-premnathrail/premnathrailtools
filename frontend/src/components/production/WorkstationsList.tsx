@@ -101,7 +101,7 @@ export default function WorkstationsList({ openNew = false }: { openNew?: boolea
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['Code', 'Name', 'Type', 'Plant', 'Capacity / day', 'Rate / hr', 'Open Ops', 'Status', ''].map((h, i) => (
+              {['Code', 'Name', 'Type', 'Plant', 'Capacity / day', 'Rate / hr', 'Open Ops', 'Status'].map((h, i) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{i === 0 && <RowCount count={workstations.length} />}
                 </th>
@@ -110,9 +110,9 @@ export default function WorkstationsList({ openNew = false }: { openNew?: boolea
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : workstations.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No workstations yet. Add the machines and work centers your routing operations run on.</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No workstations yet. Add the machines and work centers your routing operations run on.</td></tr>
             ) : (
               workstations.map((w) => (
                 <tr key={w.id} onClick={() => router.push(recordPath('/dashboard/production/workstations', w))} style={{ cursor: 'pointer' }}>
@@ -125,9 +125,6 @@ export default function WorkstationsList({ openNew = false }: { openNew?: boolea
                   <td style={cellStyle}>{w.open_operations}</td>
                   <td style={cellStyle}>
                     <Pill label={STATUS_LABELS[w.status] || w.status} hex={STATUS_HEX[w.status]} />
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/production/workstations', w))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

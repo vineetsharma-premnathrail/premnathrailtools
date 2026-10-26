@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { StoreMaterialIssue } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { primaryBtnStyle, smallSecondaryBtnStyle, RowCount, thStyle, numThStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount, thStyle, numThStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
 import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -55,15 +55,15 @@ export default function StoreMaterialIssuesPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr>
-              {['Issue #', 'Purchase Requisition', 'Store', 'Issue Type', 'Challan No.', 'Vendor', 'Department', 'Project / WO', 'Requested By', 'Issued By', 'Date', 'Items', ''].map((h, hi) => (
+              {['Issue #', 'Purchase Requisition', 'Store', 'Issue Type', 'Challan No.', 'Vendor', 'Department', 'Project / WO', 'Requested By', 'Issued By', 'Date', 'Items'].map((h, hi) => (
                 <th key={h} style={h === 'Items' ? numThStyle : thStyle}>{h}{hi === 0 && <RowCount count={issues.length} />}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={13} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
+            {loading && <tr><td colSpan={12} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && issues.length === 0 && (
-              <tr><td colSpan={13} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No material issues yet{can('store', 'issues', 'create') ? ' — use + New Issue to hand material out of a store.' : '.'}</td></tr>
+              <tr><td colSpan={12} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No material issues yet{can('store', 'issues', 'create') ? ' — use + New Issue to hand material out of a store.' : '.'}</td></tr>
             )}
             {issues.map((i) => (
               <tr key={i.id} onClick={() => router.push(recordPath('/dashboard/store/issues', i))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
@@ -81,9 +81,6 @@ export default function StoreMaterialIssuesPage() {
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.issued_by_name || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(i.issue_date)}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, textAlign: 'right' }}>{i.items.length}</td>
-                <td onClick={(e) => e.stopPropagation()} style={{ padding: '8px 16px' }}>
-                  <button type="button" onClick={() => router.push(recordPath('/dashboard/store/issues', i))} style={smallSecondaryBtnStyle}>View</button>
-                </td>
               </tr>
             ))}
           </tbody>

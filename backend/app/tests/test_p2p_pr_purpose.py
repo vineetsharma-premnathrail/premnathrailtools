@@ -94,8 +94,9 @@ def test_capital_needs_internal_order_and_stock_takes_no_charge(client, db):
     assert r.status_code == 200, r.text
     assert r.json()["project_label"] == "Store stock refill" and r.json()["account_assignment"] is None
 
+    # Development is charged to an R&D project now; an internal order is no longer the default answer.
     r = _post(client, db, req, item, purpose="development", category_code="RAW", account_assignment="internal_order", internal_order_id=io.id)
-    assert r.status_code == 200 and r.json()["project_type"] == "new", r.text
+    assert r.status_code == 400 and "R&D project" in r.json()["detail"], r.text
 
 
 def test_machine_project_needs_the_project_and_bad_purpose_refused(client, db):
@@ -118,7 +119,7 @@ def test_machine_project_needs_the_project_and_bad_purpose_refused(client, db):
     # The form gets each purpose's categories and pre-filled values.
     meta = {p["code"]: p for p in client.get(f"{BASE}/meta", headers=auth_header(req)).json()["purposes"]}
     assert list(meta)[:2] == ["customer_order", "machine_project"]
-    assert meta["customer_order"]["label"] == "Production (customer order)"
+    assert meta["customer_order"]["label"] == "Project"
     assert meta["capital"]["default_category"] == "CAP" and meta["capital"]["default_requirement_type"] == "Capital Equipment"
     assert meta["department"]["default_category"] == "ADM" and meta["customer_order"]["default_category"] is None
     assert all("OTH" not in p["categories"] for p in meta.values())
@@ -146,7 +147,7 @@ def test_project_manager_stage_only_for_production_and_names_the_projects_manage
     ]}, head)
     db.commit()
     item = master_item(db, "Axle box", code="RM-AXL-09")
-    body = _create_payload(project_label=None, project_type=None, category_code="RAW", purpose="customer_order",
+    body = _create_payload(project_label="PEW-9-1 — Test machine", project_type=None, category_code="RAW", purpose="customer_order",
                            account_assignment="order_project", order_project_id=project.id,
                            items=[{"store_item_id": item.id, "quantity": 1, "project_inhouse": "Project",
                                    "order_project_element_id": els[0].id}])

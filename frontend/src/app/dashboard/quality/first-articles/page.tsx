@@ -48,7 +48,7 @@ export default function FirstArticlesPage() {
   }, [isAuthorized, status, search])
 
   if (isLoading || !isAuthorized) return null
-  const cols = ['FAI', 'Item', 'Source', 'Drawing', 'Why', 'Lot', 'Status', 'Decided', '']
+  const cols = ['FAI', 'Item', 'Source', 'Drawing', 'Why', 'Lot', 'Status', 'Decided']
 
   return (
     <div>
@@ -85,9 +85,6 @@ export default function FirstArticlesPage() {
                 <td style={tdStyle}>{f.lot_number || '—'}{f.lot_status ? <div style={{ fontSize: 11.5, color: TEXT.muted }}>{LOT_STATUS_LABELS[f.lot_status] || f.lot_status}</div> : null}</td>
                 <td style={tdStyle}><Pill text={STATUS_LABELS[f.status] || f.status} hex={STATUS_HEX[f.status]} /></td>
                 <td style={tdStyle}>{f.decided_by_name ? `${f.decided_by_name}, ${fmtDate(f.decided_at)}` : '—'}</td>
-                <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                  <span onClick={() => router.push(recordPath('/dashboard/quality/first-articles', f))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                </td>
               </tr>
             ))}
           </tbody>

@@ -191,7 +191,7 @@ export default function MaintenanceSchedulePage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1150 }}>
             <thead>
               <tr>
-                {['Plan', 'Asset', 'Title', 'Type', 'Frequency', 'Next Due', 'Last Done', 'Technician', 'Current Job', 'Status', ''].map((h, hi) => (
+                {['Plan', 'Asset', 'Title', 'Type', 'Frequency', 'Next Due', 'Last Done', 'Technician', 'Current Job', 'Status'].map((h, hi) => (
                   <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                     {h}{hi === 0 && <RowCount count={plans.length} />}
                   </th>
@@ -200,9 +200,9 @@ export default function MaintenanceSchedulePage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+                <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
               ) : plans.length === 0 ? (
-                <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+                <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                   {search || branchId || dueFilter || activeFilter !== 'active' ? 'No PM plans match these filters.' : 'No PM plans yet. Create one per machine for lubrication, inspections, calibration and other routine servicing.'}
                 </td></tr>
               ) : plans.map((p) => {
@@ -225,9 +225,6 @@ export default function MaintenanceSchedulePage() {
                       ) : '—'}
                     </td>
                     <td style={cellStyle}><Pill hex={DUE_HEX[state] || '#78716c'} label={PM_DUE_STATE_LABELS[state] || state} /></td>
-                    <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                      <span onClick={() => router.push(recordPath('/dashboard/maintenance/schedule', p))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                    </td>
                   </tr>
                 )
               })}

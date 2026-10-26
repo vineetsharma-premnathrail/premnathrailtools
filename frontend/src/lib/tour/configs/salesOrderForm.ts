@@ -19,10 +19,16 @@ const config: TourConfig = {
     {
       target: 'sales-form-po',
       title: 'Customer PO number and date',
-      purpose: 'Exactly as printed on the customer’s PO (or LOA for railway tenders).',
+      purpose: 'Exactly as printed on the customer’s PO. For railway tenders, enter the LOA number and date here — a PO and an LOA are treated as the same thing.',
       required: true,
       validExample: 'CR/COS/RRV/2026/771',
       why: 'A PO number can be used only once per customer among live orders — the system blocks duplicates.',
+    },
+    {
+      target: 'sales-form-currency',
+      title: 'Currency',
+      purpose: 'The currency of the customer’s PO. Default is INR. Pick from the list or type to search.',
+      why: 'Recorded as a label only: billing plan, invoices and Finance reports use the amounts exactly as entered, without any conversion. A note appears when the currency is not INR.',
     },
     {
       target: 'sales-form-price-basis',
@@ -71,7 +77,7 @@ const config: TourConfig = {
     {
       target: 'sales-form-po-file',
       title: 'PO document',
-      purpose: 'Attach the customer’s PO / LOA. It is required before the order can be submitted.',
+      purpose: 'Attach the customer’s PO (or LOA). It is required before the order can be submitted.',
     },
     {
       target: 'sales-form-save',

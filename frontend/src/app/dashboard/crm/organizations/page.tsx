@@ -22,7 +22,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { recordHref, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
-import { RowCount } from '@/components/shared/ui'
+import { RowCount, StatChip } from '@/components/shared/ui'
 
 const PINNED_ORGS_KEY = 'crm_pinned_org_ids'
 
@@ -132,7 +132,7 @@ export default function OrganizationsPage() {
 
   const clearFilters = () => {
     setSearch('')
-    setFilters({ org_type: '', railway_zone: '', city: '', state: '', created_by_name: '' })
+    setFilters({ org_scope: '', org_type: '', railway_zone: '', city: '', state: '', created_by_name: '' })
   }
 
   const openOrg = (org: object) => {
@@ -152,15 +152,15 @@ export default function OrganizationsPage() {
     }
   }
 
-  type FilterKey = 'org_type' | 'railway_zone' | 'city' | 'state' | 'created_by_name'
-  const FILTER_KEYS: FilterKey[] = ['org_type', 'railway_zone', 'city', 'state', 'created_by_name']
+  type FilterKey = 'org_scope' | 'org_type' | 'railway_zone' | 'city' | 'state' | 'created_by_name'
+  const FILTER_KEYS: FilterKey[] = ['org_scope', 'org_type', 'railway_zone', 'city', 'state', 'created_by_name']
   const [filters, setFilters] = useState<Record<FilterKey, string>>({
-    org_type: '', railway_zone: '', city: '', state: '', created_by_name: '',
+    org_scope: '', org_type: '', railway_zone: '', city: '', state: '', created_by_name: '',
   })
   const setFilter = (key: FilterKey, value: string) => setFilters((f) => ({ ...f, [key]: value }))
 
   const filterOptions = useMemo(() => {
-    const options: Record<FilterKey, string[]> = { org_type: [], railway_zone: [], city: [], state: [], created_by_name: [] }
+    const options: Record<FilterKey, string[]> = { org_scope: [], org_type: [], railway_zone: [], city: [], state: [], created_by_name: [] }
     for (const key of FILTER_KEYS) {
       const values = new Set<string>()
       for (const o of orgs) {
@@ -173,8 +173,11 @@ export default function OrganizationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgs])
 
+  const scopeLabel = (v?: string | null) => (v === 'international' ? 'International' : 'Domestic')
+
   const columns: { label: string; key: SortKey | FilterKey; type: 'sort' | 'filter' | 'none'; sortLabels?: [string, string] }[] = [
     { label: 'Name', key: 'name', type: 'sort', sortLabels: ['A–Z', 'Z–A'] },
+    { label: 'Scope', key: 'org_scope', type: 'filter' },
     { label: 'Type', key: 'org_type', type: 'filter' },
     { label: 'Railway Zone', key: 'railway_zone', type: 'filter' },
     { label: 'City', key: 'city', type: 'filter' },
@@ -212,10 +215,28 @@ export default function OrganizationsPage() {
 
   if (isLoading || !isAuthorized) return null
 
+  // Counter chips follow the search and the column filters, like the table.
+  const monthIST = (d: string | Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date(d))
+  const thisMonth = monthIST(new Date())
+  const orgStats = {
+    total: filteredOrgs.length,
+    domestic: filteredOrgs.filter((o) => o.org_scope !== 'international').length,
+    international: filteredOrgs.filter((o) => o.org_scope === 'international').length,
+    railway: filteredOrgs.filter((o) => (o.org_type || '').includes('Railway')).length,
+    addedThisMonth: filteredOrgs.filter((o) => !!o.created_at && monthIST(o.created_at) === thisMonth).length,
+  }
+
   const header = (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 10 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Customer Organizations</h1>
+        <div data-tour="crm-org-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0 14px' }}>
+          <StatChip label="Organizations" value={orgStats.total} color="#3b82f6" />
+          <StatChip label="Domestic" value={orgStats.domestic} color="#16a34a" />
+          <StatChip label="International" value={orgStats.international} color="#ea580c" />
+          <StatChip label="Railway" value={orgStats.railway} color="#ca8a04" />
+          <StatChip label="Added this month" value={orgStats.addedThisMonth} color="#78716c" />
+        </div>
         {/* One toolbar row: add, search, clear, then export / import; wraps on narrow screens. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {can('crm', 'organizations', 'create') && <Link
@@ -317,7 +338,7 @@ export default function OrganizationsPage() {
                     >
                       <option value="">{col.label}</option>
                       {filterOptions[col.key as FilterKey].map((v) => (
-                        <option key={v} value={v} style={{ textTransform: 'none', color: '#1f1108' }}>{v}</option>
+                        <option key={v} value={v} style={{ textTransform: 'none', color: '#1f1108' }}>{col.key === 'org_scope' ? scopeLabel(v) : v}</option>
                       ))}
                     </Select>
                   </th>
@@ -351,8 +372,8 @@ export default function OrganizationsPage() {
             </tr>
           </thead>
           <tbody data-tour="orgs-table-rows" style={{ opacity: loading && hasLoadedOnce ? 0.5 : 1, transition: 'opacity .15s' }}>
-            {loading && !hasLoadedOnce && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && paged.length === 0 && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No customer organizations found.</td></tr>}
+            {loading && !hasLoadedOnce && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
+            {!loading && paged.length === 0 && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No customer organizations found.</td></tr>}
             {(!loading || hasLoadedOnce) && paged.map((o, idx) => {
               const pinned = pinnedIds.includes(o.id)
               return (
@@ -373,6 +394,7 @@ export default function OrganizationsPage() {
                     </div>
                   </div>
                 </td>
+                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{scopeLabel(o.org_scope)}</td>
                 <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.org_type || undefined}>{o.org_type || '—'}</td>
                 <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.railway_zone || undefined}>{o.railway_zone || '—'}</td>
                 <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.city || undefined}>{o.city || '—'}</td>

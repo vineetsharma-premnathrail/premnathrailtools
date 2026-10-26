@@ -10,7 +10,7 @@ and the notification rules (app/core/notify_rules.py)."""
 from app.core.notify_rules import notification_groups, notification_specs, validate_notification_rules
 from app.core.settings_framework import ModuleSettingsDef, SettingSpec, register_module_settings, get_setting as _get
 from app.modules.main.models.user import AVAILABLE_APPS
-from app.modules.p2p.models.p2p_request import P2P_CATEGORIES, P2P_CATEGORY_AUTO_BUYERS
+from app.modules.p2p.models.p2p_request import P2P_CATEGORIES, P2P_CATEGORY_AUTO_BUYERS, standard_buyer_id
 
 # Notification recipients may come from any department.
 _ANY_MODULE = tuple(sorted(AVAILABLE_APPS))
@@ -47,7 +47,7 @@ DEFAULT_COMPANY_TERMS = [
 
 _SPECS = [
     SettingSpec("company_terms", "terms", "Standard terms & conditions", "longtext", "\n".join(DEFAULT_COMPANY_TERMS),
-                help="Write one clause per line. Printed on every new PO before the vendor's own terms. "
+                help="Write one clause per line. Printed on every new PO (a vendor's own terms are used on the RFQ only, never on the PO). "
                      "Not entered on the RFQ."),
     # SAP OMR6 tolerance keys — read by accounts/services/po_match.py.
     SettingSpec("invoice_qty_tolerance_pct", "invoice_match", "Quantity tolerance (%)", "decimal", 2.0, min=0, max=50,
@@ -68,12 +68,15 @@ _SPECS = [
                      "tomorrow. When the date passes, the buyer is told how many quotes came in."),
     # The buyer a new requisition goes to, by its category (2026-10-23) — was
     # fixed in code (P2P_CATEGORY_AUTO_BUYERS), which stays the fallback for a
-    # category left blank here.
+    # category not yet saved here. Never blank (2026-10-26): shown pre-filled
+    # with the standard buyer; categories without one are required until picked.
     *(SettingSpec(f"buyer_{code.lower()}", "buyers", f"{label} ({code})", "user", None, user_apps=("p2p", "purchase"),
-                  help=(f"New {label} requisitions are assigned to this buyer. Blank = the standard buyer "
-                        f"({P2P_CATEGORY_AUTO_BUYERS[code]})." if code in P2P_CATEGORY_AUTO_BUYERS
-                        else f"New {label} requisitions are assigned to this buyer. Blank = no buyer — "
-                             "Purchase picks one on the requisition."))
+                  required=True,
+                  default_resolver=((lambda db, _c=code: standard_buyer_id(db, _c, active_only=True))
+                                    if code in P2P_CATEGORY_AUTO_BUYERS else None),
+                  help=(f"New {label} requisitions are assigned to this buyer." if code in P2P_CATEGORY_AUTO_BUYERS
+                        else f"New {label} requisitions are assigned to this buyer. "
+                             "Required: pick the buyer for this category."))
       for code, label in P2P_CATEGORIES.items()),
     *notification_specs(NOTIFY_EVENTS, user_apps={e: _ANY_MODULE for e in NOTIFY_EVENTS}),
 ]

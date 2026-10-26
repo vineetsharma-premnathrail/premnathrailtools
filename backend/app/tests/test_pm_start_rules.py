@@ -59,7 +59,7 @@ def test_chosen_step_rule_needs_the_step(client, t):  # noqa: F811
 
 def test_new_project_starts_without_milestones(client, db, t):  # noqa: F811
     r = client.post(f"{API}/projects", headers=auth(t["partner"]), json={
-        "name": "RRV for metro", "client_name": "DMRC", "start_date": str(TODAY),
+        "name": "RRV for metro", "client_name": "DMRC", "customer_po_ref": "PO-D", "sales_order_ref": "SO-D", "start_date": str(TODAY),
         "target_handover_date": str(TODAY + timedelta(days=200))})
     assert r.status_code == 200, r.text
     assert db.query(PmProjectMilestone).filter_by(project_id=r.json()["id"]).count() == 0

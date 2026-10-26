@@ -113,7 +113,7 @@ export default function HydCalculationsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr>
-              {['Calc No.', 'Title', 'Calculation', 'Type', 'System', 'Key Result', 'By', 'Date', ''].map((h, hi) => (
+              {['Calc No.', 'Title', 'Calculation', 'Type', 'System', 'Key Result', 'By', 'Date'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{hi === 0 && <RowCount count={calcs.length} />}
                 </th>
@@ -122,9 +122,9 @@ export default function HydCalculationsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : calcs.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No saved calculations match. Size a cylinder, pump, accumulator or receiver in the calculator and save it here for the record.</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No saved calculations match. Size a cylinder, pump, accumulator or receiver in the calculator and save it here for the record.</td></tr>
             ) : (
               calcs.map((c) => (
                 <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/calculations', c))} style={{ cursor: 'pointer' }}>
@@ -138,9 +138,6 @@ export default function HydCalculationsPage() {
                   <td style={cellStyle}>{keyResultText(c.results?.results)}</td>
                   <td style={cellStyle}>{c.created_by_name || '—'}</td>
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{formatDate(c.created_at)}</td>
-                  <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/hydraulic/calculations', c))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                  </td>
                 </tr>
               ))
             )}

@@ -165,7 +165,7 @@ export default function PurposeRulesCard() {
                     : 'Not charged'}</td>
                   <td style={td}>{p.rules.line_project_mode === 'inhouse'
                     ? <span title="Inhouse: bought for the company's own use, not for a customer order or project.">Inhouse</span>
-                    : <span title="Order project: every line belongs to the project chosen at the top of the requisition.">Order project</span>}</td>
+                    : <span title="Project: every line belongs to the project chosen at the top of the requisition.">Project</span>}</td>
                   <td style={td} onClick={(e) => e.stopPropagation()}>
                     <button type="button" style={sheetBtn('secondary', SHEET.INK)} aria-label={`${canEdit ? 'Edit' : 'View'} ${p.label} rules`} onClick={() => open(p)}><SheetIcon name="edit" size={14} />{canEdit ? 'Edit' : 'View'}</button>
                   </td>

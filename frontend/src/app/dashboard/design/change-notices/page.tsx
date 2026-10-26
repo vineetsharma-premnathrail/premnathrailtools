@@ -179,13 +179,13 @@ export default function DesignChangesPage() {
           <div data-tour="design-ecrs-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
               <thead>
-                <tr>{['ECR', 'Title', 'Source', 'Urgency', 'Items', 'Raised by', 'Status', 'Votes', 'Days open', 'ECN', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={ecrs.length} />}</th>)}</tr>
+                <tr>{['ECR', 'Title', 'Source', 'Urgency', 'Items', 'Raised by', 'Status', 'Votes', 'Days open', 'ECN'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={ecrs.length} />}</th>)}</tr>
               </thead>
               <tbody>
                 {ecrLoading ? (
-                  <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+                  <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
                 ) : ecrs.length === 0 ? (
-                  <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No change requests here — use + Raise ECR to ask for a change to a released drawing or BOM.</td></tr>
+                  <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No change requests here — use + Raise ECR to ask for a change to a released drawing or BOM.</td></tr>
                 ) : (
                   ecrs.map((r) => (
                     <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/design/change-requests', r))} style={{ cursor: 'pointer' }}>
@@ -205,9 +205,6 @@ export default function DesignChangesPage() {
                         {r.ecn_id ? (
                           <span onClick={() => router.push(recordPath('/dashboard/design/change-notices', r, 'ecn_id'))} style={{ fontWeight: 600, color: '#FF6A2A', cursor: 'pointer', whiteSpace: 'nowrap' }}>{r.ecn_number}</span>
                         ) : '—'}
-                      </td>
-                      <td onClick={(ev) => ev.stopPropagation()} style={cellStyle}>
-                        <span onClick={() => router.push(recordPath('/dashboard/design/change-requests', r))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                       </td>
                     </tr>
                   ))
@@ -238,13 +235,13 @@ export default function DesignChangesPage() {
           <div data-tour="design-ecns-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1240 }}>
               <thead>
-                <tr>{['ECN', 'Title', 'ECR', 'Reason', 'Priority', 'Items', 'Raised by', 'Target', 'Acknowledged', 'Status', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={ecns.length} />}</th>)}</tr>
+                <tr>{['ECN', 'Title', 'ECR', 'Reason', 'Priority', 'Items', 'Raised by', 'Target', 'Acknowledged', 'Status'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={ecns.length} />}</th>)}</tr>
               </thead>
               <tbody>
                 {ecnLoading ? (
-                  <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+                  <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
                 ) : ecns.length === 0 ? (
-                  <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No change notices here — they are created from an approved change request (“Create ECN”).</td></tr>
+                  <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No change notices here — they are created from an approved change request (“Create ECN”).</td></tr>
                 ) : (
                   ecns.map((e) => {
                     const total = (e.documents?.length ?? e.document_count) + (e.boms?.length ?? 0)
@@ -265,9 +262,6 @@ export default function DesignChangesPage() {
                         <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{formatDate(e.target_date)}</td>
                         <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{acks ? `${e.acknowledged_count} / ${acks}` : '—'}</td>
                         <td style={cellStyle}>{pill(ECN_STATUS_LABELS[e.status] || e.status, ECN_STATUS_HEX[e.status] || '#78716c')}</td>
-                        <td onClick={(ev) => ev.stopPropagation()} style={cellStyle}>
-                          <span onClick={() => router.push(recordPath('/dashboard/design/change-notices', e))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                        </td>
                       </tr>
                     )
                   })

@@ -38,6 +38,7 @@ def notes(db, user, ntype):
 
 def body(pm_id, **extra):
     data = {"project_code": "PEW-50", "name": "Tamping machine", "client_name": "RVNL", "project_manager_id": pm_id,
+            "customer_po_ref": "PO-1", "sales_order_ref": "SO-1",
             "start_date": str(TODAY), "target_handover_date": str(TODAY + timedelta(days=60))}
     data.update(extra)
     return data
@@ -160,9 +161,9 @@ def test_create_validation_messages(client, db, w):
 
 
 def test_create_normalises_code_and_po_ref_and_notifies_pm(client, db, w):
-    p = create(client, w, project_code="  pew-77 ", name="  RRV  ", customer_po_ref="  ")
+    p = create(client, w, project_code="  pew-77 ", name="  RRV  ", customer_po_ref="  PO-9  ")
     assert p["project_code"] == "PEW-77" and p["name"] == "RRV"
-    assert p["customer_po_ref"] is None and p["status"] == "planning" and p["health"] is None
+    assert p["customer_po_ref"] == "PO-9" and p["status"] == "planning" and p["health"] is None
     assert p["progress_percent"] == 0 and p["milestones_total"] == 0 and p["next_milestone"] is None
     assert p["created_by_name"] == "lc.partner" and p["project_manager_name"] == "lc.pm"
     assert notes(db, w["pm"], "pm_project_manager") == 1

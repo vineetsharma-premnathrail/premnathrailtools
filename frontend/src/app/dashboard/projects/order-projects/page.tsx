@@ -62,13 +62,13 @@ export default function OrderProjectsPage() {
       <div data-tour="sales-op-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1050 }}>
           <thead>
-            <tr>{['Project', 'Sales order', 'Customer', 'Customer PO', 'Vehicles', 'Project manager', 'Planned end', 'Status', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={projects.length} />}</th>)}</tr>
+            <tr>{['Project', 'Sales order', 'Customer', 'Customer PO', 'Vehicles', 'Project manager', 'Planned end', 'Status'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={projects.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {loading && canView ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : projects.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 {search || status ? 'No projects match these filters.' : 'No order projects yet. A project is created automatically when a sales order with an RRV line is confirmed.'}
               </td></tr>
             ) : projects.map((p) => (
@@ -84,9 +84,6 @@ export default function OrderProjectsPage() {
                 <td style={tdStyle}>{p.project_manager_name || <span style={{ color: TEXT.muted }}>Not assigned</span>}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(p.planned_end)}</td>
                 <td style={tdStyle}><Pill label={OP_STATUS_LABELS[p.status] || p.status} hex={OP_STATUS_HEX[p.status] || '#78716c'} /></td>
-                <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
-                  <span onClick={() => router.push(recordPath('/dashboard/projects/order-projects', p))} style={{ color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>View</span>
-                </td>
               </tr>
             ))}
           </tbody>

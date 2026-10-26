@@ -105,7 +105,7 @@ export default function HydSparePartsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1150 }}>
           <thead>
             <tr>
-              {['Part Code', 'Name', 'Category', 'For Component', 'Criticality', 'Available / Min', 'Used (12 m)', 'Lead Time', 'Stock', ''].map((h, hi) => (
+              {['Part Code', 'Name', 'Category', 'For Component', 'Criticality', 'Available / Min', 'Used (12 m)', 'Lead Time', 'Stock'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{hi === 0 && <RowCount count={spares.length} />}
                 </th>
@@ -114,9 +114,9 @@ export default function HydSparePartsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : spares.length === 0 ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No spare parts match. Add the seal kits, filter elements and hoses your systems need, and link each to its Store item to track stock.</td></tr>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No spare parts match. Add the seal kits, filter elements and hoses your systems need, and link each to its Store item to track stock.</td></tr>
             ) : (
               spares.map((s) => {
                 const stockColor = s.stock_status === 'out' ? '#DC2626' : s.stock_status === 'low' ? '#B45309' : TEXT.body
@@ -140,9 +140,6 @@ export default function HydSparePartsPage() {
                     <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{s.lead_time_days != null ? `${s.lead_time_days} d` : '—'}</td>
                     <td style={cellStyle}>
                       <Pill label={STOCK_LABELS[s.stock_status] || s.stock_status} hex={STOCK_HEX[s.stock_status] || '#78716c'} />
-                    </td>
-                    <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                      <span onClick={() => router.push(recordPath('/dashboard/hydraulic/spares', s))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                     </td>
                   </tr>
                 )

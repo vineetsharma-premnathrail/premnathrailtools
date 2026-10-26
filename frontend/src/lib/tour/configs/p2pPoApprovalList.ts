@@ -27,12 +27,7 @@ const config: TourConfig = {
     {
       target: 'p2p-list-table',
       title: 'Purchase Requisition Number / Category / Project / Required Date / Priority / Status',
-      purpose: 'Requisitions in the currently selected bucket, with category, project, required date, priority, and status.',
-    },
-    {
-      target: 'p2p-list-view',
-      title: 'View',
-      purpose: 'Opens the requisition\'s full detail page, including the PO Approval section and the PO document itself.',
+      purpose: 'Requisitions in the currently selected bucket, with category, project, required date, priority, and status. Click a row to open the requisition\'s full detail page, including the PO Approval section and the PO document itself.',
     },
     {
       target: 'p2p-list-approve',

@@ -18,6 +18,7 @@ from app.modules.sales import approvals as sap
 from app.modules.sales.access import ensure_order, scoped_orders
 from app.modules.sales.models.order import (
     SalesOrder, SalesOrderSchedule, SALES_SOURCE_TYPES, SALES_ORDER_OPEN_STATUSES, SALES_ORDER_LIVE_STATUSES,
+    SALES_DEFAULT_ORDER_TYPE, SALES_DEFAULT_CURRENCY,
 )
 from app.modules.sales.models.approval import SalesApproval
 from app.modules.sales.models.amendment import SalesOrderAmendment, SALES_AMENDMENT_OPEN_STATUSES
@@ -286,7 +287,7 @@ async def prefill(inquiry: int | None = None, tender: int | None = None, quotati
         "existing_order": _existing(existing),
         "customer_id": t.org_id, "customer_name": org.name if org else None, "customer_contact_id": t.org_contact_id,
         "source_type": "tender", "source_tender_id": t.id, "source_label": f"Tender {t.tender_number or t.universal_id}",
-        "loa_number": t.loi_number, "purchaser_name": t.tender_authority, "contract_value": t.contract_value,
+        "customer_po_number": t.loi_number, "purchaser_name": t.tender_authority, "contract_value": t.contract_value,
         "lines": [{"line_number": 1, "line_type": "rrv", "description": t.tender_name or "", "quantity": 1,
                    "unit_price": 0, "gst_rate": 18, "discount_percent": 0, "uom": "NOS"}],
         **defaults,
@@ -444,9 +445,9 @@ async def create_order(payload: SalesOrderCreate, db: Session = Depends(get_db),
         if getattr(so, k, None) is None and k not in payload.model_fields_set:
             setattr(so, k, v)
     so.status = "draft"
-    so.order_type = so.order_type or "rrv_supply"
+    so.order_type = so.order_type or SALES_DEFAULT_ORDER_TYPE
     so.price_basis = so.price_basis or "for_destination"
-    so.currency = "INR"
+    so.currency = data.get("currency") or SALES_DEFAULT_CURRENCY  # label only, validated above
     so.created_by_id = user.id
     so.sales_owner_id = so.sales_owner_id or user.id
     so.customer_name = org.name
@@ -475,7 +476,7 @@ async def update_order(so_id: int, payload: SalesOrderUpdate, db: Session = Depe
         raise HTTPException(status_code=422, detail=f"{', '.join(blank)} can't be empty on a sales order — pick a value "
                                                     f"(or leave the field out of the save to keep the current one).")
     with sales_errors(db):
-        svc.validate_header({**data})
+        svc.validate_header(data)
     if "sales_owner_id" in data:
         _check_owner(db, data["sales_owner_id"])
     if data.get("customer_id") and data["customer_id"] != so.customer_id:
@@ -489,7 +490,7 @@ async def update_order(so_id: int, payload: SalesOrderUpdate, db: Session = Depe
     if "customer_contact_id" in data:
         _check_contact(db, data.get("customer_id") or so.customer_id, data["customer_contact_id"])
     for k, v in data.items():
-        if k == "currency" and v is None:
+        if k == "currency" and not v:
             continue
         setattr(so, k, v)
     with sales_errors(db):

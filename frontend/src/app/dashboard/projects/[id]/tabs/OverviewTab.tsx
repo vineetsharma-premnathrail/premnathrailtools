@@ -103,6 +103,7 @@ export default function OverviewTab({ project, onProjectUpdate }: { project: PmP
 
         <DetailGroup title="Record" last>
           {project.customer_po_ref && <DetailRow label="Customer PO">{project.customer_po_ref}</DetailRow>}
+          {project.sales_order_ref && <DetailRow label="Sales order">{project.sales_order_ref}</DetailRow>}
           <DetailRow label="Created by">{project.created_by_name ? `${project.created_by_name}${project.created_at ? ` on ${formatDate(project.created_at)}` : ''}` : null}</DetailRow>
           {project.released_at && <DetailRow label="Released">{`${formatDate(project.released_at)}${project.released_by_name ? ` by ${project.released_by_name}` : ''}`}</DetailRow>}
           {project.closure_date && <DetailRow label="Closed">{`${formatDate(project.closure_date)}${project.closed_by_name ? ` by ${project.closed_by_name}` : ''}`}</DetailRow>}

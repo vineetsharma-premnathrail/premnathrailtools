@@ -49,6 +49,7 @@ def s(client, db):
     db.commit()
     r = client.post(f"{API}/projects", headers=auth(partner), json={
         "project_code": "pew-39", "name": "RRV build", "client_name": "IRCON", "project_manager_id": pm.id,
+        "customer_po_ref": "PO-39", "sales_order_ref": "SO-39",
         "start_date": str(TODAY), "target_handover_date": str(TODAY + timedelta(days=60)),
     })
     assert r.status_code == 200, r.text
@@ -82,6 +83,7 @@ def add_task(client, s, m, **extra):
 
 def test_only_management_creates_projects(client, db, s):
     body = {"project_code": "PEW-40", "name": "X", "client_name": "Y", "project_manager_id": s["pm"].id,
+            "customer_po_ref": "PO-40", "sales_order_ref": "SO-40",
             "start_date": str(TODAY), "target_handover_date": str(TODAY + timedelta(days=5))}
     assert client.post(f"{API}/projects", headers=auth(s["viewer"]), json=body).status_code == 403
     granted = make_user(db, "granted@x.com", apps=("projects",), granular_permissions=["projects:all_projects:view", "projects:all_projects:create"])

@@ -170,7 +170,7 @@ def check_assignee(db: Session, source: str, record_id: int, assignee_id: int, d
     if department not in working_departments(db, source, record_id):
         if department in RND_SHARE_DEPARTMENTS:
             raise HTTPException(status_code=422, detail=f"This requirement isn't shared with {side_label(department)}, so its people can't get tasks on it. "
-                                                        f"The R&D head ({_head_names(db)}) shares it from the Tasks & Departments tab first.")
+                                                        f"The R&D head ({_head_names(db)}) shares it from the Milestones tab › Departments first.")
         raise HTTPException(status_code=422, detail=f"'{department}' isn't a department that works on R&D requirements — pick R&D, Design, Electrical or Hydraulic & Pneumatic.")
     assignee = db.query(User).filter(User.id == assignee_id).first()
     if not assignee or not assignee.is_active:

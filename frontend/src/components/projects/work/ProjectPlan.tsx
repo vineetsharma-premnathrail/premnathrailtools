@@ -1046,9 +1046,7 @@ function MilestonePanel(props: {
                       <td style={td}><Chip text={state.text} c={state.c} bg={state.bg} /></td>
                       <td style={td}><span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Bar value={p} color={col.c} /><span style={{ fontSize: 12, color: BODY, width: 34 }}>{p}%</span></span></td>
                       <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                        {s.can_edit && <button type="button" title="Edit" aria-label={`Edit ${s.title}`} disabled={busy} onClick={() => props.onEditTask(s)} style={btn('ghost', MUTED, busy)}><Icon name="edit" size={15} /></button>}
                         {s.can_delete && <button type="button" title="Remove" aria-label={`Remove ${s.title}`} disabled={busy} onClick={() => props.onRemoveTask(s)} style={btn('ghost', '#e11d48', busy)}><Icon name="trash" size={15} /></button>}
-                        <button type="button" title="Open" aria-label={`Open ${s.title}`} onClick={() => setTaskId(s.id)} style={btn('ghost', BLUE)}><Icon name="right" size={15} /></button>
                       </td>
                     </tr>
                   )

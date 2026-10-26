@@ -123,7 +123,7 @@ export default function MaintenanceContractsPage() {
     { key: 'active', label: 'Active', caption: `Covered beyond the next ${windowDays} days.` },
     { key: 'none', label: 'Not covered', caption: 'No expiry date recorded on the asset.' },
   ]
-  const headers = ['Asset', 'Plant', 'Crit.', 'Cover', 'Vendor', 'Expiry Date', 'Days Left', 'Status', '']
+  const headers = ['Asset', 'Plant', 'Crit.', 'Cover', 'Vendor', 'Expiry Date', 'Days Left', 'Status']
   const filtered = !!(search || branchFilter || status || kind !== 'all')
 
   return (
@@ -241,9 +241,6 @@ export default function MaintenanceContractsPage() {
                     </td>
                     <td style={cellStyle}>
                       <Pill label={STATUS_LABELS[r.status] || r.status} hex={hex} />
-                    </td>
-                    <td style={cellStyle} onClick={(e) => e.stopPropagation()}>
-                      <span onClick={go} style={{ color: '#ea580c', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }}>View</span>
                     </td>
                   </tr>
                 )

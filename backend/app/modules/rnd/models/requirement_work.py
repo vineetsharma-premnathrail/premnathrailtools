@@ -92,6 +92,8 @@ class RndRequirementTask(Base, TimestampMixin):
     # (design / electrical / hydraulic) — the assignee's side when assigned.
     # Drives the department chips on the requirement's task list.
     department: Mapped[str] = mapped_column(String(20), nullable=False, default="rnd", server_default="rnd")
+    # The milestone this task sits in (rnd_requirement_milestones); NULL = "No milestone".
+    milestone_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_requirement_milestones.id", ondelete="SET NULL"), index=True, nullable=True)
 
 
 class RndTaskEvent(Base):

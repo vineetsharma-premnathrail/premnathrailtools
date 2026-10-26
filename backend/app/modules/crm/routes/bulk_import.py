@@ -59,6 +59,7 @@ from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.crm.models.organization import Organization, OrgContact
+from app.modules.crm.services.org_scope import ORG_SCOPES, check_foreign_id, wrong_scope_message
 from app.modules.crm.models.inquiry import Inquiry, InquiryLineItem
 from app.modules.crm.models.activity import Activity
 from app.modules.crm.services.org_code import generate_org_code
@@ -132,6 +133,10 @@ _HEADER = [
     # Follow-up — one is created for every single row.
     "followup_activity_type", "followup_subject", "followup_activity_date", "followup_next_followup",
     "followup_assigned_to", "followup_status", "followup_remarks", "followup_action_plan",
+    # Optional organization scope columns (last, so older files keep working): scope is
+    # "domestic" (default) or "international"; tax_vat_id / company_registration_no are
+    # for International organizations only, gst_number is for Domestic only.
+    "scope", "tax_vat_id", "company_registration_no",
 ]
 
 _ORG_BLANK = [""] * 14  # org_name..website — blank once the org already exists
@@ -193,8 +198,8 @@ async def download_template(_user: User = Depends(require_tab_action("crm", "org
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(_HEADER)
-    for row in _EXAMPLE_ROWS:
-        writer.writerow(row)
+    for n, row in enumerate(_EXAMPLE_ROWS):
+        writer.writerow([*row, "domestic" if n == 0 else "", "", ""])
     return StreamingResponse(
         iter([buf.getvalue()]), media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="crm_bulk_import_template.csv"'},
@@ -282,6 +287,23 @@ async def bulk_import(
                 org_type = _get(row, "org_type")
                 if not org_type:
                     raise ValueError(f"org_type is required the first time '{org_name}' appears")
+                scope = (_get(row, "scope") or _get(row, "org_scope") or "domestic").lower()
+                if scope not in ORG_SCOPES:
+                    raise ValueError(f"scope '{scope}' isn't valid — use 'domestic' or 'international' (or leave it empty for domestic)")
+                tax_vat_id = check_foreign_id(_get(row, "tax_vat_id"), "tax_vat_id")
+                registration_no = check_foreign_id(_get(row, "company_registration_no"), "company_registration_no")
+                scope_msg = wrong_scope_message(
+                    scope, gst_number=_get(row, "gst_number"), tax_vat_id=tax_vat_id, company_registration_no=registration_no)
+                if scope_msg:
+                    raise ValueError(scope_msg)
+                if scope == "international" and tax_vat_id:
+                    country_in = (_get(row, "country") or "India").strip().lower()
+                    vat_clash = db.query(Organization).filter(
+                        Organization.org_scope == "international", Organization.is_deleted == False,  # noqa: E712
+                        func.lower(Organization.tax_vat_id) == tax_vat_id.lower(),
+                        func.lower(func.coalesce(Organization.country, "")) == country_in).first()
+                    if vat_clash:
+                        raise ValueError(f"Tax / VAT ID '{tax_vat_id}' is already used by customer organization '{vat_clash.name}' in the same country")
                 gst = validate_gst_format(_get(row, "gst_number") or None)
                 if gst and gst in existing_gsts:
                     raise ValueError(f"GST number '{gst}' is already used by another customer organization")
@@ -299,6 +321,7 @@ async def bulk_import(
                     city=_get(row, "city") or None,
                     pin_code=_get(row, "pin_code") or None,
                     gst_number=gst,
+                    org_scope=scope, tax_vat_id=tax_vat_id, company_registration_no=registration_no,
                     official_phone=_get(row, "official_phone") or None,
                     official_email=official_email,
                     website=_get(row, "website") or None,
@@ -325,6 +348,12 @@ async def bulk_import(
                 # silently ignore it). Skip fields that are blank on this
                 # row so continuation rows — which never repeat org
                 # details — leave it untouched.
+                tax_vat_id = check_foreign_id(_get(row, "tax_vat_id"), "tax_vat_id")
+                registration_no = check_foreign_id(_get(row, "company_registration_no"), "company_registration_no")
+                scope_msg = wrong_scope_message(
+                    org.org_scope, gst_number=_get(row, "gst_number"), tax_vat_id=tax_vat_id, company_registration_no=registration_no)
+                if scope_msg:
+                    raise ValueError(f"'{org_name}' is a {org.org_scope} organization: {scope_msg}")
                 gst = validate_gst_format(_get(row, "gst_number") or None)
                 if gst and gst != org.gst_number and gst in existing_gsts:
                     raise ValueError(f"GST number '{gst}' is already used by another customer organization")
@@ -339,6 +368,10 @@ async def bulk_import(
                 field_undo = []
                 for field in simple_fields:
                     val = _get(row, field)
+                    if val and getattr(org, field) != val:
+                        field_undo.append((field, getattr(org, field)))
+                        setattr(org, field, val)
+                for field, val in (("tax_vat_id", tax_vat_id), ("company_registration_no", registration_no)):
                     if val and getattr(org, field) != val:
                         field_undo.append((field, getattr(org, field)))
                         setattr(org, field, val)

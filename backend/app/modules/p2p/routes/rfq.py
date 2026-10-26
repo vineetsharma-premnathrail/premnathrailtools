@@ -1052,15 +1052,13 @@ async def submit_po_draft(
 
 def _po_terms(db: Session, rfq: RFQ, vendor_id: int | None) -> str | None:
     """Terms printed on the PO: the company's standard terms (Procurement → Settings,
-    not editable per RFQ), the late delivery clause agreed on this RFQ, then the
-    vendor's own terms. Older RFQs that carried a per-RFQ copy keep it."""
+    not editable per RFQ), then the late delivery clause agreed on this RFQ. The
+    vendor's own terms & conditions are used on the RFQ only (rfq_mail), never on
+    the PO (owner decision 2026-10-26). Older RFQs that carried a per-RFQ copy keep it."""
     parts = []
     company = rfq.terms_conditions or get_p2p_setting(db, "company_terms")
     if company:
         parts.append(f"Company terms:\n{company.strip()}")
     if (rfq.late_delivery_clause or "").strip():
         parts.append(f"Late delivery clause:\n{rfq.late_delivery_clause.strip()}")
-    vendor = db.get(Vendor, vendor_id) if vendor_id else None
-    if vendor and vendor.terms_conditions:
-        parts.append(f"Vendor terms ({vendor.name}):\n{vendor.terms_conditions.strip()}")
     return "\n\n".join(parts) or None

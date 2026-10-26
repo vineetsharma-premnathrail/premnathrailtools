@@ -4,8 +4,7 @@ import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Calendar, CaretDown, Check, Clock, Flag, Gear, ListChecks, Package, Paperclip, PencilSimple, Plus, Star, Target, Trash, Truck, User, WarningCircle } from '@phosphor-icons/react'
 import type { Icon as PhosphorIcon } from '@phosphor-icons/react'
-import { rndApi } from '@/lib/api'
-import { RndMilestone, RndProjectDetail, RndTask } from '@/types'
+import { RndMilestone, RndMilestoneInput, RndTask } from '@/types'
 import { extractErrorMessages } from '@/lib/validation'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
@@ -16,7 +15,8 @@ import { FormSheet, Req, SHEET, SheetColumns, SheetError, SheetIcon, SheetSectio
 import TasksBoard, { TaskApi, TaskLabels } from './TasksBoard'
 import { pillStyle } from '@/components/shared/ui'
 
-/* Project Plan & Milestones for an R&D (Prototype / Research) project — the
+/* Plan & Milestones for an R&D project (Prototype / Research) or an R&D
+ * requirement — one component, the caller passes its own API + wording. The
  * same plan as Project Management (components/projects/work/ProjectPlan.tsx):
  * a timeline of milestones, each with a responsible person and an expected
  * achievable date; open one to work its tasks. The tasks inside a milestone
@@ -114,23 +114,66 @@ function Bar({ value, color = BLUE, height = 8 }: { value: number; color?: strin
 const card: React.CSSProperties = { background: '#fff', border: `1px solid ${LINE}`, borderRadius: 14, boxShadow: '0 1px 3px rgba(15,23,42,0.05)' }
 
 type Person = { id: number; name: string; department?: string | null; designation?: string | null; team_role: string }
+export type MilestonePerson = Person
+type DepartmentFilter = { options: { key: string; label: string }[]; mine: string[] }
+/** The calls the plan makes — the project page and the requirement page each pass theirs. */
+export interface MilestoneApi {
+  list: () => Promise<RndMilestone[]>
+  people: () => Promise<Person[]>
+  create: (p: RndMilestoneInput) => Promise<RndMilestone>
+  edit: (id: number, p: Partial<RndMilestoneInput>) => Promise<RndMilestone>
+  status: (id: number, action: 'done' | 'reopen' | 'cancel', reason?: string) => Promise<RndMilestone>
+  remove: (id: number) => Promise<unknown>
+}
+export interface MilestonePlanInfo {
+  /** Changes when the plan belongs to another record (reload trigger). */
+  key: string | number
+  heading: string
+  subtitle: string
+  startDate?: string | null
+  targetEndDate?: string | null
+}
+export interface MilestonePlanTexts {
+  /** Hint under the owner pickers. */
+  teamHint: string
+  emptyManager: string
+  emptyOther: string
+  /** Shown when the role can't see the tasks. */
+  noTaskRights: string
+  looseHint: string
+  /** Form subtitle for a new milestone. */
+  formSubtitle: string
+  peopleLoading: string
+  peopleError: string
+  /** Prefix of the target-end sentence in the date hint, e.g. "The project's target end is". */
+  targetEndPrefix: string
+}
 type MsForm = {
   id?: number; title: string; description: string; assignee_id: string; start_date: string; due_date: string
   status: string; blocker_reason: string; color: string; icon: string; co_owner_ids: string[]
 }
 
-export default function RndMilestonePlan({ project, userId, isManager, taskApi, labels }: {
-  project: RndProjectDetail
+export default function RndMilestonePlan({ plan, userId, isManager, taskApi, labels, milestoneApi, featureTab, ownerRuleKey, texts, departmentFilter, looseCreate = false, canMoveTasks = false }: {
+  plan: MilestonePlanInfo
   userId: number
-  /** Project lead / admin. */
+  /** Project lead / R&D head / admin. */
   isManager: boolean
-  /** The project's task API — scoped to one milestone here. */
+  /** The task API of the project or requirement — scoped to one milestone here. */
   taskApi: TaskApi
   labels: TaskLabels
+  milestoneApi: MilestoneApi
+  featureTab: 'projects' | 'requirements'
+  ownerRuleKey: string
+  texts: MilestonePlanTexts
+  departmentFilter?: DepartmentFilter
+  /** The caller may give plain (no-milestone) tasks while the plan has no live milestone. */
+  looseCreate?: boolean
+  /** Requirement head: the Edit form of a main task offers a Milestone picker (open milestones). */
+  canMoveTasks?: boolean
 }) {
   const { canFeature } = useCan()
-  const f = (feature: string, action: PermissionAction) => canFeature('rnd', 'projects', feature, action)
-  const allowOwner = useAssigneeFilter('rnd:projects.milestones')
+  const f = (feature: string, action: PermissionAction) => canFeature('rnd', featureTab, feature, action)
+  const allowOwner = useAssigneeFilter(ownerRuleKey)
   const [rows, setRows] = useState<RndMilestone[]>([])
   const [loose, setLoose] = useState(0)
   const [loaded, setLoaded] = useState(false)
@@ -149,13 +192,13 @@ export default function RndMilestonePlan({ project, userId, isManager, taskApi, 
 
   const canAdd = isManager && f('milestones', 'create')
   const load = useCallback(() => {
-    rndApi.listMilestones(project.id)
+    milestoneApi.list()
       .then((d) => { setRows(Array.isArray(d) ? d : []); setError('') })
       .catch((err) => setError(extractErrorMessages(err, 'Could not load the milestones — reload the page.')))
       .finally(() => setLoaded(true))
     // Task totals (and tasks saved before milestones existed) — what this person can see.
     if (f('tasks', 'view')) {
-      rndApi.listProjectTasks(project.id).then((ts: RndTask[]) => {
+      taskApi.list().then((ts: RndTask[]) => {
         const top = ts.filter((t) => !t.parent_task_id && t.status !== 'cancelled')
         const done = (t: RndTask) => t.status === 'closed' || t.status === 'submitted'
         setStats({ total: top.length, done: top.filter(done).length, pending: top.filter((t) => !done(t)).length, overdue: top.filter((t) => t.is_overdue).length })
@@ -163,7 +206,7 @@ export default function RndMilestonePlan({ project, userId, isManager, taskApi, 
       }).catch(() => { /* the totals are a summary; the milestones above still show */ })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id])
+  }, [plan.key])
   useEffect(() => { load() }, [load])
 
   // Timeline order: by expected date; cancelled ones last.
@@ -175,12 +218,12 @@ export default function RndMilestonePlan({ project, userId, isManager, taskApi, 
   const replace = (m: RndMilestone) => setRows((rs) => rs.map((x) => (x.id === m.id ? m : x)))
 
   const needPeople = () => {
-    if (!people) rndApi.milestonePeople(project.id).then(setPeople).catch((err) => setFormError(extractErrorMessages(err, 'Could not load the project team.')))
+    if (!people) milestoneApi.people().then(setPeople).catch((err) => setFormError(extractErrorMessages(err, texts.peopleError)))
   }
   const suggestedStart = () => {
     const today = new Date().toISOString().slice(0, 10)
     const ends = rows.filter((x) => x.status !== 'cancelled').map((x) => x.due_date).sort()
-    const base = ends.length ? addDays(ends[ends.length - 1], 1) : (project.start_date || today)
+    const base = ends.length ? addDays(ends[ends.length - 1], 1) : (plan.startDate || today)
     return base > today ? base : today
   }
   const openMs = (m?: RndMilestone) => {
@@ -210,7 +253,7 @@ export default function RndMilestonePlan({ project, userId, isManager, taskApi, 
       co_owner_ids: msForm.co_owner_ids.filter((x) => x !== msForm.assignee_id).map(Number),
     }
     try {
-      const saved = msForm.id ? await rndApi.editMilestone(project.id, msForm.id, payload) : await rndApi.createMilestone(project.id, payload)
+      const saved = msForm.id ? await milestoneApi.edit(msForm.id, payload) : await milestoneApi.create(payload)
       if (msForm.id) replace(saved)
       else { setRows((rs) => [...rs, saved]); setSelId(saved.id) }
       setMsForm(null)
@@ -221,7 +264,7 @@ export default function RndMilestonePlan({ project, userId, isManager, taskApi, 
   const achieve = async (m: RndMilestone) => {
     setBusy(true)
     setError('')
-    try { replace(await rndApi.milestoneStatus(project.id, m.id, 'done')) } catch (err) { setError(extractErrorMessages(err, `Could not mark '${m.title}' achieved.`)) } finally { setBusy(false) }
+    try { replace(await milestoneApi.status(m.id, 'done')) } catch (err) { setError(extractErrorMessages(err, `Could not mark '${m.title}' achieved.`)) } finally { setBusy(false) }
   }
   const submitReason = async () => {
     const r = reason
@@ -230,7 +273,7 @@ export default function RndMilestonePlan({ project, userId, isManager, taskApi, 
     if (!v) { setReasonError(`Say why '${r.m.title}' is being ${r.action === 'reopen' ? 'reopened' : 'cancelled'}.`); return }
     setBusy(true)
     setReasonError('')
-    try { replace(await rndApi.milestoneStatus(project.id, r.m.id, r.action, v)); setReason(null) }
+    try { replace(await milestoneApi.status(r.m.id, r.action, v)); setReason(null) }
     catch (err) { setReasonError(extractErrorMessages(err, `Could not ${r.action} '${r.m.title}'.`)) }
     finally { setBusy(false) }
   }
@@ -238,7 +281,7 @@ export default function RndMilestonePlan({ project, userId, isManager, taskApi, 
     setBusy(true)
     setError('')
     try {
-      await rndApi.deleteMilestone(project.id, m.id)
+      await milestoneApi.remove(m.id)
       setRows((rs) => rs.filter((x) => x.id !== m.id))
       if (selId === m.id) setSelId(null)
     } catch (err) { setError(extractErrorMessages(err, `Could not delete '${m.title}'.`)) } finally { setBusy(false) }
@@ -246,8 +289,9 @@ export default function RndMilestonePlan({ project, userId, isManager, taskApi, 
 
   const ownerOpts = msForm
     ? (people || []).filter((p) => allowOwner(p.id) || [msForm.assignee_id, ...msForm.co_owner_ids].includes(String(p.id)))
-        .map((p) => ({ value: String(p.id), label: `${p.name}${p.department ? ` — ${p.department}` : p.designation ? ` — ${p.designation}` : ''}${p.team_role === 'lead' ? ' (lead)' : ''}` }))
+        .map((p) => ({ value: String(p.id), label: `${p.name}${p.department ? ` — ${p.department}` : p.designation ? ` — ${p.designation}` : ''}${p.team_role === 'lead' ? ' (lead)' : p.team_role === 'head' ? ' (head)' : ''}` }))
     : []
+  const moveChoices = canMoveTasks ? ms.filter(isOpen).map((m) => ({ id: m.id, title: m.title })) : undefined
   const personName = (id: string) => people?.find((p) => String(p.id) === id)?.name
   const rights = {
     create: f('tasks', 'create'), edit: f('tasks', 'edit'), approve: f('tasks', 'approve'), cancel: f('tasks', 'cancel'),
@@ -258,8 +302,8 @@ export default function RndMilestonePlan({ project, userId, isManager, taskApi, 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'stretch', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 320px' }}>
-          <h2 style={{ fontSize: 22, fontWeight: 800, color: INK, margin: 0, letterSpacing: '-0.01em' }}>Project Plan &amp; Milestones</h2>
-          <p style={{ fontSize: 13.5, color: MUTED, margin: '4px 0 0' }}>{project.project_number} · {project.title} — {live.length} milestone{live.length === 1 ? '' : 's'}</p>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: INK, margin: 0, letterSpacing: '-0.01em' }}>{plan.heading}</h2>
+          <p style={{ fontSize: 13.5, color: MUTED, margin: '4px 0 0' }}>{plan.subtitle} — {live.length} milestone{live.length === 1 ? '' : 's'}</p>
         </div>
         {ms.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '0 1 240px', minWidth: 180, alignSelf: 'center' }} title="Overall progress of the live milestones">
@@ -282,9 +326,7 @@ export default function RndMilestonePlan({ project, userId, isManager, taskApi, 
           <span style={{ display: 'inline-flex', width: 56, height: 56, borderRadius: 16, background: '#eff6ff', alignItems: 'center', justifyContent: 'center' }}><Icon name="flag" size={28} color={BLUE} /></span>
           <h3 style={{ fontSize: 18, fontWeight: 700, color: INK, margin: '12px 0 4px' }}>No milestones yet</h3>
           <p style={{ fontSize: 13.5, color: MUTED, margin: '0 0 16px' }}>
-            {canAdd
-              ? 'Lay out the project as milestones — each with a responsible person and an expected date — then add tasks inside each one.'
-              : 'A project lead lays out the plan as milestones; their tasks then show here.'}
+            {canAdd ? texts.emptyManager : texts.emptyOther}
           </p>
           {canAdd && <button type="button" onClick={() => openMs()} style={sheetBtn('primary', BLUE)}><Icon name="plus" size={16} /> Add Milestone</button>}
         </div>
@@ -348,12 +390,14 @@ export default function RndMilestonePlan({ project, userId, isManager, taskApi, 
                   }}
                   userId={userId} canManage={isManager} labels={labels}
                   canCreate={sel.can_plan && rights.create}
+                  departmentFilter={departmentFilter}
+                  milestoneChoices={moveChoices}
                   rights={rights}
                   reloadKey={sel.id}
                   onTasksChange={() => load()}
                 />
               ) : (
-                <p style={{ fontSize: 13, color: MUTED, margin: 0 }}>Your role can&apos;t see project tasks (R&amp;D › Prototype / Research › Project tasks).</p>
+                <p style={{ fontSize: 13, color: MUTED, margin: 0 }}>{texts.noTaskRights}</p>
               )}
             </MilestonePanel>
           )}
@@ -398,14 +442,16 @@ export default function RndMilestonePlan({ project, userId, isManager, taskApi, 
       )}
 
       {/* Tasks given before the project had milestones. */}
-      {loose > 0 && f('tasks', 'view') && (
+      {(loose > 0 || (looseCreate && live.length === 0)) && f('tasks', 'view') && (
         <div data-tour="rnd-ms-loose-tasks" style={{ ...card, padding: 18 }}>
           <h3 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 4px' }}>Tasks not in a milestone</h3>
-          <p style={{ fontSize: 12.5, color: MUTED, margin: '0 0 12px' }}>Given before this project had milestones. New tasks are added inside a milestone.</p>
+          <p style={{ fontSize: 12.5, color: MUTED, margin: '0 0 12px' }}>{texts.looseHint}</p>
           <TasksBoard
             api={{ ...taskApi, list: async () => (await taskApi.list()).filter((t) => !t.milestone_id) }}
-            userId={userId} canManage={isManager} labels={labels} canCreate={false} rights={rights}
-            reloadKey={project.id}
+            userId={userId} canManage={isManager} labels={labels} canCreate={looseCreate && live.length === 0 && rights.create} rights={rights}
+            reloadKey={plan.key}
+            departmentFilter={departmentFilter}
+            milestoneChoices={moveChoices}
             onTasksChange={(ts) => setLoose(ts.length)}
           />
         </div>
@@ -413,7 +459,7 @@ export default function RndMilestonePlan({ project, userId, isManager, taskApi, 
 
       {/* Create / edit milestone — same form as Project Management */}
       {msForm && (
-        <FormSheet icon="flag" iconColor={BLUE} title={msForm.id ? 'Edit Milestone' : 'Create Milestone'} subtitle={msForm.id ? 'Change the milestone details.' : `Add a new milestone to ${project.project_number}'s plan.`}
+        <FormSheet icon="flag" iconColor={BLUE} title={msForm.id ? 'Edit Milestone' : 'Create Milestone'} subtitle={msForm.id ? 'Change the milestone details.' : texts.formSubtitle}
           onClose={() => setMsForm(null)} busy={busy}
           footer={<>
             <button type="button" onClick={() => setMsForm(null)} disabled={busy} style={sheetBtn('secondary', INK, busy)}>Cancel</button>
@@ -449,7 +495,7 @@ export default function RndMilestonePlan({ project, userId, isManager, taskApi, 
                         <div style={{ ...sheetInput, background: SOFT, color: days !== null && days < 0 ? '#be123c' : BODY }}>{days === null ? '—' : days < 0 ? `${-days} days ago` : `${days} days`}</div>
                       </div>
                     </div>
-                    <p style={sheetHint}>Start date is filled in after the last milestone — change it if needed. End date = the expected achievable date. Tasks in this milestone can&apos;t be due after it.{project.target_end_date ? ` The project's target end is ${fmt(project.target_end_date)}.` : ''}</p>
+                    <p style={sheetHint}>Start date is filled in after the last milestone — change it if needed. End date = the expected achievable date. Tasks in this milestone can&apos;t be due after it.{plan.targetEndDate ? ` ${texts.targetEndPrefix} ${fmt(plan.targetEndDate)}.` : ''}</p>
                   </SheetSection>
                   <SheetSection icon="flag" title="Status">
                     {editingClosed ? (
@@ -476,7 +522,7 @@ export default function RndMilestonePlan({ project, userId, isManager, taskApi, 
                     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                       <div style={{ flex: '1 1 220px', minWidth: 0 }}>
                         <label style={sheetLabel}>Responsible Person <Req /></label>
-                        <SearchableSelect value={msForm.assignee_id} onChange={(v) => setMsForm({ ...msForm, assignee_id: v, co_owner_ids: msForm.co_owner_ids.filter((x) => x !== v) })} options={ownerOpts} placeholder={people ? 'Search a person…' : 'Loading the project team…'} />
+                        <SearchableSelect value={msForm.assignee_id} onChange={(v) => setMsForm({ ...msForm, assignee_id: v, co_owner_ids: msForm.co_owner_ids.filter((x) => x !== v) })} options={ownerOpts} placeholder={people ? 'Search a person…' : texts.peopleLoading} />
                       </div>
                       <div style={{ flex: '1 1 220px', minWidth: 0 }}>
                         <label style={sheetLabel}>More Responsible People <span style={{ color: MUTED, fontWeight: 400 }}>(optional)</span></label>
@@ -484,7 +530,7 @@ export default function RndMilestonePlan({ project, userId, isManager, taskApi, 
                           options={ownerOpts.filter((o) => o.value !== msForm.assignee_id)} placeholder="Add a person…" />
                       </div>
                     </div>
-                    <p style={sheetHint}>Only people on the project team (Project Leads / Team Members) are listed. Everyone here is notified, can add the milestone&apos;s tasks and mark it achieved once its tasks are done.</p>
+                    <p style={sheetHint}>{texts.teamHint}</p>
                   </SheetSection>
                 </>} right={<>
                   <SheetSection icon="star" title="Icons" color={col.c}>

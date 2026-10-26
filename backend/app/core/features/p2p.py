@@ -20,6 +20,14 @@ _PRICES_HINT = ("Unit prices, tax, line totals and order values. Off = those fig
 
 register_features(
     "p2p", "purchase_requisitions",
+    _feature("my_requisitions", "My Requisitions tab", "subtab", {"view": "view"},
+             "The My Requisitions tab on the Purchase Requisitions page: the requisitions this person raised."),
+    _feature("all_requisitions", "All Requisitions tab", "subtab", {"view": "view"},
+             "The All Requisitions tab: every requisition this person's data access allows them to see. "
+             "Data access (Role & Permissions > Data access) still decides which ones those are."),
+    _feature("approvals", "Approvals tab", "subtab", {"view": "view"},
+             "The Approvals tab: requisitions waiting for this person's decision. Only people named as PR approvers "
+             "in Organization > Approval Workflows get a list in it, whatever the role says."),
     _feature("purchase_order", "Purchase order block", "section", {"view": "view"},
              "The Purchase Order card on a requisition (vendor, PO lines, PO document) for the people who buy or approve it."),
     _feature("fulfilment", "Stock check & issue from stock", "action", {"view": "view", "create": "view", "edit": "edit"},

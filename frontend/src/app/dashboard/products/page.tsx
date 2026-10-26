@@ -76,11 +76,11 @@ export default function ProductsPage() {
 
       <div style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-          <thead><tr>{['Code', 'Name', 'Type', 'Model', 'Applications', 'Status', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
+          <thead><tr>{['Code', 'Name', 'Type', 'Model', 'Applications', 'Status'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
-            {loading && rows.length === 0 && <tr><td colSpan={7} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>}
+            {loading && rows.length === 0 && <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={7} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>
+              <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>
                 {Object.values(filters).some(Boolean) ? 'No products match these filters.' : 'No products yet — add your first finished product (e.g. RRB Sanding Vehicle).'}
               </td></tr>
             )}
@@ -92,9 +92,6 @@ export default function ProductsPage() {
                 <td style={tdStyle}>{p.model_number || '—'}</td>
                 <td style={tdStyle}>{p.applications.length ? p.applications.map((a) => a.name).join(', ') : '—'}</td>
                 <td style={tdStyle}><Pill text={PRODUCT_STATUS_LABELS[p.status] || p.status} hex={PRODUCT_STATUS_HEX[p.status]} /></td>
-                <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
-                  <span onClick={() => open(p)} style={{ color: '#FF6A2A', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }}>View</span>
-                </td>
               </tr>
             ))}
           </tbody>

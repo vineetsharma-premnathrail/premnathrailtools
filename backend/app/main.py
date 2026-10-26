@@ -233,6 +233,7 @@ from app.modules.rnd.models.task_approval import RndTaskApproval
 from app.modules.rnd.models.technical_offer import RndTechnicalOffer
 from app.modules.rnd.models.project_task import RndProjectTask, RndProjectTaskEvent
 from app.modules.rnd.models.project_milestone import RndProjectMilestone
+from app.modules.rnd.models.requirement_milestone import RndRequirementMilestone
 from app.modules.hr.models.masters import HrGrade, HrDesignation, HrShift
 from app.modules.hr.models.holiday import HrHoliday
 from app.modules.hr.models.employee_profile import HrEmployeeProfile
@@ -480,6 +481,8 @@ from app.modules.rnd.routes import technical_offers as rnd_technical_offers_rout
 from app.modules.rnd.routes import department_requirements as rnd_department_requirements_routes
 from app.modules.rnd.routes import project_tasks as rnd_project_tasks_routes
 from app.modules.rnd.routes import project_milestones as rnd_project_milestones_routes
+from app.modules.rnd.routes import requirement_milestones as rnd_requirement_milestones_routes
+from app.core.reporting.router import router as reporting_router
 from app.modules.rnd.routes import settings as rnd_settings_routes
 from app.modules.organization.routes import company as organization_company_routes
 from app.modules.organization.routes import branch as organization_branch_routes
@@ -559,6 +562,7 @@ app.add_middleware(
     allow_credentials=True,            # Allow cookies/auth headers
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Requested-With", "X-Record-Refs", "X-Lock-Version", "X-User-Active"],
+    expose_headers=["X-Reports-Skipped", "Content-Disposition"],  # Excel export: which reports of a pack were left out
 )
 
 # Security: Trusted hosts
@@ -822,6 +826,8 @@ app.include_router(rnd_technical_offers_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_department_requirements_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_project_tasks_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_project_milestones_routes.router, prefix="/api/v1/rnd")
+app.include_router(rnd_requirement_milestones_routes.router, prefix="/api/v1/rnd")
+app.include_router(reporting_router, prefix="/api/v1")
 app.include_router(rnd_settings_routes.router, prefix="/api/v1/rnd")
 app.include_router(organization_company_routes.router, prefix="/api/v1")
 app.include_router(organization_branch_routes.router, prefix="/api/v1")

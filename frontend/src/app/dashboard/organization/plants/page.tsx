@@ -179,8 +179,6 @@ export default function OrganizationPlantsPage() {
                   <td style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(p.updated_at)}</td>
                   <td style={{ padding: '12px 16px', fontSize: 12, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                     <div style={{ display: 'flex', gap: 10 }}>
-                      <span onClick={() => router.push(recordPath('/dashboard/organization/plants', p))} data-tour={idx === 0 ? 'org-plants-view-btn' : undefined} style={{ color: BRAND.primaryActive, cursor: 'pointer', fontWeight: 600 }}>View</span>
-                      {canEdit && <span onClick={() => router.push(`${recordPath('/dashboard/organization/plants', p)}/edit`)} data-tour={idx === 0 ? 'org-plants-edit-btn' : undefined} style={{ color: BRAND.primaryActive, cursor: 'pointer', fontWeight: 600 }}>Edit</span>}
                       {canEdit && <span
                         onClick={(e) => toggleActive(p, e)}
                         data-tour={idx === 0 ? 'org-plants-toggle-status' : undefined}

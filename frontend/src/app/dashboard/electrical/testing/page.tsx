@@ -15,10 +15,10 @@ import {
   inputStyle, thStyle, tdStyle, Pill, ErrorBanner, useLookupErrors,
   TEST_RESULT_LABELS, TEST_RESULT_HEX, TEST_PHASE_LABELS,
 } from '@/components/electrical/shared'
-import { RowCount, Pill as UiPill, segmentBtnStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { RowCount, Pill as UiPill, segmentBtnStyle } from '@/components/shared/ui'
 
 
-const COLS = ['Test No.', 'Job', 'Phase', 'Type', 'Circuit', 'Measured', 'Result', 'Date', 'Tested by', '']
+const COLS = ['Test No.', 'Job', 'Phase', 'Type', 'Circuit', 'Measured', 'Result', 'Date', 'Tested by']
 
 export default function ElectricalTestRegisterPage() {
   const { isAuthorized, isLoading } = useRequireApp('electrical')
@@ -145,9 +145,6 @@ export default function ElectricalTestRegisterPage() {
                 </td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(t.test_date)}</td>
                 <td style={tdStyle}>{t.tested_by_name || '—'}</td>
-                <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                  <button type="button" onClick={() => go(t)} style={smallSecondaryBtnStyle}>View</button>
-                </td>
               </tr>
             ))}
           </tbody>

@@ -86,6 +86,9 @@ class RndProject(Base, TimestampMixin, SoftDeleteMixin):
     source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     improvement_reason: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Internal order that New development purchases are charged to (one per project).
+    internal_order_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("internal_orders.id", ondelete="SET NULL"), nullable=True, unique=True)
     product_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
     origin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 

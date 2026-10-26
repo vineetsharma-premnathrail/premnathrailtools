@@ -23,7 +23,7 @@ export const APPLICATION_TYPE_OPTIONS: { value: string; meaning: string }[] = [
 ]
 
 export const SR_STATUS_OPTIONS: { value: string; meaning: string }[] = [
-  { value: 'Open / Reported', meaning: 'Customer complaint logged; nobody has looked at it yet.' },
+  { value: 'Open', meaning: 'Customer complaint logged; nobody has looked at it yet.' },
   { value: 'Acknowledged', meaning: 'Service team has seen it and told the customer it is being handled.' },
   { value: 'Assigned', meaning: 'An engineer has been named for the job.' },
   { value: 'Scheduled', meaning: 'A visit date is fixed with the customer.' },
@@ -80,12 +80,6 @@ export function serviceRequestFormSteps(mode: 'create' | 'edit'): TourStep[] {
       purpose: 'Why this visit is happening — decides whether it is free or billable.',
       options: SERVICE_TYPE_OPTIONS,
       why: 'Service type drives billing: Warranty and AMC jobs are not charged; Repair and Paid Service may be.',
-    },
-    {
-      target: 'erp-srf-category',
-      title: 'Issue Category',
-      purpose: 'Optional, and available once a Service Type is chosen. Which system of the machine has the fault — Mechanical, Electrical, Hydraulic, Pneumatic, Engine, Software or Other.',
-      why: 'Reports group faults by category, so you can see which system fails most and feed that back to Design.',
     },
     {
       target: 'erp-srf-location',
@@ -164,7 +158,7 @@ export function serviceRequestFormSteps(mode: 'create' | 'edit'): TourStep[] {
       target: 'erp-srf-status',
       title: mode === 'create' ? 'Initial Status' : 'Status',
       purpose: mode === 'create'
-        ? 'Normally leave as "Open / Reported". A new SR cannot start as Closed.'
+        ? 'Normally leave as "Open". A new SR cannot start as Closed.'
         : 'Where the job stands now.',
       options: SR_STATUS_OPTIONS,
     },

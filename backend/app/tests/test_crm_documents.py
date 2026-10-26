@@ -18,7 +18,7 @@ def auth_header(user):
 
 
 def make_org(client, user, name="Doc Org"):
-    return client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": name}, headers=auth_header(user)).json()
+    return client.post("/api/v1/crm/organizations", json={"org_scope": "domestic", "org_type": "Customer", "name": name}, headers=auth_header(user)).json()
 
 
 def inquiry_payload(client, user, org_id, **extra):

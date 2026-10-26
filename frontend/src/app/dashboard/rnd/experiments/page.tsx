@@ -154,7 +154,7 @@ function RndExperimentsListPageInner() {
         <table data-tour="rnd-exp-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['Experiment No.', 'Title', 'Project', 'Type', 'Status', 'Result', 'Date', ''].map((h, hi) => (
+              {['Experiment No.', 'Title', 'Project', 'Type', 'Status', 'Result', 'Date'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{hi === 0 && <RowCount count={experiments.length} />}
                 </th>
@@ -163,9 +163,9 @@ function RndExperimentsListPageInner() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : experiments.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No experiments found.</td></tr>
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No experiments found.</td></tr>
             ) : (
               experiments.map((x) => (
                 <tr key={x.id} onClick={() => router.push(recordPath('/dashboard/rnd/experiments', x))} style={{ cursor: 'pointer' }}>
@@ -186,9 +186,6 @@ function RndExperimentsListPageInner() {
                     ) : '—'}
                   </td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, whiteSpace: 'nowrap' }}>{x.experiment_date ? formatDate(x.experiment_date) : '—'}</td>
-                  <td onClick={(e) => e.stopPropagation()} style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span onClick={() => router.push(recordPath('/dashboard/rnd/experiments', x))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                  </td>
                 </tr>
               ))
             )}

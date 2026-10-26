@@ -14,7 +14,7 @@ import POTrackingList from '@/components/p2p/POTrackingList'
 import POOpenItems from '@/components/p2p/POOpenItems'
 import CreatePODialog from '@/components/p2p/CreatePODialog'
 import { useP2PApproverFlags } from '@/components/p2p/useP2PApproverFlags'
-import { primaryBtnStyle } from '@/components/shared/ui'
+import { PO_CREATE_BTN } from '@/components/p2p/POTrackingShared'
 
 type View = 'create' | 'approvals' | 'tracking' | 'open_items'
 
@@ -48,22 +48,16 @@ export default function PurchaseOrdersPage() {
     )
   }
   const view = picked && views.some((v) => v.key === picked) ? picked : views[0].key
+  // The primary create button sits at the left of each list's toolbar. The Approvals list (built on the
+  // requisition list) has its own toolbar and no PO create button.
+  const createBtn = canCreatePo ? (
+    <button type="button" data-tour="po-create-btn" onClick={() => setCreateFor('new')} style={PO_CREATE_BTN}>+ Create PO</button>
+  ) : null
 
   return (
     <div>
       <P2PNav />
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Purchase Orders</h1>
-          <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Create POs from finished RFQs, approve them, and follow each one until the goods arrive.</p>
-        </div>
-        {canCreatePo && (
-          <button type="button" data-tour="po-create-btn" onClick={() => setCreateFor('new')}
-            style={primaryBtnStyle}>
-            + Create PO
-          </button>
-        )}
-      </div>
+      <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Purchase Orders</h1>
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
         {views.map((v) => (
@@ -77,11 +71,11 @@ export default function PurchaseOrdersPage() {
         ))}
       </div>
 
-      {view === 'create' && <POReadyList onCreate={(rfqId) => setCreateFor(rfqId)} />}
+      {view === 'create' && <POReadyList onCreate={(rfqId) => setCreateFor(rfqId)} lead={createBtn} />}
       {createFor !== null && <CreatePODialog initialRfqId={createFor === 'new' ? undefined : createFor} onClose={() => setCreateFor(null)} />}
       {view === 'approvals' && <POApprovalQueue />}
-      {view === 'tracking' && <POTrackingList />}
-      {view === 'open_items' && <POOpenItems />}
+      {view === 'tracking' && <POTrackingList lead={createBtn} />}
+      {view === 'open_items' && <POOpenItems lead={createBtn} />}
     </div>
   )
 }

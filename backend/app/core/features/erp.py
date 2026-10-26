@@ -10,6 +10,7 @@ needs Store › Material Issues › Create, and the invoice needs SR edit rights
 or Finance › Sales Invoices › Create."""
 from app.core.assignee_rules import register_pickers
 from app.core.permission_registry import _feature, register_features
+from app.core.reporting.features import management_feature
 
 register_features(
     "erp", "projects",
@@ -68,6 +69,9 @@ register_features(
     _feature("service_requests", "Service requests on the contract", "section", {"view": "view"},
              "The list of service requests raised under a contract."),
 )
+
+# Reports tab: per-person figures (explicit-only, see core/reporting/features.py).
+register_features("erp", "reports", management_feature())
 
 # "Assign to" rules per role (core/assignee_rules.py).
 register_pickers("erp", "service_requests",

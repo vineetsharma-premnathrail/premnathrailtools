@@ -31,7 +31,7 @@ const config: TourConfig = {
     {
       target: 'store-grn-table',
       title: 'Receipts list',
-      purpose: 'In Upcoming: one row per Purchase Order with the quantity still pending from the vendor per item, its expected delivery date and a "Receive →" link. In the other queues: one row per GRN — click any row (or "View") to open it.',
+      purpose: 'In Upcoming: one row per Purchase Order with the quantity still pending from the vendor per item, its expected delivery date and a "Receive →" link. In the other queues: one row per GRN — click a row to open it.',
       options: [
         { value: 'Awaiting Delivery (blue)', meaning: 'PO issued/acknowledged by the vendor, nothing received yet.' },
         { value: 'Partially Received (amber)', meaning: 'Some quantity came in, the rest is still due from the vendor.' },

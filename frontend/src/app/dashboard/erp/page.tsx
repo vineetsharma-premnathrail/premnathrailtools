@@ -7,7 +7,7 @@ import { useAuth, useRequireApp } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import { Project, ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
-import { Section, RowCount } from '@/components/shared/ui'
+import { Section, StatChip, RowCount } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 import { formatDate } from '@/lib/format'
@@ -27,6 +27,14 @@ const STATUS_COLORS: Record<string, string> = {
   decommissioned: '#78716c',
   cancel: '#78716c',
 }
+
+// Text longer than this is cut with "..." (full text on hover); free-text columns may use two rows (50).
+const clip = (v?: string | null, max = 25) => (!v ? '—' : v.length > max ? `${v.slice(0, max).trimEnd()}…` : v)
+const clip2 = (v?: string | null) => clip(v, 50)
+
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '10px 8px', fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }
+const tdText: React.CSSProperties = { padding: '10px 8px', fontSize: 12.5, color: '#57534e' }
+const glassCard: React.CSSProperties = { borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden' }
 
 function ageInDays(dateStr?: string) {
   if (!dateStr) return null
@@ -123,18 +131,17 @@ export default function ErpDashboardPage() {
         </div>
       )}
       <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Dashboard Panel</h1>
-      <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 24px' }}>
+      <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>
         Welcome back, {user?.name || 'there'}. Here is the real-time operational state of your deployment assets.
       </p>
-
-      <div data-tour="erp-dash-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
-        <StatCard label="Total Projects" value={stats.totalProjects} color="#3b82f6" />
-        <StatCard label="Total Service Requests" value={stats.totalSrs} color="#FF7A45" />
-        <StatCard label="Monthly SRs" value={stats.thisMonthSrs} color="#10b981" />
-        <StatCard label="Total Active Tickets" value={stats.activeTickets} color="#eab308" />
+      <div data-tour="erp-dash-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0 18px' }}>
+        <StatChip label="Projects" value={stats.totalProjects} color="#3b82f6" />
+        <StatChip label="Service requests" value={stats.totalSrs} color="#ea580c" />
+        <StatChip label="This month" value={stats.thisMonthSrs} color="#10b981" />
+        <StatChip label="Active tickets" value={stats.activeTickets} color="#ca8a04" />
       </div>
 
-      <div className="grid-2" data-tour="erp-dash-charts" style={{ gap: 20, marginBottom: 24 }}>
+      <div className="grid-2" data-tour="erp-dash-charts" style={{ gap: 16, marginBottom: 20 }}>
         <Section title="Project Deployment Status">
           {deploymentStatusBreakdown.length === 0 ? (
             <p style={{ fontSize: 13, color: '#a8a29e' }}>No data yet.</p>
@@ -152,24 +159,24 @@ export default function ErpDashboardPage() {
         </Section>
       </div>
 
-      <div data-tour="erp-dash-recent-srs" style={{ marginBottom: 24 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+      <div data-tour="erp-dash-recent-srs" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1f1108', margin: 0 }}>Recent Service Tickets</h2>
-          <Link href="/dashboard/erp/service-requests" data-tour="erp-dash-srs-viewall" style={{ fontSize: 12, color: '#FF7A45', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
+          <Link href="/dashboard/erp/service-requests" data-tour="erp-dash-srs-viewall" style={{ fontSize: 12, color: '#ea580c', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
         </div>
-        <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden' }}>
+        <div style={glassCard}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 0 }}>
             <thead>
               <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-                {['SR Number', 'Serial No.', 'Model', 'Machine Type', 'Client', 'Site', 'Issue Summary', 'Priority', 'Status', 'Age', 'Warranty', 'Actions'].map((h, hi) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}{hi === 0 && <RowCount count={recentSrs.length} />}</th>
+                {['SR Number', 'Serial No.', 'Model', 'Machine Type', 'Client', 'Site', 'Issue Summary', 'Priority', 'Status', 'Age', 'Warranty'].map((h, hi) => (
+                  <th key={h} data-fit-min={60} data-fit-cut={['Machine Type', 'Client', 'Site', 'Issue Summary'].includes(h) ? '' : undefined} style={thStyle}>{h}{hi === 0 && <RowCount count={recentSrs.length} />}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={12} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
-              {!loading && recentSrs.length === 0 && <tr><td colSpan={12} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No service requests yet.</td></tr>}
+              {loading && <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
+              {!loading && recentSrs.length === 0 && <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No service requests yet.</td></tr>}
               {recentSrs.map((sr) => {
                 const project = projectById.get(sr.project_id)
                 const age = ageInDays(sr.opened_at || sr.created_at)
@@ -179,24 +186,21 @@ export default function ErpDashboardPage() {
                     onClick={() => router.push(recordPath('/dashboard/erp/service-requests', sr))}
                     style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
                   >
-                    <td style={{ padding: '10px 14px' }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 600, color: '#FF7A45' }}>{sr.request_number}</span>
+                    <td style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 600, color: '#ea580c' }}>{sr.request_number}</span>
                     </td>
-                    <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.serial_number || '—'}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.model_name || '—'}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.machine_type || '—'}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.client_company || '—'}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.site_name || '—'}</td>
-                    <td title={sr.issue_title} style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', maxWidth: 260, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sr.issue_title}</td>
-                    <td style={{ padding: '10px 14px' }}>
+                    <td title={project?.serial_number || undefined} style={{ ...tdText, whiteSpace: 'nowrap' }}>{clip(project?.serial_number)}</td>
+                    <td title={project?.model_name || undefined} style={{ ...tdText, whiteSpace: 'nowrap' }}>{clip(project?.model_name)}</td>
+                    <td data-fit-clamp style={tdText}><div title={project?.machine_type || undefined}>{clip2(project?.machine_type)}</div></td>
+                    <td data-fit-clamp style={tdText}><div title={project?.client_company || undefined}>{clip2(project?.client_company)}</div></td>
+                    <td data-fit-clamp style={tdText}><div title={project?.site_name || undefined}>{clip2(project?.site_name)}</div></td>
+                    <td data-fit-clamp style={tdText}><div title={sr.issue_title}>{clip2(sr.issue_title)}</div></td>
+                    <td style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>
                       <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: PRIORITY_COLORS[sr.priority] || '#64748b' }}>{sr.priority}</span>
                     </td>
-                    <td style={{ padding: '10px 14px', fontSize: 12, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{sr.status.replace(/_/g, ' ')}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{age !== null ? `${age}d` : '—'}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(project)}</td>
-                    <td style={{ padding: '10px 14px' }}>
-                      <span style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb' }}>View</span>
-                    </td>
+                    <td style={{ padding: '10px 8px', fontSize: 12, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{sr.status.replace(/_/g, ' ')}</td>
+                    <td style={{ padding: '10px 8px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{age !== null ? `${age}d` : '—'}</td>
+                    <td style={{ padding: '10px 8px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(project)}</td>
                   </tr>
                 )
               })}
@@ -207,48 +211,45 @@ export default function ErpDashboardPage() {
       </div>
 
       <div data-tour="erp-dash-machines">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1f1108', margin: 0 }}>Machine Assets</h2>
-          <Link href="/dashboard/erp/projects" data-tour="erp-dash-machines-viewall" style={{ fontSize: 12, color: '#FF7A45', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
+          <Link href="/dashboard/erp/projects" data-tour="erp-dash-machines-viewall" style={{ fontSize: 12, color: '#ea580c', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
         </div>
-        <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden' }}>
+        <div style={glassCard}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 0 }}>
             <thead>
               <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-                {['Serial Number', 'Model', 'Machine Type', 'Application Type', 'Client', 'Site', 'Year of Mfg.', 'Dispatch Date', 'Commissioning Date', 'Status', 'Total SRs', 'Warranty', 'Actions'].map((h, hi) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}{hi === 0 && <RowCount count={recentProjects.length} />}</th>
+                {['Serial Number', 'Model', 'Machine Type', 'Application Type', 'Client', 'Site', 'Year of Mfg.', 'Dispatch Date', 'Commissioning Date', 'Status', 'Total SRs', 'Warranty'].map((h, hi) => (
+                  <th key={h} data-fit-min={60} data-fit-cut={['Machine Type', 'Application Type', 'Client', 'Site'].includes(h) ? '' : undefined} style={thStyle}>{h}{hi === 0 && <RowCount count={recentProjects.length} />}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={13} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
-              {!loading && recentProjects.length === 0 && <tr><td colSpan={13} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No machines registered yet.</td></tr>}
+              {loading && <tr><td colSpan={12} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
+              {!loading && recentProjects.length === 0 && <tr><td colSpan={12} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No machines registered yet.</td></tr>}
               {recentProjects.map((p) => (
                 <tr
                   key={p.id}
                   onClick={() => router.push(recordPath('/dashboard/erp/projects', p))}
                   style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
                 >
-                  <td style={{ padding: '10px 14px' }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 600, color: '#FF7A45' }}>{p.serial_number}</span>
+                  <td style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>
+                    <span title={p.serial_number} style={{ fontSize: 12.5, fontWeight: 600, color: '#ea580c' }}>{clip(p.serial_number)}</span>
                   </td>
-                  <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{p.model_name || '—'}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{p.machine_type || '—'}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{p.application_type || '—'}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{p.client_company || '—'}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{p.site_name || '—'}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.year_of_manufacture || '—'}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.delivery_date ? formatDate(p.delivery_date) : '—'}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.commissioning_date ? formatDate(p.commissioning_date) : '—'}</td>
-                  <td style={{ padding: '10px 14px' }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'capitalize', color: STATUS_COLORS[p.status] || '#64748b' }}>{p.status.replace(/_/g, ' ')}</span>
+                  <td title={p.model_name || undefined} style={{ ...tdText, whiteSpace: 'nowrap' }}>{clip(p.model_name)}</td>
+                  <td data-fit-clamp style={tdText}><div title={p.machine_type || undefined}>{clip2(p.machine_type)}</div></td>
+                  <td data-fit-clamp style={tdText}><div title={p.application_type || undefined}>{clip2(p.application_type)}</div></td>
+                  <td data-fit-clamp style={tdText}><div title={p.client_company || undefined}>{clip2(p.client_company)}</div></td>
+                  <td data-fit-clamp style={tdText}><div title={p.site_name || undefined}>{clip2(p.site_name)}</div></td>
+                  <td style={{ padding: '10px 8px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.year_of_manufacture || '—'}</td>
+                  <td style={{ padding: '10px 8px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.delivery_date ? formatDate(p.delivery_date) : '—'}</td>
+                  <td style={{ padding: '10px 8px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.commissioning_date ? formatDate(p.commissioning_date) : '—'}</td>
+                  <td title={p.status.replace(/_/g, ' ')} style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'capitalize', color: STATUS_COLORS[p.status] || '#64748b' }}>{clip(p.status.replace(/_/g, ' '))}</span>
                   </td>
-                  <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e' }}>{srCountByProject.get(p.id) || 0}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(p)}</td>
-                  <td style={{ padding: '10px 14px' }}>
-                    <span style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb' }}>View</span>
-                  </td>
+                  <td style={{ padding: '10px 8px', fontSize: 12.5, color: '#57534e' }}>{srCountByProject.get(p.id) || 0}</td>
+                  <td style={{ padding: '10px 8px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(p)}</td>
                 </tr>
               ))}
             </tbody>
@@ -256,15 +257,6 @@ export default function ErpDashboardPage() {
         </div>
         </div>
       </div>
-    </div>
-  )
-}
-
-function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <div style={{ padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-      <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 6px' }}>{label}</p>
-      <p style={{ fontSize: 24, fontWeight: 700, color, margin: 0 }}>{value}</p>
     </div>
   )
 }

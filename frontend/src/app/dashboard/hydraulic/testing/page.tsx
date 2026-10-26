@@ -113,7 +113,7 @@ export default function HydTestsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr>
-              {['Test No.', 'Title', 'Test Type', 'Subject', 'Date', 'Test Pressure', 'Failed Readings', 'Status', 'Result', ''].map((h, hi) => (
+              {['Test No.', 'Title', 'Test Type', 'Subject', 'Date', 'Test Pressure', 'Failed Readings', 'Status', 'Result'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }}>
                   {h}{hi === 0 && <RowCount count={tests.length} />}
                 </th>
@@ -122,9 +122,9 @@ export default function HydTestsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : tests.length === 0 ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No tests match. Plan a pressure, proof, leak or cleanliness test against a system or component to start its test record.</td></tr>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No tests match. Plan a pressure, proof, leak or cleanliness test against a system or component to start its test record.</td></tr>
             ) : (
               tests.map((t) => (
                 <tr key={t.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/testing', t))} style={{ cursor: 'pointer' }}>
@@ -142,9 +142,6 @@ export default function HydTestsPage() {
                   </td>
                   <td style={cellStyle}><span style={pill(STATUS_HEX[t.status])}>{STATUS_LABELS[t.status] || t.status}</span></td>
                   <td style={cellStyle}><span style={pill(RESULT_HEX[t.result])}>{RESULT_LABELS[t.result] || t.result}</span></td>
-                  <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/hydraulic/testing', t))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                  </td>
                 </tr>
               ))
             )}

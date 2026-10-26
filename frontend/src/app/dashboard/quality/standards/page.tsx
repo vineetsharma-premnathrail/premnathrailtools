@@ -97,7 +97,7 @@ export default function QualityStandardsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead>
             <tr>
-              {['Code', 'Title', 'Category', 'Effective Date', 'Status', ''].map((h, i) => (
+              {['Code', 'Title', 'Category', 'Effective Date', 'Status'].map((h, i) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{i === 0 && <RowCount count={filtered.length} />}
                 </th>
@@ -106,9 +106,9 @@ export default function QualityStandardsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={5} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={6} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No standards found.</td></tr>
+              <tr><td colSpan={5} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No standards found.</td></tr>
             ) : (
               filtered.map((s) => (
                 <tr key={s.id} onClick={() => router.push(recordPath('/dashboard/quality/standards', s))} style={{ cursor: 'pointer' }}>
@@ -118,9 +118,6 @@ export default function QualityStandardsPage() {
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{formatDate(s.effective_date)}</td>
                   <td style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
                     <Pill label={STATUS_LABELS[s.status] || s.status} hex={STATUS_HEX[s.status]} />
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()} style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span onClick={() => router.push(recordPath('/dashboard/quality/standards', s))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

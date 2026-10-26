@@ -61,6 +61,47 @@ const config: TourConfig = {
       after: 'Submit Response to CRM sends it back to the BD owner; the status changes to Responded on time / Responded late. You must give remarks or at least one document.',
     },
     {
+      target: 'rnd-req-tab-Milestones',
+      title: 'Milestones tab',
+      purpose: 'The requirement\'s plan, laid out like an R&D project: a timeline of milestones, each with a responsible person and an expected achievable date. Tasks are given inside a milestone.',
+      why: 'A technical offer usually needs several steps (feasibility, design input, costing). Milestones show which step is late and who owns it.',
+      autoActivate: true,
+    },
+    {
+      target: 'rnd-ms-add-btn',
+      title: 'Add Milestone (R&D head)',
+      purpose: 'Opens the milestone form: name, start and end date (the expected achievable date), status, responsible person and more people, icon and colour. Only the R&D head sees this button.',
+      whatToEnter: 'Responsible people come from R&D and from the departments the requirement is shared with. Share with a department first (Departments section at the top of this tab) if its person is missing.',
+      after: 'The responsible people are notified and can add the milestone\'s tasks.',
+    },
+    {
+      target: 'rnd-ms-timeline',
+      title: 'Milestone timeline',
+      purpose: 'Milestones in date order, cancelled ones last. Click one to open it; overdue dates show in red.',
+    },
+    {
+      target: 'rnd-ms-panel',
+      title: 'Milestone panel',
+      purpose: 'One milestone: dates, responsible people, progress and its tasks. The head can edit, reopen with a reason, cancel with a reason, or delete one that never had a task. The head or a responsible person marks it achieved once every task is completed or cancelled.',
+      after: 'A task added inside a milestone must be due on or before the milestone\'s end date. Reopening a task inside an achieved milestone reopens the milestone.',
+    },
+    {
+      target: 'rnd-ms-loose-tasks',
+      title: 'Tasks not in a milestone',
+      purpose: 'Tasks given before the requirement had milestones, or by a department. They keep working as before; new tasks are added inside a milestone.',
+    },
+    {
+      target: 'rnd-req-history',
+      title: 'History tab',
+      purpose: 'Every milestone change, requirement access change and task event on this requirement, newest first. Only R&D sees it; people who are not the head do not see access changes.',
+      why: 'Shows who changed a date or reopened work, and when.',
+    },
+    {
+      target: 'rnd-req-departments',
+      title: 'Departments (Milestones tab)',
+      purpose: 'At the top of the Milestones tab: the departments this requirement is shared with, and their replies. Department people work on it from their own Requirements page.',
+    },
+    {
       target: 'rnd-req-share-form',
       title: '+ Share with departments (R&D head)',
       purpose: 'Opens the Share popup. Bring Design, Electrical and/or Hydraulic & Pneumatic in: what R&D needs from them and a reply-by date. The department then works on this requirement with R&D from its own Requirements page — tasks, documents, discussion — and sends its feasibility reply.',

@@ -126,7 +126,7 @@ def test_single_element_project_auto_fills_and_flows_to_po_grn_and_360(client, d
     assert r.status_code == 200, r.text
     pr = r.json()
     assert pr["account_assignment"] == "order_project" and pr["order_project_id"] == project.id
-    assert pr["account_assignment_label"].startswith(f"Order project: {project.op_number}")
+    assert pr["account_assignment_label"].startswith(f"Project: {project.op_number}")
     assert pr["items"][0]["order_project_element_id"] == els[0].id
 
     # 360: requested, not yet ordered.

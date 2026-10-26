@@ -7,11 +7,6 @@ const config: TourConfig = {
   pageTitle: 'Hydraulic Motor Calculator',
   steps: [
     {
-      target: 'rnd-toolnav-hydraulic',
-      title: 'Engineering Tools row',
-      purpose: 'Jump between calculators from this row of pills.',
-    },
-    {
       target: 'rnd-hyd-mode',
       title: 'Calculation Mode',
       purpose: 'Chooses what to solve for. The input boxes below change to show only what that mode needs.',

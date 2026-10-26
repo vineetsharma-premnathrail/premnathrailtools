@@ -97,7 +97,7 @@ export default function HydBomsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr>
-              {['BOM No.', 'Rev', 'Title', 'System', 'Circuit', 'Lines', ...(seeCosts ? ['Total Cost'] : []), 'Status', ''].map((h, hi) => (
+              {['BOM No.', 'Rev', 'Title', 'System', 'Circuit', 'Lines', ...(seeCosts ? ['Total Cost'] : []), 'Status'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{hi === 0 && <RowCount count={boms.length} />}
                 </th>
@@ -106,9 +106,9 @@ export default function HydBomsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={seeCosts ? 9 : 8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={seeCosts ? 8 : 7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : boms.length === 0 ? (
-              <tr><td colSpan={seeCosts ? 9 : 8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No BOMs match. Create one to list the components a system or circuit is built from.</td></tr>
+              <tr><td colSpan={seeCosts ? 8 : 7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No BOMs match. Create one to list the components a system or circuit is built from.</td></tr>
             ) : (
               boms.map((b) => (
                 <tr key={b.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/bom', b))} style={{ cursor: 'pointer', opacity: b.status === 'obsolete' ? 0.65 : 1 }}>
@@ -121,9 +121,6 @@ export default function HydBomsPage() {
                   {seeCosts && <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{b.total_cost == null ? '—' : `₹${b.total_cost.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}</td>}
                   <td style={cellStyle}>
                     <Pill label={STATUS_LABELS[b.status] || b.status} hex={STATUS_HEX[b.status] || '#78716c'} />
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/hydraulic/bom', b))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

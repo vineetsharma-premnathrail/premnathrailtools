@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AmendmentContext, POAmendment, POVersion, poAmendmentsApi } from '@/lib/mmPurchasingApi'
 import { TEXT, BORDER } from '@/lib/theme'
-import { primaryBtnStyle, RowCount, secondaryBtnStyle, smallSecondaryBtnStyle, Pill } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount, secondaryBtnStyle, Pill } from '@/components/shared/ui'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import SearchableSelect from '@/components/erp/SearchableSelect'
@@ -66,10 +66,10 @@ export default function POAmendmentPanel({ poId, canEdit, onChanged }: { poId: n
       {history.length === 0 ? <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>No amendments yet.</p> : (
         <div style={{ overflow: 'auto', border: `1px solid ${BORDER.normal}`, borderRadius: 10 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
-            <thead><tr>{['No.', 'Reason', 'Changes', 'PO Value', 'Status', ''].map((h, i) => <th key={h} style={h === 'PO Value' ? { ...th, textAlign: 'right' } : th}>{h}{i === 0 && <RowCount count={history.length} />}</th>)}</tr></thead>
+            <thead><tr>{['No.', 'Reason', 'Changes', 'PO Value', 'Status'].map((h, i) => <th key={h} style={h === 'PO Value' ? { ...th, textAlign: 'right' } : th}>{h}{i === 0 && <RowCount count={history.length} />}</th>)}</tr></thead>
             <tbody>
               {history.map((a) => (
-                <tr key={a.id}>
+                <tr key={a.id} onClick={() => router.push(recordPath('/dashboard/p2p/purchase-orders/amendments', a))} style={{ cursor: 'pointer' }}>
                   <td style={td}>A{a.amendment_no}</td>
                   <td style={td}>{a.reason}<div style={{ color: TEXT.muted, fontSize: 11 }}>{a.requested_by_name}</div></td>
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>{a.changes.length} change{a.changes.length === 1 ? '' : 's'}</td>
@@ -78,7 +78,6 @@ export default function POAmendmentPanel({ poId, canEdit, onChanged }: { poId: n
                     <Pill label={STATUS_LABELS[a.status] || a.status} hex={STATUS_HEX[a.status] || '#78716c'} />
                     {a.waiting_on.length > 0 && <div style={{ color: TEXT.muted, fontSize: 11, marginTop: 4 }}>Waiting on {a.waiting_on.join(', ')}</div>}
                   </td>
-                  <td style={{ ...td, textAlign: 'right' }}><button type="button" style={smallSecondaryBtnStyle} onClick={() => router.push(recordPath('/dashboard/p2p/purchase-orders/amendments', a))}>View</button></td>
                 </tr>
               ))}
             </tbody>

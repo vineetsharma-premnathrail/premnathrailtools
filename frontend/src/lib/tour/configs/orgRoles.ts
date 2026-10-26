@@ -32,7 +32,8 @@ const config: TourConfig = {
     {
       target: 'org-roles-table-rows',
       title: 'Users table',
-      purpose: 'Every user with designation, department, office location, role, granted modules (Apps), and status. Click a row to open that user.',
+      purpose: 'Every user with designation, department, office location, role, granted modules (Apps), and status. Click a row to open that user\'s profile: details, branch assignments, Roles & Permissions (roles, Director approval role, extra permissions, effective access) and their login/activity/permission history.',
+      after: 'Roles themselves are created and edited in Organization › Role & Permissions.',
     },
     {
       target: 'org-roles-role-badge',
@@ -57,12 +58,6 @@ const config: TourConfig = {
         { value: 'Active', meaning: 'Can sign in.' },
         { value: 'Inactive', meaning: 'Sign-in blocked; records and history are kept.' },
       ],
-    },
-    {
-      target: 'org-roles-edit-btn',
-      title: 'Edit',
-      purpose: 'Opens this user\'s profile: details, branch assignments, Roles & Permissions (roles, Director approval role, extra permissions, effective access) and their login/activity/permission history.',
-      after: 'Roles themselves are created and edited in Organization › Role & Permissions.',
     },
   ],
 }

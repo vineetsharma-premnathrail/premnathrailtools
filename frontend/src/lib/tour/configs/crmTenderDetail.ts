@@ -117,7 +117,7 @@ const steps: TourStep[] = [
     // Only rendered for Sales-app users on a tender with LOA / Order Received (or one with an SO) — the tour skips it otherwise.
     target: 'tender-create-so-btn',
     title: 'Create Sales Order',
-    purpose: 'Hands the awarded tender over to Sales: opens a new Sales Order pre-filled with this customer, the LOA number, purchaser and contract value. Once an order exists, this becomes a green chip showing the SO number and status — click it to open the order.',
+    purpose: 'Hands the awarded tender over to Sales: opens a new Sales Order pre-filled with this customer, the LOA number (entered as the PO number), the purchase person name and the contract value. Once an order exists, this becomes a green chip showing the SO number and status — click it to open the order.',
     why: 'One live sales order per tender, so the same LOA can\'t be booked twice. Shown only to people with the Sales app, and only once the tender status is "LOA / Order Received".',
     after: 'When Sales confirms the order (after its approvals), this tender is automatically set to Status "Closed – Ordered" and Stage "Awarded / Lost", and the timeline records which SO closed it.',
   },

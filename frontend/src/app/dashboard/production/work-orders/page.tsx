@@ -124,7 +124,7 @@ export default function ProductionWorkOrdersPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
           <thead>
             <tr>
-              {['WO Number', 'Product', 'Machine / Project', 'Qty', 'Progress', 'Priority', 'Planned End', 'Status', ''].map((h, i) => (
+              {['WO Number', 'Product', 'Machine / Project', 'Qty', 'Progress', 'Priority', 'Planned End', 'Status'].map((h, i) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{i === 0 && <RowCount count={orders.length} />}
                 </th>
@@ -133,9 +133,9 @@ export default function ProductionWorkOrdersPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : orders.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No work orders match this view — change the filters, or use “+ New Work Order” to raise one from an active BOM.</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No work orders match this view — change the filters, or use “+ New Work Order” to raise one from an active BOM.</td></tr>
             ) : (
               orders.map((o) => (
                 <tr key={o.id} onClick={() => router.push(recordPath('/dashboard/production/work-orders', o))} style={{ cursor: 'pointer' }}>
@@ -157,9 +157,6 @@ export default function ProductionWorkOrdersPage() {
                   </td>
                   <td style={cellStyle}>
                     <Pill label={STATUS_LABELS[o.status] || o.status} hex={STATUS_HEX[o.status]} />
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/production/work-orders', o))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

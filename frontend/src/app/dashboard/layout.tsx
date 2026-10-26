@@ -9,6 +9,7 @@ import LoadingSpinner from '@/components/LoadingSpinner'
 import GlobalActivity from '@/components/shared/GlobalActivity'
 import AppLock from '@/components/shared/AppLock'
 import ScrollRevealObserver from '@/components/ScrollRevealObserver'
+import TableFit from '@/components/shared/TableFit'
 import { TourProvider } from '@/components/tour/TourContext'
 import TourOverlay from '@/components/tour/TourOverlay'
 import { GLASS } from '@/lib/theme'
@@ -94,6 +95,7 @@ export default function DashboardLayout({
         {children}
       </main>
       <ScrollRevealObserver containerRef={mainRef} />
+      <TableFit />
       <TourOverlay />
       <GlobalActivity />
       <AppLock />

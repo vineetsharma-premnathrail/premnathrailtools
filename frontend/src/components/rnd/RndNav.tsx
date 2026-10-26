@@ -23,7 +23,7 @@ const TABS = [
   { href: '/dashboard/rnd/settings', label: 'Settings', icon: 'settings', subtabKey: 'requirements' },
 ] as const
 
-// Second row, shown only inside Engineering Tools, for jumping between calculators.
+// Calculator routes: only used to keep the Engineering Tools tab highlighted inside a calculator (calculators open from the Engineering Tools page).
 const TOOL_TABS = [
   { href: '/dashboard/rnd/braking', label: 'Braking', icon: 'braking', subtabKey: 'braking' },
   { href: '/dashboard/rnd/hydraulic', label: 'Hydraulic', icon: 'hydraulic', subtabKey: 'hydraulic' },
@@ -65,7 +65,6 @@ export default function RndNav() {
   const allowedTabs = filterTabsByAccess('rnd', TABS, user)
   const visibleTabs = allowedTabs.filter((t) => t.icon !== 'settings')
   const settingsTab = allowedTabs.find((t) => t.icon === 'settings')
-  const visibleToolTabs = filterTabsByAccess('rnd', TOOL_TABS, user)
   const inTools = pathname.startsWith('/dashboard/rnd/tools') || TOOL_TABS.some((t) => pathname.startsWith(t.href))
 
   const isActive = (href: string) => {
@@ -121,38 +120,6 @@ export default function RndNav() {
           </div>
         </div>
       </div>
-
-      {inTools && visibleToolTabs.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
-          {visibleToolTabs.map((tab) => {
-            const active = pathname.startsWith(tab.href)
-            return (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                data-tour={`rnd-toolnav-${tab.icon}`}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 5,
-                  padding: '6px 12px',
-                  borderRadius: 9999,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: active ? '#fff' : '#78716c',
-                  background: active ? '#FF7A45' : 'rgba(255,255,255,.55)',
-                  border: `1px solid ${active ? '#FF7A45' : 'rgba(0,0,0,0.08)'}`,
-                  textDecoration: 'none',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <TabIcon name={tab.icon} />
-                {tab.label}
-              </Link>
-            )
-          })}
-        </div>
-      )}
     </div>
   )
 }

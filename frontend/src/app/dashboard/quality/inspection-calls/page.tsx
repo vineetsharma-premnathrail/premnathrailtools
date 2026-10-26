@@ -54,7 +54,7 @@ function CallsTab() {
       .finally(() => setLoadedKey(filterKey))
   }, [filterKey])
 
-  const cols = ['Call', 'Agency', 'Order / contract', 'Item', 'Qty', 'Call date', 'Inspector', 'Status', 'Certificate', '']
+  const cols = ['Call', 'Agency', 'Order / contract', 'Item', 'Qty', 'Call date', 'Inspector', 'Status', 'Certificate']
   return (
     <>
       <ErrorBanner error={error} />
@@ -92,9 +92,6 @@ function CallsTab() {
                   <td style={tdStyle}>{c.inspector_name || '—'}</td>
                   <td style={tdStyle}><Pill text={STATUS_LABELS[c.status] || c.status} hex={STATUS_HEX[c.status]} /></td>
                   <td style={tdStyle}>{c.certificate_number || '—'}</td>
-                  <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/quality/inspection-calls', c))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                  </td>
                 </tr>
               )
             })}

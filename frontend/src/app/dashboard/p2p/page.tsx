@@ -7,31 +7,58 @@ import { useCan } from '@/lib/permissions'
 import { p2pApi } from '@/lib/api'
 import { P2PRequest } from '@/types'
 import { TEXT } from '@/lib/theme'
-import { secondaryBtnStyle, primaryBtnStyle, pillStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle, pillStyle, StatChip, segmentBtnStyle } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
-import P2PRequestList from '@/components/p2p/P2PRequestList'
-import PRApprovalQueue from '@/components/p2p/PRApprovalQueue'
+import P2PRequestList, { P2PListStats } from '@/components/p2p/P2PRequestList'
 import ExportDialog, { ExportItem } from '@/components/erp/ExportDialog'
 import ImportDialog from '@/components/shared/ImportDialog'
 import { useP2PApproverFlags } from '@/components/p2p/useP2PApproverFlags'
 
-type View = 'mine' | 'approvals'
+type View = 'waiting' | 'approved' | 'rejected' | 'all'
 
-// ?view=approvals (old P.R Approval links, notifications) opens the approvals view.
-const viewFromUrl = (): View =>
-  typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'approvals' ? 'approvals' : 'mine'
+const NEW_BTN: React.CSSProperties = { background: '#ea580c', border: '1px solid #c2410c', color: '#fff', fontSize: 13.5, fontWeight: 600, padding: '10px 14px', borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap' }
+
+// Status segments: which statuses each shows (undefined = every requisition the user's data access allows).
+const SEGMENTS: Record<View, { label: string; statuses?: string[]; empty: string }> = {
+  waiting: { label: 'Waiting for me', statuses: ['submitted'], empty: 'Nothing is waiting for your approval.' },
+  approved: { label: 'Approved', statuses: ['approved', 'vendor_quotations', 'technical_evaluation', 'commercial_evaluation', 'vendor_selected', 'po_drafted', 'po_raised', 'po_approved', 'partially_received', 'received', 'closed'], empty: 'No approved requisitions yet.' },
+  rejected: { label: 'Rejected', statuses: ['rejected'], empty: 'No rejected requisitions.' },
+  all: { label: 'All', statuses: undefined, empty: 'No Purchase Requisitions yet.' },
+}
+
+// ?view=approvals (old P.R Approval links, notifications) opens Waiting for me; ?view=all / ?bucket=... the matching segment.
+const viewFromUrl = (): View | null => {
+  if (typeof window === 'undefined') return null
+  const q = new URLSearchParams(window.location.search)
+  const v = q.get('view'); const b = q.get('bucket')
+  if (v === 'approvals' || b === 'pending') return 'waiting'
+  if (v === 'all' || b === 'all') return 'all'
+  if (b === 'approved' || b === 'rejected') return b
+  return null
+}
 
 export default function P2PHomePage() {
   const { isAuthorized, isLoading, user } = useRequireApp('p2p')
   const router = useRouter()
-  const { can } = useCan()
-  const [view, setView] = useState<View>(viewFromUrl)
+  const { can, canFeature } = useCan()
+  const [requestedView, setView] = useState<View | null>(viewFromUrl)
   const [exportItems, setExportItems] = useState<ExportItem[] | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [listKey, setListKey] = useState(0)
+  const [stats, setStats] = useState<P2PListStats>({ total: 0, pending: 0, inProgress: 0, closed: 0 })
   const approverFlags = useP2PApproverFlags()
 
-  const canApprove = approverFlags.is_pr_approver
+  // Which tabs this person's role shows (Organization > Role & Permissions > Purchase Requisitions > features).
+  const canApprove = approverFlags.is_pr_approver && canFeature('p2p', 'purchase_requisitions', 'approvals', 'view')
+  const canMine = canFeature('p2p', 'purchase_requisitions', 'my_requisitions', 'view')
+  const canAll = canFeature('p2p', 'purchase_requisitions', 'all_requisitions', 'view')
+  const tabs: [View, string][] = ([
+    ...(canApprove ? ['waiting'] : []),
+    ...(canMine ? ['approved', 'rejected'] : []),
+    ...(canAll ? ['all'] : []),
+  ] as View[]).map((v) => [v, SEGMENTS[v].label])
+  // The asked-for segment if the role allows it, else All, else the first one the role has.
+  const view: View = tabs.some(([v]) => v === requestedView) ? (requestedView as View) : (tabs.some(([v]) => v === 'all') ? 'all' : (tabs[0]?.[0] ?? 'all'))
   // Count on the Approvals sub-tab: requisitions waiting for this user (same rule as the "Waiting for me" list).
   const [pendingCount, setPendingCount] = useState<number | null>(null)
   useEffect(() => {
@@ -54,53 +81,52 @@ export default function P2PHomePage() {
     setExportItems(prs.map((p) => ({ id: p.id, label: p.project_label ? `${p.p2p_number} — ${p.project_label}` : p.p2p_number, sub: [p.status.charAt(0).toUpperCase() + p.status.slice(1).replace(/_/g, ' '), p.requested_by_name].filter(Boolean).join(' · ') })))
   }
 
+
+  const newBtn = can('p2p', 'purchase_requisitions', 'create') ? (
+              <button type="button" data-tour="p2p-new-btn" onClick={() => router.push('/dashboard/p2p/new')} style={NEW_BTN}>+ New Purchase Requisition</button>
+            ) : undefined
+  const toolbarLeft = (
+    <>
+      {newBtn}
+      {tabs.map(([v, label]) => (
+        <button key={v} type="button" data-tour={`p2p-view-${v}`} onClick={() => setView(v)} style={{ ...segmentBtnStyle(view === v), whiteSpace: 'nowrap' }}>
+          {label}
+          {v === 'waiting' && pendingCount != null && pendingCount > 0 && (
+            <span aria-label={`${pendingCount} waiting for you`} style={{ ...pillStyle('#dc2626'), marginLeft: 6 }}>{pendingCount}</span>
+          )}
+        </button>
+      ))}
+    </>
+  )
+  const toolbarRight = <>
+              {can('p2p', 'purchase_requisitions', 'export') && (
+                <button type="button" data-tour="p2p-export-btn" onClick={openExport} style={secondaryBtnStyle}>Export</button>
+              )}
+              {/* No 'import' action on this tab — importing raises requisitions, so it rides on 'create'. */}
+              {can('p2p', 'purchase_requisitions', 'create') && (
+                <button type="button" data-tour="p2p-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>
+              )}
+            </>
+
   return (
     <div>
       <P2PNav />
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Purchase Requisitions</h1>
-          <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>Raise requisitions and approve them here — approvers are set in Organization › Approval Workflows.</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {can('p2p', 'purchase_requisitions', 'export') && (
-            <button type="button" data-tour="p2p-export-btn" onClick={openExport} style={secondaryBtnStyle}>Export</button>
-          )}
-          {/* No 'import' action on this tab — importing raises requisitions, so it rides on 'create'. */}
-          {can('p2p', 'purchase_requisitions', 'create') && (
-            <button type="button" data-tour="p2p-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>
-          )}
-          {can('p2p', 'purchase_requisitions', 'create') && (<button
-            data-tour="p2p-new-btn"
-            onClick={() => router.push('/dashboard/p2p/new')}
-            style={primaryBtnStyle}
-          >
-            + New Purchase Requisition
-          </button>)}
+      <div style={{ marginBottom: 14 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Purchase Requisitions</h1>
+        <div data-tour="p2p-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+          <StatChip label="Requisitions" value={stats.total} color="#3b82f6" />
+          <StatChip label="Pending approval" value={stats.pending} color="#ea580c" />
+          <StatChip label="In progress" value={stats.inProgress} color="#ca8a04" />
+          <StatChip label="Closed" value={stats.closed} color="#16a34a" />
         </div>
       </div>
 
-      {canApprove && (
-        <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-          {([['mine', 'My Requisitions'], ['approvals', 'Approvals']] as const).map(([v, label]) => (
-            <button key={v} type="button" data-tour={`p2p-view-${v}`} onClick={() => setView(v)}
-              style={{
-                padding: '9px 14px', marginBottom: -1, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                color: view === v ? '#FF7A45' : '#78716c', borderBottom: view === v ? '2px solid #FF7A45' : '2px solid transparent',
-              }}>
-              {label}
-              {v === 'approvals' && pendingCount != null && pendingCount > 0 && (
-                <span aria-label={`${pendingCount} waiting for you`} style={{ ...pillStyle('#dc2626'), marginLeft: 6 }}>{pendingCount}</span>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {view === 'approvals' && canApprove
-        ? <PRApprovalQueue />
-        : <P2PRequestList key={listKey} showFilters emptyLabel="You haven't raised any Purchase Requisitions yet." />}
+      {tabs.length === 0
+        ? <p role="status" style={{ fontSize: 13.5, color: '#78716c' }}>Your role does not show any requisition tab. Ask an administrator to switch one on for your role (Organization › Role &amp; Permissions › Purchase Requisitions).</p>
+        : <P2PRequestList key={`${view}-${listKey}`} showFilters mineToggle onStats={setStats}
+            statuses={SEGMENTS[view].statuses} queue={view === 'waiting' ? 'pr-approval' : undefined} context={view === 'waiting' ? 'approval' : undefined}
+            onlyPendingForViewer={view === 'waiting'} toolbarLeft={toolbarLeft} toolbarRight={toolbarRight} emptyLabel={SEGMENTS[view].empty} />}
 
       {exportItems && (
         <ExportDialog onClose={() => setExportItems(null)} filename="purchase_requisitions" noun="requisitions" dateLabel="Request date"

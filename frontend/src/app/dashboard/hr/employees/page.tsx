@@ -265,9 +265,7 @@ export default function HrEmployeesPage() {
                   )}
                 </td>
                 <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }} data-tour="hr-emp-row-action" onClick={(ev) => ev.stopPropagation()}>
-                  {e.has_profile
-                    ? <span style={{ ...linkActionStyle, cursor: 'pointer' }} onClick={() => router.push(href)}>View</span>
-                    : can('hr', 'employees', 'create') ? <span style={{ ...linkActionStyle, cursor: 'pointer' }} onClick={() => router.push(`${href}/edit`)}>Create profile</span> : null}
+                  {!e.has_profile && can('hr', 'employees', 'create') ? <span style={{ ...linkActionStyle, cursor: 'pointer' }} onClick={() => router.push(`${href}/edit`)}>Create profile</span> : null}
                 </td>
               </tr>
               )

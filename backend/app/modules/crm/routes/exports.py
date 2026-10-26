@@ -86,7 +86,8 @@ def export_organizations(
         if search and search.strip():
             like = f"%{search.strip()}%"
             q = q.filter(or_(Organization.name.ilike(like), Organization.org_code.ilike(like), Organization.city.ilike(like),
-                             Organization.gst_number.ilike(like)))
+                             Organization.gst_number.ilike(like),
+                             Organization.tax_vat_id.ilike(like)))
         orgs = [o for o in q.order_by(Organization.name).all() if in_range(ist_date(o.created_at), date_from, date_to)]
 
     contacts: dict[int, list[OrgContact]] = {}
@@ -95,14 +96,15 @@ def export_organizations(
             contacts.setdefault(c.org_id, []).append(c)
     names = _names(db, {o.created_by_id for o in orgs})
     headers = ["Org Code", "Customer Organization", "Type", "Parent", "Railway Zone", "Division / Workshop", "Address", "City", "State",
-               "PIN", "Country", "GST No.", "Phone", "Email", "Website", "Contacts", "Primary Contact", "Primary Contact Mobile",
+               "PIN", "Country", "Scope", "GST No.", "PAN", "GST State Code", "Tax / VAT ID", "Company Registration No", "Phone", "Email", "Website", "Contacts", "Primary Contact", "Primary Contact Mobile",
                "Credit Limit", "Credit Days", "Created On", "Created By"]
     rows = []
     for o in orgs:
         cs = contacts.get(o.id, [])
         first = cs[0] if cs else None
         rows.append([_v(o.org_code), o.name, _v(o.org_type), _v(o.parent_org), _v(o.railway_zone), _v(o.division_workshop),
-                     _v(o.address), _v(o.city), _v(o.state), _v(o.pin_code), _v(o.country), _v(o.gst_number),
+                     _v(o.address), _v(o.city), _v(o.state), _v(o.pin_code), _v(o.country), (o.org_scope or "domestic").title(), _v(o.gst_number),
+                     _v(o.pan), _v(o.gst_state_code), _v(o.tax_vat_id), _v(o.company_registration_no),
                      _v(o.official_phone), _v(o.official_email), _v(o.website), len(cs),
                      _v(first.name if first else None), _v(getattr(first, "mobile", None) if first else None),
                      _v(o.credit_limit), _v(o.credit_days), _v(ist_date(o.created_at)), names.get(o.created_by_id, "")])

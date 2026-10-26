@@ -8,12 +8,14 @@
 import { useEffect, useState } from 'react'
 import { poReportsApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
-import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { inputStyle, RowCount, secondaryBtnStyle, smallSecondaryBtnStyle, segmentBtnStyle, Pill, pillStyle } from '@/components/shared/ui'
+import { TEXT, BORDER } from '@/lib/theme'
+import { inputStyle, RowCount, secondaryBtnStyle, segmentBtnStyle, Pill, pillStyle, StatChip } from '@/components/shared/ui'
+import Checkbox from '@/components/Checkbox'
+import { FiltersButton, FiltersSheet, PO_CARD, PO_TD, PO_TH, clip, clip2 } from '@/components/p2p/POTrackingShared'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
-import { FormSheet, SHEET, sheetBtn } from '@/components/shared/FormSheet'
+import { FormSheet, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 
 type Row = {
   po_id: number; po_number: string; po_date: string; po_status: string; p2p_number?: string | null; vendor_name?: string | null
@@ -25,15 +27,9 @@ type Summary = { vendor_name?: string; item_name?: string; lines: number; open_q
 type Group = 'po' | 'vendor' | 'item'
 
 const money = (v: number) => `₹${(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
-const th: React.CSSProperties = {
-  position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '10px 12px', fontSize: 11,
-  fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap',
-}
-const td: React.CSSProperties = { padding: '9px 12px', fontSize: 12.5, color: TEXT.secondary, borderTop: '1px solid rgba(0,0,0,0.05)', whiteSpace: 'nowrap' }
-const wrap: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 360px)', minHeight: 160,
-}
+const th: React.CSSProperties = PO_TH
+const td: React.CSSProperties = { ...PO_TD, fontSize: 12.5, whiteSpace: 'nowrap' }
+const wrap: React.CSSProperties = PO_CARD
 const EVENT_HEX: Record<string, string> = { grn: '#2563eb', rtv: '#dc2626', invoice: '#16a34a', service_entry: '#7c3aed' }
 const numTd: React.CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }
 const numTh: React.CSSProperties = { ...th, textAlign: 'right' }
@@ -97,7 +93,7 @@ function POHistoryDialog({ poId, onClose }: { poId: number; onClose: () => void 
   )
 }
 
-export default function POOpenItems() {
+export default function POOpenItems({ lead }: { lead?: React.ReactNode }) {
   const { can, canFeature } = useCan()
   // Purchase Orders features: PO history popup, and the price switch (the export is a sheet of rates).
   const seeHistory = canFeature('p2p', 'purchase_orders', 'history', 'view')
@@ -114,6 +110,8 @@ export default function POOpenItems() {
   const [overdueOnly, setOverdueOnly] = useState(false)
   const [allLines, setAllLines] = useState(false)
   const [historyFor, setHistoryFor] = useState<number | null>(null)
+  const [showFilters, setShowFilters] = useState(false)
+  const [draft, setDraft] = useState({ vendor: '', overdue: false, all: false })
 
   const params = () => ({ vendor_name: vendor.trim() || undefined, po_number: poNumber.trim() || undefined, overdue_only: overdueOnly, open_only: !allLines })
 
@@ -144,43 +142,69 @@ export default function POOpenItems() {
   }
 
   const summary = group === 'vendor' ? byVendor : byItem
+  const activeFilterCount = (vendor.trim() ? 1 : 0) + (overdueOnly ? 1 : 0) + (allLines ? 1 : 0)
+  const openFilters = () => { setDraft({ vendor, overdue: overdueOnly, all: allLines }); setShowFilters(true) }
+  const applyFilters = () => { setVendor(draft.vendor); setOverdueOnly(draft.overdue); setAllLines(draft.all); setShowFilters(false) }
+  const clearFilters = () => { setVendor(''); setOverdueOnly(false); setAllLines(false); setShowFilters(false) }
   return (
     <div>
       <MessageDialog open={!!error} variant="error" title="Open PO Items" message={error} onClose={() => setError('')} />
       {historyFor !== null && <POHistoryDialog poId={historyFor} onClose={() => setHistoryFor(null)} />}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 12 }}>
-        <div style={{ display: 'flex', gap: 4 }}>
-          {([['po', 'By PO line'], ['vendor', 'By vendor'], ['item', 'By item']] as [Group, string][]).map(([k, label]) => (
-            <button key={k} type="button" onClick={() => setGroup(k)}
-              style={segmentBtnStyle(group === k)}>{label}</button>
-          ))}
-        </div>
-        <input style={{ ...inputStyle, flex: '1 1 180px', maxWidth: 260, width: 'auto' }} placeholder="Vendor" value={vendor} onChange={(e) => setVendor(e.target.value)} />
-        <input style={{ ...inputStyle, flex: '1 1 150px', maxWidth: 200, width: 'auto' }} placeholder="PO no." value={poNumber} onChange={(e) => setPoNumber(e.target.value)} />
-        <label style={{ fontSize: 12.5, color: TEXT.secondary, display: 'flex', gap: 6, alignItems: 'center' }}>
-          <input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} /> Overdue only
-        </label>
-        <label style={{ fontSize: 12.5, color: TEXT.secondary, display: 'flex', gap: 6, alignItems: 'center' }}>
-          <input type="checkbox" checked={allLines} onChange={(e) => setAllLines(e.target.checked)} /> Include fully delivered lines
-        </label>
-        {can('p2p', 'purchase_orders', 'export') && seePrices && <button type="button" onClick={exportExcel} style={secondaryBtnStyle}>Export Excel</button>}
-        <span style={{ marginLeft: 'auto', fontSize: 13, color: TEXT.secondary }}>Open value <strong style={{ color: TEXT.heading }}>{money(total)}</strong></span>
+      <div data-tour="po-open-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+        <StatChip label="Open PO lines" value={rows.length} color="#3b82f6" />
+        <StatChip label="Overdue lines" value={rows.filter((r) => r.days_overdue > 0).length} color="#dc2626" />
+        <StatChip label="Vendors" value={new Set(rows.map((r) => r.vendor_name || '')).size} color="#ca8a04" />
+        <span style={{ whiteSpace: 'nowrap', fontSize: 13, color: TEXT.secondary, marginLeft: 6 }}>Open value <strong style={{ color: TEXT.heading }}>{money(total)}</strong></span>
       </div>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
+        {([['po', 'By PO line'], ['vendor', 'By vendor'], ['item', 'By item']] as [Group, string][]).map(([k, label]) => (
+          <button key={k} type="button" onClick={() => setGroup(k)}
+            style={segmentBtnStyle(group === k)}>{label}</button>
+        ))}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        {lead}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <input style={{ ...inputStyle, width: 280, maxWidth: '100%' }} placeholder="PO number..." aria-label="Search by PO number" data-tour="po-open-search" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} />
+          <FiltersButton count={activeFilterCount} onOpen={openFilters} tour="po-open-filter-btn" />
+          {activeFilterCount > 0 && <button type="button" onClick={clearFilters} style={secondaryBtnStyle} data-tour="po-open-clear-btn">Clear</button>}
+          {can('p2p', 'purchase_orders', 'export') && seePrices && <button type="button" onClick={exportExcel} style={secondaryBtnStyle} data-tour="po-open-export-btn">Export</button>}
+        </div>
+      </div>
+      {showFilters && (
+        <FiltersSheet subtitle="Narrow the open PO lines, then press Apply." tour="po-open-filter-sheet" applyTour="po-open-apply-btn" onClose={() => setShowFilters(false)} onClear={clearFilters} onApply={applyFilters}>
+          <div>
+            <label style={sheetLabel}>Vendor</label>
+            <input style={sheetInput} placeholder="Vendor name" value={draft.vendor} onChange={(e) => setDraft((d) => ({ ...d, vendor: e.target.value }))} data-tour="po-open-vendor-filter" />
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#57534e', cursor: 'pointer' }}>
+            <Checkbox checked={draft.overdue} onChange={(e) => setDraft((d) => ({ ...d, overdue: e.target.checked }))} />
+            Overdue only
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#57534e', cursor: 'pointer' }}>
+            <Checkbox checked={draft.all} onChange={(e) => setDraft((d) => ({ ...d, all: e.target.checked }))} />
+            Include fully delivered lines
+          </label>
+        </FiltersSheet>
+      )}
 
       <div style={wrap}>
         {group === 'po' ? (
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1300 }}>
+          <table data-tour="po-open-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>
-              {['PO No.', 'Vendor', 'Item', 'Ordered', 'Received', 'Rejected', 'Returned', 'Delivered', 'Invoiced', 'Open', 'Open Value', 'Due', 'Overdue', ''].map((h, i) => <th key={h} style={(i >= 3 && i <= 10) || i === 12 ? numTh : th}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}
+              {['PO No.', 'PO Date', 'Vendor', 'Item', 'Ordered', 'Received', 'Rejected', 'Returned', 'Delivered', 'Invoiced', 'Open', 'Open Value', 'Due', 'Overdue'].map((h, i) => <th key={h} data-fit-min={60} data-fit-cut={h === 'Vendor' || h === 'Item' ? '' : undefined} style={(i >= 4 && i <= 11) || i === 13 ? numTh : th}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}
             </tr></thead>
             <tbody>
               {loading && <tr><td colSpan={14} style={{ ...td, textAlign: 'center', padding: 24 }}>Loading…</td></tr>}
               {!loading && rows.length === 0 && <tr><td colSpan={14} style={{ ...td, textAlign: 'center', padding: 24 }}>No open PO lines match — clear the vendor / PO filters, or tick &quot;Include fully delivered lines&quot;.</td></tr>}
               {!loading && rows.map((r) => (
                 <tr key={r.po_item_id} onClick={() => { if (seeHistory) setHistoryFor(r.po_id) }} style={{ cursor: seeHistory ? 'pointer' : 'default' }}>
-                  <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{r.po_number}<div style={{ fontSize: 11, color: TEXT.muted, fontWeight: 400 }}>{formatDate(r.po_date)}</div></td>
-                  <td style={td}>{r.vendor_name || '—'}</td>
-                  <td style={{ ...td, whiteSpace: 'normal', minWidth: 200 }}>{r.item_code ? `${r.item_code} — ` : ''}{r.item_name}</td>
+                  <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{r.po_number}</td>
+                  <td style={td}>{formatDate(r.po_date)}</td>
+                  <td style={td} title={r.vendor_name || undefined}>{clip(r.vendor_name)}</td>
+                  <td data-fit-clamp style={{ ...td, whiteSpace: 'normal' }}>
+                    <div title={`${r.item_code ? `${r.item_code} — ` : ''}${r.item_name}`} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip2(`${r.item_code ? `${r.item_code} — ` : ''}${r.item_name}`)}</div>
+                  </td>
                   <td style={numTd}>{qty(r.ordered_qty)} {r.unit || ''}</td>
                   <td style={numTd}>{qty(r.received_qty)}</td>
                   <td style={{ ...numTd, color: r.rejected_qty ? '#b91c1c' : TEXT.secondary }}>{qty(r.rejected_qty)}</td>
@@ -195,22 +219,21 @@ export default function POOpenItems() {
                       ? <Pill label={`${r.days_overdue} day${r.days_overdue === 1 ? '' : 's'}`} hex="#dc2626" />
                       : '—'}
                   </td>
-                  <td style={{ ...td, textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
-                    {seeHistory && <button type="button" onClick={() => setHistoryFor(r.po_id)} style={smallSecondaryBtnStyle}>History</button>}
-                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
-            <thead><tr>{[group === 'vendor' ? 'Vendor' : 'Item', 'Open Lines', 'Open Qty', 'Open Value', 'Overdue Lines', 'Max Days Overdue'].map((h, i) => <th key={h} style={i === 0 ? th : numTh}>{h}{i === 0 && <RowCount count={summary.length} />}</th>)}</tr></thead>
+          <table data-tour="po-open-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>{[group === 'vendor' ? 'Vendor' : 'Item', 'Open Lines', 'Open Qty', 'Open Value', 'Overdue Lines', 'Max Days Overdue'].map((h, i) => <th key={h} data-fit-min={60} data-fit-cut={i === 0 ? '' : undefined} style={i === 0 ? th : numTh}>{h}{i === 0 && <RowCount count={summary.length} />}</th>)}</tr></thead>
             <tbody>
               {loading && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', padding: 24 }}>Loading…</td></tr>}
               {!loading && summary.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', padding: 24 }}>No open PO lines match — clear the vendor / PO filters, or tick &quot;Include fully delivered lines&quot;.</td></tr>}
               {summary.map((s, i) => (
                 <tr key={i}>
-                  <td style={{ ...td, fontWeight: 600, color: TEXT.body, whiteSpace: 'normal' }}>{(group === 'vendor' ? s.vendor_name : s.item_name) || '—'}</td>
+                  <td data-fit-clamp style={{ ...td, fontWeight: 600, color: TEXT.body, whiteSpace: 'normal' }}>
+                    <div title={(group === 'vendor' ? s.vendor_name : s.item_name) || undefined} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip2(group === 'vendor' ? s.vendor_name : s.item_name)}</div>
+                  </td>
                   <td style={numTd}>{s.lines.toLocaleString('en-IN')}</td>
                   <td style={numTd}>{qty(s.open_qty)}</td>
                   <td style={numTd}>{money(s.open_value)}</td>

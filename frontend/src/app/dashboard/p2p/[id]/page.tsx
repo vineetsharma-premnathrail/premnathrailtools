@@ -102,7 +102,7 @@ const dangerBtn = dangerBtnStyle
 
 // Purpose of the requisition (backend P2P_PURPOSES), shown in the header.
 const PURPOSE_LABELS: Record<string, string> = {
-  customer_order: 'Production (customer order)', machine_project: 'Service (delivered machine)', development: 'New development',
+  customer_order: 'Project', machine_project: 'Service', development: 'New development',
   department: 'Department running cost', capital: 'Asset / capital purchase', stock: 'Store stock refill',
 }
 const PRIORITY_LABELS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High' }
@@ -599,7 +599,7 @@ export default function MyP2PRequestDetailPage() {
         <DetailGroup title="What it is for">
           <DetailRow label="Purpose">{pr.purpose ? PURPOSE_LABELS[pr.purpose] || pr.purpose : null}</DetailRow>
           <DetailRow label="Category">{pr.category_label || pr.category_code}</DetailRow>
-          <DetailRow label="Charged to">{pr.project_label || null}</DetailRow>
+          <DetailRow label="Charged to">{pr.rnd_project_id ? `R&D project: ${pr.rnd_project_label || `#${pr.rnd_project_id}`}` : (pr.project_label || null)}</DetailRow>
           {pr.order_project_number && <DetailRow label="Order project">{pr.order_project_number}</DetailRow>}
           <DetailRow label="Requirement type">{pr.requirement_type || null}</DetailRow>
         </DetailGroup>

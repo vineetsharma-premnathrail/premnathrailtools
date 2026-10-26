@@ -10,9 +10,9 @@ const config: TourConfig = {
       purpose: 'What this purchase is for. It decides what the cost is charged to, so every rupee lands on a real order, department or job.',
       required: true,
       options: [
-        { value: 'Production (customer order)', meaning: 'Material to build a machine a customer has ordered, before delivery. Charged to its Order Project; every line is for that project (no vehicle / lot per line).' },
-        { value: 'Service (delivered machine)', meaning: 'Spares or work for a machine already delivered: service, repair, warranty. Pick the machine; every line is for it. Charged To is optional.' },
-        { value: 'New development', meaning: 'R&D / new product work. Charged to the development job’s internal order.' },
+        { value: 'Project', meaning: 'Charged to its Order Project.' },
+        { value: 'Service', meaning: 'Spares or work for a machine already with the customer: service, repair, warranty. Pick the machine; every line is for it. Charged To is optional.' },
+        { value: 'New development', meaning: 'R&D / new product work. Charged to the R&D project (R&D › Prototype / Research) it belongs to. Finance is linked automatically; you never pick a Finance order.' },
         { value: 'Department running cost', meaning: 'Cleaning material, stationery, small tools, office repairs, AMC, housekeeping. Purchase charges it to your department’s cost centre on the PO; you don’t pick one here.' },
         { value: 'Asset / capital purchase', meaning: 'Things used for years: machine, laptop, AC, welding set. Charged to the asset’s internal order.' },
         { value: 'Store stock refill', meaning: 'Common items Store keeps in stock. Nothing is charged now; the cost goes to whoever Store issues it to.' },
@@ -23,15 +23,15 @@ const config: TourConfig = {
     {
       target: 'pr-new-project',
       title: 'Machine Project',
-      purpose: 'Shown only for a Service (delivered machine) purpose: the delivered machine this purchase is for.',
+      purpose: 'Shown only for a Service purpose: the machine this purchase is for.',
       required: true,
       whatToEnter: 'Search by machine number or model and pick it.',
     },
     {
       target: 'pr-new-charged-to',
       title: 'Charged To',
-      purpose: 'The record the cost is booked against: order project, sales order, work order, internal order or cost centre. Only the options that fit the purpose are offered. When the purpose has just one possible answer (e.g. Production → Order project) it is shown as a fixed value marked "Fixed" instead of a dropdown, and you only pick the record next to it.',
-      after: 'An internal order also goes onto the PO, so its budget shows the commitment in Finance › Controlling.',
+      purpose: 'The record the cost is booked against: project, sales order, work order, internal order, cost centre or, for New development, the R&D project. Only the options that fit the purpose are offered. When the purpose has just one possible answer (e.g. Project → Project) it is shown as a fixed value marked "Fixed" instead of a dropdown, and you only pick the record next to it.',
+      after: 'For New development you pick an open R&D project; the system links Finance for you the first time something is charged to it. The charge also goes onto the PO, so the budget shows the commitment in Finance › Controlling.',
     },
     {
       target: 'pr-new-category',

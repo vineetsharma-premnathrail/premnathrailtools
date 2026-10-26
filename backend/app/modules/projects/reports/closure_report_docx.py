@@ -65,6 +65,7 @@ def build_closure_report_docx(ctx: Mapping[str, Any]) -> io.BytesIO:
     half = USABLE_IN / 2
     facts = [
         ("Project", ctx["name"]), ("Customer", ctx.get("client")),
+        ("Customer PO no.", ctx.get("po")), ("Sales order (SO) no.", ctx.get("so")),
         ("Project manager", ctx.get("pm")), ("Start date", ctx["start"]),
         ("Target handover", ctx["target"]), ("Technically complete", ctx["completed"]),
         ("Schedule variance", ctx["variance"]), ("Closed", ctx["closed"]),

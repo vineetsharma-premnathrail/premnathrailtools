@@ -210,10 +210,10 @@ export default function HrTravelPage() {
           <div data-tour="hr-claims-table" style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
               <thead>
-                <tr>{['Claim', 'Employee', 'Title', 'Date', 'Trip', 'Amount', 'Approver', 'Status', ''].map((h, hi) => <th key={h} style={{ ...thStyle, textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}{hi === 0 && <RowCount count={claims.length} />}</th>)}</tr>
+                <tr>{['Claim', 'Employee', 'Title', 'Date', 'Trip', 'Amount', 'Approver', 'Status'].map((h, hi) => <th key={h} style={{ ...thStyle, textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}{hi === 0 && <RowCount count={claims.length} />}</th>)}</tr>
               </thead>
               <tbody>
-                {claimsLoading ? <EmptyRow colSpan={9} text="Loading…" /> : claims.length === 0 ? <EmptyRow colSpan={9} text="No claims match these filters. Drafts stay private until the employee submits them." /> : claims.map((c) => (
+                {claimsLoading ? <EmptyRow colSpan={8} text="Loading…" /> : claims.length === 0 ? <EmptyRow colSpan={8}text="No claims match these filters. Drafts stay private until the employee submits them." /> : claims.map((c) => (
                   <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/hr/travel/claims', c))} style={{ cursor: 'pointer' }}>
                     <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{c.claim_no}</td>
                     <td style={tdStyle}>
@@ -228,11 +228,6 @@ export default function HrTravelPage() {
                     <td data-tour="hr-claims-status-badge" style={tdStyle}>
                       <Pill hex={CLAIM_STATUS_HEX[c.status] || '#64748B'} label={CLAIM_STATUS_LABELS[c.status] || c.status} />
                       {c.status === 'paid' && c.payment_reference && <div style={{ fontSize: 11.5, color: TEXT.muted, marginTop: 4 }}>{c.payment_reference}</div>}
-                    </td>
-                    <td onClick={(e) => e.stopPropagation()} style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                      <span data-tour="hr-claims-open-link" onClick={() => router.push(recordPath('/dashboard/hr/travel/claims', c))} style={linkActionStyle}>
-                        {c.can_mark_paid ? 'Record payment' : c.can_decide ? 'Review' : 'View'}
-                      </span>
                     </td>
                   </tr>
                 ))}

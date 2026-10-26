@@ -149,14 +149,14 @@ export default function StoreGrnPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
             <thead>
               <tr>
-                {['GRN Number', 'PO Number', 'PO Date', 'Vendor', 'Received Date', 'Status', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}
+                {['GRN Number', 'PO Number', 'PO Date', 'Vendor', 'Received Date', 'Status'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+                <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>{active.emptyLabel}</td></tr>
+                <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>{active.emptyLabel}</td></tr>
               ) : (
                 rows.map((g) => (
                   <tr key={g.id} onClick={() => router.push(recordPath('/dashboard/store/grn', g))} style={{ cursor: 'pointer' }}>
@@ -167,9 +167,6 @@ export default function StoreGrnPage() {
                     <td style={tdStyle}>{formatDate(g.received_date)}</td>
                     <td style={tdStyle}>
                       <Pill label={STATUS_LABELS[g.status] || g.status} hex={STATUS_HEX[g.status] || '#64748b'} />
-                    </td>
-                    <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                      <button type="button" onClick={() => router.push(recordPath('/dashboard/store/grn', g))} style={smallSecondaryBtnStyle}>View</button>
                     </td>
                   </tr>
                 ))

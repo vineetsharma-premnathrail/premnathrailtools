@@ -149,7 +149,7 @@ export function SheetError({ error }: { error?: string | string[] | null }) {
 
 /** The popup: header (icon, title, subtitle, close), body, footer buttons. Escape closes it. */
 export function FormSheet({ icon, iconColor = BLUE, title, subtitle, onClose, busy, children, footer, tour, width = 960, onSubmit }: {
-  icon: SheetIconName; iconColor?: string; title: string; subtitle: string; onClose: () => void; busy: boolean
+  icon: SheetIconName; iconColor?: string; title: string; subtitle?: string; onClose: () => void; busy: boolean
   children: React.ReactNode
   /** Omit for a view-only popup — no footer strip is drawn. */
   footer?: React.ReactNode; tour?: string
@@ -172,7 +172,7 @@ export function FormSheet({ icon, iconColor = BLUE, title, subtitle, onClose, bu
           <span style={{ width: 42, height: 42, borderRadius: 12, background: iconColor, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><SheetIcon name={icon} size={22} color="#fff" /></span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h3 id={titleId} data-sheet-title tabIndex={-1} style={{ fontSize: 20, fontWeight: 700, color: INK, margin: 0 }}>{title}</h3>
-            <p style={{ fontSize: 13, color: MUTED, margin: '2px 0 0', wordBreak: 'break-word' }}>{subtitle}</p>
+            {subtitle && <p style={{ fontSize: 13, color: MUTED, margin: '2px 0 0', wordBreak: 'break-word' }}>{subtitle}</p>}
           </div>
           <button type="button" aria-label="Close" onClick={() => !busy && onClose()} style={sheetBtn('ghost', MUTED)}><SheetIcon name="x" size={20} /></button>
         </div>

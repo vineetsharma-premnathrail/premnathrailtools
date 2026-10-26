@@ -5,11 +5,6 @@ const config: TourConfig = {
   pageTitle: 'Braking Performance Calculator',
   steps: [
     {
-      target: 'rnd-toolnav-braking',
-      title: 'Engineering Tools row',
-      purpose: 'This second row of pills appears only inside Engineering Tools — click any pill to jump straight to another calculator (Hydraulic, Qmax, Load, Tractive, Vehicle, Spline).',
-    },
-    {
       target: 'rnd-brk-stats',
       title: 'Summary cards',
       purpose: 'Shown after a calculation: GBR (Gross Braking Ratio — braking force as a % of vehicle weight), Max Braking Force in kN, and the vehicle mass and reaction time used.',

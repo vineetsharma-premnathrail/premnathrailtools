@@ -5,34 +5,25 @@ const config: TourConfig = {
   pageTitle: 'P.R Approval',
   steps: [
     {
-      target: 'pr-approval-bucket-pending',
-      title: 'Pending',
-      purpose: 'Requisitions waiting on YOUR signature — this tab only appears for users named as an approver on a requisition, and it lists only the requisitions routed to you (admins see everything).',
+      target: 'p2p-stats',
+      title: 'Counters',
+      purpose: 'Requisitions in the selected segment (Waiting for me, Approved, Rejected or All), split into waiting for approval, in progress and closed. They follow the search and filters.',
     },
     {
-      target: 'pr-approval-bucket-approved',
-      title: 'Approved',
-      purpose: 'Requisitions you were an approver on that have been approved — including everything downstream (RFQ raised, PO raised/approved, received, closed).',
+      target: 'p2p-list-search',
+      title: 'Search',
+      purpose: 'Type a PR number, category, project, requester or buyer to narrow the list.',
     },
     {
-      target: 'pr-approval-bucket-rejected',
-      title: 'Rejected',
-      purpose: 'Requisitions that were rejected at the approval stage.',
-    },
-    {
-      target: 'pr-approval-bucket-all',
-      title: 'All',
-      purpose: 'Every requisition regardless of status, for a full overview.',
+      target: 'p2p-filter-btn',
+      title: 'Filters',
+      purpose: 'Opens the Filters popup: status, category, buyer and order project. Apply Filters uses your choices; Clear removes them.',
+      required: false,
     },
     {
       target: 'p2p-list-table',
       title: 'Purchase Requisition Number / Category / Project / Required Date / Priority / Status',
-      purpose: 'Requisitions in the currently selected bucket, with category, project, required date, priority, and status.',
-    },
-    {
-      target: 'p2p-list-view',
-      title: 'View',
-      purpose: 'Click View — or anywhere on the row — to open the full requisition detail, where Approve/Reject actions are also available.',
+      purpose: 'Requisitions in the currently selected bucket, with category, project, required date, priority, and status. Click a row to open the full requisition detail, where Approve/Reject actions are available.',
     },
   ],
 }

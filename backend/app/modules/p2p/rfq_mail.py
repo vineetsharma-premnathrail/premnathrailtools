@@ -8,6 +8,7 @@ from html import escape
 
 from sqlalchemy.orm import Session
 
+from app.modules.accounts.models.vendor import Vendor
 from app.modules.main.models.user import User
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.rfq import RFQ
@@ -40,7 +41,8 @@ def _items_html(pr: P2PRequest) -> str:
     return f'<table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e2e8f0">{head}{"".join(rows)}</table>'
 
 
-def build_rfq_email(rfq: RFQ, pr: P2PRequest, buyer: User | None, contact_name: str | None, reminder: bool) -> tuple[str, str]:
+def build_rfq_email(rfq: RFQ, pr: P2PRequest, buyer: User | None, contact_name: str | None, reminder: bool,
+                    vendor_terms: str | None = None) -> tuple[str, str]:
     due = rfq.quote_due_date.strftime("%d-%m-%Y") if rfq.quote_due_date else "as soon as possible"
     subject = (f"{'Reminder: ' if reminder else ''}Request for Quotation {rfq.rfq_number} — {COMPANY} "
                f"(quote by {due})")
@@ -54,6 +56,10 @@ def build_rfq_email(rfq: RFQ, pr: P2PRequest, buyer: User | None, contact_name: 
     late = (f'<p style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#64748b;margin:18px 0 6px">'
             f'Late delivery clause</p><p style="margin:0;font-size:13px;white-space:pre-wrap">{escape(rfq.late_delivery_clause)}</p>'
             if rfq.late_delivery_clause else "")
+    # The vendor's own terms & conditions (vendor master) are used on the RFQ only, not on the PO.
+    vterms = (f'<p style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#64748b;margin:18px 0 6px">'
+              f'Terms & conditions</p><p style="margin:0;font-size:13px;white-space:pre-wrap">{escape(vendor_terms.strip())}</p>'
+              if vendor_terms and vendor_terms.strip() else "")
     body = f"""
     <p style="margin:0 0 10px;font-size:14px;color:#1e293b">Dear {escape(contact_name or "Sir / Madam")},</p>
     <p style="margin:0 0 18px;font-size:14px;color:#475569;line-height:1.6">{intro}</p>
@@ -70,6 +76,7 @@ def build_rfq_email(rfq: RFQ, pr: P2PRequest, buyer: User | None, contact_name: 
       <li>Your quotation as a PDF attachment, quoting <strong>{escape(rfq.rfq_number)}</strong></li>
     </ol>
     {late}
+    {vterms}
     <p style="margin:20px 0 0;font-size:14px;color:#1e293b">Regards,<br><strong>{buyer_line}</strong><br>Purchase Department, {COMPANY}</p>"""
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
@@ -97,7 +104,8 @@ async def send_invite(db: Session, rfq: RFQ, pr: P2PRequest, invite: RFQVendorIn
     if buyer is None or not (buyer.email or "").strip():
         return False, ("The RFQ is sent from the buyer's own mailbox, but this user has no email in the portal — "
                        "add it under Organization › Users, then use Resend.")
-    subject, html = build_rfq_email(rfq, pr, buyer, contact_name, reminder)
+    vendor = db.get(Vendor, invite.vendor_id)
+    subject, html = build_rfq_email(rfq, pr, buyer, contact_name, reminder, vendor.terms_conditions if vendor else None)
     ok, err = await _send_graph_mail(buyer.email, subject, html, invite.email, invite.vendor_name,
                                      sender_name=buyer.name or buyer.email)
     if not ok and ("403" in err or "ErrorAccessDenied" in err or "404" in err):

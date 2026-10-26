@@ -7,7 +7,7 @@ import { rrvApi } from '@/lib/api'
 import { ProductionReworkOrder } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import ProductionNav from '@/components/production/ProductionNav'
-import { secondaryBtnStyle, smallSecondaryBtnStyle, chipBtnStyle, RowCount, Pill } from '@/components/shared/ui'
+import { secondaryBtnStyle, chipBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
@@ -92,7 +92,7 @@ export default function ReworkOrdersPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr>
-              {['Rework', 'Build', 'What needs fixing', 'Source', 'Assigned to', 'Due', 'Status', ''].map((h, i) => (
+              {['Rework', 'Build', 'What needs fixing', 'Source', 'Assigned to', 'Due', 'Status'].map((h, i) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{i === 0 && <RowCount count={rows.length} />}
                 </th>
@@ -101,9 +101,9 @@ export default function ReworkOrdersPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>{mine ? 'No rework assigned to you in this view.' : 'No rework orders in this view.'} Rework is raised from a build’s Tests or Rework tab, or automatically when a test or inspection fails.</td></tr>
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>{mine ? 'No rework assigned to you in this view.' : 'No rework orders in this view.'} Rework is raised from a build’s Tests or Rework tab, or automatically when a test or inspection fails.</td></tr>
             ) : (
               rows.map((r) => (
                 <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/production/rrv-builds', r, 'build_id'))} style={{ cursor: 'pointer' }}>
@@ -115,9 +115,6 @@ export default function ReworkOrdersPage() {
                   <td style={{ ...cellStyle, color: r.is_overdue ? '#DC2626' : TEXT.body, fontWeight: r.is_overdue ? 600 : 400 }}><span style={{ whiteSpace: 'nowrap' }}>{formatDate(r.due_date)}{r.is_overdue ? ' · overdue' : ''}</span></td>
                   <td style={cellStyle}>
                     <Pill label={STATUS_LABELS[r.status] || r.status} hex={STATUS_HEX[r.status] || '#78716c'} />
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <button type="button" onClick={() => router.push(recordPath('/dashboard/production/rrv-builds', r, 'build_id'))} style={{ ...smallSecondaryBtnStyle, whiteSpace: 'nowrap' }}>Open build</button>
                   </td>
                 </tr>
               ))

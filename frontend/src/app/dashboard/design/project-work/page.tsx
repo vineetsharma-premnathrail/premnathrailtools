@@ -380,7 +380,7 @@ export default function DesignRequestsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1320 }}>
           <thead>
             <tr>
-              {['Request', 'Title', 'Source', 'Customer / CRM', 'Project / WBS', 'Lead Designer', 'Due', 'Waiting On', 'Status', 'Deliverables', ''].map((h, hi) => (
+              {['Request', 'Title', 'Source', 'Customer / CRM', 'Project / WBS', 'Lead Designer', 'Due', 'Waiting On', 'Status', 'Deliverables'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }}>
                   {h}{hi === 0 && <RowCount count={requests.length} />}
                 </th>
@@ -389,9 +389,9 @@ export default function DesignRequestsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : requests.length === 0 ? (
-              <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 No design requests match these filters.{statusFilter !== '' && ' Try the “All” tab.'}
               </td></tr>
             ) : (
@@ -430,9 +430,6 @@ export default function DesignRequestsPage() {
                   <td style={cellStyle}>{badge(REQUEST_STATUS_LABELS[r.status] || r.status, STATUS_HEX[r.status] || '#78716c')}</td>
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
                     {r.document_count ? <><strong>{r.released_count}</strong> / {r.document_count} released</> : <span style={{ color: TEXT.muted }}>none yet</span>}
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/design/requests', r))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

@@ -163,6 +163,7 @@ function OverviewTab({ org }: { org: OrganizationDetail }) {
         </>}
       />
       <DetailGroup title="Customer Organization Details">
+        <DetailRow label="Scope">{org.org_scope === 'international' ? 'International' : 'Domestic'}</DetailRow>
         <DetailRow label="Type">{org.org_type}</DetailRow>
         {showRailwayFields && <DetailRow label="Railway zone">{org.railway_zone}</DetailRow>}
         {showRailwayFields && <DetailRow label="Division / Workshop">{org.division_workshop}</DetailRow>}
@@ -177,9 +178,18 @@ function OverviewTab({ org }: { org: OrganizationDetail }) {
         <DetailRow label="Official phone">{[org.official_phone, ...(org.additional_phones || [])].filter(Boolean).join(', ') || null}</DetailRow>
         <DetailRow label="Official email">{[org.official_email, ...(org.additional_emails || [])].filter(Boolean).join(', ') || null}</DetailRow>
         <DetailRow label="Website">{org.website}</DetailRow>
-        <DetailRow label="GST number">{org.gst_number}</DetailRow>
-        <DetailRow label="PAN">{org.pan}</DetailRow>
-        <DetailRow label="GST state code (place of supply)">{org.gst_state_code}</DetailRow>
+        {org.org_scope === 'international' ? (
+          <>
+            <DetailRow label="Tax / VAT ID">{org.tax_vat_id}</DetailRow>
+            <DetailRow label="Company registration number">{org.company_registration_no}</DetailRow>
+          </>
+        ) : (
+          <>
+            <DetailRow label="GSTIN">{org.gst_number}</DetailRow>
+            <DetailRow label="PAN">{org.pan}</DetailRow>
+            <DetailRow label="GST state code (place of supply)">{org.gst_state_code}</DetailRow>
+          </>
+        )}
       </DetailGroup>
     </DetailCard>
   )
@@ -266,14 +276,14 @@ function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: Organizati
     const badExtra = extraEmails.map((e) => e.trim()).filter((e) => e && !isValidEmail(e))
     if (badExtra.length) { setErrorDialog([`Enter a valid email address — "${badExtra[0]}" isn't one. Fix it or remove that row.`]); return }
     if ((extraMobiles.some((m) => m.trim()) && !form.mobile.trim()) || (extraEmails.some((e) => e.trim()) && !form.email.trim())) {
-      setErrorDialog(['Fill in the main Mobile / Email first — the extra rows are for a second or third number/address.'])
+      setErrorDialog(['Fill in the main Phone / Email first — the extra rows are for a second or third number/address.'])
       return
     }
-    // Mobile/email matching another contact on the same org is a hard stop —
+    // Phone/email matching another contact on the same org is a hard stop —
     // only a same-name-but-different-details match gets a soft "save anyway?".
     if (dupMobile || dupEmail) {
       const parts: string[] = []
-      if (dupMobile) parts.push('This mobile number is already used by another contact on this customer organization.')
+      if (dupMobile) parts.push('This phone number is already used by another contact on this customer organization.')
       if (dupEmail) parts.push('This email address is already used by another contact on this customer organization.')
       setErrorDialog(parts)
       return
@@ -311,8 +321,8 @@ function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: Organizati
                 <SheetSection icon="chat" title="Reach">
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                     <div style={{ flex: '1 1 200px' }}>
-                      <div data-tour="orgdetail-contact-mobile"><label style={sheetLabel}>Mobile</label>
-                        <ValueRow button={<AddMoreButton label="Add another mobile" extras={extraMobiles} primary={form.mobile} onClick={() => canAddMore(extraMobiles, form.mobile) && setExtraMobiles((v) => [...v, ''])} />}>
+                      <div data-tour="orgdetail-contact-mobile"><label style={sheetLabel}>Phone</label>
+                        <ValueRow button={<AddMoreButton label="Add another phone" extras={extraMobiles} primary={form.mobile} onClick={() => canAddMore(extraMobiles, form.mobile) && setExtraMobiles((v) => [...v, ''])} />}>
                           <input
                             value={form.mobile}
                             onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))}
@@ -322,8 +332,8 @@ function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: Organizati
                         {dupMobile && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>Already used by another contact on this customer organization.</p>}
                         {extraMobiles.map((m, i) => (
                           <div key={i} style={{ marginTop: 8 }}>
-                            <ValueRow button={<RemoveValueButton label="Remove this mobile" onClick={() => setExtraMobiles((v) => v.filter((_, j) => j !== i))} />}>
-                              <input value={m} placeholder={`Mobile ${i + 2}`} onChange={(e) => setExtraMobiles((v) => v.map((x, j) => (j === i ? e.target.value : x)))} style={sheetInput} />
+                            <ValueRow button={<RemoveValueButton label="Remove this phone" onClick={() => setExtraMobiles((v) => v.filter((_, j) => j !== i))} />}>
+                              <input value={m} placeholder={`Phone ${i + 2}`} onChange={(e) => setExtraMobiles((v) => v.map((x, j) => (j === i ? e.target.value : x)))} style={sheetInput} />
                             </ValueRow>
                           </div>
                         ))}
@@ -439,7 +449,7 @@ function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: Organizati
       <ConfirmDialog
         open={dupeConfirm}
         title="Possible duplicate contact"
-        message={`A contact with the same name, mobile, or email already exists for this customer organization. Save anyway?`}
+        message={`A contact with the same name, phone, or email already exists for this customer organization. Save anyway?`}
         onConfirm={() => { setDupeConfirm(false); doSave() }}
         onCancel={() => setDupeConfirm(false)}
       />

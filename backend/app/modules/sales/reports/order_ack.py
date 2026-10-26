@@ -24,6 +24,20 @@ _MILESTONE = {"advance": "Advance", "drawing_approval": "On drawing approval", "
               "retention_release": "Retention release", "other": "Other"}
 
 
+def _contact_name(db: Session, so: SalesOrder) -> str | None:
+    if not so.customer_contact_id:
+        return None
+    from app.modules.crm.models.organization import OrgContact
+    c = db.query(OrgContact).filter(OrgContact.id == so.customer_contact_id).first()
+    return c.name if c else None
+
+
+def _purchase_person(so: SalesOrder, contact: str | None) -> str | None:
+    """'Purchase Person Name', with the contact person on the next line."""
+    parts = [so.purchaser_name, f"Contact person: {contact}" if contact else None]
+    return chr(10).join(p for p in parts if p) or None
+
+
 def _d(v) -> str:
     return v.strftime("%d-%m-%Y") if v else "—"
 
@@ -48,7 +62,9 @@ def oa_spec(db: Session, so: SalesOrder) -> dict:
             parts.append(f"{so.warranty_months_from_commissioning} months from commissioning")
         warranty = " / ".join(parts) + (f", {_RULE[so.warranty_rule]}" if len(parts) > 1 else "")
     title = "ORDER ACKNOWLEDGEMENT" + (f" — AMENDMENT {so.amendment_no}" if so.amendment_no else "")
-    po = f"{so.customer_po_number or '—'} dated {_d(so.customer_po_date)}"
+    po = f"{svc.po_number(so) or '—'} dated {_d(svc.po_date(so))}"
+    cur = so.currency or "INR"
+    contact = _contact_name(db, so)
     statement_bits = [f"Liquidated damages: {ld}.", f"Warranty: {warranty}."]
     if so.inspection_agency:
         statement_bits.append(f"Inspection: {so.inspection_agency.upper()}{' (third-party inspection required)' if so.third_party_inspection_required else ''}.")
@@ -64,15 +80,16 @@ def oa_spec(db: Session, so: SalesOrder) -> dict:
                   f"as we have understood them. Please let us know within 7 days if anything differs from your order."),
         "facts": [
             ("Customer", so.customer_name), ("Customer PO", po),
-            ("GSTIN", so.customer_gstin), ("LOA", f"{so.loa_number} dated {_d(so.loa_date)}" if so.loa_number else None),
+            ("GSTIN", so.customer_gstin),
             ("Billing address", so.billing_address), ("Contract ref.", so.contract_reference),
-            ("Purchaser", so.purchaser_name), ("Paying authority", so.paying_authority),
+            ("Purchase Person Name", _purchase_person(so, contact)),
+            ("Paying authority", so.paying_authority),
             ("Price basis", _PRICE_BASIS.get(so.price_basis, so.price_basis)), ("Freight / insurance",
                                                                                  " / ".join(p for p in (so.freight_terms, so.insurance_terms) if p) or None),
-            ("Order value (incl. GST)", f"INR {_num(so.grand_total)}"), ("Taxable value", f"INR {_num(so.taxable_total)}"),
+            ("Order value (incl. GST)", f"{cur} {_num(so.grand_total)}"), ("Taxable value", f"{cur} {_num(so.taxable_total)}"),
         ],
         "sections": [
-            {"heading": "Items", "columns": ["#", "Description", "Customer ref.", "HSN", "Qty", "Unit price", "GST %", "Total"],
+            {"heading": "Items", "columns": ["#", "Description", "Customer ref.", "HSN", "Qty", f"Unit price ({cur})", "GST %", f"Total ({cur})"],
              "widths": [0.3, 2.3, 1.0, 0.6, 0.5, 0.9, 0.5, 1.0],
              "rows": [[str(ln.line_number), ln.description + (f" ({ln.rrv_model})" if ln.rrv_model else ""), ln.customer_line_ref or "",
                        ln.hsn_sac_code or "", f"{float(ln.quantity):g} {ln.uom}", _num(ln.unit_price), f"{float(ln.gst_rate):g}",
@@ -82,7 +99,7 @@ def oa_spec(db: Session, so: SalesOrder) -> dict:
              "rows": [[str(lines[r.so_line_id].line_number) if r.so_line_id in lines else "", str(r.sequence), f"{float(r.quantity):g}",
                        r.consignee_name or so.customer_name or "", _d(r.current_delivery_date)]
                       for r in so.schedules if r.status != "cancelled"]},
-            {"heading": "Billing / payment milestones", "columns": ["#", "Milestone", "%", "Amount (INR)", "Due"],
+            {"heading": "Billing / payment milestones", "columns": ["#", "Milestone", "%", f"Amount ({cur})", "Due"],
              "widths": [0.3, 3.2, 0.7, 1.5, 1.4],
              "rows": [[str(b.sequence), _MILESTONE.get(b.milestone_type, b.milestone_type) + (f" — {b.description}" if b.description else ""),
                        f"{float(b.percent):g}", _num(b.amount), f"{b.due_days} days" if b.due_days else "—"]

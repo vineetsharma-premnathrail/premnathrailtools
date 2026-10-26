@@ -7,6 +7,7 @@ import { p2pApi, storeApi } from '@/lib/api'
 import { PRCategoryMeta, P2PPurposeMeta, P2PRequest, P2PRequestLineItemInput, StoreItem } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { accountAssignmentApi, ACCOUNT_ASSIGNMENTS } from '@/lib/mmLogisticsApi'
+
 import DateField from '@/components/erp/DateField'
 import { FormPage, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import P2PNav from '@/components/p2p/P2PNav'
@@ -26,9 +27,8 @@ const typeLabel = (t: string) => { const s = t.replace(/_/g, ' '); return s.char
 // server (/meta, edited in Procurement › Settings › Purpose rules); only the
 // help text lives here. One project per machine: lines never pick a vehicle / lot.
 const PURPOSE_HINTS: Record<string, string> = {
-  customer_order: 'Material to build a machine a customer has ordered (not yet delivered). Charged to its Order Project; every line is for that project.',
   machine_project: 'Spares or work for a machine already delivered to the customer: service, repair, warranty. Pick the machine; every line is for it. Charged To is optional.',
-  development: "New product development (R&D). Charged to the development job's internal order, which holds its budget.",
+  development: 'New product development (R&D). Charged to the R&D project it belongs to; Finance is linked automatically.',
   // The cost centre is picked by Purchase on the PO (your department's by default), not here.
   department: "Day-to-day running cost of a department: cleaning material, stationery, small tools, office repairs, AMC, housekeeping. Purchase charges it to your department's cost centre on the PO.",
   capital: "Something the company owns and uses for years (machine, laptop, AC, welding set). Charged to the asset's internal order.",
@@ -316,7 +316,7 @@ export default function NewP2PRequestPage() {
   const pickPurpose = (value: string) => {
     setPurpose(value)
     const pm = purposes.find((p) => p.code === value)
-    if (value !== 'machine_project') setProjectId('')
+    if (value !== 'machine_project' && value !== 'customer_order') setProjectId('')
     setAcctKind(pm?.charged_required ? pm.charged_to_kinds[0] : '')
     setAcctId('')
     // Lines carry no project choice: Inhouse purposes mark every line Inhouse, the rest are for the header's project.
@@ -377,9 +377,11 @@ export default function NewP2PRequestPage() {
       if (bad >= 0) { fail(`Line ${bad + 1}: quantity must be more than 0.`, `pr-line-${bad + 1}-qty`); return }
     } else {
     if (!rule) { fail('Choose the purpose of this requisition: what is it being bought for?', 'pr-field-purpose'); return }
-    if (purpose === 'machine_project' && !projectId) { fail('Pick the machine project this requisition is for.', 'pr-field-project'); return }
+    if ((purpose === 'machine_project' || purpose === 'customer_order') && !projectId) { fail('Pick the machine project this requisition is for.', 'pr-field-project'); return }
     if (acctKind && !acctId) {
-      fail(acctKind === 'internal_order'
+      fail(acctKind === 'rnd_project'
+        ? 'Pick the R&D project this development belongs to.'
+        : acctKind === 'internal_order'
         ? "Pick the internal order this is charged to. If it isn't in the list, ask Finance to open one in Finance › Masters & Setup › Internal Orders."
         : `Pick the ${ACCOUNT_ASSIGNMENTS.find((a) => a.value === acctKind)?.label.toLowerCase()} this requisition is charged to.`, 'pr-field-acct-id')
       return
@@ -420,7 +422,7 @@ export default function NewP2PRequestPage() {
         purpose: purpose || null,
         // Only a machine project names a project; for the rest the server
         // fills the label from what it is charged to (or the purpose).
-        project_label: purpose === 'machine_project' ? projects.find((p) => p.id === Number(projectId))?.label : null,
+        project_label: (purpose === 'machine_project' || purpose === 'customer_order') ? projects.find((p) => p.id === Number(projectId))?.label : null,
         category_code: categoryCode,
         account_assignment: acctKind || null,
         ...Object.fromEntries(ACCOUNT_ASSIGNMENTS.map((x) => [x.fk, x.value === acctKind && acctId ? Number(acctId) : null])),
@@ -541,11 +543,11 @@ export default function NewP2PRequestPage() {
             </div>
             {metaError && <p role="alert" style={{ ...sheetHint, color: '#B91C1C' }}>{metaError} Reload the page to try again.</p>}
             {rule && <p data-tour="pr-new-purpose-hint" style={sheetHint}>{rule.hint}</p>}
-            {(purpose === 'machine_project' || (rule && rule.kinds.length > 0 && acctKind)) && (
+            {(purpose === 'machine_project' || purpose === 'customer_order' || (rule && rule.kinds.length > 0 && acctKind)) && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
-              {purpose === 'machine_project' && (
+              {(purpose === 'machine_project' || purpose === 'customer_order') && (
                 <div data-tour="pr-new-project" style={{ minWidth: 0 }}>
-                  <label style={labelStyle}>Machine Project <Req /></label>
+                  <label style={labelStyle}>{purpose === 'customer_order' ? 'Project' : 'Machine Project'} <Req /></label>
                   <div id="pr-field-project">
                     <SearchableSelect
                       value={projectId}
@@ -566,11 +568,13 @@ export default function NewP2PRequestPage() {
                     <SearchableSelect value={acctId} onChange={setAcctId} ariaLabel={ACCOUNT_ASSIGNMENTS.find((a) => a.value === acctKind)?.label}
                       disabled={acctLoading || !!acctError || acctOptions.length === 0}
                       options={acctOptions.map((o) => ({ value: String(o.id), label: o.label }))}
-                      placeholder={acctLoading ? 'Loading…' : acctError ? 'Could not load the list' : acctOptions.length ? 'Search…' : 'Nothing to pick yet'} />
+                      placeholder={acctLoading ? 'Loading…' : acctError ? 'Could not load the list' : acctOptions.length ? (acctKind === 'rnd_project' ? 'Search an R&D project' : 'Search…') : (acctKind === 'rnd_project' ? 'No open R&D project' : 'Nothing to pick yet')} />
                   </div>
                   {acctError && <p role="alert" style={{ ...sheetHint, color: '#B91C1C' }}>{acctError} Pick the charge type again, or reload the page.</p>}
                   {!acctLoading && !acctError && acctOptions.length === 0 && (
-                    <p style={sheetHint}>{acctKind === 'internal_order'
+                    <p style={sheetHint}>{acctKind === 'rnd_project'
+                      ? 'No open R&D project — ask the R&D head to create one in R&D › Prototype / Research.'
+                      : acctKind === 'internal_order'
                       ? 'No internal orders yet — ask Finance to open one in Finance › Masters & Setup › Internal Orders.'
                       : `No ${ACCOUNT_ASSIGNMENTS.find((a) => a.value === acctKind)?.label.toLowerCase()} available yet — ask an admin to set one up, then reload the page.`}</p>
                   )}

@@ -1,13 +1,42 @@
 from datetime import date, datetime
-from pydantic import BaseModel
+from typing import Annotated
+
+from pydantic import BaseModel, Field, field_validator
+
+PO_REQUIRED_MSG = "Customer PO number is required. Enter the customer's purchase order number for this project."
+SO_REQUIRED_MSG = "Sales order (SO) number is required. Enter the SO number this project is delivered under."
 
 
-class PmProjectCreate(BaseModel):
+def _clean_ref(value: str | None, message: str) -> str:
+    """Trim; blank or missing is an error; plain text only (no link to Sales)."""
+    text = (value or "").strip()
+    if not text:
+        raise ValueError(message)
+    if len(text) > 100:
+        raise ValueError("The PO and SO numbers can each be at most 100 characters. Shorten the one you entered.")
+    return text
+
+
+class _PoSoCheck(BaseModel):
+    @field_validator("customer_po_ref", check_fields=False)
+    @classmethod
+    def _po(cls, v):
+        return _clean_ref(v, PO_REQUIRED_MSG)
+
+    @field_validator("sales_order_ref", check_fields=False)
+    @classmethod
+    def _so(cls, v):
+        return _clean_ref(v, SO_REQUIRED_MSG)
+
+
+class PmProjectCreate(_PoSoCheck):
     # Blank = next PEW-<year>-NNNN number (one series with the Order Projects).
     project_code: str | None = None
     name: str
     client_name: str
-    customer_po_ref: str | None = None
+    # Required: a missing key falls to the default None and fails the validator with the real message.
+    customer_po_ref: Annotated[str | None, Field(validate_default=True)] = None
+    sales_order_ref: Annotated[str | None, Field(validate_default=True)] = None
     description: str | None = None
     # Blank = the person creating the project.
     project_manager_id: int | None = None
@@ -16,11 +45,13 @@ class PmProjectCreate(BaseModel):
     priority: str = "medium"
 
 
-class PmProjectUpdate(BaseModel):
+class PmProjectUpdate(_PoSoCheck):
     project_code: str | None = None
     name: str | None = None
     client_name: str | None = None
+    # Optional, but once sent they can never be blank (existing projects may still lack them).
     customer_po_ref: str | None = None
+    sales_order_ref: str | None = None
     description: str | None = None
     project_manager_id: int | None = None
     start_date: date | None = None
@@ -72,6 +103,7 @@ class PmProjectResponse(BaseModel):
     name: str
     client_name: str | None = None
     customer_po_ref: str | None = None
+    sales_order_ref: str | None = None
     description: str | None = None
     project_manager_id: int | None = None
     project_manager_name: str | None = None

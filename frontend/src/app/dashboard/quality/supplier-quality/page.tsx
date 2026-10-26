@@ -154,10 +154,10 @@ export default function SupplierQualityPage() {
           </div>
           <div style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-              <thead><tr>{['Vendor', 'Item', 'Status', 'Sampling', 'Accepted in a row', 'Last score', 'Valid until', 'Pending', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={avl.length} />}</th>)}</tr></thead>
+              <thead><tr>{['Vendor', 'Item', 'Status', 'Sampling', 'Accepted in a row', 'Last score', 'Valid until', 'Pending'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={avl.length} />}</th>)}</tr></thead>
               <tbody>
                 {avl.length === 0 ? (
-                  <tr><td colSpan={9} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Nothing on the list for this filter.</td></tr>
+                  <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Nothing on the list for this filter.</td></tr>
                 ) : avl.map((a) => (
                   <tr key={a.id} onClick={() => router.push(recordPath('/dashboard/quality/supplier-quality', a))} style={{ cursor: 'pointer' }}>
                     <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>{a.vendor_name}</td>
@@ -168,9 +168,6 @@ export default function SupplierQualityPage() {
                     <td style={tdStyle}>{a.last_score != null ? `${score(a.last_score)} (${a.last_rated_period})` : '—'}</td>
                     <td style={{ ...tdStyle, color: a.expired ? '#DC2626' : undefined }}>{fmtDate(a.valid_until)}{a.expired ? ' · re-evaluate' : ''}</td>
                     <td style={tdStyle}>{a.pending_action ? `${a.pending_action} (Partner)` : '—'}</td>
-                    <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                      <span onClick={() => router.push(recordPath('/dashboard/quality/supplier-quality', a))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -5,11 +5,6 @@ const config: TourConfig = {
   pageTitle: 'Spline Design Calculator',
   steps: [
     {
-      target: 'rnd-toolnav-spline',
-      title: 'Engineering Tools row',
-      purpose: 'Jump between calculators from this row of pills.',
-    },
-    {
       target: 'rnd-spl-doc',
       title: 'Document Details',
       purpose: 'Doc No., Made By, Checked By and Approved By are printed on the Word / PDF report. Doc No. is also used as the file name and the History entry name ("Spline — <Doc No.>").',

@@ -3164,6 +3164,14 @@ export const deptRequirementsApi = {
   },
 }
 
+// Shared module reports framework (backend app/core/reporting): one catalogue + run + options + Excel export per module.
+export const reportsApi = {
+  catalogue: async (module: string): Promise<import('@/types').ReportCatalogue> => { const { data } = await apiClient.get(`/reports/${module}`); return data },
+  run: async (module: string, report: string, params: Record<string, unknown> = {}): Promise<import('@/types').ReportResult> => { const { data } = await apiClient.get(`/reports/${module}/${report}`, { params }); return data },
+  options: async (module: string, report: string, filter: string, q = ''): Promise<{ value: string; label: string }[]> => { const { data } = await apiClient.get(`/reports/${module}/${report}/options/${filter}`, { params: q ? { q } : undefined }); return data },
+  exportXlsx: async (module: string, report: string, params: Record<string, unknown> = {}): Promise<Blob> => { const { data } = await apiClient.get(`/reports/${module}/${report}/export`, { params, responseType: 'blob', timeout: 120000, activityLabel: 'Preparing Excel' }); return data },
+}
+
 export const rndApi = {
   listRequirements: async (params: { search?: string; source?: string; mine?: boolean } = {}): Promise<RndRequirement[]> => {
     const { data } = await apiClient.get('/rnd/requirements', { params })
@@ -3228,6 +3236,14 @@ export const rndApi = {
   myTasks: async (includeDone = false): Promise<import('@/types').RndTask[]> => { const { data } = await apiClient.get('/rnd/requirement-work/tasks/mine', { params: includeDone ? { include_done: true } : undefined }); return data },
   /** Tasks assigned to me on R&D (Prototype / Research) projects. */
   myProjectTasks: async (includeDone = false): Promise<import('@/types').RndTask[]> => { const { data } = await apiClient.get('/rnd/project-tasks/mine', { params: includeDone ? { include_done: true } : undefined }); return data },
+  // Requirement Plan & Milestones (same plan as an R&D project) and the requirement's History tab.
+  listRequirementMilestones: async (source: string, id: number): Promise<import('@/types').RndMilestone[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/milestones`); return data },
+  requirementMilestonePeople: async (source: string, id: number): Promise<{ id: number; name: string; department?: string | null; designation?: string | null; team_role: string }[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/milestone-people`); return data },
+  createRequirementMilestone: async (source: string, id: number, p: import('@/types').RndMilestoneInput): Promise<import('@/types').RndMilestone> => { const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/milestones`, p); return data },
+  editRequirementMilestone: async (source: string, id: number, milestoneId: number, p: Partial<import('@/types').RndMilestoneInput>): Promise<import('@/types').RndMilestone> => { const { data } = await apiClient.patch(`/rnd/requirement-work/${source}/${id}/milestones/${milestoneId}`, p); return data },
+  requirementMilestoneStatus: async (source: string, id: number, milestoneId: number, action: 'done' | 'reopen' | 'cancel', reason?: string): Promise<import('@/types').RndMilestone> => { const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/milestones/${milestoneId}/status`, { action, reason }); return data },
+  deleteRequirementMilestone: async (source: string, id: number, milestoneId: number): Promise<{ message: string }> => { const { data } = await apiClient.delete(`/rnd/requirement-work/${source}/${id}/milestones/${milestoneId}`); return data },
+  requirementHistory: async (source: string, id: number): Promise<import('@/types').RndProjectHistoryEntry[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/history`); return data },
   createTask: async (source: string, id: number, p: import('@/types').RndTaskCreateInput): Promise<import('@/types').RndTask> => {
     const form = new FormData()
     form.append('title', p.title)
@@ -3235,6 +3251,7 @@ export const rndApi = {
     form.append('due_date', p.due_date)
     if (p.remarks) form.append('remarks', p.remarks)
     if (p.department) form.append('department', p.department)
+    if (p.milestone_id) form.append('milestone_id', String(p.milestone_id))
     appendTaskPlanning(form, p)
     for (const f of p.files) form.append('files', f)
     const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/tasks`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Assigning' })

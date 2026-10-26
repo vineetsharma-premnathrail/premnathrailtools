@@ -227,7 +227,7 @@ export default function DesignBomsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
           <thead>
             <tr>
-              {['BOM No.', 'Product item', 'Title', 'Project', 'Released Rev', 'Work in Progress', 'Lines', 'Owner', 'Status', ''].map((h, i) => (
+              {['BOM No.', 'Product item', 'Title', 'Project', 'Released Rev', 'Work in Progress', 'Lines', 'Owner', 'Status'].map((h, i) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{i === 0 && <RowCount count={boms.length} />}
                 </th>
@@ -236,9 +236,9 @@ export default function DesignBomsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : boms.length === 0 ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 No BOMs match these filters.{statusTab !== '' ? ' Try the “All” tab.' : ' Use + New BOM to create one.'}
               </td></tr>
             ) : (
@@ -273,9 +273,6 @@ export default function DesignBomsPage() {
                   <td style={cellStyle}>{b.line_count}</td>
                   <td style={cellStyle}>{b.owner_name || '—'}</td>
                   <td style={cellStyle}>{pill(b.display_status)}</td>
-                  <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/design/boms', b))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                  </td>
                 </tr>
               ))
             )}

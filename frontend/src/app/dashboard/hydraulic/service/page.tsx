@@ -113,7 +113,7 @@ export default function HydServiceRecordsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1150 }}>
           <thead>
             <tr>
-              {['Record No.', 'Date', 'System', 'Type', 'Plan', 'Performed By / Agency', 'Downtime h', 'Total Cost', 'Status', ''].map((h, hi) => (
+              {['Record No.', 'Date', 'System', 'Type', 'Plan', 'Performed By / Agency', 'Downtime h', 'Total Cost', 'Status'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{hi === 0 && <RowCount count={records.length} />}
                 </th>
@@ -122,9 +122,9 @@ export default function HydServiceRecordsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : records.length === 0 ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No service records match these filters.</td></tr>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No service records match these filters.</td></tr>
             ) : (
               records.map((r) => (
                 <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/service', r))} style={{ cursor: 'pointer' }}>
@@ -141,9 +141,6 @@ export default function HydServiceRecordsPage() {
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.total_cost == null ? '—' : `₹${r.total_cost.toLocaleString('en-IN')}`}</td>
                   <td style={cellStyle}>
                     <Pill label={STATUS_LABELS[r.status] || r.status} hex={STATUS_HEX[r.status] || '#78716c'} />
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/hydraulic/service', r))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

@@ -48,15 +48,15 @@ def pi_spec(db: Session, pi: SalesProformaInvoice, so: SalesOrder) -> dict:
     return {
         "title": "PROFORMA INVOICE" + (" — CANCELLED" if pi.status == "cancelled" else ""),
         "number": pi.pi_number,
-        "intro": (f"Request for the {pct} advance payment against your order {so.customer_po_number or '—'} dated "
-                  f"{_d(so.customer_po_date)} (our sales order {so.so_number}). This is not a tax invoice: the tax invoice "
+        "intro": (f"Request for the {pct} advance payment against your order {svc.po_number(so) or '—'} dated "
+                  f"{_d(svc.po_date(so))} (our sales order {so.so_number}). This is not a tax invoice: the tax invoice "
                   f"for the advance / supply will be issued on receipt of payment as per GST rules."),
         "facts": [
             ("PI date", _d(pi.pi_date)), ("Valid until", _d(pi.valid_until)),
             ("Customer", so.customer_name), ("Customer GSTIN", so.customer_gstin),
             ("Billing address", so.billing_address), ("Our GSTIN", our_gstin),
             ("Place of supply", f"{pos} — {GST_STATE_CODES.get(pos, '')}" if pos else None),
-            ("Sales order", so.so_number), ("Customer PO", so.customer_po_number),
+            ("Sales order", so.so_number), ("Customer PO", svc.po_number(so)),
             ("Paying authority", so.paying_authority), ("Milestone", f"{pct} advance" + (f" — {b.description}" if b and b.description else "")),
             ("Order value (incl. GST)", f"INR {_num(so.grand_total)}"),
         ],

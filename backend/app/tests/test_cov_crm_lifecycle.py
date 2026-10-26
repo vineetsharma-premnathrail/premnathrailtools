@@ -27,7 +27,7 @@ def auth(user):
 
 
 def make_org(client, user, name="Northern Railway", **extra):
-    resp = client.post(f"{API}/organizations", json={"org_type": "Customer", "name": name, **extra}, headers=auth(user))
+    resp = client.post(f"{API}/organizations", json={"org_scope": "domestic", "org_type": "Customer", "name": name, **extra}, headers=auth(user))
     assert resp.status_code == 201, resp.text
     return resp.json()
 
@@ -349,17 +349,17 @@ def test_org_codes_are_sequential_per_year(client, ctx):
 
 def test_org_name_clash_is_case_insensitive_and_email_unique(client, ctx):
     h = auth(ctx["owner"])
-    resp = client.post(f"{API}/organizations", json={"org_type": "Customer", "name": "  northern railway "}, headers=h)
+    resp = client.post(f"{API}/organizations", json={"org_scope": "domestic", "org_type": "Customer", "name": "  northern railway "}, headers=h)
     assert resp.status_code == 409 and "name already exists" in resp.json()["detail"]
     make_org(client, ctx["owner"], name="Org Mail", official_email="tenders@nr.gov.in")
-    resp = client.post(f"{API}/organizations", json={"org_type": "Customer", "name": "Org Mail 2", "official_email": "TENDERS@nr.gov.in"}, headers=h)
+    resp = client.post(f"{API}/organizations", json={"org_scope": "domestic", "org_type": "Customer", "name": "Org Mail 2", "official_email": "TENDERS@nr.gov.in"}, headers=h)
     assert resp.status_code == 409 and "Official Email" in resp.json()["detail"]
 
 
 def test_org_requires_type_and_valid_gst(client, ctx):
     h = auth(ctx["owner"])
     assert client.post(f"{API}/organizations", json={"org_type": "  ", "name": "No Type"}, headers=h).status_code == 422
-    assert client.post(f"{API}/organizations", json={"org_type": "Customer", "name": "Bad GST", "gst_number": "NOTAGST"}, headers=h).status_code == 422
+    assert client.post(f"{API}/organizations", json={"org_scope": "domestic", "org_type": "Customer", "name": "Bad GST", "gst_number": "NOTAGST"}, headers=h).status_code == 422
 
 
 def test_org_update_rejects_gst_and_email_of_another_org(client, ctx):
@@ -381,7 +381,7 @@ def test_gst_of_deleted_org_gives_real_error(client, ctx):
     h = auth(ctx["owner"])
     gone = make_org(client, ctx["owner"], name="Deleted GST Holder", gst_number="07AAACN1234Q1Z2")
     assert client.delete(f"{API}/organizations/{gone['id']}", headers=h).status_code == 204
-    resp = client.post(f"{API}/organizations", json={"org_type": "Customer", "name": "New GST Holder", "gst_number": "07AAACN1234Q1Z2"}, headers=h)
+    resp = client.post(f"{API}/organizations", json={"org_scope": "domestic", "org_type": "Customer", "name": "New GST Holder", "gst_number": "07AAACN1234Q1Z2"}, headers=h)
     assert resp.status_code == 409
     assert "GST" in resp.json()["detail"]
 
@@ -404,7 +404,7 @@ def test_org_delete_by_creator_cascades_everything(client, ctx):
     assert client.patch(f"{API}/activities/{direct['id']}", json={"remarks": "x"}, headers=h).status_code == 404
     assert client.get(f"{API}/organizations/{org['id']}/detail", headers=h).status_code == 404
     # A soft-deleted org's name is free again.
-    assert client.post(f"{API}/organizations", json={"org_type": "Customer", "name": org["name"]}, headers=h).status_code == 201
+    assert client.post(f"{API}/organizations", json={"org_scope": "domestic", "org_type": "Customer", "name": org["name"]}, headers=h).status_code == 201
 
 
 def test_org_delete_leaves_activity_of_inquiry_moved_to_another_org(client, ctx):

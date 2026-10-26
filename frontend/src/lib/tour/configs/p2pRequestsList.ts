@@ -37,9 +37,24 @@ const config: TourConfig = {
       purpose: 'Who approves PRs and POs (a preview — set in Organization › Approval Workflows), the company\'s standard terms & conditions, and which events notify whom.',
     },
     {
-      target: 'p2p-view-approvals',
-      title: 'Approvals',
-      purpose: 'Requisitions waiting for your approval — open one and Approve or Reject it. Shown to PR approvers and admins.',
+      target: 'p2p-view-waiting',
+      title: 'Waiting for me',
+      purpose: 'Requisitions waiting for your decision, with a red count. Open one and Approve or Reject it. Shown to PR approvers and admins.',
+    },
+    {
+      target: 'p2p-view-approved',
+      title: 'Approved',
+      purpose: 'Requisitions that were approved, including everything after approval (RFQ, PO, receiving, closed).',
+    },
+    {
+      target: 'p2p-view-rejected',
+      title: 'Rejected',
+      purpose: 'Requisitions that were turned down. Open one to see the reason.',
+    },
+    {
+      target: 'p2p-view-all',
+      title: 'All',
+      purpose: 'Every requisition your data access allows you to see. Use "Raised by me" in Filters to see only the ones you raised.',
     },
     {
       target: 'p2p-export-btn',
@@ -63,16 +78,29 @@ const config: TourConfig = {
       after: 'Takes you to a separate New Purchase Requisition page — its own guided tour covers every field there.',
     },
     {
-      target: 'p2p-list-filters',
-      title: 'Category / Buyer Filters',
-      purpose: 'Narrow the list to one Purchase Requisition category, or to the requisitions handled by one buyer (or those with no buyer assigned yet). "Clear filters" appears once a filter is set.',
+      target: 'p2p-stats',
+      title: 'Counters',
+      purpose: 'Requisitions shown, how many wait for approval, how many are in progress (approved through receiving) and how many are closed. They follow the search and filters.',
+    },
+    {
+      target: 'p2p-list-search',
+      title: 'Search',
+      purpose: 'Type a PR number, category, project, requester or buyer — the list narrows as you type.',
+    },
+    {
+      target: 'p2p-filter-btn',
+      title: 'Filters',
+      purpose: 'Opens the Filters popup (status, category, buyer, order project, Raised by me). Press Apply Filters to use your choices; the button shows how many filters are on, and Clear removes them.',
       required: false,
       options: [
+        { value: 'Status', meaning: 'Only PRs in one status, for example Pending Approval or PO Raised.' },
         { value: 'All categories', meaning: 'No category filter — every PR is shown.' },
         { value: 'A category (e.g. Raw Material)', meaning: 'Only PRs raised under that purchase category.' },
         { value: 'All buyers', meaning: 'No buyer filter.' },
         { value: 'A buyer name', meaning: 'Only PRs the purchase team has assigned to that buyer to handle.' },
         { value: 'No buyer assigned', meaning: 'PRs the purchase team has not picked up yet — useful to spot requests nobody is working on.' },
+        { value: 'Raised by me', meaning: 'Switch on to show only the requisitions you raised yourself.' },
+        { value: 'Order project', meaning: 'Only PRs raised for one customer order project or one of its vehicles / lots.' },
       ],
     },
     {
@@ -98,9 +126,9 @@ const config: TourConfig = {
       ],
     },
     {
-      target: 'p2p-list-view',
-      title: 'View',
-      purpose: 'Click View — or anywhere else on the row — to open that PR\'s full detail page: approval status, item list, linked RFQ/PO, and any attachments.',
+      target: 'p2p-list-table',
+      title: 'Open a PR',
+      purpose: 'Click a row to open that PR\'s full detail page: approval status, item list, linked RFQ/PO, and any attachments.',
     },
     {
       target: 'p2p-list-approve',

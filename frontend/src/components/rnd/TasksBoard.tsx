@@ -333,14 +333,16 @@ const DEPT_HEX: Record<string, string> = { rnd: '#16A34A', design: '#7C3AED', el
 
 /** One popup form for a new task, a new sub-task and editing a task (no files when editing) — same layout as PM's Create Task. */
 function TaskForm({
-  mode, people, labels, onSubmit, onCancel, initial, maxDue, parentTitle,
+  mode, people, labels, onSubmit, onCancel, initial, maxDue, parentTitle, milestoneChoices,
 }: {
   mode: 'create' | 'subtask' | 'edit'
   people: RndPerson[]
   labels: TaskLabels
   onSubmit: (p: TaskInput) => Promise<void>
   onCancel: () => void
-  initial?: Pick<RndTask, 'title' | 'assigned_to_id' | 'due_date' | 'remarks' | 'priority' | 'start_date' | 'work_status' | 'checklist' | 'department' | 'parent_task_id'>
+  initial?: Pick<RndTask, 'title' | 'assigned_to_id' | 'due_date' | 'remarks' | 'priority' | 'start_date' | 'work_status' | 'checklist' | 'department' | 'parent_task_id' | 'milestone_id'>
+  /** Edit of a main requirement task by the head: the milestones it can move to. */
+  milestoneChoices?: { id: number; title: string }[]
   maxDue?: string
   /** Sub-task: the main task it belongs to. */
   parentTitle?: string
@@ -353,6 +355,7 @@ function TaskForm({
   const [start, setStart] = useState(initial?.start_date || '')
   const [workStatus, setWorkStatus] = useState<RndTaskWorkStatus>(initial?.work_status || 'not_started')
   const [steps, setSteps] = useState<DraftStep[]>(() => (initial?.checklist || []).map((c) => ({ id: c.id, text: c.text, done: c.done })))
+  const [milestone, setMilestone] = useState(initial?.milestone_id ? String(initial.milestone_id) : '')
   const [files, setFiles] = useState<File[]>([])
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
@@ -372,6 +375,7 @@ function TaskForm({
       await onSubmit({
         title: title.trim(), assigned_to_id: who.id, department: who.department, due_date: due, remarks: remarks.trim() || undefined,
         priority, start_date: start || undefined, work_status: workStatus, checklist, files,
+        ...(milestoneChoices && milestone ? { milestone_id: Number(milestone) } : {}),
       })
     } catch (err) {
       setError(extractErrorMessages(err, `Could not save the task.`))
@@ -414,6 +418,16 @@ function TaskForm({
               <div style={{ flex: '1 1 150px' }}><label style={sheetLabel}>{labels.dueDate} <Req /></label><DateField value={due} onChange={setDue} /></div>
             </div>
             {maxDue && <p style={sheetHint}>Must be due by {formatDate(maxDue)} — the main task&apos;s date.</p>}
+            {milestoneChoices && (
+              <div style={{ marginTop: 12 }}>
+                <label style={sheetLabel}>Milestone</label>
+                <Select style={sheetInput} value={milestone} onChange={(e) => setMilestone(e.target.value)}>
+                  {!initial?.milestone_id && <option value="">No milestone</option>}
+                  {milestoneChoices.map((m) => <option key={m.id} value={String(m.id)}>{m.title}</option>)}
+                </Select>
+                <p style={sheetHint}>Moves the task, with its sub-tasks, into the milestone. The due date must fit the milestone&apos;s end date.</p>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
               <div style={{ flex: '1 1 130px' }}>
                 <label style={sheetLabel}>Priority</label>
@@ -529,7 +543,7 @@ const ALL_RIGHTS: Required<TaskRights> = { create: true, edit: true, approve: tr
 
 /** One task opened: header with its actions, then Overview · Sub-tasks · Files · Approvals · Activity tabs. */
 function TaskView({
-  task, all, userId, canManage, rights = ALL_RIGHTS, api, labels, people, team, startPanel, onChanged, onCreated, onOpen, onClose, prevId, nextId,
+  task, all, userId, canManage, rights = ALL_RIGHTS, api, labels, people, team, startPanel, milestoneChoices, onChanged, onCreated, onOpen, onClose, prevId, nextId,
 }: {
   task: RndTask
   all: RndTask[]
@@ -541,6 +555,7 @@ function TaskView({
   people: RndPerson[]
   team: RndPerson[]
   startPanel?: Panel
+  milestoneChoices?: { id: number; title: string }[]
   onChanged: (t: RndTask) => void
   onCreated: () => void
   onOpen: (id: number) => void
@@ -861,14 +876,18 @@ function TaskView({
           people={isSub ? team : people}
           initial={task}
           parentTitle={parent?.title}
+          milestoneChoices={!isSub ? milestoneChoices : undefined}
           onCancel={() => setPanel('')}
           onSubmit={async (p) => {
+            const moved = !isSub && !!milestoneChoices && !!p.milestone_id && p.milestone_id !== task.milestone_id
             const t = await api.edit!(task.id, {
+              ...(moved ? { milestone_id: p.milestone_id } : {}),
               title: p.title, remarks: p.remarks || null, due_date: p.due_date, assigned_to_id: p.assigned_to_id, department: p.department,
               priority: p.priority, start_date: p.start_date || null, work_status: p.work_status, checklist: p.checklist,
             })
             setPanel('')
             onChanged(t)
+            if (moved) onCreated()
           }}
         />
       )}
@@ -946,7 +965,7 @@ function TaskView({
 
 type Filter = 'all' | 'pending' | 'completed' | 'overdue' | 'mine' | 'given'
 
-export default function TasksBoard({ api, userId, canManage, canCreate = canManage, rights: rightsIn, departmentFilter, labels, reloadKey, onTasksChange }: {
+export default function TasksBoard({ api, userId, canManage, canCreate = canManage, rights: rightsIn, departmentFilter, milestoneChoices, labels, reloadKey, onTasksChange }: {
   api: TaskApi
   userId: number
   /** Head / lead: create top-level tasks and review every task. */
@@ -957,6 +976,8 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
   rights?: TaskRights
   /** Department chips: All · My department · one per department. */
   departmentFilter?: { options: { key: string; label: string }[]; mine: string[] }
+  /** Requirement head only: the milestones a main task can be moved to (shown in the Edit form). Omit everywhere else. */
+  milestoneChoices?: { id: number; title: string }[]
   labels: TaskLabels
   /** Change to reload (e.g. when the caller's record changes). */
   reloadKey?: string | number
@@ -1128,6 +1149,7 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
             })}
           </div>
           <TaskView key={openTask.id} task={openTask} all={list} userId={userId} canManage={canManage} rights={rights} api={api} labels={labels} people={people} team={team}
+            milestoneChoices={milestoneChoices}
             startPanel={open?.panel}
             onChanged={(nt) => { replace(nt); if (nt.status === 'cancelled') load() }} onCreated={load}
             onOpen={(id) => setOpen({ id })} onClose={() => setOpen(null)}
@@ -1146,12 +1168,11 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
                 <th style={th}>Due Date</th>
                 <th style={th}>Status</th>
                 <th style={{ ...th, width: 140 }}>Progress</th>
-                <th style={{ ...th, textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 && (
-                <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: MUTED, padding: 24 }}>
+                <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: MUTED, padding: 24 }}>
                   {query.trim() ? `No task matches “${query.trim()}”.` : 'No tasks match these filters.'}{' '}
                   <button type="button" onClick={() => { setQuery(''); setFilter('all'); setDept('all') }} style={{ ...sheetBtn('ghost', BLUE), padding: 0, display: 'inline' }}>Clear filters</button>
                 </td></tr>
@@ -1160,7 +1181,6 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
                 const ss = taskState(t)
                 const kids = list.filter((k) => k.parent_task_id === t.id)
                 const files = docCount(t)
-                const canEditRow = !!api.edit && rights.edit && t.status === 'open' && (canManage || t.created_by_id === userId)
                 const pr = t.priority || 'medium'
                 return (
                   <tr key={t.id} onClick={() => setOpen({ id: t.id })} style={{ cursor: 'pointer', background: depth ? '#fcfcfd' : undefined }}
@@ -1182,10 +1202,6 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
                     <td style={{ ...td, whiteSpace: 'nowrap', color: t.is_overdue ? '#be123c' : BODY, fontWeight: t.is_overdue ? 600 : 400 }}>{formatDate(t.due_date)}</td>
                     <td style={td}><Chip text={ss.text} c={ss.c} bg={ss.bg} /></td>
                     <td style={td}><span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Bar value={taskPercent(t)} color="#16a34a" /><span style={{ fontSize: 12, color: BODY, width: 34 }}>{taskPercent(t)}%</span></span></td>
-                    <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                      {canEditRow && <button type="button" title="Edit" aria-label={`Edit ${t.title}`} onClick={() => setOpen({ id: t.id, panel: 'edit' })} style={sheetBtn('ghost', MUTED)}><SheetIcon name="edit" size={15} /></button>}
-                      <button type="button" title="Open" aria-label={`Open ${t.title}`} onClick={() => setOpen({ id: t.id })} style={sheetBtn('ghost', BLUE)}><SheetIcon name="right" size={15} /></button>
-                    </td>
                   </tr>
                 )
               })}

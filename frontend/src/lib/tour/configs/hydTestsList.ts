@@ -57,7 +57,7 @@ const config: TourConfig = {
     {
       target: 'hyd-test-table',
       title: 'Tests list',
-      purpose: 'Each test with its subject (system · component, serial no.), date, test pressure, number of failed readings (red), status and result badges. Click a row or "View" to open it.',
+      purpose: 'Each test with its subject (system · component, serial no.), date, test pressure, number of failed readings (red), status and result badges. Click a row to open it.',
     },
   ],
 }

@@ -14,7 +14,7 @@ import { storeApi, vendorsApi } from '@/lib/api'
 import { InfoRecord, ItemOverview, ItemVendorRow, infoRecordsApi } from '@/lib/mmPurchasingApi'
 import { StoreItem } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, RowCount, Pill as SharedPill } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, RowCount, StatChip, Pill as SharedPill } from '@/components/shared/ui'
 import { formatDate } from '@/lib/format'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import P2PNav from '@/components/p2p/P2PNav'
@@ -30,8 +30,11 @@ const card: React.CSSProperties = {
 const h2: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }
 const label: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }
 const errBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
-const th: React.CSSProperties = { textAlign: 'left', padding: '9px 12px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 1 }
-const td: React.CSSProperties = { padding: '10px 12px', fontSize: 13, borderTop: `1px solid ${BORDER.normal}`, verticalAlign: 'top' }
+const th: React.CSSProperties = { textAlign: 'left', padding: '10px 8px', fontSize: 12, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 1 }
+const td: React.CSSProperties = { padding: '10px 8px', fontSize: 13, borderTop: `1px solid ${BORDER.normal}`, verticalAlign: 'middle', whiteSpace: 'nowrap' }
+// One-row text longer than 25 characters is cut with "…" (full text in the title).
+const clip = (v?: string | null, max = 25) => (!v ? '—' : v.length > max ? `${v.slice(0, max).trimEnd()}…` : v)
+const mutedInline: React.CSSProperties = { fontSize: 11.5, color: TEXT.muted, marginLeft: 6 }
 const sub: React.CSSProperties = { fontSize: 11.5, color: TEXT.muted, marginTop: 2 }
 const linkStyle: React.CSSProperties = { color: '#c2410c', fontWeight: 600, cursor: 'pointer', fontSize: 12.5 }
 const GREEN = '#15803d'
@@ -49,16 +52,6 @@ const EMPTY_CONTRACT: ContractForm = { vendor_id: '', unit_price: '', lead_time_
 /** Shared status pill, spaced from the text before it. */
 function Pill({ text, hex }: { text: string; hex: string }) {
   return <span style={{ display: 'inline-flex', marginLeft: 6, verticalAlign: 'middle' }}><SharedPill label={text} hex={hex} /></span>
-}
-
-function Stat({ title, value, note }: { title: string; value: string; note?: string }) {
-  return (
-    <div style={{ flex: '1 1 190px', padding: '12px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.6)', border: `1px solid ${BORDER.normal}` }}>
-      <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em', color: TEXT.muted }}>{title}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: TEXT.heading, marginTop: 4 }}>{value}</div>
-      {note && <div style={sub}>{note}</div>}
-    </div>
-  )
 }
 
 export default function ItemRatesPage() {
@@ -160,18 +153,30 @@ export default function ItemRatesPage() {
   return (
     <div>
       <P2PNav />
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 14 }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Item Rates</h1>
-        <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0', maxWidth: 720 }}>
-          Search an item to see who supplies it, at what rate, and what we last paid. Filled in automatically from approved POs and
-          vendor quotations.
-        </p>
+        {itemId && ov && s && (
+          <div data-tour="p2p-rates-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+            <StatChip label="Vendors" value={s.vendor_count} color="#3b82f6" />
+            <StatChip label="Rate contracts" value={ov.vendors.filter((v) => v.contract).length} color="#ea580c" />
+            <StatChip label="Approved vendors" value={sources.length} color="#16a34a" />
+            <StatChip label="PO lines" value={ov.history.length} color="#ca8a04" />
+          </div>
+        )}
       </div>
       {error && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{error}</div>}
 
-      <div style={card}>
-        <span style={label}>Item</span>
-        <div style={{ maxWidth: 640 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        {canEdit && itemId && ov && (
+          <button type="button" data-tour="p2p-rates-add-btn" onClick={() => openContract()}
+            style={{ ...primaryBtnStyle, fontSize: 13.5, fontWeight: 600, padding: '10px 14px', borderRadius: 10, background: '#ea580c', border: '1px solid #c2410c', color: '#fff', whiteSpace: 'nowrap' }}>
+            + Rate contract
+          </button>
+        )}
+        {canEdit && itemId && ov && (
+          <button type="button" data-tour="p2p-rates-sources-btn" onClick={() => setShowSources(true)} style={secondaryBtnStyle}>Approved vendors ({sources.length})</button>
+        )}
+        <div data-tour="p2p-rates-item" style={{ marginLeft: 'auto', width: 420, maxWidth: '100%' }}>
           <SearchableSelect autoFocus ariaLabel="Item" value={itemId} onChange={(v) => { setOv(null); setLoading(!!v); setItemId(v) }} placeholder="Search item code / name…" options={itemOptions} />
         </div>
       </div>
@@ -192,32 +197,21 @@ export default function ItemRatesPage() {
 
       {itemId && ov && s && (
         <>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
-            <Stat title="Last bought at" value={s.last_po ? money(s.last_po.unit_price) : '—'}
-              note={s.last_po ? `${s.last_po.vendor_name} · ${ddmmyyyy(s.last_po.po_date)} · ${s.last_po.po_number}` : 'Never bought on an approved PO'} />
-            <Stat title="Best rate today" value={s.best_current ? money(s.best_current.rate) : '—'}
-              note={s.best_current ? `${s.best_current.vendor_name} · from ${SOURCE_LABEL[s.best_current.source]}` : 'No rate yet'} />
-            <Stat title="PO rate range" value={s.lowest_po_price != null ? `${money(s.lowest_po_price)} – ${money(s.highest_po_price)}` : '—'}
-              note={s.avg_po_price != null ? `Average ${money(s.avg_po_price)}` : undefined} />
-            <Stat title="Vendors" value={String(s.vendor_count)} note={s.has_source_list ? 'Approved-vendor list is ON' : 'Any vendor can be ordered from'} />
+          <div data-tour="p2p-rates-summary" style={{ fontSize: 12.5, color: TEXT.muted, marginBottom: 14, display: 'flex', flexWrap: 'wrap', gap: '4px 18px' }}>
+            <span><b style={{ color: TEXT.body }}>Last bought at</b> {s.last_po ? `${money(s.last_po.unit_price)} · ${s.last_po.vendor_name} · ${ddmmyyyy(s.last_po.po_date)} · ${s.last_po.po_number}` : 'never on an approved PO'}</span>
+            <span><b style={{ color: TEXT.body }}>Best rate today</b> {s.best_current ? `${money(s.best_current.rate)} · ${s.best_current.vendor_name} · from ${SOURCE_LABEL[s.best_current.source]}` : 'no rate yet'}</span>
+            {s.lowest_po_price != null && <span><b style={{ color: TEXT.body }}>PO rate range</b> {money(s.lowest_po_price)} – {money(s.highest_po_price)}{s.avg_po_price != null ? ` (average ${money(s.avg_po_price)})` : ''}</span>}
+            <span>{s.has_source_list ? 'Approved-vendor list is ON' : 'Any vendor can be ordered from'}</span>
           </div>
 
           <div style={card}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-              <div>
-                <h2 style={h2}>Who supplies {ov.item_code} — {ov.item_name}</h2>
-                <div style={sub}>Cheapest current rate first. Green = lowest PO rate / lowest valid quote.</div>
-              </div>
-              {canEdit && (
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button type="button" onClick={() => setShowSources(true)} style={secondaryBtnStyle}>Approved vendors ({sources.length})</button>
-                  <button type="button" onClick={() => openContract()} style={primaryBtnStyle}>+ Rate contract</button>
-                </div>
-              )}
+            <div style={{ marginBottom: 12 }}>
+              <h2 style={h2}>Who supplies {ov.item_code} — {ov.item_name}</h2>
+              <div style={sub}>Cheapest current rate first. Green = lowest PO rate / lowest valid quote.</div>
             </div>
             <div style={{ overflow: 'auto', border: `1px solid ${BORDER.normal}`, borderRadius: 10 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-                <thead><tr>{['Vendor', 'Rate today', 'Last PO', 'Last quotation', 'Rate contract', 'Lead time', ''].map((h, i) => <th key={h} style={th}>{h}{i === 0 && <RowCount count={ov.vendors.length} />}</th>)}</tr></thead>
+              <table data-tour="p2p-rates-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr>{['Vendor', 'Rate today', 'Last PO', 'Last quotation', 'Rate contract', 'Lead time', ''].map((h, i) => <th key={h || 'actions'} data-fit-min={60} data-fit-cut={i === 0 ? '' : undefined} style={th}>{h}{i === 0 && <RowCount count={ov.vendors.length} />}</th>)}</tr></thead>
                 <tbody>
                   {ov.vendors.length === 0 && (
                     <tr><td colSpan={7} style={{ ...td, color: TEXT.muted, padding: 20 }}>
@@ -230,35 +224,33 @@ export default function ItemRatesPage() {
                     return (
                       <tr key={`${v.vendor_id}-${v.vendor_name}`} style={{ opacity: blocked ? 0.55 : 1 }}>
                         <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>
-                          {v.vendor_name || '—'}
+                          <span title={`${v.vendor_name || ''}${v.po_count > 0 ? ` — ${v.po_count} approved PO${v.po_count > 1 ? 's' : ''}` : ''}`}>{clip(v.vendor_name)}</span>
                           {v.source?.is_fixed && <Pill text="Preferred" hex={GREEN} />}
                           {v.source && !v.source.is_fixed && !blocked && <Pill text="Approved" hex="#0891b2" />}
                           {blocked && <Pill text="Blocked" hex="#b91c1c" />}
                           {v.vendor_status && v.vendor_status !== 'active' && <Pill text={VENDOR_STATUS_LABEL[v.vendor_status] || v.vendor_status.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())} hex="#b45309" />}
-                          {v.po_count > 0 && <div style={sub}>{v.po_count} approved PO{v.po_count > 1 ? 's' : ''}</div>}
                         </td>
                         <td style={td}>
                           <b>{money(v.current_rate)}</b>
-                          {v.current_rate_source && <div style={sub}>from {SOURCE_LABEL[v.current_rate_source]}</div>}
+                          {v.current_rate_source && <span style={mutedInline}>from {SOURCE_LABEL[v.current_rate_source]}</span>}
                         </td>
                         <td style={td}>
                           {v.last_po ? (
                             <>
                               <span style={{ fontWeight: 600, color: v.last_po.unit_price === lowest.po ? GREEN : TEXT.body }}>{money(v.last_po.unit_price)}</span>
-                              <div style={sub}>{ddmmyyyy(v.last_po.po_date)} · {v.last_po.po_number} · {qty(v.last_po.quantity)} {v.last_po.unit || ''}</div>
+                              <span style={mutedInline}>{ddmmyyyy(v.last_po.po_date)} · {v.last_po.po_number} · {qty(v.last_po.quantity)} {v.last_po.unit || ''}</span>
                             </>
                           ) : <span style={{ color: TEXT.muted }}>Never bought</span>}
                         </td>
                         <td style={td}>
                           {v.last_quote ? (
                             <>
-                              <span style={{ fontWeight: 600, color: v.last_quote.valid_today && v.last_quote.net_price === lowest.quote ? GREEN : TEXT.body }}>{money(v.last_quote.net_price)}</span>
-                              {v.last_quote.discount_pct ? <span style={{ ...sub, display: 'inline', marginLeft: 6 }}>({money(v.last_quote.unit_price)} − {v.last_quote.discount_pct}%)</span> : null}
+                              <span title={v.last_quote.discount_pct ? `${money(v.last_quote.unit_price)} − ${v.last_quote.discount_pct}%` : undefined} style={{ fontWeight: 600, color: v.last_quote.valid_today && v.last_quote.net_price === lowest.quote ? GREEN : TEXT.body }}>{money(v.last_quote.net_price)}</span>
                               {v.last_quote.is_awarded && <Pill text="Awarded" hex={GREEN} />}
-                              <div style={sub}>
+                              <span style={mutedInline}>
                                 {v.last_quote.rfq_number}{v.last_quote.quote_date ? ` · ${ddmmyyyy(v.last_quote.quote_date)}` : ''}
                                 {!v.last_quote.valid_today && <span style={{ color: '#b45309' }}> · expired {ddmmyyyy(v.last_quote.valid_until)}</span>}
-                              </div>
+                              </span>
                             </>
                           ) : <span style={{ color: TEXT.muted }}>No quote</span>}
                         </td>
@@ -267,10 +259,10 @@ export default function ItemRatesPage() {
                             <>
                               <span style={{ fontWeight: 600 }}>{money(v.contract.unit_price)}</span>
                               {!v.contract.valid_today && <Pill text="Not valid today" hex="#b45309" />}
-                              <div style={sub}>
+                              <span style={mutedInline}>
                                 {v.contract.valid_from || v.contract.valid_to ? `${ddmmyyyy(v.contract.valid_from) || '…'} to ${ddmmyyyy(v.contract.valid_to) || '…'}` : 'No end date'}
                                 {v.contract.min_order_qty ? ` · Min. order ${qty(v.contract.min_order_qty)}` : ''}
-                              </div>
+                              </span>
                             </>
                           ) : <span style={{ color: TEXT.muted }}>—</span>}
                         </td>
@@ -299,14 +291,14 @@ export default function ItemRatesPage() {
             {ov.history.length === 0 && <p style={{ ...sub, fontSize: 12.5, margin: '8px 0 0' }}>No approved PO for this item yet — each approved PO line for it will be listed here.</p>}
             {showHistory && ov.history.length > 0 && (
               <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)', border: `1px solid ${BORDER.normal}`, borderRadius: 10, marginTop: 12 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
-                  <thead><tr>{['PO Date', 'PO No.', 'Vendor', 'Qty', 'Rate', 'GST %', 'PR No.'].map((h, i) => <th key={h} style={i >= 3 && i <= 5 ? numTh : th}>{h}{i === 0 && <RowCount count={ov.history.length} />}</th>)}</tr></thead>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr>{['PO Date', 'PO No.', 'Vendor', 'Qty', 'Rate', 'GST %', 'PR No.'].map((h, i) => <th key={h} data-fit-min={60} data-fit-cut={h === 'Vendor' ? '' : undefined} style={i >= 3 && i <= 5 ? numTh : th}>{h}{i === 0 && <RowCount count={ov.history.length} />}</th>)}</tr></thead>
                   <tbody>
                     {ov.history.map((r, i) => (
                       <tr key={`${r.po_id}-${i}`}>
                         <td style={{ ...td, whiteSpace: 'nowrap' }}>{ddmmyyyy(r.po_date) || '—'}</td>
                         <td style={td}>{r.po_number}{r.amendment_no ? ` (A${r.amendment_no})` : ''}</td>
-                        <td style={td}>{r.vendor_name || '—'}</td>
+                        <td style={td}><span title={r.vendor_name ?? undefined}>{clip(r.vendor_name)}</span></td>
                         <td style={numTd}>{qty(r.quantity)} {r.unit || ''}</td>
                         <td style={{ ...numTd, fontWeight: 600 }}>{money(r.unit_price)}</td>
                         <td style={numTd}>{r.tax_rate ?? '—'}</td>
@@ -332,13 +324,13 @@ export default function ItemRatesPage() {
           </div>
           {showUnlinked && (
             <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)', border: `1px solid ${BORDER.normal}`, borderRadius: 10, marginTop: 12 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-                <thead><tr>{['Vendor', 'Catalog Item', 'Part Code', 'Price', 'Item Master Item', ''].map((h, i) => <th key={h} style={i === 3 ? numTh : th}>{h}{i === 0 && <RowCount count={unlinked.length} />}</th>)}</tr></thead>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr>{['Vendor', 'Catalog Item', 'Part Code', 'Price', 'Item Master Item', ''].map((h, i) => <th key={h || 'actions'} data-fit-min={60} data-fit-cut={i <= 1 ? '' : undefined} style={i === 3 ? numTh : th}>{h}{i === 0 && <RowCount count={unlinked.length} />}</th>)}</tr></thead>
                 <tbody>
                   {unlinked.map((r) => (
                     <tr key={r.id}>
-                      <td style={td}>{r.vendor_name}</td>
-                      <td style={td}>{r.item_name}</td>
+                      <td style={td}><span title={r.vendor_name ?? undefined}>{clip(r.vendor_name)}</span></td>
+                      <td style={td}><span title={r.item_name}>{clip(r.item_name)}</span></td>
                       <td style={td}>{r.part_code || '—'}</td>
                       <td style={numTd}>{money(r.unit_price)}</td>
                       <td style={{ ...td, minWidth: 260 }}>

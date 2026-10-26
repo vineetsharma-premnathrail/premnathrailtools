@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.sales.models.order import (
     SALES_ORDER_TYPES, SALES_PRICE_BASES, SALES_LD_PERIODS, SALES_LD_BASES, SALES_WARRANTY_RULES, SALES_LINE_TYPES,
+    SALES_ORDER_TYPE_LABELS, SALES_CURRENCIES, SALES_DEFAULT_CURRENCY, SALES_DEFAULT_ORDER_TYPE,
     SALES_MILESTONE_TYPES, SALES_ORDER_STATUSES, SALES_SCHEDULE_STATUSES,
 )
 from app.modules.sales.models.extension import SALES_EXTENSION_REASONS
@@ -23,7 +24,9 @@ _AGENCY_FALLBACK = [("rites", "RITES"), ("rdso", "RDSO"), ("customer", "Customer
 @router.get("/meta")
 async def meta():
     return {
-        "order_types": SALES_ORDER_TYPES, "price_bases": SALES_PRICE_BASES, "ld_periods": SALES_LD_PERIODS,
+        "order_types": SALES_ORDER_TYPES, "order_type_labels": SALES_ORDER_TYPE_LABELS,
+        "default_order_type": SALES_DEFAULT_ORDER_TYPE, "currencies": SALES_CURRENCIES,
+        "default_currency": SALES_DEFAULT_CURRENCY, "price_bases": SALES_PRICE_BASES, "ld_periods": SALES_LD_PERIODS,
         "ld_bases": SALES_LD_BASES, "warranty_rules": SALES_WARRANTY_RULES, "line_types": SALES_LINE_TYPES,
         "milestone_types": SALES_MILESTONE_TYPES, "order_statuses": SALES_ORDER_STATUSES,
         "schedule_statuses": SALES_SCHEDULE_STATUSES, "extension_reasons": SALES_EXTENSION_REASONS,

@@ -30,7 +30,7 @@ const config: TourConfig = {
     {
       target: 'production-rework-table',
       title: 'Rework list',
-      purpose: 'Each rework with its build, what needs fixing, source (test / inspection / manual), who it is assigned to, due date and status. Click a row (or "Open build") to open the vehicle — its Rework tab is where rework is started, marked done and verified.',
+      purpose: 'Each rework with its build, what needs fixing, source (test / inspection / manual), who it is assigned to, due date and status. Click a row to open the vehicle — its Rework tab is where rework is started, marked done and verified.',
     },
   ],
 }

@@ -213,10 +213,10 @@ export default function HrSafetyPage() {
       {view === 'register' && isEhs ? (
         <div style={tableWrap}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
-            <thead><tr>{['No.', 'Date & time', 'Plant / place', 'Type', 'Persons injured', 'Injury', 'Days lost', 'Form 18', 'Status', ''].map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={registerRows.length} />}</th>)}</tr></thead>
+            <thead><tr>{['No.', 'Date & time', 'Plant / place', 'Type', 'Persons injured', 'Injury', 'Days lost', 'Form 18', 'Status'].map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={registerRows.length} />}</th>)}</tr></thead>
             <tbody>
-              {loading ? <tr><td colSpan={10} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
-                : registerRows.length === 0 ? <tr><td colSpan={10} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>No incidents in this period.</td></tr>
+              {loading ? <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
+                : registerRows.length === 0 ? <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>No incidents in this period.</td></tr>
                   : registerRows.map((r) => (
                     <tr key={String(r.id)} onClick={() => router.push(recordPath('/dashboard/hr/safety', r))} style={{ cursor: 'pointer' }}>
                       <td style={{ ...td, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{String(r.incident_no)}</td>
@@ -228,7 +228,6 @@ export default function HrSafetyPage() {
                       <td style={td}>{String(r.lost_days)}</td>
                       <td style={td}>{r.reportable ? (r.form18_submitted_on ? `Sent ${fmtD(String(r.form18_submitted_on))}` : <span style={{ color: '#b91c1c', fontWeight: 700 }}>Due</span>) : 'Not reportable'}</td>
                       <td style={td}><span style={pill(STATUS_HEX[String(r.status)] || '#78716C')}>{STATUS_LABELS[String(r.status)] || String(r.status)}</span></td>
-                      <td style={td} onClick={(e) => e.stopPropagation()}><span onClick={() => router.push(recordPath('/dashboard/hr/safety', r))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span></td>
                     </tr>
                   ))}
             </tbody>
@@ -237,10 +236,10 @@ export default function HrSafetyPage() {
       ) : (
         <div style={tableWrap}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-            <thead><tr>{['No.', 'Incident', 'Type', 'Severity', 'Happened', 'Injured / lost days', 'CAPA', 'Status', ''].map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
+            <thead><tr>{['No.', 'Incident', 'Type', 'Severity', 'Happened', 'Injured / lost days', 'CAPA', 'Status'].map((h, hi) => <th key={h} style={th}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
             <tbody>
-              {loading ? <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
-                : rows.length === 0 ? <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>{isEhs ? 'No incidents match these filters.' : 'You have not reported or been involved in any incident.'}</td></tr>
+              {loading ? <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
+                : rows.length === 0 ? <tr><td colSpan={8}style={{ ...td, textAlign: 'center', color: TEXT.muted }}>{isEhs ? 'No incidents match these filters.' : 'You have not reported or been involved in any incident.'}</td></tr>
                   : rows.map((r) => (
                     <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/hr/safety', r))} style={{ cursor: 'pointer' }}>
                       <td style={{ ...td, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{r.incident_no}</td>
@@ -254,7 +253,6 @@ export default function HrSafetyPage() {
                       <td style={td}>{r.injured_count} / {r.lost_days}{r.lti_count ? <span style={{ color: '#b91c1c', fontWeight: 700 }}> · LTI</span> : null}</td>
                       <td style={td}>{r.open_actions ? `${r.open_actions} open` : '—'}{r.overdue_actions ? <span style={{ color: '#b91c1c', fontWeight: 700 }}> · {r.overdue_actions} overdue</span> : null}</td>
                       <td style={td}><span style={pill(STATUS_HEX[r.status] || '#78716C')}>{STATUS_LABELS[r.status] || r.status}</span></td>
-                      <td style={td} onClick={(e) => e.stopPropagation()}><span onClick={() => router.push(recordPath('/dashboard/hr/safety', r))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span></td>
                     </tr>
                   ))}
             </tbody>

@@ -12,17 +12,25 @@ const KIND: Record<RndProjectHistoryEntry['kind'], { text: string; hex: string }
   milestone: { text: 'Milestone', hex: '#2563EB' },
   task: { text: 'Task', hex: '#7C3AED' },
   project: { text: 'Project', hex: '#78716c' },
+  requirement: { text: 'Requirement', hex: '#78716c' },
 }
 
-/** R&D project › History — project edits, milestone changes and every task event, newest first (same as PM's History tab). */
-export default function RndProjectHistory({ projectId }: { projectId: number }) {
+/** R&D project › History — project edits, milestone changes and every task event, newest first (same as PM's History tab).
+ *  A requirement passes its own `load` and wording; the project passes only `projectId`. */
+export default function RndProjectHistory({ projectId, load, tour = 'rnd-pd-history', errorText = 'Could not load the project history. Refresh the page; if it keeps failing, check you can still open this project.' }: {
+  projectId: number | string
+  load?: () => Promise<RndProjectHistoryEntry[]>
+  tour?: string
+  errorText?: string
+}) {
   const [entries, setEntries] = useState<RndProjectHistoryEntry[] | null>(null)
   const [error, setError] = useState<string | string[]>('')
 
   useEffect(() => {
-    rndApi.projectHistory(projectId)
+    (load ? load() : rndApi.projectHistory(Number(projectId)))
       .then((d) => setEntries(Array.isArray(d) ? d : []))
-      .catch((err) => { setEntries([]); setError(extractErrorMessages(err, 'Could not load the project history. Refresh the page; if it keeps failing, check you can still open this project.')) })
+      .catch((err) => { setEntries([]); setError(extractErrorMessages(err, errorText)) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
   if (error) {
@@ -36,7 +44,7 @@ export default function RndProjectHistory({ projectId }: { projectId: number }) 
   if (entries.length === 0) return <p style={{ fontSize: 13, color: TEXT.muted }}>No history yet.</p>
 
   return (
-    <div data-tour="rnd-pd-history" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div data-tour={tour} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {entries.map((e) => (
         <div key={e.id} style={{
           padding: '12px 16px', borderRadius: 12, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,

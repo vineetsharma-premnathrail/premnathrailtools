@@ -294,7 +294,7 @@ def test_contribution_margin_per_order_with_quoted_vs_actual(pc):
     db.add(cust)
     db.flush()
     pc["p"].standard_cost = 5000
-    so = SalesOrder(so_number="SO-9", customer_id=cust.id, order_type="rrv_supply", status="confirmed", taxable_total=10000)
+    so = SalesOrder(so_number="SO-9", customer_id=cust.id, order_type="road_rail_vehicle", status="confirmed", taxable_total=10000)
     db.add(so)
     db.flush()
     sol = SalesOrderLine(so_id=so.id, line_number=1, description="Bogie", product_item_id=pc["p"].id, quantity=1,

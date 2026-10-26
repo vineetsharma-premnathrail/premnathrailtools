@@ -8,7 +8,8 @@ it must be charged to, so every rupee lands on a real cost object:
                    lines name their vehicle / lot
   machine_project  service of a delivered machine (ERP project); the charge
                    is optional (work order, internal order, sales order, order project)
-  development      an internal order (the development job and its budget)
+  development      an R&D project (R&D › Prototype / Research); its Finance
+                   internal order is opened and linked automatically
   department       nothing on the PR — Purchase picks the cost centre on the
                    PO (the requester's department's by default, see below)
   capital          an internal order (the asset job and its budget)
@@ -35,9 +36,10 @@ INHOUSE_ONLY = ("development", "department", "capital", "stock")
 # What each purpose may be charged to; the first is the required one where
 # the purpose has a single answer. None in the tuple = may be left blank.
 _ALLOWED: dict[str, tuple] = {
-    "customer_order": ("order_project", "sales_order"),
+    # Project and Service both name a machine project in the header; the charge is optional (owner 2026-10-26).
+    "customer_order": (None, "work_order", "internal_order", "sales_order", "order_project"),
     "machine_project": (None, "work_order", "internal_order", "sales_order", "order_project"),
-    "development": ("internal_order",),
+    "development": ("rnd_project",),
     # Older requisitions carry a cost centre; new ones leave it to the PO.
     "department": (None, "cost_center"),
     "capital": ("internal_order",),
@@ -90,19 +92,19 @@ RULES_KEY_PREFIX = "purpose_rules."
 # Accepted by the server for old requisitions / derived charges but never
 # offered on the form: a customer order may carry a sales order (its Order
 # Project is derived), a department cost centre is filled by Purchase on the PO.
-_LEGACY_EXTRA_KINDS: dict[str, tuple[str, ...]] = {"customer_order": ("sales_order",), "department": ("cost_center",)}
+_LEGACY_EXTRA_KINDS: dict[str, tuple[str, ...]] = {"department": ("cost_center",)}
 
 # Charged To kinds an admin may pick for each purpose.
 VALID_CHARGED_TO: dict[str, tuple[str, ...]] = {
-    "customer_order": ("order_project", "sales_order"),
+    "customer_order": ("work_order", "internal_order", "sales_order", "order_project"),
     "machine_project": ("work_order", "internal_order", "sales_order", "order_project"),
-    "development": ("internal_order", "work_order"),
+    "development": ("rnd_project", "internal_order", "work_order"),
     "department": ("internal_order", "cost_center"),
     "capital": ("internal_order", "work_order"),
     "stock": (),
 }
-CHARGED_TO_LABELS = {"order_project": "Order project", "sales_order": "Sales order", "work_order": "Production work order",
-                     "internal_order": "Internal order", "cost_center": "Cost centre"}
+CHARGED_TO_LABELS = {"order_project": "Project", "sales_order": "Sales order", "work_order": "Production work order",
+                     "internal_order": "Internal order", "cost_center": "Cost centre", "rnd_project": "R&D project"}
 
 
 # How a requisition line says what project it is for (2026-10-24 - one project
@@ -323,8 +325,8 @@ def apply_line_project_mode(db, purpose: str | None, items) -> None:
 
 
 _NEED = {
-    "customer_order": "the order project of the machine being built",
-    "development": "the internal order of the development job — ask Finance to open one in Finance › Masters › Internal orders if it isn't in the list",
+    "customer_order": "the project of the machine being built",
+    "development": "the R&D project this development belongs to (R&D › Prototype / Research). Finance is linked automatically",
     "capital": "the internal order of the asset purchase — ask Finance to open one in Finance › Masters › Internal orders if it isn't in the list",
 }
 
@@ -343,13 +345,13 @@ def header_problems(purpose: str | None, account_assignment: str | None, project
     """What is missing / wrong on a submitted requisition's header, worded as
     the fix. Empty when it is fine."""
     if not purpose:
-        return ["Choose the purpose of this requisition — customer order, machine / service project, new development, "
+        return ["Choose the purpose of this requisition — project, service, new development, "
                 "department running cost, asset / capital purchase or store stock refill."]
     if purpose not in P2P_PURPOSES:
         return [f"Purpose must be one of: {', '.join(P2P_PURPOSES.values())}."]
     label = P2P_PURPOSES[purpose].lower()
-    names = {"order_project": "order project", "sales_order": "sales order", "work_order": "production work order",
-             "internal_order": "internal order", "cost_center": "cost centre"}
+    names = {"order_project": "project", "sales_order": "sales order", "work_order": "production work order",
+             "internal_order": "internal order", "cost_center": "cost centre", "rnd_project": "R&D project"}
     allowed = _rules(db, purpose)["allowed_charges"]
     if account_assignment not in allowed:
         if not any(allowed):
@@ -363,7 +365,7 @@ def header_problems(purpose: str | None, account_assignment: str | None, project
         ok = ", ".join(names[a] for a in allowed if a)
         return [f"A {label} requisition can't be charged to a {names.get(account_assignment, account_assignment)} — "
                 f"charge it to: {ok}."]
-    if purpose == "machine_project" and not (project_label or "").strip():
+    if purpose in ("machine_project", "customer_order") and not (project_label or "").strip():
         return ["Pick the machine project this requisition is for."]
     return []
 

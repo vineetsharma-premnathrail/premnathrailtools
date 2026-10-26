@@ -143,7 +143,7 @@ function RndPrototypesListPageInner() {
         <table data-tour="rnd-proto-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['Prototype No.', 'Name', 'Version', 'Project', 'Status', 'BOM Cost', 'Experiments', ''].map((h, i) => (
+              {['Prototype No.', 'Name', 'Version', 'Project', 'Status', 'BOM Cost', 'Experiments'].map((h, i) => (
                 <th key={h || `col-${i}`} style={{ textAlign: h === 'BOM Cost' || h === 'Experiments' ? 'right' : 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{i === 0 && <RowCount count={prototypes.length} />}
                 </th>
@@ -152,9 +152,9 @@ function RndPrototypesListPageInner() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : prototypes.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No prototypes found.</td></tr>
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No prototypes found.</td></tr>
             ) : (
               prototypes.map((p) => (
                 <tr key={p.id} onClick={() => router.push(recordPath('/dashboard/rnd/prototypes', p))} style={{ cursor: 'pointer' }}>
@@ -169,9 +169,6 @@ function RndPrototypesListPageInner() {
                   </td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, textAlign: 'right', whiteSpace: 'nowrap' }}>{formatInr(p.bom_cost)}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, textAlign: 'right' }}>{p.experiment_count ?? 0}</td>
-                  <td onClick={(e) => e.stopPropagation()} style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span onClick={() => router.push(recordPath('/dashboard/rnd/prototypes', p))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                  </td>
                 </tr>
               ))
             )}

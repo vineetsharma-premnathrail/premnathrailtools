@@ -112,6 +112,8 @@ class P2PRequestCreate(BaseModel):
     cost_center_id: int | None = None
     work_order_id: int | None = None
     internal_order_id: int | None = None
+    # New development: the R&D project (internal_order_id is then derived by the server).
+    rnd_project_id: int | None = None
     order_project_id: int | None = None
     category_code: str
     required_date: date | None = None
@@ -224,6 +226,8 @@ class P2PRequestResponse(BaseModel):
     cost_center_id: int | None = None
     work_order_id: int | None = None
     internal_order_id: int | None = None
+    rnd_project_id: int | None = None
+    rnd_project_label: str | None = None
     order_project_id: int | None = None
     order_project_number: str | None = None
     account_assignment_label: str | None = None

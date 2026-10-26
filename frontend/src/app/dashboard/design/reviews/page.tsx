@@ -240,7 +240,7 @@ export default function DesignReviewsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
           <thead>
             <tr>
-              {['Submission', 'Customer', 'Project', 'Drawings', 'Sent', 'Due', 'Waiting', 'Response', 'Turnaround', 'Open comments', 'Status', ''].map((h, hi) => (
+              {['Submission', 'Customer', 'Project', 'Drawings', 'Sent', 'Due', 'Waiting', 'Response', 'Turnaround', 'Open comments', 'Status'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{hi === 0 && <RowCount count={rows.length} />}
                 </th>
@@ -249,9 +249,9 @@ export default function DesignReviewsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={12} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={12} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No customer submissions here — use + New submission to send approved drawings to a customer.</td></tr>
+              <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No customer submissions here — use + New submission to send approved drawings to a customer.</td></tr>
             ) : (
               rows.map((s) => (
                 <tr key={s.id} onClick={() => router.push(recordPath('/dashboard/design/reviews/submissions', s))} style={{ cursor: 'pointer' }}>
@@ -268,9 +268,6 @@ export default function DesignReviewsPage() {
                   <td style={cellStyle}>{s.turnaround_days != null ? `${s.turnaround_days} d` : '—'}</td>
                   <td style={{ ...cellStyle, color: s.open_comments > 0 ? '#b45309' : TEXT.body, fontWeight: s.open_comments > 0 ? 700 : 400 }}>{s.open_comments || '—'}</td>
                   <td style={cellStyle}>{pill(SUBMISSION_STATUS_LABELS[s.status] || s.status, STATUS_HEX[s.status] || '#78716c')}</td>
-                  <td onClick={(ev) => ev.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/design/reviews/submissions', s))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                  </td>
                 </tr>
               ))
             )}

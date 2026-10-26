@@ -133,7 +133,7 @@ function RndProjectList() {
         <table data-tour="rnd-proj-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
           <thead>
             <tr>
-              {['ID', 'Title', 'Origin', 'Priority', 'Status', 'Lead', 'Target End', ''].map((h, hi) => (
+              {['ID', 'Title', 'Origin', 'Priority', 'Status', 'Lead', 'Target End'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{hi === 0 && <RowCount count={projects.length} />}
                 </th>
@@ -142,9 +142,9 @@ function RndProjectList() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : projects.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No R&amp;D projects found.</td></tr>
+              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No R&amp;D projects found.</td></tr>
             ) : (
               projects.map((p) => {
                 return (
@@ -168,9 +168,6 @@ function RndProjectList() {
                     </td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{p.lead_name || '—'}</td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{p.target_end_date ? formatDate(p.target_end_date) : 'Not decided'}</td>
-                    <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                      <span onClick={() => router.push(recordPath('/dashboard/rnd/projects', p))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                    </td>
                   </tr>
                 )
               })

@@ -9,7 +9,7 @@ import { electricalApi } from '@/lib/api'
 import { recordPath } from '@/lib/recordRef'
 import { ElectricalJob } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { primaryBtnStyle, smallSecondaryBtnStyle, segmentBtnStyle, thStyle, tdStyle, Pill, RowCount } from '@/components/shared/ui'
+import { primaryBtnStyle, segmentBtnStyle, thStyle, tdStyle, Pill, RowCount } from '@/components/shared/ui'
 import { inputStyle, JOB_STATUS_LABELS as STATUS_LABELS, JOB_STATUS_HEX as STATUS_HEX, PRIORITY_LABELS, PRIORITY_HEX } from '@/components/electrical/shared'
 import ElectricalNav from '@/components/electrical/ElectricalNav'
 import { extractErrorMessages } from '@/lib/validation'
@@ -18,7 +18,7 @@ import { formatDate } from '@/lib/format'
 const PHASE_LABELS: Record<string, string> = { design: 'Design', procurement: 'Procurement', build: 'Assembly', test_qc: 'Testing & QC', handover: 'Handover' }
 
 const cellStyle: React.CSSProperties = tdStyle
-const COLS = ['Job No.', 'Title / RRV', 'Customer', 'Lead Engineer', 'Current Stage', 'Progress', 'Target Handover', 'Priority', 'Status', '']
+const COLS = ['Job No.', 'Title / RRV', 'Customer', 'Lead Engineer', 'Current Stage', 'Progress', 'Target Handover', 'Priority', 'Status']
 
 export default function ElectricalJobsPage() {
   const { isAuthorized, isLoading } = useRequireApp('electrical')
@@ -111,9 +111,9 @@ export default function ElectricalJobsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : jobs.length === 0 ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 {search.trim() || phaseFilter || mine || statusFilter !== 'open'
                   ? 'No electrical jobs match these filters — clear the search or pick another status.'
                   : `No open electrical jobs.${can('electrical', 'jobs', 'create') ? ' Use "+ New Job" for each RRV whose electrical system you’re building.' : ''}`}
@@ -149,9 +149,6 @@ export default function ElectricalJobsPage() {
                   </td>
                   <td style={cellStyle}><Pill label={PRIORITY_LABELS[j.priority] || j.priority} hex={PRIORITY_HEX[j.priority]} /></td>
                   <td style={cellStyle}><Pill label={STATUS_LABELS[j.status] || j.status} hex={STATUS_HEX[j.status]} /></td>
-                  <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <button type="button" onClick={() => router.push(recordPath('/dashboard/electrical/jobs', j))} style={smallSecondaryBtnStyle}>View</button>
-                  </td>
                 </tr>
               ))
             )}

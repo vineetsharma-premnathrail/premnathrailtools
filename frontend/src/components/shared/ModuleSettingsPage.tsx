@@ -42,6 +42,10 @@ const chipStyle = (active: boolean): React.CSSProperties => ({
 
 const USER_TYPES = ['user', 'users']
 
+function isEmptyValue(v: unknown): boolean {
+  return v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0)
+}
+
 function fmtDate(iso: string | null): string {
   if (!iso) return ''
   const d = new Date(iso)
@@ -206,6 +210,9 @@ export default function ModuleSettingsPage({
       }
       return { value: nums }
     }
+    if (spec.type === 'user' && spec.required && (raw === null || raw === undefined || raw === '')) {
+      return { error: `${spec.label} is required — pick a person.` }
+    }
     if (spec.type === 'json') {
       try { return { value: JSON.parse(String(raw ?? 'null')) } } catch { return { error: `${spec.label} is not valid JSON — check brackets and quotes.` } }
     }
@@ -287,7 +294,8 @@ export default function ModuleSettingsPage({
   const renderInput = (spec: SettingSpecDto) => {
     const v = draft[spec.key]
     const disabled = !canEdit || spec.locked
-    const errBorder = fieldErrors[spec.key] ? { borderColor: 'rgba(220,38,38,0.6)' } : {}
+    const emptyRequired = !!spec.required && (v === null || v === undefined || v === '')
+    const errBorder = fieldErrors[spec.key] || emptyRequired ? { borderColor: 'rgba(220,38,38,0.6)' } : {}
 
     if (disabled) {
       return <div style={{ fontSize: 13.5, color: TEXT.body, padding: '6px 0', whiteSpace: 'pre-wrap' }}>{displayValue(spec, payload?.values[spec.key], users)}</div>
@@ -345,7 +353,7 @@ export default function ModuleSettingsPage({
           return (
             <div>
               <input type="number" value={v === null || v === undefined ? '' : String(v)}
-                onChange={(e) => setField(spec.key, e.target.value ? Number(e.target.value) : null)} style={{ ...inputStyle, maxWidth: 160 }} />
+                onChange={(e) => setField(spec.key, e.target.value ? Number(e.target.value) : null)} style={{ ...inputStyle, maxWidth: 160, ...errBorder }} />
               <p style={helpStyle}>User list unavailable — enter the user ID.</p>
             </div>
           )
@@ -353,7 +361,8 @@ export default function ModuleSettingsPage({
         return (
           <div style={{ maxWidth: 340 }}>
             <SearchableSelect value={v === null || v === undefined ? '' : String(v)} onChange={(x) => setField(spec.key, x ? Number(x) : null)}
-              options={userOptions} placeholder="Select a person..." />
+              options={userOptions} placeholder={emptyRequired ? 'Required — pick a person' : 'Select a person...'}
+              required={spec.required} triggerStyle={errBorder} />
           </div>
         )
       case 'users': {
@@ -462,15 +471,18 @@ export default function ModuleSettingsPage({
                 <div key={spec.key} style={{ paddingBottom: 14, borderBottom: `1px solid ${BORDER.light}` }}
                   data-tour={tourPrefix ? `${tourPrefix}-field-${spec.key}` : undefined}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-                    <span style={labelStyle}>{spec.label}</span>
+                    <span style={labelStyle}>{spec.label}{spec.required && <span style={{ color: '#dc2626' }} title="Required"> *</span>}</span>
                     {isDefault && <span style={badgeStyle}>Default</span>}
                     {spec.locked && <span style={badgeStyle}>Locked</span>}
                     {dirty[spec.key] && <span style={{ ...badgeStyle, background: `${BRAND.primary}1a`, color: BRAND.primaryActive }}>Unsaved</span>}
-                    {canEdit && !spec.locked && !isDefault && (
+                    {canEdit && !spec.locked && !isDefault && !(spec.required && isEmptyValue(spec.default)) && (
                       <button type="button" style={linkBtnStyle} onClick={() => setResetReq({ keys: [spec.key], label: spec.label })}>Reset to default</button>
                     )}
                   </div>
                   {renderInput(spec)}
+                  {spec.required && spec.type === 'user' && canEdit && !spec.locked && !fieldErrors[spec.key] && isEmptyValue(draft[spec.key]) && (
+                    <p style={{ ...helpStyle, color: '#b91c1c' }}>Required — pick a person. This setting cannot be left blank.</p>
+                  )}
                   {fieldErrors[spec.key] && <p style={{ ...helpStyle, color: '#b91c1c' }}>{fieldErrors[spec.key]}</p>}
                   {spec.help && <p style={helpStyle}>{spec.help}</p>}
                   {!isDefault && meta && (meta.updated_by_name || meta.updated_at) && (

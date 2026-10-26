@@ -2,7 +2,58 @@
 
 // Shared by PO Tracking's list and its side detail: row type, stage colours and small cells.
 import { TEXT } from '@/lib/theme'
-import { pillStyle } from '@/components/shared/ui'
+import { pillStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { Funnel } from '@phosphor-icons/react'
+import { FormSheet, SheetIcon, SHEET, sheetBtn } from '@/components/shared/FormSheet'
+
+// ---- List layout shared by the RFQ and Purchase Orders tabs (same look as the Service Request Registry) ----
+/** One-row text longer than max is cut with an ellipsis (put the full text in title). */
+export const clip = (v?: string | null, max = 25) => (!v ? '—' : v.length > max ? `${v.slice(0, max).trimEnd()}…` : v)
+/** Two-row free-text columns are cut at 50. */
+export const clip2 = (v?: string | null) => clip(v, 50)
+
+export const PO_CREATE_BTN: React.CSSProperties = {
+  background: '#ea580c', border: '1px solid #c2410c', color: '#fff', fontSize: 13.5, fontWeight: 600,
+  padding: '10px 14px', borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap',
+}
+export const PO_TH: React.CSSProperties = {
+  textAlign: 'left', padding: '10px 8px', fontSize: 12, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase',
+  color: '#57534e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1,
+}
+export const PO_TD: React.CSSProperties = { padding: '10px 8px', fontSize: 13, color: '#57534e', borderTop: '1px solid rgba(0,0,0,0.05)' }
+/** Table card; scrolls inside, never sideways (TableFit keeps the columns inside). */
+export const PO_CARD: React.CSSProperties = {
+  borderRadius: 18, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)',
+  border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)',
+  overflow: 'auto', maxHeight: 'calc(100vh - 330px)', minHeight: 120,
+}
+
+/** Funnel button with the active-filter count badge. */
+export function FiltersButton({ count, onOpen, tour }: { count: number; onOpen: () => void; tour: string }) {
+  return (
+    <button type="button" onClick={onOpen} data-tour={tour} aria-label="Filters" title="Filters"
+      style={{ ...secondaryBtnStyle, display: 'inline-flex', alignItems: 'center', gap: 6, ...(count ? { borderColor: '#ea580c', color: '#c2410c' } : {}) }}>
+      <Funnel size={16} weight={count ? 'fill' : 'regular'} />
+      Filters
+      {count > 0 && <span style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: '#ea580c', color: '#fff', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{count}</span>}
+    </button>
+  )
+}
+
+/** The Filters popup: edits a draft (children), Apply copies it into the live filters. */
+export function FiltersSheet({ subtitle, tour, applyTour, onClose, onClear, onApply, children }: {
+  subtitle: string; tour: string; applyTour: string; onClose: () => void; onClear: () => void; onApply: () => void; children: React.ReactNode
+}) {
+  return (
+    <FormSheet icon="search" title="Filters" subtitle={subtitle} width={560} busy={false} onClose={onClose} tour={tour}
+      footer={<>
+        <button type="button" onClick={onClear} style={sheetBtn('secondary', SHEET.INK)}>Clear Filters</button>
+        <button type="button" onClick={onApply} style={sheetBtn('primary', SHEET.BLUE)} data-tour={applyTour}><SheetIcon name="check" size={16} />Apply Filters</button>
+      </>}>
+      <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>{children}</div>
+    </FormSheet>
+  )
+}
 
 /** One row of GET /p2p/po-reports/tracking — one purchase order (a split requisition has several). */
 export type TrackRow = {

@@ -48,7 +48,7 @@ export default function LotList({ mine = false, initialType = '' }: { mine?: boo
     return () => { ignore = true; clearTimeout(t) }
   }, [mine, status, type, search])
 
-  const cols = ['Lot', 'Item', 'Qty', 'Type', 'Source', 'Status', 'Assigned', 'Age', 'Decision', '']
+  const cols = ['Lot', 'Item', 'Qty', 'Type', 'Source', 'Status', 'Assigned', 'Age', 'Decision']
 
   return (
     <div>
@@ -92,9 +92,6 @@ export default function LotList({ mine = false, initialType = '' }: { mine?: boo
                     {l.age_days} d
                   </td>
                   <td style={tdStyle}>{l.decision ? DECISION_LABELS[l.decision] : '—'}</td>
-                  <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/quality/lots', l))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                  </td>
                 </tr>
               )
             })}

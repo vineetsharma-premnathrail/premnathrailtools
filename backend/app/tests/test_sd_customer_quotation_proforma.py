@@ -23,7 +23,7 @@ ITEM = {"description": "RRV 10T", "model_number": "RRV-10T", "quantity": 1, "uni
 def test_org_pan_and_gst_state_derived_and_checked(client, db):
     admin = make_user(db, "sd.admin@premnathrail.com", apps=("crm",), role="admin")
     gstin = gstin_for("27", "AAACR1234C")
-    r = client.post(f"{CRM}/organizations", json={"name": "Central Railway HQ", "org_type": "Railway", "gst_number": gstin}, headers=hdr(admin))
+    r = client.post(f"{CRM}/organizations", json={"org_scope": "domestic", "name": "Central Railway HQ", "org_type": "Railway", "gst_number": gstin}, headers=hdr(admin))
     assert r.status_code == 201, r.text
     assert (r.json()["pan"], r.json()["gst_state_code"]) == ("AAACR1234C", "27")
     org_id = r.json()["id"]
@@ -33,7 +33,7 @@ def test_org_pan_and_gst_state_derived_and_checked(client, db):
     bad = client.patch(f"{CRM}/organizations/{org_id}", json={"pan": "12345"}, headers=hdr(admin))
     assert bad.status_code == 422 and "10 characters" in bad.json()["detail"]
     # Unregistered customer: the state name gives the GST state (place of supply).
-    r = client.post(f"{CRM}/organizations", json={"name": "Workshop X", "org_type": "Private", "state": "Delhi"}, headers=hdr(admin))
+    r = client.post(f"{CRM}/organizations", json={"org_scope": "domestic", "name": "Workshop X", "org_type": "Private", "state": "Delhi"}, headers=hdr(admin))
     assert r.json()["gst_state_code"] == "07"
 
 

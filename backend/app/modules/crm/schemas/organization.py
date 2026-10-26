@@ -1,6 +1,9 @@
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from app.core.validators import validate_email_format, validate_gst_format
+from app.modules.crm.services.org_scope import (
+    ORG_SCOPES, blank_to_none, check_foreign_id, domestic_country_message, wrong_scope_message,
+)
 
 
 def _validate_email_list(v: list[str] | None) -> list[str] | None:
@@ -87,7 +90,30 @@ class OrgContactResponse(BaseModel):
     created_at: datetime | None = None
 
 
+def _check_scope_value(v: str | None) -> str | None:
+    if v is None:
+        return v
+    value = str(v).strip().lower()
+    if value not in ORG_SCOPES:
+        raise ValueError(f"Organization Scope '{v}' isn't valid. Choose Domestic or International.")
+    return value
+
+
+def _blank_to_none(v):
+    return blank_to_none(v)
+
+
+def _check_tax_vat_id(v: str | None) -> str | None:
+    return check_foreign_id(v, "Tax / VAT ID")
+
+
+def _check_registration_no(v: str | None) -> str | None:
+    return check_foreign_id(v, "Company Registration Number")
+
+
 class OrganizationCreate(BaseModel):
+    # Domestic / International is picked by the user first; Country never decides it.
+    org_scope: str | None = Field(default=None, description="'domestic' or 'international' — required.")
     name: str
     org_type: str
     parent_org: str | None = None
@@ -101,6 +127,8 @@ class OrganizationCreate(BaseModel):
     gst_number: str | None = None
     pan: str | None = None
     gst_state_code: str | None = None
+    tax_vat_id: str | None = None
+    company_registration_no: str | None = None
     official_phone: str | None = None
     official_email: str | None = None
     additional_phones: list[str] | None = None
@@ -113,8 +141,13 @@ class OrganizationCreate(BaseModel):
 
     _validate_email = field_validator("official_email")(validate_email_format)
     _validate_gst = field_validator("gst_number")(validate_gst_format)
+    _validate_blank_tax = field_validator(
+        "gst_number", "pan", "gst_state_code", "tax_vat_id", "company_registration_no", mode="before")(_blank_to_none)
+    _validate_tax_vat_id = field_validator("tax_vat_id")(_check_tax_vat_id)
+    _validate_registration_no = field_validator("company_registration_no")(_check_registration_no)
     _validate_additional_emails = field_validator("additional_emails")(_validate_email_list)
     _validate_additional_phones = field_validator("additional_phones")(_validate_phone_list)
+    _validate_scope = field_validator("org_scope")(_check_scope_value)
 
     @field_validator("org_type")
     @classmethod
@@ -123,8 +156,25 @@ class OrganizationCreate(BaseModel):
             raise ValueError("Customer Organization Type is required.")
         return v
 
+    @model_validator(mode="after")
+    def _scope_rules(self):
+        if not self.org_scope:
+            raise ValueError("Organization Scope is required. Choose Domestic or International first.")
+        msg = wrong_scope_message(
+            self.org_scope, gst_number=self.gst_number, pan=self.pan, gst_state_code=self.gst_state_code,
+            tax_vat_id=self.tax_vat_id, company_registration_no=self.company_registration_no)
+        if msg:
+            raise ValueError(msg)
+        if self.org_scope == "domestic":
+            country_msg = domestic_country_message(self.country)
+            if country_msg:
+                raise ValueError(country_msg)
+            self.country = "India"
+        return self
+
 
 class OrganizationUpdate(BaseModel):
+    org_scope: str | None = None
     name: str | None = None
     org_type: str | None = None
     parent_org: str | None = None
@@ -138,6 +188,8 @@ class OrganizationUpdate(BaseModel):
     gst_number: str | None = None
     pan: str | None = None
     gst_state_code: str | None = None
+    tax_vat_id: str | None = None
+    company_registration_no: str | None = None
     official_phone: str | None = None
     official_email: str | None = None
     additional_phones: list[str] | None = None
@@ -150,8 +202,13 @@ class OrganizationUpdate(BaseModel):
 
     _validate_email = field_validator("official_email")(validate_email_format)
     _validate_gst = field_validator("gst_number")(validate_gst_format)
+    _validate_blank_tax = field_validator(
+        "gst_number", "pan", "gst_state_code", "tax_vat_id", "company_registration_no", mode="before")(_blank_to_none)
+    _validate_tax_vat_id = field_validator("tax_vat_id")(_check_tax_vat_id)
+    _validate_registration_no = field_validator("company_registration_no")(_check_registration_no)
     _validate_additional_emails = field_validator("additional_emails")(_validate_email_list)
     _validate_additional_phones = field_validator("additional_phones")(_validate_phone_list)
+    _validate_scope = field_validator("org_scope")(_check_scope_value)
 
 
 class OrganizationResponse(BaseModel):
@@ -172,6 +229,9 @@ class OrganizationResponse(BaseModel):
     gst_number: str | None = None
     pan: str | None = None
     gst_state_code: str | None = None
+    org_scope: str = "domestic"
+    tax_vat_id: str | None = None
+    company_registration_no: str | None = None
     official_phone: str | None = None
     official_email: str | None = None
     additional_phones: list[str] | None = None

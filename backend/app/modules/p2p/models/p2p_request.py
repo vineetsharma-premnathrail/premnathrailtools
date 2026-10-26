@@ -103,10 +103,21 @@ def resolve_auto_buyer_id(db, category_code: str) -> int | None:
         buyer = db.query(User).filter(User.id == int(picked), User.is_active.is_(True)).first()
         if buyer:
             return buyer.id
+    return standard_buyer_id(db, category_code)
+
+
+def standard_buyer_id(db, category_code: str, *, active_only: bool = False) -> int | None:
+    """Current user id of the category's standard buyer (looked up by email),
+    or None when the category has none or the user is missing. The one place
+    that does this lookup."""
+    from app.modules.main.models.user import User  # local import avoids a cross-module cycle at startup
     email = P2P_CATEGORY_AUTO_BUYERS.get(category_code)
     if not email:
         return None
-    buyer = db.query(User).filter(User.email == email).first()
+    q = db.query(User).filter(User.email == email)
+    if active_only:
+        q = q.filter(User.is_active.is_(True))
+    buyer = q.first()
     return buyer.id if buyer else None
 
 # Purpose of a requisition (2026-10-23) — the first question on the PR form.
@@ -121,8 +132,8 @@ def resolve_auto_buyer_id(db, category_code: str) -> int | None:
 #   stock            store stock refill — charged when Store issues it
 # NULL on requisitions raised before it (they keep project_type rules).
 P2P_PURPOSES: dict[str, str] = {
-    "customer_order": "Production (customer order)",
-    "machine_project": "Service (delivered machine)",
+    "customer_order": "Project",
+    "machine_project": "Service",
     "development": "New development",
     "department": "Department running cost",
     "capital": "Asset / capital purchase",
@@ -231,6 +242,9 @@ class P2PRequest(Base, TimestampMixin):
     cost_center_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("cost_centers.id"), nullable=True)
     work_order_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("production_work_orders.id"), nullable=True)
     internal_order_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("internal_orders.id"), nullable=True)
+    # R&D project the purchase is charged to (New development).
+    rnd_project_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("rnd_projects.id", ondelete="SET NULL"), nullable=True, index=True)
     # Order Project (2026-10-17): set when charged to 'order_project', and also
     # filled from the sales order's project when charged to a 'sales_order'.
     # The default for the lines; each line carries its own element.

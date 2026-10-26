@@ -947,3 +947,44 @@ button.nav-help-btn:focus-visible {
   white-space: nowrap;
 }
 .sidebar-footer-row > button > span:last-child:not(:first-child) { margin-left: 0 !important; }
+
+/* TableFit - see components/shared/TableFit.tsx. Every table is kept inside its card:
+   fixed layout, long cell text cut with an ellipsis (full text in the title tooltip). */
+.table-fit {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 0 !important;
+  max-width: 100%;
+}
+.table-fit th,
+.table-fit td {
+  overflow: clip;
+  overflow-clip-margin: 4px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.table-fit th[data-fit-min] { white-space: normal; }
+.table-fit td[data-fit-wrap] { white-space: normal; overflow-wrap: break-word; }
+.table-fit td > div,
+.table-fit td > a,
+.table-fit td > span:not([style*="inline-flex"]) {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.table-fit td > span:not([style*="inline-flex"]),
+.table-fit td > a {
+  display: inline-block;
+  vertical-align: bottom;
+}
+.table-fit td > span[style*="inline-flex"] { min-width: 0; max-width: 100%; }
+/* Issue Summary style cells: up to two lines, then "..." */
+.table-fit td[data-fit-clamp] > div { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: break-word; }
+.table-fit td[data-fit-wrap] > div,
+.table-fit td[data-fit-wrap] > span:not([style*="inline-flex"]) { white-space: normal; overflow-wrap: break-word; display: block; }
+/* TableFit measuring pass (applied and removed inside one frame, never painted). */
+.table-fit-measure { table-layout: auto !important; width: max-content !important; min-width: 0 !important; max-width: none !important; }
+.table-fit-measure th, .table-fit-measure td { white-space: nowrap !important; overflow: visible !important; }
+.table-fit-measure col { width: auto !important; }

@@ -35,9 +35,8 @@ function PriorityIcon({ name }: { name: string }) {
 }
 
 const STATUS_OPTIONS = [
-  { value: 'open', label: 'Open / Reported' },
+  { value: 'open', label: 'Open' },
   { value: 'acknowledged', label: 'Acknowledged' },
-  { value: 'assigned', label: 'Assigned' },
   { value: 'scheduled', label: 'Scheduled' },
   { value: 'in_progress', label: 'In Progress' },
   { value: 'pending_parts', label: 'Pending Parts' },
@@ -137,6 +136,13 @@ export default function ServiceRequestForm({
     { value: '', label: '— Not assigned yet —' },
     ...people.filter((o) => allowEngineer(Number(o.value)) || o.value === String(user?.id ?? '') || o.value === engineerId),
   ]
+  // New SR: the person creating it is the default engineer (their name shows in the field; they can change or clear it).
+  const engineerDefaulted = useRef(false)
+  useEffect(() => {
+    if (initial || engineerDefaulted.current || !user?.id) return
+    engineerDefaulted.current = true
+    setEngineerId((cur) => cur || String(user.id))
+  }, [initial, user?.id])
   const [peopleHint, setPeopleHint] = useState('')
   const [machinesError, setMachinesError] = useState('')
   const [warrantyHint, setWarrantyHint] = useState('')
@@ -378,17 +384,6 @@ export default function ServiceRequestForm({
               <input value={form.issue_title} onChange={(e) => set('issue_title', e.target.value)} placeholder="Brief summary of the fault..." style={sheetInput} data-tour="erp-srf-title" />
               <label style={{ ...sheetLabel, marginTop: 14 }}>Detailed Description <Req /></label>
               <textarea value={form.issue_description} onChange={(e) => set('issue_description', e.target.value)} rows={4} placeholder="Describe symptoms, context, and impact..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-srf-description" />
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginTop: 14 }}>
-                <div>
-                  <label style={sheetLabel}>Issue Category <Optional /></label>
-                  <Select value={form.issue_category} onChange={(e) => set('issue_category', e.target.value)} disabled={!form.service_type} style={sheetInput} data-tour="erp-srf-category">
-                    <option value="">{form.service_type ? 'Select Category' : 'Choose a service type first'}</option>
-                    {['Mechanical', 'Electrical', 'Hydraulic', 'Pneumatic', 'Engine', 'Software', 'Other'].map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </Select>
-                </div>
-              </div>
             </SheetSection>
 
             <SheetSection icon="user" title="Reported By" extra={<Optional />}>

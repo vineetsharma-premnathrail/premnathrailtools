@@ -5,10 +5,9 @@ import Link from 'next/link'
 import Select from '@/components/shared/Select'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { approvalsApi } from '@/lib/api'
-import { useCan } from '@/lib/permissions'
 import { ApprovalTransactionType } from '@/types'
 import { BORDER, GLASS, SHADOWS, TEXT } from '@/lib/theme'
-import { inputStyle, Pill, secondaryBtnStyle, smallBtnSize } from '@/components/shared/ui'
+import { inputStyle, Pill } from '@/components/shared/ui'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import { extractErrorMessages } from '@/lib/validation'
 
@@ -23,7 +22,6 @@ const cardStyle: React.CSSProperties = {
 
 export default function WorkflowsPage() {
   const { isAuthorized, isLoading } = useRequireOrgTab('workflows')
-  const { can } = useCan()
   const [rows, setRows] = useState<ApprovalTransactionType[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -95,9 +93,7 @@ export default function WorkflowsPage() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 'none' }}>
                   {r.is_active === false && <Pill label="⏻ Off" hex="#B45309" />}
-                  <Pill label={r.customised ? 'Custom' : 'Standard'} hex={r.customised ? '#7c3aed' : '#57534e'} />
-                  <span style={{ ...secondaryBtnStyle, ...smallBtnSize, color: '#c2410c' }}>{can('organization', 'workflows', 'edit') ? 'Edit' : 'View'}</span>
-                </div>
+                  <Pill label={r.customised ? 'Custom' : 'Standard'} hex={r.customised ? '#7c3aed' : '#57534e'} />                </div>
               </Link>
             ))}
           </div>

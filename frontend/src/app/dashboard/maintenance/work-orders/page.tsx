@@ -128,7 +128,7 @@ export default function MaintenanceWorkOrdersPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1150 }}>
           <thead>
             <tr>
-              {['Number', 'Asset', 'Title', 'Type', 'Priority', 'Technician', 'Planned', 'Downtime', 'Cost', 'Status', ''].map((h, hi) => (
+              {['Number', 'Asset', 'Title', 'Type', 'Priority', 'Technician', 'Planned', 'Downtime', 'Cost', 'Status'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{hi === 0 && <RowCount count={orders.length} />}
                 </th>
@@ -137,9 +137,9 @@ export default function MaintenanceWorkOrdersPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : orders.length === 0 ? (
-              <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 {search || statusFilter || typeFilter || mine || branchFilter ? 'No work orders match these filters.' : 'No open work orders. Breakdown requests become work orders once maintenance picks them up.'}
               </td></tr>
             ) : (
@@ -163,9 +163,6 @@ export default function MaintenanceWorkOrdersPage() {
                     <td style={cellStyle}>
                       <Pill label={WO_STATUS_LABELS[w.status] || w.status} hex={STATUS_HEX[w.status]} />
                       {w.awaiting_confirmation && <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#F59E0B', marginTop: 4 }}>Awaiting requester</span>}
-                    </td>
-                    <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                      <span onClick={() => router.push(recordPath('/dashboard/maintenance/work-orders', w))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                     </td>
                   </tr>
                 )

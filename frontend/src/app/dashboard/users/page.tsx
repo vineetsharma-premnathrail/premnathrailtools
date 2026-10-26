@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { CaretRight } from '@phosphor-icons/react'
 import { useRouter } from 'next/navigation'
 import { recordPath } from '@/lib/recordRef'
 import OrganizationNav from '@/components/organization/OrganizationNav'
@@ -13,7 +12,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
-import { secondaryBtnStyle, smallSecondaryBtnStyle, RowCount } from '@/components/shared/ui'
+import { secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 
 const STATUS_TABS = ['All Users', 'Active Users', 'Inactive Users'] as const
 
@@ -177,7 +176,7 @@ export default function UsersRolesPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-              {['User', 'Email', 'Designation', 'Department', 'Office Location', 'Role', 'Apps', 'Status', 'Actions'].map((h, hi) => (
+              {['User', 'Email', 'Designation', 'Department', 'Office Location', 'Role', 'Apps', 'Status'].map((h, hi) => (
                 <th
                   key={h}
                   style={{
@@ -203,14 +202,14 @@ export default function UsersRolesPage() {
           <tbody data-tour="org-roles-table-rows">
             {loading && (
               <tr>
-                <td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>
+                <td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>
                   Loading users…
                 </td>
               </tr>
             )}
             {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>
+                <td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>
                   No users match your filters.
                 </td>
               </tr>
@@ -306,16 +305,6 @@ export default function UsersRolesPage() {
                     >
                       {u.is_active ? 'Active' : 'Inactive'}
                     </span>
-                  </td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <button
-                      onClick={() => router.push(recordPath('/dashboard/users', u))}
-                      data-tour={idx === 0 ? 'org-roles-edit-btn' : undefined}
-                      style={smallSecondaryBtnStyle}
-                    >
-                      {can('organization', 'users', 'edit') ? 'Edit' : 'View'}
-                      <CaretRight size={12} aria-hidden />
-                    </button>
                   </td>
                 </tr>
               )

@@ -101,6 +101,23 @@ export const PROJECT_FORM_STEPS: TourStep[] = [
     validExample: 'IRCON International Limited',
   },
   {
+    target: 'pm-form-po',
+    title: 'Customer PO number',
+    purpose: 'The purchase order the customer placed for this project.',
+    whatToEnter: "Type the customer's PO number exactly as on their order (up to 100 characters).",
+    why: 'Ties the project to the customer order, so every department can trace what was ordered.',
+    required: true,
+    validExample: '4500123456',
+  },
+  {
+    target: 'pm-form-so',
+    title: 'Sales order (SO) number',
+    purpose: 'The sales order this project is delivered under.',
+    whatToEnter: 'Type the SO number (up to 100 characters). It is typed text, not a link to the Sales module.',
+    required: true,
+    validExample: 'SO-2026-0042',
+  },
+  {
     target: 'pm-form-pm',
     title: 'Project manager',
     purpose: 'The one person who owns the project end-to-end.',

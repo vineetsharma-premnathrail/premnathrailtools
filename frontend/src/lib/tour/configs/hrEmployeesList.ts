@@ -109,8 +109,8 @@ const config: TourConfig = {
     },
     {
       target: 'hr-emp-row-action',
-      title: 'View / Create profile',
-      purpose: '"View" opens the employee record. "Create profile" appears for people without an HR record and opens the profile form directly.',
+      title: 'Create profile',
+      purpose: 'Click a row to open the employee record. "Create profile" appears for people without an HR record and opens the profile form directly.',
     },
     {
       target: 'hr-emp-pagination',

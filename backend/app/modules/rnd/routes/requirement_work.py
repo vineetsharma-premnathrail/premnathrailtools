@@ -28,6 +28,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.audit import record_audit
 from app.core.config import settings
 from app.core.permissions import ensure_feature_action
 from app.db.session import get_db
@@ -43,6 +44,9 @@ from app.modules.rnd.models.requirement_work import (
     RndRequirementAccess, RndRequirementDocVisibility, RndRequirementProjectLink, RndRequirementShare, RndRequirementTask, RndTaskEvent,
 )
 from app.modules.rnd.models.project import RndProject
+from app.modules.rnd.models.requirement_milestone import (
+    RND_MILESTONE_OPEN, RND_MILESTONE_STATUS_LABELS, RndRequirementMilestone,
+)
 from app.modules.rnd.services import requirement_access as ra
 from app.modules.rnd.services import requirement_shares as rs
 from app.modules.rnd.services import task_approvals
@@ -151,10 +155,35 @@ def _is_overdue(t: RndRequirementTask) -> bool:
     return t.status == "open" and today_ist() > t.due_date
 
 
+def _open_milestone(db: Session, source: str, record_id: int, record, milestone_id: int | None) -> RndRequirementMilestone | None:
+    """The milestone a task goes into: on this requirement and still open."""
+    if not milestone_id:
+        return None
+    m = db.query(RndRequirementMilestone).filter(
+        RndRequirementMilestone.id == milestone_id, RndRequirementMilestone.source == source,
+        RndRequirementMilestone.record_id == record_id).first()
+    if not m:
+        raise HTTPException(status_code=404, detail=f"Milestone #{milestone_id} isn't on {_ref(source, record)} any more — refresh the page.")
+    if m.status not in RND_MILESTONE_OPEN:
+        raise HTTPException(status_code=409, detail=f"Milestone '{m.title}' is {RND_MILESTONE_STATUS_LABELS[m.status]}, so it can't get tasks. Reopen it first, or pick another milestone.")
+    return m
+
+
+def _check_in_milestone(m: RndRequirementMilestone | None, due: date, start: date | None = None) -> None:
+    if not m:
+        return
+    if due > m.due_date:
+        raise HTTPException(status_code=422, detail=f"A task in '{m.title}' can't be due after the milestone's end date ({m.due_date.strftime('%d %b %Y')}). Pick an earlier date, or move the milestone's end date first.")
+    if start and m.start_date and start < m.start_date:
+        raise HTTPException(status_code=422, detail=f"A task in '{m.title}' can't start before the milestone starts ({m.start_date.strftime('%d %b %Y')}).")
+
+
 def _serialize_tasks(db: Session, tasks: list[RndRequirementTask]) -> list[dict]:
     if not tasks:
         return []
     ids = [t.id for t in tasks]
+    ms_ids = {t.milestone_id for t in tasks if t.milestone_id}
+    milestone_titles = {m.id: m.title for m in db.query(RndRequirementMilestone).filter(RndRequirementMilestone.id.in_(ms_ids)).all()} if ms_ids else {}
     events = db.query(RndTaskEvent).filter(RndTaskEvent.task_id.in_(ids)).order_by(RndTaskEvent.id.asc()).all()
     docs = db.query(CrmDocument).filter(
         CrmDocument.related_sub_module == TASK_DOC, CrmDocument.related_sub_id.in_(ids), CrmDocument.is_deleted == False,  # noqa: E712
@@ -175,6 +204,7 @@ def _serialize_tasks(db: Session, tasks: list[RndRequirementTask]) -> list[dict]
     return [
         {
             "id": t.id, "source": t.source, "record_id": t.record_id, "parent_task_id": t.parent_task_id,
+            "milestone_id": t.milestone_id, "milestone_title": milestone_titles.get(t.milestone_id) if t.milestone_id else None,
             "title": t.title, "remarks": t.remarks,
             "department": t.department, "department_label": ra.side_label(t.department),
             "assigned_to_id": t.assigned_to_id, "assigned_to": _name(users.get(t.assigned_to_id)),
@@ -710,11 +740,13 @@ async def create_task(
     priority: str | None = Form(None), start_date: str | None = Form(None),
     work_status: str | None = Form(None), checklist: str | None = Form(None),
     department: str = Form(ra.RND),
+    milestone_id: int | None = Form(None),
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db), user: User = Depends(get_current_user),
 ):
     """Anyone who can open the requirement gives a task to a person in R&D or
-    in a department it is shared with; that person's department head is told."""
+    in a department it is shared with; that person's department head is told.
+    The task can sit inside one of the requirement's open milestones."""
     record = _record(db, source, record_id)
     ra.ensure(db, user, source, record_id, "view")
     if ra.is_rnd_side(user):
@@ -729,13 +761,18 @@ async def create_task(
         raise HTTPException(status_code=422, detail=f"Response Due Date {due.strftime('%d %b %Y')} is in the past — pick today or a later date.")
     assignee = ra.check_assignee(db, source, record_id, assigned_to_id, department)
     assignee_rules.ensure_allowed(db, user, RULE_KEY, assignee)
+    milestone = _open_milestone(db, source, record_id, record, milestone_id)
 
     task = RndRequirementTask(
         source=source, record_id=record_id, title=title, remarks=(remarks or "").strip() or None,
         assigned_to_id=assignee.id, created_by_id=user.id, original_due_date=due, due_date=due, status="open",
-        department=department,
+        department=department, milestone_id=milestone.id if milestone else None,
     )
     task_fields.apply_create(task, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist)
+    _check_in_milestone(milestone, due, task.start_date)
+    if milestone and milestone.status == "todo":
+        # Work has begun on the milestone once its first task is handed out.
+        milestone.status = "in_progress"
     db.add(task)
     db.flush()
     await _store_files(db, source=source, record=record, files=files or [], sub_module=TASK_DOC, sub_id=task.id,
@@ -969,6 +1006,7 @@ async def create_subtask(
         source=parent.source, record_id=parent.record_id, parent_task_id=parent.id, title=title,
         remarks=(remarks or "").strip() or None, assigned_to_id=assignee.id, created_by_id=user.id,
         original_due_date=due, due_date=due, status="open", department=department,
+        milestone_id=parent.milestone_id,
     )
     task_fields.apply_create(task, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist)
     db.add(task)
@@ -994,6 +1032,8 @@ class TaskEditPayload(BaseModel):
     work_status: str | None = None
     # [{id?, text, done?}] — the whole list; items keep their id / who ticked them.
     checklist: list[dict] | None = None
+    # Move a main task into (another) milestone of this requirement; R&D head only. Sub-tasks follow.
+    milestone_id: int | None = None
 
 
 class TaskProgressPayload(BaseModel):
@@ -1061,6 +1101,20 @@ async def edit_task(task_id: int, payload: TaskEditPayload, db: Session = Depend
             changes.append(f"Department: {ra.side_label(task.department)} → {ra.side_label(new_department)}")
         task.assigned_to_id, task.department = new_assignee.id, new_department
     changes += task_fields.apply_edit(task, data, _name(user))
+    if data.get("milestone_id") and data["milestone_id"] != task.milestone_id:
+        if task.parent_task_id:
+            raise HTTPException(status_code=409, detail="A sub-task stays in its main task's milestone — move the main task instead.")
+        ra.ensure_head(db, user, "move tasks between milestones")
+        target = _open_milestone(db, task.source, task.record_id, _record(db, task.source, task.record_id), data["milestone_id"])
+        _check_in_milestone(target, task.due_date)
+        changes.append(f"Milestone: → '{target.title}'")
+        task.milestone_id = target.id
+        for sub in db.query(RndRequirementTask).filter(RndRequirementTask.parent_task_id == task.id).all():
+            sub.milestone_id = target.id
+        if target.status == "todo":
+            target.status = "in_progress"
+    elif task.milestone_id and not task.parent_task_id and task.due_date != old_due:
+        _check_in_milestone(db.get(RndRequirementMilestone, task.milestone_id), task.due_date)
 
     if not changes:
         return _serialize_tasks(db, [task])[0]
@@ -1158,6 +1212,17 @@ async def reopen_task(task_id: int, payload: ReviewPayload, db: Session = Depend
     task.closed_at = None
     _event(db, task, "reopened", user, remarks=reason, old_due=old if task.due_date != old else None,
            new_due=task.due_date if task.due_date != old else None)
+    milestone = db.get(RndRequirementMilestone, task.milestone_id) if task.milestone_id else None
+    if milestone and milestone.status == "done":
+        # An achieved milestone can't hold an open task: it is open again.
+        milestone.status, milestone.completed_at, milestone.completed_by_id = "in_progress", None, None
+        record = _record(db, task.source, task.record_id)
+        record_audit(db, entity_type=f"rnd_req_{task.source}", entity_id=task.record_id, action="milestone_reopened_by_task", module_key="rnd",
+                     summary=f"Milestone '{milestone.title}' is open again: {_name(user)} reopened task '{task.title}'. Reason: {reason}", user_id=user.id)
+        owners = {milestone.assignee_id, *(milestone.co_owner_ids or [])} - {user.id}
+        _notify(db, owners, task.source, task.record_id, title=f"Milestone reopened ({_ref(task.source, record)})",
+                message=f"'{milestone.title}' is open again because {_name(user)} reopened task \"{task.title}\".",
+                notification_type="rnd_requirement_milestone_edited")
     if task.assigned_to_id != user.id:
         record = _record(db, task.source, task.record_id)
         _notify(db, [task.assigned_to_id], task.source, task.record_id, title=f"Task reopened ({_ref(task.source, record)})",

@@ -87,7 +87,7 @@ def link_pr_lines(db: Session, pr: P2PRequest, rows: list[tuple], *, draft: bool
     if scope is not None:
         live = _live_elements(db, scope.id)
         single = live[0] if len(live) == 1 else None
-    overhead = pr.account_assignment in ("cost_center", "internal_order")
+    overhead = pr.account_assignment in ("cost_center", "internal_order", "rnd_project")
 
     for idx, item, master, row in rows:
         name = f"Line {idx} ({master.item_code} {master.item_name})"
@@ -102,7 +102,7 @@ def link_pr_lines(db: Session, pr: P2PRequest, rows: list[tuple], *, draft: bool
             if overhead:
                 raise HTTPException(status_code=422, detail=(
                     f"{name} is tagged to an order project vehicle / lot, but the requisition is charged to a "
-                    f"{'cost centre' if pr.account_assignment == 'cost_center' else 'internal order'}. Charge it to the "
+                    f"{ {'cost_center': 'cost centre', 'rnd_project': 'R&D project'}.get(pr.account_assignment, 'internal order') }. Charge it to the "
                     f"order project (or its sales order) instead, or clear the line's Order Project."))
             try:
                 # An element a saved line already had stays valid on an edit even

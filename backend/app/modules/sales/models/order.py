@@ -33,7 +33,28 @@ SALES_ORDER_OPEN_STATUSES = ("confirmed", "in_execution", "partially_delivered",
 SALES_ORDER_HOLDABLE_STATUSES = ("confirmed", "in_execution", "partially_delivered")
 SALES_ORDER_AMENDABLE_STATUSES = ("confirmed", "in_execution", "partially_delivered", "on_hold")
 
-SALES_ORDER_TYPES = ("rrv_supply", "spares", "service", "other")
+SALES_ORDER_TYPES = ("road_rail_vehicle", "rail_bound_vehicle", "accessories", "other")
+SALES_DEFAULT_ORDER_TYPE = "road_rail_vehicle"
+# One place for the labels (forms, documents, validation messages).
+SALES_ORDER_TYPE_LABELS = {"road_rail_vehicle": "Road Rail Vehicle", "rail_bound_vehicle": "Rail Bound Vehicle",
+                           "accessories": "Accessories", "other": "Others"}
+# Both vehicle types behave as the old "RRV supply"; accessories / others as the old spares / other.
+SALES_VEHICLE_ORDER_TYPES = ("road_rail_vehicle", "rail_bound_vehicle")
+
+# Order currency is a LABEL only: no conversion, GST / billing / invoices / Finance treat the numbers as given.
+SALES_DEFAULT_CURRENCY = "INR"
+SALES_CURRENCIES = (
+    {"code": "INR", "name": "Indian Rupee", "symbol": "₹"}, {"code": "USD", "name": "US Dollar", "symbol": "$"},
+    {"code": "EUR", "name": "Euro", "symbol": "€"}, {"code": "GBP", "name": "Pound Sterling", "symbol": "£"},
+    {"code": "AED", "name": "UAE Dirham", "symbol": "AED"}, {"code": "SGD", "name": "Singapore Dollar", "symbol": "S$"},
+    {"code": "AUD", "name": "Australian Dollar", "symbol": "A$"}, {"code": "CAD", "name": "Canadian Dollar", "symbol": "C$"},
+    {"code": "JPY", "name": "Japanese Yen", "symbol": "¥"}, {"code": "CNY", "name": "Chinese Yuan", "symbol": "CN¥"},
+    {"code": "SAR", "name": "Saudi Riyal", "symbol": "SAR"}, {"code": "QAR", "name": "Qatari Riyal", "symbol": "QAR"},
+    {"code": "KWD", "name": "Kuwaiti Dinar", "symbol": "KWD"}, {"code": "OMR", "name": "Omani Rial", "symbol": "OMR"},
+    {"code": "BDT", "name": "Bangladeshi Taka", "symbol": "৳"}, {"code": "LKR", "name": "Sri Lankan Rupee", "symbol": "Rs"},
+    {"code": "NPR", "name": "Nepalese Rupee", "symbol": "Rs"}, {"code": "ZAR", "name": "South African Rand", "symbol": "R"},
+)
+SALES_CURRENCY_CODES = tuple(c["code"] for c in SALES_CURRENCIES)
 SALES_SOURCE_TYPES = ("inquiry", "tender", "direct")
 SALES_PRICE_BASES = ("ex_works", "for_destination", "for_dispatch")
 SALES_LD_PERIODS = ("week", "day")
@@ -74,7 +95,7 @@ class SalesOrder(Base, TimestampMixin, SoftDeleteMixin):
     __mapper_args__ = {"version_id_col": lock_version}
     so_number: Mapped[str | None] = mapped_column(String(50), unique=True, index=True, nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="draft", index=True, nullable=False)
-    order_type: Mapped[str] = mapped_column(String(20), default="rrv_supply", nullable=False)
+    order_type: Mapped[str] = mapped_column(String(20), default="road_rail_vehicle", nullable=False)
 
     customer_id: Mapped[int] = mapped_column(Integer, ForeignKey("crm_organizations.id"), index=True, nullable=False)
     customer_contact_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("crm_org_contacts.id"), nullable=True)

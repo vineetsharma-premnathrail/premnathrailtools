@@ -33,7 +33,15 @@ register_features(
     # ── sub-tabs ──
     _feature("tasks", "Tasks", "subtab", {
         "view": "view", "create": "view", "edit": "view", "approve": "view", "cancel": "view",
-    }, "Tasks & Departments sub-tab: see tasks, create tasks / sub-tasks, edit / reopen / tick tasks you review, decide approval requests and cancel tasks. Record rules stay: only whoever gave a task (or the R&D head) reviews it."),
+    }, "Tasks (inside the Milestones tab): see tasks, create tasks / sub-tasks, edit / reopen / tick tasks you review, decide approval requests and cancel tasks. Record rules stay: only whoever gave a task (or the R&D head) reviews it."),
+    _feature("milestones", "Milestones", "subtab", {
+        "view": "view", "create": "view", "edit": "view", "delete": "view",
+    }, "The Milestones tab of a requirement: see the plan; add, edit and delete milestones. Record rule stays: only the R&D head changes the plan."),
+    _feature("milestone_status", "Achieve, reopen & cancel milestones", "action", {
+        "view": "view", "approve": "view", "edit": "view", "cancel": "view",
+    }, "Approve = mark a milestone achieved (its responsible people or the R&D head, once every task is finished); edit = reopen an achieved one; cancel = cancel an open one (R&D head, with a reason)."),
+    _feature("history", "History", "subtab", {"view": "view"},
+             "The History tab of a requirement: milestone, requirement and task changes in one list (R&D side only)."),
     _feature("departments", "Share with departments", "section", {"view": "view", "create": "view"},
              "Which departments (Design / Electrical / Hydraulic & Pneumatic) a requirement is shared with and their feasibility replies. Create = share it (R&D head only)."),
     _feature("technical_offers", "Technical Offers", "subtab", {
@@ -86,6 +94,8 @@ register_features(
 # "Assign to" rules per role (core/assignee_rules.py).
 register_pickers("rnd", "requirements",
                  ("tasks", "Assign tasks to", "Who this role may give requirement tasks / sub-tasks to, or reassign them to."))
+register_pickers("rnd", "requirements",
+                 ("milestones", "Set milestone owners to", "Who this role may make responsible for a requirement milestone (R&D or a shared department)."))
 register_pickers("rnd", "projects",
                  ("tasks", "Assign tasks to", "Who this role may give project tasks / sub-tasks to, or reassign them to."))
 register_pickers("rnd", "projects",

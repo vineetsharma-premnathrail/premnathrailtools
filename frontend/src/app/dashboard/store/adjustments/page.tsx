@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { StoreStockAdjustment } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { primaryBtnStyle, smallSecondaryBtnStyle, RowCount, Pill, thStyle, numThStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, RowCount, Pill, thStyle, numThStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
 import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -58,15 +58,15 @@ export default function StoreStockAdjustmentsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead>
             <tr>
-              {['Adjustment #', 'Store', 'Date', 'Status', 'Approver', 'Items', ''].map((h, hi) => (
+              {['Adjustment #', 'Store', 'Date', 'Status', 'Approver', 'Items'].map((h, hi) => (
                 <th key={h} style={h === 'Items' ? numThStyle : thStyle}>{h}{hi === 0 && <RowCount count={adjustments.length} />}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
+            {loading && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && adjustments.length === 0 && (
-              <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No stock adjustments yet{can('store', 'adjustments', 'create') ? ' — use + New Adjustment when a count differs from the books.' : '.'}</td></tr>
+              <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No stock adjustments yet{can('store', 'adjustments', 'create') ? ' — use + New Adjustment when a count differs from the books.' : '.'}</td></tr>
             )}
             {adjustments.map((a) => (
               <tr key={a.id} onClick={() => router.push(recordPath('/dashboard/store/adjustments', a))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
@@ -78,9 +78,6 @@ export default function StoreStockAdjustmentsPage() {
                 </td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{a.approved_by_name || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, textAlign: 'right' }}>{a.items.length}</td>
-                <td onClick={(e) => e.stopPropagation()} style={{ padding: '8px 16px' }}>
-                  <button type="button" onClick={() => router.push(recordPath('/dashboard/store/adjustments', a))} style={smallSecondaryBtnStyle}>View</button>
-                </td>
               </tr>
             ))}
           </tbody>

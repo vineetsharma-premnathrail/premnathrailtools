@@ -88,7 +88,6 @@ export default function VendorReferralSection({ value, onChange, required, tour,
           </div>
         </div>
       )}
-      <p style={sheetHint}>Recorded for vendor-onboarding control. Who added the vendor is captured automatically.</p>
     </>
   )
   return bare ? <div style={{ minWidth: 0 }}>{body}</div> : <SheetSection icon="user" title="Referred by">{body}</SheetSection>

@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { readdirSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
-import { checkDialogs, checkFormCards, checkPageOverflow, checkTables, openSomeDialogs, saveShot } from './layout-checks'
+import { checkDialogs, checkFormCards, checkPageOverflow, checkTableHorizontalScroll, checkTables, openSomeDialogs, saveShot } from './layout-checks'
 
 // Runtime layout checks on every static dashboard page, at a laptop (1366x768)
 // and a phone (390x844) width — see playwright.config.ts for how to run.
@@ -205,6 +205,7 @@ for (const route of ROUTES) {
       ...(await inspect(page)),
       ...(await checkPageOverflow(page)),
       ...(await checkTables(page)),
+      ...(await checkTableHorizontalScroll(page)),
       ...(await checkFormCards(page)),
       ...(await checkDialogs(page)),
       ...(await checkDropdowns(page)),

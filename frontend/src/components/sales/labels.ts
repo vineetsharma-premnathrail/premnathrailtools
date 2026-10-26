@@ -20,8 +20,43 @@ export const ROW_STATUS_HEX: Record<string, string> = {
   open: '#78716c', build_planned: '#2563EB', in_production: '#7c3aed', ready: '#0891b2',
   dispatched: '#0f766e', delivered: '#16A34A', commissioned: '#15803d', cancelled: '#78716c',
 }
+// Order types a user can pick on a new order. Both vehicle types are "vehicle orders".
+export const ORDER_TYPE_OPTIONS: Record<string, string> = {
+  road_rail_vehicle: 'Road Rail Vehicle', rail_bound_vehicle: 'Rail Bound Vehicle', accessories: 'Accessories', other: 'Others',
+}
+// Display labels: the options above plus the values older orders may still carry.
 export const ORDER_TYPE_LABELS: Record<string, string> = {
-  rrv_supply: 'RRV supply', spares: 'Spares supply', service: 'Service / AMC', other: 'Other',
+  ...ORDER_TYPE_OPTIONS,
+  rrv_supply: 'Road Rail Vehicle', spares: 'Accessories', service: 'Service / AMC',
+}
+export const VEHICLE_ORDER_TYPES = ['road_rail_vehicle', 'rail_bound_vehicle', 'rrv_supply']
+export function isVehicleOrderType(t: string | null | undefined): boolean {
+  return !!t && VEHICLE_ORDER_TYPES.includes(t)
+}
+
+export const CURRENCY_OPTIONS: { value: string; label: string; symbol: string }[] = [
+  { value: 'INR', label: 'INR - Indian Rupee', symbol: '₹' },
+  { value: 'USD', label: 'USD - US Dollar', symbol: '$' },
+  { value: 'EUR', label: 'EUR - Euro', symbol: '€' },
+  { value: 'GBP', label: 'GBP - British Pound', symbol: '£' },
+  { value: 'AED', label: 'AED - UAE Dirham', symbol: 'AED' },
+  { value: 'SGD', label: 'SGD - Singapore Dollar', symbol: 'S$' },
+  { value: 'AUD', label: 'AUD - Australian Dollar', symbol: 'A$' },
+  { value: 'CAD', label: 'CAD - Canadian Dollar', symbol: 'C$' },
+  { value: 'JPY', label: 'JPY - Japanese Yen', symbol: '¥' },
+  { value: 'CNY', label: 'CNY - Chinese Yuan', symbol: 'CN¥' },
+  { value: 'SAR', label: 'SAR - Saudi Riyal', symbol: 'SAR' },
+  { value: 'QAR', label: 'QAR - Qatari Riyal', symbol: 'QAR' },
+  { value: 'KWD', label: 'KWD - Kuwaiti Dinar', symbol: 'KWD' },
+  { value: 'OMR', label: 'OMR - Omani Rial', symbol: 'OMR' },
+  { value: 'BDT', label: 'BDT - Bangladeshi Taka', symbol: 'BDT' },
+  { value: 'LKR', label: 'LKR - Sri Lankan Rupee', symbol: 'LKR' },
+  { value: 'NPR', label: 'NPR - Nepalese Rupee', symbol: 'NPR' },
+  { value: 'ZAR', label: 'ZAR - South African Rand', symbol: 'R' },
+]
+export function currencySymbol(code: string | null | undefined): string {
+  const c = code || 'INR'
+  return CURRENCY_OPTIONS.find((o) => o.value === c)?.symbol || c
 }
 export const PRICE_BASIS_LABELS: Record<string, string> = {
   ex_works: 'Ex-works', for_destination: 'FOR destination', for_dispatch: 'FOR dispatch station',
@@ -55,4 +90,12 @@ export const DOC_TYPE_LABELS: Record<string, string> = {
 export function formatINR(value: number | null | undefined): string {
   if (value == null) return '—'
   return `₹${Number(value).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+}
+
+// Amount shown with the order's currency symbol / code. Label only: amounts are not converted.
+export function formatMoney(value: number | null | undefined, currency?: string | null): string {
+  if (!currency || currency === 'INR') return formatINR(value)
+  if (value == null) return '—'
+  const sym = currencySymbol(currency)
+  return `${sym}${sym.length > 1 && /^[A-Z]+$/.test(sym) ? ' ' : ''}${Number(value).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 }

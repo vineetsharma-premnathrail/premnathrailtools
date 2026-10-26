@@ -17,7 +17,7 @@ import { TEXT } from '@/lib/theme'
 import TasksBoard, { TaskApi, TaskLabels, TaskRights } from '@/components/rnd/TasksBoard'
 import RequirementDepartmentsTab from '@/components/rnd/RequirementDepartmentsTab'
 
-const LABELS: TaskLabels = {
+export const REQUIREMENT_TASK_LABELS: TaskLabels = {
   manager: 'head',
   dueDate: 'Response Due Date',
   assignPlaceholder: 'Select person (R&D or a shared department)…',
@@ -36,12 +36,9 @@ export interface RequirementTaskGates {
   share: boolean
 }
 
-export default function RequirementTasksTab({ source, recordId, userId, access, gates }: {
-  source: 'inquiry' | 'tender'; recordId: number; userId: number; access: RndMyAccess; gates?: RequirementTaskGates
-}) {
-  const [shares, setShares] = useState<RndRequirementShare[]>([])
-
-  const api = useMemo<TaskApi>(() => ({
+/** The task API of one requirement — used here and by the Milestones tab (tasks inside milestones). */
+export function requirementTaskApi(source: 'inquiry' | 'tender', recordId: number): TaskApi {
+  return {
     list: () => rndApi.listTasks(source, recordId),
     // R&D people and the people of every department the requirement is shared with.
     people: () => rndApi.requirementAssignees(source, recordId),
@@ -58,7 +55,17 @@ export default function RequirementTasksTab({ source, recordId, userId, access, 
     reopen: rndApi.reopenTask,
     cancel: rndApi.cancelTask,
     openDoc: rndApi.openWorkDocument,
-  }), [source, recordId])
+  }
+}
+
+export default function RequirementTasksTab({ source, recordId, userId, access, gates, createDisabledHint }: {
+  source: 'inquiry' | 'tender'; recordId: number; userId: number; access: RndMyAccess; gates?: RequirementTaskGates
+  /** Set while the requirement has a live milestone: new tasks are added inside a milestone, so "New task" is off here. */
+  createDisabledHint?: string
+}) {
+  const [shares, setShares] = useState<RndRequirementShare[]>([])
+
+  const api = useMemo<TaskApi>(() => requirementTaskApi(source, recordId), [source, recordId])
 
   // Chips: R&D plus every department the requirement is shared with.
   const sharedDepts = Array.from(new Map(shares.map((s) => [s.department, s.department_label])).entries())
@@ -72,7 +79,8 @@ export default function RequirementTasksTab({ source, recordId, userId, access, 
         <RequirementDepartmentsTab source={source} recordId={recordId} isHead={access.is_head && (gates?.share ?? true)} onSharesChange={setShares} />
       )}
       <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '4px 0 10px' }}>Tasks — all departments</p>
-      <TasksBoard api={api} userId={userId} canManage={access.is_head} canCreate={access.view && (gates?.tasks.create ?? true)} rights={gates?.tasks} labels={LABELS}
+      {createDisabledHint && <p data-tour="rnd-req-tasks-milestone-hint" style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 10px' }}>{createDisabledHint}</p>}
+      <TasksBoard api={api} userId={userId} canManage={access.is_head} canCreate={access.view && (gates?.tasks.create ?? true) && !createDisabledHint} rights={gates?.tasks} labels={REQUIREMENT_TASK_LABELS}
         departmentFilter={{ options, mine: access.departments || [] }}
         reloadKey={`${source}-${recordId}-${shareKey}`} />
     </div>

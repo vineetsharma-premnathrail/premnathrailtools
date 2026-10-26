@@ -17,7 +17,7 @@ const config: TourConfig = {
     {
       target: 'sales-orders-filters',
       title: 'Filters',
-      purpose: 'Search by SO / PO / LOA number or customer; filter by status, due month (pick it from the month picker), orders waiting for your approval, or orders with vehicles at risk / overdue (the two toggle buttons). Clear resets all of them. View stays pinned at the right edge of the table.',
+      purpose: 'Search by SO / PO / LOA number or customer; filter by status, due month (pick it from the month picker), orders waiting for your approval, or orders with vehicles at risk / overdue (the two toggle buttons). Clear resets all of them. Click a row to open that order.',
     },
     {
       target: 'sales-orders-table',

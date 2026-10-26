@@ -82,11 +82,11 @@ export default function MyClaimsPage() {
       <div data-tour="hr-myclaims-table" style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
           <thead>
-            <tr>{['Claim', 'Title', 'Date', 'Trip', 'Lines', 'Amount', 'Status', ''].map((h, hi) => <th key={h} style={{ ...thStyle, textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr>
+            <tr>{['Claim', 'Title', 'Date', 'Trip', 'Lines', 'Amount', 'Status'].map((h, hi) => <th key={h} style={{ ...thStyle, textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr>
           </thead>
           <tbody>
-            {loading ? <EmptyRow colSpan={8} text="Loading…" /> : rows.length === 0 ? (
-              <EmptyRow colSpan={8} text={status ? 'No claims with this status.' : 'No expense claims yet. Use “+ New Claim” to start one.'} />
+            {loading ? <EmptyRow colSpan={7} text="Loading…" /> : rows.length === 0 ? (
+              <EmptyRow colSpan={7} text={status ? 'No claims with this status.' : 'No expense claims yet. Use “+ New Claim” to start one.'} />
             ) : rows.map((c) => (
               <tr key={c.id} onClick={() => open(c)} style={{ cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{c.claim_no}</td>
@@ -101,9 +101,6 @@ export default function MyClaimsPage() {
                 <td style={tdStyle}>
                   <Pill hex={CLAIM_STATUS_HEX[c.status] || '#64748B'} label={CLAIM_STATUS_LABELS[c.status] || c.status} />
                   {c.status === 'paid' && c.paid_on && <div style={{ fontSize: 11.5, color: TEXT.muted, marginTop: 4 }}>{fmtDate(c.paid_on)}</div>}
-                </td>
-                <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                  <span onClick={() => open(c)} style={linkActionStyle}>{c.can_edit ? 'Edit' : 'View'}</span>
                 </td>
               </tr>
             ))}

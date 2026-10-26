@@ -53,7 +53,7 @@ const config: TourConfig = {
       target: 'hyd-plan-table',
       title: 'Plans list',
       purpose: 'Most urgent first. Shows the frequency, when it was last done (date and hours), next due, who it is assigned to and the due badge (red Overdue, amber Due Soon, green On Track, grey Inactive).',
-      after: 'Job column: "Raise job" creates a service job for this plan; "Open job" goes to the job already raised and not yet completed. Click a row or "View" to open the plan.',
+      after: 'Job column: "Raise job" creates a service job for this plan; "Open job" goes to the job already raised and not yet completed. Click a row to open the plan.',
     },
   ],
 }

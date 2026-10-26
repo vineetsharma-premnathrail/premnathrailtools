@@ -141,16 +141,16 @@ export default function HrAssetsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr>
-              {['Code', 'Asset', 'Category', 'Serial', 'Plant', 'Status', 'Held by', 'Condition', ''].map((h, i) => (
+              {['Code', 'Asset', 'Category', 'Serial', 'Plant', 'Status', 'Held by', 'Condition'].map((h, i) => (
                 <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={assets.length} />}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <EmptyRow colSpan={9} text="Loading…" />
+              <EmptyRow colSpan={8} text="Loading…" />
             ) : assets.length === 0 ? (
-              <EmptyRow colSpan={9} text={filtersActive ? 'No assets match these filters.' : 'No assets registered yet. Use “+ Add Asset” to register the first one.'} />
+              <EmptyRow colSpan={8} text={filtersActive ? 'No assets match these filters.' : 'No assets registered yet. Use “+ Add Asset” to register the first one.'} />
             ) : (
               assets.map((a) => (
                 <tr key={a.id} onClick={() => router.push(recordPath('/dashboard/hr/assets', a))} style={{ cursor: 'pointer' }}>
@@ -177,9 +177,6 @@ export default function HrAssetsPage() {
                     ) : '—'}
                   </td>
                   <td style={tdStyle}>{a.condition ? ASSET_CONDITION_LABELS[a.condition] || a.condition : '—'}</td>
-                  <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                    <span data-tour="hr-asset-view-link" onClick={() => router.push(recordPath('/dashboard/hr/assets', a))} style={linkActionStyle}>View</span>
-                  </td>
                 </tr>
               ))
             )}

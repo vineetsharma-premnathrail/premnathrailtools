@@ -13,7 +13,7 @@ import ElectricalNav from '@/components/electrical/ElectricalNav'
 import {
   inputStyle, thStyle, tdStyle, Pill, ErrorBanner, useLookupErrors, PROCUREMENT_LABELS, PROCUREMENT_HEX, humanize,
 } from '@/components/electrical/shared'
-import { RowCount, numThStyle, numTdStyle, smallSecondaryBtnStyle } from '@/components/shared/ui'
+import { RowCount, numThStyle, numTdStyle } from '@/components/shared/ui'
 
 // '' = the API default: every line still open (To Buy / PR Raised / Ordered).
 const STATUS_FILTERS: { value: string; label: string }[] = [
@@ -31,7 +31,7 @@ const chipStyle = (hex: string): React.CSSProperties => ({
   background: `${hex}14`, border: `1px solid ${hex}33`, color: hex,
 })
 
-const COLS = ['Job', 'Line #', 'Category', 'Description', 'Qty', 'Rating', 'Procurement', 'PR', '']
+const COLS = ['Job', 'Line #', 'Category', 'Description', 'Qty', 'Rating', 'Procurement', 'PR']
 
 export default function ElectricalPurchaseRequirementsPage() {
   const { isAuthorized, isLoading } = useRequireApp('electrical')
@@ -173,9 +173,6 @@ export default function ElectricalPurchaseRequirementsPage() {
                       {r.p2p_status && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{humanize(r.p2p_status)}</div>}
                     </>
                   ) : '—'}
-                </td>
-                <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                  <button type="button" onClick={() => go(r)} style={smallSecondaryBtnStyle}>View</button>
                 </td>
               </tr>
             ))}

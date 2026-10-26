@@ -14,7 +14,7 @@ const config: TourConfig = {
     {
       target: 'transfers-table',
       title: 'Transfer rows',
-      purpose: 'One row per transfer: number, From store, To store, date and number of items. Click a row (or View) to open its detail page. Shows "No stock transfers yet" until one is created.',
+      purpose: 'One row per transfer: number, From store, To store, date and number of items. Click a row to open its detail page. Shows "No stock transfers yet" until one is created.',
     },
   ],
 }

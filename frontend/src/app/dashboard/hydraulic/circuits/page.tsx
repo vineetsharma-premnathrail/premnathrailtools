@@ -105,7 +105,7 @@ export default function HydCircuitsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr>
-              {['Circuit No.', 'Rev', 'Title', 'System', 'Type', 'Files', 'Approved', 'Status', ''].map((h, hi) => (
+              {['Circuit No.', 'Rev', 'Title', 'System', 'Type', 'Files', 'Approved', 'Status'].map((h, hi) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}{hi === 0 && <RowCount count={circuits.length} />}
                 </th>
@@ -114,9 +114,9 @@ export default function HydCircuitsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : circuits.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No circuits match. Create one, upload its ISO 1219 schematic, and send it for review.</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No circuits match. Create one, upload its ISO 1219 schematic, and send it for review.</td></tr>
             ) : (
               circuits.map((c) => (
                 <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/circuits', c))} style={{ cursor: 'pointer', opacity: c.status === 'superseded' ? 0.65 : 1 }}>
@@ -138,9 +138,6 @@ export default function HydCircuitsPage() {
                   </td>
                   <td style={cellStyle}>
                     <Pill label={STATUS_LABELS[c.status] || c.status} hex={STATUS_HEX[c.status] || '#78716c'} />
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(recordPath('/dashboard/hydraulic/circuits', c))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

@@ -22,12 +22,7 @@ const config: TourConfig = {
         { value: 'Vehicle Performance', meaning: 'Traction capability per gear and speed — tractive effort and shunting charts.' },
         { value: 'Spline', meaning: 'Strength and factor of safety of an involute spline shaft.' },
       ],
-      after: 'Inside any calculator a second row of pills lets you jump straight to the others. Every run is saved to History automatically.',
-    },
-    {
-      target: 'rnd-toolnav-braking',
-      title: 'Calculator pills',
-      purpose: 'Shortcut row to jump between calculators without coming back to this page.',
+      after: 'Open any calculator from its card on this page. Every run is saved to History automatically.',
     },
     {
       target: 'rnd-nav-history',
