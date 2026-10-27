@@ -71,6 +71,9 @@ register_features(
              "Confirm services received against a PO's service lines, accept or cancel service entries."),
     _feature("po_document", "PO document", "action", {"view": "view", "create": "edit"},
              "Download the signed PO document, and upload it on a draft PO."),
+    _feature("tally_import", "Upload Tally POs", "action", {"view": "approve", "create": "approve"},
+             "Upload purchase orders already approved in Tally from an Excel file. They skip portal PO approval and "
+             "are ready for goods receipt at once, so by default only people who can approve POs get it."),
     _feature("link_item", "Link PO line to Item Master", "action", {"view": "view", "edit": "edit"},
              "Link an older PO line to its Item Master item so goods can be received against it."),
     _feature("history", "PO history", "section", {"view": "view"},

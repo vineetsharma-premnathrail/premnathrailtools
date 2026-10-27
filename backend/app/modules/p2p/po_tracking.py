@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
-from app.modules.p2p.po_split import _LEGACY_RELEASED_PR_STATUSES, PO_ENTITY
+from app.modules.p2p.po_split import _LEGACY_RELEASED_PR_STATUSES, EXTERNAL_PO_SOURCES, PO_ENTITY
 from app.modules.store.models.item import StoreItem
 
 STAGES: dict[str, str] = {
@@ -115,6 +115,8 @@ def load_infos(db: Session, pos: list[P2PPurchaseOrder]) -> dict[int, PoInfo]:
         pr = prs.get(po.p2p_request_id) if po.p2p_request_id else None
         if po.status in ("draft", "cancelled"):
             released = False
+        elif po.source in EXTERNAL_PO_SOURCES:
+            released = True
         elif po.id in approvals:
             released = approvals[po.id] == "approved"
         else:  # approved before the approval engine: the requisition's status tells

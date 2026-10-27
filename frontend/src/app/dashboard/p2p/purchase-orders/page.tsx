@@ -11,31 +11,34 @@ import P2PNav from '@/components/p2p/P2PNav'
 import POReadyList from '@/components/p2p/POReadyList'
 import POApprovalQueue from '@/components/p2p/POApprovalQueue'
 import POTrackingList from '@/components/p2p/POTrackingList'
-import POOpenItems from '@/components/p2p/POOpenItems'
 import CreatePODialog from '@/components/p2p/CreatePODialog'
 import { useP2PApproverFlags } from '@/components/p2p/useP2PApproverFlags'
 import { PO_CREATE_BTN } from '@/components/p2p/POTrackingShared'
+import TallyPOUploadDialog from '@/components/p2p/TallyPOUploadDialog'
+import { secondaryBtnStyle } from '@/components/shared/ui'
+import { UploadSimple } from '@phosphor-icons/react'
 
-type View = 'create' | 'approvals' | 'tracking' | 'open_items'
+type View = 'create' | 'approvals' | 'tracking'
 
 export default function PurchaseOrdersPage() {
   const { user, isLoading } = useAuth()
-  const { can } = useCan()
+  const { can, canFeature } = useCan()
   const isPurchase = !!user?.apps?.includes('purchase') || user?.role === 'admin'
   const canCreatePo = isPurchase && can('p2p', 'purchase_orders', 'create')
   const isApprover = useP2PApproverFlags().is_po_approver
+  // POs already approved in Tally — skip portal approval, so a separate permission.
+  const canTallyUpload = isPurchase && canFeature('p2p', 'purchase_orders', 'tally_import', 'create')
+  const [tallyOpen, setTallyOpen] = useState(false)
   const views: { key: View; label: string }[] = [
     ...(canCreatePo ? [{ key: 'create' as const, label: 'Create PO' }] : []),
     ...(isApprover ? [{ key: 'approvals' as const, label: 'Approvals' }] : []),
     ...(isPurchase ? [{ key: 'tracking' as const, label: 'Tracking' }] : []),
-    // ME2N / ME2L / ME2M line-level open PO report + ME23N PO history.
-    ...(isPurchase || can('p2p', 'purchase_orders', 'view') ? [{ key: 'open_items' as const, label: 'Open Items' }] : []),
   ]
   const [createFor, setCreateFor] = useState<number | 'new' | null>(null)
   const [picked, setPicked] = useState<View | null>(() => {
     if (typeof window === 'undefined') return null
     const v = new URLSearchParams(window.location.search).get('view')
-    return v === 'create' || v === 'approvals' || v === 'tracking' || v === 'open_items' ? v : null
+    return v === 'create' || v === 'approvals' || v === 'tracking' ? v : null
   })
 
   if (isLoading || !user) return null
@@ -69,13 +72,19 @@ export default function PurchaseOrdersPage() {
             {v.label}
           </button>
         ))}
+        {view === 'create' && canTallyUpload && (
+          <button type="button" data-tour="po-tally-upload" onClick={() => setTallyOpen(true)}
+            style={{ ...secondaryBtnStyle, marginLeft: 'auto', alignSelf: 'center', marginBottom: 6, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <UploadSimple size={15} />Upload Tally POs
+          </button>
+        )}
       </div>
 
       {view === 'create' && <POReadyList onCreate={(rfqId) => setCreateFor(rfqId)} lead={createBtn} />}
       {createFor !== null && <CreatePODialog initialRfqId={createFor === 'new' ? undefined : createFor} onClose={() => setCreateFor(null)} />}
       {view === 'approvals' && <POApprovalQueue />}
       {view === 'tracking' && <POTrackingList lead={createBtn} />}
-      {view === 'open_items' && <POOpenItems lead={createBtn} />}
+      {tallyOpen && <TallyPOUploadDialog onClose={() => setTallyOpen(false)} />}
     </div>
   )
 }

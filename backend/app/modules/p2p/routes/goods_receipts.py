@@ -64,6 +64,9 @@ def _po_approval_block_reason(db: Session, po: P2PPurchaseOrder) -> str | None:
     Director / Partner stamps of POs approved before it),
     not just a status string, and refuses a PO with no parent PR at all —
     such a PO never went through any approval chain."""
+    from app.modules.p2p.po_split import EXTERNAL_PO_SOURCES
+    if po.source in EXTERNAL_PO_SOURCES:
+        return None  # approved in Tally and uploaded — no portal approval to wait for
     pr = db.query(P2PRequest).filter(P2PRequest.id == po.p2p_request_id).first() if po.p2p_request_id else None
     if not pr:
         return f"PO '{po.po_number}' isn't linked to a purchase requisition, so it never went through PO approval — goods can't be received against it."

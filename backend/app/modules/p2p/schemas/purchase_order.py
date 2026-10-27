@@ -125,6 +125,9 @@ class P2PPurchaseOrderResponse(BaseModel):
     ship_to_location_id: int | None = None
     vendor_quotation_id: int | None = None
     amendment_no: int = 0
+    # "tally" for a PO uploaded from Tally; external_ref = its Tally PO number.
+    source: str | None = None
+    external_ref: str | None = None
     created_by_id: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None

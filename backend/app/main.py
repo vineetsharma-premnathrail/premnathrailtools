@@ -316,6 +316,7 @@ from app.modules.p2p.routes import account_assignment as p2p_account_assignment_
 from app.modules.p2p.routes import mm_quotations as p2p_mm_quotations_routes
 from app.modules.p2p.routes import rfq_invites as p2p_rfq_invites_routes
 from app.modules.p2p.routes import po_amendments as p2p_po_amendments_routes
+from app.modules.p2p.routes import tally_po_import as p2p_tally_po_import_routes
 from app.modules.p2p.routes import info_records as p2p_info_records_routes
 from app.modules.store.routes import item_plants as store_item_plants_routes
 from app.modules.store.routes import in_transit as store_in_transit_routes
@@ -623,6 +624,7 @@ app.include_router(p2p_account_assignment_routes.router, prefix="/api/v1")
 app.include_router(p2p_mm_quotations_routes.router, prefix="/api/v1")
 app.include_router(p2p_rfq_invites_routes.router, prefix="/api/v1")
 app.include_router(p2p_po_amendments_routes.router, prefix="/api/v1")
+app.include_router(p2p_tally_po_import_routes.router, prefix="/api/v1")
 app.include_router(p2p_info_records_routes.router, prefix="/api/v1")
 app.include_router(store_item_plants_routes.router, prefix="/api/v1")
 app.include_router(store_in_transit_routes.router, prefix="/api/v1")

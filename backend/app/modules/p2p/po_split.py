@@ -35,6 +35,9 @@ _MANAGED_PR_STATUSES = {
 # PR statuses a further (split) PO can be drafted at.
 SPLIT_PO_PR_STATUSES = _MANAGED_PR_STATUSES
 _LEGACY_RELEASED_PR_STATUSES = ("po_approved", "partially_received", "received", "closed")
+# POs approved outside the portal and uploaded (purchase_order.source) —
+# released from import, there is no portal approval to wait for.
+EXTERNAL_PO_SOURCES = ("tally",)
 
 
 def live_pos(db: Session, pr_id: int) -> list[P2PPurchaseOrder]:
@@ -57,6 +60,8 @@ def po_is_released(db: Session, po: P2PPurchaseOrder) -> bool:
     status tells."""
     if po.status in ("draft", "cancelled"):
         return False
+    if po.source in EXTERNAL_PO_SOURCES:
+        return True
     status = po_approval_status(db, po)
     if status is not None:
         return status == "approved"

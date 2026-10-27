@@ -1757,6 +1757,10 @@ export const itemsApi = {
   },
 }
 
+export interface TallyPoPreviewLine { row: number; store_item_id: number; item_code: string; item_name: string; unit: string | null; quantity: number; unit_price: number; gst_rate: number | null; line_total: number | null }
+export interface TallyPoPreviewPo { tally_po_no: string | null; po_date: string | null; expected_delivery: string | null; vendor_id: number | null; vendor_code: string | null; vendor_name: string | null; lines: TallyPoPreviewLine[]; total_value: number; errors: string[] }
+export interface TallyPoPreview { pos: TallyPoPreviewPo[]; ready: number; with_errors: number; lines: number }
+
 export const purchaseOrdersApi = {
   list: async (params: Record<string, unknown> = {}) => {
     const { data } = await apiClient.get('/p2p/purchase-orders', { params })
@@ -1768,7 +1772,32 @@ export const purchaseOrdersApi = {
     return data
   },
 
-  // POs are created only via rfqApi.createPoDraft (RFQ -> draft -> submit);
+  // Tally POs (2026-10-27): POs already approved in Tally, uploaded from Excel.
+  // preview checks the file only; commit saves all POs or none.
+  tallyTemplate: async () => {
+    const { data } = await apiClient.get('/p2p/tally-po-import/template', { responseType: 'blob' })
+    return data as Blob
+  },
+  tallyPreview: async (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const { data } = await apiClient.post('/p2p/tally-po-import/preview', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 })
+    return data as TallyPoPreview
+  },
+  tallyCommit: async (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const { data } = await apiClient.post('/p2p/tally-po-import/commit', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 })
+    return data as { created: { id: number; po_number: string; tally_po_no: string; vendor_name: string; total_value: number; lines: number }[] }
+  },
+  tallyAttachDocument: async (poId: number, file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const { data } = await apiClient.post(`/p2p/tally-po-import/${poId}/document`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 })
+    return data as { id: number; po_number: string; document_filename: string }
+  },
+
+  // Portal POs are created only via rfqApi.createPoDraft (RFQ -> draft -> submit);
   // status changes only through submit/approval/GRN, never this update.
   update: async (id: number, payload: { expected_delivery?: string; delivery_terms?: string }) => {
     const { data } = await apiClient.patch(`/p2p/purchase-orders/${id}`, payload)

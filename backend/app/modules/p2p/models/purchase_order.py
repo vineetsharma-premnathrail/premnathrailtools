@@ -1,7 +1,7 @@
 from __future__ import annotations
 from datetime import date, datetime
 from typing import TYPE_CHECKING
-from sqlalchemy import String, Integer, Float, Date, DateTime, Text, ForeignKey
+from sqlalchemy import String, Integer, Float, Date, DateTime, Text, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
@@ -94,6 +94,15 @@ class P2PPurchaseOrder(Base, TimestampMixin):
     ship_to_location_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("store_locations.id"), nullable=True)
     vendor_quotation_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("p2p_vendor_quotations.id"), nullable=True)
     amendment_no: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+    # A PO made and approved outside the portal and uploaded here (2026-10-27:
+    # "tally" = Tally ERP). Such a PO has no requisition and no portal approval —
+    # it counts as released from import (po_split.po_is_released) so the store
+    # can receive it. external_ref = the PO number in that system; one import
+    # per (source, external_ref).
+    source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    external_ref: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    __table_args__ = (Index("uq_p2p_purchase_orders_source_external_ref", "source", "external_ref", unique=True),)
 
     p2p_request: Mapped["P2PRequest | None"] = relationship("P2PRequest")
     items: Mapped[list["P2PPurchaseOrderItem"]] = relationship(
