@@ -103,7 +103,6 @@ from app.modules.sales.models.approval import SalesApproval
 from app.modules.sales.models.attachment import SalesAttachment
 from app.modules.sales.models.delivery import SalesDeliveryEvent, SalesInvoiceLink
 from app.modules.sales.models.proforma import SalesProformaInvoice
-from app.modules.sales.models.order_project import OrderProject, OrderProjectElement
 from app.modules.production.models.workstation import ProductionWorkstation
 from app.modules.production.models.mrp import ProductionMrpRun, ProductionPlannedOrder, ProductionMrpException
 from app.modules.production.models.bom import ProductionBom, ProductionBomItem, ProductionBomOperation
@@ -152,6 +151,7 @@ from app.modules.products.models.application import ProductApplication
 from app.modules.products.models.product import FinishedProduct, ProductSpecification
 from app.modules.products.models.price_condition import ProductPriceCondition
 from app.modules.projects.models.project import PmProject
+from app.modules.projects.models.element import PmProjectElement  # noqa: F401
 from app.modules.projects.models.task import PmProjectTask, PmTaskSubtask, PmTaskUpdate, PmTaskTimeLog, PmMilestoneMessage
 from app.modules.projects.models.milestone import PmProjectMilestone
 from app.modules.projects.models.document import PmProjectDocument
@@ -175,11 +175,12 @@ from app.modules.store.models.batch import StoreBatch  # noqa: F401
 from app.modules.store.models.job_work import StoreJobWorkReceipt, StoreJobWorkReceiptComponent  # noqa: F401
 from app.modules.store.models.serial_number import StoreSerialNumber, StoreSerialEvent  # noqa: F401
 from app.modules.store.models.bin_move import StoreBinMove  # noqa: F401
+from app.modules.store.models.pre_po_receipt import StorePrePoReceipt, StorePrePoReceiptItem, StorePrePoReceiptAttachment  # noqa: F401
 from app.modules.crm.models import (
     Organization, OrgContact, Inquiry, InquiryLineItem, Quotation, QuotationLineItem,
     Tender, Activity,
     CrmDocument, CrmStageLog, Product, PaymentTerm, CrmRndRequest, CrmRequirementComment,
-    CrmDocumentCategory,
+    CrmDocumentCategory, CrmEngagement,
 )
 from app.modules.accounts.models.gl_account import GLAccount
 from app.modules.accounts.models.bank_account import BankAccount

@@ -23,7 +23,7 @@ import { formatDate, formatDateTime } from '@/lib/format'
 import { recordHref, recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useCan } from '@/lib/permissions'
-import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
+import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
 
 const BUILD_LABELS: Record<string, string> = { planned: 'Planned', in_progress: 'In Progress', on_hold: 'On Hold', completed: 'Completed', handed_over: 'Handed Over', cancelled: 'Cancelled' }
@@ -441,10 +441,10 @@ export default function RrvBuildDetailPage() {
               <DetailRow label="Customer PO">{b.customer_po_number ? `${b.customer_po_number}${b.customer_po_date ? ` · ${formatDate(b.customer_po_date)}` : ''}` : null}</DetailRow>
               {b.order_reference && <DetailRow label="Order reference">{b.order_reference}</DetailRow>}
               {b.order_project_number && b.order_project_id && (
-                <DetailRow label="Order Project">
+                <DetailRow label="Project">
                   <span data-tour="production-rrv-order-project">
                     <OrderProjectChip opNumber={b.order_project_number} elementNo={b.order_project_element_no} label={b.order_project_element_label}
-                      onClick={canTab('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', b, 'order_project_id')) : undefined} />
+                      onClick={canTab('projects', 'all_projects', 'view') ? () => router.push(recordPath('/dashboard/projects', b, 'order_project_id')) : undefined} />
                   </span>
                 </DetailRow>
               )}

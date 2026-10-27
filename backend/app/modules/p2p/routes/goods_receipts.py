@@ -274,6 +274,9 @@ def _sync_po_and_pr_status(db: Session, po: P2PPurchaseOrder, user_id: int) -> N
         po.status = "partially_fulfilled"
     else:
         po.status = "fulfilled"
+    # A Before-PO receipt closes once its PO is received in full.
+    from app.modules.p2p.pre_po import close_receipt_if_po_received
+    close_receipt_if_po_received(db, po)
 
     if not po.p2p_request_id:
         return

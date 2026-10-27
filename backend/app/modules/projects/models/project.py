@@ -1,9 +1,13 @@
 from __future__ import annotations
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 from sqlalchemy import String, Integer, Text, Date, DateTime, ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
+
+if TYPE_CHECKING:
+    from app.modules.projects.models.element import PmProjectElement
 
 # Planning → Active → On hold ↔ Active → Technically complete (every
 # milestone achieved, machine handed over) → Closed (after final billing and
@@ -53,3 +57,22 @@ class PmProject(Base, TimestampMixin):
     documents_archived_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     # What went well / what to do differently — goes into the Final Project Report.
     lessons_learned: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The Finance budget (internal order) the project's spend is tracked against;
+    # one budget belongs to one project (accounts/services/project_budget.py).
+    internal_order_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("internal_orders.id", ondelete="SET NULL"), nullable=True, unique=True)
+    # Set when the project was created from a confirmed sales order (one order = one project).
+    sales_order_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("sales_orders.id"), nullable=True, unique=True)
+    customer_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("crm_organizations.id"), nullable=True, index=True)
+    branch_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("branches.id"), nullable=True)
+    # Where the machine/order is in its life (projects/lifecycle.py LIFECYCLE_STAGES);
+    # separate from `status`, which keeps hold / cancel / close / release.
+    lifecycle_stage: Mapped[str] = mapped_column(String(30), default="planned", server_default="planned", nullable=False)
+
+    # Units (vehicles / lots) of a project made from a sales order.
+    elements: Mapped[list["PmProjectElement"]] = relationship(
+        "PmProjectElement", back_populates="project", cascade="all, delete-orphan",
+        order_by="PmProjectElement.id",
+    )

@@ -130,6 +130,11 @@ def _can_modify(record, user: User) -> bool:
     return user.role == "admin" or record.created_by_id == user.id
 
 
+def _check_doc_date(value: date | None) -> None:
+    if value and value > date.today():
+        raise HTTPException(status_code=422, detail=f"Inquiry Date {value.strftime('%d-%m-%Y')} is in the future. Enter the day it was actually received (today or earlier).")
+
+
 def _generate_universal_id(db: Session) -> str:
     today = date.today().strftime("%Y%m%d")
     return next_sequential_id(db, prefix=f"INQ-{today}-", column=Inquiry.universal_id)
@@ -206,6 +211,8 @@ async def create_inquiry(
     _check_choice({"status": payload.status}, None, "status", INQ_STATUSES, "inquiry status")
 
     data = payload.model_dump(exclude={"additional_items"})
+    data["inquiry_date"] = data.get("inquiry_date") or date.today()
+    _check_doc_date(data["inquiry_date"])
     # The BD owner is always the person who logs the inquiry — not picked on the form.
     data["bd_owner_id"] = user.id
     data["bd_owner"] = user.name or user.email
@@ -289,6 +296,11 @@ async def update_inquiry(
     ensure_not_with_sales(db, inquiry_id=inquiry.id, label="inquiry")
 
     updates = payload.model_dump(exclude_unset=True, exclude={"additional_items", "stage_reason"})
+    if "inquiry_date" in updates:
+        if updates["inquiry_date"] is None:
+            updates.pop("inquiry_date")  # the date is always kept; clearing it is ignored
+        else:
+            _check_doc_date(updates["inquiry_date"])
     # BD owner = the creator, fixed for the inquiry's life. The form sends the
     # current values back (fine); asking for a different owner is refused.
     if updates.get("bd_owner_id") is not None and updates["bd_owner_id"] != inquiry.bd_owner_id:
@@ -319,6 +331,11 @@ async def update_inquiry(
         "org_contact_id" in updates and updates["org_contact_id"] != inquiry.org_contact_id
     ):
         _check_org_and_contact(db, updates.get("org_id") or inquiry.org_id, updates.get("org_contact_id", inquiry.org_contact_id), "inquiry")
+    # Closing the lead as not ordered also closes its pipeline stage (owner, 2026-10-27:
+    # the status changed but the stage tracker still showed the old stage).
+    if (updates.get("status") == "Closed - Not Ordered" and "current_stage" not in updates
+            and inquiry.current_stage != "Closed – Not Ordered"):
+        updates["current_stage"] = "Closed – Not Ordered"
     stage_changed = "current_stage" in updates and updates["current_stage"] != inquiry.current_stage
     changed = [f for f, v in updates.items() if str(getattr(inquiry, f, None)) != str(v)]
     # Stage changes get their own timeline entry (_log_stage below) — everything else

@@ -170,7 +170,7 @@ def _notify_new_lot(db: Session, lot: QualityInspectionLot, actor_id: int | None
 
 def order_project_link_of(obj) -> dict:
     """{order_project_id, order_project_element_id} copied from a source
-    record (work order…) once its module carries the Order Project link —
+    record (work order…) once its module carries the project link —
     empty values until then."""
     return {"order_project_id": getattr(obj, "order_project_id", None),
             "order_project_element_id": getattr(obj, "order_project_element_id", None)}

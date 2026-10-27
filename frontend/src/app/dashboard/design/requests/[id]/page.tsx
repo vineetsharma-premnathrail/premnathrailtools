@@ -23,7 +23,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { recordHref, recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
-import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 
 const STATUS_HEX: Record<string, string> = {
   open: '#2563EB', accepted: '#7C3AED', in_progress: '#0f766e', on_hold: '#b45309', completed: '#16A34A', cancelled: '#a8a29e',
@@ -323,9 +323,9 @@ export default function DesignRequestDetailPage() {
             </DetailGroup>
             <DetailGroup title="Linked to" last>
               {req.order_project_number && (
-                <DetailRow label="Order project">
+                <DetailRow label="Project">
                   <OrderProjectChip opNumber={req.order_project_number} elementNo={req.order_project_element_no} label={req.order_project_element_label}
-                    onClick={() => router.push(recordPath('/dashboard/projects/order-projects', req, 'order_project_id'))} />
+                    onClick={() => router.push(recordPath('/dashboard/projects', req, 'order_project_id'))} />
                 </DetailRow>
               )}
               <DetailRow label="Customer">{req.customer_name}</DetailRow>
@@ -466,7 +466,7 @@ export default function DesignRequestDetailPage() {
                 </>}
                 right={
                   <SheetSection icon="link" title="Links">
-                    <div style={{ marginBottom: 14 }}><label style={sheetLabel}>Order project <Optional /></label><OrderProjectPicker value={editOp} requireElement={false} onChange={(v) => setEditOp(v)} /></div>
+                    <div style={{ marginBottom: 14 }}><label style={sheetLabel}>Project <Optional /></label><OrderProjectPicker value={editOp} requireElement={false} onChange={(v) => setEditOp(v)} /></div>
                     <div style={{ marginBottom: 14 }}><label style={sheetLabel}>Customer <Optional /></label><SearchableSelect value={edit.customer_id} onChange={(v) => setEdit({ ...edit, customer_id: v })} options={toOptions(customers, 'None')} /></div>
                     <div style={{ marginBottom: 14 }}><label style={sheetLabel}>Project <Optional /></label><SearchableSelect value={edit.pm_project_id} onChange={(v) => { setMilestones([]); setEdit({ ...edit, pm_project_id: v, pm_milestone_id: '' }) }} options={toOptions(projects, 'None')} /></div>
                     <div style={{ marginBottom: 14 }}>

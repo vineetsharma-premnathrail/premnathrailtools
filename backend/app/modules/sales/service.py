@@ -1170,9 +1170,9 @@ def apply_amendment(db: Session, so: SalesOrder, proposed: dict) -> list[str]:
     recompute_totals(so)
     so.amendment_no = (so.amendment_no or 0) + 1
     refresh_order(db, so)
-    # Order Project: vehicles added / cancelled by the amendment (sales/order_projects.py).
-    from app.modules.sales.order_projects import ensure_order_project
-    ensure_order_project(db, so, None)
+    # Project units: vehicles added / cancelled by the amendment (projects/so_projects.py).
+    from app.modules.projects.so_projects import ensure_project_for_order
+    ensure_project_for_order(db, so, None)
     return notes
 
 
@@ -1191,9 +1191,9 @@ def confirm_order(db: Session, so: SalesOrder, user: User) -> None:
     so.status = "confirmed"
     so.confirmed_at, so.confirmed_by_id = now_utc(), user.id
     refresh_order(db, so)
-    # Execution project (OP-YYYY-NNN) for orders that build RRVs (sales/order_projects.py).
-    from app.modules.sales.order_projects import ensure_order_project
-    ensure_order_project(db, so, user)
+    # Project (PEW-NN) in Project Management > All Projects for orders that build RRVs (projects/so_projects.py).
+    from app.modules.projects.so_projects import ensure_project_for_order
+    ensure_project_for_order(db, so, user)
     # CRM → Sales handoff (plan §6.1): close the source inquiry / tender as ordered.
     from app.modules.crm.services.won import mark_won
     mark_won(db, so, user)
@@ -1258,12 +1258,12 @@ def notify_order_rejected(db: Session, so: SalesOrder, actor, comment: str, *, r
 
 def notify_confirmed(db: Session, so: SalesOrder, actor_id: int) -> None:
     msg = (f"{so.customer_name}: PO {so.customer_po_number}, value {inr(so.grand_total)}. "
-           f"Its Order Project and a planned RRV build per vehicle are created automatically — see Sales › Order Projects.")
+           f"Its project and a planned RRV build per vehicle are created automatically — see Project Management › All Projects.")
     from app.modules.sales import events as sales_events
     sales_events.order_event(
         db, None, "order_confirmed", so, title=f"Sales order {so.so_number} confirmed",
         message=f"{so.customer_name}: PO {so.customer_po_number} is confirmed as {so.so_number}. "
-                f"Its Order Project and a planned build per vehicle are created automatically (Sales › Order Projects).",
+                f"Its project and a planned build per vehicle are created automatically (Project Management › All Projects).",
         skip_user_ids={actor_id, so.created_by_id, so.submitted_by_id, so.sales_owner_id, *production_planners(db)},
     )
     notify_bell(db, [so.created_by_id, so.submitted_by_id, so.sales_owner_id], f"{so.so_number} confirmed", msg,

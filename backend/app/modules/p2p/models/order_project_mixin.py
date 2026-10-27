@@ -1,4 +1,4 @@
-"""Read-only display of a line's Order Project element (PR / PO / GRN lines).
+"""Read-only display of a line's PM project unit (PR / PO / GRN lines).
 
 Each line model defines its own order_project_id / order_project_element_id
 columns and an `order_project_element` view-only relationship; this mixin
@@ -11,7 +11,7 @@ class OrderProjectLineMixin:
     @property
     def order_project_number(self) -> str | None:
         el = getattr(self, "order_project_element", None)
-        return el.project.op_number if el is not None and el.project is not None else None
+        return el.project.project_code if el is not None and el.project is not None else None
 
     @property
     def order_project_element_no(self) -> str | None:
@@ -28,5 +28,5 @@ class OrderProjectLineMixin:
         el = getattr(self, "order_project_element", None)
         if el is None or el.project is None:
             return None
-        from app.modules.sales.order_projects import element_display
+        from app.modules.projects.so_projects import element_display
         return element_display(el.project, el)

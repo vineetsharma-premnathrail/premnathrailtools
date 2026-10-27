@@ -65,7 +65,7 @@ Build statuses: `planned → in_progress → completed → handed_over`, plus `o
 # 4. Data model (all new tables prefixed `production_`)
 
 * **`production_rrv_builds`** holds the vehicle record:
-  * `build_number` (`RRV-YYYY-NNNN`)
+  * `build_number` (the Order Project vehicle number, e.g. `PEW-80/01`; a hand-made build takes the next `PEW-N`; builds before 2026-10-27 keep `RRV-YYYY-NNNN`)
   * model, customer, customer PO number and date, order reference
   * `erp_project_id` (the machine; optional until completion, when it's created if missing)
   * planned serial, chassis, engine, year of manufacture

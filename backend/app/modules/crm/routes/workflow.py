@@ -2,11 +2,12 @@ import json
 import re
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy.orm import Session
+from sqlalchemy import or_
+from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import get_db
 from app.core.permissions import ensure_can_delete, ensure_feature_action, require_feature_action, require_tab_access, require_tab_action
-from app.core.data_scope import ensure_in_scope
+from app.core.data_scope import apply_scope, ensure_in_scope
 import app.modules.crm.access  # noqa: F401 — registers the CRM data-scope models
 from app.modules.crm.access import QUOTATION_LINE_MONEY_FIELDS, QUOTATION_MONEY_FIELDS, blank, sees_quotation_prices
 from app.modules.main.models.user import User
@@ -120,6 +121,25 @@ async def list_quotations(inquiry_id: int, db: Session = Depends(get_db), _user:
     if qstatus.expire_due(db):  # validity ended since the daily job last ran
         db.commit()
     return [quotation_out(q, _user) for q in db.query(Quotation).filter(Quotation.inquiry_id == inquiry_id).order_by(Quotation.id.desc()).all()]
+
+
+@router.get("/past-quotations", response_model=list[QuotationResponse])
+async def list_past_quotations(q: str | None = None, limit: int = 30, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "view"))):
+    """Recent quotations across every live inquiry in the user's CRM data scope —
+    the "Fill from a past quotation" picker on the quotation form copies one of
+    these (items, prices, terms) into a new quotation. Optional search on the
+    quotation number, client name or a line item's name / model number."""
+    inquiries = apply_scope(db.query(Inquiry.id).filter(Inquiry.is_deleted == False), _user, Inquiry, db)  # noqa: E712
+    query = db.query(Quotation).options(selectinload(Quotation.items)).filter(Quotation.inquiry_id.in_(inquiries.statement))
+    term = (q or "").strip()
+    if term:
+        like = f"%{term}%"
+        query = query.filter(or_(
+            Quotation.quot_number.ilike(like), Quotation.client_name.ilike(like),
+            Quotation.items.any(or_(QuotationLineItem.description.ilike(like), QuotationLineItem.model_number.ilike(like))),
+        ))
+    rows = query.order_by(Quotation.id.desc()).limit(max(1, min(limit, 100))).all()
+    return [quotation_out(r, _user) for r in rows]
 
 
 QUOT_SEQ_RE = re.compile(r"-(\d+)$")

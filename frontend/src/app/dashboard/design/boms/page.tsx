@@ -15,7 +15,7 @@ import { useDesignMe } from '@/components/design/useDesignMe'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
-import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 
 const STATUS_HEX: Record<string, string> = {
   draft: '#78716c', in_review: '#2563EB', in_approval: '#7C3AED', released: '#16A34A', revising: '#0f766e', obsolete: '#DC2626', superseded: '#a8a29e',
@@ -215,7 +215,7 @@ export default function DesignBomsPage() {
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input data-tour="design-boms-search" style={{ ...inputStyle, flex: '1 1 260px', minWidth: 200, maxWidth: 420 }} placeholder="Search by BOM number, title or product item…" value={search} onChange={(e) => setSearch(e.target.value)} />
         <div data-tour="design-boms-order-project" style={{ flex: '0 1 280px', minWidth: 220 }}>
-          <OrderProjectPicker value={opFilter} requireElement={false} placeholder="All order projects" onChange={(v) => setOpFilter(v ? { projectId: v.projectId, elementId: null } : null)} />
+          <OrderProjectPicker value={opFilter} requireElement={false} placeholder="All projects" onChange={(v) => setOpFilter(v ? { projectId: v.projectId, elementId: null } : null)} />
         </div>
         <span style={{ fontSize: 12, color: TEXT.muted }}>{loading ? '' : `${boms.length} BOM${boms.length === 1 ? '' : 's'}`}</span>
       </div>

@@ -1,4 +1,4 @@
-"""Purchase ↔ Order Project (p2p/order_project_links.py): PR lines carry the
+"""Purchase ↔ Project units (p2p/order_project_links.py): PR lines carry the
 vehicle / lot of the order's project (mandatory for project lines of a PR
 charged to an order that has one, auto-filled when derivable), PO and GRN
 lines inherit it, list filters, and the 'purchase' column of the 360 page."""
@@ -7,8 +7,8 @@ from datetime import date, timedelta
 from app.modules.p2p import order_project_links as links
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
-from app.modules.sales import order_projects as ops
-from app.modules.sales.models.order_project import OrderProject
+from app.modules.projects import so_projects as ops
+from app.modules.projects.models.project import PmProject
 from app.tests.p2p_workflow_helpers import master_item, set_pr_workflow
 from app.tests.test_p2p_item_master_link import GRN, _inspect_all, _po_for, _store
 from app.tests.test_p2p_requests import (  # noqa: F401 — _sqlite_number_series is an autouse fixture
@@ -22,7 +22,7 @@ def _order_project(client, db, qty=2):
     _org, inq, _ = setup_customer(db, qty=qty, price=1000000)
     so = confirm(client, db, create_order(client, db, maker, inq), maker, head, director)
     db.expire_all()
-    project = db.query(OrderProject).filter(OrderProject.sales_order_id == so["id"]).one()
+    project = db.query(PmProject).filter(PmProject.sales_order_id == so["id"]).one()
     els = sorted(project.elements, key=lambda e: e.element_no)
     return so, project, els
 
@@ -68,10 +68,10 @@ def test_so_charged_pr_needs_element_per_project_line(client, db):
     ])
     assert r.status_code == 200, r.text
     pr = r.json()
-    assert pr["order_project_id"] == project.id and pr["order_project_number"] == project.op_number
+    assert pr["order_project_id"] == project.id and pr["order_project_number"] == project.project_code
     lines = pr["items"]
     assert [ln["order_project_element_id"] for ln in lines] == [els[0].id, els[1].id, None]
-    assert lines[0]["order_project_number"] == project.op_number
+    assert lines[0]["order_project_number"] == project.project_code
     assert lines[0]["order_project_element_no"] == els[0].element_no and lines[0]["order_project_element_label"] == "Vehicle 1"
     assert lines[1]["order_project_display"] == ops.element_display(project, els[1])
 
@@ -126,12 +126,12 @@ def test_single_element_project_auto_fills_and_flows_to_po_grn_and_360(client, d
     assert r.status_code == 200, r.text
     pr = r.json()
     assert pr["account_assignment"] == "order_project" and pr["order_project_id"] == project.id
-    assert pr["account_assignment_label"].startswith(f"Project: {project.op_number}")
+    assert pr["account_assignment_label"].startswith(f"Project: {project.project_code}")
     assert pr["items"][0]["order_project_element_id"] == els[0].id
 
     # 360: requested, not yet ordered.
     db.expire_all()
-    p = db.get(OrderProject, project.id)
+    p = db.get(PmProject, project.id)
     cell = links.purchase_cells(db, p, list(p.elements))[els[0].id]
     assert cell["status"] == "requested" and cell["tone"] == "neutral"
 
@@ -156,7 +156,7 @@ def test_element_travels_pr_to_po_to_grn_and_provider_tones(client, db):
                       headers=auth_header(buyer)).json() == []
 
     db.expire_all()
-    p = db.get(OrderProject, project.id)
+    p = db.get(PmProject, project.id)
     cells = links.purchase_cells(db, p, list(p.elements))
     assert cells[els[0].id] is None
     assert cells[els[1].id]["status"] == "ordered" and cells[els[1].id]["tone"] == "info"
@@ -165,7 +165,7 @@ def test_element_travels_pr_to_po_to_grn_and_provider_tones(client, db):
     po_row = db.get(P2PPurchaseOrder, po["id"])
     po_row.expected_delivery = date.today() - timedelta(days=3)
     db.commit()
-    cells = links.purchase_cells(db, db.get(OrderProject, project.id), list(p.elements))
+    cells = links.purchase_cells(db, db.get(PmProject, project.id), list(p.elements))
     assert cells[els[1].id]["tone"] == "warning" and po_row.po_number in cells[els[1].id]["detail"]
 
     # GRN line inherits the element; fully received -> success.
@@ -174,17 +174,17 @@ def test_element_travels_pr_to_po_to_grn_and_provider_tones(client, db):
     assert r.status_code == 200, r.text
     grn = r.json()
     assert grn["items"][0]["order_project_element_id"] == els[1].id
-    assert grn["items"][0]["order_project_number"] == project.op_number
+    assert grn["items"][0]["order_project_number"] == project.project_code
     assert _inspect_all(client, buyer, grn).status_code == 200
     db.expire_all()
-    cells = links.purchase_cells(db, db.get(OrderProject, project.id), list(db.get(OrderProject, project.id).elements))
+    cells = links.purchase_cells(db, db.get(PmProject, project.id), list(db.get(PmProject, project.id).elements))
     assert cells[els[1].id]["status"] == "received" and cells[els[1].id]["tone"] == "success"
 
     # 360 detail endpoint carries the purchase cell.
     from app.tests.test_sales import make_user
     viewer = make_user(db, "op.viewer@premnathrail.com", role="admin")
     from app.tests.test_sales import hdr
-    r = client.get(f"/api/v1/sales/order-projects/{project.id}", headers=hdr(viewer))
+    r = client.get(f"/api/v1/projects/{project.id}/units", headers=hdr(viewer))
     assert r.status_code == 200, r.text
     assert "Received" in r.text
 

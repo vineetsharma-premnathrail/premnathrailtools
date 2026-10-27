@@ -9,17 +9,19 @@ import { crmApi } from '@/lib/api'
 import { recordVisit } from '@/lib/crmShortcuts'
 import { OrganizationDetail, Inquiry, Tender, OrgContact } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import SearchableSelect from '@/components/erp/SearchableSelect'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages, isValidEmail } from '@/lib/validation'
-import { orgTypeHasRailwayFields, inquiryStatusColor, tenderStatusColor } from '@/components/crm/constants'
+import { orgTypeHasRailwayFields, inquiryStatusColor, tenderStatusColor, CONTACT_DESIGNATIONS, CONTACT_DEPARTMENTS } from '@/components/crm/constants'
 import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, handleEnterAsTab, smallSecondaryBtnStyle } from '@/components/crm/ui'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import { recordPath, refOf } from '@/lib/recordRef'
 import { formatDateTime, formatDate } from '@/lib/format'
 import { AddMoreButton, RemoveValueButton, ValueRow, canAddMore } from '@/components/shared/MoreValuesButtons'
+import OrgEngagementsTab from '@/components/crm/OrgEngagementsTab'
 import { segmentBtnStyle, RowCount, Pill, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 
-const TABS = ['Overview', 'Contacts', 'Inquiries', 'Tenders', 'Audit Trail'] as const
+const TABS = ['Overview', 'Contacts', 'Engagements', 'Inquiries', 'Tenders', 'Audit Trail'] as const
 
 // Links out to an inquiry/tender carry a `back` param so its Back button returns
 // here — to this organization, on the tab the link was clicked from.
@@ -71,6 +73,7 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
   // Organization sub-tabs are features of the Organizations tab (core/features/crm.py).
   const seeTab = (t: typeof TABS[number]) => t === 'Overview'
     || (t === 'Contacts' && canFeature('crm', 'organizations', 'contacts', 'view'))
+    || (t === 'Engagements' && canFeature('crm', 'organizations', 'engagements', 'view'))
     || ((t === 'Inquiries' || t === 'Tenders') && canFeature('crm', 'organizations', 'linked_records', 'view'))
     || (t === 'Audit Trail' && canFeature('crm', 'organizations', 'audit_trail', 'view'))
   const canDeleteOrg = !!org && canDelete('crm', 'organizations', org.created_by_id ?? null)
@@ -128,9 +131,11 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
       </div>
 
       {(tab === 'Overview' || !seeTab(tab)) && <OverviewTab org={org} />}
-      {tab === 'Contacts' && seeTab(tab) && <ContactsTab org={org} canModify={isOwnerOrAdmin && canFeature('crm', 'organizations', 'contacts', 'edit')} canCreate={isOwnerOrAdmin && canFeature('crm', 'organizations', 'contacts', 'create')} onRefresh={load} />}
-      {tab === 'Inquiries' && seeTab(tab) && <InquiriesTab orgId={org.id} orgRef={refOf(org)} canModify={isOwnerOrAdmin && can('crm', 'inquiries_tenders', 'create')} contacts={org.contacts} />}
-      {tab === 'Tenders' && seeTab(tab) && <TendersTab orgId={org.id} orgRef={refOf(org)} canModify={isOwnerOrAdmin && can('crm', 'inquiries_tenders', 'create')} />}
+      {tab === 'Contacts' && seeTab(tab) && <ContactsTab org={org} canModify={isOwnerOrAdmin && canFeature('crm', 'organizations', 'contacts', 'edit')} canCreate={canFeature('crm', 'organizations', 'contacts', 'create')} onRefresh={load} />}
+      {tab === 'Engagements' && seeTab(tab) && <OrgEngagementsTab org={org} canCreate={canFeature('crm', 'organizations', 'engagements', 'create')}
+        canEditOwn={canFeature('crm', 'organizations', 'engagements', 'edit')} canDeleteOwn={canFeature('crm', 'organizations', 'engagements', 'delete')} />}
+      {tab === 'Inquiries' && seeTab(tab) && <InquiriesTab orgId={org.id} orgRef={refOf(org)} canModify={can('crm', 'inquiries_tenders', 'create')} contacts={org.contacts} />}
+      {tab === 'Tenders' && seeTab(tab) && <TendersTab orgId={org.id} orgRef={refOf(org)} canModify={can('crm', 'inquiries_tenders', 'create')} />}
       {tab === 'Audit Trail' && seeTab(tab) && <AuditTab orgId={org.id} />}
 
       <ConfirmDialog
@@ -163,31 +168,31 @@ function OverviewTab({ org }: { org: OrganizationDetail }) {
         </>}
       />
       <DetailGroup title="Customer Organization Details">
-        <DetailRow label="Scope">{org.org_scope === 'international' ? 'International' : 'Domestic'}</DetailRow>
-        <DetailRow label="Type">{org.org_type}</DetailRow>
-        {showRailwayFields && <DetailRow label="Railway zone">{org.railway_zone}</DetailRow>}
-        {showRailwayFields && <DetailRow label="Division / Workshop">{org.division_workshop}</DetailRow>}
+        <DetailRow emptyText="Not added" label="Scope">{org.org_scope === 'international' ? 'International' : 'Domestic'}</DetailRow>
+        <DetailRow emptyText="Not added" label="Type">{org.org_type}</DetailRow>
+        {showRailwayFields && <DetailRow emptyText="Not added" label="Railway zone">{org.railway_zone}</DetailRow>}
+        {showRailwayFields && <DetailRow emptyText="Not added" label="Division / Workshop">{org.division_workshop}</DetailRow>}
       </DetailGroup>
       <DetailGroup title="Address">
-        <DetailRow label="Address">{org.address}</DetailRow>
-        <DetailRow label="City / State">{place || null}</DetailRow>
-        <DetailRow label="PIN code">{org.pin_code}</DetailRow>
-        <DetailRow label="Country">{org.country}</DetailRow>
+        <DetailRow emptyText="Not added" label="Address">{org.address}</DetailRow>
+        <DetailRow emptyText="Not added" label="City / State">{place || null}</DetailRow>
+        <DetailRow emptyText="Not added" label={org.org_scope === 'international' ? 'ZIP / Postal code' : 'PIN code'}>{org.pin_code}</DetailRow>
+        <DetailRow emptyText="Not added" label="Country">{org.country}</DetailRow>
       </DetailGroup>
       <DetailGroup title="Contact & Registration" last>
-        <DetailRow label="Official phone">{[org.official_phone, ...(org.additional_phones || [])].filter(Boolean).join(', ') || null}</DetailRow>
-        <DetailRow label="Official email">{[org.official_email, ...(org.additional_emails || [])].filter(Boolean).join(', ') || null}</DetailRow>
-        <DetailRow label="Website">{org.website}</DetailRow>
+        <DetailRow emptyText="Not added" label="Official phone">{[org.official_phone, ...(org.additional_phones || [])].filter(Boolean).join(', ') || null}</DetailRow>
+        <DetailRow emptyText="Not added" label="Official email">{[org.official_email, ...(org.additional_emails || [])].filter(Boolean).join(', ') || null}</DetailRow>
+        <DetailRow emptyText="Not added" label="Website">{org.website}</DetailRow>
         {org.org_scope === 'international' ? (
           <>
-            <DetailRow label="Tax / VAT ID">{org.tax_vat_id}</DetailRow>
-            <DetailRow label="Company registration number">{org.company_registration_no}</DetailRow>
+            <DetailRow emptyText="Not added" label="Tax / VAT ID">{org.tax_vat_id}</DetailRow>
+            <DetailRow emptyText="Not added" label="Company registration number">{org.company_registration_no}</DetailRow>
           </>
         ) : (
           <>
-            <DetailRow label="GSTIN">{org.gst_number}</DetailRow>
-            <DetailRow label="PAN">{org.pan}</DetailRow>
-            <DetailRow label="GST state code (place of supply)">{org.gst_state_code}</DetailRow>
+            <DetailRow emptyText="Not added" label="GSTIN">{org.gst_number}</DetailRow>
+            <DetailRow emptyText="Not added" label="PAN">{org.pan}</DetailRow>
+            <DetailRow emptyText="Not added" label="GST state code (place of supply)">{org.gst_state_code}</DetailRow>
           </>
         )}
       </DetailGroup>
@@ -202,6 +207,9 @@ function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: Organizati
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState(emptyForm)
+  // "Other" picked: form.designation holds the typed text.
+  const [designationOther, setDesignationOther] = useState(false)
+  const [departmentOther, setDepartmentOther] = useState(false)
   // More mobiles / emails for the same person (besides the main one).
   const [extraMobiles, setExtraMobiles] = useState<string[]>([])
   const [extraEmails, setExtraEmails] = useState<string[]>([])
@@ -220,6 +228,9 @@ function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: Organizati
   const startEdit = (c: OrganizationDetail['contacts'][number]) => {
     setEditingId(c.id)
     setForm({ name: c.name, designation: c.designation || '', mobile: c.mobile || '', email: c.email || '', department: c.department || '' })
+    // An older typed designation that isn't on the list shows as Other + its text.
+    setDesignationOther(!!c.designation && !CONTACT_DESIGNATIONS.includes(c.designation))
+    setDepartmentOther(!!c.department && !CONTACT_DEPARTMENTS.includes(c.department))
     setExtraMobiles(c.additional_mobiles || [])
     setExtraEmails(c.additional_emails || [])
     setShowForm(true)
@@ -228,6 +239,8 @@ function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: Organizati
   const cancelForm = () => {
     setEditingId(null)
     setForm(emptyForm)
+    setDesignationOther(false)
+    setDepartmentOther(false)
     setExtraMobiles([])
     setExtraEmails([])
     setShowForm(false)
@@ -314,8 +327,14 @@ function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: Organizati
                 <SheetSection icon="user" title="Person">
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                     <div style={{ flex: '1 1 100%' }}><div data-tour="orgdetail-contact-name"><label style={sheetLabel}>Name <Req /></label><input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} style={sheetInput} autoFocus /></div></div>
-                    <div style={{ flex: '1 1 200px' }}><div data-tour="orgdetail-contact-designation"><label style={sheetLabel}>Designation</label><input value={form.designation} onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))} style={sheetInput} /></div></div>
-                    <div style={{ flex: '1 1 200px' }}><div data-tour="orgdetail-contact-department"><label style={sheetLabel}>Department</label><input value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} style={sheetInput} /></div></div>
+                    <div style={{ flex: '1 1 200px' }}><div data-tour="orgdetail-contact-designation"><label style={sheetLabel}>Designation</label>
+                      <SearchableSelect typeIn value={designationOther ? 'Other' : form.designation} onChange={(v) => { const other = v === 'Other'; setDesignationOther(other); setForm((f) => ({ ...f, designation: other ? '' : v })) }} options={CONTACT_DESIGNATIONS.map((d) => ({ value: d, label: d }))} placeholder="Type or select" ariaLabel="Designation" triggerStyle={sheetInput} />
+                      {designationOther && <input value={form.designation} onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))} placeholder="Type designation, e.g. DEN" maxLength={100} autoFocus={!form.designation} style={{ ...sheetInput, marginTop: 6 }} />}
+                    </div></div>
+                    <div style={{ flex: '1 1 200px' }}><div data-tour="orgdetail-contact-department"><label style={sheetLabel}>Department</label>
+                      <SearchableSelect typeIn value={departmentOther ? 'Other' : form.department} onChange={(v) => { const other = v === 'Other'; setDepartmentOther(other); setForm((f) => ({ ...f, department: other ? '' : v })) }} options={CONTACT_DEPARTMENTS.map((d) => ({ value: d, label: d }))} placeholder="Type or select" ariaLabel="Department" triggerStyle={sheetInput} />
+                      {departmentOther && <input value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} placeholder="Type department, e.g. Stores" maxLength={100} autoFocus={!form.department} style={{ ...sheetInput, marginTop: 6 }} />}
+                    </div></div>
                   </div>
                 </SheetSection>
                 <SheetSection icon="chat" title="Reach">

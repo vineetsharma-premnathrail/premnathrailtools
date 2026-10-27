@@ -83,7 +83,9 @@ def test_deleted_machine_children_404(client, db):
 
 def test_machine_approve_respects_data_scope(client, db):
     owner = _user(db, "idor.erp.owner@premnathrail.com", assigned_apps=["erp"])
-    outsider = _scoped(db, "idor.erp.out@premnathrail.com", "erp", ["erp:*:*"], "own", assigned_apps=["erp"])
+    # Machines follow the Project Management scope since 2026-10-26 (what migration f7c3a9e1d5b2 writes for a Service wildcard role).
+    outsider = _scoped(db, "idor.erp.out@premnathrail.com", "projects",
+                       ["erp:*:*"] + [f"projects:service_projects:{a}" for a in ("view", "create", "edit", "delete")], "own", assigned_apps=["erp"])
     p = Project(serial_number="IDOR-PEND", approval_status="pending", created_by_id=owner.id)
     db.add(p)
     db.commit()

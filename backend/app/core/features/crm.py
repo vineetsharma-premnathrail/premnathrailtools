@@ -9,6 +9,7 @@ Inquiries & Tenders feature below applies to an inquiry AND to a tender
 (Quotations exist only on inquiries)."""
 from app.core.assignee_rules import register_pickers
 from app.core.permission_registry import _feature, register_features
+from app.core.reporting.features import management_feature
 
 register_features(
     "crm", "organizations",
@@ -22,6 +23,10 @@ register_features(
     _feature("audit_trail", "Audit trail", "subtab", {
         "view": "view",
     }, "The Audit Trail sub-tab of a customer organization: who created and changed it, and when."),
+    _feature("engagements", "Engagements", "subtab", {
+        "view": "view", "create": "view", "edit": "view", "delete": "view",
+    }, "The Engagements sub-tab of a customer organization: log meetings, calls, visits and discussions with its contacts "
+       "and their outcome. Anyone who can see organizations logs them; only the person who logged one (or an admin) edits / deletes it."),
 )
 
 register_features(
@@ -72,3 +77,6 @@ register_features(
 register_pickers("crm", "inquiries_tenders",
                  ("bd_owner", "Set BD owner to", "Who this role may make the BD owner of an inquiry (create / edit). Making themselves the owner is always allowed."),
                  ("sales_engineer", "Set sales engineer to", "Who this role may pick as an inquiry's Sales Engineer (create / edit)."))
+
+# CRM › Reports: per-BD-owner figures (Sales team page) need People & performance.
+register_features("crm", "reports", management_feature())

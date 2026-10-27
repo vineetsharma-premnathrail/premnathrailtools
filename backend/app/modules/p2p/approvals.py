@@ -47,7 +47,7 @@ from app.modules.organization.models.approval import ApprovalRequest, ApprovalRe
 from app.modules.organization.services import approval_engine as engine
 from app.modules.organization.services.approval_engine import StageDef, TransactionType, register_transaction
 from app.modules.p2p.models.p2p_request import (
-    ENGINE_SCHEME, P2P_CATEGORIES, P2P_PROJECT_TYPES, P2P_PURPOSES, P2P_REQUEST_PRIORITIES, P2P_REQUIREMENT_TYPES, P2PRequest,
+    ENGINE_SCHEME, LINE_CATEGORY, P2P_CATEGORIES, P2P_PROJECT_TYPES, P2P_PURPOSES, P2P_REQUEST_PRIORITIES, P2P_REQUIREMENT_TYPES, P2PRequest,
 )
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
 
@@ -92,14 +92,14 @@ _PR_CONTEXT_FIELDS = {
     "project_type": {"label": "Project type", "type": "choice", "choices": list(P2P_PROJECT_TYPES),
                      "choice_labels": {"existing": "Existing project", "new": "New project"}},
     "purpose": {"label": "Purpose", "type": "choice", "choices": list(P2P_PURPOSES), "choice_labels": dict(P2P_PURPOSES)},
-    "category_code": {"label": "Category", "type": "choice", "choices": list(P2P_CATEGORIES),
+    "category_code": {"label": "Category", "type": "choice", "choices": [c for c in P2P_CATEGORIES if c != LINE_CATEGORY],
                       "choice_labels": {k: f"{v} ({k})" for k, v in P2P_CATEGORIES.items()}},
-    # The project manager of the Order Project a production requisition is
+    # The project manager of the project a production requisition is
     # for (picked on the project) — a "Person named on the record" stage with
     # an "Applies when: Purpose = Production" condition.
-    "project_manager_id": {"label": "Project manager (of the order project)", "type": "user",
-                           "missing": "Order project {ref} has no project manager — pick one on the project "
-                                      "(Projects › Order Projects), then submit again.",
+    "project_manager_id": {"label": "Project manager (of the project)", "type": "user",
+                           "missing": "Project {ref} has no project manager — pick one on the project "
+                                      "(Project Management › All Projects), then submit again.",
                            "missing_ref": "order_project_ref"},
     "priority": {"label": "Priority", "type": "choice", "choices": list(P2P_REQUEST_PRIORITIES),
                  "choice_labels": {"low": "Low", "medium": "Medium", "high": "High"}},
@@ -113,19 +113,33 @@ _PO_CONTEXT_FIELDS = {
 }
 
 
+def _condition_category(pr: P2PRequest) -> str | None:
+    """The category approval conditions see. A requisition from the PR form has
+    no category of its own (LINE_CATEGORY, 2026-10-27): it is judged by its
+    purpose's usual category (Procurement › Settings › Purpose rules), so a
+    stage such as "Category = Capital Equipment" still applies to it."""
+    if pr.category_code != LINE_CATEGORY:
+        return pr.category_code
+    from sqlalchemy.orm import object_session
+
+    from app.modules.p2p.purpose import resolve_purpose_rules
+    rules = resolve_purpose_rules(object_session(pr)).get(pr.purpose or "")
+    return (rules or {}).get("category") or pr.category_code
+
+
 def _pr_context(pr: P2PRequest) -> dict:
     ctx = {
-        "project_type": pr.project_type, "purpose": pr.purpose, "category_code": pr.category_code, "priority": pr.priority,
+        "project_type": pr.project_type, "purpose": pr.purpose, "category_code": _condition_category(pr), "priority": pr.priority,
         "requirement_type": pr.requirement_type, "department": pr.department, "project_manager_id": None,
     }
     if pr.order_project_id:
         from sqlalchemy.orm import object_session
 
-        from app.modules.sales.models.order_project import OrderProject
-        op = object_session(pr).get(OrderProject, pr.order_project_id)
+        from app.modules.projects.models.project import PmProject
+        op = object_session(pr).get(PmProject, pr.order_project_id)
         if op is not None:
             ctx["project_manager_id"] = op.project_manager_id
-            ctx["order_project_ref"] = op.op_number
+            ctx["order_project_ref"] = op.project_code
     return ctx
 
 
@@ -265,6 +279,8 @@ def _split_po_decided(db: Session, req: ApprovalRequest, outcome: str, actor: Us
               f"The PO '{po.po_number}' for PR '{pr.p2p_number}' got its final approval from {who}.", pr, actor)
     elif outcome == "rejected":
         po.status = "cancelled"
+        from app.modules.p2p.pre_po import reopen_receipt_for_cancelled_po
+        reopen_receipt_for_cancelled_po(db, po, actor)
         _write_audit(db, pr.id, "po_cancelled", actor,
                      summary=f"{who} rejected PO '{po.po_number}' of {pr.p2p_number}; it is cancelled and its lines can go on another PO.{note}",
                      old_status="issued", new_status="cancelled")
@@ -402,9 +418,13 @@ def submit_po(db: Session, pr: P2PRequest, po: P2PPurchaseOrder, submitter: User
     pr.status = "po_raised"
     db.flush()
     title = f"Purchase order {po.po_number}" + (f" — {po.vendor_name}" if po.vendor_name else "") + f" ({pr.p2p_number})"
+    from app.modules.p2p.pre_po import qty_raised_lines
+    raised = qty_raised_lines(db, po)
+    if raised:
+        title += f" — qty raised above requisition on {raised} line(s)"
     req = engine.submit(
         db, PO_KEY, entity_id=po.id, requester=submitter, title=title, reference=po.po_number,
-        amount=po.total_value, context={**_pr_context(pr), "vendor_name": po.vendor_name},
+        amount=po.total_value, context={**_pr_context(pr), "vendor_name": po.vendor_name, "qty_above_requisition": bool(raised)},
         branch_id=getattr(submitter, "branch_id", None),
     )
     from app.modules.p2p import notify as p2p_notify

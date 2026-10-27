@@ -12,7 +12,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { userPoRoles } from '@/lib/p2pRoles'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
-import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
 import { RowCount, pillStyle, smallSecondaryBtnStyle, smallDangerBtnStyle, inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import { Funnel } from '@phosphor-icons/react'
@@ -105,7 +105,7 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
   const [search, setSearch] = useState('')
   // PR numbers sort ascending by default (app standard); the header toggles it.
   const [sortAsc, setSortAsc] = useState(true)
-  // Order Project filter (server-side): a whole project or one vehicle / lot.
+  // Project filter (server-side): a whole project or one vehicle / lot.
   const [opFilter, setOpFilter] = useState<OrderProjectValue | null>(null)
   const [filterOpen, setFilterOpen] = useState(false)
   const [mineOnly, setMineOnly] = useState(false)
@@ -324,9 +324,9 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
                 Raised by me
               </label>
             )}
-            <div aria-label="Filter by order project">
-              <label style={sheetLabel}>Order project</label>
-              <OrderProjectPicker value={draft.op} onChange={(v) => setDraft((d) => ({ ...d, op: v }))} requireElement={false} placeholder="All order projects" />
+            <div aria-label="Filter by project">
+              <label style={sheetLabel}>Project</label>
+              <OrderProjectPicker value={draft.op} onChange={(v) => setDraft((d) => ({ ...d, op: v }))} requireElement={false} placeholder="All projects" />
             </div>
           </div>
         </FormSheet>

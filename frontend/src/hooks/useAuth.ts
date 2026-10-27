@@ -7,7 +7,7 @@ import { AppModule, User } from '@/types'
 
 /** Legacy ERP id check (project_create, sr_edit, etc.) — admins implicitly
  * hold every permission. /auth/me derives `erp_permissions` from the user's
- * roles (erp:projects:* / erp:service_requests:*), so this stays in sync with
+ * roles (projects:service_projects:* / erp:service_requests:*), so this stays in sync with
  * the server's has_erp_permission. New code should use can() from
  * '@/lib/permissions'. */
 export function hasErpPermission(user: User | null | undefined, permission: string): boolean {
@@ -100,10 +100,11 @@ export function useRequireAnyApp(...appNames: AppModule[]) {
  * granular sub-permission (e.g. "project_create"). Redirects everyone else
  * back to `fallback`. Use on create/edit routes whose entry points (buttons)
  * are already hidden by the same permission — this is the direct-URL backstop. */
-export function useRequireErpPermission(permission: string, fallback = '/dashboard/erp') {
+export function useRequireErpPermission(permission: string, fallback = '/dashboard/erp', app: AppModule = 'erp') {
   const router = useRouter()
   const { user, isLoading } = useAuth()
-  const hasErpApp = !!user?.apps?.includes('erp')
+  // Machine (project_*) pages live in Project Management since 2026-10-26 and pass app 'projects'.
+  const hasErpApp = !!user?.apps?.includes(app)
   const isAuthorized = hasErpApp && hasErpPermission(user, permission)
 
   useEffect(() => {

@@ -9,7 +9,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetHint, Optional } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
-import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import {
   ErrorBanner, useLookupErrors, F, rowStyle, PRIORITY_LABELS, toOptions, strOrNull,
 } from '@/components/electrical/shared'
@@ -168,11 +168,11 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel, titl
                 </F>
               </div>
               <div style={rowStyle}>
-                <F tour="elec-job-order-project" label="Order Project / Vehicle" optional basis={320} grow>
+                <F tour="elec-job-order-project" label="Project / Unit" optional basis={320} grow>
                   <OrderProjectPicker value={orderProject} requireElement={false} kind="vehicle"
                     onChange={(v, item) => {
                       setOrderProject(v)
-                      if (item?.customer_name) setValues((x) => ({ ...x, customer_name: x.customer_name || item.customer_name || '' }))
+                      if (item?.client_name) setValues((x) => ({ ...x, customer_name: x.customer_name || item.client_name || '' }))
                     }} />
                 </F>
               </div>

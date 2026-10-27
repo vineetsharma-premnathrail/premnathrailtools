@@ -9,7 +9,7 @@ import { SheetColumns, SheetSection, SHEET, sheetInput, sheetLabel, sheetHint, R
 import HydFormShell, { HydShellProps, Cell, fieldRow } from '@/components/hydraulic/HydFormShell'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
-import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import { SYSTEM_TYPE_LABELS, SYSTEM_TYPE_HEX, SYSTEM_STATUS_LABELS, flowUnit } from '@/components/hydraulic/labels'
 
 
@@ -191,7 +191,7 @@ export default function SystemForm({
           <SheetSection icon="building" title="Project & Ownership">
             <div style={fieldRow}>
               <Cell tour="hyd-sys-order-project" basis={320} grow>
-                <label style={sheetLabel}>Order Project / Vehicle <Optional /></label>
+                <label style={sheetLabel}>Project / Unit <Optional /></label>
                 <OrderProjectPicker value={orderProject} requireElement={false} onChange={(v) => setOrderProject(v)} />
               </Cell>
             </div>

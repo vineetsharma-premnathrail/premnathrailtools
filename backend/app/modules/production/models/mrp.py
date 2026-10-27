@@ -115,10 +115,10 @@ class ProductionPlannedOrder(Base, TimestampMixin):
     sales_order_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("sales_orders.id"), index=True, nullable=True)
     sales_schedule_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("sales_order_schedules.id"), nullable=True)
     rrv_build_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("production_rrv_builds.id"), index=True, nullable=True)
-    # Order Project element of the pegged demand (vehicle / lot) — Purchase
+    # PM project unit of the pegged demand (vehicle / lot) — Purchase
     # reads it from buy planned orders and the PRs they become.
-    order_project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("sales_order_projects.id", ondelete="SET NULL"), index=True, nullable=True)
-    order_project_element_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("sales_order_project_elements.id", ondelete="SET NULL"), index=True, nullable=True)
+    order_project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("pm_projects.id", ondelete="SET NULL"), index=True, nullable=True)
+    order_project_element_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("pm_project_elements.id", ondelete="SET NULL"), index=True, nullable=True)
     erp_project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("erp_projects.id"), nullable=True)
     work_order_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("production_work_orders.id"), nullable=True)
     # Conversion (to a work order or a PR) — the document it became.

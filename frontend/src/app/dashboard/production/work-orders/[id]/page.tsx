@@ -25,7 +25,7 @@ import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { ChangeFlagBanner, DependentOrdersSection, JobWorkLinkDialog, WorkOrderLinks } from '@/components/production/WorkOrderEngineering'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { productionEngineeringApi } from '@/lib/productionEngineeringApi'
-import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', released: 'Released', in_progress: 'In Progress', completed: 'Completed', closed: 'Closed', cancelled: 'Cancelled' }
@@ -295,7 +295,7 @@ export default function WorkOrderDetailPage() {
       supervisor_id: num(edit.supervisor_id), planned_start_date: edit.planned_start_date || null,
       planned_end_date: edit.planned_end_date || null, remarks: edit.remarks.trim() || null,
     }
-    // Only send the Order Project element when it changed (a build's WO inherits the build's).
+    // Only send the Project unit when it changed (a build's WO inherits the build's).
     if (!wo.rrv_build_id && (editOp?.elementId ?? null) !== (wo.order_project_element_id ?? null)) {
       payload.order_project_element_id = editOp?.elementId ?? null
     }
@@ -779,9 +779,9 @@ export default function WorkOrderDetailPage() {
                   <SearchableSelect value={edit.erp_project_id} onChange={(v) => setEdit({ ...edit, erp_project_id: v })} options={toOptions(projects, '— Stock build —')} />
                 </div>
                 <div data-tour="production-wo-edit-order-project" style={{ marginTop: 14 }}>
-                  <label style={sheetLabel}>Order Project — Vehicle / Lot</label>
+                  <label style={sheetLabel}>Project — Unit (vehicle / lot)</label>
                   <OrderProjectPicker value={editOp} onChange={(v) => setEditOp(v)} disabled={!!wo.rrv_build_id}
-                    placeholder={wo.rrv_build_id ? 'Follows the RRV build' : 'Pick OP / vehicle or lot…'} />
+                    placeholder={wo.rrv_build_id ? 'Follows the RRV build' : 'Pick project / unit (vehicle or lot)…'} />
                   {wo.rrv_build_id && <p style={sheetHint}>Part of an RRV build — it works for the build&apos;s vehicle.</p>}
                 </div>
               </SheetSection>

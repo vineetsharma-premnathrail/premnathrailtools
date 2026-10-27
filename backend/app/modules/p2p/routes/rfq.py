@@ -199,7 +199,9 @@ async def list_rfqs(
     db: Session = Depends(get_db),
     user: User = Depends(_purchase_tab("rfq", "view")),
 ):
-    query = apply_scope(db.query(RFQ).options(selectinload(RFQ.attachments)), user, RFQ)
+    # RFQs behind a PO made from a Before-PO receipt are internal plumbing (RFQ.source), never listed.
+    query = apply_scope(db.query(RFQ).options(selectinload(RFQ.attachments)), user, RFQ).filter(
+        RFQ.source.is_(None) | (RFQ.source != "before_po"))
     if p2p_request_id:
         query = query.filter(RFQ.p2p_request_id == p2p_request_id)
     if status:
@@ -709,14 +711,11 @@ def _derive_po_total(items) -> float | None:
     return round(sum(i.line_total for i in items), 2)
 
 
-@router.post("/{rfq_id}/po-draft", response_model=P2PPurchaseOrderResponse)
-async def create_po_draft(
-    rfq_id: int,
-    payload: P2PPurchaseOrderCreate,
-    db: Session = Depends(get_db),
-    user: User = Depends(_purchase_tab("purchase_orders", "create")),
-):
-    """Creates an editable draft PO (status='draft'). Most RFQs go through
+def build_po_draft(db: Session, rfq: RFQ, pr: P2PRequest, user: User, payload: P2PPurchaseOrderCreate) -> P2PPurchaseOrder:
+    """Creates an editable draft PO (status='draft') and flushes it; the caller
+    commits. Shared by the RFQ route below and the Before-PO receipt route
+    (p2p/routes/pre_po_receipts.py), so both apply the same vendor block,
+    approved-supplier check, price proposal and terms. Most RFQs go through
     formal vendor selection first (pr.status == 'vendor_selected'), but the
     frontend's current flow also attaches a PO that was already agreed/
     issued outside the system directly from 'vendor_quotations' — the buyer
@@ -724,8 +723,6 @@ async def create_po_draft(
     picking a selected VendorQuotation. Line prices are then filled in on the
     draft (PATCH below); submit-po-draft refuses to send it into PO
     approval (p2p/approvals.py) until every line is priced."""
-    rfq = _get_rfq_or_404(db, rfq_id, user)
-    pr = _get_pr_for_rfq(db, rfq)
     if pr.status not in ("vendor_quotations", "vendor_selected"):
         raise HTTPException(status_code=409, detail=f"A PO draft can only be created while the PR is at 'vendor_quotations' or 'vendor_selected' (current status: {pr.status})")
 
@@ -848,7 +845,20 @@ async def create_po_draft(
                  summary=f"{user.name or user.email} created draft PO '{po.po_number}' for {pr.p2p_number} to {po.vendor_name} ({tier})."
                          + (f" Reason for not using L1: {reason}" if tier != "L1" else ""),
                  old_status=old_status, new_status="po_drafted")
+    return po
 
+
+@router.post("/{rfq_id}/po-draft", response_model=P2PPurchaseOrderResponse)
+async def create_po_draft(
+    rfq_id: int,
+    payload: P2PPurchaseOrderCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(_purchase_tab("purchase_orders", "create")),
+):
+    """Creates an editable draft PO from the RFQ (see build_po_draft)."""
+    rfq = _get_rfq_or_404(db, rfq_id, user)
+    pr = _get_pr_for_rfq(db, rfq)
+    po = build_po_draft(db, rfq, pr, user, payload)
     db.commit()
     db.refresh(po)
     resp = P2PPurchaseOrderResponse.model_validate(po)
@@ -889,14 +899,32 @@ async def update_po_draft(
         unknown = [p.id for p in payload.items if p.id not in items_by_id]
         if unknown:
             raise HTTPException(status_code=400, detail=f"Line item(s) {', '.join(map(str, unknown))} don't belong to PO '{po.po_number}' — reload the page and try again.")
+        from app.modules.p2p.pre_po import po_line_min_quantity
+        raised: list[str] = []
         for pricing in payload.items:
             item = items_by_id[pricing.id]
-            item.unit_price = pricing.unit_price
+            # Quantity may be raised above the requisition (vendor lot size, spares), never below it.
+            if pricing.quantity is not None and abs(pricing.quantity - (item.quantity or 0)) > 1e-9:
+                floor = po_line_min_quantity(item, db, lock=True)
+                if floor is not None and pricing.quantity < floor - 1e-9:
+                    raise HTTPException(status_code=422, detail=(
+                        f"{item.item_name}: quantity can't be below {floor:g} {item.unit or 'units'} — that is what the "
+                        "requisition asks for. You can only increase it."))
+                if pricing.quantity > (item.quantity or 0):
+                    raised.append(f"'{item.item_name}' {item.quantity:g} to {pricing.quantity:g} {item.unit or ''}".rstrip())
+                item.quantity = pricing.quantity
+            # Prices may be left empty on a draft; Send for approval still needs every line priced.
+            if "unit_price" in pricing.model_fields_set:
+                item.unit_price = pricing.unit_price
             item.tax_rate = pricing.tax_rate
             if "specification" in pricing.model_fields_set:
                 item.specification = (pricing.specification or "").strip() or None
             item.line_total = compute_line_total(item.quantity, item.unit_price, item.tax_rate)
         po.total_value = _derive_po_total(po.items)
+        if raised:
+            _write_pr_audit(db, pr.id, "po_qty_raised", user,
+                            summary=f"{user.name or user.email} raised quantity on draft PO '{po.po_number}' above the requisition: "
+                                    + "; ".join(raised) + ".")
 
     if updates or payload.items is not None:
         value_note = f" PO value now {po.total_value:,.2f}." if po.total_value is not None else ""

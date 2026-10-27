@@ -5,6 +5,7 @@ from datetime import date
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.modules.erp.models.project import Project as MachineProject
 from app.modules.main.models.user import User
 from app.modules.organization.models.department import Department
 from app.modules.projects.models.document import PmProjectDocument
@@ -32,6 +33,7 @@ class _Names:
         self._depts: dict[int, str | None] = {}
         self._projects: dict[int, PmProject | None] = {}
         self._milestones: dict[int, PmProjectMilestone | None] = {}
+        self._machines: dict[int, tuple[int, str] | None] = {}
 
     def user(self, uid: int | None) -> str | None:
         if not uid:
@@ -61,6 +63,24 @@ class _Names:
             self._milestones[mid] = self.db.get(PmProjectMilestone, mid)
         return self._milestones[mid]
 
+    def preload_machines(self, project_ids) -> None:
+        """One query for the machines of many projects (lists)."""
+        ids = [i for i in set(project_ids) if i not in self._machines]
+        if not ids:
+            return
+        found: dict[int, tuple[int, str]] = {}
+        for mid, pid, serial in self.db.query(MachineProject.id, MachineProject.pm_project_id, MachineProject.serial_number).filter(
+            MachineProject.pm_project_id.in_(ids), MachineProject.is_deleted == False,  # noqa: E712
+        ).order_by(MachineProject.id).all():
+            found.setdefault(pid, (mid, serial))  # lowest id wins
+        for i in ids:
+            self._machines[i] = found.get(i)
+
+    def machine(self, project_id: int) -> tuple[int, str] | None:
+        if project_id not in self._machines:
+            self.preload_machines([project_id])
+        return self._machines[project_id]
+
 
 def names(db: Session) -> _Names:
     return _Names(db)
@@ -80,6 +100,25 @@ def project_response(db: Session, project: PmProject, user: User | None = None, 
     resp.documents_archived_by_name = cache.user(project.documents_archived_by_id)
     for key, value in wf.project_rollup(db, project).items():
         setattr(resp, key, value)
+    machine = cache.machine(project.id)
+    if machine:
+        resp.machine_id, resp.machine_serial = machine
+    if project.internal_order_id:
+        from app.modules.accounts.models.internal_order import InternalOrder
+        io = db.get(InternalOrder, project.internal_order_id)
+        if io:
+            resp.internal_order_code, resp.internal_order_name = io.code, io.name
+    from app.modules.projects import lifecycle
+    resp.lifecycle_stage = project.lifecycle_stage or "planned"
+    resp.lifecycle_stage_label = lifecycle.stage_label(resp.lifecycle_stage)
+    if project.sales_order_id:
+        from app.modules.sales.models.order import SalesOrder
+        so = db.get(SalesOrder, project.sales_order_id)
+        if so:
+            resp.so_number = so.so_number or f"Draft #{so.id}"
+        from app.modules.projects.models.element import PmProjectElement
+        resp.units_total = db.query(func.count(PmProjectElement.id)).filter(
+            PmProjectElement.project_id == project.id, PmProjectElement.status != "cancelled").scalar() or 0
     if user is not None:
         resp.can_manage = wf.can_manage(project, user)
     return resp

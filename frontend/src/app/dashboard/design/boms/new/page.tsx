@@ -15,7 +15,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import BomLinesEditor, { BomImportButton, BomLineDraft, bomDraftsToPayload, bomLinesToDrafts, emptyBomLine, itemsFromBomLines } from '../BomLinesEditor'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
-import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 
 function mergeOptions(base: DesignLookupOption[], extra: DesignLookupOption[]): DesignLookupOption[] {
   const seen = new Set(base.map((o) => o.id))
@@ -230,7 +230,7 @@ export default function NewDesignBomPage() {
         right={<>
           <SheetSection icon="link" title="Links" extra={<Optional />}>
             <div data-tour="design-bomnew-order-project" style={{ marginBottom: 12 }}>
-              <label style={sheetLabel}>Order project</label>
+              <label style={sheetLabel}>Project</label>
               <OrderProjectPicker value={orderProject} requireElement={false} onChange={(v) => setOrderProject(v)} />
               <p style={sheetHint}>A project BOM for a confirmed order — pick a vehicle only for a vehicle-specific variant.</p>
             </div>

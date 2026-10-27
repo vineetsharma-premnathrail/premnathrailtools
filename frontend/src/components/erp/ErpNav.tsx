@@ -8,12 +8,11 @@ import { filterTabsByAccess } from '@/lib/tabAccess'
 import NotificationBell from './NotificationBell'
 import TourButton from '@/components/tour/TourButton'
 import { SERVICE_CONTRACTS_ENABLED } from '@/lib/features'
-import { ChartBar, FileText, ShieldCheck, SquaresFour, Trash, Truck, Users, type Icon } from '@phosphor-icons/react'
+import { ChartBar, FileText, ShieldCheck, SquaresFour, Trash, Users, type Icon } from '@phosphor-icons/react'
 import { pillStyle } from '@/components/shared/ui'
 
 const TABS = [
   { href: '/dashboard/erp', label: 'Dashboard', icon: 'grid', subtabKey: 'dashboard' },
-  { href: '/dashboard/erp/projects', label: 'Projects', icon: 'truck', subtabKey: 'projects' },
   { href: '/dashboard/erp/service-requests', label: 'Service Requests', icon: 'file', subtabKey: 'service_requests' },
   { href: '/dashboard/erp/service-contracts', label: 'Contracts', icon: 'shield', subtabKey: 'service_contracts' },
   { href: '/dashboard/erp/reports', label: 'Reports', icon: 'chart', subtabKey: 'reports' },
@@ -24,7 +23,6 @@ const TABS = [
 // tab's data-tour id, so keys stay as they are.
 const TAB_ICONS: Record<string, Icon> = {
   grid: SquaresFour,
-  truck: Truck,
   shield: ShieldCheck,
   file: FileText,
   chart: ChartBar,

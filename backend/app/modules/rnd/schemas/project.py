@@ -39,6 +39,8 @@ class RndProjectCreate(BaseModel):
     start_date: date | None = None
     target_end_date: date | None = None
     budget_amount: float | None = None
+    # A budget Finance created to link instead of typing an amount (the amount then comes from Finance).
+    internal_order_id: int | None = None
     remarks: str | None = None
     # Origin + source (services/project_origin.py validates per origin).
     origin: str | None = None
@@ -46,6 +48,7 @@ class RndProjectCreate(BaseModel):
     source_id: int | None = None
     improvement_reason: str | None = None
     product_id: int | None = None
+    machine_id: int | None = None
     origin_note: str | None = None
     # Files the form uploads right after create — proof for origins that need
     # an attached document (the files themselves go to /rnd/documents).
@@ -66,6 +69,7 @@ class RndProjectUpdate(BaseModel):
     target_end_date: date | None = None
     actual_end_date: date | None = None
     budget_amount: float | None = None
+    internal_order_id: int | None = None
     handover_specs_final: bool | None = None
     handover_bom_approved: bool | None = None
     handover_process_documented: bool | None = None
@@ -78,6 +82,7 @@ class RndProjectUpdate(BaseModel):
     source_id: int | None = None
     improvement_reason: str | None = None
     product_id: int | None = None
+    machine_id: int | None = None
     origin_note: str | None = None
 
 
@@ -117,6 +122,7 @@ class RndProjectResponse(BaseModel):
     source_ref: str | None = None
     improvement_reason: str | None = None
     product_id: int | None = None
+    machine_id: int | None = None
     origin_note: str | None = None
     created_by_id: int | None = None
     created_at: datetime | None = None
@@ -129,11 +135,18 @@ class RndProjectResponse(BaseModel):
     leads: list[RndProjectMember] = []
     team_members: list[RndProjectMember] = []
     actual_cost: float | None = 0  # None = hidden (R&D › Prototypes › BOM costs)
+    # The Finance budget behind the project; budget_from_finance = linked to a
+    # budget Finance created (its amount is Finance's, not typed on the project).
+    internal_order_id: int | None = None
+    internal_order_code: str | None = None
+    internal_order_name: str | None = None
+    budget_from_finance: bool = False
     experiment_count: int = 0
     prototype_count: int = 0
     origin_label: str | None = None
     improvement_reason_label: str | None = None
     product_name: str | None = None
+    machine_label: str | None = None
     # Frontend detail page of the source record (null once it's deleted);
     # the signed source_id_ref is added by the record-ref middleware.
     source_path: str | None = None

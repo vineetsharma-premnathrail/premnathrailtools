@@ -12,10 +12,10 @@ from app.modules.main.models.notification import Notification
 from app.modules.production import order_project_links as links
 from app.modules.production.models.mrp import ProductionPlannedOrder
 from app.modules.production.models.rrv_build import ProductionRrvBuild
-from app.modules.sales import order_projects as ops
+from app.modules.projects import so_projects as ops
 from app.modules.sales import service as svc
 from app.modules.sales.models.order import SalesOrder, SalesOrderSchedule
-from app.modules.sales.models.order_project import OrderProject
+from app.modules.projects.models.project import PmProject
 from app.tests.test_production_mrp import MRP, m  # noqa: F401 — fixture
 from app.tests.test_sales import BASE, TODAY, confirm, create_order, hdr, payload_from_prefill, setup_customer, setup_people
 from app.tests.test_cov_production_execution import API, _sqlite_document_numbers  # noqa: F401 — autouse fixture
@@ -55,8 +55,16 @@ def _setup(client, db, with_spares=True):
     so = _order_with_spares(client, db, maker, inq) if with_spares else create_order(client, db, maker, inq)
     so = confirm(client, db, so, maker, head, director)
     db.expire_all()
-    project = db.query(OrderProject).filter(OrderProject.sales_order_id == so["id"]).one()
+    project = db.query(PmProject).filter(PmProject.sales_order_id == so["id"]).one()
     return maker, planner, so, project
+
+
+def _dept(db, project):
+    """The 360 cells of a project's units ({unit_id: {department: cell}}) from the core API."""
+    db.expire_all()
+    project = db.get(PmProject, project.id)
+    so = db.get(SalesOrder, project.sales_order_id)
+    return ops.department_cells(db, project, so, list(project.elements))
 
 
 def _builds(db, so_id):
@@ -72,6 +80,8 @@ def test_confirmation_plans_one_build_per_vehicle(client, db):
     for b, el in zip(builds, vehicles):
         assert b.status == "planned" and b.order_project_id == project.id and b.order_project_element_id == el.id
         assert b.sales_schedule_id == el.sales_schedule_id and b.rrv_model == "RRV-10T"
+        # Known by its project vehicle number, never a separate RRV-YYYY-NNNN (2026-10-27).
+        assert b.build_number == el.element_no
         assert b.target_handover_date == el.contractual_date
         assert b.customer_po_number == "CR/PO/2026/771" and b.order_reference == so["so_number"]
         assert len(b.stages) == 12 and b.required_tests
@@ -79,11 +89,11 @@ def test_confirmation_plans_one_build_per_vehicle(client, db):
         assert row.rrv_build_id == b.id and row.status == "build_planned"
     note = db.query(Notification).filter(Notification.user_id == planner.id,
                                          Notification.title.like("Planned build created%")).one()
-    assert builds[0].build_number in note.message and project.op_number in note.message
+    assert builds[0].build_number in note.message and project.project_code in note.message
 
     # Idempotent: re-running the project sync plans nothing new.
     order = db.get(SalesOrder, so["id"])
-    ops.ensure_order_project(db, order, maker)
+    ops.ensure_project_for_order(db, order, maker)
     db.commit()
     assert len(_builds(db, so["id"])) == 2
 
@@ -98,11 +108,10 @@ def test_confirmation_plans_one_build_per_vehicle(client, db):
     assert len(builds) == 3 and builds[2].target_handover_date == TODAY + timedelta(days=400)
 
     # 360 page: production column per vehicle; the lot has no work yet.
-    d = client.get(f"{BASE}/order-projects/{project.id}", headers=hdr(maker)).json()
-    cells = {e["element_no"]: e["departments"]["production"] for e in d["elements"]}
-    v1 = cells[f"{project.op_number}/01"]
+    cells = {e.element_no: c["production"] for e, c in ((e, _dept(db, project)[e.id]) for e in project.elements)}
+    v1 = cells[f"{project.project_code}/01"]
     assert v1["label"] == f"{builds[0].build_number} · Planned" and v1["tone"] == "neutral" and "0/12 stages" in v1["detail"]
-    assert cells[f"{project.op_number}/03"] is None  # the spares lot
+    assert cells[f"{project.project_code}/03"] is None  # the spares lot
 
 
 def test_build_progress_drives_element_status(client, db):
@@ -112,11 +121,10 @@ def test_build_progress_drives_element_status(client, db):
     assert r.status_code == 200, r.text
     db.expire_all()
     el = db.get(ProductionRrvBuild, b1.id)
-    project = db.get(OrderProject, project.id)
+    project = db.get(PmProject, project.id)
     el1 = next(e for e in project.elements if e.id == el.order_project_element_id)
     assert el1.status == "in_progress"
-    d = client.get(f"{BASE}/order-projects/{project.id}", headers=hdr(maker)).json()
-    cell = next(e for e in d["elements"] if e["id"] == el1.id)["departments"]["production"]
+    cell = _dept(db, project)[el1.id]["production"]
     assert cell["status"] == "in_progress" and cell["tone"] == "info"
 
     build = db.get(ProductionRrvBuild, b1.id)
@@ -124,11 +132,11 @@ def test_build_progress_drives_element_status(client, db):
     links.sync_build_element(db, build)
     db.commit()
     db.expire_all()
-    assert db.get(OrderProject, project.id).elements[0].status == "ready"
+    assert db.get(PmProject, project.id).elements[0].status == "ready"
 
     # Detail of the build carries the chip data.
     r = client.get(f"{API}/rrv-builds/{b1.id}", headers=hdr(planner))
-    assert r.json()["order_project_number"] == project.op_number and r.json()["order_project_element_no"] == el1.element_no
+    assert r.json()["order_project_number"] == project.project_code and r.json()["order_project_element_no"] == el1.element_no
 
 
 def test_work_order_element_rules(client, db, m):  # noqa: F811
@@ -142,13 +150,13 @@ def test_work_order_element_rules(client, db, m):  # noqa: F811
 
     # RRV line with two vehicles and no element → 422 naming the project.
     r = client.post(f"{API}/work-orders", json={**base, "sales_order_id": so["id"], "sales_order_line_id": rrv_line.id}, headers=m["h"])
-    assert r.status_code == 422 and project.op_number in r.json()["detail"] and "Order Project field" in r.json()["detail"]
+    assert r.status_code == 422 and project.project_code in r.json()["detail"] and "Project unit field" in r.json()["detail"]
     # Element picked → the sales order is filled in from it.
     r = client.post(f"{API}/work-orders", json={**base, "order_project_element_id": v2.id}, headers=m["h"])
     assert r.status_code == 200, r.text
     wo = r.json()
     assert wo["order_project_element_id"] == v2.id and wo["sales_order_id"] == so["id"] and wo["sales_order_line_id"] == rrv_line.id
-    assert wo["order_project_number"] == project.op_number and wo["order_project_element_label"] == "Vehicle 2"
+    assert wo["order_project_number"] == project.project_code and wo["order_project_element_label"] == "Vehicle 2"
     # Element of another line than the one picked → 422.
     r = client.post(f"{API}/work-orders", json={**base, "order_project_element_id": v1.id, "sales_order_line_id": spares_line.id},
                     headers=m["h"])
@@ -175,8 +183,7 @@ def test_work_order_element_rules(client, db, m):  # noqa: F811
     assert r.status_code == 409 and v1.element_no in r.json()["detail"]
 
     # 360: the lot shows its work order.
-    d = client.get(f"{BASE}/order-projects/{project.id}", headers=hdr(maker)).json()
-    cell = next(e for e in d["elements"] if e["id"] == lot.id)["departments"]["production"]
+    cell = _dept(db, project)[lot.id]["production"]
     assert cell["label"] == "1 WO · Draft"
 
 
@@ -202,14 +209,14 @@ def test_mrp_carries_the_element(client, db, m):  # noqa: F811
     rows = client.get(f"{MRP}/planned-orders", headers=m["h"]).json()
     row = next(x for x in rows if x["id"] == tops[0].id)
     assert row["order_project_element_id"] == tops[0].order_project_element_id
-    assert row["order_project_label"].startswith(project.op_number)
+    assert row["order_project_label"].startswith(project.project_code)
 
 
 @pytest.mark.parametrize("bad", [999999])
 def test_unknown_element_is_404(client, db, m, bad):  # noqa: F811
     r = client.post(f"{API}/work-orders", json={"bom_id": m["m_bom"]["id"], "quantity_planned": 1, "order_project_element_id": bad},
                     headers=m["h"])
-    assert r.status_code == 404 and "Order Project picker" in r.json()["detail"]
+    assert r.status_code == 404 and "project picker" in r.json()["detail"]
 
 
 def test_mrp_requisition_is_charged_to_the_order_and_element(client, db, m):  # noqa: F811

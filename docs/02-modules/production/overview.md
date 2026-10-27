@@ -154,7 +154,7 @@ Child tables (snapshotted from the BOM by `explode_bom`):
 - **`production_work_order_operations`**: `sequence`, `operation_name`, `workstation_id`, `planned_hours` = setup + run × qty, `requires_inspection`, `status` (`pending`, `in_progress`, `completed`), `qty_good`, `qty_scrap`, `started_at`, `completed_at`, `quality_lot_id` (Phase 2 gate lot), `quality_inspection_id` (legacy gate, still honoured), `instructions`, `remarks`.
 - **`production_time_logs`**: `work_order_id`, `operation_id`, `workstation_id`, `operator_id`, `log_date` (not future), `hours`, `qty_good`, `qty_scrap`, `remarks`, `created_by_id`.
 
-## 4.4 RRV builds — `production_rrv_builds` (`RRV-YYYY-NNNN`)
+## 4.4 RRV builds — `production_rrv_builds` (project vehicle number `PEW-80/01`; hand-made builds take the next `PEW-N`; older builds `RRV-YYYY-NNNN`)
 
 | Group | Columns |
 |---|---|
@@ -173,7 +173,7 @@ Child tables:
 
 ## 4.5 Number series
 
-`BOM-YYYY-NNNN`, `WO-YYYY-NNNN`, `RRV-YYYY-NNNN`, `RW-YYYY-NNNN`, restarting each calendar year. Each takes a transaction-scoped Postgres advisory lock on its prefix (`_lock_number_series`), so concurrent saves can't collide.
+`BOM-YYYY-NNNN`, `WO-YYYY-NNNN`, `RW-YYYY-NNNN` (RRV builds use the PEW project series since 2026-10-27), restarting each calendar year. Each takes a transaction-scoped Postgres advisory lock on its prefix (`_lock_number_series`), so concurrent saves can't collide.
 
 ---
 

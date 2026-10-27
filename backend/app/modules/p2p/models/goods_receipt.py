@@ -131,18 +131,18 @@ class P2PGoodsReceiptItem(Base, TimestampMixin, OrderProjectLineMixin):
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Order Project link (2026-10-17): the vehicle / lot of the build-to-order
+    # PM project link (2026-10-17): the vehicle / lot of the build-to-order
     # project this line is bought for — copied from its PO line
     # so Store can tag the received stock (p2p/order_project_links.py).
     order_project_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("sales_order_projects.id", ondelete="SET NULL"), nullable=True, index=True)
+        Integer, ForeignKey("pm_projects.id", ondelete="SET NULL"), nullable=True, index=True)
     order_project_element_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("sales_order_project_elements.id", ondelete="SET NULL"), nullable=True, index=True)
+        Integer, ForeignKey("pm_project_elements.id", ondelete="SET NULL"), nullable=True, index=True)
 
     goods_receipt: Mapped["P2PGoodsReceipt"] = relationship("P2PGoodsReceipt", back_populates="items")
     po_item: Mapped["P2PPurchaseOrderItem"] = relationship("P2PPurchaseOrderItem")
     store_item = relationship("StoreItem")
-    order_project_element = relationship("OrderProjectElement", viewonly=True, lazy="select")
+    order_project_element = relationship("PmProjectElement", viewonly=True, lazy="select")
 
     @property
     def item_code(self) -> str | None:

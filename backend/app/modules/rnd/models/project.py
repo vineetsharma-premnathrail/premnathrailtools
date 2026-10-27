@@ -90,6 +90,8 @@ class RndProject(Base, TimestampMixin, SoftDeleteMixin):
     internal_order_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("internal_orders.id", ondelete="SET NULL"), nullable=True, unique=True)
     product_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    # Improvement of existing product: the existing project / machine (PEW) being improved (2026-10-27).
+    machine_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("erp_projects.id", ondelete="SET NULL"), nullable=True)
     origin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)

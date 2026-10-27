@@ -140,21 +140,10 @@ const config: TourConfig = {
       required: false,
     },
     {
-      target: 'tnd-lead-source',
-      title: 'Lead Source',
-      purpose: 'Where this tender opportunity was found.',
+      target: 'tnd-date',
+      title: 'Tender Date',
+      purpose: 'The day this tender was taken up. Starts as today; change it when you log a tender picked up earlier. Cannot be a future date.',
       required: true,
-      options: [
-        { value: 'Website', meaning: 'Came through the company website.' },
-        { value: 'WhatsApp', meaning: 'Enquired via WhatsApp message.' },
-        { value: 'Referral', meaning: 'Came through a referral/existing contact.' },
-        { value: 'Phone Call', meaning: 'Inbound or outbound phone call.' },
-        { value: 'Email', meaning: 'Customer emailed directly.' },
-        { value: 'Walk-in', meaning: 'Customer walked in without prior contact.' },
-        { value: 'LinkedIn', meaning: 'Came through LinkedIn outreach or a post.' },
-        { value: 'Exhibition/Event', meaning: 'Met at a trade show, exhibition, or industry event — the common case for tenders.' },
-        { value: 'Other', meaning: 'Any source not covered by the options above.' },
-      ],
     },
     {
       target: 'tnd-priority',
@@ -165,7 +154,8 @@ const config: TourConfig = {
         { value: 'Medium', meaning: 'Normal requirement (default).' },
         { value: 'Low', meaning: 'Can be handled later.' },
       ],
-    },
+    },
+
     {
       target: 'tnd-org',
       title: 'Customer Organization',
@@ -186,7 +176,7 @@ const config: TourConfig = {
     {
       target: 'tnd-save',
       title: 'Create',
-      purpose: 'Validates the required fields (Customer Organization, Tender Number, Tender Name, Submission Date, Lead Source, Priority) and saves the tender.',
+      purpose: 'Validates the required fields (Customer Organization, Tender Number, Tender Name, Submission Date, Tender Date, Priority) and saves the tender.',
       after: 'On success you land on the tender\'s own detail page.',
     },
   ],

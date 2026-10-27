@@ -39,6 +39,8 @@ const GROUPS = [
       // Own page under Store (not a link out to P2P) — same goods-receipts API
       // as the P2P GRN pages, presented here since goods physically land here.
       { href: '/dashboard/store/grn', label: 'GRN & Inspection', key: 'grn', subtabKey: 'grn' },
+      // Goods that arrived before their PO — held, not in stock; Procurement makes the PO.
+      { href: '/dashboard/store/before-po', label: 'Before PO', key: 'before-po', subtabKey: 'grn' },
       { href: '/dashboard/store/returns', label: 'Returns', key: 'returns', subtabKey: 'returns' },
     ],
   },

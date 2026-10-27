@@ -10,7 +10,10 @@ and the notification rules (app/core/notify_rules.py)."""
 from app.core.notify_rules import notification_groups, notification_specs, validate_notification_rules
 from app.core.settings_framework import ModuleSettingsDef, SettingSpec, register_module_settings, get_setting as _get
 from app.modules.main.models.user import AVAILABLE_APPS
-from app.modules.p2p.models.p2p_request import P2P_CATEGORIES, P2P_CATEGORY_AUTO_BUYERS, standard_buyer_id
+from app.modules.p2p.models.p2p_request import (
+    LINE_CATEGORY, P2P_CATEGORIES, P2P_CATEGORY_AUTO_BUYERS, P2P_ITEM_TYPE_BUYER_TYPES, P2P_ITEM_TYPE_STANDARD_CATEGORY,
+    standard_buyer_id,
+)
 
 # Notification recipients may come from any department.
 _ANY_MODULE = tuple(sorted(AVAILABLE_APPS))
@@ -29,7 +32,8 @@ P2P_SETTING_GROUPS = {
     "terms": "Company terms & conditions",
     "invoice_match": "Invoice match tolerances (3-way match per PO line)",
     "rfq": "RFQ by email",
-    "buyers": "Buyer for each requisition category",
+    "line_buyers": "Buyer for each item type",
+    "buyers": "Buyer by category (requisitions raised from Service Requests and Maintenance)",
     **notification_groups(NOTIFY_EVENTS),
 }
 
@@ -77,7 +81,17 @@ _SPECS = [
                   help=(f"New {label} requisitions are assigned to this buyer." if code in P2P_CATEGORY_AUTO_BUYERS
                         else f"New {label} requisitions are assigned to this buyer. "
                              "Required: pick the buyer for this category."))
-      for code, label in P2P_CATEGORIES.items()),
+      for code, label in P2P_CATEGORIES.items() if code != LINE_CATEGORY),
+    # The buyer of each requisition line, by its Item Master item type
+    # (2026-10-27) — a requisition no longer has one category, so one PR can
+    # carry lines for different buyers. Blank = the type's standard buyer.
+    *(SettingSpec(f"buyer_type_{t}", "line_buyers", label, "user", None, user_apps=("p2p", "purchase"),
+                  default_resolver=((lambda db, _c=P2P_ITEM_TYPE_STANDARD_CATEGORY[t]: standard_buyer_id(db, _c, active_only=True))
+                                    if t in P2P_ITEM_TYPE_STANDARD_CATEGORY else None),
+                  help=(f"Requisition lines whose item is of type {label.lower()} go to this buyer."
+                        if t != "other" else "Lines whose item type is one Store added (not listed above) go to this buyer.")
+                        + " Left blank, those lines go to the requisition's main buyer.")
+      for t, label in P2P_ITEM_TYPE_BUYER_TYPES.items()),
     *notification_specs(NOTIFY_EVENTS, user_apps={e: _ANY_MODULE for e in NOTIFY_EVENTS}),
 ]
 

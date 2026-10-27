@@ -35,8 +35,8 @@ class P2PRequestItemPayload(BaseModel):
     project_inhouse: str | None = None
     category: str | None = None
     ship_to: str | None = None
-    # Order Project vehicle / lot this line is bought for. Required on a
-    # 'Project' line when the PR is charged to a sales order / order project
+    # Project unit (vehicle / lot) this line is bought for. Required on a
+    # 'Project' line when the PR is charged to a sales order / project
     # that has one; auto-filled when derivable (p2p/order_project_links.py).
     order_project_element_id: int | None = None
 
@@ -62,7 +62,7 @@ class P2PRequestItemResponse(BaseModel):
     issued_from_location_id: int | None = None
     issued_qty: float | None = None
     material_issue_id: int | None = None
-    # Order Project element (vehicle / lot) this line is for — OrderProjectChip.
+    # Project unit (vehicle / lot) this line is for — ProjectUnitChip.
     order_project_id: int | None = None
     order_project_element_id: int | None = None
     order_project_number: str | None = None
@@ -73,6 +73,9 @@ class P2PRequestItemResponse(BaseModel):
 
     # Denormalized display fields, filled in by the route.
     issued_from_location_name: str | None = None
+    # Buyer of this line (by its item type); None = the requisition's assigned buyer.
+    buyer_id: int | None = None
+    buyer_name: str | None = None
 
 
 class P2PRequestItemStockLocationInfo(BaseModel):
@@ -115,7 +118,10 @@ class P2PRequestCreate(BaseModel):
     # New development: the R&D project (internal_order_id is then derived by the server).
     rnd_project_id: int | None = None
     order_project_id: int | None = None
-    category_code: str
+    # None (the PR form since 2026-10-27): the lines' item types decide what is
+    # bought and who buys each line; numbered P2P-[YEAR]-[NUMBER]. A code is still
+    # sent by the internal callers that raise category-based requisitions.
+    category_code: str | None = None
     required_date: date | None = None
     requirement_type: str | None = None
     priority: str = "medium"

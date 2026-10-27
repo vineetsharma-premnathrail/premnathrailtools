@@ -17,12 +17,6 @@ const config: TourConfig = {
       purpose: 'Returns to the Projects Asset Register.',
     },
     {
-      target: 'erp-proj-new-sr-btn',
-      title: '+ New Service Request',
-      purpose: 'Raises a service ticket — use it when the customer reports a fault or a visit is due on this machine.',
-      after: 'Opens the Create Service Request form; pick this machine in "Asset / Vehicle".',
-    },
-    {
       target: 'erp-proj-edit-btn',
       title: 'Edit Project',
       purpose: 'Opens the full machine form to correct or update any detail — status, site, warranty, AMC, contacts.',

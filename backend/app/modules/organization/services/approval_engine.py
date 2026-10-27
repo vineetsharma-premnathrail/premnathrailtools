@@ -612,20 +612,37 @@ def _notify(db: Session, user_ids, title: str, message: str, req: ApprovalReques
             pass
 
 
+def _queue_mail(db: Session, step: ApprovalRequestStep, user_ids) -> None:
+    """Approval email with Approve / Reject links, sent after commit (approval_mail.py)."""
+    from app.modules.organization.services import approval_mail
+
+    req = step.request
+    # Nobody the four-eyes rule bars gets a link decide() would refuse (e.g. a delegate who is the requester).
+    barred = {req.requester_id, *((req.context or {}).get("_excluded_user_ids") or [])} if req is not None else set()
+    try:
+        approval_mail.queue(db, step, [u for u in user_ids if u not in barred])
+    except Exception:  # an email must never block the approval itself
+        pass
+
+
 def _activate(db: Session, req: ApprovalRequest, sequence: int, notify_approvers: bool = True) -> None:
     req.current_sequence = sequence
     now = _now()
     notify: list[int] = []
+    mails: list[tuple[ApprovalRequestStep, list[int]]] = []
     for step in req.steps:
         if step.sequence == sequence and step.status == "waiting":
             step.status = "pending"
             step.activated_at = now
             if step.escalate_after_hours:
                 step.due_at = now + timedelta(hours=step.escalate_after_hours)
-            notify.append(step.approver_id)
-            notify += [d.delegate_id for d in _delegations_from(db, step.approver_id, req.workflow_key, req.module_key)]
+            people = [step.approver_id] + [d.delegate_id for d in _delegations_from(db, step.approver_id, req.workflow_key, req.module_key)]
+            notify += people
+            mails.append((step, people))
     if not notify_approvers:
         return
+    for step, people in mails:
+        _queue_mail(db, step, people)
     stage = next((s.stage_name for s in req.steps if s.sequence == sequence), "")
     _notify(db, notify, f"Approval needed: {req.title}",
             f"{req.reference or req.title} is waiting for your approval ({stage}).", req, teams=True)
@@ -747,7 +764,11 @@ def _tab_action(tt: TransactionType | None, decision: str) -> str:
     return "reject" if decision in ("reject", "return") and "reject" in acts else "approve"
 
 
-def decide(db: Session, request_id: int, user: User, decision: str, comment: str | None = None) -> ApprovalRequest:
+def decide(db: Session, request_id: int, user: User, decision: str, comment: str | None = None,
+           *, only_step_id: int | None = None) -> ApprovalRequest:
+    """only_step_id (approval email link): decide exactly that step, never the
+    stage after it nor as an admin stand-in — a second click of the same link
+    must not approve the next stage once the first click activated it."""
     if decision not in ("approve", "reject", "return"):
         raise HTTPException(status_code=422, detail="Decision must be approve, reject or return.")
     comment = (comment or "").strip() or None
@@ -757,13 +778,18 @@ def decide(db: Session, request_id: int, user: User, decision: str, comment: str
     tt = _TYPES.get(req.workflow_key)
     wf = ensure_workflow(db, req.workflow_key)
     pending = [s for s in req.steps if s.sequence == req.current_sequence and s.status == "pending"]
+    if only_step_id is not None:
+        pending = [s for s in pending if s.id == only_step_id]
+        if not pending:
+            raise HTTPException(status_code=409, detail="This step was already decided or moved on — nothing left for this link "
+                                                        "to decide. Open My Approvals in the portal to see what is waiting.")
     step, via = None, None
     for s in sorted(pending, key=lambda s: s.approver_id != user.id):
         via = _via(db, user, s, req)
         if via:
             step = s
             break
-    if step is None and is_admin_user(user) and pending:
+    if step is None and is_admin_user(user) and pending and only_step_id is None:
         if not comment:
             raise HTTPException(status_code=422, detail="You're not an approver of this stage — as an admin you can stand in, "
                                                         "but write a comment saying why.")
@@ -885,6 +911,7 @@ def reassign_pending(db: Session, from_user_id: int, to_user_id: int, actor: Use
         if step.status == "pending":
             _notify(db, [to_user_id], f"Approval needed: {req.title}",
                     f"{req.reference or req.title} was handed over to you for approval ({step.stage_name}).", req, teams=True)
+            _queue_mail(db, step, [to_user_id])
     db.flush()
     return len(steps)
 
@@ -1417,6 +1444,7 @@ def escalate_overdue(db: Session) -> int:
         _notify(db, targets, f"Escalated: {req.title}",
                 f"{req.reference or req.title} has waited {step.escalate_after_hours}h for {late} ({step.stage_name}). "
                 "You can now decide it.", req, teams=True)
+        _queue_mail(db, step, targets)
         _notify(db, [step.approver_id], f"Overdue approval: {req.title}",
                 f"{req.reference or req.title} is overdue and was escalated.", req, teams=True)
     db.flush()

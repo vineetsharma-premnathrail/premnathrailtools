@@ -18,11 +18,14 @@ import RndDocumentsPanel from '@/components/rnd/RndDocumentsPanel'
 import { TaskApi, TaskLabels } from '@/components/rnd/TasksBoard'
 import RndMilestonePlan, { MilestoneApi, MilestonePlanTexts } from '@/components/rnd/RndMilestonePlan'
 import RndProjectHistory from '@/components/rnd/RndProjectHistory'
+import RndProjectMembers from '@/components/rnd/RndProjectMembers'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
+import RndBudgetFields, { EMPTY_RND_BUDGET, RndBudgetDraft, rndBudgetError, rndBudgetFromProject, rndBudgetPayload } from '@/components/rnd/RndBudgetFields'
+import { ProjectBudgetCard } from '@/components/finance/ProjectBudget'
 import ProjectOriginFields, { EMPTY_ORIGIN, KIND_LABELS, OriginDraft, originError, originFromProject, originPayload } from '@/components/rnd/ProjectOriginFields'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, FileDropZone, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
@@ -56,8 +59,8 @@ const MILESTONE_TEXTS: MilestonePlanTexts = {
   targetEndPrefix: 'The project\'s target end is',
 }
 
-// Same layout as a Project Management project: Overview · Milestones · Documents · History.
-const TABS = ['Overview', 'Milestones', 'Documents', 'History'] as const
+// Same layout as a Project Management project: Overview · Members · Milestones · Documents · History.
+const TABS = ['Overview', 'Members', 'Milestones', 'Documents', 'History'] as const
 type Tab = typeof TABS[number]
 function tabBtnStyle(active: boolean): React.CSSProperties {
   return {
@@ -162,6 +165,7 @@ export default function RndProjectDetailPage() {
   const [targetEndDate, setTargetEndDate] = useState('')
   const [remarks, setRemarks] = useState('')
   const [origin, setOrigin] = useState<OriginDraft>(EMPTY_ORIGIN)
+  const [budget, setBudget] = useState<RndBudgetDraft>(EMPTY_RND_BUDGET)
   const [files, setFiles] = useState<File[]>([])
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -220,6 +224,7 @@ export default function RndProjectDetailPage() {
     setTargetEndDate(p.target_end_date || '')
     setRemarks(p.remarks || '')
     setOrigin(originFromProject(p))
+    setBudget(rndBudgetFromProject(p))
   }
 
   useEffect(() => {
@@ -247,9 +252,6 @@ export default function RndProjectDetailPage() {
         <RndNav />
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
           <div>
-            <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-              R&amp;D Module
-            </p>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>R&amp;D Project</h1>
           </div>
           <button onClick={() => router.push('/dashboard/rnd/projects')} type="button" style={secondaryBtnStyle}>← Back</button>
@@ -279,6 +281,8 @@ export default function RndProjectDetailPage() {
       const originMsg = originError(origin, null)
       if (originMsg) { setError(originMsg); return }
     }
+    const budgetMsg = rndBudgetError(budget)
+    if (budgetMsg) { setError(budgetMsg); return }
 
     setSaving(true)
     try {
@@ -293,6 +297,7 @@ export default function RndProjectDetailPage() {
         start_date: startDate || null,
         target_end_date: targetEndDate || null,
         remarks: remarks.trim() || null,
+        ...rndBudgetPayload(budget, rndBudgetFromProject(project)),
       })
       // New attachments go to the project's Documents; a failed file never undoes the save.
       const failed: string[] = []
@@ -402,6 +407,7 @@ export default function RndProjectDetailPage() {
                   </div>
                 </div>
               </SheetSection>
+              <RndBudgetFields value={budget} onChange={setBudget} projectId={project.id} />
             </>}
             right={<>
               <SheetSection icon="users" title="Project Members">
@@ -433,9 +439,6 @@ export default function RndProjectDetailPage() {
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div data-tour="rnd-pd-badges">
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            R&amp;D Module
-          </p>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 20px' }}>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{project.project_number}</h1>
           </div>
@@ -499,6 +502,7 @@ export default function RndProjectDetailPage() {
                       )}
                     </DetailRow>
                   )}
+                  {project.machine_label && <DetailRow label="Project being improved">{project.machine_label}</DetailRow>}
                   {project.product_name && <DetailRow label={project.origin === 'product_improvement' ? 'Product being improved' : 'Product'}>{project.product_name}</DetailRow>}
                   {project.improvement_reason_label && <DetailRow label="Reason">{project.improvement_reason_label}</DetailRow>}
                   {project.origin_note && <DetailRow label="Who proposed it and why">{project.origin_note}</DetailRow>}
@@ -532,6 +536,14 @@ export default function RndProjectDetailPage() {
           </div>
         )
       })()}
+      {tab === 'Overview' && (
+        <ProjectBudgetCard key={`${project.id}-${project.updated_at || ''}`} load={() => rndApi.projectBudget(project.id)} tour="rnd-pd-budget"
+          emptyText={canEdit ? 'No budget yet — use Edit to pick a budget Finance created, or type an amount.' : 'No budget set for this project.'} />
+      )}
+
+      {tab === 'Members' && (
+        <RndProjectMembers key={`${project.id}-${project.updated_at || ''}`} project={project} users={users} pickable={pickable} canEdit={canEdit} onSaved={applyProject} />
+      )}
 
       {tab === 'Milestones' && user && (
         <div id="tasks" data-tour="rnd-pd-tasks" style={{ scrollMarginTop: 16 }}>

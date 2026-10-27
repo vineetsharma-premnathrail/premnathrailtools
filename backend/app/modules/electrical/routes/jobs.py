@@ -153,13 +153,14 @@ def _ensure_assignee_rule(db: Session, user: User, key: str, person_id: int | No
 
 
 def _prefill_from_order_project(db: Session, data: dict) -> None:
-    """Blank customer / RRV model filled from the Order Project (its sales
-    order line)."""
+    """Blank customer / RRV model filled from the project (and its unit's
+    sales order line)."""
     from app.modules.sales.models.order import SalesOrderLine
-    from app.modules.sales.models.order_project import OrderProject, OrderProjectElement
-    project = db.get(OrderProject, data["order_project_id"])
-    el = db.get(OrderProjectElement, data["order_project_element_id"]) if data.get("order_project_element_id") else None
-    data["customer_name"] = data.get("customer_name") or project.customer_name
+    from app.modules.projects.models.project import PmProject
+    from app.modules.projects.models.element import PmProjectElement
+    project = db.get(PmProject, data["order_project_id"])
+    el = db.get(PmProjectElement, data["order_project_element_id"]) if data.get("order_project_element_id") else None
+    data["customer_name"] = data.get("customer_name") or project.client_name
     if el is not None:
         line = db.get(SalesOrderLine, el.sales_order_line_id)
         if line is not None and not data.get("rrv_model"):

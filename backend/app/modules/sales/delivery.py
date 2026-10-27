@@ -208,8 +208,8 @@ def after_change(db: Session, so: SalesOrder) -> None:
     svc.refresh_order(db, so)
     for row in so.schedules:
         _sync_machine(db, so, row)
-    # Order Project elements follow the delivery events (dispatched / delivered).
-    from app.modules.sales.order_projects import refresh_order_project
+    # Project units follow the delivery events (dispatched / delivered).
+    from app.modules.projects.so_projects import refresh_order_project
     refresh_order_project(db, so)
     db.flush()
 

@@ -28,8 +28,8 @@ from app.modules.production.models.rrv_build import (
     PRODUCTION_RRV_WO_ROLES, PRODUCTION_RRV_DEFAULT_REQUIRED_TESTS, PRODUCTION_REWORK_OPEN_STATUSES,
 )
 from app.modules.production.models.work_order import ProductionWorkOrder
-from app.modules.production import order_project_links  # registers the Order Project hooks / provider
-from app.modules.sales.models.order_project import OrderProjectElement
+from app.modules.production import order_project_links  # registers the project hooks / provider
+from app.modules.projects.models.element import PmProjectElement
 from app.modules.production.reports.rrv_handover_pdf import build_rrv_handover_pdf
 from app.modules.production.reports.rrv_handover_docx import build_rrv_handover_docx
 from app.modules.main.services import managed_documents
@@ -204,7 +204,7 @@ def _responses(db: Session, builds: list[ProductionRrvBuild], cls=ProductionRrvB
         if hit:
             proj, el = hit
             resp.order_project_id, resp.order_project_element_id = proj.id, el.id
-            resp.order_project_number, resp.order_project_element_no, resp.order_project_element_label = proj.op_number, el.element_no, el.label
+            resp.order_project_number, resp.order_project_element_no, resp.order_project_element_label = proj.project_code, el.element_no, el.label
         else:
             resp.order_project_id = resp.order_project_element_id = None
         out.append(resp)
@@ -590,11 +590,11 @@ async def link_work_order(build_id: int, wo_id: int, payload: ProductionRrvLinkW
     build_el = order_project_links.resolve_build_element(db, build, persist=True)
     if build_el is not None:
         if wo.order_project_element_id and wo.order_project_element_id != build_el.id:
-            other = db.get(OrderProjectElement, wo.order_project_element_id)
-            raise HTTPException(status_code=409, detail=f"{wo.wo_number} works for {other.element_no if other else 'another element'}, but "
+            other = db.get(PmProjectElement, wo.order_project_element_id)
+            raise HTTPException(status_code=409, detail=f"{wo.wo_number} works for {other.element_no if other else 'another unit'}, but "
                                                         f"{build.build_number} builds {build_el.element_no} ({build_el.label}). Change the work "
-                                                        "order's Order Project element first, or link it to that element's build.")
-        wo.order_project_id, wo.order_project_element_id = build_el.order_project_id, build_el.id
+                                                        "order's project unit first, or link it to that unit's build.")
+        wo.order_project_id, wo.order_project_element_id = build_el.project_id, build_el.id
         wo.sales_order_id = wo.sales_order_id or build.sales_order_id
         wo.sales_order_line_id = wo.sales_order_line_id or build.sales_order_line_id
     wo.rrv_build_id, wo.build_role = build.id, payload.build_role

@@ -9,12 +9,13 @@ import NotificationBell from '@/components/erp/NotificationBell'
 import TourButton from '@/components/tour/TourButton'
 import NavSettingsGear from '@/components/shared/NavSettingsGear'
 import { BRAND } from '@/lib/theme'
-import { Buildings, FileText, Gear, Package, SquaresFour, UploadSimple, type Icon } from '@phosphor-icons/react'
+import { Buildings, ChartBar, FileText, Gear, Package, SquaresFour, UploadSimple, type Icon } from '@phosphor-icons/react'
 
 const TABS = [
   { href: '/dashboard/crm', label: 'Dashboard', icon: 'grid', subtabKey: 'dashboard' },
   { href: '/dashboard/crm/organizations', label: 'Customer Organizations', icon: 'building', subtabKey: 'organizations' },
   { href: '/dashboard/crm/inquiries', label: 'Inquiries & Tenders', icon: 'file', subtabKey: 'inquiries_tenders' },
+  { href: '/dashboard/crm/reports', label: 'Reports', icon: 'chart', subtabKey: 'reports' },
   // Products, categories, payment terms and notification rules live here
   // (the old Masters and Bulk Import tabs were folded into Settings / the lists' Import button).
   { href: '/dashboard/crm/settings', label: 'Settings', icon: 'gear', subtabKey: 'settings' },
@@ -26,6 +27,7 @@ const TAB_ICONS: Record<string, Icon> = {
   grid: SquaresFour,
   building: Buildings,
   file: FileText,
+  chart: ChartBar,
   box: Package,
   gear: Gear,
   upload: UploadSimple,

@@ -64,11 +64,24 @@ def _builds(db: Session, ids) -> dict:
     return {i: (b, stage_now.get(i)) for i, b in builds.items()}
 
 
+def _project_elements(db: Session, schedule_ids: list[int]) -> dict[int, tuple[str, str]]:
+    """Schedule row id -> (project number PEW-80, unit PEW-80/01) of its project."""
+    if not schedule_ids:
+        return {}
+    from app.modules.projects.models.element import PmProjectElement
+    from app.modules.projects.models.project import PmProject
+    q = (db.query(PmProjectElement.sales_schedule_id, PmProject.project_code, PmProjectElement.element_no)
+         .join(PmProject, PmProject.id == PmProjectElement.project_id)
+         .filter(PmProjectElement.sales_schedule_id.in_(schedule_ids)))
+    return {sid: (op, el) for sid, op, el in q.all()}
+
+
 def schedule_rows(db: Session, so: SalesOrder, rows: list[SalesOrderSchedule] | None = None) -> list[SalesOrderScheduleResponse]:
     rows = so.schedules if rows is None else rows
     as_of = svc.today_ist()
     window = int(svc.get_setting(db, "at_risk_reminder_days"))
     builds = _builds(db, [r.rrv_build_id for r in rows])
+    elements = _project_elements(db, [r.id for r in rows])
     lines = {ln.id: ln for ln in so.lines}
     out = []
     for r in rows:
@@ -86,6 +99,8 @@ def schedule_rows(db: Session, so: SalesOrder, rows: list[SalesOrderSchedule] | 
         if b:
             resp.build_number, resp.build_status = b[0].build_number, b[0].status
             resp.build_stage = b[1] or ("Done" if b[0].status in ("completed", "handed_over") else None)
+        if r.id in elements:
+            resp.project_number, resp.project_element_no = elements[r.id]
         resp.ld_weeks, resp.ld_amount = svc.ld_accrued(so, r, as_of)  # live, not the daily snapshot
         resp.ld_forecast_periods, resp.ld_forecast_amount = svc.ld_forecast(so, r)
         resp.risk = svc.risk_of(db, so, r, as_of, window)
@@ -204,9 +219,12 @@ def _order_response(db: Session, so: SalesOrder, user: User, *, light: bool = Fa
     amend = db.query(SalesOrderAmendment.id).filter(
         SalesOrderAmendment.so_id == so.id, SalesOrderAmendment.status.in_(SALES_AMENDMENT_OPEN_STATUSES)).first()
     resp.open_amendment_id = amend[0] if amend else None
-    from app.modules.sales.order_projects import project_for_order
+    from app.modules.projects.so_projects import project_for_order
     op = project_for_order(db, so.id)
-    resp.order_project = {"id": op.id, "op_number": op.op_number, "status": op.status} if op else None
+    resp.pm_project_id = op.id if op else None
+    resp.pm_project_code = op.project_code if op else None
+    # Old key kept for the frontend until it reads pm_project_*; filled from the PM project.
+    resp.order_project = {"id": op.id, "op_number": op.project_code, "status": op.status} if op else None
     resp.can = can_flags(db, so, user, via_engine=resp.approval_via_engine)
     return resp
 

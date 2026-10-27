@@ -7,7 +7,9 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import { RndProject } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { primaryBtnStyle, RowCount, inputStyle as sharedInputStyle, pillStyle } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, RowCount, inputStyle as sharedInputStyle, pillStyle } from '@/components/shared/ui'
+import { FiltersButton, FiltersSheet } from '@/components/p2p/POTrackingShared'
+import { sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import RndNav from '@/components/rnd/RndNav'
 import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
@@ -55,6 +57,18 @@ function RndProjectList() {
   const [statusFilter, setStatusFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('')
   const [originFilter, setOriginFilter] = useState('')
+  // The Filters popup edits a draft; Apply copies it into the live filters.
+  const [showFilters, setShowFilters] = useState(false)
+  const [draft, setDraft] = useState({ stage: '', status: '', priority: '', origin: '' })
+  const activeFilterCount = [stageFilter, statusFilter, priorityFilter, originFilter].filter(Boolean).length
+  const openFilters = () => { setDraft({ stage: stageFilter, status: statusFilter, priority: priorityFilter, origin: originFilter }); setShowFilters(true) }
+  const applyFilters = () => {
+    setStageFilter(draft.stage); setStatusFilter(draft.status); setPriorityFilter(draft.priority); setOriginFilter(draft.origin); setShowFilters(false)
+  }
+  const clearFilters = () => {
+    setStageFilter(''); setStatusFilter(''); setPriorityFilter(''); setOriginFilter('')
+    setDraft({ stage: '', status: '', priority: '', origin: '' }); setShowFilters(false)
+  }
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -76,55 +90,68 @@ function RndProjectList() {
     <div>
       <RndNav />
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            R&amp;D Module
-          </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Prototype / Research</h1>
-        </div>
-        {can('rnd', 'projects', 'create') && (
-          <button
-            data-tour="rnd-proj-new-btn"
-            onClick={() => router.push('/dashboard/rnd/projects/new')}
-            style={primaryBtnStyle}
-          >
-            + New Project
-          </button>
-        )}
-      </div>
-
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
           {Array.isArray(error) ? error.join(' ') : error}
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+      {/* One toolbar row: create on the left, search + Filters (popup) next to it — same as the Procurement lists. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        {can('rnd', 'projects', 'create') && (
+          <button
+            data-tour="rnd-proj-new-btn"
+            onClick={() => router.push('/dashboard/rnd/projects/new')}
+            style={{ ...primaryBtnStyle, whiteSpace: 'nowrap' }}
+          >
+            + New R&amp;D Project
+          </button>
+        )}
         <input
           data-tour="rnd-proj-search"
+          aria-label="Search R&D projects"
           style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }}
           placeholder="Search by project number, title, or objective…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <Select data-tour="rnd-proj-stage-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
-          <option value="">All stages</option>
-          {Object.entries(STAGE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </Select>
-        <Select data-tour="rnd-proj-status-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="">All statuses</option>
-          {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </Select>
-        <Select data-tour="rnd-proj-priority-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
-          <option value="">All priorities</option>
-          {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </Select>
-        <Select data-tour="rnd-proj-origin-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={originFilter} onChange={(e) => setOriginFilter(e.target.value)}>
-          <option value="">All origins</option>
-          {Object.entries(ORIGIN_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </Select>
+        <FiltersButton count={activeFilterCount} onOpen={openFilters} tour="rnd-proj-filter-btn" />
+        {activeFilterCount > 0 && <button type="button" onClick={clearFilters} style={secondaryBtnStyle}>Clear</button>}
       </div>
+
+      {showFilters && (
+        <FiltersSheet subtitle="Narrow the R&D project list, then press Apply." tour="rnd-proj-filter-sheet" applyTour="rnd-proj-apply-btn"
+          onClose={() => setShowFilters(false)} onClear={clearFilters} onApply={applyFilters}>
+          <div>
+            <label style={sheetLabel}>Stage</label>
+            <Select data-tour="rnd-proj-stage-filter" style={sheetInput} value={draft.stage} onChange={(e) => setDraft((d) => ({ ...d, stage: e.target.value }))}>
+              <option value="">All stages</option>
+              {Object.entries(STAGE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </Select>
+          </div>
+          <div>
+            <label style={sheetLabel}>Status</label>
+            <Select data-tour="rnd-proj-status-filter" style={sheetInput} value={draft.status} onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))}>
+              <option value="">All statuses</option>
+              {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </Select>
+          </div>
+          <div>
+            <label style={sheetLabel}>Priority</label>
+            <Select data-tour="rnd-proj-priority-filter" style={sheetInput} value={draft.priority} onChange={(e) => setDraft((d) => ({ ...d, priority: e.target.value }))}>
+              <option value="">All priorities</option>
+              {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </Select>
+          </div>
+          <div>
+            <label style={sheetLabel}>Origin</label>
+            <Select data-tour="rnd-proj-origin-filter" style={sheetInput} value={draft.origin} onChange={(e) => setDraft((d) => ({ ...d, origin: e.target.value }))}>
+              <option value="">All origins</option>
+              {Object.entries(ORIGIN_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </Select>
+          </div>
+        </FiltersSheet>
+      )}
 
       <div style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,

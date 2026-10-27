@@ -103,7 +103,7 @@ def public_standard() -> dict:
             "leaves_factory": bool(spec.get("leaves_factory")),
             "manager_only": bool(spec.get("manager_only")),
             "remarks_label": spec.get("remarks_label"),
-            # Order Project element picker (store/services/project_stock.py —
+            # project element picker (store/services/project_stock.py —
             # validated there, not by validate_issue): shown for these types.
             "order_project": t in PROJECT_ISSUE_TYPES,
             "fields": [{"key": k, "rule": rule, **FIELDS[k]} for k, rule in spec["fields"].items()],

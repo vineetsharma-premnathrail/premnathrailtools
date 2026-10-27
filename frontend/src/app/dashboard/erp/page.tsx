@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuth, useRequireApp } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
-import { Project, ServiceRequest } from '@/types'
+import { ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import { Section, StatChip, RowCount } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
@@ -18,15 +18,20 @@ const PRIORITY_COLORS: Record<string, string> = {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  active: '#22c55e',
-  inactive: '#94a3b8',
-  under_service: '#eab308',
-  manufacturing_under_progress: '#3b82f6',
-  work_in_progress: '#3b82f6',
-  standby: '#a8a29e',
-  decommissioned: '#78716c',
-  cancel: '#78716c',
+  open: '#ea580c',
+  acknowledged: '#f59e0b',
+  assigned: '#3b82f6',
+  scheduled: '#6366f1',
+  in_progress: '#2563eb',
+  pending_parts: '#eab308',
+  on_hold: '#a8a29e',
+  work_completed: '#22c55e',
+  review: '#14b8a6',
+  closed: '#78716c',
+  cancelled: '#78716c',
 }
+
+const CLOSED_STATUSES = ['closed', 'cancelled']
 
 // Text longer than this is cut with "..." (full text on hover); free-text columns may use two rows (50).
 const clip = (v?: string | null, max = 25) => (!v ? '—' : v.length > max ? `${v.slice(0, max).trimEnd()}…` : v)
@@ -42,69 +47,51 @@ function ageInDays(dateStr?: string) {
   return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)))
 }
 
-function warrantyLabel(project?: Project) {
-  if (!project?.warranty_start_date || !project?.warranty_end_date) return 'No'
-  return `${formatDate(project.warranty_start_date)} → ${formatDate(project.warranty_end_date)}`
-}
-
 export default function ErpDashboardPage() {
   const { user } = useAuth()
   const { isAuthorized, isLoading } = useRequireApp('erp')
   const router = useRouter()
-  const [projects, setProjects] = useState<Project[]>([])
   const [srs, setSrs] = useState<ServiceRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [loadErrors, setLoadErrors] = useState<string[]>([])
 
   useEffect(() => {
     if (!isAuthorized) return
-    // Load each list on its own so one failure doesn't silently show zeros
-    // for both — whatever failed is named in the banner.
-    Promise.allSettled([erpApi.listProjects({ limit: 10000 }), erpApi.listServiceRequests({ limit: 1000 })])
-      .then(([p, s]) => {
-        const errs: string[] = []
-        if (p.status === 'fulfilled') setProjects(p.value)
-        else errs.push(`Machines: ${extractErrorMessages(p.reason, 'could not be loaded — check your connection and reload.').join(' ')}`)
-        if (s.status === 'fulfilled') setSrs(s.value)
-        else errs.push(`Service requests: ${extractErrorMessages(s.reason, 'could not be loaded — check your connection and reload.').join(' ')}`)
-        setLoadErrors(errs)
-      })
+    erpApi.listServiceRequests({ limit: 1000 })
+      .then(setSrs)
+      .catch((e) => setLoadErrors([`Service requests: ${extractErrorMessages(e, 'could not be loaded — check your connection and reload.').join(' ')}`]))
       .finally(() => setLoading(false))
   }, [isAuthorized])
 
-  const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects])
-  const srCountByProject = useMemo(() => {
-    const map = new Map<number, number>()
-    srs.forEach((s) => map.set(s.project_id, (map.get(s.project_id) || 0) + 1))
-    return map
-  }, [srs])
-
-  const stats = useMemo(
-    () => ({
-      totalProjects: projects.length,
+  const stats = useMemo(() => {
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    const open = srs.filter((s) => !CLOSED_STATUSES.includes(s.status))
+    return {
       totalSrs: srs.length,
-      activeTickets: srs.filter((s) => !['closed', 'cancelled'].includes(s.status)).length,
+      activeTickets: open.length,
+      inProgress: srs.filter((s) => s.status === 'in_progress').length,
+      overdue: open.filter((s) => s.expected_completion_date && new Date(s.expected_completion_date).getTime() < today).length,
+      closed: srs.filter((s) => s.status === 'closed').length,
       thisMonthSrs: srs.filter((s) => {
         if (!s.created_at) return false
         const d = new Date(s.created_at)
-        const now = new Date()
         return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
       }).length,
-    }),
-    [projects, srs]
-  )
+    }
+  }, [srs])
 
-  const deploymentStatusBreakdown = useMemo(() => {
+  const statusBreakdown = useMemo(() => {
     const counts: Record<string, number> = {}
-    projects.forEach((p) => {
-      counts[p.status] = (counts[p.status] || 0) + 1
+    srs.forEach((s) => {
+      counts[s.status] = (counts[s.status] || 0) + 1
     })
     return Object.entries(counts).sort((a, b) => b[1] - a[1])
-  }, [projects])
+  }, [srs])
 
   const activeTicketsByPriority = useMemo(() => {
     const counts: Record<string, number> = {}
-    srs.filter((s) => !['closed', 'cancelled'].includes(s.status)).forEach((s) => {
+    srs.filter((s) => !CLOSED_STATUSES.includes(s.status)).forEach((s) => {
       counts[s.priority] = (counts[s.priority] || 0) + 1
     })
     return Object.entries(counts)
@@ -113,10 +100,6 @@ export default function ErpDashboardPage() {
   const recentSrs = useMemo(
     () => [...srs].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).slice(0, 8),
     [srs]
-  )
-  const recentProjects = useMemo(
-    () => [...projects].sort((a, b) => (a.serial_number || '').localeCompare(b.serial_number || '', undefined, { numeric: true, sensitivity: 'base' })).slice(0, 8),
-    [projects]
   )
 
   if (isLoading || !isAuthorized) return null
@@ -132,21 +115,23 @@ export default function ErpDashboardPage() {
       )}
       <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Dashboard Panel</h1>
       <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>
-        Welcome back, {user?.name || 'there'}. Here is the real-time operational state of your deployment assets.
+        Welcome back, {user?.name || 'there'}. Here is the current state of your service requests.
       </p>
       <div data-tour="erp-dash-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0 18px' }}>
-        <StatChip label="Projects" value={stats.totalProjects} color="#3b82f6" />
         <StatChip label="Service requests" value={stats.totalSrs} color="#ea580c" />
         <StatChip label="This month" value={stats.thisMonthSrs} color="#10b981" />
         <StatChip label="Active tickets" value={stats.activeTickets} color="#ca8a04" />
+        <StatChip label="In progress" value={stats.inProgress} color="#2563eb" />
+        <StatChip label="Past target date" value={stats.overdue} color="#dc2626" />
+        <StatChip label="Closed" value={stats.closed} color="#78716c" />
       </div>
 
       <div className="grid-2" data-tour="erp-dash-charts" style={{ gap: 16, marginBottom: 20 }}>
-        <Section title="Project Deployment Status">
-          {deploymentStatusBreakdown.length === 0 ? (
-            <p style={{ fontSize: 13, color: '#a8a29e' }}>No data yet.</p>
+        <Section title="Tickets by Status">
+          {statusBreakdown.length === 0 ? (
+            <p style={{ fontSize: 13, color: '#a8a29e' }}>No service requests yet.</p>
           ) : (
-            <BarChart data={deploymentStatusBreakdown} colorMap={STATUS_COLORS} />
+            <BarChart data={statusBreakdown} colorMap={STATUS_COLORS} />
           )}
         </Section>
 
@@ -169,16 +154,15 @@ export default function ErpDashboardPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 0 }}>
             <thead>
               <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-                {['SR Number', 'Serial No.', 'Model', 'Machine Type', 'Client', 'Site', 'Issue Summary', 'Priority', 'Status', 'Age', 'Warranty'].map((h, hi) => (
-                  <th key={h} data-fit-min={60} data-fit-cut={['Machine Type', 'Client', 'Site', 'Issue Summary'].includes(h) ? '' : undefined} style={thStyle}>{h}{hi === 0 && <RowCount count={recentSrs.length} />}</th>
+                {['SR Number', 'Issue Summary', 'Type', 'Priority', 'Status', 'Assigned To', 'Target Date', 'Age'].map((h, hi) => (
+                  <th key={h} data-fit-min={60} data-fit-cut={['Issue Summary', 'Type', 'Assigned To'].includes(h) ? '' : undefined} style={thStyle}>{h}{hi === 0 && <RowCount count={recentSrs.length} />}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
-              {!loading && recentSrs.length === 0 && <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No service requests yet.</td></tr>}
+              {loading && <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
+              {!loading && recentSrs.length === 0 && <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No service requests yet.</td></tr>}
               {recentSrs.map((sr) => {
-                const project = projectById.get(sr.project_id)
                 const age = ageInDays(sr.opened_at || sr.created_at)
                 return (
                   <tr
@@ -189,69 +173,18 @@ export default function ErpDashboardPage() {
                     <td style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>
                       <span style={{ fontSize: 12.5, fontWeight: 600, color: '#ea580c' }}>{sr.request_number}</span>
                     </td>
-                    <td title={project?.serial_number || undefined} style={{ ...tdText, whiteSpace: 'nowrap' }}>{clip(project?.serial_number)}</td>
-                    <td title={project?.model_name || undefined} style={{ ...tdText, whiteSpace: 'nowrap' }}>{clip(project?.model_name)}</td>
-                    <td data-fit-clamp style={tdText}><div title={project?.machine_type || undefined}>{clip2(project?.machine_type)}</div></td>
-                    <td data-fit-clamp style={tdText}><div title={project?.client_company || undefined}>{clip2(project?.client_company)}</div></td>
-                    <td data-fit-clamp style={tdText}><div title={project?.site_name || undefined}>{clip2(project?.site_name)}</div></td>
                     <td data-fit-clamp style={tdText}><div title={sr.issue_title}>{clip2(sr.issue_title)}</div></td>
+                    <td data-fit-clamp style={{ ...tdText, textTransform: 'capitalize' }}><div title={sr.service_type?.replace(/_/g, ' ')}>{sr.service_type ? clip2(sr.service_type.replace(/_/g, ' ')) : '—'}</div></td>
                     <td style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>
                       <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: PRIORITY_COLORS[sr.priority] || '#64748b' }}>{sr.priority}</span>
                     </td>
                     <td style={{ padding: '10px 8px', fontSize: 12, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{sr.status.replace(/_/g, ' ')}</td>
+                    <td data-fit-clamp style={tdText}><div title={sr.assigned_to_name || undefined}>{clip(sr.assigned_to_name)}</div></td>
+                    <td style={{ padding: '10px 8px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{sr.expected_completion_date ? formatDate(sr.expected_completion_date) : '—'}</td>
                     <td style={{ padding: '10px 8px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{age !== null ? `${age}d` : '—'}</td>
-                    <td style={{ padding: '10px 8px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(project)}</td>
                   </tr>
                 )
               })}
-            </tbody>
-          </table>
-        </div>
-        </div>
-      </div>
-
-      <div data-tour="erp-dash-machines">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1f1108', margin: 0 }}>Machine Assets</h2>
-          <Link href="/dashboard/erp/projects" data-tour="erp-dash-machines-viewall" style={{ fontSize: 12, color: '#ea580c', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
-        </div>
-        <div style={glassCard}>
-        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 0 }}>
-            <thead>
-              <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-                {['Serial Number', 'Model', 'Machine Type', 'Application Type', 'Client', 'Site', 'Year of Mfg.', 'Dispatch Date', 'Commissioning Date', 'Status', 'Total SRs', 'Warranty'].map((h, hi) => (
-                  <th key={h} data-fit-min={60} data-fit-cut={['Machine Type', 'Application Type', 'Client', 'Site'].includes(h) ? '' : undefined} style={thStyle}>{h}{hi === 0 && <RowCount count={recentProjects.length} />}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading && <tr><td colSpan={12} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
-              {!loading && recentProjects.length === 0 && <tr><td colSpan={12} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No machines registered yet.</td></tr>}
-              {recentProjects.map((p) => (
-                <tr
-                  key={p.id}
-                  onClick={() => router.push(recordPath('/dashboard/erp/projects', p))}
-                  style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
-                >
-                  <td style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>
-                    <span title={p.serial_number} style={{ fontSize: 12.5, fontWeight: 600, color: '#ea580c' }}>{clip(p.serial_number)}</span>
-                  </td>
-                  <td title={p.model_name || undefined} style={{ ...tdText, whiteSpace: 'nowrap' }}>{clip(p.model_name)}</td>
-                  <td data-fit-clamp style={tdText}><div title={p.machine_type || undefined}>{clip2(p.machine_type)}</div></td>
-                  <td data-fit-clamp style={tdText}><div title={p.application_type || undefined}>{clip2(p.application_type)}</div></td>
-                  <td data-fit-clamp style={tdText}><div title={p.client_company || undefined}>{clip2(p.client_company)}</div></td>
-                  <td data-fit-clamp style={tdText}><div title={p.site_name || undefined}>{clip2(p.site_name)}</div></td>
-                  <td style={{ padding: '10px 8px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.year_of_manufacture || '—'}</td>
-                  <td style={{ padding: '10px 8px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.delivery_date ? formatDate(p.delivery_date) : '—'}</td>
-                  <td style={{ padding: '10px 8px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.commissioning_date ? formatDate(p.commissioning_date) : '—'}</td>
-                  <td title={p.status.replace(/_/g, ' ')} style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'capitalize', color: STATUS_COLORS[p.status] || '#64748b' }}>{clip(p.status.replace(/_/g, ' '))}</span>
-                  </td>
-                  <td style={{ padding: '10px 8px', fontSize: 12.5, color: '#57534e' }}>{srCountByProject.get(p.id) || 0}</td>
-                  <td style={{ padding: '10px 8px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(p)}</td>
-                </tr>
-              ))}
             </tbody>
           </table>
         </div>

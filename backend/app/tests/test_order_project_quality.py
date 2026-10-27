@@ -7,9 +7,9 @@ from datetime import date
 import pytest
 
 from app.modules.quality.services import order_project_inspection as opi
-from app.modules.sales import order_projects as ops
+from app.modules.projects import so_projects as ops
 from app.modules.sales.models.order import SalesOrder
-from app.modules.sales.models.order_project import OrderProject
+from app.modules.projects.models.project import PmProject
 from app.tests.test_quality_phase1 import (  # noqa: F401  (fixture)
     Q, make_user as q_user, hdr as q_hdr, setup_item, _sqlite_number_series,
 )
@@ -33,7 +33,7 @@ def _order(client, db, agency="rites", required=True):
                       billing_plan=PLAN)
     so = confirm(client, db, so, maker, head, director)
     db.expire_all()
-    project = db.query(OrderProject).filter(OrderProject.sales_order_id == so["id"]).first()
+    project = db.query(PmProject).filter(PmProject.sales_order_id == so["id"]).first()
     els = sorted(project.elements, key=lambda e: e.element_no)
     return so, project, els
 
@@ -74,7 +74,7 @@ def test_call_for_element_takes_agency_from_sales_order_and_bills_inspection(cli
     assert r.status_code == 200, r.text
     call = r.json()
     assert call["agency"] == "rites" and call["order_reference"] == "CR/PO/2026/771"
-    assert call["op_number"] == project.op_number and call["element_no"] == v1.element_no
+    assert call["op_number"] == project.project_code and call["element_no"] == v1.element_no
     assert call["so_number"] == so["so_number"] and call["so_third_party_inspection_required"] is True
 
     req = client.get(f"{Q}/inspection-calls/order-project-requirement", params={"element_id": v1.id}, headers=q_hdr(eng)).json()
@@ -143,13 +143,13 @@ def test_manual_lot_links_to_element(client, db):
                     headers=q_hdr(eng))
     assert r.status_code == 200, r.text
     lot = r.json()
-    assert lot["order_project_element_id"] == v1.id and lot["op_number"] == project.op_number
+    assert lot["order_project_element_id"] == v1.id and lot["op_number"] == project.project_code
     assert lot["element_no"] == v1.element_no
     listed = client.get(f"{Q}/inspection-lots", params={"order_project_id": project.id}, headers=q_hdr(eng)).json()
     assert [x["id"] for x in listed] == [lot["id"]]
     r = client.post(f"{Q}/inspection-lots", json={"inspection_type": "final", "item_id": item.id, "quantity": 1,
                                                  "order_project_element_id": 999999}, headers=q_hdr(eng))
-    assert r.status_code == 404 and "Order Project picker" in r.json()["detail"]
+    assert r.status_code == 404 and "project picker" in r.json()["detail"]
     # The 360 detail line mentions the open final inspection.
     db.expire_all()
     assert lot["lot_number"] in (_cells(db, project)[v1.id]["detail"] or "")

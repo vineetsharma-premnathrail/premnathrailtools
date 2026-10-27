@@ -131,7 +131,6 @@ export default function RndMyTasksPage() {
     <div>
       <RndNav />
       <div data-tour="rnd-mytasks-header" style={{ marginBottom: 16 }}>
-        <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>R&amp;D Module</p>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>My Tasks</h1>
         <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>
           Everything assigned to you — ongoing projects, prototypes / research and requirements.

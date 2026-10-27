@@ -15,7 +15,7 @@ import Select from '@/components/shared/Select'
 import { sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import POTrackingDetail from '@/components/p2p/POTrackingDetail'
 import { DueChip, FiltersButton, FiltersSheet, PO_CARD, PO_TD, PO_TH, STAGE_ORDER, StageBadge, TrackRow, clip, clip2, money } from '@/components/p2p/POTrackingShared'
 
@@ -217,9 +217,9 @@ export default function POTrackingList({ lead }: { lead?: React.ReactNode }) {
             <label style={sheetLabel} htmlFor="pot-buyer">Buyer</label>
             <SearchableSelect id="pot-buyer" ariaLabel="Buyer" value={draft.buyerId} onChange={(v) => setDraft((d) => ({ ...d, buyerId: v }))} options={buyerOptions} placeholder="All buyers" />
           </div>
-          <div role="group" aria-label="Filter by order project">
-            <span style={sheetLabel}>Order project</span>
-            <OrderProjectPicker value={draft.opFilter} onChange={(v) => setDraft((d) => ({ ...d, opFilter: v }))} requireElement={false} placeholder="All order projects" />
+          <div role="group" aria-label="Filter by project">
+            <span style={sheetLabel}>Project</span>
+            <OrderProjectPicker value={draft.opFilter} onChange={(v) => setDraft((d) => ({ ...d, opFilter: v }))} requireElement={false} placeholder="All projects" />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>

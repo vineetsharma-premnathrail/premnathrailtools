@@ -149,12 +149,12 @@ def test_create_validation_messages(client, db, w):
         r = client.post(f"{API}/projects", headers=h, json=body(w["pm"].id, **extra))
         assert r.status_code == code, (extra, r.text)
         assert msg in r.json()["detail"], (extra, r.json())
-    # Blank number = next PEW-<year>-NNNN (shared with Order Projects); blank project manager = the creator.
+    # Blank number = next PEW-<N> (shared with Order Projects); blank project manager = the creator.
     r = client.post(f"{API}/projects", headers=h, json=body(None, project_code="  "))
-    assert r.status_code == 200 and r.json()["project_code"] == f"PEW-{TODAY.year}-0001"
+    assert r.status_code == 200 and r.json()["project_code"] == "PEW-1"
     assert r.json()["project_manager_id"] == w["partner"].id
     r = client.post(f"{API}/projects", headers=h, json=body(None, project_code=""))
-    assert r.json()["project_code"] == f"PEW-{TODAY.year}-0002"
+    assert r.json()["project_code"] == "PEW-2"
     inactive = make_user(db, "lc.gone@x.com", is_active=False)
     r = client.post(f"{API}/projects", headers=h, json=body(inactive.id))
     assert r.status_code == 422 and "project manager" in r.json()["detail"]

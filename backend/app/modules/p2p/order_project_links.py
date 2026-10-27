@@ -1,7 +1,7 @@
-"""Purchase ↔ Order Project (2026-10-17).
+"""Purchase ↔ Project and its Units (2026-10-17; Order Project merged into Project Management 2026-10-27).
 
 RRVs are built to order: every requisition line bought for an RRV order is
-tied to one element (vehicle / lot) of the order's Order Project, so Store,
+tied to one unit (vehicle / lot) of the order's project, so Store,
 Production and the project 360 page can see what was bought for which
 vehicle.
 
@@ -17,11 +17,11 @@ Where the link lives
   GRN line  copied from the PO line it receives, so Store can tag the stock.
 
 Rule (changed 2026-10-24: one project per machine) — a 'Project' line of a PR
-charged to an order with an Order Project is tied to that project; the element
+charged to an order with a project is tied to that project; the element
 is no longer mandatory.
 'Inhouse' lines are not project items and never carry one. The element is
 filled automatically when it can be derived:
-  * the line names it (the PR form's Order Project picker, MRP / shortage
+  * the line names it (the PR form's project picker, MRP / shortage
     prefill passing order_project_element_id),
   * the PR is charged to a work order that carries an element
     (ProductionWorkOrder.order_project_element_id, read at runtime),
@@ -30,7 +30,7 @@ Plain stock / overhead PRs with no order link behave as before.
 
 Registered at import (imported by routes/p2p_requests.py, loaded at startup):
   * mapper events that copy the element PR line -> PO line -> GRN line,
-  * the 'purchase' department provider for the Order Project 360 table."""
+  * the 'purchase' department provider for the project Units 360 table."""
 from __future__ import annotations
 
 from datetime import date
@@ -43,8 +43,9 @@ from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceip
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
-from app.modules.sales import order_projects as op_core
-from app.modules.sales.models.order_project import OrderProject, OrderProjectElement
+from app.modules.projects import so_projects as op_core
+from app.modules.projects.models.element import PmProjectElement
+from app.modules.projects.models.project import PmProject
 
 EPS = 1e-6
 # PR statuses whose lines no longer count as open demand.
@@ -54,7 +55,7 @@ _DECIDED_GRN_LINE_STATUSES = ("passed", "failed", "partial")
 
 # ---------------------------------------------------------------- PR lines
 
-def _work_order_element(db: Session, pr: P2PRequest) -> OrderProjectElement | None:
+def _work_order_element(db: Session, pr: P2PRequest) -> PmProjectElement | None:
     """The element of the work order a PR is charged to — only when Production
     has added that link (read at runtime; nothing breaks without it)."""
     if pr.account_assignment != "work_order" or not pr.work_order_id:
@@ -64,25 +65,25 @@ def _work_order_element(db: Session, pr: P2PRequest) -> OrderProjectElement | No
     eid = getattr(wo, "order_project_element_id", None) if wo is not None else None
     if not eid:
         return None
-    el = db.get(OrderProjectElement, eid)
+    el = db.get(PmProjectElement, eid)
     return el if el is not None and el.status != "cancelled" else None
 
 
-def _live_elements(db: Session, project_id: int) -> list[OrderProjectElement]:
-    return (db.query(OrderProjectElement)
-            .filter(OrderProjectElement.order_project_id == project_id, OrderProjectElement.status != "cancelled")
-            .order_by(OrderProjectElement.id).all())
+def _live_elements(db: Session, project_id: int) -> list[PmProjectElement]:
+    return (db.query(PmProjectElement)
+            .filter(PmProjectElement.project_id == project_id, PmProjectElement.status != "cancelled")
+            .order_by(PmProjectElement.id).all())
 
 
 def link_pr_lines(db: Session, pr: P2PRequest, rows: list[tuple], *, draft: bool) -> None:
-    """Set / check the Order Project element of each PR line.
+    """Set / check the project unit of each PR line.
 
     rows: (line no., payload line, Item Master row, P2PRequestItem) — call after
     the account assignment is applied (pr.order_project_id is the scope).
     Raises HTTPException 404/422 with the line named and the fix."""
     wo_el = _work_order_element(db, pr)
-    scope_id = pr.order_project_id or (wo_el.order_project_id if wo_el is not None else None)
-    scope = db.get(OrderProject, scope_id) if scope_id else None
+    scope_id = pr.order_project_id or (wo_el.project_id if wo_el is not None else None)
+    scope = db.get(PmProject, scope_id) if scope_id else None
     single = None
     if scope is not None:
         live = _live_elements(db, scope.id)
@@ -97,13 +98,13 @@ def link_pr_lines(db: Session, pr: P2PRequest, rows: list[tuple], *, draft: bool
         if eid:
             if inhouse:
                 raise HTTPException(status_code=422, detail=(
-                    f"{name} is marked Inhouse but is tagged to an order project vehicle / lot — Inhouse items aren't bought "
-                    f"for a project. Mark the line 'Project', or clear its Order Project."))
+                    f"{name} is marked Inhouse but is tagged to a project unit (vehicle / lot) — Inhouse items aren't bought "
+                    f"for a project. Mark the line 'Project', or clear its project."))
             if overhead:
                 raise HTTPException(status_code=422, detail=(
-                    f"{name} is tagged to an order project vehicle / lot, but the requisition is charged to a "
+                    f"{name} is tagged to a project unit (vehicle / lot), but the requisition is charged to a "
                     f"{ {'cost_center': 'cost centre', 'rnd_project': 'R&D project'}.get(pr.account_assignment, 'internal order') }. Charge it to the "
-                    f"order project (or its sales order) instead, or clear the line's Order Project."))
+                    f"project (or its sales order) instead, or clear the line's project."))
             try:
                 # An element a saved line already had stays valid on an edit even
                 # if a sales amendment cancelled it since — only new picks are refused.
@@ -111,7 +112,7 @@ def link_pr_lines(db: Session, pr: P2PRequest, rows: list[tuple], *, draft: bool
                     db, int(eid), project_id=scope.id if scope is not None else None,
                     allow_cancelled=row.order_project_element_id == int(eid))
                 if row.order_project_element_id != int(eid):
-                    op_core.resolve_project(db, _project.id)  # a new pick needs an active / on-hold project
+                    op_core.resolve_project(db, _project.id)  # a new pick needs a live project (Project Management › All Projects)
             except HTTPException as e:
                 raise HTTPException(status_code=e.status_code, detail=f"{name}: {e.detail}")
         elif not inhouse:
@@ -121,7 +122,7 @@ def link_pr_lines(db: Session, pr: P2PRequest, rows: list[tuple], *, draft: bool
         # vehicles) the line is still tied to the PROJECT in scope, so PO / GRN /
         # reports keep the project link; only the per-vehicle split is not known.
         if el is not None:
-            row.order_project_id, row.order_project_element_id = el.order_project_id, el.id
+            row.order_project_id, row.order_project_element_id = el.project_id, el.id
         else:
             row.order_project_id = scope.id if scope is not None and not inhouse else None
             row.order_project_element_id = None
@@ -167,7 +168,7 @@ def _fmt(d: date) -> str:
     return d.strftime("%d %b %Y")
 
 
-def purchase_cells(db: Session, project: OrderProject, elements: list[OrderProjectElement]) -> dict[int, dict | None]:
+def purchase_cells(db: Session, project: PmProject, elements: list[PmProjectElement]) -> dict[int, dict | None]:
     """Per element: open PR lines (not yet on a live PO), open PO lines, fully
     received PO lines; warning when an open PO line is past its delivery date."""
     ids = [e.id for e in elements]

@@ -29,12 +29,14 @@ const EMPTY_TEXT = 'Nothing to show for this period and these filters. Widen the
 const blankState = (): DashState => ({ preset: 'this_month', ...(resolvePreset('this_month') as { from: string; to: string }), compare: false, slicers: {}, sel: {} })
 
 /** Ready-made dashboards for a module: tabs per page, period bar, slicers, KPI cards and charts. Click a chart to filter everything else; "Show data" lists the records. */
-export default function ModuleDashboardPage({ module, nav, title, subtitle, tourPrefix = 'rep' }: {
+export default function ModuleDashboardPage({ module, nav, title, subtitle, tourPrefix = 'rep', dataTab = true }: {
   module: string
   nav: React.ReactNode
   title: string
   subtitle: string
   tourPrefix?: string
+  /** Show the "Detailed data" tab (record list) after the dashboard pages. */
+  dataTab?: boolean
 }) {
   const t = (n: string) => `${tourPrefix}-${n}`
   const [cat, setCat] = useState<DashCatalogue | null>(null)
@@ -70,10 +72,10 @@ export default function ModuleDashboardPage({ module, nav, title, subtitle, tour
   useEffect(() => {
     if (!pages.length || tab) return
     const want = new URLSearchParams(window.location.search).get('page')
-    const first = pages.find((p) => p.key === want)?.key || (want === DATA_TAB ? DATA_TAB : pages[0].key)
+    const first = pages.find((p) => p.key === want)?.key || (want === DATA_TAB && dataTab ? DATA_TAB : pages[0].key)
     setTab(first)
     if (first !== DATA_TAB) setLastDash(first)
-  }, [pages, tab])
+  }, [pages, tab, dataTab])
 
   const goTab = (key: string) => {
     if (key === tab) return
@@ -254,11 +256,13 @@ export default function ModuleDashboardPage({ module, nav, title, subtitle, tour
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div data-tour={t('tabs')} role="tablist" aria-label="Dashboard pages" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {[...pages.map((p) => ({ key: p.key, label: p.label })), { key: DATA_TAB, label: 'Detailed data' }].map((p) => (
-            <button key={p.key} type="button" role="tab" aria-selected={p.key === tab} style={segmentBtnStyle(p.key === tab)} onClick={() => goTab(p.key)}>{p.label}</button>
-          ))}
-        </div>
+        {(pages.length > 1 || dataTab) && (
+          <div data-tour={t('tabs')} role="tablist" aria-label="Dashboard pages" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {[...pages.map((p) => ({ key: p.key, label: p.label })), ...(dataTab ? [{ key: DATA_TAB, label: 'Detailed data' }] : [])].map((p) => (
+              <button key={p.key} type="button" role="tab" aria-selected={p.key === tab} style={segmentBtnStyle(p.key === tab)} onClick={() => goTab(p.key)}>{p.label}</button>
+            ))}
+          </div>
+        )}
         <p style={{ margin: 0, fontSize: 12.5, color: '#78716c' }}>
           {onData ? `Every ${dataset.record_noun.replace(/s$/, '')} behind the dashboards, for the period and filters chosen below.` : dashPage.hint}
         </p>
@@ -339,7 +343,7 @@ export default function ModuleDashboardPage({ module, nav, title, subtitle, tour
         return (
           <DrillSheet key={`${drill.report}|${drill.title}`} module={module} report={drill.report} dataset={ds} initial={drill.state} title={drill.title} periodText={periodText}
             locked={{ ...(rep.locked_filters || {}), ...drill.fixed }} canExport={cat.can_export} onClose={() => setDrill(null)}
-            onOpenFull={(s) => { setOverride({ state: s, title: drill.title }); setDrill(null); goTab(DATA_TAB) }} />
+            onOpenFull={dataTab ? (s) => { setOverride({ state: s, title: drill.title }); setDrill(null); goTab(DATA_TAB) } : undefined} />
         )
       })()}
     </div>

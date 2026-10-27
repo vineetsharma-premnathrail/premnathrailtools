@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.config import settings
 from app.db.session import get_db
 from app.core.permissions import (
-    ensure_can_delete, ensure_feature_action, ensure_tab_action, has_erp_permission, require_app_access,
+    ensure_can_delete, ensure_feature_action, ensure_tab_action, has_erp_permission, require_any_app_access,
     require_feature_action, require_tab_access, require_tab_action,
 )
 from app.core.permission_registry import can_view_tab
@@ -20,12 +20,15 @@ from app.modules.erp.models.project_letter import ProjectLetter
 from app.modules.erp.models.service_request import ServiceRequest
 from app.modules.erp.schemas.project import (
     PROJECT_STATUSES, ProjectCreate, ProjectUpdate, ProjectResponse, ProjectAttachmentResponse, ProjectAttachmentPermissionUpdate,
-    ProjectLetterCreate, ProjectLetterUpdate, ProjectLetterResponse, ProjectApprovalPayload,
+    ProjectLetterCreate, ProjectLetterUpdate, ProjectLetterResponse, ProjectApprovalPayload, MachineStagePayload,
 )
 from app.modules.erp.settings import get_setting as get_erp_setting
 from app.modules.erp.notify import broadcast_except, fire_event, role_event
 from app.modules.erp import access as erp_access
-from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.data_scope import apply_scope, ensure_in_scope, in_scope
+from app.core.pew_numbers import link_machine_to_project, normalise_serial
+from app.modules.projects import lifecycle
+from app.modules.projects.lifecycle import SERVICEABLE_STAGES
 from app.modules.organization.services import approval_engine as engine
 from app.modules.erp.reports.letter import build_letter_pdf, build_letter_docx
 from app.modules.organization.models.company import Company
@@ -62,16 +65,92 @@ _SHAREPOINT_MISSING = (
 _MACHINE_NOT_FOUND = "Machine not found — it may have been deleted or moved to the Recycle Bin. Refresh the Machines list."
 
 
+def _has_machine_or_sr_tab(user: User) -> bool:
+    return can_view_tab(user, "projects", "service_projects") or can_view_tab(user, "erp", "service_requests")
+
+
+def _deny_machine_tab() -> None:
+    raise HTTPException(
+        status_code=403,
+        detail="You don't have view access to Machines or Service Requests in the Permission Matrix — "
+               "ask an admin to grant 'ERP → Machines' view.",
+    )
+
+
 def _require_machine_or_sr_tab(user: User = Depends(get_current_user)) -> User:
     """Machine detail is read by the Machines pages AND the Service Request
     detail page (to show the SR's machine), so either Permission Matrix view
     is enough here."""
-    if not (can_view_tab(user, "erp", "projects") or can_view_tab(user, "erp", "service_requests")):
-        raise HTTPException(
-            status_code=403,
-            detail="You don't have view access to Machines or Service Requests in the Permission Matrix — "
-                   "ask an admin to grant 'ERP → Machines' view.",
-        )
+    if not _has_machine_or_sr_tab(user):
+        _deny_machine_tab()
+    return user
+
+
+def _pm_project_viewable(db: Session, user: User, pm_project_id: int | None) -> bool:
+    """True when the user may open that Project Management project: All Projects › View plus
+    the project inside their Project Management data scope (the rules of GET /projects/{id})."""
+    if not pm_project_id or not can_view_tab(user, "projects", "all_projects"):
+        return False
+    from app.modules.projects.models.project import PmProject
+    pm = db.get(PmProject, pm_project_id)
+    return pm is not None and in_scope(db, user, pm)
+
+
+def _can_view_via_pm_project(db: Session, user: User, machine: Project | None) -> bool:
+    """A machine linked to a Project Management project shows in that project's Overview, so
+    whoever can view the project can view the machine (detail and documents). Unlinked
+    machines keep the Machines tab + machine data-scope rules."""
+    return machine is not None and _pm_project_viewable(db, user, machine.pm_project_id)
+
+
+def _can_manage_via_pm_project(db: Session, user: User, machine: Project | None) -> bool:
+    """Management or the project manager of the machine's Project Management project may
+    edit the machine from that project (in addition to the ERP 'Edit machines' grant)."""
+    if machine is None or not machine.pm_project_id or not _pm_project_viewable(db, user, machine.pm_project_id):
+        return False
+    from app.modules.projects.models.project import PmProject
+    from app.modules.projects import workflow as wf
+    return wf.can_manage(db.get(PmProject, machine.pm_project_id), user)
+
+
+def link_machine_by_number(db: Session, machine: Project, user: User) -> bool:
+    """link_machine_to_project plus an audit row on the Project Management project it joined."""
+    if not link_machine_to_project(db, machine):
+        return False
+    from app.modules.projects import workflow as wf
+    wf.audit(db, machine.pm_project_id, user, "updated",
+             f"Machine {machine.serial_number} linked by its number by {wf.user_label(user)}.", subtab_key="overview")
+    return True
+
+
+def _machines_tab_or_pm_project(
+    pm_project_id: int | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user),
+) -> User:
+    """Machines list gate: the Machines tab, or — when asking for one project's machines —
+    permission to view that Project Management project."""
+    if can_view_tab(user, "projects", "service_projects") or _pm_project_viewable(db, user, pm_project_id):
+        return user
+    return require_tab_access("projects", "service_projects")(user)  # raises the standard 403
+
+
+def _machine_view_gate(user: User = Depends(get_current_user)) -> User:
+    """Machine detail: Machines/Service Request tab, or All Projects view (checked against the
+    machine's own project link in the route). Anyone else is refused before any lookup."""
+    if not _has_machine_or_sr_tab(user) and not can_view_tab(user, "projects", "all_projects"):
+        _deny_machine_tab()
+    return user
+
+
+def _documents_view_or_pm(project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> User:
+    """Machine documents: the Documents › View grant, or the machine is linked to a Project
+    Management project the user can view."""
+    from app.core.permission_registry import can_feature
+    if can_feature(user, "projects", "service_projects", "documents", "view"):
+        return user
+    machine = db.query(Project).filter(Project.id == project_id, Project.is_deleted == False).first()  # noqa: E712
+    if _can_view_via_pm_project(db, user, machine):
+        return user
+    ensure_feature_action(user, "projects", "service_projects", "documents", "view")  # raises the standard 403
     return user
 
 
@@ -217,15 +296,21 @@ async def list_projects(
     application_type: str | None = None,
     client_company: str | None = None,
     customer_id: int | None = None,
+    pm_project_id: int | None = None,
+    serviceable_only: bool = False,
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("erp")),
-    _tab: User = Depends(require_tab_access("erp", "projects")),
+    _user: User = Depends(require_any_app_access("erp", "projects")),
+    _tab: User = Depends(_machines_tab_or_pm_project),
 ):
     """List active (non-deleted) machines/vehicles, optionally filtered by a text search
-    across serial number, model, and client company, plus exact-match filters."""
-    query = apply_scope(db.query(Project).filter(Project.is_deleted == False), _user, Project)  # noqa: E712
+    across serial number, model, and client company, plus exact-match filters.
+    With pm_project_id the machines linked to that Project Management project are listed for
+    anyone who can view that project (its Overview shows them), whatever their machine scope."""
+    query = db.query(Project).filter(Project.is_deleted == False)  # noqa: E712
+    if not (pm_project_id and _pm_project_viewable(db, _user, pm_project_id)):
+        query = apply_scope(query, _user, Project)
     if status:
         query = query.filter(Project.status == status)
     if application_type:
@@ -234,6 +319,11 @@ async def list_projects(
         query = query.filter(Project.client_company == client_company)
     if customer_id:
         query = query.filter(Project.customer_id == customer_id)
+    if pm_project_id:
+        query = query.filter(Project.pm_project_id == pm_project_id)
+    if serviceable_only:
+        # Service pickers: only machines Dispatched or later (Project Management moves the stage).
+        query = query.filter(Project.lifecycle_stage.in_(SERVICEABLE_STAGES))
     if search:
         like = f"%{search}%"
         query = query.filter(
@@ -249,8 +339,8 @@ async def list_projects(
 @router.get("/filter-options")
 async def get_project_filter_options(
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("erp")),
-    _tab: User = Depends(require_tab_access("erp", "projects")),
+    _user: User = Depends(require_any_app_access("erp", "projects")),
+    _tab: User = Depends(require_tab_access("projects", "service_projects")),
 ):
     """Distinct values for the registry's filter dropdowns, so the UI only ever
     offers values that actually exist in the data."""
@@ -268,8 +358,8 @@ async def get_project_filter_options(
 @router.get("/link-options")
 async def get_installed_base_link_options(
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("erp")),
-    _tab: User = Depends(require_tab_access("erp", "projects")),
+    _user: User = Depends(require_any_app_access("erp", "projects")),
+    _tab: User = Depends(require_tab_access("projects", "service_projects")),
 ):
     """Customer (CRM organizations) and product (Product master) pick-lists
     for the machine form — served here because Service users usually don't
@@ -290,8 +380,8 @@ async def get_installed_base_link_options(
 async def get_installed_base(
     customer_id: int | None = None,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("erp")),
-    _tab: User = Depends(require_tab_access("erp", "projects")),
+    _user: User = Depends(require_any_app_access("erp", "projects")),
+    _tab: User = Depends(require_tab_access("projects", "service_projects")),
 ):
     """Customer-wise installed base (SAP IB51/IH01): per customer, its
     machines with today's warranty cover and open service requests. Machines
@@ -343,15 +433,26 @@ async def create_project(
     payload: ProjectCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("erp")),
+    user: User = Depends(require_any_app_access("erp", "projects")),
 ):
     if not has_erp_permission(user, "project_create"):
         raise HTTPException(status_code=403, detail="You need the 'Create machines' ERP permission to register a machine. Ask an admin to grant it in Users & Roles.")
-    existing = _find_serial_clash(db, payload.serial_number)
+    project = register_machine(db, background_tasks, payload.model_dump(), user)
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+def register_machine(db: Session, background_tasks: BackgroundTasks, values: dict, user: User) -> Project:
+    """Creates a machine (serial check, approval, audit, events, notifications)
+    WITHOUT committing — the caller commits, so 'Add New Project' can save the
+    Project Management project and its machine in one transaction.
+    `values` are Project columns (may include pm_project_id)."""
+    values["serial_number"] = normalise_serial(values["serial_number"])
+    existing = _find_serial_clash(db, values["serial_number"])
     if existing:
         raise HTTPException(status_code=409, detail=_serial_clash_detail(existing))
-    _check_warranty_dates(payload.model_dump())
-    values = payload.model_dump()
+    _check_warranty_dates(values)
     _apply_installed_base_links(db, values)
 
     needs_approval = bool(get_erp_setting(db, "project_approval_required"))
@@ -359,6 +460,14 @@ async def create_project(
                       approval_status="pending" if needs_approval else "approved")
     db.add(project)
     db.flush()
+    link_machine_by_number(db, project, user)  # by number, unless pm_project_id was given explicitly
+    if project.pm_project_id:
+        from app.modules.projects.models.project import PmProject
+        pm = db.get(PmProject, project.pm_project_id)
+        if pm is not None:
+            project.lifecycle_stage = pm.lifecycle_stage or "planned"  # a machine follows its project's stage
+    elif not values.get("lifecycle_stage"):
+        project.lifecycle_stage = "closed"  # past machine, already delivered; the owner can re-set it (Past Projects)
     _write_audit(db, project.id, "created", user, summary=f"Machine {project.serial_number} registered by {user.name or user.email}."
                  + (" Sent for approval." if needs_approval else ""))
     if needs_approval:
@@ -380,6 +489,7 @@ async def create_project(
                 + (f" for {project.client_company}" if project.client_company else "")
                 + (". It is waiting for approval — service requests can't be raised on it until it is approved." if needs_approval else "."),
         entity_type="project", entity_id=project.id, actor=user, record=project, details=_machine_details(project, user),
+        module="projects",
     )
     broadcast_except(
         db, reached | {user.id},
@@ -389,21 +499,48 @@ async def create_project(
         entity_type="project",
         entity_id=project.id,
     )
-    db.commit()
-    db.refresh(project)
     return project
+
+
+def rename_machine_serial(db: Session, machine: Project, new_serial: str, user: User) -> None:
+    """Changes a machine's serial when its Project Management project is
+    renumbered (the serial was the project number). No commit. Refuses while
+    an RRV build has signed off or been handed over (the handover certificate
+    prints the serial) — same rule as editing the serial on the machine."""
+    old = machine.serial_number
+    builds = _live_rrv_builds(db, machine.id)
+    done = [b.build_number for b in builds if b.status in ("completed", "handed_over")]
+    if done:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Machine serial {old} can't follow the new project number because RRV build {', '.join(done)} is signed off or handed over "
+                   f"(its certificate carries {old}). Keep the project number {old}, or reopen that build stage in Production first.",
+        )
+    clash = _find_serial_clash(db, new_serial, exclude_id=machine.id)
+    if clash:
+        raise HTTPException(status_code=409, detail=_serial_clash_detail(clash))
+    machine.serial_number = new_serial
+    for b in builds:
+        if b.status in ("planned", "in_progress", "on_hold"):
+            b.vehicle_serial_number = new_serial
+    _write_audit(db, machine.id, "updated", user,
+                 summary=f"Serial changed from {old} to {new_serial} with its project number by {user.name or user.email}.")
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
 async def get_project(
     project_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("erp")),
-    _tab: User = Depends(_require_machine_or_sr_tab),
+    _user: User = Depends(require_any_app_access("erp", "projects")),
+    _tab: User = Depends(_machine_view_gate),
 ):
     project = db.query(Project).filter(Project.id == project_id, Project.is_deleted == False).first()  # noqa: E712
     if not project:
         raise HTTPException(status_code=404, detail=_MACHINE_NOT_FOUND)
+    if _can_view_via_pm_project(db, _user, project):
+        return project  # linked to a Project Management project the user can view
+    if not _has_machine_or_sr_tab(_user):
+        _deny_machine_tab()
     ensure_in_scope(db, _user, project)
     return project
 
@@ -414,16 +551,22 @@ async def update_project(
     payload: ProjectUpdate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("erp")),
+    user: User = Depends(require_any_app_access("erp", "projects")),
 ):
-    if not has_erp_permission(user, "project_edit"):
-        raise HTTPException(status_code=403, detail="You need the 'Edit machines' ERP permission to edit a machine. Ask an admin to grant it in Users & Roles.")
+    can_edit_machines = has_erp_permission(user, "project_edit")
     project = db.query(Project).filter(Project.id == project_id, Project.is_deleted == False).first()  # noqa: E712
+    if not can_edit_machines and not _can_manage_via_pm_project(db, user, project):
+        # Same answer whether or not the machine exists, so a missing grant is never a 404.
+        raise HTTPException(status_code=403, detail="You need the 'Edit machines' ERP permission to edit a machine. Ask an admin to grant it in Users & Roles "
+                                                    "(or be the project manager / management of the Project Management project it belongs to).")
     if not project:
         raise HTTPException(status_code=404, detail=_MACHINE_NOT_FOUND)
-    ensure_in_scope(db, user, project)
+    if not (can_edit_machines and in_scope(db, user, project)) and not _can_manage_via_pm_project(db, user, project):
+        ensure_in_scope(db, user, project)  # raises the 403 with the data-scope reason
 
     updates = payload.model_dump(exclude_unset=True)
+    if updates.get("serial_number"):
+        updates["serial_number"] = normalise_serial(updates["serial_number"])
     # An unchanged legacy status (saved before the list was fixed) mustn't
     # block editing other fields; any new value must come from the fixed list.
     if "status" in updates and updates["status"] != project.status and updates["status"] not in PROJECT_STATUSES:
@@ -471,6 +614,8 @@ async def update_project(
     changed_fields = [field for field, value in updates.items() if str(getattr(project, field, None)) != str(value)]
     for field, value in updates.items():
         setattr(project, field, value)
+    if "serial_number" in updates:
+        link_machine_by_number(db, project, user)  # only when it has no project link yet
     # Keep an open linked build's vehicle serial in step so Production shows
     # the corrected serial too (closed builds' records stay as they are).
     for b in serial_builds:
@@ -533,16 +678,56 @@ def _decide_machine(db: Session, project: Project, user: User, decision: str, re
     return True
 
 
+@router.patch("/{project_id}/lifecycle-stage", response_model=ProjectResponse)
+async def set_machine_lifecycle_stage(
+    project_id: int,
+    payload: MachineStagePayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_tab_action("projects", "service_projects", "edit")),
+):
+    """Sets the stage of a machine that has no Project Management project (a past project).
+    A machine linked to a project follows that project's stage instead."""
+    machine = db.query(Project).filter(Project.id == project_id, Project.is_deleted == False).first()  # noqa: E712
+    if not machine:
+        raise HTTPException(status_code=404, detail=_MACHINE_NOT_FOUND)
+    ensure_in_scope(db, user, machine)
+    stage = lifecycle.validate_stage(payload.stage)
+    if machine.pm_project_id:
+        from app.modules.projects.models.project import PmProject
+        pm = db.get(PmProject, machine.pm_project_id)
+        code = pm.project_code if pm else f"#{machine.pm_project_id}"
+        raise HTTPException(status_code=409, detail=f"Machine {machine.serial_number} follows its project's stage - set it on project {code} "
+                                                    f"(Project Management > All Projects).")
+    old = machine.lifecycle_stage
+    reason = (payload.reason or "").strip()
+    if old != stage and lifecycle.stage_index(stage) < lifecycle.stage_index(old):
+        from app.modules.projects import workflow as pm_wf
+        if not (pm_wf.is_admin(user) or bool(getattr(user, "is_partner", False))):
+            raise HTTPException(status_code=403, detail=f"Only an admin or a Partner can move machine {machine.serial_number} back from "
+                                                        f"{lifecycle.stage_label(old)} to {lifecycle.stage_label(stage)}.")
+        if not reason:
+            raise HTTPException(status_code=422, detail=f"Give a reason for moving machine {machine.serial_number} back to "
+                                                        f"{lifecycle.stage_label(stage)} - it is written in the machine's history.")
+    if old != stage:
+        machine.lifecycle_stage = stage
+        _write_audit(db, machine.id, "updated", user,
+                     summary=f"Stage changed from {lifecycle.stage_label(old)} to {lifecycle.stage_label(stage)} by {user.name or user.email}."
+                             + (f" Reason: {reason}" if reason else ""))
+        db.commit()
+        db.refresh(machine)
+    return machine
+
+
 @router.post("/{project_id}/approve", response_model=ProjectResponse)
 async def approve_project(
     project_id: int,
     payload: ProjectApprovalPayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("erp")),
+    user: User = Depends(require_any_app_access("erp", "projects")),
     # Compatibility route: the decision goes through the central approval
     # engine (Organization › Approval Workflows › New machine); the page uses
     # the shared ApprovalPanel.
-    _tab: User = Depends(require_tab_access("erp", "projects")),
+    _tab: User = Depends(require_tab_access("projects", "service_projects")),
 ):
     project = _approval_target(db, project_id, user)
     remarks = (payload.remarks or "").strip() or None
@@ -571,8 +756,8 @@ async def reject_project(
     project_id: int,
     payload: ProjectApprovalPayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("erp")),
-    _tab: User = Depends(require_tab_access("erp", "projects")),
+    user: User = Depends(require_any_app_access("erp", "projects")),
+    _tab: User = Depends(require_tab_access("projects", "service_projects")),
 ):
     remarks = (payload.remarks or "").strip()
     if not remarks:
@@ -603,7 +788,7 @@ async def reject_project(
 async def delete_project(
     project_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("erp")),
+    user: User = Depends(require_any_app_access("erp", "projects")),
 ):
     """Soft delete a machine, and cascade the soft-delete to all of its Service Requests
     (setting `is_deleted` doesn't trigger the ORM's `delete-orphan` cascade — that only
@@ -612,7 +797,7 @@ async def delete_project(
     if not project:
         raise HTTPException(status_code=404, detail=_MACHINE_NOT_FOUND)
     ensure_in_scope(db, user, project)
-    ensure_can_delete(user, project, "erp", "projects", what="machine")
+    ensure_can_delete(user, project, "projects", "service_projects", what="machine")
     links = _machine_links(db, project.id)
     if links:
         raise HTTPException(
@@ -662,7 +847,7 @@ async def delete_project(
 async def restore_project(
     project_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("erp")),
+    user: User = Depends(require_any_app_access("erp", "projects")),
 ):
     ensure_tab_action(user, "erp", "recycle_bin", "edit")  # restoring = Recycle Bin › Edit
     project = db.query(Project).filter(Project.id == project_id, Project.is_deleted == True).first()  # noqa: E712
@@ -690,7 +875,7 @@ async def restore_project(
 @router.get("/recycle-bin/list")
 async def list_deleted_projects(
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("erp")),
+    _user: User = Depends(require_any_app_access("erp", "projects")),
     _tab: User = Depends(require_tab_access("erp", "recycle_bin")),
 ):
     projects = apply_scope(db.query(Project).filter(Project.is_deleted == True), _user, Project).all()  # noqa: E712
@@ -710,8 +895,8 @@ async def list_deleted_projects(
 async def get_project_audit(
     project_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("erp")),
-    _tab: User = Depends(require_feature_action("erp", "projects", "audit_trail", "view")),
+    _user: User = Depends(require_any_app_access("erp", "projects")),
+    _tab: User = Depends(require_feature_action("projects", "service_projects", "audit_trail", "view")),
 ):
     if not db.query(Project.id).filter(Project.id == project_id).first():
         raise HTTPException(status_code=404, detail=f"No machine with id {project_id} — check the link or open it from the Machines list.")
@@ -774,11 +959,11 @@ def _can_view_attachment(user: User, attachment: ProjectAttachment) -> bool:
 async def list_project_attachments(
     project_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("erp")),
-    _tab: User = Depends(require_feature_action("erp", "projects", "documents", "view")),
+    user: User = Depends(require_any_app_access("erp", "projects")),
+    _tab: User = Depends(_documents_view_or_pm),
 ):
-    _get_live_project(db, project_id, user)
-    attachments = db.query(ProjectAttachment).options(selectinload(ProjectAttachment.shares)).filter(
+    _get_live_project(db, project_id, user, via_pm=True)
+    attachments =db.query(ProjectAttachment).options(selectinload(ProjectAttachment.shares)).filter(
         ProjectAttachment.project_id == project_id
     ).all()
     return [a for a in attachments if _can_view_attachment(user, a)]
@@ -789,10 +974,10 @@ async def preview_project_attachment(
     project_id: int,
     attachment_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("erp")),
-    _tab: User = Depends(require_feature_action("erp", "projects", "documents", "view")),
+    user: User = Depends(require_any_app_access("erp", "projects")),
+    _tab: User = Depends(_documents_view_or_pm),
 ):
-    _get_live_project(db, project_id, user)  # 404 when the machine is in the Recycle Bin, 403 when out of scope
+    _get_live_project(db, project_id, user, via_pm=True)  # 404 when the machine is in the Recycle Bin, 403 when out of scope
     attachment = db.query(ProjectAttachment).options(selectinload(ProjectAttachment.shares)).filter(
         ProjectAttachment.id == attachment_id, ProjectAttachment.project_id == project_id
     ).first()
@@ -812,14 +997,14 @@ async def get_project_attachment_content(
     project_id: int,
     attachment_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("erp")),
-    _tab: User = Depends(require_feature_action("erp", "projects", "documents", "view")),
+    user: User = Depends(require_any_app_access("erp", "projects")),
+    _tab: User = Depends(_documents_view_or_pm),
 ):
     """Raw file bytes for in-app preview (img/pdf/video tags on our own
     origin) — for formats the browser can render natively. Office documents
     (docx/xlsx/pptx) still need the /preview Microsoft-viewer link since a
     browser can't render those on its own."""
-    _get_live_project(db, project_id, user)
+    _get_live_project(db, project_id, user, via_pm=True)
     attachment = db.query(ProjectAttachment).options(selectinload(ProjectAttachment.shares)).filter(
         ProjectAttachment.id == attachment_id, ProjectAttachment.project_id == project_id
     ).first()
@@ -847,11 +1032,11 @@ async def upload_project_attachments(
     shared_departments: str | None = Form(None),
     shared_designations: str | None = Form(None),
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("erp")),
+    user: User = Depends(require_any_app_access("erp", "projects")),
 ):
     if not has_erp_permission(user, "project_edit"):
         raise HTTPException(status_code=403, detail="You need the 'Edit machines' ERP permission to upload documents. Ask an admin to grant it in Users & Roles.")
-    ensure_feature_action(user, "erp", "projects", "documents", "create")
+    ensure_feature_action(user, "projects", "service_projects", "documents", "create")
     project = db.query(Project).options(selectinload(Project.attachments)).filter(
         Project.id == project_id, Project.is_deleted == False  # noqa: E712
     ).first()
@@ -911,8 +1096,8 @@ async def update_project_attachment_permissions(
     attachment_id: int,
     payload: ProjectAttachmentPermissionUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("erp")),
-    _tab: User = Depends(require_feature_action("erp", "projects", "documents", "edit")),
+    user: User = Depends(require_any_app_access("erp", "projects")),
+    _tab: User = Depends(require_feature_action("projects", "service_projects", "documents", "edit")),
 ):
     _get_live_project(db, project_id, user)
     attachment = db.query(ProjectAttachment).options(selectinload(ProjectAttachment.shares)).filter(
@@ -942,10 +1127,10 @@ async def delete_project_attachment(
     project_id: int,
     attachment_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("erp")),
+    user: User = Depends(require_any_app_access("erp", "projects")),
 ):
-    ensure_tab_action(user, "erp", "projects", "delete")  # before the lookup, so a missing grant is never a 404
-    ensure_feature_action(user, "erp", "projects", "documents", "delete")
+    ensure_tab_action(user, "projects", "service_projects", "delete")  # before the lookup, so a missing grant is never a 404
+    ensure_feature_action(user, "projects", "service_projects", "documents", "delete")
     _get_live_project(db, project_id, user)
     attachment = db.query(ProjectAttachment).options(selectinload(ProjectAttachment.shares)).filter(
         ProjectAttachment.id == attachment_id, ProjectAttachment.project_id == project_id
@@ -957,7 +1142,7 @@ async def delete_project_attachment(
             status_code=403,
             detail="This is a private document shared with others — only its uploader, people it is shared with, or an admin can delete it.",
         )
-    ensure_can_delete(user, attachment, "erp", "projects", what="machine document")
+    ensure_can_delete(user, attachment, "projects", "service_projects", what="machine document")
 
     if settings.SHAREPOINT_SITE_ID and attachment.sharepoint_path:
         try:
@@ -974,11 +1159,13 @@ async def delete_project_attachment(
 
 # ── Created documents: letters on company letterhead ────────────────────────
 
-def _get_live_project(db: Session, project_id: int, user: User | None = None) -> Project:
+def _get_live_project(db: Session, project_id: int, user: User | None = None, *, via_pm: bool = False) -> Project:
+    """`via_pm=True` (read-only routes) also lets anyone who can view the machine's
+    Project Management project in, even outside the machine's own data scope."""
     project = db.query(Project).filter(Project.id == project_id, Project.is_deleted == False).first()  # noqa: E712
     if not project:
         raise HTTPException(status_code=404, detail="Machine not found — it may have been deleted or moved to the recycle bin.")
-    if user is not None:
+    if user is not None and not (via_pm and _can_view_via_pm_project(db, user, project)):
         ensure_in_scope(db, user, project)
     return project
 
@@ -1013,8 +1200,8 @@ def _letter_response(db: Session, letter: ProjectLetter) -> ProjectLetterRespons
 async def project_letter_defaults(
     project_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("erp")),
-    _tab: User = Depends(require_feature_action("erp", "projects", "letters", "view")),
+    _user: User = Depends(require_any_app_access("erp", "projects")),
+    _tab: User = Depends(require_feature_action("projects", "service_projects", "letters", "view")),
 ):
     """Default signatory for a new document: a company Partner (Organization →
     Company Info → Partners) — the logged-in user if they are one, else the
@@ -1038,8 +1225,8 @@ async def project_letter_defaults(
 async def list_project_letters(
     project_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("erp")),
-    _tab: User = Depends(require_feature_action("erp", "projects", "letters", "view")),
+    _user: User = Depends(require_any_app_access("erp", "projects")),
+    _tab: User = Depends(require_feature_action("projects", "service_projects", "letters", "view")),
 ):
     _get_live_project(db, project_id, _user)
     letters = db.query(ProjectLetter).filter(
@@ -1053,11 +1240,11 @@ async def create_project_letter(
     project_id: int,
     payload: ProjectLetterCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("erp")),
+    user: User = Depends(require_any_app_access("erp", "projects")),
 ):
     if not has_erp_permission(user, "project_edit"):
         raise HTTPException(status_code=403, detail="You need the 'Edit projects' ERP permission to create letters. Ask an admin to grant it.")
-    ensure_feature_action(user, "erp", "projects", "letters", "create")
+    ensure_feature_action(user, "projects", "service_projects", "letters", "create")
     # Only the fixed delivery documents are created now; existing general letters stay viewable/editable.
     if payload.letter_type == "general":
         raise HTTPException(status_code=422, detail="General letters are no longer created here — pick Delivery Cover Letter, Delivery Confirmation or Guarantee Certificate.")
@@ -1084,11 +1271,11 @@ async def update_project_letter(
     letter_id: int,
     payload: ProjectLetterUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("erp")),
+    user: User = Depends(require_any_app_access("erp", "projects")),
 ):
     if not has_erp_permission(user, "project_edit"):
         raise HTTPException(status_code=403, detail="You need the 'Edit projects' ERP permission to edit letters. Ask an admin to grant it.")
-    ensure_feature_action(user, "erp", "projects", "letters", "edit")
+    ensure_feature_action(user, "projects", "service_projects", "letters", "edit")
     letter = _get_letter(db, project_id, letter_id, user)
     if payload.letter_type != letter.letter_type:
         raise HTTPException(status_code=422, detail=f"{letter.letter_no} is a {letter.subject or 'letter'} — its type can't be changed. Create a new document of the other type instead.")
@@ -1110,11 +1297,11 @@ async def delete_project_letter(
     project_id: int,
     letter_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("erp")),
+    user: User = Depends(require_any_app_access("erp", "projects")),
 ):
     letter = _get_letter(db, project_id, letter_id, user)
-    ensure_can_delete(user, letter, "erp", "projects", what="letter")
-    ensure_feature_action(user, "erp", "projects", "letters", "delete")
+    ensure_can_delete(user, letter, "projects", "service_projects", what="letter")
+    ensure_feature_action(user, "projects", "service_projects", "letters", "delete")
     _write_audit(db, project_id, "letter_deleted", user, summary=f"{user.name or user.email} deleted letter {letter.letter_no}: {letter.subject}")
     letter.is_deleted = True
     letter.deleted_at = datetime.now(timezone.utc)
@@ -1128,8 +1315,8 @@ async def download_project_letter(
     letter_id: int,
     format: str = "pdf",
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("erp")),
-    _tab: User = Depends(require_feature_action("erp", "projects", "letters", "print")),
+    _user: User = Depends(require_any_app_access("erp", "projects")),
+    _tab: User = Depends(require_feature_action("projects", "service_projects", "letters", "print")),
 ):
     if format not in ("pdf", "docx"):
         raise HTTPException(status_code=422, detail=f"Unknown letter format '{format}' — use 'pdf' or 'docx'.")
@@ -1177,13 +1364,13 @@ def _letter_document_target(db: Session, letter_id: int, user: User, modify: boo
         raise HTTPException(status_code=404, detail="Letter not found — it may have been deleted. Refresh the Documents tab.")
     # Reading the Word document's state = Machines › View; creating / editing /
     # uploading it = Machines › Edit and Print (it is the printable letter).
-    ensure_tab_action(user, "erp", "projects", "view")
-    ensure_feature_action(user, "erp", "projects", "letters", "view")
+    ensure_tab_action(user, "projects", "service_projects", "view")
+    ensure_feature_action(user, "projects", "service_projects", "letters", "view")
     if modify:
-        ensure_tab_action(user, "erp", "projects", "edit")
-        ensure_tab_action(user, "erp", "projects", "print")
-        ensure_feature_action(user, "erp", "projects", "letters", "edit")
-        ensure_feature_action(user, "erp", "projects", "letters", "print")
+        ensure_tab_action(user, "projects", "service_projects", "edit")
+        ensure_tab_action(user, "projects", "service_projects", "print")
+        ensure_feature_action(user, "projects", "service_projects", "letters", "edit")
+        ensure_feature_action(user, "projects", "service_projects", "letters", "print")
     return managed_documents.DocumentTarget(
         entity_id=letter.id, revision=letter.revision, title=f"Letter {letter.letter_no}",
         folder=managed_documents.sharepoint_folder("ERP-Letters", project.serial_number),
@@ -1193,5 +1380,5 @@ def _letter_document_target(db: Session, letter_id: int, user: User, modify: boo
 
 
 managed_documents.register(managed_documents.DocumentAdapter(
-    entity_type=LETTER_ENTITY, app="erp", load=_letter_document_target,
-    view_grant="erp:projects.letters:view", edit_grant="erp:projects.letters:edit"))
+    entity_type=LETTER_ENTITY, app="projects", load=_letter_document_target,
+    view_grant="projects:service_projects.letters:view", edit_grant="projects:service_projects.letters:edit"))

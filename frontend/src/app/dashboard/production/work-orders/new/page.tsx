@@ -14,7 +14,7 @@ import ProductionNav from '@/components/production/ProductionNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
-import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
 import { RowCount } from '@/components/shared/ui'
 
@@ -57,7 +57,7 @@ export default function NewWorkOrderPage() {
   // CO01 sales-order assignment (make-to-order): the customer order line built for.
   const [soLineId, setSoLineId] = useState('')
   const [soLines, setSoLines] = useState<ProductionLookupOption[]>([])
-  // Order Project vehicle / lot (required when the sales order has a project —
+  // Project unit (vehicle / lot) (required when the sales order has a project —
   // the server fills it in when the SO line has only one).
   const [orderProject, setOrderProject] = useState<OrderProjectValue | null>(null)
 
@@ -194,10 +194,10 @@ export default function NewWorkOrderPage() {
               </div>
               {!rrvBuildId && (
                 <div data-tour="production-wo-new-order-project" style={{ marginTop: 14 }}>
-                  <label style={sheetLabel}>Order Project — Vehicle / Lot</label>
+                  <label style={sheetLabel}>Project — Unit (vehicle / lot)</label>
                   <OrderProjectPicker value={orderProject}
                     onChange={(v) => { setOrderProject(v); if (v) setSoLineId('') }}
-                    placeholder="Required for an order with a project — pick OP / vehicle…" />
+                    placeholder="Required for an order with a project — pick project / unit…" />
                   <p style={sheetHint}>Picking a vehicle / lot fills in its sales order line. Leave both blank for a stock build.</p>
                 </div>
               )}

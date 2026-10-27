@@ -22,6 +22,12 @@ const config: TourConfig = {
       after: 'Click to see both lists — this is also where you create a new Inquiry or Tender.',
     },
     {
+      target: 'crm-nav-chart',
+      title: 'Reports',
+      purpose: 'Graphs for management: leads received month by month, open pipeline, won and lost (and why), quotations and per-BD-owner figures.',
+      after: 'Click to open the CRM Reports dashboards. Shown only if your role has CRM › Reports.',
+    },
+    {
       target: 'crm-nav-settings',
       title: 'Settings',
       purpose: 'The lists quotations and inquiries pick from (Products, Product Categories, Payment Terms) and the notification rules — who is told when an customer organization, inquiry or tender is created or a Discussion message is posted.',

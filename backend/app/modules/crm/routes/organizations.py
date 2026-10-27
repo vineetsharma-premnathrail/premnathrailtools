@@ -396,19 +396,29 @@ async def delete_organization(
         raise HTTPException(status_code=404, detail="Customer Organization not found")
     ensure_in_scope(db, user, org)
     ensure_can_delete(user, org, "crm", "organizations", what="customer organization")
-    # The organization is the customer master of its sales orders — a customer with a
-    # live order can't be deleted (that would also delete the inquiries / tenders the
-    # orders were raised from).
-    from app.modules.sales.models.order import SalesOrder, SALES_ORDER_LIVE_STATUSES
-    live = db.query(SalesOrder).filter(
-        SalesOrder.customer_id == org.id, SalesOrder.is_deleted == False,  # noqa: E712
-        SalesOrder.status.in_(SALES_ORDER_LIVE_STATUSES),
-    ).order_by(SalesOrder.id).limit(4).all()
-    if live:
-        names = ", ".join(o.display_number for o in live[:3]) + (" and more" if len(live) > 3 else "")
+    # Owner, 2026-10-27: an organization is deleted only when nothing hangs off it —
+    # its inquiries / tenders are deleted one by one first (each refuses while Sales or
+    # R&D refers to it), and no sales order names it as the customer.
+    from app.modules.crm.models.inquiry import Inquiry
+    from app.modules.crm.models.tender import Tender
+    from app.modules.sales.models.order import SalesOrder
+    open_records = [
+        *(i for (i,) in db.query(Inquiry.universal_id).filter(Inquiry.org_id == org.id, Inquiry.is_deleted == False)  # noqa: E712
+          .order_by(Inquiry.id).limit(6).all()),
+        *(t for (t,) in db.query(Tender.universal_id).filter(Tender.org_id == org.id, Tender.is_deleted == False)  # noqa: E712
+          .order_by(Tender.id).limit(6).all()),
+    ]
+    if open_records:
+        shown = ", ".join(str(x) for x in open_records[:5]) + (" and more" if len(open_records) > 5 else "")
         raise HTTPException(status_code=409, detail=(
-            f"{org.name} can't be deleted: it is the customer on sales order(s) {names}. "
-            f"Cancel those orders in Sales first, or keep the customer organization."))
+            f"{org.name} can't be deleted: it still has inquiries / tenders ({shown}). Delete them one by one first "
+            f"(Inquiries & Tenders) — one that is linked to Sales or R&D can't be deleted, and then the organization stays."))
+    orders = db.query(SalesOrder).filter(SalesOrder.customer_id == org.id, SalesOrder.is_deleted == False  # noqa: E712
+                                         ).order_by(SalesOrder.id).limit(4).all()
+    if orders:
+        names = ", ".join(o.display_number for o in orders[:3]) + (" and more" if len(orders) > 3 else "")
+        raise HTTPException(status_code=409, detail=(
+            f"{org.name} can't be deleted: it is the customer on sales order(s) {names}, so it stays as their customer record."))
 
     now = datetime.now(timezone.utc)
     org.is_deleted = True

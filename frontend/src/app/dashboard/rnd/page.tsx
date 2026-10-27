@@ -10,7 +10,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
 import { RndRequirement, RndTask } from '@/types'
-import { Pill } from '@/components/shared/ui'
+import { Pill, StatChip } from '@/components/shared/ui'
 
 const STAGE_HEX: Record<string, string> = { initiation: '#78716c', research: '#2563EB', development: '#7C3AED', feasibility: '#F59E0B', handover: '#0891B2', closed: '#16A34A' }
 const STAGE_LABELS: Record<string, string> = { initiation: 'Initiation', research: 'Research', development: 'Development', feasibility: 'Feasibility', handover: 'Handover', closed: 'Closed' }
@@ -36,15 +36,8 @@ interface RndDashboardData {
   recent_projects: { id: number; project_number: string; title: string; stage: string; status: string; priority: string; lead_name?: string | null; target_end_date?: string | null }[]
 }
 
-function StatTile({ label, value, sub, hex, href }: { label: string; value: string | number; sub?: string; hex: string; href: string }) {
-  return (
-    <Link href={href} style={{ ...cardStyle, padding: 18, textDecoration: 'none', display: 'block' }}>
-      <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 8px' }}>{label}</p>
-      <p style={{ fontSize: 26, fontWeight: 700, color: hex, margin: 0, lineHeight: 1.1 }}>{value}</p>
-      {sub && <p style={{ fontSize: 12, color: TEXT.muted, margin: '6px 0 0' }}>{sub}</p>}
-    </Link>
-  )
-}
+// Counter chips in the header, same as the Service dashboard; each opens its list.
+const chipLink: React.CSSProperties = { textDecoration: 'none', display: 'inline-flex' }
 
 function CardHeader({ title, href }: { title: string; href: string }) {
   return (
@@ -86,7 +79,7 @@ export default function RndDashboardPage() {
     <div>
       <RndNav />
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Research &amp; Development</h1>
           <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>
@@ -101,14 +94,19 @@ export default function RndDashboardPage() {
         </div>
       )}
 
-      <div data-tour="rnd-dash-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 20 }}>
-        {requirements && (
-          <StatTile label="Requirements" value={requirements.length} sub={`${awaiting} awaiting R&D response`} hex={TEXT.heading} href="/dashboard/rnd/requirements" />
-        )}
-        {data && (
-          <StatTile label="Ongoing Projects" value={data.projects.ongoing} sub={`${data.projects.on_hold} on hold · ${data.projects.total} total`} hex={TEXT.heading} href="/dashboard/rnd/projects" />
-        )}
-        <StatTile label="My Open Tasks" value={tasks ? tasks.length : '…'} sub={overdue ? `${overdue} overdue` : 'None overdue'} hex={overdue ? '#DC2626' : TEXT.heading} href="/dashboard/rnd/tasks" />
+      <div data-tour="rnd-dash-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0 18px' }}>
+        {requirements && (<>
+          <Link href="/dashboard/rnd/requirements" style={chipLink}><StatChip label="Requirements" value={requirements.length} color="#3b82f6" /></Link>
+          <Link href="/dashboard/rnd/requirements" style={chipLink}><StatChip label="Awaiting R&D" value={awaiting} color="#ea580c" /></Link>
+        </>)}
+        {data && (<>
+          <Link href="/dashboard/rnd/projects" style={chipLink}><StatChip label="Ongoing projects" value={data.projects.ongoing} color="#10b981" /></Link>
+          <Link href="/dashboard/rnd/projects" style={chipLink}><StatChip label="On hold" value={data.projects.on_hold} color="#78716c" /></Link>
+        </>)}
+        {tasks && (<>
+          <Link href="/dashboard/rnd/tasks" style={chipLink}><StatChip label="My open tasks" value={tasks.length} color="#ca8a04" /></Link>
+          <Link href="/dashboard/rnd/tasks" style={chipLink}><StatChip label="Overdue" value={overdue} color="#dc2626" /></Link>
+        </>)}
       </div>
 
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 20, alignItems: 'stretch' }}>

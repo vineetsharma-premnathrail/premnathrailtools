@@ -81,6 +81,11 @@ def _can_modify(record, user: User) -> bool:
     return user.role == "admin" or record.created_by_id == user.id
 
 
+def _check_doc_date(value: date | None) -> None:
+    if value and value > date.today():
+        raise HTTPException(status_code=422, detail=f"Tender Date {value.strftime('%d-%m-%Y')} is in the future. Enter the day it was actually received (today or earlier).")
+
+
 def _generate_universal_id(db: Session) -> str:
     today = date.today().strftime("%Y%m%d")
     return next_sequential_id(db, prefix=f"TND-{today}-", column=Tender.universal_id)
@@ -164,6 +169,8 @@ async def create_tender(
 
     universal_id = _generate_universal_id(db)
     data = payload.model_dump()
+    data["tender_date"] = data.get("tender_date") or date.today()
+    _check_doc_date(data["tender_date"])
     # The BD owner is always the person who logs the tender — not picked on the form.
     data["bd_owner"] = user.name or user.email
     tender = Tender(**data, universal_id=universal_id, created_by_id=user.id)
@@ -236,6 +243,11 @@ async def update_tender(
         raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this tender.")
 
     updates = payload.model_dump(exclude_unset=True, exclude={"stage_reason"})
+    if "tender_date" in updates:
+        if updates["tender_date"] is None:
+            updates.pop("tender_date")  # the date is always kept; clearing it is ignored
+        else:
+            _check_doc_date(updates["tender_date"])
     # BD owner = the creator, fixed for the tender's life. The form sends the
     # current value back (fine); asking for a different owner is refused.
     if updates.get("bd_owner") and updates["bd_owner"] != tender.bd_owner:

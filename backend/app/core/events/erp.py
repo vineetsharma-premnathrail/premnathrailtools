@@ -10,12 +10,7 @@ The old "everyone in Service" bells (broadcast) skip whoever a role event
 already reached, so nobody gets the same notice twice."""
 from app.core.notification_events import register_event
 
-# ── Machines ─────────────────────────────────────────────────────────────────
-register_event(
-    "erp", "machine_registered", "New machine registered",
-    "a machine is registered in the installed base (the notice says when it is waiting for approval)",
-    ("projects", "view"), default_channels=("bell",), kind="info",
-)
+# Machines: "machine_registered" lives in events/projects.py (Service Projects moved to Project Management, 2026-10-26).
 
 # ── Service requests ─────────────────────────────────────────────────────────
 register_event(

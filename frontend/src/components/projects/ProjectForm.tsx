@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { usersApi } from '@/lib/api'
+import { projectsApi, usersApi } from '@/lib/api'
 import { DirectoryUser, PmProject } from '@/types'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { Optional, Req, SHEET, SheetSection, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import { BudgetPicker } from '@/components/finance/ProjectBudget'
 
 export type ProjectFormValues = {
   project_code: string
@@ -17,11 +18,13 @@ export type ProjectFormValues = {
   project_manager_id: string
   start_date: string
   target_handover_date: string
+  /** Finance budget (internal order) id; '' = none. */
+  internal_order_id: string
 }
 
 export const emptyProjectForm = (): ProjectFormValues => ({
   project_code: '', name: '', client_name: '', customer_po_ref: '', sales_order_ref: '', description: '',
-  project_manager_id: '', start_date: '', target_handover_date: '',
+  project_manager_id: '', start_date: '', target_handover_date: '', internal_order_id: '',
 })
 
 export const projectToForm = (p: PmProject): ProjectFormValues => ({
@@ -29,13 +32,14 @@ export const projectToForm = (p: PmProject): ProjectFormValues => ({
   customer_po_ref: p.customer_po_ref || '', sales_order_ref: p.sales_order_ref || '',
   description: p.description || '', project_manager_id: p.project_manager_id ? String(p.project_manager_id) : '',
   start_date: p.start_date || '', target_handover_date: p.target_handover_date || '',
+  internal_order_id: p.internal_order_id ? String(p.internal_order_id) : '',
 })
 
 /** Client-side check with the same rules (and messages) as the backend.
  * On create, code and project manager may be blank (auto number / creator). */
 export function validateProjectForm(f: ProjectFormValues, isEdit = false): string[] {
   const missing: string[] = []
-  if (isEdit && !f.project_code.trim()) missing.push('Project number is required, e.g. PEW-2026-0001.')
+  if (isEdit && !f.project_code.trim()) missing.push('Project number is required, e.g. PEW-78 or PEW-64A.')
   if (!f.name.trim()) missing.push('Project name is required.')
   if (!f.client_name.trim()) missing.push('Client is required.')
   if (!f.customer_po_ref.trim()) missing.push("Customer PO number is required. Enter the customer's purchase order number for this project.")
@@ -55,16 +59,32 @@ export const formToPayload = (f: ProjectFormValues) => ({
   description: f.description.trim() || null,
   project_manager_id: f.project_manager_id ? Number(f.project_manager_id) : null, start_date: f.start_date,
   target_handover_date: f.target_handover_date,
+  internal_order_id: f.internal_order_id ? Number(f.internal_order_id) : null,
 })
 
 /** Project header. The essentials — name, client, timeline — come first;
  * code, project manager and scope sit under "More
  * details" (on create they default: next PEW number, you as manager). */
-export default function ProjectForm({ value, onChange, codeLocked, isEdit = false }: {
+/** Finance budget the project's spend is tracked against (Finance creates budgets). */
+export function ProjectBudgetSection({ value, onChange, projectId }: { value: string; onChange: (v: string) => void; projectId?: number }) {
+  return (
+    <SheetSection icon="list" title="Budget" extra={<Optional />}>
+      <div data-tour="pm-form-budget" style={{ maxWidth: 520 }}>
+        <label style={sheetLabel}>Finance budget</label>
+        <BudgetPicker value={value} onChange={onChange} load={() => projectsApi.budgetOptions(projectId)} />
+        <p style={sheetHint}>Purchases and expenses booked on this budget show on the project as committed and actual spend.</p>
+      </div>
+    </SheetSection>
+  )
+}
+
+export default function ProjectForm({ value, onChange, codeLocked, isEdit = false, projectId }: {
   value: ProjectFormValues
   onChange: (v: ProjectFormValues) => void
   codeLocked?: boolean
   isEdit?: boolean
+  /** The project being edited (its own budget stays in the list). */
+  projectId?: number
 }) {
   const [users, setUsers] = useState<DirectoryUser[]>([])
   const [more, setMore] = useState(isEdit)
@@ -106,6 +126,7 @@ export default function ProjectForm({ value, onChange, codeLocked, isEdit = fals
           </div>
         </div>
       </SheetSection>
+      <ProjectBudgetSection value={value.internal_order_id} onChange={(v) => set('internal_order_id', v)} projectId={projectId} />
 
       {!isEdit && (
         <button type="button" onClick={() => setMore(!more)} style={{ background: 'none', border: 'none', padding: 0, margin: '0 0 14px', color: SHEET.BLUE, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
@@ -118,7 +139,7 @@ export default function ProjectForm({ value, onChange, codeLocked, isEdit = fals
             <div data-tour="pm-form-code" style={{ flex: '0 1 200px', minWidth: 170 }}>
               <label style={sheetLabel}>Project number {isEdit && <Req />}</label>
               <input style={{ ...sheetInput, ...(codeLocked ? { background: '#f5f5f4', color: '#78716c' } : {}) }} value={value.project_code} readOnly={codeLocked}
-                onChange={(e) => set('project_code', e.target.value.toUpperCase())} placeholder={isEdit ? 'e.g. PEW-2026-0001' : 'Blank = next PEW number'} />
+                onChange={(e) => set('project_code', e.target.value.toUpperCase())} placeholder={isEdit ? 'e.g. PEW-78 or PEW-64A' : 'Blank = next number (e.g. PEW-78), or type your own such as PEW-64A'} />
               {codeLocked && <p style={sheetHint}>Fixed once the project is released — departments know it by this code.</p>}
             </div>
             <div data-tour="pm-form-pm" style={{ flex: '1 1 260px', maxWidth: 360 }}>

@@ -16,9 +16,7 @@ import { ChartBar, CheckSquare, FolderOpen, Folders, SquaresFour, User, UsersThr
 // is everyone's cross-module list of tasks assigned to them.
 const TABS = [
   { href: '/dashboard/projects', label: 'Dashboard', icon: 'dashboard', subtabKey: 'dashboard', pmOnly: true },
-  { href: '/dashboard/projects/all', label: 'All Projects', icon: 'grid', subtabKey: 'all_projects', pmOnly: true },
-  // OP-YYYY-NNN execution projects — created automatically when a sales order with an RRV line is confirmed.
-  { href: '/dashboard/projects/order-projects', label: 'Order Projects', icon: 'folder', subtabKey: 'order_projects', pmOnly: true },
+  { href: '/dashboard/projects/all', label: 'All Projects', icon: 'grid', subtabKeys: ['all_projects', 'service_projects'], pmOnly: true },
   // Everyone's own work — no app or tab grant needed (also a card on the Dashboard home).
   { href: '/dashboard/projects/my-tasks', label: 'My Tasks', icon: 'check', pmOnly: false },
 ] as const
@@ -52,7 +50,9 @@ export default function ProjectsNav() {
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
       <div className="nav-tabs-scroll" ref={navScrollRef} style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'nowrap', overflowX: 'auto' }}>
         {visibleTabs.map((tab) => {
-          const isActive = tab.href === '/dashboard/projects' ? pathname === tab.href : pathname.startsWith(tab.href)
+          const isActive = tab.href === '/dashboard/projects' ? pathname === tab.href
+            : tab.href === '/dashboard/projects/all' ? (pathname.startsWith(tab.href) || pathname.startsWith('/dashboard/projects/service-projects'))
+            : pathname.startsWith(tab.href)
           return (
             <Link
               key={tab.href}

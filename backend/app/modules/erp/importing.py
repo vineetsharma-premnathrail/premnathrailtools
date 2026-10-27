@@ -212,6 +212,9 @@ def csv_template(columns: list[tuple[str, str]], samples: list[list[str]], filen
                              headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
+_FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
+
+
 def xlsx_response(sheet: str, headers: list[str], rows: list[list], filename: str, widths: list[int] | None = None) -> StreamingResponse:
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
@@ -233,6 +236,11 @@ def xlsx_response(sheet: str, headers: list[str], rows: list[list], filename: st
         for cell in col:
             if isinstance(cell.value, (date, datetime)):
                 cell.number_format = "DD-MM-YYYY"
+            elif isinstance(cell.value, str) and cell.value[:1] in _FORMULA_STARTS:
+                # Spreadsheet formula injection: openpyxl writes a string starting with "=" as a
+                # formula. Forcing the string type stores it as plain text (no visible apostrophe,
+                # so an exported file still re-imports unchanged); numbers and dates are untouched.
+                cell.data_type = "s"
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
     buf = io.BytesIO()

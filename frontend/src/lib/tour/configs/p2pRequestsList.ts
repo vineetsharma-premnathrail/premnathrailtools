@@ -90,7 +90,7 @@ const config: TourConfig = {
     {
       target: 'p2p-filter-btn',
       title: 'Filters',
-      purpose: 'Opens the Filters popup (status, category, buyer, order project, Raised by me). Press Apply Filters to use your choices; the button shows how many filters are on, and Clear removes them.',
+      purpose: 'Opens the Filters popup (status, category, buyer, project, Raised by me). Press Apply Filters to use your choices; the button shows how many filters are on, and Clear removes them.',
       required: false,
       options: [
         { value: 'Status', meaning: 'Only PRs in one status, for example Pending Approval or PO Raised.' },
@@ -100,7 +100,7 @@ const config: TourConfig = {
         { value: 'A buyer name', meaning: 'Only PRs the purchase team has assigned to that buyer to handle.' },
         { value: 'No buyer assigned', meaning: 'PRs the purchase team has not picked up yet — useful to spot requests nobody is working on.' },
         { value: 'Raised by me', meaning: 'Switch on to show only the requisitions you raised yourself.' },
-        { value: 'Order project', meaning: 'Only PRs raised for one customer order project or one of its vehicles / lots.' },
+        { value: 'Project', meaning: 'Only PRs raised for one project or one of its units (vehicles / lots).' },
       ],
     },
     {

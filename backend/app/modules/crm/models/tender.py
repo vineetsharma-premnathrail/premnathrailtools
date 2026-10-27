@@ -35,6 +35,9 @@ class Tender(Base, TimestampMixin, SoftDeleteMixin):
     # any other info field (see _write_spec_revision in routes/tenders.py).
     current_status_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Document date: the day the tender was taken up (user-editable, defaults to today).
+    # created_at stays the system timestamp of when the record was entered.
+    tender_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     lead_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
     priority: Mapped[str] = mapped_column(String(20), default="Medium", nullable=False)
     bd_owner: Mapped[str | None] = mapped_column(String(150), nullable=True)

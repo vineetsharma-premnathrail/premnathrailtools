@@ -15,7 +15,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
-import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import { recordPath } from '@/lib/recordRef'
 import Select from '@/components/shared/Select'
 import { formatDate } from '@/lib/format'
@@ -27,7 +27,7 @@ export default function StoreStockReservationsPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
   const { can } = useCan()
   const router = useRouter()
-  // List filter: all / project stock only / one Order Project (vehicle / lot).
+  // List filter: all / project stock only / one Project (vehicle / lot).
   const [view, setView] = useState<'all' | 'project'>('all')
   const [filterProject, setFilterProject] = useState<OrderProjectValue | null>(null)
   const [orderProject, setOrderProject] = useState<OrderProjectValue | null>(null)
@@ -203,7 +203,7 @@ export default function StoreStockReservationsPage() {
             </SheetSection>
             <SheetSection icon="link" title="Reserved For" extra={<Optional />}>
               <div data-tour="res-order-project" style={{ marginBottom: 14 }}>
-                <label style={sheetLabel}>Order project — vehicle / lot</label>
+                <label style={sheetLabel}>Project — Unit (vehicle / lot)</label>
                 <OrderProjectPicker value={orderProject} onChange={(v) => setOrderProject(v)}
                   placeholder="Hold this stock for an RRV order's vehicle / lot (project stock)" />
                 <div style={{ fontSize: 11.5, color: TEXT.muted, marginTop: 4 }}>
@@ -241,7 +241,7 @@ export default function StoreStockReservationsPage() {
         {view === 'project' && (
           <div style={{ flex: '1 1 280px', maxWidth: 420 }}>
             <OrderProjectPicker value={filterProject} onChange={(v) => setFilterProject(v)} requireElement={false}
-              placeholder="Every Order Project — or pick one / a vehicle" />
+              placeholder="Every project — or pick one / a unit" />
           </div>
         )}
       </div>
@@ -270,7 +270,7 @@ export default function StoreStockReservationsPage() {
                   {r.op_number ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
                       <OrderProjectChip opNumber={r.op_number} elementNo={r.element_no} label={r.element_label}
-                        onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', r, 'order_project_id')) : undefined} />
+                        onClick={can('projects', 'all_projects', 'view') ? () => router.push(recordPath('/dashboard/projects', r, 'order_project_id')) : undefined} />
                       {r.source_reference && <span style={{ fontSize: 11.5, color: TEXT.muted }}>Held from {r.source_reference}</span>}
                     </div>
                   ) : ([r.project, r.production_order].filter(Boolean).join(' / ') || '—')}

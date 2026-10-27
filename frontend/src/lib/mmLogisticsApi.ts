@@ -144,7 +144,7 @@ export const ACCOUNT_ASSIGNMENTS: { value: string; label: string; fk: string }[]
   { value: 'cost_center', label: 'Cost centre', fk: 'cost_center_id' },
   { value: 'work_order', label: 'Production work order', fk: 'work_order_id' },
   { value: 'internal_order', label: 'Internal order', fk: 'internal_order_id' },
-  // Build-to-order project (OP-YYYY-NNN); each Project line then names its vehicle / lot.
+  // Build-to-project; each Project line then names its vehicle / lot.
   { value: 'order_project', label: 'Project', fk: 'order_project_id' },
   // New development: the R&D project (Prototype / Research); Finance's internal order is created behind it.
   { value: 'rnd_project', label: 'R&D project', fk: 'rnd_project_id' },

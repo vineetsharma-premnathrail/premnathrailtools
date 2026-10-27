@@ -1,4 +1,4 @@
-"""Project stock — material held for an Order Project vehicle / lot (2026-10-17).
+"""Project stock — material held for a project vehicle / lot (2026-10-17).
 
 Kept lightweight, the SAP "special stock via reservation" way: the stock
 balance and valuation have NO project dimension. Material belongs to a
@@ -20,7 +20,7 @@ vehicle while a StoreStockReservation with order_project_element_id holds it:
     take its stock back out.
 
 Mandatory element (resolve_issue_project): an issue for an RRV order — a work
-order / RRV build / sales order that has an Order Project — must say which
+order / RRV build / sales order that has a project — must say which
 vehicle / lot it is for. It is filled from the build / delivery row where it
 can be, and refused with the reason where it can't.
 
@@ -46,7 +46,7 @@ EPS = 1e-9
 _QTY = 4
 GRN_SOURCE = "grn_item"
 # Issue types whose material goes to building / reworking / delivering an
-# order — they carry the Order Project element. Other types (maintenance,
+# order — they carry the project unit. Other types (maintenance,
 # general, job work, scrap, sample, testing, service) are never project
 # issues: their element is cleared and they can't draw project stock.
 PROJECT_ISSUE_TYPES = ("production", "rework", "project", "dispatch")
@@ -63,12 +63,12 @@ def is_store_manager(user, location=None) -> bool:
 
 
 def element_label(db: Session, element_id: int | None) -> str | None:
-    """'PEW-2026-0001 / 01 · Vehicle 1' for messages and responses."""
+    """'PEW-80 / 01 · Vehicle 1' for messages and responses."""
     if not element_id:
         return None
-    from app.modules.sales.models.order_project import OrderProjectElement
-    from app.modules.sales.order_projects import element_display
-    el = db.get(OrderProjectElement, element_id)
+    from app.modules.projects.models.element import PmProjectElement
+    from app.modules.projects.so_projects import element_display
+    el = db.get(PmProjectElement, element_id)
     return element_display(el.project, el) if el is not None else None
 
 
@@ -76,48 +76,48 @@ def element_info(db: Session, element_id: int | None) -> dict:
     """Display fields for responses / chips (empty dict when unlinked)."""
     if not element_id:
         return {}
-    from app.modules.sales.models.order_project import OrderProjectElement
-    el = db.get(OrderProjectElement, element_id)
+    from app.modules.projects.models.element import PmProjectElement
+    el = db.get(PmProjectElement, element_id)
     if el is None:
         return {}
-    return {"order_project_id": el.order_project_id, "op_number": el.project.op_number, "element_no": el.element_no,
+    return {"order_project_id": el.project_id, "op_number": el.project.project_code, "element_no": el.element_no,
             "element_label": el.label}
 
 
 def element_for_schedule_row(db: Session, schedule_id: int | None):
     """The element a Sales delivery row ships: its vehicle element, or the lot
     element of the row's line (spares / other). None when the order has no
-    Order Project."""
+    project."""
     if not schedule_id:
         return None
     from app.modules.sales.models.order import SalesOrderSchedule
-    from app.modules.sales.models.order_project import OrderProjectElement
-    from app.modules.sales.order_projects import element_for_schedule
+    from app.modules.projects.models.element import PmProjectElement
+    from app.modules.projects.so_projects import element_for_schedule
     el = element_for_schedule(db, schedule_id)
     if el is not None:
         return el
     row = db.get(SalesOrderSchedule, schedule_id)
     if row is None:
         return None
-    return (db.query(OrderProjectElement)
-            .filter(OrderProjectElement.sales_order_line_id == row.so_line_id, OrderProjectElement.kind == "lot")
-            .order_by(OrderProjectElement.id.desc()).first())
+    return (db.query(PmProjectElement)
+            .filter(PmProjectElement.sales_order_line_id == row.so_line_id, PmProjectElement.kind == "lot")
+            .order_by(PmProjectElement.id.desc()).first())
 
 
 def _project_of_order(db: Session, so_id: int | None):
     if not so_id:
         return None
-    from app.modules.sales.order_projects import project_for_order
+    from app.modules.projects.so_projects import project_for_order
     return project_for_order(db, so_id)
 
 
 def _build_element(db: Session, build):
     """(element, project) of an RRV build: its own link (Production phase 2)
     or the vehicle element of its delivery row; else the order's project."""
-    from app.modules.sales.models.order_project import OrderProjectElement
+    from app.modules.projects.models.element import PmProjectElement
     eid = getattr(build, "order_project_element_id", None)
     if eid:
-        el = db.get(OrderProjectElement, eid)
+        el = db.get(PmProjectElement, eid)
         if el is not None:
             return el, el.project
     el = element_for_schedule_row(db, getattr(build, "sales_schedule_id", None))
@@ -139,12 +139,12 @@ def work_order_context(db: Session, ref: str | None):
         from app.modules.production.models.work_order import ProductionWorkOrder
     except Exception:  # noqa: BLE001 — Production not installed
         return None, None, None
-    from app.modules.sales.models.order_project import OrderProjectElement
+    from app.modules.projects.models.element import PmProjectElement
     wo = db.query(ProductionWorkOrder).filter(func.lower(ProductionWorkOrder.wo_number) == text.lower()).first()
     if wo is not None:
         label = f"work order {wo.wo_number}"
         eid = getattr(wo, "order_project_element_id", None)
-        if eid and (el := db.get(OrderProjectElement, eid)) is not None:
+        if eid and (el := db.get(PmProjectElement, eid)) is not None:
             return el, el.project, label
         if wo.rrv_build_id and (build := db.get(ProductionRrvBuild, wo.rrv_build_id)) is not None:
             el, project = _build_element(db, build)
@@ -161,12 +161,12 @@ def work_order_context(db: Session, ref: str | None):
 # ---------------------------------------------------------------- issue: which element
 
 def resolve_issue_project(db: Session, issue_type: str | None, payload) -> dict:
-    """Decide the Order Project link of a new material issue.
+    """Decide the project link of a new material issue.
 
     Returns {"project_id", "element_id", "line_elements": [element_id | None per
     payload item]}. Raises 422 when an RRV-order issue has no element or the
     picked element contradicts the work order / build / delivery row."""
-    from app.modules.sales.order_projects import resolve_element, resolve_project
+    from app.modules.projects.so_projects import resolve_element, resolve_project
 
     items = list(payload.items or [])
     if issue_type not in PROJECT_ISSUE_TYPES and issue_type is not None:
@@ -178,8 +178,8 @@ def resolve_issue_project(db: Session, issue_type: str | None, payload) -> dict:
         _p, picked_el = resolve_element(db, payload.order_project_element_id, project_id=picked_project_id)
     elif picked_project_id:
         p = resolve_project(db, picked_project_id)
-        raise HTTPException(status_code=422, detail=f"Pick the vehicle / lot of {p.op_number} this material goes to — an issue "
-                                                    "is booked to one element of the Order Project, not to the project as a whole.")
+        raise HTTPException(status_code=422, detail=f"Pick the vehicle / lot of {p.project_code} this material goes to — an issue "
+                                                    "is booked to one unit of the project, not to the project as a whole.")
 
     # What the issue's own references say.
     derived_el, derived_project, source = None, None, None
@@ -197,10 +197,10 @@ def resolve_issue_project(db: Session, issue_type: str | None, payload) -> dict:
             f"{source[0].upper() + source[1:]} builds {element_label(db, derived_el.id)}, but the issue names "
             f"{element_label(db, picked_el.id)} — pick the element of that {source.split(' ')[0]} "
             "(or correct the work order no.)."))
-    if picked_el is not None and derived_project is not None and picked_el.order_project_id != derived_project.id:
+    if picked_el is not None and derived_project is not None and picked_el.project_id != derived_project.id:
         raise HTTPException(status_code=422, detail=(
-            f"{element_label(db, picked_el.id)} belongs to another Order Project than {source} "
-            f"({derived_project.op_number}) — pick an element of {derived_project.op_number}."))
+            f"{element_label(db, picked_el.id)} belongs to another project than {source} "
+            f"({derived_project.project_code}) — pick an element of {derived_project.project_code}."))
     header_el = picked_el or derived_el
 
     # Lines: a dispatch line ships a delivery row → that row's element.
@@ -223,16 +223,16 @@ def resolve_issue_project(db: Session, issue_type: str | None, payload) -> dict:
     # Mandatory rule: an issue for an RRV order carries the element.
     if derived_project is not None and header_el is None and not (items and all(line_elements)):
         raise HTTPException(status_code=422, detail=(
-            f"{source[0].upper() + source[1:]} is for an RRV order (Order Project {derived_project.op_number}) — pick the "
-            "vehicle / lot this material goes to in 'Order project element', so the material is booked to that vehicle."))
+            f"{source[0].upper() + source[1:]} is for an RRV order (project {derived_project.project_code}) — pick the "
+            "vehicle / lot this material goes to in 'Project unit', so the material is booked to that vehicle."))
 
     ids = {e for e in line_elements if e}
     project_id = None
     if header_el is not None:
-        project_id = header_el.order_project_id
+        project_id = header_el.project_id
     elif ids:
-        from app.modules.sales.models.order_project import OrderProjectElement
-        projects = {db.get(OrderProjectElement, e).order_project_id for e in ids}
+        from app.modules.projects.models.element import PmProjectElement
+        projects = {db.get(PmProjectElement, e).project_id for e in ids}
         project_id = projects.pop() if len(projects) == 1 else None
     element_id = header_el.id if header_el is not None else (next(iter(ids)) if len(ids) == 1 else None)
     return {"project_id": project_id, "element_id": element_id, "line_elements": line_elements}
@@ -351,9 +351,9 @@ def reserve_for_element(db: Session, *, item_id: int, location_id: int, qty: flo
     """Hold `qty` of free stock for an element: tops up the active hold of the
     same source (a later release of the same GRN line) or opens a new one.
     Raises ValueError when free stock is short (adjust_reserved_qty)."""
-    from app.modules.sales.models.order_project import OrderProjectElement
+    from app.modules.projects.models.element import PmProjectElement
     from app.modules.store.service import generate_stock_reservation_number
-    el = db.get(OrderProjectElement, element_id)
+    el = db.get(PmProjectElement, element_id)
     adjust_reserved_qty(db, item_id=item_id, location_id=location_id, delta=qty)
     res = None
     if source_type and source_id:
@@ -369,7 +369,7 @@ def reserve_for_element(db: Session, *, item_id: int, location_id: int, qty: flo
         reservation_number=generate_stock_reservation_number(db), item_id=item_id, location_id=location_id,
         quantity=round(qty, _QTY), original_qty=round(qty, _QTY), reserved_by_id=user_id, status="active",
         required_date=required_date or (el.contractual_date if el is not None else None),
-        order_project_id=el.order_project_id if el is not None else None, order_project_element_id=element_id,
+        order_project_id=el.project_id if el is not None else None, order_project_element_id=element_id,
         source_type=source_type, source_id=source_id, source_reference=source_reference, remarks=remarks,
     )
     db.add(res)
@@ -409,14 +409,14 @@ def _grn_lines_for_txn(db: Session, txn) -> list:
 def on_free_stock_in(db: Session, txn) -> None:
     """Stock-ledger posting hook: when material of a project PO line reaches
     Free stock (GRN inspection release, inspection-lot release, older direct
-    GRN receipt), hold it for the line's Order Project element — at most the
+    GRN receipt), hold it for the line's project unit — at most the
     line's received quantity over all its releases."""
     if txn.transaction_type not in ("quality_release", "receipt") or txn.reference_type not in ("grn", "inspection_lot"):
         return
     lines = [ln for ln in _grn_lines_for_txn(db, txn) if _grn_line_element(ln)]
     if not lines:
         return
-    from app.modules.sales.order_projects import resolve_element
+    from app.modules.projects.so_projects import resolve_element
     left = float(txn.quantity or 0)
     for ln in lines:
         if left <= EPS:

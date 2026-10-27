@@ -59,7 +59,7 @@ class QualityInspectionLotCreate(BaseModel):
     source_reference: str | None = None
     assigned_to_id: int | None = None
     remarks: str | None = None
-    # Sales › Order Projects: the vehicle / lot this inspection is for.
+    # Project Management › All Projects: the vehicle / lot this inspection is for.
     order_project_id: int | None = None
     order_project_element_id: int | None = None
 
@@ -157,7 +157,7 @@ class QualityInspectionLotResponse(BaseModel):
     photos: list[dict] = []
     first_article: dict | None = None
     gate: dict | None = None
-    # Order Project link display.
+    # project link display.
     op_number: str | None = None
     element_no: str | None = None
     element_label: str | None = None

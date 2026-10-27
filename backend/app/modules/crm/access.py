@@ -75,7 +75,10 @@ def _org_worked(user):
     return or_(Organization.id.in_(inquiries), Organization.id.in_(tenders))
 
 
-register_scoped(Organization, MODULE, owner=("created_by_id",), assigned=(_org_worked,), label="CRM customer organization")
+# Shared customer master (owner, 2026-10-27): every CRM user may add contacts, inquiries / tenders,
+# quotations, R&D discussion and documents on any organization; only its creator or an admin deletes it.
+register_scoped(Organization, MODULE, owner=("created_by_id",), assigned=(_org_worked,), label="CRM customer organization",
+                shared=True)
 register_scoped(
     Inquiry, MODULE, owner=("created_by_id",),
     assigned=(lambda u: _name_is(Inquiry.bd_owner, u), lambda u: _name_is(Inquiry.sales_engineer, u),

@@ -25,7 +25,7 @@ const config: TourConfig = {
     {
       target: 'sales-dash-risk',
       title: 'Vehicles at risk or overdue',
-      purpose: 'Each row is one vehicle. At risk = the build’s target handover is after the contractual date, or the date is close and the build hasn’t reached Final Inspection. Overdue = the date has passed.',
+      purpose: 'Each row is one vehicle. Project is the project unit (vehicle / lot) it is built under (e.g. PEW-80/01), the same number used in Project Management, Purchase and Store. At risk = the target handover is after the contractual date, or the date is close and the vehicle hasn’t reached Final Inspection. Overdue = the date has passed.',
     },
     {
       target: 'sales-dash-approvals',

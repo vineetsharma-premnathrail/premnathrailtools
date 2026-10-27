@@ -29,6 +29,9 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     # created through the normal UI, which has no such concept.
     bulk_import_ref: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
 
+    # Document date: the day the customer raised it (user-editable, defaults to today).
+    # created_at stays the system timestamp of when the record was entered.
+    inquiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     railway_zone: Mapped[str | None] = mapped_column(String(100), nullable=True)
     division: Mapped[str | None] = mapped_column(String(150), nullable=True)
     lead_source: Mapped[str | None] = mapped_column(String(100), nullable=True)

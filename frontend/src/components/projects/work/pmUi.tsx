@@ -39,6 +39,26 @@ export const PROJECT_LABELS: Record<string, string> = {
 export const PROJECT_HEX: Record<string, string> = {
   planning: '#64748b', active: '#16a34a', on_hold: '#f59e0b', technically_complete: '#0d9488', closed: '#334155', cancelled: '#78716c',
 }
+/** Lifecycle stages in order (backend projects/lifecycle.py LIFECYCLE_STAGES). Service works only from Dispatched on. */
+export const LIFECYCLE_ORDER = ['planned', 'design', 'manufacturing', 'assembly', 'testing', 'ready_for_dispatch', 'dispatched', 'commissioning', 'handover', 'closed'] as const
+export const LIFECYCLE_LABELS: Record<string, string> = {
+  planned: 'Planned', design: 'Design', manufacturing: 'Manufacturing', assembly: 'Assembly', testing: 'Testing',
+  ready_for_dispatch: 'Ready for Dispatch', dispatched: 'Dispatched', commissioning: 'Commissioning', handover: 'Handover', closed: 'Closed / Delivered',
+}
+export const LIFECYCLE_HEX: Record<string, string> = {
+  planned: '#64748b', design: '#7c3aed', manufacturing: '#2563eb', assembly: '#0891b2', testing: '#f59e0b',
+  ready_for_dispatch: '#ea580c', dispatched: '#0d9488', commissioning: '#16a34a', handover: '#15803d', closed: '#334155',
+}
+/** Stage pill, plus an extra pill when the workflow status is On hold / Cancelled. */
+export function StagePills({ stage, label, status }: { stage?: string | null; label?: string | null; status?: string | null }) {
+  const key = stage || 'planned'
+  return (
+    <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+      <span style={pillStyle(LIFECYCLE_HEX[key] || '#64748b')}>{label || LIFECYCLE_LABELS[key] || key}</span>
+      {(status === 'on_hold' || status === 'cancelled') && <span style={pillStyle(PROJECT_HEX[status])}>{PROJECT_LABELS[status]}</span>}
+    </span>
+  )
+}
 export const PRIORITY_LABELS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', critical: 'Critical' }
 export const PRIORITY_HEX: Record<string, string> = { low: '#64748b', medium: '#2563eb', high: '#f59e0b', critical: '#dc2626' }
 export const HEALTH_LABELS: Record<string, string> = { on_track: 'On track', at_risk: 'At risk', delayed: 'Delayed' }

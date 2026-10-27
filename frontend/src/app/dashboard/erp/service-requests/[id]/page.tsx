@@ -390,7 +390,7 @@ function OverviewTab({ sr, project, projectError, canModify, onPatch, onRequestS
 
         <DetailGroup title="Machine & site">
           <DetailRow label="Machine">
-            {project ? <Link href={recordPath('/dashboard/erp/projects', project)} style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'none' }}>{machineLabel}</Link>
+            {project ? <Link href={recordPath('/dashboard/projects/service-projects', project)} style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'none' }}>{machineLabel}</Link>
               : projectError ? <span style={{ color: '#b91c1c' }}>{projectError}</span> : 'Loading…'}
           </DetailRow>
           <DetailRow label="Customer">{project?.client_company}</DetailRow>

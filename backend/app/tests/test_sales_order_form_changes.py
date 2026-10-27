@@ -5,7 +5,7 @@ from app.modules.sales import service as svc
 from app.modules.sales.models.order import (
     SALES_CURRENCIES, SALES_ORDER_TYPES, SalesOrder,
 )
-from app.modules.sales.models.order_project import OrderProject
+from app.modules.projects.models.project import PmProject
 from app.modules.sales.reports.order_ack import oa_spec
 from app.tests.test_sales import BASE, confirm, create_order, hdr, make_user, setup_customer, setup_people
 
@@ -68,7 +68,7 @@ def test_both_vehicle_types_create_project_accessories_do_not(client, db):
     _o, inq, _ = setup_customer(db, qty=1)
     so = confirm(client, db, create_order(client, db, maker, inq, order_type="rail_bound_vehicle"), maker, head, director)
     db.expire_all()
-    assert db.query(OrderProject).filter(OrderProject.sales_order_id == so["id"]).first() is not None
+    assert db.query(PmProject).filter(PmProject.sales_order_id == so["id"]).first() is not None
 
 
 def test_ack_prints_po_currency_and_purchase_person(client, db):

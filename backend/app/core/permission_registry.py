@@ -79,7 +79,6 @@ MODULES: dict[str, dict] = {
     "erp": _module(
         "Service & Commissioning",
         ("dashboard", "Dashboard", V),
-        ("projects", "Projects (Machines)", _with(DOC, "import")),
         ("service_requests", "Service Requests", _with(DOC, "import")),
         ("service_contracts", "Service Contracts (AMC / CMC)", _with(WORKFLOW, "submit", "cancel")),  # VA41: approval engine erp.service_contract
         ("reports", "Reports", REPORT),
@@ -91,6 +90,7 @@ MODULES: dict[str, dict] = {
         ("dashboard", "Dashboard", V),
         ("organizations", "Customer Organizations", _with(CRUD, "export", "import")),
         ("inquiries_tenders", "Inquiries & Tenders", WORKFLOW),
+        ("reports", "Reports", REPORT),
         ("settings", "Settings", SETTINGS),
     ),
     "p2p": _module(
@@ -240,9 +240,9 @@ MODULES: dict[str, dict] = {
         "Project Management",
         ("dashboard", "Dashboard", V),
         ("all_projects", "All Projects", _with(CRUD, "export")),
-        # OP-YYYY-NNN execution projects, created automatically when a sales order with an
-        # RRV line is confirmed (sales/order_projects.py); edit = project manager / hold / dates.
-        ("order_projects", "Order Projects", VE),
+        # The machine register (erp_projects: serial, client, site, warranty) = our past projects, shown inside
+        # All Projects (owner, 2026-10-26); moved here from Service. API stays /erp/projects.
+        ("service_projects", "Past Projects (machines)", _with(DOC, "import")),
         ("department_board", "Department Board", V),
         ("department_work", "Department Work", VE),
         ("my_tasks", "My Tasks", VE),
@@ -412,7 +412,9 @@ NON_APP_MODULES = {"organization"}
 # "purchase" app); the old "Purchase Team" module's grants (purchase:*) alias
 # to it. A module wildcard (p2p:*:*) never grants it — only an explicit tick.
 PURCHASE_DESK_GRANT = "p2p:purchase_desk:view"
-EXPLICIT_ONLY_TABS = {("p2p", "purchase_desk")}
+# Tabs a module wildcard (mk:*:x) does not cover: Purchase Desk, and Service Projects (machines, moved
+# from Service on 2026-10-26) so a Project Management wildcard never hands out the machine register.
+EXPLICIT_ONLY_TABS = {("p2p", "purchase_desk"), ("projects", "service_projects")}
 
 # Sales › Products / Applications / Product Mapping: Product Management sits
 # inside Sales. Viewing one of them gives the internal "products" app; only
@@ -508,9 +510,17 @@ def legacy_grant_aliases(grant: str) -> list[str]:
             return [f"sales:{tk}:{a}"]
         acts = MODULES["sales"]["actions"]
         return [f"sales:{t}:{x}" for t in sorted(PRODUCT_TABS) for x in acts.get(t, []) if a in ("*", x)]
-    # Order Projects moved from Sales to Project Management (2026-10-23).
-    if grant.startswith("sales:order_projects"):
-        return ["projects" + grant[len("sales"):]]
+    # Order Projects were removed (2026-10-27): SO projects live in All Projects; old grants grant nothing.
+    if grant.startswith(("sales:order_projects", "projects:order_projects")):
+        return []
+    # Service Projects (machines) moved from Service to Project Management (2026-10-26). Migration
+    # f7c3a9e1d5b2 rewrote stored grants; this only catches a stray old id.
+    if grant.startswith("erp:projects."):
+        return ["projects:service_projects" + grant[len("erp:projects"):]]
+    if grant.startswith("erp:projects:"):
+        a = grant.rsplit(":", 1)[1]
+        return [f"projects:service_projects:{x}" for x in MODULES["projects"]["actions"].get("service_projects", [])
+                if a in ("*", x)]
     return [grant]
 
 
@@ -540,6 +550,8 @@ def expand_grants(grants) -> set[str]:
                     continue
                 out.update(permission_id(mk, tab, x) for x in acts if a == "*" or x == a)
             for tab, feats in module.get("features", {}).items():
+                if (mk, tab) in EXPLICIT_ONLY_TABS:
+                    continue
                 for fk, f in feats.items():
                     out.update(feature_id(mk, tab, fk, x) for x in f["actions"]
                                if (a == "*" or x == a) and f["inherit"].get(x) is not None)
@@ -644,9 +656,9 @@ def legacy_erp_permissions(user) -> list[str]:
     for frontend code that still checks User.erp_permissions."""
     return [
         f"{prefix}_{action}"
-        for prefix, tab in (("project", "projects"), ("sr", "service_requests"))
+        for prefix, mk, tab in (("project", "projects", "service_projects"), ("sr", "erp", "service_requests"))
         for action in ("view", "create", "edit", "delete")
-        if can_perform(user, "erp", tab, action)
+        if can_perform(user, mk, tab, action)
     ]
 
 
@@ -690,9 +702,13 @@ def legacy_access(apps, erp_permissions, grants) -> tuple[list[str], list[str]]:
             continue
         if mk not in MODULES or mk in NON_APP_MODULES:
             continue
-        mine = {g for g in old if g.startswith(f"{mk}:") and is_valid_grant(g)}
+        # Machines (old erp:projects:*) are worked out in their old spelling, then written as
+        # projects:service_projects:* (moved to Project Management on 2026-10-26).
+        mine = {g for g in old if g.startswith(f"{mk}:") and (is_valid_grant(g) or g.startswith("erp:projects:"))}
         if mk == "erp":
-            base = mine or standard_module_grants("erp")
+            machines = {f"erp:projects:{a}" for a in MODULES["projects"]["actions"].get("service_projects", [])
+                        if f"projects:service_projects:{a}" not in AUTHORITY_GRANTS}
+            base = mine or (standard_module_grants("erp") | machines)
             for g in base:
                 _, tab, action = g.split(":")
                 prefix = next((p for p, t in _ERP_LEGACY_TABS.items() if t == tab), None)
@@ -705,6 +721,7 @@ def legacy_access(apps, erp_permissions, grants) -> tuple[list[str], list[str]]:
                     tab = _ERP_LEGACY_TABS.get(prefix)
                     if tab and action in ("create", "edit", "delete") and f"erp:{tab}:view" in mine:
                         keep.add(f"erp:{tab}:{action}")
+            keep = {("projects:service_projects" + g[len("erp:projects"):]) if g.startswith("erp:projects:") else g for g in keep}
         elif mine:
             keep |= mine
         else:

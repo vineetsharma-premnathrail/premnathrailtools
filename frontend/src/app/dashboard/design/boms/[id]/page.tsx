@@ -22,14 +22,14 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
 import BomLinesEditor, { BomImportButton, BomLineDraft, bomDraftsToPayload, bomLinesToDrafts, itemsFromBomLines } from '../BomLinesEditor'
 import { recordHref, recordPath, useRecordId } from '@/lib/recordRef'
-import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 
 const STATUS_HEX: Record<string, string> = {
   draft: '#78716c', in_review: '#2563EB', in_approval: '#7C3AED', released: '#16A34A', revising: '#0f766e', obsolete: '#DC2626', superseded: '#a8a29e',
 }
 const EVENT_LABELS: Record<string, string> = {
-  bom_created: 'created the BOM', order_project_repeat: 'used as a repeat-model BOM for an order project', bom_updated: 'updated the details', bom_deleted: 'deleted the BOM', bom_obsoleted: 'marked the BOM obsolete',
+  bom_created: 'created the BOM', order_project_repeat: 'used as a repeat-model BOM for an project', bom_updated: 'updated the details', bom_deleted: 'deleted the BOM', bom_obsoleted: 'marked the BOM obsolete',
   bom_reactivated: 'reactivated the BOM', bom_revision_started: 'started a new revision', bom_revision_updated: 'edited the revision',
   bom_revision_discarded: 'discarded the draft revision', bom_submitted: 'submitted for check', bom_recalled: 'recalled it to draft',
   bom_review_passed: 'passed the check', bom_review_returned: 'returned it from check', bom_approval_returned: 'returned it from approval',
@@ -433,9 +433,9 @@ export default function DesignBomDetailPage() {
             </DetailGroup>
             <DetailGroup title="Linked to" last>
               {bom.order_project_number && (
-                <DetailRow label="Order project">
+                <DetailRow label="Project">
                   <OrderProjectChip opNumber={bom.order_project_number} elementNo={bom.order_project_element_no} label={bom.order_project_element_label}
-                    onClick={() => router.push(recordPath('/dashboard/projects/order-projects', bom, 'order_project_id'))} />
+                    onClick={() => router.push(recordPath('/dashboard/projects', bom, 'order_project_id'))} />
                 </DetailRow>
               )}
               <DetailRow label="Project">{bom.pm_project_label}</DetailRow>
@@ -907,7 +907,7 @@ export default function DesignBomDetailPage() {
               </div>
             </SheetSection>
             <SheetSection icon="link" title="Links" extra={<Optional />}>
-              <div style={{ marginBottom: 12 }}><label style={sheetLabel}>Order project</label><OrderProjectPicker value={headerOp} requireElement={false} onChange={(v) => setHeaderOp(v)} /></div>
+              <div style={{ marginBottom: 12 }}><label style={sheetLabel}>Project</label><OrderProjectPicker value={headerOp} requireElement={false} onChange={(v) => setHeaderOp(v)} /></div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ flex: '1 1 240px' }}><label style={sheetLabel}>Project</label><SearchableSelect value={header.pm_project_id} onChange={(v) => setHeader({ ...header, pm_project_id: v })} options={toOptions(projects, 'None')} /></div>
                 <div style={{ flex: '1 1 240px' }}><label style={sheetLabel}>Machine</label><SearchableSelect value={header.erp_project_id} onChange={(v) => setHeader({ ...header, erp_project_id: v })} options={toOptions(machines, 'None')} /></div>

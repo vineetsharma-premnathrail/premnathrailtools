@@ -7,7 +7,7 @@ const config: TourConfig = {
     {
       target: 'crm-inq-stats',
       title: 'Counters',
-      purpose: 'Small numbers under the title: Inquiries, Tenders, Open (not closed or cancelled), Won (closed as ordered), Lost (closed as not ordered) and Follow-ups overdue (open inquiries whose next follow-up date has passed). They count exactly the rows in the table, so Search, Show and the column filters change them.',
+      purpose: 'Small numbers under the title: Active inquiries and Active tenders (not closed or cancelled), Open, Won (closed as ordered), Lost (closed as not ordered), then inquiries at Requirement received and Quotation sent, and tenders at Published and Participation. They count exactly the rows in the table, so Search and the column filters change them.',
     },
     {
       target: 'iq-add-btn',
@@ -32,14 +32,14 @@ const config: TourConfig = {
       whatToEnter: 'Any part of an ID, customer organization name, product name, owner, etc. Updates the list automatically as you type.',
     },
     {
-      target: 'iq-clear-btn',
-      title: 'Clear',
-      purpose: 'A text button that resets the search box, the Show filter (back to All), and every column filter below, back to the full unfiltered list.',
+      target: 'iq-filter-btn',
+      title: 'Filter',
+      purpose: 'Opens the filters: Type (Inquiries, Tenders or both), Status, Stage, Customer Organization and Created By. The number on the button shows how many filters are on; the counters and the table follow them.',
     },
     {
-      target: 'iq-col-type',
-      title: 'Show: All / Inquiry / Tender',
-      purpose: 'This list combines both Inquiries and Tenders into one table. All is the default and shows both together; pick Inquiry or Tender to show only that kind.',
+      target: 'iq-clear-btn',
+      title: 'Clear',
+      purpose: 'Resets the search box and every column filter below, back to the full list.',
     },
     {
       target: 'iq-col-product',

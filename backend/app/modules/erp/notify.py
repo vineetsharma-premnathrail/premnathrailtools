@@ -52,10 +52,11 @@ def role_event(
     record=None,
     details: list[tuple[str, str]] | None = None,
     skip_user_ids: set[int] | None = None,
+    module: str = "erp",
 ) -> set[int]:
-    """notify_event for an erp event, scoped to `record`. Returns who it reached."""
+    """notify_event for an erp event (or a machine event of `module` "projects"), scoped to `record`. Returns who it reached."""
     from app.core.notification_events import notify_event
-    return notify_event(db, background_tasks, "erp", event, title=title, message=message,
+    return notify_event(db, background_tasks, module, event, title=title, message=message,
                         entity_type=entity_type, entity_id=entity_id, actor=actor,
                         can_open=can_open(db, record) if record is not None else None,
                         details=details, skip_user_ids=skip_user_ids)

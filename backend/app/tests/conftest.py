@@ -44,6 +44,17 @@ _settings.DEFAULT_DATA_SCOPE = "organization"
 
 
 @pytest.fixture(autouse=True)
+def _no_approval_emails(monkeypatch):
+    """Approval emails go out after every commit that activates a step
+    (organization/services/approval_mail.py). With SENDER_EMAIL set in a
+    developer's .env, a test run would open the real database and mail real
+    people — blank it; test_approval_mail.py sets it back where it needs it."""
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "SENDER_EMAIL", "")
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _reset_rate_store():
     """The OWASP middleware's rate limiter is a module-level singleton shared
     by every test in the session — without resetting it, tests run later in

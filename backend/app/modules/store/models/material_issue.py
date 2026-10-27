@@ -72,14 +72,14 @@ class StoreMaterialIssue(Base, TimestampMixin):
     # "service"): the SR whose material lines / cost this issue books.
     service_request_id: Mapped[int | None] = mapped_column(ForeignKey("erp_service_requests.id"), nullable=True, index=True)
 
-    # Order Project (Sales › Order Projects): the vehicle / lot element the
+    # PM project (Project Management › All Projects): the vehicle / lot element the
     # material goes to — mandatory when the issue is for an RRV order
     # (store/services/project_stock.py). Lines may name their own element
     # (a dispatch ships several vehicles).
     order_project_id: Mapped[int | None] = mapped_column(
-        ForeignKey("sales_order_projects.id", ondelete="SET NULL"), nullable=True, index=True)
+        ForeignKey("pm_projects.id", ondelete="SET NULL"), nullable=True, index=True)
     order_project_element_id: Mapped[int | None] = mapped_column(
-        ForeignKey("sales_order_project_elements.id", ondelete="SET NULL"), nullable=True, index=True)
+        ForeignKey("pm_project_elements.id", ondelete="SET NULL"), nullable=True, index=True)
     # A Store Manager issued stock held for another element / project: why.
     project_stock_override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -104,8 +104,8 @@ class StoreMaterialIssueItem(Base, TimestampMixin):
     # WM: the bin it was picked from; serialised item: the units issued.
     bin_id: Mapped[int | None] = mapped_column(ForeignKey("store_bins.id"), nullable=True)
     serial_numbers: Mapped[list | None] = mapped_column(JSONB, nullable=True)
-    # Order Project element this line goes to (defaults to the issue's).
+    # PM project unit this line goes to (defaults to the issue's).
     order_project_element_id: Mapped[int | None] = mapped_column(
-        ForeignKey("sales_order_project_elements.id", ondelete="SET NULL"), nullable=True, index=True)
+        ForeignKey("pm_project_elements.id", ondelete="SET NULL"), nullable=True, index=True)
 
     issue: Mapped["StoreMaterialIssue"] = relationship("StoreMaterialIssue", back_populates="items")

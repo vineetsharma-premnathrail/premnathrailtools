@@ -152,7 +152,13 @@ export default function ProjectForm({
   title,
   subtitle,
   nav,
+  projectTab,
+  serialOptional,
 }: {
+  /** Project mode (New Project): a first tab before Machine Identity, with its own validation. */
+  projectTab?: { label: string; render: () => React.ReactNode; validate: () => string[] }
+  /** Serial number may be left blank (the server uses the project number). */
+  serialOptional?: boolean
   initial?: Partial<Project>
   submitLabel: string
   currentUserId?: number
@@ -165,6 +171,9 @@ export default function ProjectForm({
   nav?: React.ReactNode
 }) {
   const [tabIndex, setTabIndex] = useState(0)
+  const off = projectTab ? 1 : 0
+  const mi = tabIndex - off // index within the machine tabs
+  const tabLabels: string[] = projectTab ? [projectTab.label, ...TABS] : [...TABS]
   const [form, setForm] = useState<FormState>(() => toFormState(initial))
   const [isExport, setIsExport] = useState(!!initial?.is_export)
   const [extendedWarranty, setExtendedWarranty] = useState(!!initial?.extended_warranty)
@@ -204,44 +213,57 @@ export default function ProjectForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!form.serial_number.trim()) {
+    if (projectTab) {
+      const missing = projectTab.validate()
+      if (missing.length) {
+        setError(missing)
+        setTabIndex(0)
+        return
+      }
+    }
+    if (!serialOptional && !form.serial_number.trim()) {
       setError('Serial number is required.')
-      setTabIndex(0)
+      setTabIndex(off)
       return
     }
     if (form.machine_type === 'Other' && !machineTypeCustom.trim()) {
       setError('Please specify the custom machine classification.')
-      setTabIndex(0)
+      setTabIndex(off)
       return
     }
     if (form.application_type === 'Other' && !applicationTypeCustom.trim()) {
       setError('Please specify the custom application type.')
-      setTabIndex(0)
+      setTabIndex(off)
       return
     }
     if (!form.client_company.trim()) {
-      setError('Client company is required.')
-      setTabIndex(1)
+      setError('Client company is required. Enter it on the Client & Site tab.')
+      setTabIndex(off + 1)
+      return
+    }
+    if (projectTab && !form.po_number.trim()) {
+      setError("Customer PO number is required. Enter the customer's purchase order number on the Timeline & Warranty tab.")
+      setTabIndex(off + 3)
       return
     }
     if (!isPhoneValid(form.client_phone) || !isPhoneValid(form.client_phone_alt) || !isPhoneValid(form.operator_phone)) {
       setError('Please enter a valid phone number before saving.')
-      setTabIndex(!isPhoneValid(form.client_phone) || !isPhoneValid(form.client_phone_alt) ? 1 : 2)
+      setTabIndex(off + (!isPhoneValid(form.client_phone) || !isPhoneValid(form.client_phone_alt) ? 1 : 2))
       return
     }
     if (!isFinancialYearValid(form.year_of_manufacture)) {
       setError('Please enter a valid financial year format (e.g. 2026-27).')
-      setTabIndex(0)
+      setTabIndex(off)
       return
     }
     if (!isValidEmail(form.client_email) || !isValidEmail(form.operator_email)) {
       setError(VALIDATION_MESSAGES.email)
-      setTabIndex(!isValidEmail(form.client_email) ? 1 : 2)
+      setTabIndex(off + (!isValidEmail(form.client_email) ? 1 : 2))
       return
     }
     if (!isValidGST(form.client_gst)) {
       setError(VALIDATION_MESSAGES.gst)
-      setTabIndex(1)
+      setTabIndex(off + 1)
       return
     }
     setSaving(true)
@@ -274,13 +296,16 @@ export default function ProjectForm({
         sharedDesignations: share.designations,
       })
     } catch (err) {
-      setError(extractErrorMessages(err, 'Failed to save project.'))
+      const msgs = extractErrorMessages(err, projectTab ? 'Failed to create the project.' : 'Failed to save project.')
+      setError(msgs)
+      // Server complaints about the project's own fields: show the Project tab.
+      if (projectTab && /project (number|name|manager)|sales order|SO number|start date|closing date/i.test(Array.isArray(msgs) ? msgs.join(' ') : msgs)) setTabIndex(0)
     } finally {
       setSaving(false)
     }
   }
 
-  const goNext = () => setTabIndex((i) => Math.min(TABS.length - 1, i + 1))
+  const goNext = () => setTabIndex((i) => Math.min(tabLabels.length - 1, i + 1))
   const goPrev = () => setTabIndex((i) => Math.max(0, i - 1))
 
   const errorText = Array.isArray(error) ? error.join(' ') : error
@@ -291,17 +316,17 @@ export default function ProjectForm({
         footer={<>
           <button type="button" onClick={onCancel} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)} data-tour="erp-pf-cancel-btn">Cancel</button>
           {tabIndex > 0 && <button type="button" onClick={goPrev} style={sheetBtn('secondary', SHEET.INK)}><SheetIcon name="left" size={14} />Previous</button>}
-          {tabIndex < TABS.length - 1 && <button type="button" onClick={goNext} style={sheetBtn('secondary', SHEET.INK)}>Next<SheetIcon name="right" size={14} /></button>}
+          {tabIndex < tabLabels.length - 1 &&<button type="button" onClick={goNext} style={sheetBtn('secondary', SHEET.INK)}>Next<SheetIcon name="right" size={14} /></button>}
           <button type="submit" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)} data-tour="erp-pf-submit-btn">
             <SheetIcon name="check" size={16} />{saving ? 'Saving…' : submitLabel}
           </button>
         </>}>
       <div style={{ display: 'flex', gap: 4, padding: '0 24px', borderBottom: `1px solid ${SHEET.LINE}`, flexWrap: 'wrap' }}>
-        {TABS.map((t, i) => (
+        {tabLabels.map((t, i) => (
           <button
             key={t}
             type="button"
-            data-tour={`erp-pf-tab-${i}`}
+            data-tour={projectTab && i === 0 ? 'erp-pf-tab-project' : `erp-pf-tab-${i - off}`}
             onClick={() => setTabIndex(i)}
             style={{
               padding: '12px 6px',
@@ -327,13 +352,17 @@ export default function ProjectForm({
       <div style={{ padding: '20px 24px' }}>
         {errorText && (
           <div ref={errorRef} style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-            <b>Cannot save the machine:</b> {errorText}
+            <b>{projectTab ? 'Cannot create the project:' : 'Cannot save the machine:'}</b> {errorText}
           </div>
         )}
-        {tabIndex === 0 && (
+        {projectTab && tabIndex === 0 && projectTab.render()}
+        {mi === 0 && (
           <SheetSection icon="truck" title="Machine Asset Identity">
             <Grid3>
-              <Field label="Serial Number" req><input value={form.serial_number} onChange={(e) => set('serial_number', e.target.value)} placeholder="e.g. PNR-RR-2026-88" style={sheetInput} data-tour="erp-pf-serial" /></Field>
+              <Field label="Serial Number" req={!serialOptional}>
+                <input value={form.serial_number} onChange={(e) => set('serial_number', e.target.value)} placeholder={serialOptional ? 'Blank = project number' : 'e.g. PNR-RR-2026-88'} style={sheetInput} data-tour="erp-pf-serial" />
+                {serialOptional && <p style={sheetHint}>Blank = project number, e.g. PEW-78.</p>}
+              </Field>
               <Field label="Model Name"><input value={form.model_name} onChange={(e) => set('model_name', e.target.value)} placeholder="e.g. Catenary Track Car Pro" style={sheetInput} data-tour="erp-pf-model" /></Field>
               <Field label="Machine Classification">
                 <Select value={form.machine_type} onChange={(e) => set('machine_type', e.target.value)} style={sheetInput} data-tour="erp-pf-machine-type">
@@ -375,7 +404,7 @@ export default function ProjectForm({
           </SheetSection>
         )}
 
-        {tabIndex === 1 && (
+        {mi === 1 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <SheetSection icon="building" title="Operational Site Location">
               <span data-tour="erp-pf-export" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: SHEET.BODY }}>
@@ -441,7 +470,7 @@ export default function ProjectForm({
           </div>
         )}
 
-        {tabIndex === 2 && (
+        {mi === 2 && (
           <SheetSection icon="gear" title="Technical Specifications" extra={<Optional />}>
             <Field label="Specifications">
               <textarea value={form.specifications} onChange={(e) => set('specifications', e.target.value)} rows={3} placeholder="List model engine power, capacity, and key metrics..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-pf-specs" />
@@ -456,11 +485,11 @@ export default function ProjectForm({
           </SheetSection>
         )}
 
-        {tabIndex === 3 && (
+        {mi === 3 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <SheetSection icon="cart" title="Procurement & Delivery Information">
               <Grid3>
-                <Field label="PO Number"><input value={form.po_number} onChange={(e) => set('po_number', e.target.value)} placeholder="Purchase Order Ref" style={sheetInput} data-tour="erp-pf-po" /></Field>
+                <Field label={projectTab ? 'Customer PO Number' : 'PO Number'} req={!!projectTab}><input value={form.po_number} onChange={(e) => set('po_number', e.target.value)} placeholder="Purchase Order Ref" style={sheetInput} data-tour="erp-pf-po" /></Field>
                 <Field label="PO Date"><DateField value={form.po_date} onChange={(v) => set('po_date', v)} /></Field>
                 <Field label="Dispatch Date"><div data-tour="erp-pf-dispatch-date"><DateField value={form.delivery_date} onChange={(v) => set('delivery_date', v)} /></div></Field>
                 <Field label="Commissioning Date"><div data-tour="erp-pf-commissioning-date"><DateField value={form.commissioning_date} onChange={(v) => set('commissioning_date', v)} /></div></Field>
@@ -504,7 +533,7 @@ export default function ProjectForm({
           </div>
         )}
 
-        {tabIndex === 4 && (
+        {mi === 4 && (
           <SheetSection icon="clip" title="Attachments & Documents">
             <p style={{ ...sheetHint, margin: '0 0 10px' }}>PDFs, Office files, images, and videos — max 10GB each</p>
             <div

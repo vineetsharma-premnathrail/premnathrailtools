@@ -5,7 +5,8 @@ Origins (RND_PROJECT_ORIGINS):
 * customer_requirement — a CRM Inquiry / Tender sent to R&D. The record is
   linked (source_kind/source_id) and also added to the requirement's
   "Linked projects" (rnd_requirement_project_links).
-* product_improvement — an existing finished product (product_id) improved
+* product_improvement — an existing project / machine (machine_id, PEW serial; was a
+  finished product until 2026-10-27, product_id kept on older projects) improved
   for a reason: customer complaint / NCR / service report (the matching
   record must be linked) or cost reduction / production difficulty (a note
   and an attached proof document).
@@ -28,11 +29,11 @@ from app.core.data_scope import apply_scope, ensure_in_scope
 from app.modules.main.models.user import User
 from app.modules.rnd.models.project import (
     RND_IMPROVEMENT_REASON_LABELS, RND_IMPROVEMENT_REASONS, RND_ORIGIN_LABELS, RND_ORIGIN_PROJECT_TYPE,
-    RND_PROJECT_ORIGINS, RND_REASON_SOURCE_KIND, RND_SOURCE_KINDS, RndProject,
+    RND_PROJECT_ORIGINS, RND_SOURCE_KINDS, RndProject,
 )
 from app.modules.rnd.services import requirement_access as ra
 
-ORIGIN_FIELDS = ("origin", "source_kind", "source_id", "improvement_reason", "product_id", "origin_note")
+ORIGIN_FIELDS = ("origin", "source_kind", "source_id", "improvement_reason", "product_id", "machine_id", "origin_note")
 
 SOURCE_KIND_LABELS = {
     "inquiry": "inquiry", "tender": "tender", "quality_complaint": "customer complaint",
@@ -132,6 +133,18 @@ def _product(db: Session, product_id: int):
     return p
 
 
+def _machine(db: Session, machine_id: int):
+    from app.modules.erp.models.project import Project as Machine
+    m = db.query(Machine).filter(Machine.id == machine_id, Machine.is_deleted == False).first()  # noqa: E712
+    if m is None:
+        raise _bad(f"Project / machine #{machine_id} no longer exists — pick the existing project being improved again.")
+    return m
+
+
+def machine_label(m) -> str:
+    return " — ".join(x for x in (m.serial_number, m.model_name, m.client_company) if x)
+
+
 def resolve(db: Session, user: User, data: dict, *, creating: bool, attachment_count: int = 0) -> dict:
     """Validate the origin fields in `data` (the merged final values) and
     return every origin column to set, including project_type and a fresh
@@ -147,11 +160,13 @@ def resolve(db: Session, user: User, data: dict, *, creating: bool, attachment_c
     source_id = data.get("source_id") or None
     reason = data.get("improvement_reason") or None
     product_id = data.get("product_id") or None
+    machine_id = data.get("machine_id") or None
     if kind and kind not in RND_SOURCE_KINDS:
         raise _bad(f"Unknown source record type '{kind}'. Valid types: {', '.join(RND_SOURCE_KINDS)}.")
 
     out = {"origin": origin, "project_type": RND_ORIGIN_PROJECT_TYPE[origin], "origin_note": note,
-           "source_kind": None, "source_id": None, "source_ref": None, "improvement_reason": None, "product_id": None}
+           "source_kind": None, "source_id": None, "source_ref": None, "improvement_reason": None, "product_id": None,
+           "machine_id": None}
 
     def need_proof(why: str) -> None:
         if creating and attachment_count < 1:
@@ -168,22 +183,16 @@ def resolve(db: Session, user: User, data: dict, *, creating: bool, attachment_c
         if product_id:
             out["product_id"] = _product(db, product_id).id
     elif origin == "product_improvement":
-        if not product_id:
-            raise _bad("Pick the existing product being improved (the Sales › Products list).")
-        out["product_id"] = _product(db, product_id).id
+        if not machine_id:
+            raise _bad("Pick the existing project being improved (its PEW number — Project Management › All Projects).")
+        out["machine_id"] = _machine(db, machine_id).id
         if not reason:
             raise _bad("Pick the reason for the improvement: customer complaint, NCR, service report, cost reduction or production difficulty.")
         if reason not in RND_IMPROVEMENT_REASONS:
             raise _bad(f"Unknown improvement reason '{reason}'. Pick one of: {', '.join(RND_IMPROVEMENT_REASON_LABELS.values())}.")
         out["improvement_reason"] = reason
-        expected = RND_REASON_SOURCE_KIND.get(reason)
-        if expected:
-            link((expected,), SOURCE_KIND_LABELS[expected])
-        else:
-            if not note:
-                raise _bad(f"Explain the {RND_IMPROVEMENT_REASON_LABELS[reason].lower()} in 'Who proposed it and why' — "
-                           "what the problem is and who raised it.")
-            need_proof("a cost study, production report or management note showing the need")
+        # Owner 2026-10-27: the project + reason are enough — no extra complaint / NCR /
+        # service request pick or proof per reason; the note stays optional.
     else:  # new_development / process_research
         if not note:
             raise _bad("Fill 'Who proposed it and why' — who proposed this "
@@ -221,8 +230,12 @@ def display(db: Session, project: RndProject) -> dict:
     out = {
         "origin_label": RND_ORIGIN_LABELS.get(project.origin) if project.origin else None,
         "improvement_reason_label": RND_IMPROVEMENT_REASON_LABELS.get(project.improvement_reason) if project.improvement_reason else None,
-        "product_name": None, "source_path": None, "source_exists": False,
+        "product_name": None, "machine_label": None, "source_path": None, "source_exists": False,
     }
+    if getattr(project, "machine_id", None):
+        from app.modules.erp.models.project import Project as Machine
+        m = db.get(Machine, project.machine_id)
+        out["machine_label"] = machine_label(m) if m else None
     if project.product_id:
         p = db.query(FinishedProduct.code, FinishedProduct.name).filter(FinishedProduct.id == project.product_id).first()
         out["product_name"] = f"{p.name} ({p.code})" if p else None
@@ -239,6 +252,14 @@ def source_options(db: Session, user: User, kind: str, q: str | None) -> list[di
     kind="product" lists finished products (no Product Management access needed)."""
     q = (q or "").strip()
     like = f"%{q}%"
+    if kind == "machine":
+        # Existing projects / machines (PEW serials) — what an improvement project improves.
+        from app.modules.erp.models.project import Project as Machine
+        query = db.query(Machine).filter(Machine.is_deleted == False)  # noqa: E712
+        if q:
+            query = query.filter(or_(Machine.serial_number.ilike(like), Machine.model_name.ilike(like), Machine.client_company.ilike(like)))
+        return [{"id": m.id, "label": machine_label(m), "sub": m.site_name or None}
+                for m in query.order_by(Machine.serial_number.asc()).limit(OPTION_LIMIT).all()]
     if kind == "product":
         from app.modules.products.models.product import PRODUCT_STATUS_LABELS, FinishedProduct
         query = db.query(FinishedProduct).filter(FinishedProduct.status != "discontinued")
@@ -247,7 +268,7 @@ def source_options(db: Session, user: User, kind: str, q: str | None) -> list[di
         return [{"id": p.id, "label": f"{p.name} ({p.code})", "sub": PRODUCT_STATUS_LABELS.get(p.status, p.status)}
                 for p in query.order_by(FinishedProduct.name.asc()).limit(OPTION_LIMIT).all()]
     if kind not in RND_SOURCE_KINDS:
-        raise _bad(f"Unknown record type '{kind}'. Valid types: product, {', '.join(RND_SOURCE_KINDS)}.")
+        raise _bad(f"Unknown record type '{kind}'. Valid types: machine, product, {', '.join(RND_SOURCE_KINDS)}.")
     model = _models()[kind]
     query = db.query(model).filter(model.is_deleted == False)  # noqa: E712
     if kind in ("inquiry", "tender"):

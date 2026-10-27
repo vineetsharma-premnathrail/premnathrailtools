@@ -154,6 +154,10 @@ PUBLIC_PATHS = {
     # returns a real 401 when there's no valid session.
     "/api/v1/auth/me",
 }
+# Approve / Reject page opened from an approval email, no portal session.
+# The signed token in the query / form (organization/routes/approval_mail.py) is the gate.
+APPROVAL_EMAIL_PATH = "/api/v1/approvals/email"
+PUBLIC_PATHS.add(APPROVAL_EMAIL_PATH)
 PUBLIC_PREFIXES = ("/static/",)
 # Signed share links (Technical Offer Request emails) are opened by recipients
 # with no portal session. Exempt ONLY this exact pattern — never a prefix; the
@@ -419,6 +423,10 @@ class OWASPMiddleware(BaseHTTPMiddleware):
         # Decode percent-encoding first (e.g. "%20"/"+") so patterns using \s
         # and literal chars like <, > still match encoded attack payloads.
         full_url = unquote(str(request.url))
+        if path == APPROVAL_EMAIL_PATH:
+            # The signed token is random base64 (can match e.g. 0x....) and is
+            # verified by the route; scan the rest and never log the token.
+            full_url = re.sub(r"([?&]t=)[^&]*", r"\1", full_url)
         if INJECTION_PATTERNS.search(full_url):
             logger.warning("[A03] Injection attempt in URL | ip=%s url=%s rid=%s", ip, full_url[:300], request_id)
             _record_violation(ip, trusted)
@@ -549,7 +557,11 @@ class OWASPMiddleware(BaseHTTPMiddleware):
             "usb=(), bluetooth=(), accelerometer=(), gyroscope=()"
         )
 
-        if path.startswith("/api/"):
+        if path == APPROVAL_EMAIL_PATH and "Content-Security-Policy" in h:
+            # An HTML page: keeps the route's own tight CSP (inline styles, own form only).
+            h["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+            h["Pragma"] = "no-cache"
+        elif path.startswith("/api/"):
             h["Content-Security-Policy"] = "default-src 'none'"
             h["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
             h["Pragma"] = "no-cache"

@@ -28,7 +28,7 @@ const config: TourConfig = {
         { value: 'Stage', meaning: 'Draft, In approval, With vendor, Partly received, Received, Short-closed, Closed or Cancelled. In approval is not an order until the final approval is given, so it is never counted as overdue.' },
         { value: 'Delivery', meaning: 'Overdue = released POs whose expected delivery date has passed with goods still to come (your daily follow-up list); Due in 7 days = due today or within the next week.' },
         { value: 'Vendor / Buyer', meaning: 'Only the purchase orders of one vendor or one buyer.' },
-        { value: 'Order project', meaning: 'Only the purchase orders charged to one order project.' },
+        { value: 'Project', meaning: 'Only the purchase orders charged to one project.' },
         { value: 'PO date from / to', meaning: 'A range of PO dates.' },
         { value: 'Sort by', meaning: 'PO number (default, A to Z), most urgent first, delivery date, PO date, vendor, stage, value or delivered %.' },
       ],

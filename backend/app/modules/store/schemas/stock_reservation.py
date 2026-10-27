@@ -10,7 +10,7 @@ class StoreStockReservationCreate(BaseModel):
     production_order: str | None = None
     required_date: date | None = None
     remarks: str | None = None
-    # Project stock: the Order Project vehicle / lot this stock is held for
+    # Project stock: the project vehicle / lot this stock is held for
     # (element required when a project is given).
     order_project_id: int | None = None
     order_project_element_id: int | None = None

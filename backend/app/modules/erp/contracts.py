@@ -182,6 +182,12 @@ def validate(db: Session, c: ServiceContract, machine_ids: list[int]) -> None:
     missing = set(ids) - {m.id for m in machines}
     if missing:
         raise HTTPException(status_code=422, detail=f"Machine(s) #{', #'.join(map(str, sorted(missing)))} not found — they may be deleted; pick again.")
+    from app.modules.projects.lifecycle import is_serviceable, stage_label
+    early = [m for m in machines if not is_serviceable(m.lifecycle_stage)]
+    if early:
+        names = ", ".join(f"{m.serial_number} ({stage_label(m.lifecycle_stage)})" for m in early)
+        raise HTTPException(status_code=422, detail=f"These machines can't be covered yet: {names}. A service contract applies once a machine is "
+                                                    "Dispatched - Project Management moves the stage.")
     wrong = [m for m in machines if m.customer_id != c.customer_id]
     if wrong:
         names = ", ".join(f"{m.serial_number} ({m.customer_name or 'no customer linked'})" for m in wrong)

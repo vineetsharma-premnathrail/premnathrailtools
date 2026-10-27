@@ -30,7 +30,7 @@ import {
   WARRANTY_RULE_LABELS, MILESTONE_LABELS, LINE_TYPE_LABELS, DOC_TYPE_LABELS, ORDER_TYPE_LABELS, formatINR, formatMoney,
 } from '@/components/sales/labels'
 import { recordPath, useRecordId } from '@/lib/recordRef'
-import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
+import { ProjectUnitChip } from '@/components/sales/ProjectUnitPicker'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import CreditReleaseDialog from '@/components/finance/CreditReleaseDialog'
 
@@ -201,15 +201,20 @@ export default function SalesOrderDetailPage() {
         </div>
       </PageHeader>
 
-      {so.order_project && (
-        <div data-tour="sales-detail-order-project" style={{ marginBottom: 12 }}>
-          <OrderProjectChip
-            opNumber={`Order Project: ${so.order_project.op_number}`}
-            onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', so.order_project)) : undefined}
-            title={can('projects', 'order_projects', 'view') ? 'Open the execution project of this order' : 'Execution project of this order'}
-          />
-        </div>
-      )}
+      {(so.pm_project_id || so.order_project) && (() => {
+        const pmId = so.pm_project_id ?? so.order_project?.id
+        const pmCode = so.pm_project_code ?? so.order_project?.project_code ?? so.order_project?.op_number ?? ''
+        const canOpen = can('projects', 'all_projects', 'view') && !!pmId
+        return (
+          <div data-tour="sales-detail-order-project" style={{ marginBottom: 12 }}>
+            <ProjectUnitChip
+              opNumber={`Project ${pmCode}`.trim()}
+              onClick={canOpen ? () => router.push(recordPath('/dashboard/projects', { id: pmId })) : undefined}
+              title={canOpen ? 'Open this order’s project in Project Management' : 'The project of this order (Project Management › All Projects)'}
+            />
+          </div>
+        )
+      })()}
 
       <div data-tour="sales-detail-stepper" style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
         {STEPS.map((s, i) => (

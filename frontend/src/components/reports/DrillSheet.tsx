@@ -25,7 +25,8 @@ export default function DrillSheet({ module, report, dataset, initial, title, pe
   locked: Record<string, string>
   canExport: boolean
   onClose: () => void
-  onOpenFull: (s: ReportState) => void
+  /** Omitted = no "Open as full record list" button. */
+  onOpenFull?: (s: ReportState) => void
 }) {
   const [state, setState] = useState<ReportState>(initial)
   const [qText, setQText] = useState('')
@@ -63,7 +64,7 @@ export default function DrillSheet({ module, report, dataset, initial, title, pe
       footer={<>
         <button type="button" onClick={onClose} style={sheetBtn('secondary', SHEET.INK)}>Close</button>
         {canExport && <button type="button" disabled={busy} onClick={exportIt} style={sheetBtn('secondary', SHEET.INK, busy)}><SheetIcon name="doc" size={16} />Export these to Excel</button>}
-        <button type="button" onClick={() => onOpenFull(state)} style={sheetBtn('primary', SHEET.BLUE)}><SheetIcon name="list" size={16} />Open as full record list</button>
+        {onOpenFull && <button type="button" onClick={() => onOpenFull(state)} style={sheetBtn('primary', SHEET.BLUE)}><SheetIcon name="list" size={16} />Open as full record list</button>}
       </>}>
       <div style={{ padding: '16px 24px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         <SheetError error={error || runError} />

@@ -31,6 +31,7 @@ export default function SearchableSelect({
   onEdit,
   onSearch,
   searchable,
+  typeIn = false,
   style,
   triggerStyle,
   id,
@@ -56,6 +57,8 @@ export default function SearchableSelect({
   onSearch?: (query: string) => void
   /** Force the search box on/off. Default: on when there are more than 8 options. */
   searchable?: boolean
+  /** Type straight into the field (no separate search box); the list filters as you type. */
+  typeIn?: boolean
   /** Outer box (width, flex, margin). */
   style?: React.CSSProperties
   /** Extra styles for the trigger box (e.g. a compact filter). */
@@ -75,6 +78,7 @@ export default function SearchableSelect({
   const triggerRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const typeInRef = useRef<HTMLInputElement>(null)
   const listId = useId()
   // Latest onSearch for the mount-time outside-click listener; a closed list resets the server search.
   const onSearchRef = useRef(onSearch)
@@ -94,12 +98,12 @@ export default function SearchableSelect({
     setOpen(false)
     resetQuery()
     setActive(-1)
-    if (refocus) triggerRef.current?.focus()
+    if (refocus) (typeInRef.current || triggerRef.current)?.focus()
   }
 
   // Mount only, like the native autoFocus attribute.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (autoFocus && !disabled) triggerRef.current?.focus() }, [])
+  useEffect(() => { if (autoFocus && !disabled) (typeInRef.current || triggerRef.current)?.focus() }, [])
 
   // Escape closes just the list, not the form popup it sits in.
   useEscapeKey(open && !disabled, () => close(true))
@@ -108,7 +112,7 @@ export default function SearchableSelect({
   // An empty-value option ("Select…", "All") reads as the placeholder, not a value.
   const selectedLabel = selected && selected.value !== '' ? selected.label : ''
   const shownPlaceholder = selected && selected.value === '' ? selected.label : placeholder
-  const showSearch = !!onSearch || (searchable ?? options.length > SEARCH_THRESHOLD)
+  const showSearch = !typeIn && (!!onSearch || (searchable ?? options.length > SEARCH_THRESHOLD))
 
   // Portaled to <body> with position:fixed so glass cards (backdrop-filter /
   // overflow / transform) never clip it. While open, a requestAnimationFrame loop
@@ -229,7 +233,8 @@ export default function SearchableSelect({
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (disabled) return
     if (!open) {
-      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      // Space types a space in the type-in field; it doesn't open the list.
+      if (e.key === 'Enter' || (e.key === ' ' && !typeIn) || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault()
         openList()
       }
@@ -251,9 +256,9 @@ export default function SearchableSelect({
       <div
         ref={triggerRef}
         id={id}
-        role="combobox"
-        tabIndex={disabled ? -1 : 0}
-        aria-expanded={open}
+        role={typeIn ? undefined : 'combobox'}
+        tabIndex={disabled || typeIn ? -1 : 0}
+        aria-expanded={typeIn ? undefined : open}
         aria-controls={open ? listId : undefined}
         aria-activedescendant={showSearch ? undefined : activeId}
         aria-haspopup="listbox"
@@ -264,7 +269,7 @@ export default function SearchableSelect({
         data-name={name}
         data-value={value}
         className="ui-select-trigger"
-        onClick={() => { if (disabled) return; if (open) close(); else openList() }}
+        onClick={() => { if (disabled) return; if (open) { if (!typeIn) close() } else openList() }}
         onKeyDown={onKeyDown}
         style={{
           ...inputStyle,
@@ -272,16 +277,35 @@ export default function SearchableSelect({
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 8,
-          cursor: disabled ? 'not-allowed' : 'pointer',
+          cursor: disabled ? 'not-allowed' : typeIn ? 'text' : 'pointer',
           background: disabled ? '#f5f5f4' : inputStyle.background,
           color: disabled ? '#78716c' : undefined,
           userSelect: 'none',
           ...triggerStyle,
         }}
       >
-        <span style={{ flex: 1, minWidth: 0, color: disabled ? '#78716c' : selectedLabel ? '#1f1108' : '#78716c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {selectedLabel || shownPlaceholder}
-        </span>
+        {typeIn ? (
+          <input
+            ref={typeInRef}
+            className="ui-select-typein"
+            role="combobox"
+            aria-expanded={open}
+            aria-controls={open ? listId : undefined}
+            aria-activedescendant={activeId}
+            aria-autocomplete="list"
+            aria-label={ariaLabel || title || placeholder}
+            disabled={disabled}
+            // Closed: shows the picked value. Open: shows what is being typed (empty = whole list).
+            value={open ? query : selectedLabel}
+            placeholder={open && selectedLabel ? selectedLabel : shownPlaceholder}
+            onChange={(e) => { setQuery(e.target.value); queryRef.current = e.target.value; setActive(0); if (!open) setOpen(true) }}
+            style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', padding: 0, margin: 0, font: 'inherit', color: '#1f1108', boxShadow: 'none', textOverflow: 'ellipsis' }}
+          />
+        ) : (
+          <span style={{ flex: 1, minWidth: 0, color: disabled ? '#78716c' : selectedLabel ? '#1f1108' : '#78716c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {selectedLabel || shownPlaceholder}
+          </span>
+        )}
         {!disabled && (
           <CaretDown size={14} color="#78716c" aria-hidden="true" style={{ flex: 'none', transition: 'transform .15s ease', transform: open ? 'rotate(180deg)' : 'none' }} />
         )}

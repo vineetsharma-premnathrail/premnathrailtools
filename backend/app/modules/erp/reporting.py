@@ -43,7 +43,7 @@ from app.modules.organization.models.branch import Branch
 
 IST = timezone(timedelta(hours=5, minutes=30))
 SR_PAGE = "/dashboard/erp/service-requests"
-MACHINE_PAGE = "/dashboard/erp/projects"
+MACHINE_PAGE = "/dashboard/projects/service-projects"
 
 OPEN_STATUSES = frozenset({"open", "acknowledged", "assigned", "scheduled", "in_progress", "pending_parts", "on_hold"})
 AWAITING_CLOSURE = frozenset({"work_completed", "review"})

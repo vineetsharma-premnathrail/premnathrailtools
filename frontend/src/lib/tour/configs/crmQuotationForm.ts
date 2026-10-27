@@ -56,6 +56,12 @@ const config: TourConfig = {
       autoActivateOnAdvance: true,
     },
     {
+      target: 'quot-fill-from-past',
+      title: 'Fill from a past quotation (optional)',
+      purpose: 'Shown when this inquiry already has quotations: search them by number or item name and pick one. Its line items, prices, pricing mode, discount, delivery time, quote conditions, payment terms and notes are copied into this form in one click.',
+      why: 'Repeat offers for the same products need not be typed again. Customer, Technical Offer and dates are not copied — they stay this inquiry\'s own — and everything copied can still be edited before saving.',
+    },
+    {
       target: 'quot-type',
       title: 'Quotation Type',
       purpose: 'Decides the currency and tax handling for the whole quotation.',

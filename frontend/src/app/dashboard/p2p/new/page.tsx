@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
-import { p2pApi, storeApi } from '@/lib/api'
-import { PRCategoryMeta, P2PPurposeMeta, P2PRequest, P2PRequestLineItemInput, StoreItem } from '@/types'
+import { organizationApi, p2pApi, storeApi } from '@/lib/api'
+import { P2PPurposeMeta, P2PRequest, P2PRequestLineItemInput, StoreItem } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { accountAssignmentApi, ACCOUNT_ASSIGNMENTS } from '@/lib/mmLogisticsApi'
 
@@ -17,17 +17,21 @@ import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { RowCount, pillStyle } from '@/components/shared/ui'
 
+type LineFilter = { type: string; category: string; q?: string; custom?: boolean }
+
 const PRIORITIES = ['low', 'medium', 'high']
 const STANDARD_ITEM_TYPES = ['material', 'service', 'asset', 'consumable', 'tool_equipment']
 const typeLabel = (t: string) => { const s = t.replace(/_/g, ' '); return s.charAt(0).toUpperCase() + s.slice(1) }
 
 // Purpose of the requisition (2026-10-23, backend p2p/purpose.py): decides what
-// it must be charged to. What each purpose offers / locks (categories,
-// requirement types, item types, Charged To, line project mode) comes from the
-// server (/meta, edited in Procurement › Settings › Purpose rules); only the
-// help text lives here. One project per machine: lines never pick a vehicle / lot.
+// it must be charged to. What each purpose offers (item types, Charged To, line
+// project mode) comes from the server (/meta, edited in Procurement › Settings ›
+// Purpose rules); only the help text lives here. One project per machine: lines
+// never pick a vehicle / lot. No header category / requirement type (2026-10-27):
+// each line's Item Type + Category say what is bought, and the item type picks
+// the line's buyer (Procurement › Settings › Buyer for each item type).
 const PURPOSE_HINTS: Record<string, string> = {
-  machine_project: 'Spares or work for a machine already delivered to the customer: service, repair, warranty. Pick the machine; every line is for it. Charged To is optional.',
+  machine_project: 'Service work on a project already delivered to the customer: spares, repair, warranty, commissioning support. Pick the delivered project; every line is for it. Charged To is optional.',
   development: 'New product development (R&D). Charged to the R&D project it belongs to; Finance is linked automatically.',
   // The cost centre is picked by Purchase on the PO (your department's by default), not here.
   department: "Day-to-day running cost of a department: cleaning material, stationery, small tools, office repairs, AMC, housekeeping. Purchase charges it to your department's cost centre on the PO.",
@@ -103,13 +107,10 @@ export default function NewP2PRequestPage() {
   const [acctError, setAcctError] = useState('')
   // After a failed submit the message opens in a dialog; closing it puts focus on the field to fix.
   const focusIdRef = useRef<string | null>(null)
-  const [categories, setCategories] = useState<PRCategoryMeta[]>([])
-  const [requirementTypes, setRequirementTypes] = useState<string[]>([])
   const [masterItems, setMasterItems] = useState<StoreItem[]>([])
   const [loadingMaster, setLoadingMaster] = useState(false)
   const masterById = useMemo(() => new Map(masterItems.map((i) => [i.id, i])), [masterItems])
-  // Each purpose with the categories it offers, its pre-filled category /
-  // requirement type and the item types it may buy (backend p2p/purpose.py PURPOSE_FORM).
+  // Each purpose with the item types it may buy (backend p2p/purpose.py PURPOSE_FORM).
   const [purposes, setPurposes] = useState<P2PPurposeMeta[]>([])
   const [purpose, setPurpose] = useState('')
   const purposeMeta = purposes.find((p) => p.code === purpose)
@@ -119,26 +120,34 @@ export default function NewP2PRequestPage() {
   const allowedTypes = purposeMeta?.item_types?.length ? purposeMeta.item_types : null
   // Per-line pickers to narrow the item list: Item Type, then Category
   // (categories offered are the ones used under the chosen type).
-  const [lineFilters, setLineFilters] = useState<{ type: string; category: string }[]>([{ type: '', category: '' }])
+  // q = the line's item search text; custom = Ship To is a typed address (not a plant).
+  const [lineFilters, setLineFilters] = useState<LineFilter[]>([{ type: '', category: '' }])
+  // Plants a line can ship to (Organization › Branches); a typed address is the other choice.
+  const [plants, setPlants] = useState<{ id: number; name: string; code: string; status?: string }[]>([])
+  useEffect(() => {
+    organizationApi.listBranches()
+      .then((rows: { id: number; name: string; code: string; status?: string }[]) => setPlants((rows || []).filter((b) => b.status !== 'inactive')))
+      .catch(() => setPlants([]))  // no plant list: Ship To stays a typed address
+  }, [])
+  const plantLabel = (b: { name: string; code: string }) => `${b.name} (${b.code})`
   // The purpose decides which Item Master types may be bought (backend
   // p2p/purpose.py PURPOSE_ITEM_TYPES, via /meta). Types Store added beyond the
   // standard five aren't judged, so they stay offered.
   const typeFits = (t: string | null | undefined) =>
     !allowedTypes || !STANDARD_ITEM_TYPES.includes(t || '') || allowedTypes.includes(t || '')
-  const itemTypeOptions = useMemo(() => {
+  const itemTypeOptions = (() => {
     const present = Array.from(new Set(masterItems.map((i) => i.item_type || '').filter(Boolean)))
     if (!allowedTypes) return present.sort()
     // Purpose order (most usual first); only types that have items, once the list is loaded.
     const ordered = allowedTypes.filter((t) => !present.length || present.includes(t))
     return [...ordered, ...present.filter((t) => !STANDARD_ITEM_TYPES.includes(t)).sort()]
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [masterItems, allowedTypes])
+  })()
   // The line's type pick; the only allowed type is chosen for the requester.
   const effectiveType = (picked: string) =>
     itemTypeOptions.includes(picked) ? picked : itemTypeOptions.length === 1 ? itemTypeOptions[0] : ''
   const categoriesForType = (type: string) =>
     Array.from(new Set(masterItems.filter((i) => (!type ? typeFits(i.item_type) : i.item_type === type)).map((i) => i.category || '').filter(Boolean))).sort()
-  const setLineFilter = (idx: number, patch: Partial<{ type: string; category: string }>) =>
+  const setLineFilter = (idx: number, patch: Partial<LineFilter>) =>
     setLineFilters((prev) => {
       const next = [...prev]
       while (next.length <= idx) next.push({ type: '', category: '' })
@@ -152,13 +161,10 @@ export default function NewP2PRequestPage() {
   const [acctKind, setAcctKind] = useState('')
   const [acctId, setAcctId] = useState('')
   const [acctOptions, setAcctOptions] = useState<{ id: number; label: string }[]>([])
-  const [categoryCode, setCategoryCode] = useState('')
   const [requiredDate, setRequiredDate] = useState('')
-  const [requirementType, setRequirementType] = useState('')
   const [priority, setPriority] = useState('medium')
   const [remarks, setRemarks] = useState('')
   const [items, setItems] = useState<P2PRequestLineItemInput[]>([emptyItem()])
-  const [supportingFiles, setSupportingFiles] = useState<File[]>([])
   const [specFiles, setSpecFiles] = useState<File[]>([])
 
   const [submitting, setSubmitting] = useState<'' | 'draft' | 'submit'>('')
@@ -180,7 +186,7 @@ export default function NewP2PRequestPage() {
           setItems(pre.items.map((i: Partial<P2PRequestLineItemInput>) => ({
             ...emptyItem(), project_inhouse: i.order_project_element_id ? 'Project' : 'Inhouse', store_item_id: i.store_item_id ?? null,
             make: i.make || '', quantity: Number(i.quantity) || 1,
-            // Order Project vehicle / lot the demand is pegged to (MRP / shortage callers).
+            // Project unit (vehicle / lot) the demand is pegged to (MRP / shortage callers).
             order_project_id: i.order_project_id ?? null, order_project_element_id: i.order_project_element_id ?? null,
           })))
           if (pre.remarks) setRemarks(String(pre.remarks))
@@ -190,7 +196,7 @@ export default function NewP2PRequestPage() {
     }
     const storeItemId = Number(searchParams.get('store_item_id'))
     if (!storeItemId) return
-    // ?order_project_id=&order_project_element_id=: demand pegged to an Order Project vehicle / lot.
+    // ?order_project_id=&order_project_element_id=: demand pegged to an Project unit (vehicle / lot).
     const opElementId = Number(searchParams.get('order_project_element_id')) || null
     setItems([{
       ...emptyItem(),
@@ -222,8 +228,6 @@ export default function NewP2PRequestPage() {
     ;(async () => {
       try {
         const [meta, projectList] = await Promise.all([p2pApi.getMeta(), p2pApi.listProjects()])
-        setCategories(meta.categories)
-        setRequirementTypes(meta.requirement_types)
         setPurposes(meta.purposes || [])
         setProjects(projectList)
         setMetaLoaded(true)
@@ -236,7 +240,7 @@ export default function NewP2PRequestPage() {
   // Edit mode: load the requisition and fill the form from it once the form
   // options are in (an existing project is matched back by its label).
   useEffect(() => {
-    if (!isAuthorized || !editId || !categories.length) return
+    if (!isAuthorized || !editId || !metaLoaded) return
     if (editing && editing.id === editId) return
     ;(async () => {
       try {
@@ -248,13 +252,12 @@ export default function NewP2PRequestPage() {
         setEditing(pr)
         const match = projects.find((p) => p.label === pr.project_label)
         setProjectId(match ? String(match.id) : '')
-        setCategoryCode(pr.category_code)
         {
           const a = pr as unknown as Record<string, unknown>
           let kind = (a.account_assignment as string) || ''
           let fk = ACCOUNT_ASSIGNMENTS.find((x) => x.value === kind)?.fk
-          // Production is charged to the Order Project only — an older PR
-          // charged to the sales order is shown as its Order Project.
+          // Production is charged to the Project only — an older PR
+          // charged to the sales order is shown as its Project.
           if (kind === 'sales_order' && pr.order_project_id) { kind = 'order_project'; fk = 'order_project_id' }
           setAcctKind(kind)
           setAcctId(fk && a[fk] ? String(a[fk]) : '')
@@ -264,7 +267,6 @@ export default function NewP2PRequestPage() {
             : kind === 'cost_center' ? 'department' : match ? 'machine_project' : ''))
         }
         setRequiredDate(pr.required_date || '')
-        setRequirementType(pr.requirement_type || '')
         setPriority(pr.priority || 'medium')
         setRemarks(pr.remarks || '')
         setItems(pr.items.length ? pr.items.map((it) => ({
@@ -277,7 +279,7 @@ export default function NewP2PRequestPage() {
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthorized, editId, categories])
+  }, [isAuthorized, editId, metaLoaded])
 
   // Active Item Master items. Re-loadable, so an item just added in
   // Store › Item Master (new tab) can be picked without losing the form.
@@ -321,17 +323,6 @@ export default function NewP2PRequestPage() {
     setAcctId('')
     // Lines carry no project choice: Inhouse purposes mark every line Inhouse, the rest are for the header's project.
     setItems((prev) => prev.map((it) => ({ ...it, project_inhouse: pm?.line_project_mode === 'inhouse' ? 'Inhouse' : 'Project', order_project_id: null, order_project_element_id: null })))
-    // Category / requirement type follow the purpose — a category that still
-    // fits is kept, otherwise the purpose's usual one (or blank) is put in.
-    // A submitted requisition's category is fixed (it is in the number).
-    // A locked (or single-option) field always takes the purpose's value.
-    if (pm && (!editing || editing.status === 'draft')) {
-      setCategoryCode((cur) => (pm.category_locked ? pm.default_category || '' : pm.categories.includes(cur) ? cur : pm.default_category || (pm.categories.length === 1 ? pm.categories[0] : '')))
-    }
-    if (pm) {
-      setRequirementType((cur) => (pm.requirement_type_locked ? pm.default_requirement_type || ''
-        : pm.default_requirement_type ? pm.default_requirement_type : pm.requirement_types.includes(cur) ? cur : pm.requirement_types.length === 1 ? pm.requirement_types[0] : ''))
-    }
     // Each line's Item Type pick must be one the new purpose buys; the rest of
     // the filter is kept. Lines already holding an out-of-type item are only
     // warned about (see typeMismatches), never dropped.
@@ -356,8 +347,8 @@ export default function NewP2PRequestPage() {
     setLineFilters((prev) => prev.filter((_, i) => i !== idx))
   }
 
-  // asDraft: keep it as a private draft — only the category is needed, and
-  // lines without an item picked yet are left out. Submit checks everything.
+  // asDraft: keep it as a private draft — lines without an item picked yet
+  // are left out. Submit checks everything.
   const fail = (msg: string | string[], focusId?: string) => { focusIdRef.current = focusId || null; setError(msg) }
   const closeError = () => {
     setError('')
@@ -372,12 +363,11 @@ export default function NewP2PRequestPage() {
     setError('')
     if (editRef && !editing) { fail('The requisition is still loading — try again in a moment.'); return }
     if (asDraft) {
-      if (!categoryCode) { fail(purposeMeta ? 'Pick a Purchase Requisition category before saving the draft — it decides the requisition number.' : 'Choose a purpose first — it sets the category, and the category is needed before saving the draft (it decides the requisition number).', purposeMeta ? 'pr-field-category' : 'pr-field-purpose'); return }
       const bad = items.findIndex((it) => it.store_item_id && !(Number(it.quantity) > 0))
       if (bad >= 0) { fail(`Line ${bad + 1}: quantity must be more than 0.`, `pr-line-${bad + 1}-qty`); return }
     } else {
     if (!rule) { fail('Choose the purpose of this requisition: what is it being bought for?', 'pr-field-purpose'); return }
-    if ((purpose === 'machine_project' || purpose === 'customer_order') && !projectId) { fail('Pick the machine project this requisition is for.', 'pr-field-project'); return }
+    if ((purpose === 'machine_project' || purpose === 'customer_order') && !projectId) { fail('Pick the project this requisition is for.', 'pr-field-project'); return }
     if (acctKind && !acctId) {
       fail(acctKind === 'rnd_project'
         ? 'Pick the R&D project this development belongs to.'
@@ -386,7 +376,6 @@ export default function NewP2PRequestPage() {
         : `Pick the ${ACCOUNT_ASSIGNMENTS.find((a) => a.value === acctKind)?.label.toLowerCase()} this requisition is charged to.`, 'pr-field-acct-id')
       return
     }
-    if (!categoryCode) { fail('Please select a Purchase Requisition category.', 'pr-field-category'); return }
     for (let i = 0; i < items.length; i++) {
       const m = items[i].store_item_id ? masterById.get(items[i].store_item_id!) : undefined
       if (!m) {
@@ -400,14 +389,6 @@ export default function NewP2PRequestPage() {
     }
     // The same rules the server enforces on a new requisition / draft — shown here so the fix is on the form.
     if (rulesApply && purposeMeta) {
-      if (!purposeMeta.categories.includes(categoryCode)) {
-        setError(`${categories.find((c) => c.code === categoryCode)?.label || categoryCode} isn't a category for a ${purposeMeta.label.toLowerCase()} requisition — pick one of: ${purposeMeta.categories.map((c) => categories.find((x) => x.code === c)?.label || c).join(', ')}.`)
-        return
-      }
-      if (requirementType && !purposeMeta.requirement_types.includes(requirementType)) {
-        setError(`Requirement type ${requirementType} isn't offered for a ${purposeMeta.label.toLowerCase()} requisition — pick one of: ${purposeMeta.requirement_types.join(', ')}.`)
-        return
-      }
       if (typeMismatches.length && allowedTypes) {
         setError(`${typeMismatches.join('; ')} ${typeMismatches.length === 1 ? "isn't" : "aren't"} an item type bought on a ${purposeMeta.label.toLowerCase()} requisition (it takes: ${allowedTypes.map((t) => typeLabel(t).toLowerCase()).join(', ')}). Pick another item for ${typeMismatches.length === 1 ? 'that line' : 'those lines'}, or change the purpose.`)
         return
@@ -423,11 +404,9 @@ export default function NewP2PRequestPage() {
         // Only a machine project names a project; for the rest the server
         // fills the label from what it is charged to (or the purpose).
         project_label: (purpose === 'machine_project' || purpose === 'customer_order') ? projects.find((p) => p.id === Number(projectId))?.label : null,
-        category_code: categoryCode,
         account_assignment: acctKind || null,
         ...Object.fromEntries(ACCOUNT_ASSIGNMENTS.map((x) => [x.fk, x.value === acctKind && acctId ? Number(acctId) : null])),
         required_date: requiredDate || undefined,
-        requirement_type: requirementType || undefined,
         priority,
         remarks: remarks || undefined,
         items: items.filter((it) => !asDraft || it.store_item_id).map((it) => ({
@@ -441,20 +420,16 @@ export default function NewP2PRequestPage() {
       }
       const pr = editing ? await p2pApi.edit(editing.id, payload) : await p2pApi.create(payload)
 
-      const allFiles = [...supportingFiles.map((f) => ({ f, doc: 'supporting' })), ...specFiles.map((f) => ({ f, doc: 'specification' }))]
       // The PR is already created — an upload failure mustn't undo that, but
       // the requester must be told which files didn't make it and why.
       let failedCount = 0
       const failReasons: string[] = []
-      for (const doc of ['supporting', 'specification'] as const) {
-        const files = allFiles.filter((x) => x.doc === doc).map((x) => x.f)
-        if (files.length) {
-          try {
-            await p2pApi.uploadAttachments(pr.id, files, doc)
-          } catch (err) {
-            failedCount += files.length
-            failReasons.push(...extractErrorMessages(err, `Upload of ${doc} file(s) failed.`))
-          }
+      if (specFiles.length) {
+        try {
+          await p2pApi.uploadAttachments(pr.id, specFiles, 'specification')
+        } catch (err) {
+          failedCount += specFiles.length
+          failReasons.push(...extractErrorMessages(err, 'Upload of the specification / reference file(s) failed.'))
         }
       }
 
@@ -481,7 +456,7 @@ export default function NewP2PRequestPage() {
     : editing.status === 'draft' ? `Edit Draft ${editing.p2p_number}` : `Edit Purchase Requisition ${editing.p2p_number}`
 
   const subtitle = !editing ? 'Ask for items from the Item Master — approved requisitions go to stock check, then RFQ and PO.'
-    : `${editing.category_label || editing.category_code} · status ${editing.status.replace(/_/g, ' ')}`
+    : `${editing.category_code !== 'ITM' ? `${editing.category_label || editing.category_code} · ` : ''}status ${editing.status.replace(/_/g, ' ')}`
 
   return (
     <FormPage nav={<P2PNav />} icon={editing ? 'edit' : 'cart'} title={heading} subtitle={subtitle} onBack={() => router.back()} backTour="pr-new-back"
@@ -547,18 +522,18 @@ export default function NewP2PRequestPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
               {(purpose === 'machine_project' || purpose === 'customer_order') && (
                 <div data-tour="pr-new-project" style={{ minWidth: 0 }}>
-                  <label style={labelStyle}>{purpose === 'customer_order' ? 'Project' : 'Machine Project'} <Req /></label>
+                  <label style={labelStyle}>Project <Req /></label>
                   <div id="pr-field-project">
                     <SearchableSelect
                       value={projectId}
                       onChange={setProjectId}
-                      ariaLabel="Machine project"
+                      ariaLabel="Project"
                       disabled={metaLoaded && projects.length === 0}
                       options={projects.map((p) => ({ value: String(p.id), label: p.label }))}
-                      placeholder={!metaLoaded ? 'Loading machine projects…' : projects.length ? 'Search machine project…' : 'No machine projects yet'}
+                      placeholder={!metaLoaded ? 'Loading projects…' : projects.length ? 'Search project…' : 'No projects yet'}
                     />
                   </div>
-                  {metaLoaded && projects.length === 0 && <p style={sheetHint}>No machine projects found. Reload the page; if the list stays empty, ask an admin which delivered machines are set up as projects.</p>}
+                  {metaLoaded && projects.length === 0 && <p style={sheetHint}>No projects found. Reload the page; if the list stays empty, ask an admin which delivered projects are set up in Project Management.</p>}
                 </div>
               )}
               {acctKind && (
@@ -587,35 +562,6 @@ export default function NewP2PRequestPage() {
         <div style={{ minWidth: 0, padding: '20px 24px', background: '#fcfcfd' }}>
           <SheetSection icon="list" title="Request Details">
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div style={{ minWidth: 0 }}>
-                <label style={labelStyle}>Purchase Requisition Category <Req /></label>
-                <div id="pr-field-category" data-tour="pr-new-category">
-                  {!purposeMeta ? (
-                    <ChoosePurposeFirst label="Purchase Requisition Category" />
-                  ) : (purposeMeta.category_locked && categoryCode === purposeMeta.default_category) || (purposeMeta.categories.length === 1 && categoryCode === purposeMeta.categories[0]) ? (
-                    <FixedValue label="Purchase Requisition Category" text={`${categories.find((c) => c.code === categoryCode)?.label || categoryCode} (${categoryCode})`} />
-                  ) : (
-                    // Only the categories that fit the purpose, in its order (the current one stays visible on an older requisition).
-                    <SearchableSelect value={categoryCode} onChange={setCategoryCode} ariaLabel="Purchase Requisition Category" placeholder="Select category…"
-                      options={categories.filter((c) => purposeMeta.categories.includes(c.code) || c.code === categoryCode)
-                        .sort((a, b) => purposeMeta.categories.indexOf(a.code) - purposeMeta.categories.indexOf(b.code))
-                        .map((c) => ({ value: c.code, label: `${c.label} (${c.code})` }))} />
-                  )}
-                </div>
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <label style={labelStyle}>Requirement Type</label>
-                <div data-tour="pr-new-requirement-type">
-                  {!purposeMeta ? (
-                    <ChoosePurposeFirst label="Requirement Type" />
-                  ) : (purposeMeta.requirement_type_locked && requirementType === purposeMeta.default_requirement_type) || (purposeMeta.requirement_types.length === 1 && requirementType === purposeMeta.requirement_types[0]) ? (
-                    <FixedValue label="Requirement Type" text={requirementType} />
-                  ) : (
-                    <SearchableSelect value={requirementType} onChange={setRequirementType} ariaLabel="Requirement Type" placeholder="Select type…"
-                      options={requirementTypes.filter((t) => purposeMeta.requirement_types.includes(t) || t === requirementType).map((t) => ({ value: t, label: t }))} />
-                  )}
-                </div>
-              </div>
               <div style={{ minWidth: 0 }}>
                 <label style={labelStyle}>Required Date</label>
                 <div data-tour="pr-new-required-date"><DateField value={requiredDate} onChange={setRequiredDate} /></div>
@@ -646,10 +592,10 @@ export default function NewP2PRequestPage() {
             </div>
           )}
           <div style={{ overflowX: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 10 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
               <thead>
                 <tr>
-                  {['Actions', 'SL', 'Item (from Item Master) *', 'Make', 'Part Code', 'UOM', 'Qty *', 'Category', 'Ship To'].map((h, i) => (
+                  {['Actions', 'SL', 'Item (from Item Master) *', 'Make', 'Part Code', 'UOM', 'Qty *', 'Ship To'].map((h, i) => (
                     <th key={h} style={th}>{h === 'Actions' ? <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>Actions</span> : h}{i === 1 && <RowCount count={items.length} />}</th>
                   ))}
                 </tr>
@@ -658,12 +604,21 @@ export default function NewP2PRequestPage() {
                 {items.map((item, idx) => {
                   const m = item.store_item_id ? masterById.get(item.store_item_id) : undefined
                   const f = lineFilters[idx] || { type: '', category: '' }
-                  const lineType = effectiveType(f.type)
+                  // A line that already holds an item shows that item's type / category.
+                  const lineType = effectiveType(f.type) || (m?.item_type && itemTypeOptions.includes(m.item_type) ? m.item_type : '')
+                  const lineCategory = f.category || (m && m.item_type === lineType ? m.category || '' : '')
+                  const lineCats = categoriesForType(lineType)
+                  // Rule (owner, 2026-10-27): pick the type, then the category, then search the item.
+                  const categoryReady = !!lineType
+                  const itemReady = !!item.store_item_id || (categoryReady && (!!lineCategory || lineCats.length === 0))
+                  const query = (f.q || '').trim().toLowerCase()
                   // Only items of the purpose's types (or the line's type pick); keep
                   // the picked item in the list even if it falls outside the filters.
                   const shown = masterItems.filter((i) =>
                     i.id === item.store_item_id
-                    || ((lineType ? i.item_type === lineType : typeFits(i.item_type)) && (!f.category || i.category === f.category)))
+                    || ((lineType ? i.item_type === lineType : typeFits(i.item_type)) && (!lineCategory || i.category === lineCategory)
+                      && (!query || [i.item_code, i.item_name, i.part_number, i.manufacturer_part_number, i.make, i.description, i.specification]
+                        .filter(Boolean).join(' ').toLowerCase().includes(query))))
                   return (
                   <tr key={idx} style={{ borderTop: idx ? `1px solid ${SHEET.LINE}` : undefined }}>
                     <td style={{ padding: '6px 8px', width: 70 }}>
@@ -672,36 +627,39 @@ export default function NewP2PRequestPage() {
                       )}
                     </td>
                     <td style={{ padding: '6px 8px', fontSize: 12.5, fontWeight: 600, color: SHEET.MUTED }}>{idx + 1}</td>
-                    <td data-tour="pr-new-item-name" style={{ padding: '6px 8px', minWidth: 300 }}>
-                      <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                        <div title="Item Type" style={{ flex: '1 1 0', minWidth: 0 }}>
+                    <td data-tour="pr-new-item-name" style={{ padding: '6px 8px', minWidth: 640 }}>
+                      {/* Type, category and item on one line (owner, 2026-10-27). */}
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <div title="Item Type" style={{ flex: '0 0 150px', minWidth: 0 }}>
                           <SearchableSelect
                             ariaLabel={`Item type, line ${idx + 1}`}
                             value={lineType}
-                            onChange={(type) => setLineFilter(idx, { type, category: categoriesForType(type).includes(f.category) ? f.category : '' })}
-                            options={[...(itemTypeOptions.length === 1 ? [] : [{ value: '', label: purposeMeta ? 'All fitting types' : 'All types' }]),
-                              ...itemTypeOptions.map((t) => ({ value: t, label: typeLabel(t) }))]}
-                            placeholder="Item type"
+                            onChange={(type) => setLineFilter(idx, { type, category: categoriesForType(type).includes(f.category) ? f.category : '', q: '' })}
+                            options={itemTypeOptions.map((t) => ({ value: t, label: typeLabel(t) }))}
+                            placeholder="1. Item type"
                           />
                         </div>
-                        <div title="Category" style={{ flex: '1 1 0', minWidth: 0 }}>
+                        <div title="Category" style={{ flex: '0 0 160px', minWidth: 0 }}>
                           <SearchableSelect
                             ariaLabel={`Category filter, line ${idx + 1}`}
-                            value={f.category}
-                            onChange={(category) => setLineFilter(idx, { category })}
-                            options={[{ value: '', label: 'All categories' }, ...categoriesForType(lineType).map((c) => ({ value: c, label: c }))]}
-                            placeholder="Category"
+                            value={lineCategory}
+                            onChange={(category) => setLineFilter(idx, { category, q: '' })}
+                            options={lineCats.map((c) => ({ value: c, label: c }))}
+                            disabled={!categoryReady}
+                            placeholder={categoryReady ? (lineCats.length ? '2. Category' : 'No categories') : 'Pick the type first'}
                           />
                         </div>
-                      </div>
-                      <div id={`pr-line-${idx + 1}-item`}>
-                        <div style={{ minWidth: 0 }}>
+                        <div id={`pr-line-${idx + 1}-item`} style={{ flex: '1 1 300px', minWidth: 0 }}>
                           <SearchableSelect
                             ariaLabel={`Item, line ${idx + 1}`}
                             value={item.store_item_id ? String(item.store_item_id) : ''}
                             onChange={(v) => pickItem(idx, v)}
-                            options={shown.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}${i.part_number ? ` · ${i.part_number}` : ''}` }))}
-                            placeholder={loadingMaster ? 'Loading items…' : `Search ${shown.length} item${shown.length === 1 ? '' : 's'} by code, name or part no…`}
+                            onSearch={(q) => setLineFilter(idx, { q })}
+                            searchable
+                            disabled={!itemReady}
+                            options={shown.slice(0, 200).map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}${i.part_number ? ` · ${i.part_number}` : ''}` }))}
+                            placeholder={loadingMaster ? 'Loading items…' : !itemReady ? (categoryReady ? 'Pick the category first' : 'Pick the type first')
+                              : `3. Search ${shown.length} item${shown.length === 1 ? '' : 's'} by code, name, part no. or technical details…`}
                           />
                         </div>
                       </div>
@@ -709,12 +667,35 @@ export default function NewP2PRequestPage() {
                     <td data-tour="pr-new-item-make" style={readCell}>{m?.make || '—'}</td>
                     <td data-tour="pr-new-item-partcode" style={readCell}>{m?.part_number || m?.manufacturer_part_number || '—'}</td>
                     <td data-tour="pr-new-item-unit" style={readCell}>{m?.uom || '—'}</td>
-                    <td style={{ padding: '6px 8px', minWidth: 70 }}>
-                      <input data-tour="pr-new-item-qty" id={`pr-line-${idx + 1}-qty`} aria-label={`Quantity, line ${idx + 1}`} type="number" min={0} step="any" style={inputStyle} value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} />
+                    <td style={{ padding: '6px 8px', width: 96 }}>
+                      <input data-tour="pr-new-item-qty" id={`pr-line-${idx + 1}-qty`} aria-label={`Quantity, line ${idx + 1}`} type="number" min={0} step="any" style={{ ...inputStyle, width: 88 }} value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} />
                     </td>
-                    <td data-tour="pr-new-item-category" style={readCell}>{m?.category || '—'}</td>
-                    <td style={{ padding: '6px 8px', minWidth: 140 }}>
-                      <input data-tour="pr-new-item-shipto" aria-label={`Ship to, line ${idx + 1}`} style={inputStyle} value={item.ship_to} onChange={(e) => updateItem(idx, 'ship_to', e.target.value)} />
+                    <td data-tour="pr-new-item-shipto" style={{ padding: '6px 8px', minWidth: 220 }}>
+                      {(() => {
+                        const plant = plants.find((b) => plantLabel(b) === item.ship_to)
+                        const custom = f.custom || (!!item.ship_to && !plant)
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <SearchableSelect
+                              ariaLabel={`Ship to, line ${idx + 1}`}
+                              value={custom ? '__custom' : plant ? String(plant.id) : ''}
+                              onChange={(v) => {
+                                if (v === '__custom') { setLineFilter(idx, { custom: true }); updateItem(idx, 'ship_to', plant ? '' : item.ship_to ?? ''); return }
+                                const b = plants.find((x) => String(x.id) === v)
+                                setLineFilter(idx, { custom: false })
+                                updateItem(idx, 'ship_to', b ? plantLabel(b) : '')
+                              }}
+                              options={[...plants.map((b) => ({ value: String(b.id), label: plantLabel(b), group: 'Plant / branch' })),
+                                { value: '__custom', label: 'Custom address…', group: 'Other' }]}
+                              placeholder="Plant or custom address"
+                            />
+                            {custom && (
+                              <input aria-label={`Ship to address, line ${idx + 1}`} style={inputStyle} value={item.ship_to} placeholder="Type the delivery address"
+                                onChange={(e) => updateItem(idx, 'ship_to', e.target.value)} />
+                            )}
+                          </div>
+                        )
+                      })()}
                     </td>
                   </tr>
                   )
@@ -743,7 +724,6 @@ export default function NewP2PRequestPage() {
         </div>
         <div style={{ minWidth: 0, padding: '20px 24px', background: '#fcfcfd' }}>
           <SheetSection icon="clip" title="Attachments" extra={<Optional />}>
-            <AttachRow label="Supporting documents" files={supportingFiles} onChange={setSupportingFiles} tour="pr-new-supporting-docs" />
             <AttachRow label="Specification / reference file" files={specFiles} onChange={setSpecFiles} tour="pr-new-spec-docs" />
           </SheetSection>
         </div>

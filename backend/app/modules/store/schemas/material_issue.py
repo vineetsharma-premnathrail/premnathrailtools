@@ -12,7 +12,7 @@ class StoreMaterialIssueItemPayload(BaseModel):
     # WM: the bin it is picked from; serialised item: one serial per unit.
     bin_id: int | None = None
     serials: list[str] = []
-    # Order Project element of this line (defaults to the issue's; a dispatch
+    # project element of this line (defaults to the issue's; a dispatch
     # line takes its delivery row's element).
     order_project_element_id: int | None = None
 
@@ -70,7 +70,7 @@ class StoreMaterialIssueCreate(BaseModel):
     transporter: str | None = None
     lr_number: str | None = None
     scrap_buyer: str | None = None
-    # Order Project (production / rework / project / dispatch issues): the
+    # project (production / rework / project / dispatch issues): the
     # vehicle / lot the material goes to — mandatory for an RRV order.
     order_project_id: int | None = None
     order_project_element_id: int | None = None

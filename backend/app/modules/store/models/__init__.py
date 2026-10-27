@@ -16,6 +16,7 @@ from app.modules.store.models.batch import StoreBatch
 from app.modules.store.models.job_work import StoreJobWorkReceipt, StoreJobWorkReceiptComponent
 from app.modules.store.models.serial_number import StoreSerialNumber, StoreSerialEvent
 from app.modules.store.models.bin_move import StoreBinMove
+from app.modules.store.models.pre_po_receipt import StorePrePoReceipt, StorePrePoReceiptItem, StorePrePoReceiptAttachment
 
 __all__ = [
     "StoreLocation",
@@ -46,4 +47,7 @@ __all__ = [
     "StoreSerialNumber",
     "StoreSerialEvent",
     "StoreBinMove",
+    "StorePrePoReceipt",
+    "StorePrePoReceiptItem",
+    "StorePrePoReceiptAttachment",
 ]

@@ -70,10 +70,11 @@ def _get_branch_or_404(branch_id: int, db: Session) -> Branch:
 def _branch_reader(user: User = Depends(get_current_user)) -> User:
     """Reading the branch list: anyone with Organization › Branches 'View'
     (admins included), plus Store users — a warehouse is created under a
-    branch, so the Warehouses form needs the list as a picker."""
+    branch, so the Warehouses form needs the list as a picker. Procurement users
+    too: a requisition line ships to a plant (or a typed address)."""
     # Users viewers need it too: a user's plant assignments pick a plant.
     if (can_view_tab(user, "organization", "branches") or can_view_tab(user, "organization", "users")
-            or "store" in user.get_apps()):
+            or "store" in user.get_apps() or "p2p" in user.get_apps()):  # PR lines ship to a plant
         return user
     raise HTTPException(
         status_code=403,

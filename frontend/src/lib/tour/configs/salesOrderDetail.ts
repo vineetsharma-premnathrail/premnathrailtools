@@ -18,8 +18,8 @@ const config: TourConfig = {
     },
     {
       target: 'sales-detail-order-project',
-      title: 'Order Project',
-      purpose: 'Once an order with an RRV line is confirmed, its execution project (OP-YYYY-NNN) is created automatically. Click to open its 360 view of every vehicle.',
+      title: 'Project',
+      purpose: 'Once an order with an RRV line is confirmed, its project (PEW-xx) is created automatically in Project Management › All Projects. Click to open it — its Units tab shows every vehicle and lot with where each department stands.',
     },
     {
       target: 'sales-detail-stepper',

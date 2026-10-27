@@ -1,7 +1,7 @@
 'use client'
 
-// Purchase Orders: create the PO (from a requisition whose RFQ is done),
-// approve it, and track its delivery — one tab, like Purchase Requisitions.
+// Purchase Orders: create the PO (row button on a finished RFQ, or on goods the
+// store received Before PO), approve it, and track its delivery — one tab.
 
 import { useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
@@ -13,12 +13,12 @@ import POApprovalQueue from '@/components/p2p/POApprovalQueue'
 import POTrackingList from '@/components/p2p/POTrackingList'
 import CreatePODialog from '@/components/p2p/CreatePODialog'
 import { useP2PApproverFlags } from '@/components/p2p/useP2PApproverFlags'
-import { PO_CREATE_BTN } from '@/components/p2p/POTrackingShared'
+import BeforePOPendingList from '@/components/p2p/BeforePOPendingList'
 import TallyPOUploadDialog from '@/components/p2p/TallyPOUploadDialog'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import { UploadSimple } from '@phosphor-icons/react'
 
-type View = 'create' | 'approvals' | 'tracking'
+type View = 'create' | 'before_po' | 'approvals' | 'tracking'
 
 export default function PurchaseOrdersPage() {
   const { user, isLoading } = useAuth()
@@ -30,15 +30,15 @@ export default function PurchaseOrdersPage() {
   const canTallyUpload = isPurchase && canFeature('p2p', 'purchase_orders', 'tally_import', 'create')
   const [tallyOpen, setTallyOpen] = useState(false)
   const views: { key: View; label: string }[] = [
-    ...(canCreatePo ? [{ key: 'create' as const, label: 'Create PO' }] : []),
+    ...(canCreatePo ? [{ key: 'create' as const, label: 'Create PO' }, { key: 'before_po' as const, label: 'Before PO' }] : []),
     ...(isApprover ? [{ key: 'approvals' as const, label: 'Approvals' }] : []),
     ...(isPurchase ? [{ key: 'tracking' as const, label: 'Tracking' }] : []),
   ]
-  const [createFor, setCreateFor] = useState<number | 'new' | null>(null)
+  const [createFor, setCreateFor] = useState<number | null>(null)
   const [picked, setPicked] = useState<View | null>(() => {
     if (typeof window === 'undefined') return null
     const v = new URLSearchParams(window.location.search).get('view')
-    return v === 'create' || v === 'approvals' || v === 'tracking' ? v : null
+    return v === 'create' || v === 'before_po' || v === 'approvals' || v === 'tracking' ? v : null
   })
 
   if (isLoading || !user) return null
@@ -51,12 +51,6 @@ export default function PurchaseOrdersPage() {
     )
   }
   const view = picked && views.some((v) => v.key === picked) ? picked : views[0].key
-  // The primary create button sits at the left of each list's toolbar. The Approvals list (built on the
-  // requisition list) has its own toolbar and no PO create button.
-  const createBtn = canCreatePo ? (
-    <button type="button" data-tour="po-create-btn" onClick={() => setCreateFor('new')} style={PO_CREATE_BTN}>+ Create PO</button>
-  ) : null
-
   return (
     <div>
       <P2PNav />
@@ -80,11 +74,12 @@ export default function PurchaseOrdersPage() {
         )}
       </div>
 
-      {view === 'create' && <POReadyList onCreate={(rfqId) => setCreateFor(rfqId)} lead={createBtn} />}
-      {createFor !== null && <CreatePODialog initialRfqId={createFor === 'new' ? undefined : createFor} onClose={() => setCreateFor(null)} />}
-      {view === 'approvals' && <POApprovalQueue />}
-      {view === 'tracking' && <POTrackingList lead={createBtn} />}
+      {view === 'create' && <POReadyList onCreate={(rfqId) => setCreateFor(rfqId)} />}
       {tallyOpen && <TallyPOUploadDialog onClose={() => setTallyOpen(false)} />}
+      {view === 'before_po' && <BeforePOPendingList />}
+      {createFor !== null && <CreatePODialog initialRfqId={createFor} onClose={() => setCreateFor(null)} />}
+      {view === 'approvals' && <POApprovalQueue />}
+      {view === 'tracking' && <POTrackingList />}
     </div>
   )
 }

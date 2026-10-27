@@ -14,15 +14,17 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.core.permissions import ensure_tab_action, require_app_access, require_tab_action
+from app.core.permissions import ensure_tab_action, require_any_app_access, require_tab_action
 from app.core.data_scope import apply_scope
+from app.core.permission_registry import can_view_tab
+from app.core.pew_numbers import normalise_serial
 from app.db.session import get_db
 from app.modules.erp.importing import (
     check_rows, csv_template, enum_label, norm_key, parse_bool, parse_choice, parse_date, read_rows,
     text, validation_reason, xlsx_response, check_date_range, in_range, ist_date, parse_export_ids,
 )
 from app.modules.erp.models.project import Project
-from app.modules.erp.routes.projects import _natural_sort_key, _write_audit
+from app.modules.erp.routes.projects import _natural_sort_key, _write_audit, link_machine_by_number
 from app.modules.erp.schemas.project import PROJECT_STATUSES, ProjectCreate
 from app.modules.main.models.user import User
 from app.utils.notifications import notify_user
@@ -61,7 +63,7 @@ AMC_CHOICES = {"Active": "Active AMC", "Expired": "Expired Contract"}
 
 def _require_create(user: User) -> None:
     # Importing registers new machines, so it needs Create as well as Import.
-    ensure_tab_action(user, "erp", "projects", "create")
+    ensure_tab_action(user, "projects", "service_projects", "create")
 
 
 def _machine_label(p: Project) -> str:
@@ -90,8 +92,8 @@ def _row_payload(r: dict) -> dict:
 
 @router.get("/import/template")
 async def import_template(
-    _user: User = Depends(require_app_access("erp")),
-    _tab: User = Depends(require_tab_action("erp", "projects", "import")),
+    _user: User = Depends(require_any_app_access("erp", "projects")),
+    _tab: User = Depends(require_tab_action("projects", "service_projects", "import")),
 ):
     keys = [k for k, _ in COLUMNS]
     sample = {"serial_number": "PRT-RRV-0101", "machine_type": "Rail Road Vehicle", "model_name": "RRV 4x4",
@@ -108,8 +110,8 @@ async def import_template(
 async def import_projects(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("erp")),
-    _tab: User = Depends(require_tab_action("erp", "projects", "import")),
+    user: User = Depends(require_any_app_access("erp", "projects")),
+    _tab: User = Depends(require_tab_action("projects", "service_projects", "import")),
 ):
     _require_create(user)
     rows = read_rows(file.filename, await file.read())
@@ -178,9 +180,12 @@ async def import_projects(
             errors.append({"row": idx, "key": serial, "reason": validation_reason(exc, LABELS)})
             continue
 
-        project = Project(**payload.model_dump())
+        values = payload.model_dump()
+        values["serial_number"] = normalise_serial(values["serial_number"])  # 'pew-90 ' -> 'PEW-90'
+        project = Project(**values)
         db.add(project)
         db.flush()
+        link_machine_by_number(db, project, user)  # same number as a PM project -> linked + audited there
         _write_audit(db, project.id, "created", user, summary=f"Machine {project.serial_number} imported from {file.filename} by {user.name or user.email}.")
         seen_serial[skey] = idx
         if project.engine_number:
@@ -216,8 +221,8 @@ async def export_projects(
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("erp")),
-    _tab: User = Depends(require_tab_action("erp", "projects", "export")),
+    _user: User = Depends(require_any_app_access("erp", "projects")),
+    _tab: User = Depends(require_tab_action("projects", "service_projects", "export")),
 ):
     """Excel of the asset register with the same filters as the list page.
     Columns match the import template, so the sheet can be edited and
@@ -235,7 +240,7 @@ async def export_projects(
         projects = sorted(query.filter(Project.id.in_(selected)).all(), key=lambda p: _natural_sort_key(p.serial_number))
         if not projects:
             raise HTTPException(status_code=404, detail="None of the selected machines exist any more — they may have been deleted. Refresh the list.")
-        return _machines_xlsx(projects)
+        return _machines_xlsx(db, projects, _user)
     if status:
         query = query.filter(Project.status == status)
     if application_type:
@@ -255,10 +260,10 @@ async def export_projects(
             "commissioning": lambda p: p.commissioning_date,
         }[date_field]
         projects = [p for p in projects if in_range(pick(p), date_from, date_to)]
-    return _machines_xlsx(projects)
+    return _machines_xlsx(db, projects, _user)
 
 
-def _machines_xlsx(projects: list[Project]):
+def _machines_xlsx(db: Session, projects: list[Project], user: User):
     def cell(p: Project, key: str):
         v = getattr(p, key)
         if key in BOOL_FIELDS:
@@ -267,5 +272,17 @@ def _machines_xlsx(projects: list[Project]):
             return STATUS_CHOICES.get(v or "", v or "")
         return "" if v is None else v
 
-    rows = [[cell(p, k) for k, _ in COLUMNS] for p in projects]
-    return xlsx_response("Machines", [t for _, t in COLUMNS], rows, "machines.xlsx")
+    # Export-only "Project" column (linked Project Management project); the import ignores it.
+    # Filled only for projects the exporting user can open (All Projects › View + their data scope).
+    from app.modules.projects.models.project import PmProject
+    ids = {p.pm_project_id for p in projects if p.pm_project_id}
+    pms: dict = {}
+    if ids and can_view_tab(user, "projects", "all_projects"):
+        pms = {pm.id: pm for pm in apply_scope(db.query(PmProject).filter(PmProject.id.in_(ids)), user, PmProject).all()}
+
+    def project_cell(p: Project) -> str:
+        pm = pms.get(p.pm_project_id) if p.pm_project_id else None
+        return f"{pm.project_code} - {pm.name}" if pm else ""
+
+    rows = [[cell(p, k) for k, _ in COLUMNS] + [project_cell(p)] for p in projects]
+    return xlsx_response("Machines", [t for _, t in COLUMNS] + ["Project"], rows, "machines.xlsx")

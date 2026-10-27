@@ -20,6 +20,7 @@ class InquiryCreate(BaseModel):
     org_contact_id: int
     railway_zone: str | None = None
     division: str | None = None
+    inquiry_date: date | None = None
     lead_source: str
     bd_owner: str | None = None
     sales_engineer: str | None = None
@@ -62,6 +63,7 @@ class InquiryUpdate(BaseModel):
     org_contact_id: int | None = None
     railway_zone: str | None = None
     division: str | None = None
+    inquiry_date: date | None = None
     lead_source: str | None = None
     bd_owner: str | None = None
     sales_engineer: str | None = None
@@ -109,6 +111,7 @@ class InquiryResponse(BaseModel):
     org_contact_id: int | None = None
     railway_zone: str | None = None
     division: str | None = None
+    inquiry_date: date | None = None
     lead_source: str | None = None
     bd_owner: str | None = None
     sales_engineer: str | None = None

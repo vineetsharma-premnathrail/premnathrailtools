@@ -10,7 +10,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 import { ErrorBanner, INSPECTION_TYPE_LABELS, sheetGap } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
-import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
 
 interface ItemOpt { id: number; item_code: string; item_name: string; uom?: string }
@@ -31,7 +31,7 @@ export default function NewManualLotPage() {
   const [locations, setLocations] = useState<{ id: number; code: string; name: string }[]>([])
   const [form, setForm] = useState({ inspection_type: 'stock_reinspection', item_id: '', quantity: '', location_id: '', take_from_free: true, batch_number: '', vendor_name: '', source_reference: '', remarks: '' })
   const [busy, setBusy] = useState(false)
-  // Order Project (the vehicle / spares lot this inspection is for) — optional.
+  // Project (the vehicle / spares lot this inspection is for) — optional.
   const [op, setOp] = useState<OrderProjectValue | null>(null)
   const [error, setError] = useState<string | string[]>('')
 
@@ -96,9 +96,9 @@ export default function NewManualLotPage() {
               <F label="Vendor (if any)"><input style={sheetInput} value={form.vendor_name} onChange={(e) => setForm({ ...form, vendor_name: e.target.value })} /></F>
               <F label="Reference document"><input style={sheetInput} value={form.source_reference} onChange={(e) => setForm({ ...form, source_reference: e.target.value })} placeholder="e.g. return note no." /></F>
             </div>
-            <label style={{ ...sheetLabel, ...sheetGap }}>Order Project — vehicle / lot <Optional /></label>
+            <label style={{ ...sheetLabel, ...sheetGap }}>Project — Unit (vehicle / lot) <Optional /></label>
             <OrderProjectPicker value={op} onChange={(v) => setOp(v)} />
-            <p style={sheetHint}>Link a final / in-process check to the build it belongs to — it shows on the Order Project&apos;s Quality column.</p>
+            <p style={sheetHint}>Link a final / in-process check to the build it belongs to — it shows on the Project&apos;s Quality column.</p>
           </SheetSection>
         </>}
         right={<>

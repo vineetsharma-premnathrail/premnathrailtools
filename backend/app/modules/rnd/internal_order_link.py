@@ -54,7 +54,7 @@ def ensure_internal_order_for_rnd_project(db: Session, project: RndProject) -> i
     io = InternalOrder(
         code=_io_code(db, project),
         name=project_label(project)[:200],
-        description=f"Opened automatically for R&D project {project.project_number}.",
+        description=f"{AUTO_DESCRIPTION} {project.project_number}.",
         order_type="development",
         start_date=project.start_date,
         end_date=project.target_end_date,
@@ -68,13 +68,23 @@ def ensure_internal_order_for_rnd_project(db: Session, project: RndProject) -> i
     return io.id
 
 
+AUTO_DESCRIPTION = "Opened automatically for R&D project"
+
+
+def is_auto_order(io: InternalOrder | None) -> bool:
+    """True for the order the system opened for the project; False for a budget
+    Finance created and the project linked (Finance owns that one)."""
+    return io is not None and (io.description or "").startswith(AUTO_DESCRIPTION)
+
+
 def sync_internal_order(db: Session, project: RndProject) -> None:
     """Keep the project's internal order budget / dates / name in step with the
-    project (no-op until the order exists). Call after the project is changed."""
+    project (no-op until the order exists, and for a budget Finance created).
+    Call after the project is changed."""
     if not project.internal_order_id:
         return
     io = db.get(InternalOrder, project.internal_order_id)
-    if io is None:
+    if not is_auto_order(io):
         return
     io.budgeted_amount = project.budget_amount
     io.start_date = project.start_date
@@ -83,5 +93,5 @@ def sync_internal_order(db: Session, project: RndProject) -> None:
     db.flush()
 
 
-__all__ = ["CLOSED_STAGES", "CLOSED_STATUSES", "closed_reason", "ensure_internal_order_for_rnd_project",
+__all__ = ["AUTO_DESCRIPTION", "is_auto_order", "CLOSED_STAGES", "CLOSED_STATUSES", "closed_reason", "ensure_internal_order_for_rnd_project",
            "project_label", "sync_internal_order"]

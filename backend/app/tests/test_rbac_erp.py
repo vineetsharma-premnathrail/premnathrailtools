@@ -101,3 +101,22 @@ def test_restore_needs_recycle_bin_edit(client, db):
     db.commit()
     assert client.get(f"{ERP}/service-requests/recycle-bin", headers=_h(alice)).status_code == 200
     assert client.post(f"{ERP}/service-requests/{sr['id']}/restore", headers=_h(alice)).status_code == 200
+
+
+def test_service_projects_moved_to_project_management(client, db):
+    """Machines live under Project Management › Service Projects (2026-10-26). A stray old grant still opens
+    them; a Project Management wildcard does not (explicit-only tab); Service Requests alone can't list them."""
+    from app.core.permission_registry import MODULES, expand_grants
+    assert "projects" not in MODULES["erp"]["subtabs"] and "service_projects" in MODULES["projects"]["subtabs"]
+    assert expand_grants(["erp:projects:view"]) >= {"projects:service_projects:view"}
+    assert not any("service_projects" in g for g in expand_grants(["projects:*:*"]))
+    old = _user(db, "old_machine_grant@premnathrail.com", ["erp:projects:view"])
+    new = _user(db, "new_machine_grant@premnathrail.com", ["projects:service_projects:view"])
+    for u in (old, new):
+        assert client.get(f"{ERP}/projects", headers=_h(u)).status_code == 200
+        assert "projects" in u.get_apps()
+    sr_only = _user(db, "sr_only@premnathrail.com", ["erp:service_requests:view"])
+    assert client.get(f"{ERP}/projects", headers=_h(sr_only)).status_code == 403
+    pm_all = _user(db, "pm_all@premnathrail.com", ["projects:*:*"])
+    assert client.get(f"{ERP}/projects", headers=_h(pm_all)).status_code == 403
+    assert client.post(f"{ERP}/projects", json={"serial_number": "PM-WILD-1"}, headers=_h(pm_all)).status_code == 403

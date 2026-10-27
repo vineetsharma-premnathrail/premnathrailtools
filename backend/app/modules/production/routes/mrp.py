@@ -380,7 +380,7 @@ async def convert_to_work_order(po_id: int, payload: ProductionPlannedOrderConve
 
 
 def _po_element_id(db: Session, po: ProductionPlannedOrder) -> int | None:
-    """The Order Project element of a planned order's demand: carried by MRP,
+    """The project unit of a planned order's demand: carried by MRP,
     else the vehicle / lot of its pegged Sales delivery row."""
     if po.order_project_element_id:
         return po.order_project_element_id
@@ -461,7 +461,7 @@ async def convert_to_requisition(payload: ProductionPlannedOrderConvertPrPayload
 
     created, errors = [], []
     today = date.today()
-    from app.modules.sales.models.order_project import OrderProjectElement
+    from app.modules.projects.models.element import PmProjectElement
     for (cat, label, element_id), group in groups.items():
         for_project = labels[(cat, label, element_id)][1]
         qty_by_item: dict[int, float] = {}
@@ -480,7 +480,7 @@ async def convert_to_requisition(payload: ProductionPlannedOrderConvertPrPayload
         # Project-pegged demand: the PR is charged to the sales order (account
         # assignment) and every line names its vehicle / lot — Purchase's create
         # route validates the element against the order's project.
-        el = db.get(OrderProjectElement, element_id) if element_id else None
+        el = db.get(PmProjectElement, element_id) if element_id else None
         if el is not None:
             pr_payload.account_assignment = "sales_order"
             pr_payload.sales_order_id = el.project.sales_order_id

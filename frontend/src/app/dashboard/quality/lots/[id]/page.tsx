@@ -22,7 +22,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import LotPhotos from '@/components/quality/LotPhotos'
 import QualityRecordDoc from '@/components/quality/QualityRecordDoc'
 import { useCan } from '@/lib/permissions'
-import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
+import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 import { SheetIcon, sheetInput, sheetLabel, sheetHint, sheetBtn, Req, Optional, SHEET } from '@/components/shared/FormSheet'
 import Select from '@/components/shared/Select'
 
@@ -200,7 +200,7 @@ export default function LotDetailPage() {
             <Pill text={LOT_STATUS_LABELS[lot.status] || lot.status} hex={LOT_STATUS_HEX[lot.status]} />
             {lot.op_number && (
               <OrderProjectChip opNumber={lot.op_number} elementNo={lot.element_no} label={lot.element_label}
-                onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', lot, 'order_project_id')) : undefined} />
+                onClick={can('projects', 'all_projects', 'view') ? () => router.push(recordPath('/dashboard/projects', lot, 'order_project_id')) : undefined} />
             )}
             <span>·</span><span>Lot date {fmtDate(lot.lot_date)} ({lot.age_days} days old)</span>
           </>}

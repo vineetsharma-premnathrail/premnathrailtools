@@ -93,7 +93,7 @@ class HydSystemResponse(BaseModel):
 
     # Denormalized display fields, filled in by the route.
     project_label: str | None = None
-    # Order Project chip (OrderProjectChip): OP number, element no / label.
+    # Project chip: project code (order_project_number), unit no / label.
     order_project_number: str | None = None
     order_project_element_no: str | None = None
     order_project_element_label: str | None = None

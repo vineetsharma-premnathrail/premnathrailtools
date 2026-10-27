@@ -26,6 +26,9 @@ from app.modules.rnd.schemas.project import (
 )
 from app.modules.rnd.services import project_origin
 from app.modules.rnd.schemas.feasibility import RndFeasibilityStudyUpdate, RndFeasibilityStudyResponse
+from app.modules.accounts.models.internal_order import InternalOrder
+from app.modules.accounts.services import project_budget
+from app.modules.rnd.internal_order_link import is_auto_order
 from app.modules.rnd.service import (
     generate_project_number, hide_costs, project_actual_cost, prototype_bom_cost, check_stage_gate, user_names, STAGE_LABELS,
 )
@@ -121,6 +124,12 @@ def _to_response(db: Session, project: RndProject, schema=RndProjectResponse):
         RndPrototype.project_id == project.id, RndPrototype.is_deleted == False  # noqa: E712
     ).scalar() or 0
     resp.linked_requirements = _linked_requirements(db, project.id)
+    io = db.get(InternalOrder, project.internal_order_id) if project.internal_order_id else None
+    if io is not None:
+        resp.internal_order_code, resp.internal_order_name = io.code, io.name
+        if not is_auto_order(io):
+            resp.budget_from_finance = True
+            resp.budget_amount = io.budgeted_amount
     for key, val in project_origin.display(db, project).items():
         setattr(resp, key, val)
     return resp
@@ -199,6 +208,34 @@ async def source_options(
     return project_origin.source_options(db, user, kind, q)
 
 
+def _linkable_budget(db: Session, internal_order_id: int, keep_id: int | None = None) -> InternalOrder:
+    try:
+        return project_budget.check_linkable(db, internal_order_id, keep_id=keep_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.get("/budget-options")
+async def budget_options(
+    project_id: int | None = Query(None, description="The project being edited — its current budget stays listed"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("rnd")),
+):
+    """Finance budgets a project can link to: Open / In progress, not held by another project."""
+    from app.core.permission_registry import can_perform
+    if project_id is not None:
+        if not can_perform(user, "rnd", "projects", "edit"):
+            raise HTTPException(status_code=403, detail="You need R&D › Projects › Edit to change a project's budget. Ask an admin to grant it in Users › Permission Matrix.")
+        keep = _get_or_404(db, project_id, user).internal_order_id
+        if keep and is_auto_order(db.get(InternalOrder, keep)):
+            keep = None  # the order the system opened is not a Finance budget to pick
+    else:
+        if not can_perform(user, "rnd", "projects", "create"):
+            raise HTTPException(status_code=403, detail="You need R&D › Projects › Create to pick a budget for a new project. Ask an admin to grant it in Users › Permission Matrix.")
+        keep = None
+    return project_budget.budget_options(db, keep_id=keep)
+
+
 @router.post("", response_model=RndProjectResponse, dependencies=[Depends(_CAN_CREATE)])
 async def create_project(
     payload: RndProjectCreate,
@@ -216,6 +253,7 @@ async def create_project(
     _validate_dates(payload.start_date, payload.target_end_date)
     origin = project_origin.resolve(db, user, payload.model_dump(include=set(project_origin.ORIGIN_FIELDS)),
                                     creating=True, attachment_count=payload.attachment_count)
+    budget = _linkable_budget(db, payload.internal_order_id) if payload.internal_order_id else None
 
     project = RndProject(
         project_number=generate_project_number(db),
@@ -228,7 +266,9 @@ async def create_project(
         team_member_ids=[i for i in dict.fromkeys(payload.team_member_ids) if i not in lead_ids],
         start_date=payload.start_date,
         target_end_date=payload.target_end_date,
-        budget_amount=payload.budget_amount,
+        # A linked Finance budget carries its own amount; the typed one is for a project without it.
+        budget_amount=None if budget else payload.budget_amount,
+        internal_order_id=budget.id if budget else None,
         remarks=payload.remarks,
         stage="initiation",
         status="active",
@@ -315,6 +355,7 @@ async def update_project(project_id: int, payload: RndProjectUpdate, db: Session
         updates.update(project_origin.resolve(db, user, merged, creating=False))
     elif project.origin and "project_type" in updates:
         updates.pop("project_type")  # kept in sync from the origin
+    _apply_budget_change(db, project, updates)
 
     for field, val in updates.items():
         setattr(project, field, val)
@@ -327,6 +368,40 @@ async def update_project(project_id: int, payload: RndProjectUpdate, db: Session
     db.commit()
     db.refresh(project)
     return _to_response(db, project)
+
+
+def _apply_budget_change(db: Session, project: RndProject, updates: dict) -> None:
+    """Link / switch / unlink the Finance budget (pops internal_order_id from
+    `updates`). The typed amount only applies without a Finance budget."""
+    current = db.get(InternalOrder, project.internal_order_id) if project.internal_order_id else None
+    new_id = updates.pop("internal_order_id", project.internal_order_id)
+    if new_id != project.internal_order_id:
+        if current is not None:
+            try:
+                project_budget.check_unlinkable(db, current)
+            except ValueError as e:
+                raise HTTPException(status_code=409, detail=str(e))
+        new_io = _linkable_budget(db, new_id, keep_id=project.internal_order_id) if new_id else None
+        project.internal_order_id = new_io.id if new_io else None
+        if new_io is not None:
+            updates["budget_amount"] = None
+        current = new_io
+    if current is not None and not is_auto_order(current) and updates.get("budget_amount") is not None:
+        raise HTTPException(status_code=422, detail=f"The budget comes from Finance budget {current.code} — ask Finance to change the amount there, or unlink the budget first.")
+
+
+@router.get("/{project_id}/budget")
+async def project_budget_spend(project_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("rnd"))):
+    """Budget, committed (open POs), actual (posted vouchers) and available for the project."""
+    project = _get_or_404(db, project_id, user=user)
+    if hide_costs(user):  # same switch as prototype costs: R&D › Prototypes › BOM costs
+        return {"linked": bool(project.internal_order_id), "hidden": True, "summary": None, "commitments": [], "recent_lines": [], "line_count": 0}
+    out = project_budget.budget_spend(db, project.internal_order_id, ledger_detail=project_budget.can_see_ledger(user))
+    if not out["linked"] and project.budget_amount is not None:
+        # Typed amount, nothing charged yet: Finance opens the order on the first purchase.
+        out["summary"] = {"budgeted_amount": project.budget_amount, "actual_amount": 0.0, "commitment_amount": 0.0,
+                          "available_amount": project.budget_amount, "consumed_pct": 0.0, "code": None, "name": None}
+    return out
 
 
 @router.post("/{project_id}/stage", response_model=RndProjectResponse, dependencies=[Depends(_CAN_EDIT)])

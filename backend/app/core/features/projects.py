@@ -17,6 +17,29 @@ Management keep working their own items under the record rules alone."""
 from app.core.assignee_rules import register_pickers
 from app.core.permission_registry import _feature, register_features
 
+# Service Projects (machine register), moved from Service & Commissioning on 2026-10-26.
+register_features(
+    "projects", "service_projects",
+    _feature("technical_specs", "Technical specs & operator", "subtab", {"view": "view"},
+             "The Technical Specs tab of a machine: operator details, software version, options and engineering notes."),
+    _feature("client_contacts", "Client & site contacts", "section", {"view": "view"},
+             "The Client & Site block of a machine's Overview: customer contact names, phones, e-mails, GST and site address."),
+    _feature("warranty", "Warranty & AMC", "section", {"view": "view"},
+             "The Warranty & AMC block and the warranty status tile of a machine (warranty dates, terms, extended warranty, AMC)."),
+    _feature("service_history", "Maintenance history", "subtab", {"view": "view"},
+             "The Maintenance History tab of a machine: the service requests raised on it (opening one still needs Service Requests › View)."),
+    _feature("production", "Production work orders", "subtab", {"view": "view"},
+             "The Production tab of a machine: the production work orders that built it."),
+    _feature("documents", "Uploaded documents", "subtab", {
+        "view": "view", "create": "edit", "edit": "edit", "delete": "delete",
+    }, "Uploaded files on a machine (Documents tab): see / open, upload, change who a private file is shared with, delete (own uploads only)."),
+    _feature("letters", "Delivery letters & certificates", "action", {
+        "view": "view", "create": "edit", "edit": "edit", "delete": "delete", "print": "print",
+    }, "Created documents on a machine (cover letter, delivery confirmation, guarantee certificate): see, create, edit, delete (own only), and download / edit in Word."),
+    _feature("audit_trail", "Audit trail", "subtab", {"view": "view"},
+             "The Audit Trail tab of a machine: who registered, edited, approved or uploaded what, and when."),
+)
+
 register_features(
     "projects", "overview",
     _feature("milestones", "Milestones", "subtab", {

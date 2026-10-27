@@ -116,10 +116,10 @@ const config: TourConfig = {
     },
     {
       target: 'org-pin',
-      title: 'PIN Code',
-      whatToEnter: '6-digit Indian postal code.',
-      validExample: '110001',
-      invalidExample: '1100 (too short) or letters mixed in',
+      title: 'PIN Code / ZIP Code',
+      whatToEnter: 'Domestic: the 6-digit Indian PIN code. International: the ZIP / postal code of that country (letters and spaces allowed).',
+      validExample: '110001 (India), 10001 (USA), SW1A 1AA (UK)',
+      invalidExample: '1100 for an Indian address (PIN needs 6 digits)',
     },
     {
       target: 'org-phone',
@@ -160,13 +160,15 @@ const config: TourConfig = {
       target: 'contact-designation',
       title: 'Designation',
       required: false,
-      validExample: 'DEN, Purchase Head, DGM',
+      whatToEnter: 'Pick from the list (type to filter). Not on the list? Pick "Other" and type it in the box below.',
+      validExample: 'Purchase Head, General Manager (GM), or Other → DEN',
     },
     {
       target: 'contact-department',
       title: 'Department',
       required: false,
-      validExample: 'Procurement, Engineering',
+      whatToEnter: 'Pick from the list (type to filter). Not on the list? Pick "Other" and type it in the box below.',
+      validExample: 'Purchase / Procurement, or Other → Stores',
     },
     {
       target: 'contact-mobile',

@@ -15,21 +15,21 @@ export const ENTRIES: TourEntry[] = [
     pattern: /^\/dashboard\/erp$/,
     load: () => import('../configs/erpDashboard'),
   },
-  // Projects (machines) — specific routes before the list.
+  // Service Projects (machines; under Project Management since 2026-10-26) — specific routes before the list.
   {
-    pattern: /^\/dashboard\/erp\/projects\/new$/,
+    pattern: /^\/dashboard\/projects\/service-projects\/new$/,
     load: () => import('../configs/erpProjectForm'),
   },
   {
-    pattern: /^\/dashboard\/erp\/projects\/[A-Za-z0-9_-]{19}\/edit$/,
+    pattern: /^\/dashboard\/projects\/service-projects\/[A-Za-z0-9_-]{19}\/edit$/,
     load: () => import('../configs/erpProjectEditForm'),
   },
   {
-    pattern: /^\/dashboard\/erp\/projects\/[A-Za-z0-9_-]{19}$/,
+    pattern: /^\/dashboard\/projects\/service-projects\/[A-Za-z0-9_-]{19}$/,
     load: loadProjectDetailOrLetter,
   },
   {
-    pattern: /^\/dashboard\/erp\/projects$/,
+    pattern: /^\/dashboard\/projects\/service-projects$/,
     load: () => import('../configs/erpProjectsList'),
   },
   // Service requests — specific routes before the list.

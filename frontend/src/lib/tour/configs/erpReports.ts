@@ -13,7 +13,7 @@ const config: TourConfig = {
     {
       target: 'rep-range',
       title: 'Period and comparison',
-      purpose: 'Pick This month, Last month, This quarter, This financial year, Last 30 days or your own dates. Switch on "Compare with previous period" to see on each number how much it went up or down. Pages about work that is open right now show "As of today".',
+      purpose: 'Open the period dropdown and pick This month, Last month, This quarter, This financial year, Last 30 days or Custom range for your own dates. Switch on "Compare with previous period" to see on each number how much it went up or down. Pages about work that is open right now show "As of today".',
     },
     {
       target: 'rep-slicers',

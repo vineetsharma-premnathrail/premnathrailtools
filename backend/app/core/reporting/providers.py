@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import logging
 
-PROVIDERS = ["app.modules.erp.reporting"]
+PROVIDERS = ["app.modules.erp.reporting", "app.modules.crm.reporting"]
 
 _loaded = False
 log = logging.getLogger(__name__)

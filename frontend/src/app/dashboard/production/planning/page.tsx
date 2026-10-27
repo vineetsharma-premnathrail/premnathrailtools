@@ -64,7 +64,7 @@ export default function ProductionPlanningPage() {
       quantity: String(Math.ceil(r.shortage_qty)),
       remarks: `Material shortage for Production work order(s) ${r.orders.map((o) => o.wo_number).join(', ')}.`,
     })
-    // Every short order works for the same Order Project vehicle / lot → the PR line is for it too.
+    // Every short order works for the same Project unit (vehicle / lot) → the PR line is for it too.
     const elements = new Set(r.orders.map((o) => o.order_project_element_id ?? null))
     const only = r.orders[0]
     if (elements.size === 1 && only?.order_project_element_id && only.order_project_id) {

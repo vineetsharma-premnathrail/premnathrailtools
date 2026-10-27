@@ -34,6 +34,11 @@ class P2PRequestItem(Base, TimestampMixin, OrderProjectLineMixin):
     project_inhouse: Mapped[str | None] = mapped_column(String(100), nullable=True)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     ship_to: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Buyer of this line (2026-10-27): picked from the line's Item Master item
+    # type (Procurement › Settings › Buyer for each item type). One requisition
+    # can carry lines for different buyers. Null on lines raised before it and
+    # on item types with no buyer set; the header's assigned buyer then applies.
+    buyer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
 
     # Per-item buyer decision after a manual store-stock check on an approved
     # PR — "stock_issued" items are excluded from PO creation (see
@@ -54,16 +59,16 @@ class P2PRequestItem(Base, TimestampMixin, OrderProjectLineMixin):
     issued_qty: Mapped[float | None] = mapped_column(Float, nullable=True)
     material_issue_id: Mapped[int | None] = mapped_column(ForeignKey("store_material_issues.id"), nullable=True)
 
-    # Order Project link (2026-10-17): the vehicle / lot of the build-to-order
+    # PM project link (2026-10-17): the vehicle / lot of the build-to-order
     # project this line is bought for — required when the PR is charged to an order
     # that has a project (p2p/order_project_links.py).
     order_project_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("sales_order_projects.id", ondelete="SET NULL"), nullable=True, index=True)
+        Integer, ForeignKey("pm_projects.id", ondelete="SET NULL"), nullable=True, index=True)
     order_project_element_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("sales_order_project_elements.id", ondelete="SET NULL"), nullable=True, index=True)
+        Integer, ForeignKey("pm_project_elements.id", ondelete="SET NULL"), nullable=True, index=True)
 
     store_item = relationship("StoreItem")
-    order_project_element = relationship("OrderProjectElement", viewonly=True, lazy="select")
+    order_project_element = relationship("PmProjectElement", viewonly=True, lazy="select")
     p2p_request: Mapped["P2PRequest"] = relationship("P2PRequest", back_populates="items")
     attachments: Mapped[list["P2PRequestAttachment"]] = relationship(
         "P2PRequestAttachment", back_populates="item", cascade="all, delete-orphan"

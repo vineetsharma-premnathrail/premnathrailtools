@@ -37,8 +37,8 @@ from app.modules.production.service import (
     check_rrv_link, rrv_log,
 )
 from app.modules.production.models.rrv_build import ProductionRrvBuild
-from app.modules.production import order_project_links  # also registers the Order Project hooks / provider
-from app.modules.sales.models.order_project import OrderProjectElement
+from app.modules.production import order_project_links  # also registers the project hooks / provider
+from app.modules.projects.models.element import PmProjectElement
 from app.modules.quality.models.inspection import QualityInspection
 from app.modules.quality.models.inspection_lot import QualityInspectionLot
 from app.modules.quality.services import production_gates
@@ -95,7 +95,7 @@ def _to_responses(db: Session, orders: list[ProductionWorkOrder], detail: bool =
     sales_labels = routing_control.sales_order_labels(db, orders)
     parents = _names(db, ProductionWorkOrder, {o.parent_work_order_id for o in orders}, lambda w: w.wo_number)
     child_counts = routing_control.child_counts(db, [o.id for o in orders])
-    element_rows = {el.id: el for el in db.query(OrderProjectElement).filter(OrderProjectElement.id.in_(
+    element_rows = {el.id: el for el in db.query(PmProjectElement).filter(PmProjectElement.id.in_(
         {o.order_project_element_id for o in orders if o.order_project_element_id} or {-1})).all()}
 
     out = []
@@ -121,7 +121,7 @@ def _to_responses(db: Session, orders: list[ProductionWorkOrder], detail: bool =
         resp.child_count = child_counts.get(wo.id, 0)
         el = element_rows.get(wo.order_project_element_id)
         if el is not None:
-            resp.order_project_number = el.project.op_number
+            resp.order_project_number = el.project.project_code
             resp.order_project_element_no, resp.order_project_element_label = el.element_no, el.label
 
         if detail:
@@ -332,8 +332,8 @@ async def create_work_order(
         if build_el is not None:
             if data.get("order_project_element_id") and data["order_project_element_id"] != build_el.id:
                 raise HTTPException(status_code=409, detail=f"{build.build_number} builds {build_el.element_no} ({build_el.label}), so its work "
-                                                            "orders work for that element too. Clear the Order Project field to use the build's.")
-            data["order_project_id"], data["order_project_element_id"] = build_el.order_project_id, build_el.id
+                                                            "orders work for that unit too. Clear the project unit field to use the build's.")
+            data["order_project_id"], data["order_project_element_id"] = build_el.project_id, build_el.id
     _validate_refs(db, data, user)
     _validate_dates(payload.planned_start_date, payload.planned_end_date)
     try:

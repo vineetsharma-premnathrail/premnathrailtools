@@ -69,14 +69,15 @@ export default function SalesDashboardPage() {
           {!data?.rows_at_risk.length ? <p style={{ fontSize: 13, color: '#57534e', margin: 0 }}>Every open vehicle is on track. Check the delivery dates on <Link href="/dashboard/sales/delivery" style={{ color: '#c2410c', fontWeight: 600 }}>Delivery</Link> to stay ahead.</p> : (
             <div style={{ overflow: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
-                <thead><tr>{['Order', 'Vehicle', 'Due', 'Build', 'Stage', 'Risk', 'LD'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={data.rows_at_risk.length} />}</th>)}</tr></thead>
+                <thead><tr>{['Order', 'Vehicle', 'Due', 'Project', 'Stage', 'Risk', 'LD'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={data.rows_at_risk.length} />}</th>)}</tr></thead>
                 <tbody>
                   {data.rows_at_risk.map((r) => (
                     <tr key={r.id} onClick={() => router.push(`${recordPath('/dashboard/sales/orders', r, 'so_id')}?tab=schedule`)} style={{ cursor: 'pointer' }}>
                       <td style={{ ...tdStyle, fontWeight: 600, whiteSpace: 'nowrap' }}>{r.so_display}</td>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>L{r.line_number}/{r.sequence}</td>
                       <td style={tdStyle}>{formatDate(r.current_delivery_date)}</td>
-                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{r.build_number || <span style={{ color: TEXT.muted }}>none</span>}</td>
+                      {/* The project unit — vehicle / lot (PEW-80/01) — the project number every department uses, not an internal build id. */}
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{r.project_element_no || r.project_number || <span style={{ color: TEXT.muted }}>not linked</span>}</td>
                       <td style={tdStyle}>{r.build_stage || ROW_STATUS_LABELS[r.status]}</td>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{r.risk && <Pill label={r.risk === 'overdue' ? 'Overdue' : 'At risk'} hex={RISK_HEX[r.risk]} />}</td>
                       <td style={tdStyle}>{formatINR((r.ld_amount || 0) + (r.ld_forecast_amount || 0))}</td>

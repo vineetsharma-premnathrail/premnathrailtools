@@ -15,6 +15,7 @@ from app.modules.main.routes.auth import get_current_user
 from app.modules.erp.models.project import Project
 from app.modules.p2p.models.p2p_request import (
     P2PRequest, P2P_REQUEST_STATUSES, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES, resolve_auto_buyer_id,
+    LINE_CATEGORY, resolve_line_buyer_id,
     PO_APPROVAL_ROLE_SETS, P2P_ROLE_FLAGS, P2P_ROLE_LABELS, P2P_PO_APPROVER_FLAGS, P2P_PROJECT_TYPES,
     P2P_EDITABLE_STATUSES, P2P_PURPOSES,
 )
@@ -293,9 +294,9 @@ def _to_response(db: Session, pr: P2PRequest, *, include_po: bool = False, user:
         from app.modules.p2p.account_assignment import rnd_project_label
         resp.rnd_project_label = rnd_project_label(db, pr)
     if pr.order_project_id:
-        from app.modules.sales.models.order_project import OrderProject
-        op = db.get(OrderProject, pr.order_project_id)
-        resp.order_project_number = op.op_number if op is not None else None
+        from app.modules.projects.models.project import PmProject
+        op = db.get(PmProject, pr.order_project_id)
+        resp.order_project_number = op.project_code if op is not None else None
     resp.approvals = [
         P2PRequestApprovalResponse.model_validate(a).model_copy(update={"role_label": P2P_ROLE_LABELS.get(a.role, a.role)})
         for a in pr.approvals
@@ -348,13 +349,16 @@ def _to_response(db: Session, pr: P2PRequest, *, include_po: bool = False, user:
     resp.pending_quantity = pr.pending_quantity
     resp.pending_approval_roles = pr.pending_approval_roles
     resp.pending_po_approval_roles = pr.pending_po_approval_roles
-    user_ids = {pr.requested_by_id, pr.assigned_buyer_id} - {None}
+    user_ids = {pr.requested_by_id, pr.assigned_buyer_id, *(item.buyer_id for item in pr.items)} - {None}
     if user_ids:
         users = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()}
         if pr.requested_by_id and pr.requested_by_id in users:
             resp.requested_by_name = users[pr.requested_by_id].name or users[pr.requested_by_id].email
         if pr.assigned_buyer_id and pr.assigned_buyer_id in users:
             resp.assigned_buyer_name = users[pr.assigned_buyer_id].name or users[pr.assigned_buyer_id].email
+        for item_resp in resp.items:
+            if item_resp.buyer_id and item_resp.buyer_id in users:
+                item_resp.buyer_name = users[item_resp.buyer_id].name or users[item_resp.buyer_id].email
 
     location_ids = {item.issued_from_location_id for item in pr.items} - {None}
     if location_ids:
@@ -421,6 +425,9 @@ def _check_view_access(pr: P2PRequest, user: User) -> None:
     allowed = {pr.requested_by_id, pr.approver_id, pr.project_head_id, pr.plant_head_id}
     allowed.update(a.approver_id for a in pr.approvals)
     allowed.update(a.approver_id for a in pr.po_approvers)
+    # Its buyers: the main one and the buyer of any line (2026-10-27).
+    allowed.add(pr.assigned_buyer_id)
+    allowed.update(row.buyer_id for row in pr.items)
     if user.id in allowed:
         return
     # Approvers of the requisition or its PO in the approval engine — and
@@ -556,7 +563,7 @@ async def get_meta(db: Session = Depends(get_db), _user: User = Depends(_request
     from app.modules.store.routes.uoms import uom_options
     rules = pr_purpose.resolve_purpose_rules(db)  # defaults + Procurement › Settings › Purpose rules
     return {
-        "categories": [{"code": k, "label": v} for k, v in P2P_CATEGORIES.items()],
+        "categories": [{"code": k, "label": v} for k, v in P2P_CATEGORIES.items() if k != LINE_CATEGORY],
         "requirement_types": list(P2P_REQUIREMENT_TYPES),
         # Each purpose with the categories it offers and the pre-filled
         # category / requirement type (p2p/purpose.py PURPOSE_FORM).
@@ -585,8 +592,11 @@ async def list_projects_for_picker(
     """A lightweight project picker for the PR creation form — every
     requester (any department, not just `erp` app holders) needs to be able
     to search existing Service Module projects, so this deliberately bypasses
-    `require_app_access("erp")` and only requires this module's own access."""
-    query = db.query(Project).filter(Project.is_deleted == False)  # noqa: E712
+    `require_app_access("erp")` and only requires this module's own access.
+    Only machines still being built (stage before Dispatched, owner 2026-10-27):
+    a dispatched / delivered machine is Service's, not a project to buy for."""
+    from app.modules.projects.lifecycle import SERVICEABLE_STAGES
+    query = db.query(Project).filter(Project.is_deleted == False, Project.lifecycle_stage.notin_(SERVICEABLE_STAGES))  # noqa: E712
     if search:
         like = f"%{search}%"
         query = query.filter(
@@ -613,19 +623,21 @@ async def create_p2p_request(
     draft = payload.save_as_draft
     lines = _validate_pr_payload(db, payload, draft=draft)
 
-    # Buyer is auto-assigned from the category — no manual "Assign Buyer"
-    # step needed once the PR is raised.
-    auto_buyer_id = resolve_auto_buyer_id(db, payload.category_code)
+    # The PR form sends no category (2026-10-27): each line's item type picks
+    # its buyer (_sync_pr_lines / _assign_line_buyers). A category sent by an
+    # internal caller still picks the buyer of the whole requisition, as before.
+    category_code = payload.category_code or LINE_CATEGORY
+    auto_buyer_id = resolve_auto_buyer_id(db, category_code)
 
     pr = P2PRequest(
-        p2p_number=generate_p2p_number(db, payload.category_code),
-        category_code=payload.category_code,
+        p2p_number=generate_p2p_number(db, category_code),
+        category_code=category_code,
         project_label=payload.project_label,
         purpose=payload.purpose,
         project_type=pr_purpose.project_type_for(payload.purpose) if payload.purpose else payload.project_type,
         approval_scheme=ENGINE_SCHEME,
         required_date=payload.required_date,
-        requirement_type=payload.requirement_type,
+        requirement_type=_requirement_type(db, payload),
         request_date=date.today(),
         department=user.department,
         requested_by_id=user.id,
@@ -646,6 +658,7 @@ async def create_p2p_request(
         # A line refused (e.g. its Order Project vehicle) — nothing is saved.
         db.rollback()
         raise
+    _assign_line_buyers(pr)
 
     if draft:
         _write_audit(db, pr.id, "draft_saved", user, summary=f"{user.name or user.email} saved P2P request {pr.p2p_number} as a draft.",
@@ -680,13 +693,39 @@ def _default_label(pr: P2PRequest) -> None:
         pr.project_label = P2P_PURPOSES.get(pr.purpose)
 
 
+def _requirement_type(db: Session, payload: P2PRequestCreate) -> str | None:
+    """The requirement type sent, else the purpose's usual one — the PR form no
+    longer asks for it (2026-10-27): the lines' item types say what is bought."""
+    if payload.requirement_type:
+        return payload.requirement_type
+    rules = pr_purpose.resolve_purpose_rules(db).get(payload.purpose or "")
+    return rules["requirement_type"] if rules else None
+
+
+def _assign_line_buyers(pr: P2PRequest) -> None:
+    """A requisition with no category of its own (LINE_CATEGORY) is assigned to
+    the buyer of its first line that has one, so lists, data scope and the RFQ
+    keep one main buyer; each line still shows and notifies its own buyer.
+    Never clears a buyer, and once approved (Purchase may have used Assign
+    Buyer) an existing main buyer is kept."""
+    if pr.category_code != LINE_CATEGORY:
+        return
+    lead = next((row.buyer_id for row in pr.items if row.buyer_id), None)
+    if lead is None or lead == pr.assigned_buyer_id:
+        return
+    if pr.assigned_buyer_id and pr.status not in ("draft", "submitted", "returned"):
+        return
+    pr.assigned_buyer_id = lead
+    pr.assignment_date = date.today()
+
+
 def _validate_pr_payload(db: Session, payload: P2PRequestCreate, *, draft: bool, check_category: bool = True) -> list[tuple]:
     """Check a create/edit payload and return its lines as (payload line,
     Item Master row). A draft needs only a valid category and, per line it
     keeps, a real item and quantity — lines with no item picked yet are
     left out. Submitting needs everything."""
-    if payload.category_code not in P2P_CATEGORIES:
-        raise HTTPException(status_code=400, detail=f"Pick a valid Purchase Requisition category (got '{payload.category_code or 'none'}').")
+    if payload.category_code is not None and payload.category_code not in P2P_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Pick a valid Purchase Requisition category (got '{payload.category_code}').")
     if payload.project_type and payload.project_type not in P2P_PROJECT_TYPES:
         raise HTTPException(status_code=400, detail="Project Type must be 'Existing project' or 'New project'.")
     if payload.purpose and payload.purpose not in P2P_PURPOSES:
@@ -725,7 +764,9 @@ def _validate_pr_payload(db: Session, payload: P2PRequestCreate, *, draft: bool,
         # The category can't change once submitted (it is in the number), so
         # only a new / draft requisition's category is held to its purpose.
         if check_category:
-            problems += [p for p in [pr_purpose.category_problem(payload.purpose, payload.category_code, db=db),
+            # No category sent = the lines decide what is bought (nothing to check).
+            problems += [p for p in [pr_purpose.category_problem(payload.purpose, payload.category_code, db=db)
+                                     if payload.category_code and payload.category_code != LINE_CATEGORY else None,
                                      pr_purpose.requirement_type_problem(payload.purpose, payload.requirement_type, db=db)] if p]
         if problems:
             raise HTTPException(status_code=400, detail=" ".join(problems))
@@ -755,6 +796,9 @@ def _sync_pr_lines(db: Session, pr: P2PRequest, lines: list[tuple], *, draft: bo
         if row is None:
             row = P2PRequestItem(p2p_request_id=pr.id)
             pr.items.append(row)
+        if pr.category_code == LINE_CATEGORY and (row.buyer_id is None or row.store_item_id != master.id):
+            # A new line, or its item changed: the buyer of the item's type.
+            row.buyer_id = resolve_line_buyer_id(db, master.item_type)
         for field, value in item_snapshot(master).items():
             setattr(row, field, value)
         # Make comes from the Item Master only — a different brand is a
@@ -827,7 +871,9 @@ async def edit_p2p_request(
         _ensure_pr_action(user, "create" if pr.status == "draft" else "submit")
     lines = _validate_pr_payload(db, payload, draft=draft, check_category=pr.status == "draft")
 
-    if payload.category_code != pr.category_code:
+    # The form no longer sends a category (2026-10-27): the requisition keeps
+    # its own; only an internal caller that names a different one renumbers it.
+    if payload.category_code and payload.category_code != pr.category_code:
         # The category is part of the PR number; once approvers have seen the
         # number it stays — only a draft is renumbered.
         if pr.status != "draft":
@@ -838,6 +884,8 @@ async def edit_p2p_request(
         pr.category_code = payload.category_code
         pr.assigned_buyer_id = resolve_auto_buyer_id(db, payload.category_code)
         pr.assignment_date = date.today() if pr.assigned_buyer_id else None
+        for row in pr.items:  # a category-based requisition has no line buyers
+            row.buyer_id = None
 
     old_status = pr.status
     if old_status == "submitted":
@@ -849,11 +897,14 @@ async def edit_p2p_request(
 
     pr.project_label = payload.project_label
     _apply_account_assignment(db, pr, payload)
+    old_purpose = pr.purpose
     pr.purpose = payload.purpose
     pr.project_type = pr_purpose.project_type_for(payload.purpose) if payload.purpose else payload.project_type
     _default_label(pr)
     pr.required_date = payload.required_date
-    pr.requirement_type = payload.requirement_type
+    # Not asked on the form any more: kept while the purpose is unchanged, else the new purpose's usual one.
+    pr.requirement_type = (payload.requirement_type or (pr.requirement_type if payload.purpose == old_purpose else None)
+                           or _requirement_type(db, payload))
     pr.priority = payload.priority
     pr.remarks = payload.remarks
     try:
@@ -861,6 +912,7 @@ async def edit_p2p_request(
     except HTTPException:
         db.rollback()
         raise
+    _assign_line_buyers(pr)
 
     who = user.name or user.email
     if draft:
@@ -974,6 +1026,9 @@ async def list_p2p_requests(
                 | P2PRequest.approvals.any(P2PRequestApproval.approver_id == user.id)
                 | P2PRequest.po_approvers.any(P2PRequestPOApprover.approver_id == user.id)
                 | P2PRequest.id.in_(p2p_approvals.engine_party_pr_ids(user))
+                # Its buyers: the main one and the buyer of any line (2026-10-27).
+                | (P2PRequest.assigned_buyer_id == user.id)
+                | P2PRequest.items.any(P2PRequestItem.buyer_id == user.id)
             )
     # Drafts are private to whoever raised them — nobody else's list shows them.
     query = query.filter((P2PRequest.status != "draft") | (P2PRequest.requested_by_id == user.id))
@@ -1419,6 +1474,8 @@ def _cancel_linked_pos(db: Session, pr: P2PRequest, user: User, why: str) -> lis
     for po in pos:
         old = po.status
         po.status = "cancelled"
+        from app.modules.p2p.pre_po import reopen_receipt_for_cancelled_po
+        reopen_receipt_for_cancelled_po(db, po, user)
         _write_audit(db, pr.id, "po_cancelled", user,
                      summary=f"PO '{po.po_number}' cancelled (was {old}) because {why}",
                      old_status=old, new_status="cancelled")
@@ -1735,6 +1792,17 @@ def _route_lines_on_approval(db: Session, pr: P2PRequest, user: User) -> None:
             message=message,
             notification_type="p2p_stock_routing", entity_type="p2p_request", entity_id=pr.id,
         )
+    # The other buyers of its lines (2026-10-27): each is told which lines are theirs.
+    for buyer_id in sorted({row.buyer_id for row in pr.items if row.buyer_id} - {pr.assigned_buyer_id}):
+        mine = [row.item_name for row in pr.items if row.buyer_id == buyer_id]
+        notify_user(
+            db, user_id=buyer_id,
+            title="PR Approved — Lines For You",
+            message=(f"PR '{pr.p2p_number}' is approved. {summary}. You are the buyer of {len(mine)} line(s): "
+                     f"{', '.join(mine[:5])}{' and more' if len(mine) > 5 else ''}. "
+                     f"The RFQ for the requisition is raised by its main buyer ({p2p_notify._buyer_name(db, pr)})."),
+            notification_type="p2p_stock_routing", entity_type="p2p_request", entity_id=pr.id,
+        )
 
 
 # A requisition whose lines can't be checked / issued from stock / sent to
@@ -1978,7 +2046,8 @@ def _check_draft_complete(pr: P2PRequest, db: Session) -> None:
                 resolve(db, {"account_assignment": "rnd_project", "rnd_project_id": pr.rnd_project_id})
             except ValueError as e:
                 problems.append(str(e))
-        problems += [p for p in [pr_purpose.category_problem(pr.purpose, pr.category_code, db=db)] if p]
+        if pr.category_code != LINE_CATEGORY:  # no category of its own: the lines decide what is bought
+            problems += [p for p in [pr_purpose.category_problem(pr.purpose, pr.category_code, db=db)] if p]
         if problems:
             raise HTTPException(status_code=400, detail=f"{pr.p2p_number} can't be submitted yet — {' '.join(problems)} Click Edit to complete the draft.")
     else:

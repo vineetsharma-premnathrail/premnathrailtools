@@ -29,7 +29,7 @@ import {
 import { useCan } from '@/lib/permissions'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
-import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
+import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 
 const WORKING = ['draft', 'in_progress', 'handed_over']
 const PHASES = ['design', 'procurement', 'build', 'test_qc', 'handover'] as const
@@ -300,9 +300,9 @@ function JobDetailView() {
                 <div data-tour="elec-job-details-rrv">
                   <DetailGroup title="RRV & Job">
                     {job.order_project_number && (
-                      <DetailRow label="Order Project / Vehicle">
+                      <DetailRow label="Project / Unit">
                         <OrderProjectChip opNumber={job.order_project_number} elementNo={job.order_project_element_no} label={job.order_project_element_label}
-                          onClick={() => router.push(recordPath('/dashboard/projects/order-projects', job, 'order_project_id'))} />
+                          onClick={() => router.push(recordPath('/dashboard/projects', job, 'order_project_id'))} />
                       </DetailRow>
                     )}
                     <DetailRow label="RRV / Machine (ERP)">{job.project_label}</DetailRow>

@@ -456,9 +456,16 @@ _RRV_WO_DONE = ("completed", "closed")
 _RRV_PASSED_INSPECTION = ("passed", "conditionally_passed")
 
 
-def generate_rrv_build_number(db: Session) -> str:
-    """RRV-[YEAR]-[NUMBER], sequence scoped per year."""
-    return _next_number(db, ProductionRrvBuild.build_number, f"RRV-{date.today().year}-")
+def generate_rrv_build_number(db: Session, element=None) -> str:
+    """A vehicle is known by its project number everywhere (owner 2026-10-27), never
+    by a separate RRV-YYYY-NNNN: a build for a project vehicle takes that
+    vehicle's number (PEW-80/01); a build made by hand takes the next number of the
+    company's PEW series (core/pew_numbers.py), e.g. PEW-91. Builds raised before
+    keep their RRV-… number."""
+    if element is not None and element.element_no:
+        return element.element_no
+    from app.core.pew_numbers import next_pew_number
+    return next_pew_number(db)
 
 
 def generate_rework_number(db: Session) -> str:

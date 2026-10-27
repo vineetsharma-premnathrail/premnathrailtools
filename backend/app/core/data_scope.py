@@ -58,13 +58,15 @@ class ScopedModel:
     entity_type: str | None = None  # approval-engine entity_type, so approvers see what they approve
     label: str = "record"
     extra: dict = field(default_factory=dict)
+    # Shared master data: visible to everyone who can open the module, whatever their scope.
+    shared: bool = False
 
 
 _REGISTRY: dict[type, ScopedModel] = {}
 
 
 def register_scoped(model: type, module_key: str, *, owner=(), assigned=(), branch=None, department=None,
-                    entity_type=None, label: str | None = None) -> None:
+                    entity_type=None, label: str | None = None, shared: bool = False) -> None:
     """Declare how a module's record table maps onto data scopes. `owner`
     columns decide "own" (and department/plant through the owner's user row
     when the record has no plant column of its own)."""
@@ -74,7 +76,7 @@ def register_scoped(model: type, module_key: str, *, owner=(), assigned=(), bran
         assigned = (assigned,)
     _REGISTRY[model] = ScopedModel(
         model=model, module_key=module_key, owner=tuple(owner), assigned=tuple(assigned), branch=branch,
-        department=department, entity_type=entity_type, label=label or model.__name__,
+        department=department, entity_type=entity_type, label=label or model.__name__, shared=shared,
     )
 
 
@@ -178,6 +180,8 @@ def scope_filter(db: Session, user, model: type):
     spec = _REGISTRY.get(model)
     if spec is None:
         raise RuntimeError(f"{model.__name__} is not registered with core.data_scope.register_scoped")
+    if spec.shared:
+        return None
     level = user_scope(user, spec.module_key)
     if level == "organization":
         return None

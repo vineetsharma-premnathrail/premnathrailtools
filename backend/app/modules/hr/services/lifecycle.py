@@ -35,6 +35,7 @@ from app.modules.organization.models.branch import Branch
 from app.modules.organization.models.department import Department
 from app.modules.organization.services.department_heads import is_same_unit
 from app.modules.p2p.models.p2p_request import P2PRequest, P2P_CATEGORY_AUTO_BUYERS
+from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.utils.notifications import broadcast_notification, notify_user
 
 MODULE_KEY = "hr"
@@ -366,7 +367,9 @@ def compute_impact(db: Session, event: HrLifecycleEvent) -> dict[str, Any]:
     p2p_req_names = _names(db, {pr.requested_by_id for pr, _ in p2p if pr.requested_by_id})
     buyer_rows = (
         db.query(P2PRequest)
-        .filter(P2PRequest.assigned_buyer_id == uid, P2PRequest.status.notin_(P2P_CLOSED_STATUSES))
+        .filter(P2PRequest.status.notin_(P2P_CLOSED_STATUSES),
+                (P2PRequest.assigned_buyer_id == uid)  # or the buyer of one of its lines (2026-10-27)
+                | P2PRequest.id.in_(db.query(P2PRequestItem.p2p_request_id).filter(P2PRequestItem.buyer_id == uid)))
         .order_by(P2PRequest.id).all()
     )
 
@@ -939,6 +942,16 @@ def complete_exit(db: Session, event: HrLifecycleEvent, payload, actor: User) ->
             )
             pr.assigned_buyer_id = handover.id
             p2p_changes.append(f"{pr.p2p_number}: buyer → {user_label(handover)}")
+        # Lines bought by the leaver on open requisitions (line buyers, 2026-10-27).
+        for line, pr in (db.query(P2PRequestItem, P2PRequest).join(P2PRequest, P2PRequest.id == P2PRequestItem.p2p_request_id)
+                         .filter(P2PRequestItem.buyer_id == user.id, P2PRequest.status.notin_(P2P_CLOSED_STATUSES)).all()):
+            record_audit(
+                db, entity_type="p2p_request", entity_id=pr.id, action="update", module_key=MODULE_KEY,
+                summary=f"Buyer of line {line.item_name} on {pr.p2p_number} reassigned from leaver {user_label(user)} to {user_label(handover)} ({event.event_no})",
+                old_value={"line_id": line.id, "buyer_id": user.id}, new_value={"line_id": line.id, "buyer_id": handover.id}, user_id=actor.id,
+            )
+            line.buyer_id = handover.id
+            p2p_changes.append(f"{pr.p2p_number} line {line.item_name}: buyer → {user_label(handover)}")
     if p2p_changes:
         changes.append(f"{len(p2p_changes)} P2P approval/buyer assignment(s) reassigned")
     summary["p2p"] = p2p_changes

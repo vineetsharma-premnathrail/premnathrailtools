@@ -23,6 +23,7 @@ import { useCan } from '@/lib/permissions'
 import { recordHref, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { RowCount, StatChip } from '@/components/shared/ui'
+import FilterMenu from '@/components/shared/FilterMenu'
 
 const PINNED_ORGS_KEY = 'crm_pinned_org_ids'
 
@@ -252,6 +253,18 @@ export default function OrganizationsPage() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search name, type, zone, city, state..."
             style={{ ...inputStyle, flex: '1 1 260px', minWidth: 200, width: 'auto' }}
+          />
+          <FilterMenu
+            tourId="orgs-filter-btn"
+            fields={([
+              ['org_scope', 'Scope'], ['org_type', 'Type'], ['railway_zone', 'Railway Zone'],
+              ['city', 'City'], ['state', 'State'], ['created_by_name', 'Created By'],
+            ] as [FilterKey, string][]).map(([key, label]) => ({
+              key, label, value: filters[key],
+              options: filterOptions[key].map((v) => ({ value: v, label: key === 'org_scope' ? scopeLabel(v) : v })),
+            }))}
+            onChange={(key, v) => setFilter(key as FilterKey, v)}
+            onClear={() => setFilters({ org_scope: '', org_type: '', railway_zone: '', city: '', state: '', created_by_name: '' })}
           />
           <button type="button" onClick={clearFilters} data-tour="orgs-clear-btn" style={secondaryBtnStyle}>Clear</button>
           <div style={{ display: 'flex', gap: 8 }}>

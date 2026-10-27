@@ -435,11 +435,11 @@ def _independent_demand(db, scope, today, item_ids, add, problems: list) -> None
     from app.modules.sales.models.order import SalesOrder, SalesOrderLine, SalesOrderSchedule
     from app.modules.production.order_project_links import element_maps
 
-    # Order Project element of each demand (vehicle = its delivery row, lot = its line).
+    # Project unit of each demand (vehicle = its delivery row, lot = its line).
     el_by_row, el_by_lot_line = element_maps(db)
 
     def _el_peg(el) -> dict:
-        return {"order_project_id": el.order_project_id, "order_project_element_id": el.id} if el is not None else {}
+        return {"order_project_id": el.project_id, "order_project_element_id": el.id} if el is not None else {}
 
     build_has_wo = {bid for (bid,) in db.query(ProductionWorkOrder.rrv_build_id).filter(
         ProductionWorkOrder.rrv_build_id.isnot(None), ProductionWorkOrder.is_deleted == False,  # noqa: E712

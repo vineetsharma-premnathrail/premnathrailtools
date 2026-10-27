@@ -528,6 +528,29 @@ select:not([multiple]) {
   border-color: #ff7a45 !important;
   box-shadow: 0 0 0 2px rgba(255, 122, 69, 0.18);
 }
+/* Type-in SearchableSelect: the inner text box has no border/ring of its own;
+   the outer field shows the focus instead, so it reads as one plain input. */
+/* Wrapped in .ui-select-trigger + the same :not() chain so it outranks the
+   app-wide !important input hover/focus rules above. */
+.ui-select-trigger input.ui-select-typein:not([type='checkbox']):not([type='radio']):not([type='range']),
+.ui-select-trigger input.ui-select-typein:not([type='checkbox']):not([type='radio']):not([type='range']):hover,
+.ui-select-trigger input.ui-select-typein:not([type='checkbox']):not([type='radio']):not([type='range']):focus,
+.ui-select-trigger input.ui-select-typein:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+.ui-select-trigger:focus-within {
+  border-color: #ff7a45 !important;
+  box-shadow: 0 0 0 2px rgba(255, 122, 69, 0.18);
+}
+/* Same focus look as a plain input (e.g. Phone): orange border + the 2px ring outside. */
+.ui-select-trigger:has(input.ui-select-typein:focus) {
+  border-color: #ff7a45 !important;
+  outline: 2px solid #c2410c !important;
+  outline-offset: 1px;
+  box-shadow: none;
+}
 @media (hover: hover) and (pointer: fine) {
   .ui-select-trigger:not([aria-disabled='true']):hover {
     border-color: #ffc3a8 !important;

@@ -314,7 +314,7 @@ export default function MrpPage() {
                         <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(o.finish_date)}</td>
                         <td style={tdStyle}>
                           {o.demand_label || '—'}
-                          {o.order_project_label && <div style={{ fontSize: 11, color: '#1d4ed8', marginTop: 2 }} title="Order Project element">{o.order_project_label}</div>}
+                          {o.order_project_label && <div style={{ fontSize: 11, color: '#1d4ed8', marginTop: 2 }} title="Project unit">{o.order_project_label}</div>}
                         </td>
                         <td style={tdStyle}>
                           <span style={pill(STATUS_HEX[o.status] || '#78716c')}>{STATUS_LABELS[o.status] || o.status}</span>
@@ -380,7 +380,7 @@ export default function MrpPage() {
             </div>
             <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
-                <thead><tr>{['Exception', 'Item', 'Element', 'Date', 'Suggested', 'Message'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={exceptions.length} />}</th>)}</tr></thead>
+                <thead><tr>{['Exception', 'Item', 'Unit', 'Date', 'Suggested', 'Message'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={exceptions.length} />}</th>)}</tr></thead>
                 <tbody>
                   {exceptions.length === 0 ? (
                     <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No exception messages in the last run.</td></tr>

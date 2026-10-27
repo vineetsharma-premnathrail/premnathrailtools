@@ -4,7 +4,6 @@ import Select from '@/components/shared/Select'
 import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState } from 'react'
 import { crmApi } from '@/lib/api'
-import { formatDate } from '@/lib/format'
 import { Inquiry, InquiryLineItem, Organization, OrgContact, Tender } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
@@ -31,6 +30,7 @@ function F({ label, tourId, children }: { label: React.ReactNode; tourId?: strin
 type FormState = {
   org_id: string
   org_contact_id: string
+  inquiry_date: string
   railway_zone: string
   division: string
   lead_source: string
@@ -48,17 +48,24 @@ type FormState = {
   quantity: string
   required_delivery_date: string
   delivery_location: string
-  requirement_desc: string
   project_details: string
   inspection_req: string
   warranty_req: string
   priority: string
 }
 
+/** Today as YYYY-MM-DD in local time (DateField's value format). */
+function todayISO() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function toFormState(initial?: Inquiry, defaultOrgId?: number): FormState {
   return {
     org_id: initial?.org_id ? String(initial.org_id) : defaultOrgId ? String(defaultOrgId) : '',
     org_contact_id: initial?.org_contact_id ? String(initial.org_contact_id) : '',
+    // Document date: when the customer raised it. Older records fall back to the day they were entered.
+    inquiry_date: initial?.inquiry_date || (initial?.created_at ? initial.created_at.slice(0, 10) : todayISO()),
     railway_zone: initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? 'Other' : initial?.railway_zone || '',
     division: initial?.division || '',
     lead_source: initial?.lead_source || '',
@@ -76,7 +83,6 @@ function toFormState(initial?: Inquiry, defaultOrgId?: number): FormState {
     quantity: initial?.quantity != null ? String(initial.quantity) : '',
     required_delivery_date: initial?.required_delivery_date || '',
     delivery_location: initial?.delivery_location || '',
-    requirement_desc: initial?.requirement_desc || '',
     project_details: initial?.project_details || '',
     inspection_req: initial?.inspection_req || '',
     warranty_req: initial?.warranty_req || '',
@@ -293,6 +299,14 @@ export default function InquiryForm({
       setError('Please select a customer organization.')
       return
     }
+    if (!form.inquiry_date) {
+      setError('Please pick the Inquiry Date — the day the customer raised this requirement.')
+      return
+    }
+    if (form.inquiry_date > todayISO()) {
+      setError('Inquiry Date cannot be in the future. Pick the day the customer actually raised it (today or earlier).')
+      return
+    }
     if (!form.lead_source) {
       setError('Please select a lead source.')
       return
@@ -479,13 +493,9 @@ export default function InquiryForm({
               />
             </F>
           </div>
-          <div style={{ flex: '1 1 100px', minWidth: 100 }}>
-            <F label="Inquiry Date">
-              <input
-                value={initial?.created_at ? formatDate(initial.created_at) : formatDate(new Date())}
-                disabled
-                style={{ ...inputStyle, background: SHEET.SOFT, color: SHEET.MUTED }}
-              />
+          <div style={{ flex: '1 1 150px', minWidth: 150 }}>
+            <F label={<>Inquiry Date <Req /></>} tourId="inq-date">
+              <DateField value={form.inquiry_date} onChange={(v) => set('inquiry_date', v)} />
             </F>
           </div>
           <div style={{ flex: '1 1 160px', minWidth: 160 }}>
@@ -556,7 +566,6 @@ export default function InquiryForm({
           </div>
         </div>
         <F label="Product Specification" tourId="inq-product-spec"><textarea value={form.product_spec} onChange={(e) => set('product_spec', e.target.value)} rows={2} placeholder="e.g. High Speed Self Propelled, 1676mm BG, hydraulic braking, anti-climber arrangement..." style={{ ...inputStyle, resize: 'vertical' }} /></F>
-        <F label="Requirement Description" tourId="inq-requirement-desc"><textarea value={form.requirement_desc} onChange={(e) => set('requirement_desc', e.target.value)} rows={2} placeholder="Brief summary of the requirement..." style={{ ...inputStyle, resize: 'vertical' }} /></F>
 
         {extraProducts.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

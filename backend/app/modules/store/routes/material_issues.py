@@ -59,9 +59,9 @@ def _to_response(db: Session, issue: StoreMaterialIssue) -> StoreMaterialIssueRe
     if info:
         resp.op_number, resp.element_no, resp.element_label = info["op_number"], info["element_no"], info["element_label"]
     elif issue.order_project_id:
-        from app.modules.sales.models.order_project import OrderProject
-        p = db.get(OrderProject, issue.order_project_id)
-        resp.op_number = p.op_number if p else None
+        from app.modules.projects.models.project import PmProject
+        p = db.get(PmProject, issue.order_project_id)
+        resp.op_number = p.project_code if p else None
     if issue.erp_project_id:
         from app.modules.erp.models.project import Project
         project = db.query(Project).filter(Project.id == issue.erp_project_id).first()
@@ -101,7 +101,7 @@ def _against_label(db: Session, issue: StoreMaterialIssue, resp) -> str | None:
     if issue.order_project_element_id:
         parts.append(project_stock.element_label(db, issue.order_project_element_id))
     elif resp.op_number:
-        parts.append(f"Order project {resp.op_number}")
+        parts.append(f"Project {resp.op_number}")
     if issue.issue_type == "general" and resp.department_name:
         parts.append(f"Department {resp.department_name}")
     return " · ".join(parts) or None
@@ -331,7 +331,7 @@ async def create_material_issue(
                                                         "assumed to be one of them (e.g. rod + bush sent, machined shaft back).")
         form["output_item_id"] = next(iter(sent))
 
-    # Order Project: the vehicle / lot the material goes to — mandatory for an
+    # Project unit: the vehicle / lot the material goes to — mandatory for an
     # RRV order, filled from the work order / build / delivery row where it can be.
     op_link = project_stock.resolve_issue_project(db, issue_type_row.value if issue_type_row else None, payload)
     override_reason = (payload.project_stock_override_reason or "").strip() or None

@@ -78,8 +78,8 @@ class ProductionWorkOrderCreate(BaseModel):
     sales_order_id: int | None = None
     sales_order_line_id: int | None = None
     parent_work_order_id: int | None = None
-    # Order Project element (vehicle / lot) — required when the sales order
-    # has an Order Project; inherited from the build / parent order.
+    # project element (vehicle / lot) — required when the sales order
+    # has an project; inherited from the build / parent order.
     order_project_id: int | None = None
     order_project_element_id: int | None = None
 
@@ -115,7 +115,7 @@ class ProductionWorkOrderIssuePayload(BaseModel):
     location_id: int | None = None
     lines: list[ProductionMaterialLinePayload] = Field(min_length=1)
     remarks: str | None = None
-    # Issue only: a Store Manager taking stock held for ANOTHER Order Project
+    # Issue only: a Store Manager taking stock held for ANOTHER project
     # element must say why (store/services/project_stock.secure_issue_qty).
     project_stock_override_reason: str | None = None
 

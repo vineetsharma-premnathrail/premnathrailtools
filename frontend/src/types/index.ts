@@ -178,6 +178,8 @@ export interface ApiError {
 export interface Project {
   id: number
   serial_number: string
+  /** Project Management project this machine was registered with (null for past machines). */
+  pm_project_id?: number | null
   machine_type?: string
   model_name?: string
   engine_number?: string
@@ -231,6 +233,10 @@ export interface Project {
   approved_by_id?: number | null
   approved_at?: string | null
   approval_remarks?: string | null
+  /** Lifecycle stage of the machine (mirrors its project when linked); Service only works on serviceable stages. */
+  lifecycle_stage?: string
+  lifecycle_stage_label?: string
+  serviceable?: boolean
   created_by_id?: number | null
   created_at: string
   updated_at: string
@@ -495,6 +501,25 @@ export interface Feedback {
 
 // ── CRM ──────────────────────────────────────────────────────────────────
 
+/** CRM › Customer Organizations › Engagements. */
+export interface CrmEngagement {
+  id: number
+  org_id: number
+  org_contact_id: number
+  contact_name?: string | null
+  engagement_date: string
+  engagement_type: string
+  engagement_type_label: string
+  summary: string
+  outcome: string
+  outcome_label: string
+  next_followup_date?: string | null
+  created_by_id?: number | null
+  created_by_name?: string | null
+  created_at?: string | null
+  can_edit: boolean
+}
+
 export interface OrgContact {
   id: number
   org_id: number
@@ -578,6 +603,7 @@ export interface Inquiry {
   org_contact_id?: number
   railway_zone?: string
   division?: string
+  inquiry_date?: string | null
   lead_source?: string
   bd_owner?: string
   sales_engineer?: string
@@ -635,6 +661,7 @@ export interface Tender {
   status: string
   current_stage: string
   current_status_note?: string
+  tender_date?: string | null
   lead_source?: string
   priority?: string
   bd_owner?: string
@@ -1412,6 +1439,9 @@ export interface P2PRequestLineItem extends P2POrderProjectLineLink {
   project_inhouse?: string
   category?: string
   ship_to?: string
+  /** Buyer of this line, by its item type (Procurement › Settings); null = the requisition's buyer. */
+  buyer_id?: number | null
+  buyer_name?: string | null
   stock_item_id?: number
   item_id?: number | null
   fulfillment_status: 'pending' | 'stock_issued' | 'sent_to_procurement'
@@ -3610,7 +3640,7 @@ export interface StoreMaterialIssueItem {
   batch_number?: string | null
   remarks?: string | null
   order_project_element_id?: number | null
-  /** "PEW-2026-0001 / 01 · Vehicle 1" */
+  /** "PEW-80 / 01 · Vehicle 1" */
   element_display?: string | null
 }
 
@@ -4895,6 +4925,52 @@ export interface PmProject {
   forecast_date?: string | null
   health?: PmHealth | null
   can_manage: boolean
+  /** Machine registered with this project ("Add New Project" form); null for projects made before that. */
+  machine_id?: number | null
+  machine_serial?: string | null
+  /** Finance budget the project's spend is tracked against. */
+  internal_order_id?: number | null
+  internal_order_code?: string | null
+  internal_order_name?: string | null
+  /** Set when the project was made from a sales order (then it has a Units tab). */
+  sales_order_id?: number | null
+  so_number?: string | null
+  /** Lifecycle stage key (planned ... closed) and its label. */
+  lifecycle_stage?: string
+  lifecycle_stage_label?: string
+  units_total?: number
+}
+
+/** A Finance budget a project can link to (one budget = one project). */
+export interface ProjectBudgetOption {
+  id: number
+  code: string
+  name: string
+  order_type: string
+  status: string
+  end_date?: string | null
+  budgeted_amount?: number | null
+  available_amount?: number | null
+}
+
+export interface ProjectBudgetSpend {
+  linked: boolean
+  /** True when the viewer may not see costs. */
+  hidden?: boolean
+  /** Ledger accounts / voucher lines left out (viewer has no Finance access). */
+  ledger_hidden?: boolean
+  summary: {
+    code?: string | null
+    name?: string | null
+    budgeted_amount?: number | null
+    actual_amount: number
+    commitment_amount: number
+    available_amount?: number | null
+    consumed_pct?: number | null
+  } | null
+  commitments: { purchase_order_id: number; po_number: string; po_date?: string | null; vendor_name?: string | null; status: string; po_value: number; invoiced_value: number; open_value: number }[]
+  recent_lines: { journal_entry_id: number; entry_number: string; voucher_type?: string | null; posting_date: string; gl_account_code?: string | null; gl_account_name?: string | null; party_name?: string | null; description?: string | null; debit_amount: number; credit_amount: number }[]
+  line_count: number
 }
 
 export interface PmAuditEntry {
@@ -5384,6 +5460,11 @@ export interface RndProject {
   target_end_date?: string | null
   actual_end_date?: string | null
   budget_amount?: number | null
+  /** Finance budget behind the project; budget_from_finance = Finance created it (amount set there). */
+  internal_order_id?: number | null
+  internal_order_code?: string | null
+  internal_order_name?: string | null
+  budget_from_finance?: boolean
   handover_specs_final: boolean
   handover_bom_approved: boolean
   handover_process_documented: boolean
@@ -5414,6 +5495,9 @@ export interface RndProject {
   improvement_reason?: RndImprovementReason | null
   improvement_reason_label?: string | null
   product_id?: number | null
+  /** Improvement of existing product: the project / machine being improved. */
+  machine_id?: number | null
+  machine_label?: string | null
   product_name?: string | null
   origin_note?: string | null
 }
@@ -9683,6 +9767,9 @@ export interface SalesOrderSchedule {
   build_number: string | null
   build_status: string | null
   build_stage: string | null
+  /** Order Project number (PEW-80) and the vehicle / lot of this row (PEW-80/01). */
+  project_number?: string | null
+  project_element_no?: string | null
   ld_forecast_periods: number | null
   ld_forecast_amount: number | null
   risk: 'at_risk' | 'overdue' | null
@@ -9906,8 +9993,10 @@ export interface SalesOrder {
   approvals: SalesApproval[]
   credit: { credit_limit: number; open_order_value: number; ar_outstanding?: number; exposure?: number; exceeded: boolean; mode: string; customer_id?: number; overdue_amount?: number; max_days_overdue?: number; block_reasons?: string[]; blocked?: boolean; release?: { id: number; release_number: string; valid_until: string } | null; pending_release?: { id: number; release_number: string } | null } | null
   open_amendment_id: number | null
-  /** Execution project created at confirmation (RRV orders only). */
-  order_project?: { id: number; op_number: string; status: string } | null
+  /** Project Management project made when the order was confirmed (RRV orders only). */
+  pm_project_id?: number | null
+  pm_project_code?: string | null
+  order_project?: { id: number; op_number?: string; project_code?: string; status?: string } | null
   can: Record<string, boolean>
 }
 
@@ -10435,10 +10524,10 @@ export interface QualityGauge {
   blocked_reason?: string | null
 }
 
-// ---------------------------------------------------------------- Order Projects (sales/order_projects.py)
+// ---------------------------------------------------------------- Project units (projects/so_projects.py)
 
 /** One 360-table cell; null in `departments` = not linked yet. */
-export interface OrderProjectCell {
+export interface ProjectUnitCell {
   status: string
   label: string
   tone: 'neutral' | 'info' | 'success' | 'warning' | 'danger'
@@ -10446,9 +10535,10 @@ export interface OrderProjectCell {
   date?: string | null
 }
 
-export type OrderProjectDepartment = 'design' | 'purchase' | 'store' | 'production' | 'quality' | 'dispatch' | 'delivery'
+export type ProjectUnitDepartment = 'design' | 'purchase' | 'store' | 'production' | 'quality' | 'dispatch' | 'delivery'
 
-export interface OrderProjectElement {
+/** A vehicle or a spares lot of a project made from a sales order (GET /projects/{id}/units). */
+export interface ProjectUnit {
   id: number
   element_no: string
   kind: 'vehicle' | 'lot'
@@ -10464,51 +10554,39 @@ export interface OrderProjectElement {
   rrv_model: string | null
   uom: string | null
   current_delivery_date: string | null
-  departments: Partial<Record<OrderProjectDepartment, OrderProjectCell | null>>
+  departments: Partial<Record<ProjectUnitDepartment, ProjectUnitCell | null>>
 }
 
-export interface OrderProject {
-  id: number
-  op_number: string
-  sales_order_id: number
-  customer_id: number | null
-  customer_name: string | null
-  title: string
-  project_manager_id: number | null
-  status: string
-  planned_start: string | null
-  planned_end: string | null
-  branch_id: number | null
-  created_by_id: number | null
-  created_at: string | null
-  updated_at: string | null
+/** GET /projects/{id}/units */
+export interface ProjectUnitsResponse {
+  sales_order_id: number | null
   so_number: string | null
   so_status: string | null
   customer_po_number: string | null
   customer_po_date: string | null
   order_value: number | null
   currency: string | null
-  project_manager_name: string | null
-  created_by_name: string | null
-  branch_name: string | null
   vehicles_total: number
   vehicles_delivered: number
   lots_total: number
-  elements: OrderProjectElement[]
-  can: { edit?: boolean; backfill?: boolean }
+  elements: ProjectUnit[]
 }
 
-export interface OrderProjectLookupItem {
+/** GET /projects/units/lookup row (feeds ProjectUnitPicker). */
+export interface ProjectUnitLookupItem {
   project_id: number
-  op_number: string
+  project_code: string
   element_id: number | null
   element_no: string | null
   label: string | null
   kind: 'vehicle' | 'lot' | null
-  customer_name: string | null
+  client_name: string | null
   so_number: string | null
   display: string
 }
+
+/** Project lifecycle stage (backend projects/lifecycle.py). */
+export interface LifecycleStageOption { key: string; label: string }
 
 // ---------------------------------------------------------------------------
 // Procurement › Settings › Purpose rules (backend p2p/purpose.py, routes/purpose_rules.py)

@@ -29,7 +29,7 @@ const config: TourConfig = {
     {
       target: 'rnd-pd-tabs',
       title: 'Tabs',
-      purpose: 'Same layout as a Project Management project: Overview (source, initiation, members), Milestones (the project plan and its tasks), Documents (attachments) and History (everything that changed).',
+      purpose: 'Same layout as a Project Management project: Overview (source, initiation, members), Members (project leads and team — add or remove people here), Milestones (the project plan and its tasks), Documents (attachments) and History (everything that changed).',
     },
     {
       target: 'rnd-pd-details',

@@ -301,7 +301,7 @@ class ProductionRrvBuildResponse(BaseModel):
     open_rework_count: int = 0
     work_order_count: int = 0
     is_overdue: bool = False
-    # Order Project (sales order projects) — the vehicle element this build makes.
+    # project (sales order projects) — the vehicle element this build makes.
     sales_order_id: int | None = None
     order_project_id: int | None = None
     order_project_element_id: int | None = None

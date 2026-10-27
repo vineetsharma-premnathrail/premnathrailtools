@@ -1,11 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import Link from 'next/link'
+import { useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { approvalsApi, pmOngoingApi } from '@/lib/api'
 import ModuleCard from '@/components/ModuleCard'
-import { BRAND, TEXT, GLASS, SHADOWS } from '@/lib/theme'
+import { BRAND, TEXT, GLASS } from '@/lib/theme'
 import { Briefcase, Flask, Users, ShoppingCart, FileText, Storefront, ShieldCheck, Factory, Wrench, PenNib, Lightning, Drop, Kanban, CurrencyInr, Buildings, IdentificationCard } from '@phosphor-icons/react'
 
 const WrenchIcon = <Briefcase size={20} />
@@ -247,18 +245,6 @@ const adminModule = {
 
 export default function DashboardPage() {
   const { user } = useAuth()
-  // My Approvals / My Tasks — every user's own work, one click from home.
-  // undefined = still loading; null = the count couldn't be read (the card still opens).
-  const [waiting, setWaiting] = useState<number | null | undefined>(undefined)
-  const [openTasks, setOpenTasks] = useState<number | null | undefined>(undefined)
-  useEffect(() => {
-    if (!user) return
-    approvalsApi.inbox().then((rows) => setWaiting(rows.length)).catch(() => setWaiting(null))
-    pmOngoingApi.my(false).then((rows) => setOpenTasks(
-      rows.filter((t) => t.mine && !['done', 'cancelled'].includes(t.status)).length
-      + rows.flatMap((t) => t.subtasks.filter((s) => s.mine && s.status !== 'done')).length,
-    )).catch(() => setOpenTasks(null))
-  }, [user])
 
   const greeting = getGreeting()
   const today = new Date().toLocaleDateString('en-IN', {
@@ -283,7 +269,6 @@ export default function DashboardPage() {
     ...LIVE_APPS.map(byApp),
     ...(canSeeOrganization ? [adminModule] : []),
   ].filter((m) => !!m)
-  const allClear = waiting === 0 && openTasks === 0
   const [showUpcoming, setShowUpcoming] = useState(false)
   const upcomingModules = UPCOMING_APPS
     .map((app) => (app === 'hr' ? (user?.apps?.includes('hr') ? hrModule : undefined) : byApp(app)))
@@ -295,15 +280,6 @@ export default function DashboardPage() {
         {greeting}{user?.name ? `, ${user.name.split(' ')[0]}` : ''}
       </h1>
       <p style={{ fontSize: 14, color: TEXT.muted, margin: '0 0 28px' }}>{today}</p>
-
-      {!allClear && (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginBottom: 32, maxWidth: 640 }}>
-        <WorkCard href="/dashboard/organization/approvals" title="My Approvals" count={waiting}
-          sub={waiting == null ? 'Documents waiting for your decision' : waiting ? `${waiting} waiting for your decision` : 'Nothing waiting for you'} accent="#FF6A2A" />
-        <WorkCard href="/dashboard/projects/my-tasks" title="My Tasks" count={openTasks}
-          sub={openTasks == null ? 'Milestones and sub-tasks given to you' : openTasks ? `${openTasks} open milestone(s) / sub-task(s)` : 'No open tasks'} accent="#4f46e5" />
-      </div>
-      )}
 
       <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', color: TEXT.muted, marginBottom: 14 }}>
         YOUR APPLICATIONS
@@ -348,24 +324,6 @@ export default function DashboardPage() {
         </>
       )}
     </div>
-  )
-}
-
-function WorkCard({ href, title, sub, count, accent }: { href: string; title: string; sub: string; count: number | null | undefined; accent: string }) {
-  return (
-    <Link href={href} style={{
-      display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 16, textDecoration: 'none',
-      background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(),
-    }}>
-      <span style={{ minWidth: 44, height: 44, padding: '0 8px', borderRadius: 12, background: `${accent}1a`, color: accent, fontSize: 18, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-        {count === undefined ? '…' : count === null ? '—' : count}
-      </span>
-      <span style={{ minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: 14.5, fontWeight: 700, color: TEXT.heading }}>{title}</span>
-        <span style={{ display: 'block', fontSize: 12.5, color: TEXT.muted, marginTop: 2 }}>{sub}</span>
-      </span>
-      <span aria-hidden style={{ marginLeft: 'auto', color: TEXT.muted }}>→</span>
-    </Link>
   )
 }
 

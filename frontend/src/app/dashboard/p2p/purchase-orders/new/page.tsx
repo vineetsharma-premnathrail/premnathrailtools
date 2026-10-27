@@ -4,15 +4,19 @@
 // L1 vendor (linked to the vendor master, so Finance can match the invoice).
 // Steps: pick the vendor & create the draft (PO number generated) → price
 // each line (pre-filled from the vendor's catalog where it lists the item) →
-// delivery, generated Word PO document → Save, which sends it for approval
-// (Settings PO approvers, then any one Partner). Terms & conditions come from
+// delivery, generated Word PO document. Quantity can be raised (never lowered
+// below the requisition) while the PO is a draft. Save keeps the draft, Download PO
+// gives the Word file, Send for approval submits it (Settings PO approvers, then any one Partner). Terms & conditions come from
 // Procurement › Settings + the vendor and aren't edited here.
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
-import { p2pApi, purchaseOrdersApi, rfqApi } from '@/lib/api'
+import { p2pApi, purchaseOrdersApi, rfqApi, managedDocumentsApi } from '@/lib/api'
+import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import PrePoAttachments from '@/components/store/PrePoAttachments'
+import { prePoProcurementApi, PrePoReceipt } from '@/lib/prePoApi'
 import { P2PPurchaseOrder, P2PRequest, RFQ } from '@/types'
 import { mmQuotationsApi } from '@/lib/mmPurchasingApi'
 import POReadyList from '@/components/p2p/POReadyList'
@@ -31,7 +35,7 @@ import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
-import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
+import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 
 const inputStyle = sheetInput
 const label = sheetLabel
@@ -44,7 +48,11 @@ const block: React.CSSProperties = { padding: '20px 24px', borderTop: `1px solid
 
 // Where a line's price came from (ME21N): awarded quote, vendor + item info record, or typed.
 const PRICE_SOURCE_LABELS: Record<string, string> = { quotation: 'from awarded quote', info_record: 'from Item Rates', manual: 'typed' }
-type PoLine = P2PPurchaseOrder['items'][number] & { price_source?: string | null; delivery_date?: string | null }
+type PoLine = P2PPurchaseOrder['items'][number] & { price_source?: string | null; delivery_date?: string | null; min_quantity?: number | null }
+const fmtQty = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 3 })
+const PO_ENTITY = 'p2p_purchase_order'
+/** A check done on this page (not a server reply) — its message is shown as is. */
+class LocalProblem extends Error {}
 
 export default function CreatePurchaseOrderPage() {
   const { user, isLoading } = useAuth()
@@ -69,8 +77,13 @@ export default function CreatePurchaseOrderPage() {
 
   const [rfq, setRfq] = useState<RFQ | null>(null)
   const [pr, setPr] = useState<P2PRequest | null>(null)
+  // The store's Before-PO receipt this PO was made from (null for an ordinary PO).
+  const [receipt, setReceipt] = useState<PrePoReceipt | null>(null)
   const [po, setPo] = useState<P2PPurchaseOrder | null>(null)
   const [prices, setPrices] = useState<Record<number, { unitPrice: string; taxRate: string }>>({})
+  // Quantity per line (a draft's quantity can be raised, never lowered below min_quantity).
+  const [qtys, setQtys] = useState<Record<number, string>>({})
+  const [confirmSend, setConfirmSend] = useState(false)
   const [expected, setExpected] = useState('')
   const [deliveryTerms, setDeliveryTerms] = useState('')
   // Cost centre the PO is charged to — Purchase picks it here (a department
@@ -94,10 +107,12 @@ export default function CreatePurchaseOrderPage() {
       setAllPos(live)
       const draft: P2PPurchaseOrder | null = (pickedPoId ? live.find((p) => p.id === pickedPoId) : null) || live.find((p) => p.status === 'draft') || live[0] || null
       setPo(draft)
+      setReceipt(draft ? await prePoProcurementApi.byPo(draft.id).catch(() => null) : null)
       // Arrived from the RFQ's "Select Vendor & Create PO": go straight to the vendor pick.
       if (!draft && new URLSearchParams(window.location.search).get('create') === '1') setShowCreate(true)
       if (draft) {
         setLineDates(Object.fromEntries((draft.items as PoLine[]).map((i) => [i.id, i.delivery_date || ''])))
+        setQtys(Object.fromEntries(draft.items.map((i) => [i.id, String(i.quantity)])))
         setExpected(draft.expected_delivery || '')
         setDeliveryTerms(draft.delivery_terms || '')
         setCostCenterId(draft.cost_center_id ? String(draft.cost_center_id) : '')
@@ -126,7 +141,7 @@ export default function CreatePurchaseOrderPage() {
   const run = async (fn: () => Promise<unknown>, fallback: string) => {
     setBusy(true)
     setError('')
-    try { await fn(); await load() } catch (err) { setError(extractErrorMessages(err, fallback).join(' ')) } finally { setBusy(false) }
+    try { await fn(); await load() } catch (err) { setError(err instanceof LocalProblem ? err.message : extractErrorMessages(err, fallback).join(' ')) } finally { setBusy(false) }
   }
 
   const l1 = rfq?.attachments.find((a) => a.vendor_tier === 'L1')
@@ -134,8 +149,10 @@ export default function CreatePurchaseOrderPage() {
   // The PO's own status decides (other POs of a split requisition may already be in approval).
   const editable = po?.status === 'draft' && can('p2p', 'purchase_orders', 'edit')
   const unpriced = (po?.items || []).filter((i) => !(Number(prices[i.id]?.unitPrice) > 0))
-  const total = (po?.items || []).reduce((s, i) => s + i.quantity * (Number(prices[i.id]?.unitPrice) || 0) * (1 + (Number(prices[i.id]?.taxRate) || 0) / 100), 0)
+  const qtyOf = (i: { id: number; quantity: number }) => (qtys[i.id] !== undefined && qtys[i.id] !== '' ? Number(qtys[i.id]) : i.quantity)
+  const total = (po?.items || []).reduce((s, i) => s + qtyOf(i) * (Number(prices[i.id]?.unitPrice) || 0) * (1 + (Number(prices[i.id]?.taxRate) || 0) / 100), 0)
 
+  const canDownload = canFeature('p2p', 'purchase_orders', 'po_document', 'view')
   const showCostCenter = !!po && (pr?.purpose === 'department' || !!po.cost_center_id)
   const draftPayload = () => ({
     expected_delivery: expected || null,
@@ -143,6 +160,7 @@ export default function CreatePurchaseOrderPage() {
     ...(showCostCenter ? { cost_center_id: costCenterId ? Number(costCenterId) : null } : {}),
     items: (po?.items || []).map((i) => ({
       id: i.id,
+      quantity: qtyOf(i),
       unit_price: prices[i.id]?.unitPrice !== '' ? Number(prices[i.id]?.unitPrice) : null,
       tax_rate: prices[i.id]?.taxRate !== '' ? Number(prices[i.id]?.taxRate) : null,
     })),
@@ -152,22 +170,60 @@ export default function CreatePurchaseOrderPage() {
     if (!rfq || !po) return
     await mmQuotationsApi.updateDraftDetails(rfq.id, po.id, { lines: po.items.map((i) => ({ id: i.id, delivery_date: lineDates[i.id] || null })) })
   }
-  // Saving the PO sends it for approval — there is no separate draft save.
-  const saveAndSend = () => {
-    if (unpriced.length) { setError(`Enter a unit price for every line before saving — missing: ${unpriced.map((i) => i.item_name).join(', ')}.`); return }
+  // Quantity can only go up: not below the requisition quantity still to buy (min_quantity from the server).
+  const qtyProblem = () => {
+    for (const i of (po?.items || []) as PoLine[]) {
+      const q = qtyOf(i)
+      if (!(q > 0)) return `${i.item_name}: enter a quantity above 0 — the requisition quantity is ${fmtQty(i.min_quantity ?? i.quantity)} ${i.unit || ''}.`
+      // Only an edited quantity is held to the floor — the server checks the same way.
+      if (i.min_quantity != null && Math.abs(q - i.quantity) > 1e-9 && q < i.min_quantity - 1e-9) return `${i.item_name}: quantity can't be below ${fmtQty(i.min_quantity)} ${i.unit || ''} — that is what the requisition asks for. You can only increase it.`
+    }
+    return ''
+  }
+  // Save the draft (prices, quantity, dates, terms); the PO stays a draft.
+  const saveDraft = async () => {
+    if (!rfq || !po) return
+    const problem = qtyProblem()
+    if (problem) throw new LocalProblem(problem)
+    await rfqApi.updatePoDraft(rfq.id, po.id, draftPayload())
+    await saveDates()
+  }
+  const save = () => run(saveDraft, 'Could not save the PO draft — check the prices and quantities and try again.')
+  // Download PO: the Word file built from the saved draft (saved first so it matches the screen).
+  const downloadPo = () => run(async () => {
+    if (!po) return
+    if (editable) await saveDraft()
+    const { document: current } = await managedDocumentsApi.get(PO_ENTITY, po.id)
+    if (!current || current.is_stale) await managedDocumentsApi.create(PO_ENTITY, po.id, false)
+    const blob = await managedDocumentsApi.downloadDocx(PO_ENTITY, po.id)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `PO-${po.po_number}`.replace(/[^A-Za-z0-9._-]+/g, '-') + '.docx'
+    a.click()
+    URL.revokeObjectURL(url)
+  }, 'Could not download the PO — make sure the draft saves, then try again.')
+  const askSend = () => {
+    if (unpriced.length) { setError(`Enter a unit price for every line before sending for approval — missing: ${unpriced.map((i) => i.item_name).join(', ')}. You can use Save to keep the draft meanwhile.`); return }
+    const problem = qtyProblem()
+    if (problem) { setError(problem); return }
+    setError('')
+    setConfirmSend(true)
+  }
+  const sendForApproval = () => {
+    setConfirmSend(false)
     run(async () => {
       if (!rfq || !po) return
-      await rfqApi.updatePoDraft(rfq.id, po.id, draftPayload())
-      await saveDates()
+      await saveDraft()
       await rfqApi.submitPoDraft(rfq.id, po.id)
-    }, 'Could not save the PO and send it for approval — check the prices and try again.')
+    }, 'Could not send the PO for approval — check the prices and try again.')
   }
 
   const poValue = po ? (editable ? (unpriced.length ? '—' : rupees(total)) : rupees(po.total_value)) : '—'
 
   return (
     <FormPage nav={<P2PNav />} icon="cart" title={po ? `Purchase Order ${po.po_number}` : 'Create Purchase Order'}
-      subtitle={[pr?.p2p_number, rfq?.rfq_number, pr?.project_label ? `Project: ${pr.project_label}` : null].filter(Boolean).join(' · ') || 'Purchase order for a requisition whose RFQ is done'}
+      subtitle={[pr?.p2p_number, receipt ? `From store — Before-PO receipt ${receipt.receipt_number}` : rfq?.rfq_number, pr?.project_label ? `Project: ${pr.project_label}` : null].filter(Boolean).join(' · ') || 'Purchase order for a requisition whose RFQ is done'}
       onBack={() => router.push('/dashboard/p2p/purchase-orders')} backTour="po-new-back"
       footer={<>
         {po && pr && !editable && (
@@ -175,7 +231,15 @@ export default function CreatePurchaseOrderPage() {
         )}
         <button type="button" style={sheetBtn('secondary', SHEET.INK, busy)} disabled={busy} onClick={() => router.push('/dashboard/p2p/purchase-orders')}>{editable ? 'Cancel' : 'Close'}</button>
         {po && editable && (
-          <button type="button" disabled={busy} onClick={saveAndSend} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="send" size={16} />{busy ? 'Saving…' : 'Save PO'}</button>
+          <button type="button" disabled={busy} onClick={save} data-tour="po-new-save-btn" style={sheetBtn('secondary', SHEET.INK, busy)}><SheetIcon name="check" size={16} />{busy ? 'Working…' : 'Save'}</button>
+        )}
+        {po && (
+          <button type="button" disabled={busy || !canDownload} onClick={downloadPo} data-tour="po-new-download-btn"
+            title={canDownload ? undefined : 'You need View permission on the PO document to download it.'}
+            style={sheetBtn('secondary', SHEET.INK, busy || !canDownload)}><SheetIcon name="doc" size={16} />Download PO</button>
+        )}
+        {po && editable && (
+          <button type="button" disabled={busy} onClick={askSend} data-tour="po-new-send-btn" style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="send" size={16} />Send for approval</button>
         )}
       </>}>
       {(error || loading) && (
@@ -262,7 +326,7 @@ export default function CreatePurchaseOrderPage() {
               {po && (
                 <SheetSection icon="shield" title="4. Approval">
                   {editable
-                    ? <p style={{ ...sheetHint, margin: 0 }}>Save PO (below) sends it for approval; prices are locked while it is in approval.</p>
+                    ? <p style={{ ...sheetHint, margin: 0 }}>Save keeps this draft. Download PO gives the Word file. Send for approval (below) needs every line priced; prices and quantities are locked while it is in approval.</p>
                     : <p style={{ fontSize: 13, color: SHEET.BODY, margin: 0 }}>
                       {pr.status === 'po_raised' ? 'Sent for approval — waiting on the PO approvers / a Partner.' : pr.status === 'rejected' ? 'Rejected at approval.' : 'Approved.'}
                     </p>}
@@ -289,7 +353,16 @@ export default function CreatePurchaseOrderPage() {
                                 <div style={{ marginTop: 4 }}><OrderProjectChip opNumber={i.order_project_number} elementNo={i.order_project_element_no} label={i.order_project_element_label} /></div>
                               )}
                             </td>
-                            <td style={{ padding: '8px 10px', fontSize: 13, whiteSpace: 'nowrap', textAlign: 'right' }}>{Number(i.quantity).toLocaleString('en-IN', { maximumFractionDigits: 3 })} {i.unit || ''}</td>
+                            <td style={{ padding: '6px 10px', fontSize: 13, whiteSpace: 'nowrap', textAlign: 'right', width: editable ? 150 : undefined }}>
+                              {editable ? (
+                                <>
+                                  <input type="number" min={(i as PoLine).min_quantity ?? 0} step="any" value={qtys[i.id] ?? String(i.quantity)} aria-label={`Quantity of ${i.item_name}`}
+                                    style={{ ...inputStyle, padding: '7px 10px', textAlign: 'right' }}
+                                    onChange={(e) => setQtys((q) => ({ ...q, [i.id]: e.target.value }))} />
+                                  <span style={{ fontSize: 10.5, color: SHEET.MUTED }}>{(i as PoLine).min_quantity != null ? `min ${fmtQty((i as PoLine).min_quantity as number)} ` : ''}{i.unit || ''}</span>
+                                </>
+                              ) : <>{fmtQty(i.quantity)} {i.unit || ''}</>}
+                            </td>
                             <td style={{ padding: '6px 10px', width: 170 }}>
                               {editable ? (
                                 <>
@@ -307,14 +380,50 @@ export default function CreatePurchaseOrderPage() {
                             <td style={{ padding: '6px 10px', width: 170 }}>
                               {editable ? <DateField value={lineDates[i.id] || ''} onChange={(v) => setLineDates((s) => ({ ...s, [i.id]: v }))} /> : formatDate((i as PoLine).delivery_date)}
                             </td>
-                            <td style={{ padding: '8px 10px', fontSize: 13, whiteSpace: 'nowrap', textAlign: 'right' }}>{unit > 0 ? rupees(i.quantity * unit * (1 + (Number(p.taxRate) || 0) / 100)) : '—'}</td>
+                            <td style={{ padding: '8px 10px', fontSize: 13, whiteSpace: 'nowrap', textAlign: 'right' }}>{unit > 0 ? rupees((editable ? qtyOf(i) : i.quantity) * unit * (1 + (Number(p.taxRate) || 0) / 100)) : '—'}</td>
                           </tr>
                         )
                       })}
                     </tbody>
                   </table>
                 </div>
-                {editable && <p style={sheetHint}>Unit price <Req /> on every line. Prices are proposed from the awarded quote or the vendor&apos;s rate in Item Rates.</p>}
+                {editable && <p style={sheetHint}>Quantity can be increased above the requisition quantity, not reduced. Items can&apos;t be added.</p>}
+                {editable && <p style={sheetHint}>Unit price <Req /> to send for approval (a draft can be saved without it). Prices are proposed from the awarded quote or the vendor&apos;s rate in Item Rates.</p>}
+              </SheetSection>
+            </div>
+          )}
+
+          {po && receipt && (
+            <div style={block} data-tour="po-new-before-po">
+              <SheetSection icon="box" title="Received before PO">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 12 }}>
+                  {([['Receipt', receipt.receipt_number], ['Received on', formatDate(receipt.received_date)], ['Store', receipt.store_location_name],
+                    ['Delivery challan no.', receipt.delivery_challan_number], ['Vendor invoice no.', receipt.vendor_invoice_number]] as const).map(([k, v]) => (
+                    <div key={k} style={{ flex: '1 1 170px' }}>
+                      <span style={label}>{k}</span>
+                      <div style={{ fontSize: 14, color: SHEET.INK, padding: '2px 0' }}>{v || '—'}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ overflow: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 10, marginBottom: 14 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 420 }}>
+                    <thead><tr>{['Item', 'Delivered qty', 'PO qty'].map((h, hi) => <th key={h} style={hi > 0 ? { ...th, textAlign: 'right' } : th}>{h}{hi === 0 && <RowCount count={receipt.items.length} />}</th>)}</tr></thead>
+                    <tbody>
+                      {receipt.items.map((r) => {
+                        const line = po.items.find((x) => x.store_item_id != null && x.store_item_id === r.store_item_id)
+                        return (
+                          <tr key={r.id} style={{ borderTop: `1px solid ${SHEET.LINE}` }}>
+                            <td style={{ padding: '8px 10px', fontSize: 13 }}>{r.item_name}{r.item_code ? ` (${r.item_code})` : ''}</td>
+                            <td style={{ padding: '8px 10px', fontSize: 13, textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtQty(r.quantity)} {r.unit || ''}</td>
+                            <td style={{ padding: '8px 10px', fontSize: 13, textAlign: 'right', whiteSpace: 'nowrap' }}>{line ? `${fmtQty(line.quantity)} ${line.unit || ''}` : '—'}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <PrePoAttachments receipt={receipt} side="p2p" canUpload={can('p2p', 'purchase_orders', 'create') || can('p2p', 'purchase_orders', 'edit')} onChanged={setReceipt} />
+                <p style={sheetHint}>The store already holds these goods; they enter stock when the GRN is done after this PO is approved.</p>
               </SheetSection>
             </div>
           )}
@@ -348,6 +457,9 @@ export default function CreatePurchaseOrderPage() {
         </div>
       )}
 
+      <ConfirmDialog open={confirmSend} danger={false} confirmLabel="Send for approval" title="Send this PO for approval?"
+        message="The draft is saved and goes to the PO approvers, then a Partner. Prices and quantities are locked while it is in approval."
+        onConfirm={sendForApproval} onCancel={() => setConfirmSend(false)} />
       {showCreate && rfq && <CreatePODialog initialRfqId={rfq.id} onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); load() }} />}
     </FormPage>
   )

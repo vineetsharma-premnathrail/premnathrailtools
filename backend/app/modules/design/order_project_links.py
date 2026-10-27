@@ -1,7 +1,7 @@
-"""Design / Electrical / Hydraulic ↔ Order Projects (sales/order_projects.py).
+"""Design / Electrical / Hydraulic <-> PM projects and their Units (projects/so_projects.py).
 
-RRVs are built to order: every confirmed Sales Order with an RRV line gets an
-Order Project (OP-YYYY-NNN), one element per vehicle. This module is the
+RRVs are built to order: every confirmed Sales Order with an RRV line gets a
+project (PEW-nn) with one unit per vehicle. This module is the
 engineering side of it:
 
 * Link helpers — `clean_op_link` validates an (order_project_id,
@@ -40,9 +40,10 @@ from app.modules.design.models.request import DesignRequest, DesignRequirementRe
 from app.modules.design.models.submission import DesignCustomerSubmission, DesignSubmissionLine
 from app.modules.design.service import add_event, released_revision
 from app.modules.main.models.user import User
-from app.modules.sales import order_projects as ops
+from app.modules.projects import so_projects as op_core
 from app.modules.sales.models.order import SalesOrder, SalesOrderLine
-from app.modules.sales.models.order_project import OrderProject, OrderProjectElement
+from app.modules.projects.models.element import PmProjectElement
+from app.modules.projects.models.project import PmProject
 
 logger = logging.getLogger("design")
 
@@ -55,7 +56,7 @@ _APPROVED = ("approved", "approved_with_comments")
 
 def clean_op_link(db: Session, data: dict, *, current_project_id: int | None = None,
                   current_element_id: int | None = None) -> None:
-    """Validate the Order Project fields in `data` (a create payload, or the
+    """Validate the project and unit fields in `data` (a create payload, or the
     changed fields of an update) and normalise them in place. An element
     alone fills its project; a different project clears an element of the
     old one. A new link must be to an active / on-hold project and a live
@@ -70,26 +71,26 @@ def clean_op_link(db: Session, data: dict, *, current_project_id: int | None = N
     pid, eid = pid or None, eid or None
     if eid:
         unchanged = eid == current_element_id
-        project, _el = ops.resolve_element(db, eid, project_id=pid, allow_cancelled=unchanged)
+        project, _el = op_core.resolve_element(db, eid, project_id=pid, allow_cancelled=unchanged)
         if not unchanged and project.id != current_project_id:
-            ops.resolve_project(db, project.id)
+            op_core.resolve_project(db, project.id)
         pid = project.id
     elif pid and pid != current_project_id:
-        ops.resolve_project(db, pid)
+        op_core.resolve_project(db, pid)
     data["order_project_id"], data["order_project_element_id"] = pid, eid
 
 
-def op_label_maps(db: Session, rows) -> tuple[dict[int, OrderProject], dict[int, OrderProjectElement]]:
+def op_label_maps(db: Session, rows) -> tuple[dict[int, PmProject], dict[int, PmProjectElement]]:
     pids = {getattr(r, "order_project_id", None) for r in rows} - {None}
     eids = {getattr(r, "order_project_element_id", None) for r in rows} - {None}
-    projects = {p.id: p for p in db.query(OrderProject).filter(OrderProject.id.in_(pids)).all()} if pids else {}
-    elements = {e.id: e for e in db.query(OrderProjectElement).filter(OrderProjectElement.id.in_(eids)).all()} if eids else {}
+    projects = {p.id: p for p in db.query(PmProject).filter(PmProject.id.in_(pids)).all()} if pids else {}
+    elements = {e.id: e for e in db.query(PmProjectElement).filter(PmProjectElement.id.in_(eids)).all()} if eids else {}
     return projects, elements
 
 
 def fill_op_labels(db: Session, rows, responses) -> None:
     """Sets order_project_number / _element_no / _element_label / _display on
-    each response (same order as rows) — what OrderProjectChip shows."""
+    each response (same order as rows) — what the project chip shows."""
     maps = op_label_maps(db, rows)
     for row, resp in zip(rows, responses):
         set_op_label(resp, row, maps)
@@ -101,10 +102,10 @@ def set_op_label(resp, row, maps) -> None:
     if not p:
         return
     el = elements.get(getattr(row, "order_project_element_id", None))
-    resp.order_project_number = p.op_number
+    resp.order_project_number = p.project_code
     resp.order_project_element_no = el.element_no if el else None
     resp.order_project_element_label = el.label if el else None
-    resp.order_project_display = ops.element_display(p, el) if el else f"{p.op_number} · {p.title}"
+    resp.order_project_display = op_core.element_display(p, el) if el else f"{p.project_code} · {p.name}"
 
 
 # ---------------------------------------------------------------- models of an order
@@ -157,9 +158,9 @@ def released_bom_for_item(db: Session, item_id: int | None):
     return None
 
 
-def _request_title(model: str, project: OrderProject) -> str:
-    who = project.customer_name or "customer"
-    tail = f" — {project.op_number}"
+def _request_title(model: str, project: PmProject) -> str:
+    who = project.client_name or "customer"
+    tail = f" — {project.project_code}"
     head = f"{model} for {who}"
     return head[: 255 - len(tail)] + tail
 
@@ -168,10 +169,10 @@ def _date_txt(d: date | None) -> str:
     return d.strftime("%d-%m-%Y") if d else "—"
 
 
-def _requirement_text(so: SalesOrder, project: OrderProject, lines: list[SalesOrderLine], vehicles: list[OrderProjectElement],
+def _requirement_text(so: SalesOrder, project: PmProject, lines: list[SalesOrderLine], vehicles: list[PmProjectElement],
                       model: str) -> str:
     parts = [
-        f"New RRV model for confirmed order {so.display_number} (Order Project {project.op_number}).",
+        f"New RRV model for confirmed order {so.display_number} (project {project.project_code}).",
         f"Customer: {so.customer_name or '—'}",
         f"Customer PO / LOA: {so.customer_po_number or so.loa_number or '—'}"
         + (f" dated {_date_txt(so.customer_po_date)}" if so.customer_po_date else ""),
@@ -190,7 +191,7 @@ def _requirement_text(so: SalesOrder, project: OrderProject, lines: list[SalesOr
     return "\n".join(parts)[:20000]
 
 
-def _notify_new_request(db: Session, req: DesignRequest, actor: User | None, project: OrderProject) -> None:
+def _notify_new_request(db: Session, req: DesignRequest, actor: User | None, project: PmProject) -> None:
     from app.utils.notifications import notify_user
     from app.modules.design.events import notify_design_event
     msg = (f"Sales order confirmed — {req.request_number} ({req.title}) was opened for the new model"
@@ -205,11 +206,11 @@ def _notify_new_request(db: Session, req: DesignRequest, actor: User | None, pro
         notify_design_event(db, None, "request_raised", req, entity_type=_REQUEST_ENTITY, actor=actor,
                             title=f"New design request: {req.request_number}", message=msg, skip=heads)
     except Exception:  # noqa: BLE001 — role notifications never block the order
-        logger.exception("Design role notification failed for %s (%s)", req.request_number, project.op_number)
+        logger.exception("Design role notification failed for %s (%s)", req.request_number, project.project_code)
 
 
-def on_order_project(db: Session, project: OrderProject, so: SalesOrder, actor: User | None,
-                     new_elements: list[OrderProjectElement]) -> None:
+def on_order_project(db: Session, project: PmProject, so: SalesOrder, actor: User | None,
+                     new_elements: list[PmProjectElement]) -> None:
     """register_project_hook: design requests for new models, repeat models noted."""
     new_vehicles = [el for el in new_elements if el.kind == "vehicle"]
     if not new_vehicles:
@@ -233,9 +234,9 @@ def on_order_project(db: Session, project: OrderProject, so: SalesOrder, actor: 
         found = released_bom_for_item(db, g["item_id"])
         if found:
             bom, rev = found
-            note = f"Repeat model for {project.op_number} ({so.display_number}) — {len(g['vehicles'])} vehicle(s)"
+            note = f"Repeat model for {project.project_code} ({so.display_number}) — {len(g['vehicles'])} vehicle(s)"
             seen = db.query(DesignEvent.id).filter(DesignEvent.bom_id == bom.id, DesignEvent.action == "order_project_repeat",
-                                                   DesignEvent.comment.like(f"Repeat model for {project.op_number} %")).first()
+                                                   DesignEvent.comment.like(f"Repeat model for {project.project_code} %")).first()
             if not seen:
                 add_event(db, "order_project_repeat", actor, bom_id=bom.id, bom_revision_id=rev.id, comment=note)
             continue
@@ -258,7 +259,7 @@ def on_order_project(db: Session, project: OrderProject, so: SalesOrder, actor: 
                                          change_note="Original requirement (from the confirmed sales order)",
                                          revised_by_id=req.requested_by_id))
         add_event(db, "request_created", actor, request_id=req.id,
-                  comment=f"Opened automatically for {project.op_number} when {so.display_number} was confirmed")
+                  comment=f"Opened automatically for {project.project_code} when {so.display_number} was confirmed")
         existing.append(req)
         _notify_new_request(db, req, actor, project)
     db.flush()
@@ -303,7 +304,7 @@ def _approval_set(docs: list[DesignDocument], state: dict[int, str]) -> list[Des
     return flagged or [d for d in docs if state.get(d.id, "none") != "none"]
 
 
-def _engineering_bits(db: Session, project: OrderProject) -> tuple[dict, dict]:
+def _engineering_bits(db: Session, project: PmProject) -> tuple[dict, dict]:
     from app.modules.electrical.models.job import ElectricalJob
     from app.modules.hydraulic.models.system import HydSystem
     jobs = db.query(ElectricalJob).filter(ElectricalJob.order_project_id == project.id,
@@ -313,7 +314,7 @@ def _engineering_bits(db: Session, project: OrderProject) -> tuple[dict, dict]:
     return ({j.id: j for j in jobs}, {s.id: s for s in systems})
 
 
-def design_cells(db: Session, project: OrderProject, elements: list[OrderProjectElement]) -> dict[int, dict | None]:
+def design_cells(db: Session, project: PmProject, elements: list[PmProjectElement]) -> dict[int, dict | None]:
     so = db.get(SalesOrder, project.sales_order_id)
     if so is None:
         return {}
@@ -428,7 +429,7 @@ def design_cells(db: Session, project: OrderProject, elements: list[OrderProject
 # ---------------------------------------------------------------- drawing approval → billing
 
 def on_customer_approval(db: Session, document_ids: list[int], *, on: date, actor: User | None) -> list[str]:
-    """After customer approvals were recorded: for every Order Project whose
+    """After customer approvals were recorded: for every project whose
     drawings (requests linked to the project) now all carry the customer's
     approval, mark the order's 'drawing_approval' billing milestone due.
     Returns the order numbers whose milestone fell due."""
@@ -446,7 +447,7 @@ def on_customer_approval(db: Session, document_ids: list[int], *, on: date, acto
     from app.modules.accounts.services import billing
     from app.modules.sales.views import get_order
     for pid in project_ids:
-        project = db.get(OrderProject, pid)
+        project = db.get(PmProject, pid)
         if project is None:
             continue
         all_req = [r.id for r in db.query(DesignRequest.id).filter(
@@ -468,10 +469,10 @@ def on_customer_approval(db: Session, document_ids: list[int], *, on: date, acto
             done.append(so.display_number)
             for rid in all_req:
                 add_event(db, "drawing_milestone_due", actor, request_id=rid,
-                          comment=f"Customer approved every drawing of {project.op_number} — the drawing-approval billing "
+                          comment=f"Customer approved every drawing of {project.project_code} — the drawing-approval billing "
                                   f"milestone of {so.display_number} is now due")
     return done
 
 
-ops.register_project_hook(on_order_project)
-ops.register_department_provider("design", design_cells)
+op_core.register_project_hook(on_order_project)
+op_core.register_department_provider("design", design_cells)

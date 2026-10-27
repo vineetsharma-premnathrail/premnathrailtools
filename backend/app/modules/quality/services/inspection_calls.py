@@ -52,7 +52,7 @@ def create(db: Session, data: dict, user: User) -> QualityInspectionCall:
         raise CallError(f"Item #{data['item_id']} isn't in the Item Master.", 404)
     if data["quantity"] <= 0:
         raise CallError("Offered quantity must be greater than zero.", 422)
-    # Order Project (the build) — its Sales Order decides the agency. A lot
+    # project (the build) — its Sales Order decides the agency. A lot
     # already linked to an element carries its link onto the call.
     from app.modules.quality.services import order_project_inspection as opi
     lot_link = None
@@ -74,7 +74,7 @@ def create(db: Session, data: dict, user: User) -> QualityInspectionCall:
         if not project:
             raise CallError(f"ERP machine / order #{data['erp_project_id']} not found.", 404)
     elif not (data.get("order_reference") or "").strip():
-        raise CallError("Pick the Order Project (vehicle / lot) or the ERP machine / order this inspection is for, or type the "
+        raise CallError("Pick the project unit (vehicle / lot) or the ERP machine / order this inspection is for, or type the "
                         "customer order reference.", 422)
     agency = data.get("agency") or (project.inspection_agency if project else None)
     if not agency:
@@ -86,7 +86,7 @@ def create(db: Session, data: dict, user: User) -> QualityInspectionCall:
         if not lot or lot.item_id != item.id:
             raise CallError("The linked final inspection lot must be a lot of the same item.", 422)
         if op_element is not None and lot.order_project_element_id and lot.order_project_element_id != op_element.id:
-            raise CallError(f"Lot {lot.lot_number} was inspected for another vehicle / lot of the order project — pick the "
+            raise CallError(f"Lot {lot.lot_number} was inspected for another vehicle / lot of the project — pick the "
                             "element the lot belongs to, or a lot of this element.", 422)
         if lot.decision not in ("accept", "accept_with_deviation", "partial"):
             raise CallError(f"Lot {lot.lot_number} hasn't been accepted by our own final inspection — offer material to the "
@@ -179,7 +179,7 @@ def record_result(db: Session, call: QualityInspectionCall, *, result: str, acce
     db.flush()
     if acc > 0:
         # Sales billing plan: the order's 'inspection' milestone falls due (VF04) —
-        # via the Order Project's Sales Order, or the ERP machine for old calls.
+        # via the project's Sales Order, or the ERP machine for old calls.
         from app.modules.quality.services.order_project_inspection import trigger_inspection_milestone
         trigger_inspection_milestone(db, call)
     if rej > 0:

@@ -137,12 +137,12 @@ async def set_contract_requirement(project_id: int, payload: QualityContractRequ
     return {"id": p.id, "third_party_inspection_required": p.third_party_inspection_required, "inspection_agency": p.inspection_agency}
 
 
-# --- Order Project requirement (from the Sales Order) ----------------------
+# --- project requirement (from the Sales Order) ----------------------
 
 @router.get("/order-project-requirement")
 async def order_project_requirement(element_id: int | None = None, project_id: int | None = None,
                                     db: Session = Depends(get_db)):
-    """What the Sales Order of an Order Project says about inspection - shown
+    """What the Sales Order of a project says about inspection - shown
     read-only on the call form ("from Sales Order ...") - and the calls
     already raised for the element."""
     try:
@@ -150,13 +150,13 @@ async def order_project_requirement(element_id: int | None = None, project_id: i
     except opi.LinkError as e:
         raise HTTPException(status_code=e.status, detail=str(e))
     if project is None:
-        raise HTTPException(status_code=422, detail="Pick an Order Project (and its vehicle / lot) first.")
+        raise HTTPException(status_code=422, detail="Pick a project (and its unit: vehicle / lot) first.")
     req = opi.so_requirement(db, element, project) or {}
     calls = opi.calls_for_element(db, element.id) if element is not None else []
     cleared = None
     if element is not None:
         _req, _agency, cleared = opi.inspection_required_for_element(db, element)
-    return {**req, "op_number": project.op_number, "element_no": element.element_no if element else None,
+    return {**req, "op_number": project.project_code, "element_no": element.element_no if element else None,
             "element_label": element.label if element else None, "cleared": cleared,
             "calls": [{"id": c.id, "call_number": c.call_number, "status": c.status, "quantity": c.quantity,
                        "accepted_qty": c.accepted_qty, "certificate_number": c.certificate_number} for c in calls]}

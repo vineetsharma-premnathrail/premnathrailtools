@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class P2PPurchaseOrderItemPayload(BaseModel):
@@ -36,13 +36,27 @@ class P2PPurchaseOrderItemResponse(BaseModel):
     vendor_quotation_item_id: int | None = None
     price_source: str | None = None
     price_override_reason: str | None = None
-    # Order Project element (vehicle / lot) this line is for (from its PR line) — OrderProjectChip.
+    # Project unit (vehicle / lot) this line is for (from its PR line) — ProjectUnitChip.
     order_project_id: int | None = None
     order_project_element_id: int | None = None
     order_project_number: str | None = None
     order_project_element_no: str | None = None
     order_project_element_label: str | None = None
     order_project_display: str | None = None
+    # Draft POs only: the least the line may be ordered for = what its requisition
+    # still asks for, less other live POs of the same line (it can only be raised).
+    min_quantity: float | None = None
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def _fill_min_quantity(cls, data, handler):
+        obj = handler(data)
+        if obj.min_quantity is None and hasattr(data, "pr_item_id") and not isinstance(data, BaseModel):
+            from app.modules.p2p.pre_po import po_line_min_quantity
+            po = getattr(data, "purchase_order", None)
+            if po is not None and po.status == "draft":
+                obj.min_quantity = po_line_min_quantity(data)
+        return obj
 
 
 class P2PPurchaseOrderCreate(BaseModel):
@@ -83,7 +97,10 @@ class P2PPurchaseOrderItemLinkPayload(BaseModel):
 
 class P2PPurchaseOrderItemPricingPayload(BaseModel):
     id: int
-    unit_price: float = Field(gt=0)
+    # None = leave unpriced: a draft may be saved with unpriced lines (Send for approval still needs prices).
+    unit_price: float | None = Field(default=None, gt=0)
+    # Raise the quantity above the requisition's; the server refuses less than min_quantity.
+    quantity: float | None = Field(default=None, gt=0)
     tax_rate: float | None = Field(default=None, ge=0, le=100)
     # Omitted = leave the line's specification as it is.
     specification: str | None = None

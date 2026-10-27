@@ -2,7 +2,7 @@
 of authorization. Imported by every p2p route module (and the goods-receipt
 routes) so the registrations exist before the first request.
 
-    P2PRequest        own = requester · assigned = the buyer · department = the PR's department column
+    P2PRequest        own = requester · assigned = the buyer, or the buyer of any of its lines · department = the PR's department column
     P2PPurchaseOrder  own = who drafted it · assigned = the buyer of its requisition
     RFQ               own = who started it · assigned = the buyer of its requisition
     P2PGoodsReceipt   (Store › GRN) own = who received it · assigned = who inspected it
@@ -24,6 +24,7 @@ from app.modules.p2p.approvals import PO_ENTITY, PR_ENTITY, can_act_now, engine_
 from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt
 from app.modules.p2p.models.p2p_request import ENGINE_SCHEME, P2P_PO_APPROVER_FLAGS, P2PRequest
 from app.modules.p2p.models.p2p_request_approval import P2PRequestApproval
+from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.p2p_request_po_approver import P2PRequestPOApprover
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
 from app.modules.p2p.models.rfq import RFQ
@@ -33,8 +34,13 @@ def _bought_by(user):
     return select(P2PRequest.id).where(P2PRequest.assigned_buyer_id == user.id)
 
 
+def _line_buyer_of(user):
+    """Requisitions with a line bought by the user (line buyers, 2026-10-27)."""
+    return P2PRequest.id.in_(select(P2PRequestItem.p2p_request_id).where(P2PRequestItem.buyer_id == user.id))
+
+
 register_scoped(
-    P2PRequest, "p2p", entity_type=PR_ENTITY, owner=("requested_by_id",), assigned=("assigned_buyer_id",),
+    P2PRequest, "p2p", entity_type=PR_ENTITY, owner=("requested_by_id",), assigned=("assigned_buyer_id", _line_buyer_of),
     department="department", label="purchase requisition",
 )
 register_scoped(

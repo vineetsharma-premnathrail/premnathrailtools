@@ -37,7 +37,6 @@ export default function RndSettingsPage() {
     <div>
       <RndNav />
       <div style={{ marginBottom: 20 }}>
-        <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>R&amp;D Module</p>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>R&amp;D Settings</h1>
         <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>Who heads R&amp;D and who works on Technical Offers — both are set elsewhere; this page explains where.</p>
       </div>

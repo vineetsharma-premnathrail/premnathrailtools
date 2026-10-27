@@ -71,7 +71,7 @@ export interface PlannedOrder {
   remarks: string | null
   start_in_past: boolean
   suggested_category_code: string | null
-  /** Order Project element of the pegged demand ("PEW-2026-0001 / 01 · Vehicle 1"). */
+  /** Project unit of the pegged demand ("PEW-80 / 01 · Vehicle 1"). */
   order_project_id?: number | null
   order_project_element_id?: number | null
   order_project_label?: string | null

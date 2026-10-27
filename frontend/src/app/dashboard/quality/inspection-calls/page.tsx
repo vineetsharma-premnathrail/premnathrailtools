@@ -15,7 +15,7 @@ import {
 } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
-import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -65,7 +65,7 @@ function CallsTab() {
           {Object.entries(STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </Select>
         <div style={{ flex: '1 1 260px', maxWidth: 380 }}>
-          <OrderProjectPicker value={op} onChange={(v) => setOp(v)} requireElement={false} placeholder="All order projects" />
+          <OrderProjectPicker value={op} onChange={(v) => setOp(v)} requireElement={false} placeholder="All projects" />
         </div>
       </div>
       <div style={tableWrapStyle}>

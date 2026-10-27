@@ -152,7 +152,7 @@ export default function ServiceContractDetailPage() {
           <Section title={`Covered machines (${c.machines.length})`} style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {c.machines.map((m) => (
-                <span key={m.project_id} onClick={() => router.push(recordPath('/dashboard/erp/projects', m, 'project_id'))} title="Open this machine"
+                <span key={m.project_id} onClick={() => router.push(recordPath('/dashboard/projects/service-projects', m, 'project_id'))} title="Open this machine"
                   style={{ ...pillStyle('#c2410c'), fontSize: 12.5, padding: '6px 10px', fontWeight: 600, cursor: 'pointer' }}>
                   {m.serial_number}{m.product_name || m.model_name ? ` · ${m.product_name || m.model_name}` : ''}
                 </span>

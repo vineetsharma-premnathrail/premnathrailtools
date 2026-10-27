@@ -281,8 +281,8 @@ async def create_request(payload: DesignRequestCreate, background_tasks: Backgro
     link = {k: values.get(k) for k in ("order_project_id", "order_project_element_id")}
     clean_op_link(db, link)
     if link["order_project_id"] and not (payload.customer_id or org_id):
-        from app.modules.sales.models.order_project import OrderProject
-        org_id = db.get(OrderProject, link["order_project_id"]).customer_id
+        from app.modules.projects.models.project import PmProject
+        org_id = db.get(PmProject, link["order_project_id"]).customer_id
     req = DesignRequest(
         request_number=next_number(db, DesignRequest.request_number, year_prefix("DRQ")), title=payload.title.strip(),
         source=payload.source, crm_source=payload.crm_source if payload.crm_record_id else None,

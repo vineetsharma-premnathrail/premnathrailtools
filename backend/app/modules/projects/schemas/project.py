@@ -3,6 +3,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.modules.erp.schemas.project import ProjectCreateOptionalSerial
+
 PO_REQUIRED_MSG = "Customer PO number is required. Enter the customer's purchase order number for this project."
 SO_REQUIRED_MSG = "Sales order (SO) number is required. Enter the SO number this project is delivered under."
 
@@ -30,7 +32,7 @@ class _PoSoCheck(BaseModel):
 
 
 class PmProjectCreate(_PoSoCheck):
-    # Blank = next PEW-<year>-NNNN number (one series with the Order Projects).
+    # Blank = next number of the PEW series (PEW-78 ...; one series with the Order Projects and past machines); or typed, e.g. PEW-64A.
     project_code: str | None = None
     name: str
     client_name: str
@@ -43,6 +45,26 @@ class PmProjectCreate(_PoSoCheck):
     start_date: date
     target_handover_date: date
     priority: str = "medium"
+    # Optional Finance budget (internal order) the project's spend is tracked against.
+    internal_order_id: int | None = None
+
+
+class PmProjectWithMachineCreate(BaseModel):
+    """'Add New Project': the PM project and its machine in one save. Client and
+    customer PO are typed once, on the machine part, and copied to the project
+    (they may also be sent on the project part to override)."""
+    project_code: str | None = None
+    name: str
+    client_name: str | None = None
+    customer_po_ref: str | None = None
+    sales_order_ref: str | None = None
+    description: str | None = None
+    project_manager_id: int | None = None
+    start_date: date
+    target_handover_date: date
+    priority: str = "medium"
+    internal_order_id: int | None = None
+    machine: ProjectCreateOptionalSerial
 
 
 class PmProjectUpdate(_PoSoCheck):
@@ -57,6 +79,8 @@ class PmProjectUpdate(_PoSoCheck):
     start_date: date | None = None
     target_handover_date: date | None = None
     priority: str | None = None
+    # Finance budget to link; null unlinks it.
+    internal_order_id: int | None = None
     # Drafted on the Overview closure panel so the Final Project Report includes them.
     closure_note: str | None = None
     lessons_learned: str | None = None
@@ -70,6 +94,12 @@ class PmProjectTransitionPayload(BaseModel):
     # close only: the PM confirms every project document is filed.
     documents_archived: bool = False
     lessons_learned: str | None = None
+
+
+class PmStagePayload(BaseModel):
+    # One of LIFECYCLE_STAGES (projects/lifecycle.py); reason is required when moving backwards.
+    stage: str
+    reason: str | None = None
 
 
 class PmClosureCheck(BaseModel):
@@ -124,6 +154,15 @@ class PmProjectResponse(BaseModel):
     documents_archived_at: datetime | None = None
     documents_archived_by_name: str | None = None
     lessons_learned: str | None = None
+    internal_order_id: int | None = None
+    internal_order_code: str | None = None
+    internal_order_name: str | None = None
+    # Order-linked project (made from a confirmed sales order) and where it is in its life.
+    sales_order_id: int | None = None
+    so_number: str | None = None
+    lifecycle_stage: str = "planned"
+    lifecycle_stage_label: str | None = None
+    units_total: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -138,3 +177,6 @@ class PmProjectResponse(BaseModel):
     # on_track | at_risk | delayed (None when not Active)
     health: str | None = None
     can_manage: bool = False
+    # The machine registered with this project (first live one); None for projects without one.
+    machine_id: int | None = None
+    machine_serial: str | None = None

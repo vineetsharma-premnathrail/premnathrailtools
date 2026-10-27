@@ -5,12 +5,11 @@ import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState } from 'react'
 import { useCan } from '@/lib/permissions'
 import { crmApi } from '@/lib/api'
-import { formatDate } from '@/lib/format'
 import { Tender, Organization, OrgContact } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import PhoneField from '@/components/erp/PhoneField'
-import { RAILWAY_ZONES, TENDER_PORTALS, TENDER_TYPES, CURRENCIES, TENDER_STATUSES, leadSourceOptions, priorityOptions, priorityLabel } from './constants'
+import { RAILWAY_ZONES, TENDER_PORTALS, TENDER_TYPES, CURRENCIES, TENDER_STATUSES, priorityOptions, priorityLabel } from './constants'
 import { handleEnterAsTab } from './ui'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import ValidatedInput from '@/components/ValidatedInput'
@@ -41,6 +40,7 @@ type FormState = {
   currency: string
   status: string
   current_status_note: string
+  tender_date: string
   lead_source: string
   priority: string
   railway_zone: string
@@ -64,6 +64,12 @@ type FormState = {
   loss_reason: string
 }
 
+/** Today as YYYY-MM-DD in local time (DateField's value format). */
+function todayISO() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function toFormState(initial?: Tender, defaultOrgId?: number): FormState {
   return {
     org_id: initial?.org_id ? String(initial.org_id) : defaultOrgId ? String(defaultOrgId) : '',
@@ -78,6 +84,9 @@ function toFormState(initial?: Tender, defaultOrgId?: number): FormState {
     currency: initial?.currency || 'INR',
     status: initial?.status || 'Requirement Received',
     current_status_note: initial?.current_status_note || '',
+    // Document date: when the tender was taken up. Older records fall back to the day they were entered.
+    tender_date: initial?.tender_date || (initial?.created_at ? initial.created_at.slice(0, 10) : todayISO()),
+    // Not asked on the form any more; an existing value is kept as it is.
     lead_source: initial?.lead_source || '',
     priority: initial?.priority || 'Medium',
     railway_zone: initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? 'Other' : initial?.railway_zone || '',
@@ -200,8 +209,12 @@ export default function TenderForm({
       setError('Please select the submission date.')
       return
     }
-    if (!form.lead_source) {
-      setError('Please select a lead source.')
+    if (!form.tender_date) {
+      setError('Please pick the Tender Date — the day this tender was taken up.')
+      return
+    }
+    if (form.tender_date > todayISO()) {
+      setError('Tender Date cannot be in the future. Pick the day the tender was actually taken up (today or earlier).')
       return
     }
     if (!form.priority) {
@@ -373,17 +386,9 @@ export default function TenderForm({
                   <input value={initial?.universal_id || previewNumber || 'Auto-generated on save'} disabled style={{ ...inputStyle, background: '#eff6ff', color: SHEET.BLUE, fontWeight: 600 }} />
                 </F>
               </div>
-              <div style={{ flex: '1 1 120px' }}>
-                <F label="Creation Date">
-                  <input value={initial?.created_at ? formatDate(initial.created_at) : formatDate(new Date())} disabled style={{ ...inputStyle, background: SHEET.SOFT, color: SHEET.MUTED }} />
-                </F>
-              </div>
-              <div style={{ flex: '1 1 140px' }}>
-                <F label={<>Lead Source <Req /></>} tourId="tnd-lead-source">
-                  <Select value={form.lead_source} onChange={(e) => set('lead_source', e.target.value)} style={inputStyle}>
-                    <option value="">-- Select Source --</option>
-                    {leadSourceOptions(form.lead_source).map((s) => <option key={s} value={s}>{s}</option>)}
-                  </Select>
+              <div style={{ flex: '1 1 150px', minWidth: 150 }}>
+                <F label={<>Tender Date <Req /></>} tourId="tnd-date">
+                  <DateField value={form.tender_date} onChange={(v) => set('tender_date', v)} />
                 </F>
               </div>
               <div style={{ flex: '1 1 200px' }}>

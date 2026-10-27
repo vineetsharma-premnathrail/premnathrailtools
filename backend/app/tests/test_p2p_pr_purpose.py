@@ -158,8 +158,10 @@ def test_project_manager_stage_only_for_production_and_names_the_projects_manage
         return [(s.stage_name, s.approver_id) for s in rows]
 
     # No manager on the project -> refused, naming the project and where to fix it.
+    project.project_manager_id = None
+    db.commit()
     r = client.post(BASE, json=body, headers=auth_header(req))
-    assert r.status_code == 422 and project.op_number in r.json()["detail"] and "Order Projects" in r.json()["detail"], r.text
+    assert r.status_code == 422 and project.project_code in r.json()["detail"] and "All Projects" in r.json()["detail"], r.text
 
     project.project_manager_id = pm.id
     db.commit()

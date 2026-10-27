@@ -137,7 +137,8 @@ def complete(client, headers, build_id, key, code=200):
 
 def test_create_seeds_stages_and_default_tests(client, plant):
     b = new_build(client, plant)
-    assert b["build_number"].startswith("RRV-") and b["status"] == "planned"
+    # A hand-made build takes the next number of the PEW project series (2026-10-27).
+    assert b["build_number"].startswith("PEW-") and b["status"] == "planned"
     assert [s["stage_key"] for s in b["stages"]][:3] == ["planning", "material_kitting", "sub_assembly"]
     assert len(b["stages"]) == 12 and b["stages_done"] == 0
     assert "rail_trial" in b["required_tests"] and b["test_status"]["rail_trial"] == "pending"

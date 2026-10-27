@@ -40,12 +40,12 @@ class DesignBom(Base, TimestampMixin, SoftDeleteMixin):
     # plan material against.
     pm_project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("pm_projects.id"), index=True, nullable=True)
     erp_project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("erp_projects.id"), index=True, nullable=True)
-    # Order Project (Sales › Order Projects) — the confirmed order this work is for;
+    # PM project (Project Management › All Projects) — the confirmed order this work is for;
     # element = one vehicle / lot of it. Nullable, kept when the project closes.
     order_project_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("sales_order_projects.id", ondelete="SET NULL"), index=True, nullable=True)
+        Integer, ForeignKey("pm_projects.id", ondelete="SET NULL"), index=True, nullable=True)
     order_project_element_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("sales_order_project_elements.id", ondelete="SET NULL"), index=True, nullable=True)
+        Integer, ForeignKey("pm_project_elements.id", ondelete="SET NULL"), index=True, nullable=True)
     design_request_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("design_requests.id"), nullable=True)
     owner_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)

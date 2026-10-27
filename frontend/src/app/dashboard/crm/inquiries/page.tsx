@@ -13,6 +13,7 @@ import InquiryDetailPanel from '@/components/crm/InquiryDetailPanel'
 import TenderDetailPanel from '@/components/crm/TenderDetailPanel'
 import { secondaryBtnStyle, primaryBtnStyle, inputStyle } from '@/components/crm/ui'
 import { RowCount, StatChip } from '@/components/shared/ui'
+import FilterMenu from '@/components/shared/FilterMenu'
 import { CONTROL, BRAND, TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -71,7 +72,8 @@ export default function InquiriesPage() {
   const [error, setError] = useState('')
 
   const [search, setSearch] = useState('')
-  const [typeFilter, setTypeFilter] = useState<'all' | Kind>('all')
+  // Inquiries by default; ?type=tender (dashboard Tenders cards) opens the tenders. No All/Inquiry/Tender switch (owner, 2026-10-27).
+  const [typeFilter, setTypeFilter] = useState<'all' | Kind>('inquiry')
   const [pinnedKeys, setPinnedKeys] = useState<string[]>([])
 
   const selectedRef = searchParams.get('id')
@@ -142,15 +144,14 @@ export default function InquiriesPage() {
 
   const orgById = useMemo(() => new Map(organizations.map((o) => [o.id, o])), [organizations])
 
-  type ColFilterKey = 'stage' | 'created_by_name'
-  const COL_FILTER_KEYS: ColFilterKey[] = ['stage', 'created_by_name']
-  const [colFilters, setColFilters] = useState<Record<ColFilterKey, string>>({ stage: '', created_by_name: '' })
+  type ColFilterKey = 'stage' | 'status' | 'org_name' | 'created_by_name'
+  const COL_FILTER_KEYS: ColFilterKey[] = ['stage', 'status', 'org_name', 'created_by_name']
+  const [colFilters, setColFilters] = useState<Record<ColFilterKey, string>>({ stage: '', status: '', org_name: '', created_by_name: '' })
   const setColFilter = (key: ColFilterKey, value: string) => setColFilters((f) => ({ ...f, [key]: value }))
 
   const clearFilters = () => {
     setSearch('')
-    setTypeFilter('all')
-    setColFilters({ stage: '', created_by_name: '' })
+    setColFilters({ stage: '', status: '', org_name: '', created_by_name: '' })
   }
 
   const combined = useMemo<CombinedRow[]>(() => {
@@ -193,7 +194,7 @@ export default function InquiriesPage() {
   }, [inquiries, tenders, typeFilter, orgById])
 
   const colFilterOptions = useMemo(() => {
-    const options: Record<ColFilterKey, string[]> = { stage: [], created_by_name: [] }
+    const options: Record<ColFilterKey, string[]> = { stage: [], status: [], org_name: [], created_by_name: [] }
     for (const key of COL_FILTER_KEYS) {
       const values = new Set<string>()
       for (const r of combined) {
@@ -255,16 +256,20 @@ export default function InquiriesPage() {
 
   // Header counters: computed from the rows the table shows (search, type and column filters already applied).
   const stats = useMemo(() => {
-    const today = new Date().toLocaleDateString('en-CA') // local date (IST), not UTC
     const isClosed = (r: CombinedRow) => r.status.startsWith('Closed')
     const notOrdered = (r: CombinedRow) => /not ordered/i.test(r.status)
     return {
-      inquiries: filteredRows.filter((r) => r.kind === 'inquiry').length,
-      tenders: filteredRows.filter((r) => r.kind === 'tender').length,
+      // Active only (owner, 2026-10-27): closed (won / lost) and cancelled ones are not counted here.
+      inquiries: filteredRows.filter((r) => r.kind === 'inquiry' && !isClosed(r)).length,
+      tenders: filteredRows.filter((r) => r.kind === 'tender' && !isClosed(r) && r.status !== 'Tender Cancelled').length,
       open: filteredRows.filter((r) => !isClosed(r) && r.status !== 'Tender Cancelled').length,
       won: filteredRows.filter((r) => isClosed(r) && !notOrdered(r)).length,
       lost: filteredRows.filter((r) => isClosed(r) && notOrdered(r)).length,
-      overdue: filteredRows.filter((r) => r.kind === 'inquiry' && !isClosed(r) && r.date !== 'Not provided' && r.date.slice(0, 10) < today).length,
+      // Where the work sits now (owner, 2026-10-27): inquiry and tender rows at these statuses.
+      reqReceived: filteredRows.filter((r) => r.kind === 'inquiry' && r.status === 'Requirement Received').length,
+      quoteSent: filteredRows.filter((r) => r.kind === 'inquiry' && r.status === 'Quotation Sent').length,
+      published: filteredRows.filter((r) => r.kind === 'tender' && r.status === 'Tender Published').length,
+      participation: filteredRows.filter((r) => r.kind === 'tender' && r.status === 'Tender Participation').length,
     }
   }, [filteredRows])
 
@@ -285,12 +290,15 @@ export default function InquiriesPage() {
         </div>
         {!loading && (
           <div data-tour="crm-inq-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0 14px' }}>
-            <StatChip label="Inquiries" value={stats.inquiries} color="#3b82f6" />
-            <StatChip label="Tenders" value={stats.tenders} color="#3b82f6" />
+            <StatChip label="Active inquiries" value={stats.inquiries} color="#3b82f6" />
+            <StatChip label="Active tenders" value={stats.tenders} color="#3b82f6" />
             <StatChip label="Open" value={stats.open} color="#ca8a04" />
             <StatChip label="Won" value={stats.won} color="#16a34a" />
             <StatChip label="Lost" value={stats.lost} color="#78716c" />
-            <StatChip label="Follow-ups overdue" value={stats.overdue} color="#ea580c" />
+            <StatChip label="Requirement received" value={stats.reqReceived} color="#7c3aed" />
+            <StatChip label="Quotation sent" value={stats.quoteSent} color="#0891b2" />
+            <StatChip label="Tenders published" value={stats.published} color="#7c3aed" />
+            <StatChip label="Tender participation" value={stats.participation} color="#0891b2" />
           </div>
         )}
         {/* One toolbar row: add, search + type filter, then export / import; wraps on narrow screens. */}
@@ -309,22 +317,18 @@ export default function InquiriesPage() {
             placeholder="Search ID, customer organization, product, owner, zone, stage..."
             style={{ ...inputStyle, flex: '1 1 260px', minWidth: 200, width: 'auto' }}
           />
-          <div data-tour="iq-col-type" role="radiogroup" aria-label="Show" style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto', height: CONTROL.height, boxSizing: 'border-box', padding: '0 12px', borderRadius: 10, border: '1px solid rgba(15,23,42,0.18)', background: '#fff' }}>
-            {([['all', 'All'], ['inquiry', 'Inquiry'], ['tender', 'Tender']] as const).map(([value, label]) => (
-              <label key={value} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 600, color: typeFilter === value ? '#c2410c' : '#57534e', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                <input
-                  type="radio"
-                  name="iq-type-filter"
-                  value={value}
-                  checked={typeFilter === value}
-                  onChange={() => setTypeFilter(value)}
-                  style={{ accentColor: '#FF7A45', margin: 0, cursor: 'pointer' }}
-                />
-                {label}
-              </label>
-            ))}
-          </div>
-          <button onClick={clearFilters} data-tour="iq-clear-btn" type="button" style={{ background: 'none', border: 'none', padding: '0 6px', height: CONTROL.height, fontSize: 13, fontWeight: 600, color: '#c2410c', cursor: 'pointer', textDecoration: 'underline' }}>Clear</button>
+          <FilterMenu
+            tourId="iq-filter-btn"
+            fields={[
+              { key: 'kind', label: 'Type', value: typeFilter, defaultValue: 'inquiry', allLabel: 'Inquiries', options: [{ value: 'tender', label: 'Tenders' }, { value: 'all', label: 'Inquiries and tenders' }] },
+              ...([['status', 'Status'], ['stage', 'Stage'], ['org_name', 'Customer Organization'], ['created_by_name', 'Created By']] as [ColFilterKey, string][]).map(([key, label]) => ({
+                key, label, value: colFilters[key], options: colFilterOptions[key].map((v) => ({ value: v, label: v })),
+              })),
+            ]}
+            onChange={(key, v) => { if (key === 'kind') setTypeFilter(v as 'all' | Kind); else setColFilter(key as ColFilterKey, v) }}
+            onClear={() => { setTypeFilter('inquiry'); setColFilters({ stage: '', status: '', org_name: '', created_by_name: '' }) }}
+          />
+          <button onClick={clearFilters} data-tour="iq-clear-btn" type="button" style={secondaryBtnStyle}>Clear</button>
           <div style={{ display: 'flex', gap: 8 }}>
             {can('crm', 'inquiries_tenders', 'export') && <button type="button" data-tour="iq-export-btn" onClick={() => setShowExport(true)} style={secondaryBtnStyle}>Export</button>}
             {user?.role === 'admin' && can('crm', 'organizations', 'import') && <button type="button" data-tour="iq-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>}

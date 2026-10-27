@@ -14,7 +14,7 @@ from app.modules.store.schemas.stock_reservation import StoreStockReservationCre
 from app.modules.store.service import generate_stock_reservation_number
 from app.modules.store.services.stock_ledger import adjust_reserved_qty
 from app.modules.store.services.project_stock import element_info
-# Registers the Order Project hooks / 360 provider at startup (this module is
+# Registers the project hooks / 360 provider at startup (this module is
 # always imported by main.py).
 from app.modules.store import order_project_links  # noqa: F401
 
@@ -42,7 +42,7 @@ async def list_stock_reservations(
     status: str | None = Query(None),
     order_project_id: int | None = Query(None),
     order_project_element_id: int | None = Query(None),
-    project_stock: bool | None = Query(None, description="true = only holds for an Order Project element; false = only others"),
+    project_stock: bool | None = Query(None, description="true = only holds for a project unit; false = only others"),
     db: Session = Depends(get_db),
     user: User = Depends(require_tab_access("store", "reservations")),
 ):
@@ -93,13 +93,13 @@ async def create_stock_reservation(
     ensure_location_allowed(db, user, payload.location_id)
     project_id = element_id = None
     if payload.order_project_element_id:
-        from app.modules.sales.order_projects import resolve_element
+        from app.modules.projects.so_projects import resolve_element
         project, element = resolve_element(db, payload.order_project_element_id, project_id=payload.order_project_id)
         project_id, element_id = project.id, element.id
     elif payload.order_project_id:
-        from app.modules.sales.order_projects import resolve_project
+        from app.modules.projects.so_projects import resolve_project
         project = resolve_project(db, payload.order_project_id)
-        raise HTTPException(status_code=422, detail=f"Pick the vehicle / lot of {project.op_number} the stock is held for — "
+        raise HTTPException(status_code=422, detail=f"Pick the vehicle / lot of {project.project_code} the stock is held for — "
                                                     "project stock is reserved for one element, not the project as a whole.")
 
     try:

@@ -15,7 +15,7 @@ import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
-import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
+import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 
 const linkBtn: React.CSSProperties = { background: 'none', border: 'none', padding: 0, fontSize: 13.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }
 const yesNo = (v?: boolean | null) => (v == null ? null : v ? 'Yes' : 'No')
@@ -39,7 +39,7 @@ export default function StoreMaterialIssueDetailPage() {
     storeApi.getMaterialIssue(issueId).then(setIssue).catch((err) => setLoadError(extractErrorMessages(err, 'Could not load this material issue — check your connection and reload; if it persists your account may lack access to this module.').join(' '))).finally(() => setLoading(false))
   }, [isAuthorized, issueId])
 
-  // A dispatch can ship several vehicles: show each line's element when they differ from the header's.
+  // A dispatch can ship several vehicles: show each line's unit when they differ from the header's.
   const showLineElement = !!issue && issue.items.some((l) => l.order_project_element_id && l.order_project_element_id !== issue.order_project_element_id)
 
   if (isLoading || !isAuthorized) return null
@@ -84,9 +84,9 @@ export default function StoreMaterialIssueDetailPage() {
               {issue.project_or_work_order && <DetailRow label="Work Order / Reference">{issue.project_or_work_order}</DetailRow>}
               {issue.op_number && (
                 <div data-tour="issue-detail-order-project">
-                  <DetailRow label="Order Project">
+                  <DetailRow label="Project">
                     <OrderProjectChip opNumber={issue.op_number} elementNo={issue.element_no} label={issue.element_label}
-                      onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', issue, 'order_project_id')) : undefined} />
+                      onClick={can('projects', 'all_projects', 'view') ? () => router.push(recordPath('/dashboard/projects', issue, 'order_project_id')) : undefined} />
                   </DetailRow>
                 </div>
               )}

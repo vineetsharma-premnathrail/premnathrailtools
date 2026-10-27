@@ -10,7 +10,7 @@ import { secondaryBtnStyle, Pill, DetailCard, DetailSummary, DetailGroup, Detail
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
-import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
+import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 import SystemForm from '@/components/hydraulic/SystemForm'
 import HydDocumentsPanel from '@/components/hydraulic/HydDocumentsPanel'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -218,9 +218,9 @@ export default function HydSystemDetailPage() {
             <DetailGroup title="Where it is used">
               <DetailRow label="Application">{system.application}</DetailRow>
               {system.order_project_number && (
-                <DetailRow label="Order project">
+                <DetailRow label="Project">
                   <OrderProjectChip opNumber={system.order_project_number} elementNo={system.order_project_element_no} label={system.order_project_element_label}
-                    onClick={() => router.push(recordPath('/dashboard/projects/order-projects', system, 'order_project_id'))} />
+                    onClick={() => router.push(recordPath('/dashboard/projects', system, 'order_project_id'))} />
                 </DetailRow>
               )}
               <DetailRow label="ERP project">{system.project_label}</DetailRow>

@@ -38,6 +38,11 @@ const config: TourConfig = {
       whatToEnter: 'Any part of a name, city, zone, etc. Updates the list automatically as you type.',
     },
     {
+      target: 'orgs-filter-btn',
+      title: 'Filter',
+      purpose: 'Opens the filters: Scope, Type, Railway Zone, City, State and Created By. The number on the button shows how many filters are on; they are the same filters as the column headers.',
+    },
+    {
       target: 'orgs-clear-btn',
       title: 'Clear',
       purpose: 'Resets the search box and every column filter below in one click, back to the full unfiltered list.',

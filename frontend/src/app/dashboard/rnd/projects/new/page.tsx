@@ -13,6 +13,7 @@ import { recordPath } from '@/lib/recordRef'
 import TeamMemberPicker from '@/components/rnd/TeamMemberPicker'
 import { extractErrorMessages } from '@/lib/validation'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
+import RndBudgetFields, { EMPTY_RND_BUDGET, RndBudgetDraft, rndBudgetError, rndBudgetPayload } from '@/components/rnd/RndBudgetFields'
 import ProjectOriginFields, { EMPTY_ORIGIN, OriginDraft, originError, originPayload, originProofRequired } from '@/components/rnd/ProjectOriginFields'
 
 const inputStyle = sheetInput
@@ -36,6 +37,7 @@ export default function NewRndProjectPage() {
   const [remarks, setRemarks] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [origin, setOrigin] = useState<OriginDraft>(EMPTY_ORIGIN)
+  const [budget, setBudget] = useState<RndBudgetDraft>(EMPTY_RND_BUDGET)
   const proofRequired = originProofRequired(origin)
 
   // Set when the project saved but an attachment didn't — the banner then
@@ -64,6 +66,8 @@ export default function NewRndProjectPage() {
     if (!title.trim()) { setError('Project title is required.'); return }
     if (!objective.trim()) { setError('Objective is required — describe what this R&D project should achieve.'); return }
     if (startDate && targetEndDate && targetEndDate < startDate) { setError("Target end date can't be before the start date."); return }
+    const budgetMsg = rndBudgetError(budget)
+    if (budgetMsg) { setError(budgetMsg); return }
 
     setSubmitting(true)
     try {
@@ -77,6 +81,7 @@ export default function NewRndProjectPage() {
         start_date: startDate || undefined,
         target_end_date: targetEndDate || undefined,
         remarks: remarks.trim() || undefined,
+        ...rndBudgetPayload(budget),
         ...originPayload(origin),
         attachment_count: files.length,
       })
@@ -187,6 +192,7 @@ export default function NewRndProjectPage() {
                 </div>
               </div>
             </SheetSection>
+            <RndBudgetFields value={budget} onChange={setBudget} />
           </>}
           right={<>
             <SheetSection icon="users" title="Project Members">

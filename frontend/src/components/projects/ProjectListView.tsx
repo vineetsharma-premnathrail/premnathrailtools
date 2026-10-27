@@ -10,7 +10,7 @@ import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 import {
-  ErrorBanner, PROJECT_HEX, PROJECT_LABELS, Pill,
+  ErrorBanner, PROJECT_LABELS, LIFECYCLE_LABELS, LIFECYCLE_ORDER, StagePills,
   inputStyle, sectionStyle, tdStyle, thStyle,
 } from '@/components/projects/work/pmUi'
 import { RowCount } from '@/components/shared/ui'
@@ -32,6 +32,7 @@ function ProjectListViewInner() {
   const due = useSearchParams().get('due')
   const [allProjects, setProjects] = useState<PmProject[]>([])
   const [status, setStatus] = useState('')
+  const [stage, setStage] = useState('')
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
@@ -50,6 +51,7 @@ function ProjectListViewInner() {
   const todayStr = addDaysIso(0)
   const in30Str = addDaysIso(30)
   const projects = allProjects.filter((p) => {
+    if (stage && (p.lifecycle_stage || 'planned') !== stage) return false
     if (due === 'passed') return !!p.target_handover_date && p.target_handover_date < todayStr
     if (due === 'soon') return !!p.target_handover_date && p.target_handover_date >= todayStr && p.target_handover_date <= in30Str
     return true
@@ -70,14 +72,18 @@ function ProjectListViewInner() {
           <option value="">All statuses</option>
           {Object.entries(PROJECT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </Select>
+        <Select data-tour="pm-all-stage-filter" style={{ ...inputStyle, maxWidth: 220 }} value={stage} onChange={(e) => setStage(e.target.value)} aria-label="Filter by stage">
+          <option value="">All stages</option>
+          {LIFECYCLE_ORDER.map((k) => <option key={k} value={k}>{LIFECYCLE_LABELS[k]}</option>)}
+        </Select>
       </div>
       {loading ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Loading…</p> : projects.length === 0 ? (
-        <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{search.trim() || status ? 'No projects match this search or status — clear the filters to see every project.' : 'No projects yet — use + New Project to start one.'}</p>
+        <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{search.trim() || status || stage ? 'No projects match this search, status or stage — clear the filters to see every project.' : 'No projects yet — use + New Project to start one.'}</p>
       ) : (
         <div data-tour="pm-all-table" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
             <thead><tr>
-              {['Code', 'Project', 'Customer', 'Status', 'Project manager', 'Closing date'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={projects.length} />}</th>)}
+              {['Code', 'Project', 'Customer', 'Stage', 'Project manager', 'Closing date'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={projects.length} />}</th>)}
             </tr></thead>
             <tbody>
               {projects.map((p) => (
@@ -85,7 +91,7 @@ function ProjectListViewInner() {
                   <td style={{ ...tdStyle, fontWeight: 700, whiteSpace: 'nowrap' }}>{p.project_code}</td>
                   <td style={tdStyle}>{p.name}</td>
                   <td style={tdStyle}>{p.client_name || '—'}</td>
-                  <td style={tdStyle}><Pill value={p.status} labels={PROJECT_LABELS} hex={PROJECT_HEX} /></td>
+                  <td style={tdStyle}><StagePills stage={p.lifecycle_stage} label={p.lifecycle_stage_label} status={p.status} /></td>
                   <td style={tdStyle}>{p.project_manager_name || '—'}</td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(p.target_handover_date)}</td>
                 </tr>

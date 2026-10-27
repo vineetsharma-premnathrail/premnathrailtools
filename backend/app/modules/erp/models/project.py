@@ -99,6 +99,13 @@ class Project(Base, TimestampMixin, SoftDeleteMixin):
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approval_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # The Project Management project this machine was registered with
+    # ("Add New Project" form = machine form + project). Past machines have none.
+    pm_project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("pm_projects.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Where the machine is in its life (same keys as PM project lifecycle_stage). Linked to a
+    # PM project it mirrors the project; without one (Past Projects) it is set by hand.
+    # Default "closed": a machine created without a project (import, past record) is already delivered.
+    lifecycle_stage: Mapped[str] = mapped_column(String(30), default="closed", server_default="planned", nullable=False)
 
     service_requests: Mapped[list["ServiceRequest"]] = relationship(
         "ServiceRequest", back_populates="project", cascade="all, delete-orphan"

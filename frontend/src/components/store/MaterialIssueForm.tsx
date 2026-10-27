@@ -15,7 +15,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
-import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
 import { RowCount } from '@/components/shared/ui'
 
@@ -396,7 +396,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
             })}
             {spec.order_project && (
               <div data-tour="issue-order-project" style={{ flex: '1 1 320px', minWidth: 240, maxWidth: 520 }}>
-                <Field label={<>Order project element {isDispatch
+                <Field label={<>Project unit {isDispatch
                   ? <span style={{ fontWeight: 400, color: SHEET.MUTED }}>(taken from the delivery row)</span>
                   : <span style={{ fontWeight: 400, color: SHEET.MUTED }}>(required for an RRV order)</span>}</>}>
                   <OrderProjectPicker value={orderProject} onChange={(v) => setOrderProject(v)}

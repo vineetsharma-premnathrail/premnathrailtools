@@ -372,12 +372,13 @@ export function DetailGroup({ title, children, last }: { title?: string; childre
 }
 
 /** One line: fixed-width label left, value right ("—" when empty). Wraps on a phone. */
-export function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+/** `emptyText`: what a blank value shows (default "—", e.g. "Not added"). */
+export function DetailRow({ label, children, emptyText = '—' }: { label: string; children: React.ReactNode; emptyText?: string }) {
   const empty = children === null || children === undefined || children === '' || children === false
   return (
     <div style={{ display: 'flex', gap: 16, padding: '8px 0', alignItems: 'baseline', flexWrap: 'wrap' }}>
       <div style={{ flex: '0 0 190px', fontSize: 13, color: '#64748b' }}>{label}</div>
-      <div style={{ flex: '1 1 260px', minWidth: 0, fontSize: 13.5, lineHeight: '20px', color: empty ? '#64748b' : '#0f172a', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{empty ? '—' : children}</div>
+      <div style={{ flex: '1 1 260px', minWidth: 0, fontSize: 13.5, lineHeight: '20px', color: empty ? '#64748b' : '#0f172a', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{empty ? emptyText : children}</div>
     </div>
   )
 }

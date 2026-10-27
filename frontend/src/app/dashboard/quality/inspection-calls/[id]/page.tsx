@@ -15,7 +15,7 @@ import { Section, InfoRow, DetailCard, DetailSummary, DetailGroup, DetailRow, pr
 import { Pill, PageHeader, ErrorBanner, ActionSheet, fmtDate, fmtQty } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
-import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
+import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 import { SheetSection, sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 import Select from '@/components/shared/Select'
 
@@ -124,7 +124,7 @@ export default function InspectionCallDetailPage() {
             <Pill text={STATUS_LABELS[call.status] || call.status} hex={STATUS_HEX[call.status]} />
             {call.op_number && (
               <OrderProjectChip opNumber={call.op_number} elementNo={call.element_no} label={call.element_label}
-                onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', call, 'order_project_id')) : undefined} />
+                onClick={can('projects', 'all_projects', 'view') ? () => router.push(recordPath('/dashboard/projects', call, 'order_project_id')) : undefined} />
             )}
             <span>·</span><span>Raised {fmtDate(call.requested_date)}{call.created_by_name ? ` by ${call.created_by_name}` : ''}</span>
             <span>·</span><span>{call.call_date ? `Inspection ${fmtDate(call.call_date)}${call.days_to_call != null ? ` (in ${call.days_to_call} days)` : ''}` : 'Inspection date not fixed yet'}</span>

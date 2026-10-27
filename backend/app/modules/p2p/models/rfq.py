@@ -32,6 +32,9 @@ class RFQ(Base, TimestampMixin):
     p2p_request_id: Mapped[int] = mapped_column(Integer, ForeignKey("p2p_requests.id"), nullable=False)
 
     status: Mapped[str] = mapped_column(String(10), default="draft", nullable=False)
+    # Where this RFQ came from. NULL = a normal RFQ raised by Purchase; 'before_po' = the internal
+    # plumbing behind a PO made from a Before-PO receipt - never shown in RFQ lists or counts.
+    source: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     is_single_quotation: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     single_quotation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

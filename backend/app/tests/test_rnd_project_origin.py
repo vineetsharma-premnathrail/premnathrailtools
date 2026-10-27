@@ -43,28 +43,32 @@ def test_internal_origins_need_note_and_proof(client, db):
     assert body["project_type"] == "technology_research" and body["origin_label"] == "Process / technology research"
 
 
+def _machine(db):
+    from app.modules.erp.models.project import Project as Machine
+    m = Machine(serial_number="PEW-31", model_name="Battery Shunter", client_company="CR")
+    db.add(m)
+    db.commit()
+    return m
+
+
 def test_improvement_rules(client, db):
+    """Owner 2026-10-27: an improvement names the existing project (machine) and a reason — nothing more."""
     h = auth_header(make_user(db, "o3@premnathrail.com"))
-    prod = _product(db)
+    m = _machine(db)
     r = _post(client, h, origin="product_improvement")
-    assert r.status_code == 400 and "existing product being improved" in r.json()["detail"]
-    r = _post(client, h, origin="product_improvement", product_id=prod.id)
+    assert r.status_code == 400 and "existing project being improved" in r.json()["detail"]
+    r = _post(client, h, origin="product_improvement", machine_id=m.id)
     assert r.status_code == 400 and "reason for the improvement" in r.json()["detail"]
-    for reason, what in (("customer_complaint", "customer complaint"), ("ncr", "NCR"), ("service_report", "service request")):
-        r = _post(client, h, origin="product_improvement", product_id=prod.id, improvement_reason=reason)
-        assert r.status_code == 400 and f"Pick the {what}" in r.json()["detail"], r.text
-    r = _post(client, h, origin="product_improvement", product_id=prod.id, improvement_reason="ncr", source_kind="ncr", source_id=99999)
-    assert r.status_code == 404 and "no longer exists" in r.json()["detail"]
-    r = _post(client, h, origin="product_improvement", product_id=prod.id, improvement_reason="cost_reduction")
-    assert r.status_code == 400 and "Who proposed it and why" in r.json()["detail"]
-    r = _post(client, h, origin="product_improvement", product_id=prod.id, improvement_reason="cost_reduction", origin_note="Casting too costly")
-    assert r.status_code == 400 and "proof document" in r.json()["detail"]
-    r = _post(client, h, origin="product_improvement", product_id=prod.id, improvement_reason="cost_reduction",
-              origin_note="Casting too costly", attachment_count=1)
-    assert r.status_code == 200, r.text
+    r = _post(client, h, origin="product_improvement", machine_id=99999, improvement_reason="ncr")
+    assert r.status_code == 400 and "no longer exists" in r.json()["detail"]
+    for reason in ("customer_complaint", "ncr", "service_report", "cost_reduction", "production_difficulty"):
+        r = _post(client, h, origin="product_improvement", machine_id=m.id, improvement_reason=reason)
+        assert r.status_code == 200, (reason, r.text)
     body = r.json()
-    assert body["project_type"] == "product_improvement" and body["product_name"] == "Battery Shunter (PRD-T1)"
-    assert body["improvement_reason_label"] == "Cost reduction" and body["source_kind"] is None
+    assert body["project_type"] == "product_improvement" and body["machine_label"] == "PEW-31 — Battery Shunter — CR"
+    assert body["improvement_reason_label"] == "Production difficulty" and body["source_kind"] is None
+    opts = client.get(f"{BASE}/source-options", params={"kind": "machine", "q": "pew-31"}, headers=h).json()
+    assert [o["id"] for o in opts] == [m.id]
 
 
 def test_customer_requirement_links_requirement(client, db, tor_env):

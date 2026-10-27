@@ -1,10 +1,10 @@
-"""Store ↔ Order Projects wiring (imported at startup from
+"""Store ↔ project Units wiring (imported at startup from
 store/routes/stock_reservations.py, which main.py always imports).
 
   * stock-ledger hooks: GRN material of a project PO line is held for its
     element when it reaches Free stock; a GRN reversal releases those holds
     (services/project_stock.py);
-  * department provider "store" for the Order Project 360 table: per element,
+  * department provider "store" for the project Units 360 table: per element,
     what is held vs issued, warning when the build's outstanding material is
     not covered by holds."""
 from __future__ import annotations
@@ -14,7 +14,7 @@ import logging
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.modules.sales.order_projects import register_department_provider
+from app.modules.projects.so_projects import register_department_provider
 from app.modules.store.models.material_issue import StoreMaterialIssue, StoreMaterialIssueItem
 from app.modules.store.models.stock_reservation import StoreStockReservation
 from app.modules.store.services import project_stock

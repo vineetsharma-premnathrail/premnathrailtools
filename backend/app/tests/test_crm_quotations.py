@@ -206,3 +206,24 @@ def test_lump_sum_create_drops_header_discount(client, db):
     q = _create(client, inq.id, owner, pricing_mode="lumpsum", price=100000, lump_sum_gst_percent=18,
                 discount=10, discount_type="percent").json()
     assert (q["discount"], q["discount_type"]) == (None, None)
+
+
+def test_past_quotations_picker_lists_scoped_and_searches(client, db):
+    """"Fill from a past quotation": quotations of every live inquiry in the user's scope,
+    newest first, searchable by item name; a deleted inquiry's quotations are not offered."""
+    owner = _user(db, "q_past@premnathrail.com")
+    inq1 = _inquiry(db, owner, uid="PRT-INQ-2026-0181")
+    inq2 = _inquiry(db, owner, uid="PRT-INQ-2026-0182")
+    _create(client, inq1.id, owner)
+    client.post(f"/api/v1/crm/inquiries/{inq2.id}/quotations",
+                json={"items": [{"description": "Tamping Unit", "model_number": "TU-9", "quantity": 2, "unit_price": 500}]}, headers=_auth(owner))
+    rows = client.get("/api/v1/crm/past-quotations", headers=_auth(owner)).json()
+    assert [r["inquiry_id"] for r in rows[:2]] == [inq2.id, inq1.id]
+    assert rows[0]["items"][0]["unit_price"] == 500
+    found = client.get("/api/v1/crm/past-quotations", params={"q": "tu-9"}, headers=_auth(owner)).json()
+    assert [r["inquiry_id"] for r in found] == [inq2.id]
+
+    inq2.is_deleted = True
+    db.commit()
+    rows = client.get("/api/v1/crm/past-quotations", headers=_auth(owner)).json()
+    assert inq2.id not in [r["inquiry_id"] for r in rows]

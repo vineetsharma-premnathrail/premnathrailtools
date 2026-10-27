@@ -16,7 +16,7 @@ import Checkbox from '@/components/Checkbox'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDateTime } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
-import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
+import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 import { useCan } from '@/lib/permissions'
 
 const sectionStyle: React.CSSProperties = {
@@ -84,9 +84,9 @@ export function WorkOrderLinks({ wo }: { wo: ProductionWorkOrder }) {
   return (
     <>
       {wo.order_project_number && wo.order_project_id && (
-        <DetailRow label="Order Project">
+        <DetailRow label="Project">
           <OrderProjectChip opNumber={wo.order_project_number} elementNo={wo.order_project_element_no} label={wo.order_project_element_label}
-            onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', wo, 'order_project_id')) : undefined} />
+            onClick={can('projects', 'all_projects', 'view') ? () => router.push(recordPath('/dashboard/projects', wo, 'order_project_id')) : undefined} />
         </DetailRow>
       )}
       {wo.sales_order_label && <DetailRow label="Sales Order">{wo.sales_order_label}</DetailRow>}

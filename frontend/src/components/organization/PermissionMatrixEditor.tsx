@@ -34,6 +34,10 @@ const PRESETS: { key: Preset; label: string; hint: string }[] = [
   { key: 'full', label: 'Full access', hint: 'Every tab and every action, including approvals and settings' },
 ]
 
+/** Tabs a module wildcard / preset never covers (backend EXPLICIT_ONLY_TABS): Purchase Desk, and
+ * Service Projects (machines) so a Project Management preset doesn't hand out the machine register. */
+const EXPLICIT_ONLY_TABS = new Set(['p2p:purchase_desk', 'projects:service_projects'])
+
 /** Concrete ids for ONE grant list — the client mirror of the backend's
  * permission_registry.expand_grants, including features: a tab's features
  * follow the tab (their `inherit` action) until the list holds any
@@ -47,9 +51,11 @@ export function expandGrants(registry: PermissionRegistry, grants: Iterable<stri
     if (!mod || !tk || !a) continue
     if (tk === '*') {
       for (const [tab, acts] of Object.entries(mod.actions)) {
+        if (EXPLICIT_ONLY_TABS.has(`${mk}:${tab}`)) continue
         for (const x of acts) if (a === '*' || x === a) out.add(`${mk}:${tab}:${x}`)
       }
       for (const [tab, feats] of Object.entries(mod.features || {})) {
+        if (EXPLICIT_ONLY_TABS.has(`${mk}:${tab}`)) continue
         // Explicit-only feature actions (inherit null) never come from a wildcard / preset.
         for (const [fk, f] of Object.entries(feats)) for (const x of f.actions) if ((a === '*' || x === a) && f.inherit[x] != null) out.add(`${mk}:${tab}.${fk}:${x}`)
       }

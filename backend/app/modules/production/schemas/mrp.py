@@ -78,7 +78,7 @@ class ProductionPlannedOrderResponse(BaseModel):
     rrv_build_id: int | None = None
     erp_project_id: int | None = None
     work_order_id: int | None = None
-    # Order Project element of the pegged demand (Purchase reads it).
+    # project element of the pegged demand (Purchase reads it).
     order_project_id: int | None = None
     order_project_element_id: int | None = None
     converted_type: str | None = None

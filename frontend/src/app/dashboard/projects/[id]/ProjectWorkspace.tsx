@@ -12,19 +12,21 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import {
-  ErrorBanner, Notice, PROJECT_HEX, PROJECT_LABELS, Pill, actionBtn, sectionStyle,
+  ErrorBanner, Notice, StagePills, actionBtn, sectionStyle,
 } from '@/components/projects/work/pmUi'
 import OverviewTab from './tabs/OverviewTab'
 import DocumentsTab from './tabs/DocumentsTab'
 import TasksTab from './tabs/TasksTab'
 import ProjectHistoryTab from './tabs/ProjectHistoryTab'
+import UnitsTab from './tabs/UnitsTab'
 
 // WBS, Discussions and Activity Log were removed from the UI: a project is
 // its details, its milestones, documents and history. Old ?tab= links open
 // Overview; ?tab=Tasks (before the rename) opens Milestones.
-const TABS = ['Overview', 'Milestones', 'Documents', 'History'] as const
+// Units (vehicles / lots with the department 360 view) exists only on a project made from a sales order.
+const TABS = ['Overview', 'Milestones', 'Units', 'Documents', 'History'] as const
 const TAB_KEYS: Record<typeof TABS[number], string> = {
-  Overview: 'overview', Milestones: 'overview', Documents: 'documents', History: 'project_history',
+  Overview: 'overview', Milestones: 'overview', Units: 'overview', Documents: 'documents', History: 'project_history',
 }
 
 // Lifecycle buttons per status — management / the project manager only.
@@ -48,7 +50,7 @@ export default function ProjectWorkspace({ project, onProjectUpdate, onDeleted }
   const initial = ((asked === 'Tasks' ? 'Milestones' : asked) as typeof TABS[number]) || 'Overview'
   const { can, canDelete, canFeature } = useCan()
   // Milestones is a feature of Overview (core/features/projects.py: projects:overview.milestones).
-  const visibleTabs = TABS.filter((t) => (t === 'Milestones' ? canFeature('projects', 'overview', 'milestones', 'view') : can('projects', TAB_KEYS[t], 'view')))
+  const visibleTabs = TABS.filter((t) => t === 'Units' ? (!!project.sales_order_id && can('projects', 'overview', 'view')) : (t === 'Milestones' ? canFeature('projects', 'overview', 'milestones', 'view') : can('projects', TAB_KEYS[t], 'view')))
   const [chosen, setTab] = useState<typeof TABS[number]>(TABS.includes(initial) ? initial : 'Overview')
   const tab = visibleTabs.includes(chosen) ? chosen : visibleTabs[0]
   const [pending, setPending] = useState<ActionDef | null>(null)
@@ -101,8 +103,8 @@ export default function ProjectWorkspace({ project, onProjectUpdate, onDeleted }
             <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Project Management</p>
             <div data-tour="pm-proj-badges" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
               <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{project.project_code}</h1>
-              {/* Planning only means "open" — nobody chose it, so no badge. */}
-              {project.status !== 'planning' && <Pill value={project.status} labels={PROJECT_LABELS} hex={PROJECT_HEX} />}
+              {/* The lifecycle stage is the badge; On hold / Cancelled show as an extra pill. */}
+              <StagePills stage={project.lifecycle_stage} label={project.lifecycle_stage_label} status={project.status} />
             </div>
             {/* Overview shows the name, client, dates and PM in its summary; the other
                 tabs keep one line of context here. */}
@@ -148,9 +150,10 @@ export default function ProjectWorkspace({ project, onProjectUpdate, onDeleted }
 
       {tab === 'Overview' && <OverviewTab project={project} onProjectUpdate={onProjectUpdate} />}
       {tab === 'Milestones' && <TasksTab project={project} />}
+      {tab === 'Units' && <UnitsTab project={project} />}
       {tab === 'Documents' && <DocumentsTab project={project} />}
       {tab === 'History' && <ProjectHistoryTab projectId={project.id} />}
-      {!tab && <Notice tone="warn">You can see this project&apos;s header, but none of its tabs (Overview, Milestones, Documents, History). Ask an admin to add &apos;View&apos; on them to one of your roles in Organization › Role &amp; Permissions.</Notice>}
+      {!tab && <Notice tone="warn">You can see this project&apos;s header, but none of its tabs (Overview, Milestones, Units, Documents, History). Ask an admin to add &apos;View&apos; on them to one of your roles in Organization › Role &amp; Permissions.</Notice>}
 
       <ConfirmDialog
         open={!!pending && !pending.prompt}

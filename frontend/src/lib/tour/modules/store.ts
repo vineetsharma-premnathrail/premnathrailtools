@@ -5,6 +5,11 @@ import type { TourEntry } from '../registry'
 // (Items, Stock, Movements, Issues, Returns, Transfers, Adjustments,
 // Reservations, Categories, Stores are registered in CORE_ENTRIES).
 export const ENTRIES: TourEntry[] = [
+  // Goods received before their PO (Inward › Before PO).
+  {
+    pattern: /^\/dashboard\/store\/before-po$/,
+    load: () => import('../configs/storeBeforePo'),
+  },
   // GRN & Inspection — specific routes before the list.
   {
     pattern: /^\/dashboard\/store\/grn\/new$/,

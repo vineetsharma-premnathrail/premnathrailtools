@@ -128,6 +128,18 @@ class ProjectCreate(BaseModel):
         return v
 
 
+class ProjectCreateOptionalSerial(ProjectCreate):
+    """Machine part of 'Add New Project': the serial may be left blank, and
+    then becomes the project number (PEW-78)."""
+    serial_number: str | None = None
+
+    @field_validator("serial_number")
+    @classmethod
+    def _serial_required(cls, v: str | None) -> str | None:
+        v = (v or "").strip()
+        return v or None
+
+
 class ProjectUpdate(BaseModel):
     """Every field optional — only supplied fields are patched."""
     machine_type: str | None = None
@@ -272,9 +284,29 @@ class ProjectResponse(BaseModel):
     created_by_id: int | None = None
     customer_name: str | None = None
     product_name: str | None = None
+    # The Project Management project this machine was registered with (None = past project).
+    pm_project_id: int | None = None
+    # Lifecycle stage (same keys as a PM project). Service only works on serviceable machines.
+    lifecycle_stage: str = "planned"
+    lifecycle_stage_label: str | None = None
+    serviceable: bool = False
 
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def _stage_flags(self):
+        from app.modules.projects import lifecycle
+        self.lifecycle_stage_label = lifecycle.stage_label(self.lifecycle_stage)
+        self.serviceable = lifecycle.is_serviceable(self.lifecycle_stage)
+        return self
+
+
+class MachineStagePayload(BaseModel):
+    # One of the project lifecycle stage keys (planned ... closed).
+    stage: str
+    # Required when moving the machine back to an earlier stage.
+    reason: str | None = None
 
 
 LETTER_TEMPLATE_TITLES = {

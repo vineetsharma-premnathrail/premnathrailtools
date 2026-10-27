@@ -30,6 +30,12 @@ const config: TourConfig = {
       required: false,
     },
     {
+      target: 'inq-date',
+      title: 'Inquiry Date',
+      purpose: 'The day the customer raised this requirement. Starts as today; change it when you log an inquiry received earlier. Cannot be a future date.',
+      required: true,
+    },
+    {
       target: 'inq-lead-source',
       title: 'Lead Source',
       purpose: 'Where this inquiry came from — used for reporting on which channels bring in business.',
@@ -104,12 +110,6 @@ const config: TourConfig = {
       title: 'Product Specification',
       required: false,
       purpose: 'Technical spec details for the primary product line — gauge, braking type, special fittings etc.',
-    },
-    {
-      target: 'inq-requirement-desc',
-      title: 'Requirement Description',
-      required: false,
-      purpose: 'A short plain-language summary of what the customer needs, for anyone skimming the inquiry list.',
     },
     {
       target: 'inq-more-details',

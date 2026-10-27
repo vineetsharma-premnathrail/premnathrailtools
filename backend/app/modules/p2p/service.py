@@ -4,7 +4,7 @@ from datetime import date
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
-from app.modules.p2p.models.p2p_request import P2PRequest
+from app.modules.p2p.models.p2p_request import LINE_CATEGORY, P2PRequest
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
 from app.modules.p2p.models.rfq import RFQ
 from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt
@@ -28,10 +28,13 @@ def _lock_number_series(db: Session, prefix: str) -> None:
         db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:prefix))"), {"prefix": prefix})
 
 
-def generate_p2p_number(db: Session, category_code: str) -> str:
-    """P2P-[CATEGORY]-[YEAR]-[NUMBER], sequence scoped per category+year."""
+def generate_p2p_number(db: Session, category_code: str | None = None) -> str:
+    """P2P-[YEAR]-[NUMBER] for a requisition whose lines decide what is bought
+    (no category, or LINE_CATEGORY — 2026-10-27); P2P-[CATEGORY]-[YEAR]-[NUMBER]
+    for the category-based ones still raised from Service Requests and
+    Maintenance. Each series runs per year."""
     year = date.today().year
-    prefix = f"P2P-{category_code}-{year}-"
+    prefix = f"P2P-{year}-" if not category_code or category_code == LINE_CATEGORY else f"P2P-{category_code}-{year}-"
     _lock_number_series(db, prefix)
     last = db.query(func.max(P2PRequest.p2p_number)).filter(
         P2PRequest.p2p_number.like(f"{prefix}%")

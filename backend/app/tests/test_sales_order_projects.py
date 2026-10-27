@@ -1,15 +1,16 @@
-"""Order Projects (sales/order_projects.py): created at SO confirmation for
+"""Projects of Sales Orders (projects/so_projects.py): created at SO confirmation for
 orders that build RRVs — one element per vehicle (delivery row) and one lot per
 spares / other line; idempotent; amendments add / cancel vehicles; delivery
 events drive dispatched / delivered; list / detail / lookup permissions and the
 admin backfill."""
 from datetime import date, timedelta
 
-from app.modules.sales import order_projects as ops
+from app.modules.projects import so_projects as op_core
 from app.modules.sales import service as svc
 from app.modules.sales import delivery as dlv
 from app.modules.sales.models.order import SalesOrder
-from app.modules.sales.models.order_project import OrderProject, OrderProjectElement
+from app.modules.projects.models.element import PmProjectElement
+from app.modules.projects.models.project import PmProject
 from app.tests.test_sales import (
     BASE, TODAY, confirm, create_order, hdr, make_user, payload_from_prefill, setup_customer, setup_people,
 )
@@ -31,7 +32,7 @@ def _rrv_plus_spares(client, db, maker, inq):
 
 def _project(db, so_id):
     db.expire_all()
-    return db.query(OrderProject).filter(OrderProject.sales_order_id == so_id).first()
+    return db.query(PmProject).filter(PmProject.sales_order_id == so_id).first()
 
 
 def test_confirm_creates_project_with_vehicle_and_lot_elements(client, db):
@@ -41,32 +42,33 @@ def test_confirm_creates_project_with_vehicle_and_lot_elements(client, db):
 
     p = _project(db, so["id"])
     assert p is not None
-    assert p.op_number == f"PEW-{date.today().year}-0001"  # one series with PM projects
-    assert p.status == "active" and p.project_manager_id is None
-    assert p.customer_name == "Central Railway" and "CR/PO/2026/771" in p.title
+    assert p.project_code == "PEW-1"  # one series with PM projects; no past projects in the test DB
+    assert p.status == "active" and p.lifecycle_stage == "planned"
+    assert p.client_name == "Central Railway" and "CR/PO/2026/771" in p.name
     els = sorted(p.elements, key=lambda e: e.element_no)
     assert [e.kind for e in els] == ["vehicle", "vehicle", "lot"]
-    assert [e.element_no for e in els] == [f"{p.op_number}/01", f"{p.op_number}/02", f"{p.op_number}/03"]
+    assert [e.element_no for e in els] == [f"{p.project_code}/01", f"{p.project_code}/02", f"{p.project_code}/03"]
     assert els[0].label == "Vehicle 1" and els[1].label == "Vehicle 2"
     assert els[0].sales_schedule_id and els[2].sales_schedule_id is None and float(els[2].quantity) == 5
-    assert p.planned_end == max(e.contractual_date for e in els)
+    assert p.target_handover_date == max(e.contractual_date for e in els)
 
     # SO detail carries the chip.
     r = client.get(f"{BASE}/orders/{so['id']}", headers=hdr(maker))
-    assert r.json()["order_project"]["op_number"] == p.op_number
+    assert r.json()["pm_project_id"] == p.id and r.json()["pm_project_code"] == p.project_code
+    assert r.json()["order_project"]["op_number"] == p.project_code
 
     # Idempotent.
     order = db.get(SalesOrder, so["id"])
-    assert ops.ensure_order_project(db, order, maker).id == p.id
+    assert op_core.ensure_project_for_order(db, order, maker).id == p.id
     db.commit()
-    assert db.query(OrderProject).count() == 1
-    assert db.query(OrderProjectElement).count() == 3
+    assert db.query(PmProject).count() == 1
+    assert db.query(PmProjectElement).count() == 3
 
     # Helper API for later phases.
-    assert ops.element_for_schedule(db, els[0].sales_schedule_id).id == els[0].id
-    assert len(ops.elements_for_order(db, so["id"])) == 3
-    proj, el = ops.resolve_element(db, els[1].id)
-    assert proj.id == p.id and ops.element_display(proj, el) == f"{p.op_number} / 02 · Vehicle 2"
+    assert op_core.element_for_schedule(db, els[0].sales_schedule_id).id == els[0].id
+    assert len(op_core.elements_for_order(db, so["id"])) == 3
+    proj, el = op_core.resolve_element(db, els[1].id)
+    assert proj.id == p.id and op_core.element_display(proj, el) == f"{p.project_code} / 02 · Vehicle 2"
 
 
 def test_spares_only_order_gets_no_project(client, db):
@@ -97,8 +99,8 @@ def test_amendment_adds_and_cancels_vehicles(client, db):
     p = _project(db, so["id"])
     live = [e for e in p.elements if e.status != "cancelled"]
     assert len(live) == 3 and all(e.kind == "vehicle" for e in live)
-    assert sorted(e.element_no for e in p.elements)[-1] == f"{p.op_number}/03"
-    assert p.planned_end == TODAY + timedelta(days=400)
+    assert sorted(e.element_no for e in p.elements)[-1] == f"{p.project_code}/03"
+    assert p.target_handover_date == TODAY + timedelta(days=400)
 
     order = db.get(SalesOrder, so["id"])
     proposed = svc.snapshot(order)
@@ -110,12 +112,11 @@ def test_amendment_adds_and_cancels_vehicles(client, db):
     assert len(p.elements) == 3  # never deleted
     assert sum(1 for e in p.elements if e.status == "cancelled") == 1
     cancelled = next(e for e in p.elements if e.status == "cancelled")
-    r = client.get(f"{BASE}/order-projects/lookup", headers=hdr(maker))
-    assert cancelled.id not in {x["element_id"] for x in r.json()}
+    assert cancelled.id not in {e.id for e in op_core.elements_for_order(db, so["id"])}
     import pytest
     from fastapi import HTTPException
     with pytest.raises(HTTPException) as e:
-        ops.resolve_element(db, cancelled.id)
+        op_core.resolve_element(db, cancelled.id)
     assert e.value.status_code == 422 and "cancelled" in e.value.detail
 
 
@@ -133,9 +134,12 @@ def test_delivery_events_drive_element_and_project_status(client, db):
     dlv.record_event(db, order, order.schedules[0], "delivery", on=TODAY, reference="RN-1", user=maker)
     db.commit()
     p = _project(db, so["id"])
-    assert p.elements[0].status == "delivered" and p.status == "delivered"
+    assert p.elements[0].status == "delivered"
 
-    r = client.get(f"{BASE}/order-projects/{p.id}", headers=hdr(maker))
+    pm_user = make_user(db, "pmu2@premnathrail.com", apps=("projects",), granular_permissions=["projects:all_projects:view"])
+    p.project_manager_id = pm_user.id
+    db.commit()
+    r = client.get(f"/api/v1/projects/{p.id}/units", headers=hdr(pm_user))
     assert r.status_code == 200, r.text
     el = r.json()["elements"][0]
     assert el["departments"]["delivery"]["status"] == "done" and el["departments"]["dispatch"]["label"] == "Dispatched"
@@ -143,76 +147,69 @@ def test_delivery_events_drive_element_and_project_status(client, db):
     assert {"design", "purchase", "store", "production", "quality"} <= set(el["departments"])
 
 
-def test_list_detail_patch_lookup_permissions(client, db):
+def test_units_and_lookup_permissions_and_scope(client, db):
     maker, head, director, _ = setup_people(db)
     _org, inq, _ = setup_customer(db, qty=2, price=1000000)
     so = confirm(client, db, _rrv_plus_spares(client, db, maker, inq), maker, head, director)
     p = _project(db, so["id"])
+    assert p.status == "active" and p.lifecycle_stage == "planned" and p.released_at is not None
+    assert p.sales_order_ref == so["so_number"]
 
-    r = client.get(f"{BASE}/order-projects", headers=hdr(maker))
-    assert r.status_code == 200 and [x["op_number"] for x in r.json()] == [p.op_number]
-    assert r.json()[0]["vehicles_total"] == 2 and r.json()[0]["lots_total"] == 1
-    assert client.get(f"{BASE}/order-projects", params={"q": "771"}, headers=hdr(maker)).json()[0]["id"] == p.id
-    assert client.get(f"{BASE}/order-projects", params={"q": "nomatch"}, headers=hdr(maker)).json() == []
-
-    d = client.get(f"{BASE}/order-projects/{p.id}", headers=hdr(maker)).json()
-    assert d["so_number"] == so["so_number"] and len(d["elements"]) == 3
-    assert set(d["elements"][0]["departments"]) == set(ops.DEPARTMENTS)
-
-    # Sales user with only Sales Orders view: no Order Projects tab.
-    viewer = make_user(db, "viewer@premnathrail.com", granular_permissions=["sales:orders:view"])
-    assert client.get(f"{BASE}/order-projects", headers=hdr(viewer)).status_code == 403
-    assert client.get(f"{BASE}/order-projects/{p.id}", headers=hdr(viewer)).status_code == 403
-    # View-only on the tab: can read, can't edit.
-    # (Project Management only — no Sales app.)
-    op_viewer = make_user(db, "opv@premnathrail.com", apps=("projects",), granular_permissions=["projects:order_projects:view"])
-    assert client.get(f"{BASE}/order-projects", headers=hdr(op_viewer)).status_code == 200
-    # Named project manager (Project Management only, no Sales app): opens it.
-    p.project_manager_id = op_viewer.id
+    d = client.get(f"/api/v1/projects/{p.id}/units", headers=hdr(maker))
+    assert d.status_code in (200, 403), d.text  # maker may lack the Project Management app
+    pm_user = make_user(db, "pmu@premnathrail.com", apps=("projects",), granular_permissions=["projects:all_projects:view"])
+    p.project_manager_id = pm_user.id
     db.commit()
-    assert client.get(f"{BASE}/order-projects/{p.id}", headers=hdr(op_viewer)).status_code == 200
-    p.project_manager_id = None
-    db.commit()
-    r = client.patch(f"{BASE}/order-projects/{p.id}", json={"status": "on_hold"}, headers=hdr(op_viewer))
-    assert r.status_code == 403
+    d = client.get(f"/api/v1/projects/{p.id}/units", headers=hdr(pm_user))
+    assert d.status_code == 200, d.text
+    body = d.json()
+    assert body["so_number"] == so["so_number"] and len(body["elements"]) == 3
+    assert body["vehicles_total"] == 2 and body["lots_total"] == 1
+    assert set(body["elements"][0]["departments"]) == set(op_core.DEPARTMENTS)
 
-    # Edit: project manager, hold, bad status, bad dates.
-    r = client.patch(f"{BASE}/order-projects/{p.id}", json={"project_manager_id": head.id, "status": "on_hold"}, headers=hdr(maker))
-    assert r.status_code == 200, r.text
-    assert r.json()["project_manager_name"] == head.name and r.json()["status"] == "on_hold"
-    assert client.patch(f"{BASE}/order-projects/{p.id}", json={"status": "delivered"}, headers=hdr(maker)).status_code == 422
-    r = client.patch(f"{BASE}/order-projects/{p.id}", json={"planned_start": str(TODAY), "planned_end": str(TODAY - timedelta(days=1))},
-                     headers=hdr(maker))
-    assert r.status_code == 422 and "before planned start" in r.json()["detail"]
-    assert client.patch(f"{BASE}/order-projects/{p.id}", json={"status": "active"}, headers=hdr(maker)).json()["status"] == "active"
+    # Outside every Project Management scope: 403 with the reason; unknown id: 404.
+    hr_user = make_user(db, "hr@premnathrail.com", apps=("hr",))
+    assert client.get(f"/api/v1/projects/{p.id}/units", headers=hdr(hr_user)).status_code == 403
+    assert client.get("/api/v1/projects/999999/units", headers=hdr(pm_user)).status_code == 404
 
     # Lookup: any department user; not for an outsider.
     designer = make_user(db, "designer@premnathrail.com", apps=("design",))
-    r = client.get(f"{BASE}/order-projects/lookup", params={"q": p.op_number}, headers=hdr(designer))
+    r = client.get("/api/v1/projects/units/lookup", params={"q": p.project_code}, headers=hdr(designer))
     assert r.status_code == 200, r.text
-    assert len(r.json()) == 3 and r.json()[0]["display"].startswith(f"{p.op_number} / 01 · Vehicle 1")
-    assert len(client.get(f"{BASE}/order-projects/lookup", params={"kind": "lot"}, headers=hdr(designer)).json()) == 1
-    r = client.get(f"{BASE}/order-projects/lookup", params={"include_projects": True}, headers=hdr(designer))
+    assert len(r.json()) == 3 and r.json()[0]["display"].startswith(f"{p.project_code} / 01 · Vehicle 1")
+    assert len(client.get("/api/v1/projects/units/lookup", params={"kind": "lot"}, headers=hdr(designer)).json()) == 1
+    r = client.get("/api/v1/projects/units/lookup", params={"include_projects": True}, headers=hdr(designer))
     assert len(r.json()) == 4 and r.json()[0]["element_id"] is None
-    hr_user = make_user(db, "hr@premnathrail.com", apps=("hr",))
-    assert client.get(f"{BASE}/order-projects/lookup", headers=hdr(hr_user)).status_code == 403
+    assert client.get("/api/v1/projects/units/lookup", headers=hdr(hr_user)).status_code == 403
 
 
-def test_backfill_is_admin_only_and_idempotent(client, db):
+def test_resolve_project_refuses_closed_with_real_message(client, db):
+    import pytest
+    from fastapi import HTTPException
+    maker, head, director, _ = setup_people(db)
+    _org, inq, _ = setup_customer(db, qty=1, price=1000000)
+    so = confirm(client, db, create_order(client, db, maker, inq), maker, head, director)
+    p = _project(db, so["id"])
+    p.status = "closed"
+    db.commit()
+    with pytest.raises(HTTPException) as e:
+        op_core.resolve_project(db, p.id)
+    assert e.value.status_code == 422 and "Project Management" in e.value.detail
+    assert op_core.resolve_project(db, p.id, allow_closed=True).id == p.id
+
+
+def test_backfill_idempotent(client, db):
     maker, head, director, _ = setup_people(db)
     _org, inq, _ = setup_customer(db, qty=2, price=1000000)
     so = confirm(client, db, create_order(client, db, maker, inq), maker, head, director)
-    # Simulate an order confirmed before Order Projects existed.
     p = _project(db, so["id"])
     db.delete(p)
     db.commit()
     assert _project(db, so["id"]) is None
-
-    assert client.post(f"{BASE}/order-projects/backfill", headers=hdr(maker)).status_code == 403
     admin = make_user(db, "adm@premnathrail.com", role="admin")
-    r = client.post(f"{BASE}/order-projects/backfill", headers=hdr(admin))
-    assert r.status_code == 200, r.text
-    assert r.json()["created"] == 1
+    created = op_core.backfill(db, admin)
+    db.commit()
+    assert len(created) == 1
     p = _project(db, so["id"])
     assert p is not None and sum(1 for e in p.elements if e.kind == "vehicle") == 2
-    assert client.post(f"{BASE}/order-projects/backfill", headers=hdr(admin)).json()["created"] == 0
+    assert op_core.backfill(db, admin) == []

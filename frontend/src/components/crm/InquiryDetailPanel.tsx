@@ -1,7 +1,7 @@
 'use client'
 
 import Select from '@/components/shared/Select'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
@@ -713,28 +713,71 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
     setShowForm(false)
     setRevisingQuot(null)
     setRevisionSource(null)
+    setPastQuery('')
   }
 
-  // asNew: a new quotation pre-filled from q (items + terms, fresh dates) - saved through the create flow.
-  const startRevise = (q: QuotationItem, asNew = false) => {
+  // The commercial part of a quotation (pricing, items' terms) — shared by Revise and "Fill from a past quotation".
+  const commercialFieldsOf = (q: QuotationItem) => {
     const conditions = q.quote_conditions || ''
     const known = !conditions || (QUOTE_CONDITIONS as readonly string[]).includes(conditions)
-    setForm({
-      quotation_type: q.quotation_type || 'Domestic', gst_type: q.gst_type || 'CGST_SGST', quote_date: asNew ? todayIso : (q.quote_date || todayIso),
-      client_name: q.client_name || '', client_contact_name: q.client_contact_name || '',
-      client_contact_email: q.client_contact_email || '', client_contact_phone: q.client_contact_phone || '',
-      technical_offer_id: q.technical_offer_id ? String(q.technical_offer_id) : '',
-      valid_until: asNew ? addDaysIso(todayIso, QUOTE_VALIDITY_DAYS) : (q.valid_until || ''), delivery_time: q.delivery_time || '', payment_terms: q.payment_terms || '', notes: q.notes || '',
+    return {
+      quotation_type: q.quotation_type || 'Domestic', gst_type: q.gst_type || 'CGST_SGST',
+      delivery_time: q.delivery_time || '', payment_terms: q.payment_terms || '', notes: q.notes || '',
       discount: q.discount != null ? String(q.discount) : '', discount_type: q.discount_type || 'percent',
       quote_conditions: known ? conditions : 'Other/Custom', quote_conditions_custom: known ? '' : conditions,
       pricing_mode: q.pricing_mode || 'itemwise', price: q.price != null ? String(q.price) : '',
       lump_sum_gst_percent: q.lump_sum_gst_percent != null ? String(q.lump_sum_gst_percent) : '18',
-    })
+    }
+  }
+  const itemsOf = (q: QuotationItem) => {
     const str = (v?: number | null) => (v != null ? String(v) : '')
-    setItems(q.items.length ? q.items.map((it) => ({
+    return q.items.length ? q.items.map((it) => ({
       description: it.description || '', model_number: it.model_number || '', details: it.details || '',
       quantity: str(it.quantity), unit_price: str(it.unit_price), gst_percent: str(it.gst_percent), subtotal: str(it.subtotal), total: str(it.total),
-    })) : [{ ...emptyLineItem }])
+    })) : [{ ...emptyLineItem }]
+  }
+
+  // "Fill from a past quotation": copies items, prices and terms of an earlier quotation OF THIS INQUIRY
+  // (owner, 2026-10-27: only this inquiry's quotations, never other inquiries'). Customer, Technical
+  // Offer and dates stay this inquiry's own.
+  const [pastQuery, setPastQuery] = useState('')
+  const showPastPicker = showForm && !revisingQuot && quotations.length > 0
+  const pastQuotes = useMemo(() => {
+    const q = pastQuery.trim().toLowerCase()
+    return q ? quotations.filter((x) => [x.quot_number, ...x.items.map((it) => it.description)].filter(Boolean).join(' ').toLowerCase().includes(q)) : quotations
+  }, [quotations, pastQuery])
+  const fillFromPast = (q: QuotationItem) => {
+    setForm((f) => ({ ...f, ...commercialFieldsOf(q) }))
+    setItems(itemsOf(q))
+    setPastQuery('')
+    setFieldErrors({})
+    setAttemptedSave(false)
+    setProductNotice(`Filled from ${q.quot_number || 'the selected quotation'} (${q.client_name || 'customer'}): line items, prices and terms. Check and edit them before saving.`)
+  }
+  const pastQuoteLabel = (q: QuotationItem) => {
+    const names = q.items.map((it) => it.description).filter(Boolean).join(', ')
+    return `${q.quot_number || `Quotation #${q.id}`} · ${q.client_name || '—'}${names ? ` — ${names}` : ''}`
+  }
+  const pastQuoteSub = (q: QuotationItem) => {
+    const sym = q.quotation_type === 'Export' ? '$' : '₹'
+    const total = q.pricing_mode === 'lumpsum'
+      ? (q.price != null ? q.price * (1 + (q.quotation_type === 'Export' ? 0 : (q.lump_sum_gst_percent || 0)) / 100) : null)
+      : q.items.reduce((s, it) => s + (it.total || 0), 0)
+    return [q.quote_date ? formatDate(q.quote_date) : null, `${q.items.length} item${q.items.length === 1 ? '' : 's'}`,
+      seeQuotePrices && total ? `${sym}${fmtAmount(total)}` : null, q.status].filter(Boolean).join(' · ')
+  }
+
+  // asNew: a new quotation pre-filled from q (items + terms, fresh dates) - saved through the create flow.
+  const startRevise = (q: QuotationItem, asNew = false) => {
+    setForm({
+      ...commercialFieldsOf(q),
+      quote_date: asNew ? todayIso : (q.quote_date || todayIso),
+      client_name: q.client_name || '', client_contact_name: q.client_contact_name || '',
+      client_contact_email: q.client_contact_email || '', client_contact_phone: q.client_contact_phone || '',
+      technical_offer_id: q.technical_offer_id ? String(q.technical_offer_id) : '',
+      valid_until: asNew ? addDaysIso(todayIso, QUOTE_VALIDITY_DAYS) : (q.valid_until || ''),
+    })
+    setItems(itemsOf(q))
     setFormError('')
     setFieldErrors({})
     setAttemptedSave(false)
@@ -935,6 +978,20 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                   <span style={{ flex: 1 }}>{productNotice}</span>
                   <button type="button" aria-label="Dismiss" onClick={() => setProductNotice('')} style={sheetBtn('ghost', '#15803d')}><SheetIcon name="x" size={14} /></button>
                 </div>
+              )}
+              {showPastPicker && (
+                <SheetSection icon="history" title="Fill from a past quotation (optional)">
+                  <div data-tour="quot-fill-from-past">
+                    <ComboBox
+                      value={pastQuery}
+                      onChange={setPastQuery}
+                      onPick={(o) => { const q = pastQuotes.find((p) => String(p.id) === o.key); if (q) fillFromPast(q) }}
+                      options={pastQuotes.map((q) => ({ key: String(q.id), label: pastQuoteLabel(q), sublabel: pastQuoteSub(q) }))}
+                      placeholder="This inquiry's quotations — search by quotation no. or item, pick one to copy its items, prices and terms"
+                    />
+                    <p style={{ fontSize: 12, color: '#78716c', margin: '6px 0 0' }}>Customer, Technical Offer and dates stay as they are for this inquiry; everything copied can be edited before saving.</p>
+                  </div>
+                </SheetSection>
               )}
               <SheetSection icon="doc" title="Quotation">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>

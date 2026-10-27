@@ -17,7 +17,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
-import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
+import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
 
 const sectionStyle: React.CSSProperties = {

@@ -65,7 +65,8 @@ def _machines_i_work_on(user):
     return Project.id.in_(sub)
 
 
-register_scoped(Project, "erp", entity_type=MACHINE_ENTITY, owner=("created_by_id",),
+# Machines follow the Project Management scope since they moved there (2026-10-26; migration f7c3a9e1d5b2 copied Service scopes).
+register_scoped(Project, "projects", entity_type=MACHINE_ENTITY, owner=("created_by_id",),
                 assigned=(_machines_i_work_on,), label="machine")
 register_scoped(ServiceRequest, "erp", entity_type=SR_ENTITY, owner=("created_by_id",),
                 assigned=("assigned_service_person_id",), label="service request")
@@ -260,8 +261,8 @@ def _sr_closure_decided(db: Session, req, outcome: str, actor: User) -> None:
 
 
 register_transaction(TransactionType(
-    key=MACHINE_KEY, module_key="erp", subtab_key="projects", label="New machine",
-    entity_type=MACHINE_ENTITY, url="/dashboard/erp/projects/{id}",
+    key=MACHINE_KEY, module_key="projects", subtab_key="service_projects", label="New machine",
+    entity_type=MACHINE_ENTITY, url="/dashboard/projects/service-projects/{id}",
     description="A newly registered machine, when Service → Settings › 'New machines need approval' is on. "
                 "Service requests can't be raised on the machine until it is approved.",
     context_fields={"admin_ids": {"label": "Portal admins", "type": "user"}},

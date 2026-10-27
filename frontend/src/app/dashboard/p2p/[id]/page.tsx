@@ -23,7 +23,7 @@ import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import ServiceEntriesPanel from '@/components/p2p/ServiceEntriesPanel'
 import PoDeliveryCostsPanel from '@/components/p2p/PoDeliveryCostsPanel'
 import { useRecordId, recordHref, recordPath } from '@/lib/recordRef'
-import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
+import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { FormSheet, SheetSection, SheetIcon, SheetIconName, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
@@ -412,6 +412,8 @@ export default function MyP2PRequestDetailPage() {
   // header stay only for requisitions / POs still on the old approval path.
   const engine = pr.engine_approval || null
   const prViaEngine = !!engine?.pr_request_id
+  // Distinct buyers of the lines (one requisition can carry lines for several buyers, 2026-10-27).
+  const lineBuyers = Array.from(new Set(pr.items.map((it) => it.buyer_name || pr.assigned_buyer_name).filter((n): n is string => !!n)))
   const poViaEngine = !!engine?.po_id
   const canApproveReject = fromApproval && canApproveOrReject && !prViaEngine
   const canRejectStill = fromApproval && canRejectAccess && !prViaEngine
@@ -598,14 +600,15 @@ export default function MyP2PRequestDetailPage() {
         />
         <DetailGroup title="What it is for">
           <DetailRow label="Purpose">{pr.purpose ? PURPOSE_LABELS[pr.purpose] || pr.purpose : null}</DetailRow>
-          <DetailRow label="Category">{pr.category_label || pr.category_code}</DetailRow>
+          {/* Requisitions raised since 2026-10-27 have no category of their own (ITM): each line shows its own. */}
+          {pr.category_code !== 'ITM' && <DetailRow label="Category">{pr.category_label || pr.category_code}</DetailRow>}
           <DetailRow label="Charged to">{pr.rnd_project_id ? `R&D project: ${pr.rnd_project_label || `#${pr.rnd_project_id}`}` : (pr.project_label || null)}</DetailRow>
-          {pr.order_project_number && <DetailRow label="Order project">{pr.order_project_number}</DetailRow>}
+          {pr.order_project_number && <DetailRow label="Project">{pr.order_project_number}</DetailRow>}
           <DetailRow label="Requirement type">{pr.requirement_type || null}</DetailRow>
         </DetailGroup>
         <DetailGroup title="People & dates" last={!pr.remarks}>
           <DetailRow label="Requested by">{pr.requested_by_name ? `${pr.requested_by_name}${pr.department ? ` · ${pr.department}` : ''}` : null}</DetailRow>
-          <DetailRow label="Buyer">{pr.assigned_buyer_name || null}</DetailRow>
+          <DetailRow label={lineBuyers.length > 1 ? 'Buyers' : 'Buyer'}>{lineBuyers.length > 1 ? lineBuyers.join(', ') : pr.assigned_buyer_name || null}</DetailRow>
           <DetailRow label="Request date">{formatDate(pr.request_date)}</DetailRow>
           <DetailRow label="Required by">{pr.required_date ? formatDate(pr.required_date) : null}</DetailRow>
         </DetailGroup>
@@ -671,7 +674,7 @@ export default function MyP2PRequestDetailPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
           <thead>
             <tr>
-              {['SL', 'Item Description', 'Make', 'Part Code', 'UOM', 'Qty', 'Project / Inhouse', 'Category', 'Ship To', 'Stock', 'Attachments', 'Fulfillment'].map((h, i) => (
+              {['SL', 'Item Description', 'Make', 'Part Code', 'UOM', 'Qty', 'Project / Inhouse', 'Category', 'Buyer', 'Ship To', 'Stock', 'Attachments', 'Fulfillment'].map((h, i) => (
                 <th key={h} style={h === 'Qty' ? numThStyle : thStyle}>{h}{i === 0 && <RowCount count={pr.items.length} />}</th>
               ))}
             </tr>
@@ -696,11 +699,12 @@ export default function MyP2PRequestDetailPage() {
                     <div style={{ marginTop: 4 }}>
                       <OrderProjectChip opNumber={it.order_project_number} elementNo={it.order_project_element_no} label={it.order_project_element_label}
                         title={it.order_project_display || undefined}
-                        onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', it, 'order_project_id')) : undefined} />
+                        onClick={can('projects', 'all_projects', 'view') ? () => router.push(recordPath('/dashboard/projects', it, 'order_project_id')) : undefined} />
                     </div>
                   )}
                 </td>
                 <td style={{ ...tdStyle, color: TEXT.secondary }}>{it.category || '—'}</td>
+                <td style={{ ...tdStyle, color: TEXT.secondary }}>{it.buyer_name || pr.assigned_buyer_name || '—'}</td>
                 <td style={{ ...tdStyle, color: TEXT.secondary }}>{it.ship_to || '—'}</td>
                 <td style={{ ...tdStyle, fontSize: 12.5 }}>
                   {it.stock_status ? (
@@ -741,7 +745,7 @@ export default function MyP2PRequestDetailPage() {
                 </tr>
                 {showActions && (
                   <tr key={`${it.id}-stock`}>
-                    <td colSpan={12} style={{ ...tdStyle, padding: '10px 14px', background: 'rgba(148,163,184,0.06)' }}>
+                    <td colSpan={13} style={{ ...tdStyle, padding: '10px 14px', background: 'rgba(148,163,184,0.06)' }}>
                       {stockCheckLoading[it.id] ? (
                         <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>Checking store stock…</p>
                       ) : stockCheckErrors[it.id] ? (
@@ -1086,7 +1090,7 @@ export default function MyP2PRequestDetailPage() {
       )}
 
       {promptAction && m && (
-      <FormSheet width={580} icon={m.icon} iconColor={m.color} title={m.title} subtitle={`${pr.p2p_number} · ${pr.category_label || pr.category_code}`} onClose={closePrompt} busy={busy}
+      <FormSheet width={580} icon={m.icon} iconColor={m.color} title={m.title} subtitle={pr.category_code === 'ITM' ? pr.p2p_number : `${pr.p2p_number} · ${pr.category_label || pr.category_code}`} onClose={closePrompt} busy={busy}
         footer={<>
           <button type="button" onClick={closePrompt} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Close</button>
           <button type="button" onClick={submitPrompt} disabled={busy} style={sheetBtn('primary', m.color, busy)}><SheetIcon name={m.icon} size={16} />{busy ? m.busy : m.submit}</button>

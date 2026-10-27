@@ -50,13 +50,13 @@ class QualityInspectionLot(Base, TimestampMixin):
     # two-way FK cycle breaks metadata create/drop ordering.
     ncr_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # The build this lot belongs to (Sales › Order Projects) — final /
+    # The build this lot belongs to (Project Management › All Projects) — final /
     # in-process lots of a vehicle or a spares lot. Copied from the work
     # order when Production carries the link, or picked on a manual lot.
     order_project_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("sales_order_projects.id", ondelete="SET NULL"), index=True, nullable=True)
+        Integer, ForeignKey("pm_projects.id", ondelete="SET NULL"), index=True, nullable=True)
     order_project_element_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("sales_order_project_elements.id", ondelete="SET NULL"), index=True, nullable=True)
+        Integer, ForeignKey("pm_project_elements.id", ondelete="SET NULL"), index=True, nullable=True)
 
     item_id: Mapped[int] = mapped_column(Integer, ForeignKey("store_items.id"), nullable=False, index=True)
     item_code: Mapped[str | None] = mapped_column(String(100), nullable=True)

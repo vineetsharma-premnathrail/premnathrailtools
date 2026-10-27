@@ -55,8 +55,11 @@ P2P_EDITABLE_STATUSES = ("draft", "returned", "submitted", "approved")
 
 P2P_REQUEST_PRIORITIES = ("low", "medium", "high")
 
-# Category code -> display label. Codes feed directly into the PR number
-# format P2P-[CODE]-[YEAR]-[NUMBER].
+# Category code of a requisition whose lines decide what is bought (see below).
+LINE_CATEGORY = "ITM"
+
+# Category code -> display label. Codes fed the old PR number format
+# P2P-[CODE]-[YEAR]-[NUMBER] (requisitions raised before 2026-10-27).
 P2P_CATEGORIES: dict[str, str] = {
     "MKT": "Market Items",
     "PNH": "Pneumatic & Hydraulic",
@@ -71,6 +74,10 @@ P2P_CATEGORIES: dict[str, str] = {
     "CAP": "Capital Equipment",
     # Kept for requisitions raised before Purpose; never offered on a new one.
     "OTH": "Others",
+    # 2026-10-27: the header category is gone from the PR form — each line's
+    # Item Master type and category say what is bought (and pick its buyer).
+    # New requisitions carry this code and are numbered P2P-[YEAR]-[NUMBER].
+    LINE_CATEGORY: "By line item",
 }
 
 # Buyer auto-assigned at PR creation based on category — replaces manually
@@ -98,7 +105,8 @@ def resolve_auto_buyer_id(db, category_code: str) -> int | None:
     rather than letting a stale id 500 the whole PR creation."""
     from app.modules.main.models.user import User  # local import avoids a cross-module cycle at startup
     from app.modules.p2p.settings import get_setting
-    picked = get_setting(db, f"buyer_{(category_code or '').lower()}") if category_code in P2P_CATEGORIES else None
+    picked = (get_setting(db, f"buyer_{(category_code or '').lower()}")
+              if category_code in P2P_CATEGORIES and category_code != LINE_CATEGORY else None)
     if picked:
         buyer = db.query(User).filter(User.id == int(picked), User.is_active.is_(True)).first()
         if buyer:
@@ -120,9 +128,42 @@ def standard_buyer_id(db, category_code: str, *, active_only: bool = False) -> i
     buyer = q.first()
     return buyer.id if buyer else None
 
+
+# Buyer of a line by its Item Master item type (2026-10-27). The standard buyer
+# of each type is the standard buyer of the category it is usually bought
+# under (P2P_CATEGORY_AUTO_BUYERS); Procurement › Settings › Buyer for each item
+# type overrides it. Types Store added beyond these use the "other" setting.
+P2P_ITEM_TYPE_BUYER_TYPES: dict[str, str] = {
+    "material": "Material",
+    "consumable": "Consumable",
+    "tool_equipment": "Tool / equipment",
+    "service": "Service",
+    "asset": "Asset",
+    "other": "Any other item type",
+}
+P2P_ITEM_TYPE_STANDARD_CATEGORY: dict[str, str] = {
+    "material": "RAW", "consumable": "HWC", "tool_equipment": "HWC", "service": "JOB",
+}
+
+
+def resolve_line_buyer_id(db, item_type: str | None) -> int | None:
+    """The buyer a requisition line of this item type goes to: the one picked
+    in Procurement › Settings, else the type's standard buyer. None when
+    neither is an active user (the requisition's assigned buyer then applies)."""
+    from app.modules.main.models.user import User  # local import avoids a cross-module cycle at startup
+    from app.modules.p2p.settings import get_setting
+    key = item_type if item_type in P2P_ITEM_TYPE_BUYER_TYPES else "other"
+    picked = get_setting(db, f"buyer_type_{key}")
+    if picked:
+        buyer = db.query(User).filter(User.id == int(picked), User.is_active.is_(True)).first()
+        if buyer:
+            return buyer.id
+    category = P2P_ITEM_TYPE_STANDARD_CATEGORY.get(key)
+    return standard_buyer_id(db, category, active_only=True) if category else None
+
 # Purpose of a requisition (2026-10-23) — the first question on the PR form.
 # It decides what the purchase must be charged to (p2p/purpose.py):
-#   customer_order   production of an ordered machine — its Order Project;
+#   customer_order   production of an ordered machine — its PM project;
 #                    lines name their vehicle / lot
 #   machine_project  service / repair of a delivered machine (ERP project)
 #   development      new product development — an internal order
@@ -245,11 +286,11 @@ class P2PRequest(Base, TimestampMixin):
     # R&D project the purchase is charged to (New development).
     rnd_project_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("rnd_projects.id", ondelete="SET NULL"), nullable=True, index=True)
-    # Order Project (2026-10-17): set when charged to 'order_project', and also
+    # PM project (2026-10-17): set when charged to 'order_project', and also
     # filled from the sales order's project when charged to a 'sales_order'.
     # The default for the lines; each line carries its own element.
     order_project_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("sales_order_projects.id", ondelete="SET NULL"), nullable=True, index=True)
+        Integer, ForeignKey("pm_projects.id", ondelete="SET NULL"), nullable=True, index=True)
     # 'existing' | 'new' — picks the approval role sets above. NULL on PRs
     # from before the manager-role matrix (legacy approval flow).
     project_type: Mapped[str | None] = mapped_column(String(10), nullable=True)

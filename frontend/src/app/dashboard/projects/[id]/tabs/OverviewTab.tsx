@@ -8,11 +8,14 @@ import { useCan } from '@/lib/permissions'
 import { extractErrorMessages } from '@/lib/validation'
 import ProjectForm, { formToPayload, projectToForm, validateProjectForm } from '@/components/projects/ProjectForm'
 import {
-  ErrorBanner, HEALTH_HEX, HEALTH_LABELS, PROJECT_HEX, PROJECT_LABELS, ProgressBar, actionBtn,
+  ErrorBanner, HEALTH_HEX, HEALTH_LABELS, ProgressBar, actionBtn,
 } from '@/components/projects/work/pmUi'
 import { DetailCard, DetailGroup, DetailRow, DetailSummary, Pill } from '@/components/shared/ui'
 import { FormSheet, SHEET, SheetIcon, sheetBtn } from '@/components/shared/FormSheet'
+import { ProjectBudgetCard } from '@/components/finance/ProjectBudget'
+import StageControl from '@/components/projects/StageControl'
 import ClosurePanel from './ClosurePanel'
+import ProjectMachineDetails from './MachineTab'
 
 export default function OverviewTab({ project, onProjectUpdate }: { project: PmProject; onProjectUpdate: () => void }) {
   const { can } = useCan()
@@ -52,7 +55,6 @@ export default function OverviewTab({ project, onProjectUpdate }: { project: PmP
           title={project.name}
           text={project.description || (canEdit ? 'No scope written yet — use Edit to describe what is being delivered.' : undefined)}
           meta={<>
-            {project.status !== 'planning' && <Pill label={PROJECT_LABELS[project.status] || project.status} hex={PROJECT_HEX[project.status] || '#64748b'} />}
             <span>Client <strong style={{ color: SHEET.INK }}>{project.client_name || '—'}</strong></span>
             <span>·</span>
             <span>{formatDate(project.start_date)} → {formatDate(project.target_handover_date)}</span>
@@ -73,12 +75,17 @@ export default function OverviewTab({ project, onProjectUpdate }: { project: PmP
             </>}>
             <div style={{ padding: '20px 24px' }}>
               <ErrorBanner error={error} />
-              <ProjectForm value={form} onChange={setForm} codeLocked={project.status !== 'planning'} isEdit />
+              <ProjectForm value={form} onChange={setForm} codeLocked={project.status !== 'planning'} isEdit projectId={project.id} />
             </div>
           </FormSheet>
         )}
 
         <DetailGroup title="Progress">
+          <DetailRow label="Stage">
+            <span data-tour="pm-ov-stage">
+              <StageControl project={project} canMove={project.can_manage && can('projects', 'overview', 'edit') && !closed} onChanged={onProjectUpdate} />
+            </span>
+          </DetailRow>
           <DetailRow label="Milestones achieved">
             {project.milestones_total > 0 ? `${project.milestones_achieved} of ${project.milestones_total}` : 'No milestones planned yet'}
           </DetailRow>
@@ -104,11 +111,15 @@ export default function OverviewTab({ project, onProjectUpdate }: { project: PmP
         <DetailGroup title="Record" last>
           {project.customer_po_ref && <DetailRow label="Customer PO">{project.customer_po_ref}</DetailRow>}
           {project.sales_order_ref && <DetailRow label="Sales order">{project.sales_order_ref}</DetailRow>}
+          <DetailRow label="Finance budget">{project.internal_order_code ? `${project.internal_order_code} — ${project.internal_order_name || ''}` : (canEdit ? 'Not linked — use Edit to link a budget Finance created.' : null)}</DetailRow>
           <DetailRow label="Created by">{project.created_by_name ? `${project.created_by_name}${project.created_at ? ` on ${formatDate(project.created_at)}` : ''}` : null}</DetailRow>
           {project.released_at && <DetailRow label="Released">{`${formatDate(project.released_at)}${project.released_by_name ? ` by ${project.released_by_name}` : ''}`}</DetailRow>}
           {project.closure_date && <DetailRow label="Closed">{`${formatDate(project.closure_date)}${project.closed_by_name ? ` by ${project.closed_by_name}` : ''}`}</DetailRow>}
         </DetailGroup>
       </DetailCard>
+      <ProjectBudgetCard key={`${project.id}-${project.internal_order_id ?? 0}`} load={() => projectsApi.budget(project.id)} tour="pm-ov-budget"
+        emptyText="No Finance budget linked. Finance creates the budget; the project manager links it with Edit." />
+      <ProjectMachineDetails project={project} />
       {/* The closure panel was removed from open projects; a project closed
           earlier still shows its closure record (read-only). */}
       {project.status === 'closed' && <ClosurePanel project={project} onProjectUpdate={onProjectUpdate} />}

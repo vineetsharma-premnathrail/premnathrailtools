@@ -16,7 +16,8 @@ class TenderCreate(BaseModel):
     status: str = "Requirement Received"
     current_stage: str = "Tender Published"
     current_status_note: str | None = None
-    lead_source: str
+    tender_date: date | None = None
+    lead_source: str | None = None
     priority: str = "Medium"
     bd_owner: str | None = None
     railway_zone: str | None = None
@@ -56,6 +57,7 @@ class TenderUpdate(BaseModel):
     status: str | None = None
     current_stage: str | None = None
     current_status_note: str | None = None
+    tender_date: date | None = None
     lead_source: str | None = None
     priority: str | None = None
     bd_owner: str | None = None
@@ -98,6 +100,7 @@ class TenderResponse(BaseModel):
     status: str
     current_stage: str
     current_status_note: str | None = None
+    tender_date: date | None = None
     lead_source: str | None = None
     priority: str
     bd_owner: str | None = None

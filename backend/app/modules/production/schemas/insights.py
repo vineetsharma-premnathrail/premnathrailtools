@@ -37,7 +37,7 @@ class ProductionRequirementOrder(BaseModel):
     status: str
     outstanding_qty: float
     planned_start_date: date | None = None
-    # Order Project vehicle / lot the work order is for (prefills the PR).
+    # project vehicle / lot the work order is for (prefills the PR).
     order_project_id: int | None = None
     order_project_element_id: int | None = None
 

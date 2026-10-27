@@ -34,7 +34,7 @@ const config: TourConfig = {
       target: 'rnd-req-source',
       title: 'Source filter',
       options: [
-        { value: 'Inquiries & Tenders', meaning: 'Show both.' },
+        { value: 'Nothing picked', meaning: 'Show both inquiries and tenders. Click the picked button again to clear it.' },
         { value: 'Inquiries only', meaning: 'Requests from customer inquiries (direct enquiries).' },
         { value: 'Tenders only', meaning: 'Requests from government / railway tenders.' },
       ],

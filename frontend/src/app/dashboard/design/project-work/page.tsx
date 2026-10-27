@@ -17,7 +17,7 @@ import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET,
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
-import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 
 // Requests tab: work brought to Design (BD / project / R&D / internal),
 // the milestone evidence Design submits to Project Management, and the
@@ -303,7 +303,7 @@ export default function DesignRequestsPage() {
 
               <SheetSection icon="link" title="Links">
                 <div data-tour="design-reqnew-order-project" style={{ marginBottom: 14 }}>
-                  <label style={sheetLabel}>Order project <Optional /></label>
+                  <label style={sheetLabel}>Project <Optional /></label>
                   <OrderProjectPicker value={form.order_project} requireElement={false} onChange={(v) => set({ order_project: v })} />
                   <p style={sheetHint}>The confirmed sales order this design is for — pick a vehicle for a vehicle-specific variant.</p>
                 </div>
@@ -363,7 +363,7 @@ export default function DesignRequestsPage() {
           <option value="requester">Waiting on requester</option>
         </Select>
         <div data-tour="design-reqs-order-project" style={{ flex: '0 1 280px', minWidth: 220 }}>
-          <OrderProjectPicker value={opFilter} requireElement={false} placeholder="All order projects" onChange={(v) => setOpFilter(v ? { projectId: v.projectId, elementId: null } : null)} />
+          <OrderProjectPicker value={opFilter} requireElement={false} placeholder="All projects" onChange={(v) => setOpFilter(v ? { projectId: v.projectId, elementId: null } : null)} />
         </div>
         <label data-tour="design-reqs-mine" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.secondary, cursor: 'pointer' }}>
           <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Mine (lead / raised by me)

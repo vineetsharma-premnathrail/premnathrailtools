@@ -375,6 +375,11 @@ export const crmApi = {
     const { data } = await apiClient.get(`/crm/organizations/${id}/detail`)
     return data
   },
+  /** Customer engagements (meetings, calls, visits, discussions) on an organization. */
+  listEngagements: async (orgId: number): Promise<import('@/types').CrmEngagement[]> => (await apiClient.get(`/crm/organizations/${orgId}/engagements`)).data,
+  createEngagement: async (orgId: number, payload: Record<string, unknown>): Promise<import('@/types').CrmEngagement> => (await apiClient.post(`/crm/organizations/${orgId}/engagements`, payload)).data,
+  updateEngagement: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').CrmEngagement> => (await apiClient.patch(`/crm/engagements/${id}`, payload)).data,
+  deleteEngagement: async (id: number) => (await apiClient.delete(`/crm/engagements/${id}`)).data,
   updateOrganization: async (id: number, payload: Record<string, unknown>) => {
     const { data } = await apiClient.patch(`/crm/organizations/${id}`, payload)
     return data
@@ -659,6 +664,7 @@ export const crmApi = {
   },
 
   listQuotations: async (inquiryId: number) => (await apiClient.get(`/crm/inquiries/${inquiryId}/quotations`)).data,
+  listPastQuotations: async (q?: string): Promise<import('@/types').QuotationItem[]> => (await apiClient.get('/crm/past-quotations', { params: q ? { q } : {} })).data,
   listInquiryTechnicalOffers: async (inquiryId: number): Promise<import('@/types').CrmTechnicalOfferOption[]> => (await apiClient.get(`/crm/inquiries/${inquiryId}/technical-offers`)).data,
   technicalOfferPdf: async (inquiryId: number, offerId: number): Promise<Blob> => (await apiClient.get(`/crm/inquiries/${inquiryId}/technical-offers/${offerId}/pdf`, { responseType: 'blob' })).data,
   createQuotation: async (inquiryId: number, payload: Record<string, unknown>) => (await apiClient.post(`/crm/inquiries/${inquiryId}/quotations`, payload)).data,
@@ -715,7 +721,7 @@ export const erpApi = {
   rejectSrClose: async (id: number, remarks: string) => { const { data } = await apiClient.post(`/erp/service-requests/${id}/reject-close`, { remarks }); return data },
 
   // Projects (machines/vehicles)
-  listProjects: async (params: { search?: string; status?: string; application_type?: string; client_company?: string; customer_id?: number; limit?: number } = {}) => {
+  listProjects: async (params: { search?: string; status?: string; application_type?: string; client_company?: string; customer_id?: number; pm_project_id?: number; limit?: number } = {}) => {
     const { data } = await apiClient.get('/erp/projects', { params })
     return data
   },
@@ -760,6 +766,12 @@ export const erpApi = {
 
   updateProject: async (id: number, payload: Record<string, unknown>) => {
     const { data } = await apiClient.patch(`/erp/projects/${id}`, payload)
+    return data
+  },
+
+  /** Past Projects: set the lifecycle stage of a machine that has no project (409 for a linked one). */
+  setProjectLifecycleStage: async (id: number, stage: string, reason?: string): Promise<import('@/types').Project> => {
+    const { data } = await apiClient.patch(`/erp/projects/${id}/lifecycle-stage`, { stage, ...(reason ? { reason } : {}) })
     return data
   },
 
@@ -1477,7 +1489,7 @@ export const qualityApi = {
 }
 
 export const projectsApi = {
-  meta: async () => { const { data } = await apiClient.get('/projects/meta'); return data as { statuses: string[]; priorities: string[]; can_create: boolean } },
+  meta: async () => { const { data } = await apiClient.get('/projects/meta'); return data as { statuses: string[]; priorities: string[]; can_create: boolean; lifecycle_stages?: { key: string; label: string }[] } },
   departments: async () => { const { data } = await apiClient.get('/projects/lookups/departments'); return data as { id: number; name: string; heads: string[]; has_head: boolean }[] },
   departmentPeople: async (deptId: number) => { const { data } = await apiClient.get(`/projects/lookups/departments/${deptId}/people`); return data },
   list: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/projects', { params }); return data },
@@ -1485,9 +1497,21 @@ export const projectsApi = {
   board: async () => { const { data } = await apiClient.get('/projects/board'); return data },
   get: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}`); return data },
   create: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/projects', payload); return data },
+  /** "Add New Project": the PM project and its machine in one save. Body = project fields + `machine` (machine form fields). */
+  createWithMachine: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/projects/with-machine', payload); return data as import('@/types').PmProject },
   update: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${id}`, payload); return data },
+  /** Finance budgets the project can link to (projectId = the project being edited keeps its own listed). */
+  budgetOptions: async (projectId?: number): Promise<import('@/types').ProjectBudgetOption[]> => { const { data } = await apiClient.get('/projects/budget-options', { params: projectId ? { project_id: projectId } : {} }); return data },
+  /** Linked Finance budget: budget / committed / actual / available, open POs, recent postings. */
+  budget: async (id: number): Promise<import('@/types').ProjectBudgetSpend> => { const { data } = await apiClient.get(`/projects/${id}/budget`); return data },
   transition: async (id: number, payload: { action: string; reason?: string; closure_note?: string; documents_archived?: boolean; lessons_learned?: string }) => { const { data } = await apiClient.post(`/projects/${id}/transition`, payload); return data },
   closure: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/closure`); return data },
+  /** Move the lifecycle stage (planned ... closed). Forward: PM / management. Backward: admin / Partner, `reason` required. */
+  stage: async (id: number, payload: { stage: string; reason?: string }): Promise<import('@/types').PmProject> => { const { data } = await apiClient.post(`/projects/${id}/stage`, payload); return data },
+  /** Vehicles / lots of a project made from a sales order, with the department 360 cells. */
+  units: async (id: number): Promise<import('@/types').ProjectUnitsResponse> => { const { data } = await apiClient.get(`/projects/${id}/units`); return data },
+  /** Server search behind <ProjectUnitPicker> (other modules link their records to a project / unit). */
+  unitsLookup: async (params: { q?: string; kind?: 'vehicle' | 'lot'; include_projects?: boolean; project_id?: number } = {}): Promise<import('@/types').ProjectUnitLookupItem[]> => { const { data } = await apiClient.get('/projects/units/lookup', { params }); return data },
   remove: async (id: number) => { const { data } = await apiClient.delete(`/projects/${id}`); return data },
   audit: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/audit`); return data },
   breakdown: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/breakdown`); return data },
@@ -3546,8 +3570,18 @@ export const rndApi = {
     const { data } = await apiClient.patch(`/rnd/projects/${id}`, payload)
     return data
   },
+  /** Finance budgets an R&D project can link to (projectId = the project being edited keeps its own listed). */
+  projectBudgetOptions: async (projectId?: number): Promise<import('@/types').ProjectBudgetOption[]> => {
+    const { data } = await apiClient.get('/rnd/projects/budget-options', { params: projectId ? { project_id: projectId } : {} })
+    return data
+  },
+  /** The project's budget: budget / committed / actual / available, open POs, recent postings. */
+  projectBudget: async (id: number): Promise<import('@/types').ProjectBudgetSpend> => {
+    const { data } = await apiClient.get(`/rnd/projects/${id}/budget`)
+    return data
+  },
   /** Picker options for a project's origin (product / inquiry / tender / complaint / NCR / service request). */
-  projectSourceOptions: async (kind: import('@/types').RndProjectSourceKind | 'product', q?: string): Promise<import('@/types').RndProjectSourceOption[]> => {
+  projectSourceOptions: async (kind: import('@/types').RndProjectSourceKind | 'product' | 'machine', q?: string): Promise<import('@/types').RndProjectSourceOption[]> => {
     const { data } = await apiClient.get('/rnd/projects/source-options', { params: { kind, ...(q ? { q } : {}) } })
     return data
   },
@@ -4781,15 +4815,6 @@ export const rrvApi = {
 
 // Sales (backend app/modules/sales) — orders, approvals, amendments, delivery
 // schedule, DP extensions, dashboard / reports, settings.
-// Order Projects (OP-YYYY-NNN) — execution projects of confirmed sales orders
-// (backend sales/routes/order_projects.py). `lookup` feeds <OrderProjectPicker> in other modules.
-export const orderProjectsApi = {
-  list: async (params: Record<string, unknown> = {}): Promise<import('@/types').OrderProject[]> => { const { data } = await apiClient.get('/sales/order-projects', { params }); return data },
-  get: async (id: number): Promise<import('@/types').OrderProject> => { const { data } = await apiClient.get(`/sales/order-projects/${id}`); return data },
-  update: async (id: number, payload: { project_manager_id?: number | null; status?: 'active' | 'on_hold'; planned_start?: string | null; planned_end?: string | null }): Promise<import('@/types').OrderProject> => { const { data } = await apiClient.patch(`/sales/order-projects/${id}`, payload); return data },
-  backfill: async (): Promise<{ created: number; op_numbers: string[] }> => { const { data } = await apiClient.post('/sales/order-projects/backfill'); return data },
-  lookup: async (params: { q?: string; kind?: 'vehicle' | 'lot'; include_projects?: boolean; project_id?: number } = {}): Promise<import('@/types').OrderProjectLookupItem[]> => { const { data } = await apiClient.get('/sales/order-projects/lookup', { params }); return data },
-}
 
 export const salesApi = {
   listOrders: async (params: Record<string, unknown> = {}): Promise<import('@/types').SalesOrder[]> => { const { data } = await apiClient.get('/sales/orders', { params }); return data },

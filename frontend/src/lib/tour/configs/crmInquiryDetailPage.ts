@@ -125,7 +125,7 @@ const steps: TourStep[] = [
   {
     target: 'inq-delete-btn',
     title: 'Delete',
-    purpose: 'Admin-only. Permanently deletes this inquiry.',
+    purpose: 'Deletes this inquiry — only its creator or an admin can, and only while no sales order or R&D work (offer request, tasks, R&D project) is linked to it.',
     why: 'This cannot be undone — a confirmation dialog appears before anything is actually deleted.',
   },
   {

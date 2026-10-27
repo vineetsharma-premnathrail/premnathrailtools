@@ -86,11 +86,11 @@ class ProductionRrvBuild(Base, TimestampMixin, SoftDeleteMixin):
     sales_order_line_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("sales_order_lines.id", use_alter=True, name="fk_production_rrv_builds_sales_order_line_id"), nullable=True)
     sales_schedule_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("sales_order_schedules.id", use_alter=True, name="fk_production_rrv_builds_sales_schedule_id"), unique=True, nullable=True)
     customer_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("crm_organizations.id"), index=True, nullable=True)
-    # Order Project (sales/models/order_project.py): the vehicle element this
+    # project (sales/models/order_project.py): the vehicle element this
     # build makes — set when the build is auto-planned at SO confirmation
     # (production/order_project_links.py) or linked to a delivery row.
-    order_project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("sales_order_projects.id", ondelete="SET NULL"), index=True, nullable=True)
-    order_project_element_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("sales_order_project_elements.id", ondelete="SET NULL"), index=True, nullable=True)
+    order_project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("pm_projects.id", ondelete="SET NULL"), index=True, nullable=True)
+    order_project_element_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("pm_project_elements.id", ondelete="SET NULL"), index=True, nullable=True)
 
     vehicle_serial_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     chassis_number: Mapped[str | None] = mapped_column(String(100), nullable=True)

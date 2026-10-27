@@ -3,12 +3,12 @@ import { MACHINE_STATUS_OPTIONS } from './erpShared'
 
 const config: TourConfig = {
   id: 'erp-projects-list',
-  pageTitle: 'Projects Asset Register',
+  pageTitle: 'Machine register',
   steps: [
     {
-      target: 'erp-nav-truck',
-      title: 'Projects',
-      purpose: 'You are on the asset register — one record per machine we have built and supplied.',
+      target: 'erp-proj-heading',
+      title: 'Machine register',
+      purpose: 'Machine register: every machine of our past projects — one record per machine we have built and supplied. Reach it from Project Management › All Projects › Machine register; use ← Back to return. Service requests are still raised in Service.',
     },
     {
       target: 'erp-proj-add-btn',

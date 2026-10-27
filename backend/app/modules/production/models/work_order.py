@@ -60,11 +60,11 @@ class ProductionWorkOrder(Base, TimestampMixin, SoftDeleteMixin):
     # order builds for. Inherited from the RRV build / parent order when set.
     sales_order_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("sales_orders.id", use_alter=True, name="fk_production_work_orders_sales_order_id"), index=True, nullable=True)
     sales_order_line_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("sales_order_lines.id", use_alter=True, name="fk_production_work_orders_sales_order_line_id"), nullable=True)
-    # Order Project element (vehicle / lot) this order works for. Inherited
+    # PM project unit (vehicle / lot) this order works for. Inherited
     # from the RRV build / parent order; required when the sales order has an
-    # Order Project (production/order_project_links.py).
-    order_project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("sales_order_projects.id", ondelete="SET NULL"), index=True, nullable=True)
-    order_project_element_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("sales_order_project_elements.id", ondelete="SET NULL"), index=True, nullable=True)
+    # PM project (production/order_project_links.py).
+    order_project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("pm_projects.id", ondelete="SET NULL"), index=True, nullable=True)
+    order_project_element_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("pm_project_elements.id", ondelete="SET NULL"), index=True, nullable=True)
     # CS11 multi-level explosion: the order whose sub-assembly (make item)
     # this dependent order builds.
     parent_work_order_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("production_work_orders.id"), index=True, nullable=True)

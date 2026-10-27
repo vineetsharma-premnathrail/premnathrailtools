@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { CaretDown, CaretUp, Funnel } from '@phosphor-icons/react'
 import Checkbox from '@/components/Checkbox'
 import PickerButton from './PickerButton'
 import { rememberLabel } from './ReportFilters'
@@ -57,7 +58,7 @@ function SlicerList({ module, report, def, value, onChange }: { module: string; 
   )
 }
 
-/** One row of dropdown slicers. It scrolls sideways inside its own row on a phone, never the page. */
+/** One "Filters" button. Its popover lists every slicer; open one to search and tick values. */
 export default function SlicerBar({ module, optionsReport, defs, value, onChange, tour }: {
   module: string
   /** Any report of the same data, used to look up people / customers / machines. */
@@ -67,14 +68,33 @@ export default function SlicerBar({ module, optionsReport, defs, value, onChange
   onChange: (key: string, v: string[]) => void
   tour?: string
 }) {
+  const [openKey, setOpenKey] = useState<string | null>(null)
   if (!defs.length) return null
+  const total = defs.reduce((n, d) => n + (value[d.key]?.length || 0), 0)
   return (
-    <div data-tour={tour} style={{ display: 'flex', flexWrap: 'nowrap', gap: 8, overflowX: 'auto', paddingBottom: 2 }} aria-label="Slicers">
-      {defs.map((d) => (
-        <PickerButton key={d.key} label={d.label} badge={value[d.key]?.length || ''} minWidth={260} maxHeight={380}>
-          <SlicerList module={module} report={optionsReport} def={d} value={value[d.key] || []} onChange={(v) => onChange(d.key, v)} />
-        </PickerButton>
-      ))}
+    <div data-tour={tour} style={{ display: 'flex' }} aria-label="Slicers">
+      <PickerButton label="Filters" icon={<Funnel size={15} weight={total ? 'fill' : 'regular'} />} badge={total || ''} minWidth={320} maxHeight={480}>
+        <div style={{ display: 'flex', flexDirection: 'column', padding: '4px 0' }}>
+          {total > 0 && (
+            <button type="button" style={{ ...textActionStyle, alignSelf: 'flex-end', margin: '4px 12px' }} onClick={() => defs.forEach((d) => { if (value[d.key]?.length) onChange(d.key, []) })}>Clear all filters</button>
+          )}
+          {defs.map((d) => {
+            const n = value[d.key]?.length || 0
+            const isOpen = openKey === d.key
+            return (
+              <div key={d.key} style={{ borderTop: '1px solid #f1f5f9' }}>
+                <button type="button" aria-expanded={isOpen} onClick={() => setOpenKey(isOpen ? null : d.key)}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, minHeight: 36, padding: '0 12px', background: isOpen ? '#f8fafc' : 'transparent', border: 'none', cursor: 'pointer', fontSize: 13.5, fontWeight: 600, color: '#334155', textAlign: 'left' }}>
+                  <span style={{ flex: 1 }}>{d.label}</span>
+                  {n > 0 && <span style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: '#fff1eb', color: '#c2410c', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{n}</span>}
+                  {isOpen ? <CaretUp size={12} /> : <CaretDown size={12} />}
+                </button>
+                {isOpen && <SlicerList module={module} report={optionsReport} def={d} value={value[d.key] || []} onChange={(v) => onChange(d.key, v)} />}
+              </div>
+            )
+          })}
+        </div>
+      </PickerButton>
     </div>
   )
 }

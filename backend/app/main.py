@@ -109,7 +109,6 @@ from app.modules.sales.models.approval import SalesApproval
 from app.modules.sales.models.attachment import SalesAttachment
 from app.modules.sales.models.delivery import SalesDeliveryEvent, SalesInvoiceLink
 from app.modules.sales.models.proforma import SalesProformaInvoice
-from app.modules.sales.models.order_project import OrderProject, OrderProjectElement
 from app.modules.production.models.workstation import ProductionWorkstation
 from app.modules.production.models.mrp import ProductionMrpRun, ProductionPlannedOrder, ProductionMrpException
 from app.modules.production.models.bom import ProductionBom, ProductionBomItem, ProductionBomOperation
@@ -158,6 +157,7 @@ from app.modules.products.models.application import ProductApplication
 from app.modules.products.models.product import FinishedProduct, ProductSpecification
 from app.modules.products.models.price_condition import ProductPriceCondition
 from app.modules.projects.models.project import PmProject
+from app.modules.projects.models.element import PmProjectElement  # noqa: F401
 from app.modules.projects.models.task import PmProjectTask, PmTaskSubtask, PmTaskUpdate, PmTaskTimeLog, PmMilestoneMessage
 from app.modules.projects.models.milestone import PmProjectMilestone
 from app.modules.projects.models.document import PmProjectDocument
@@ -182,7 +182,7 @@ from app.modules.crm.models import (
     Organization, OrgContact, Inquiry, InquiryLineItem, Quotation, QuotationLineItem,
     Tender, Activity,
     CrmDocument, CrmStageLog, Product, PaymentTerm, CrmRndRequest, CrmRequirementComment,
-    CrmDocumentCategory,
+    CrmDocumentCategory, CrmEngagement,
 )
 from app.modules.accounts.models.gl_account import GLAccount
 from app.modules.accounts.models.bank_account import BankAccount
@@ -313,6 +313,8 @@ from app.modules.p2p.routes import po_reports as p2p_po_reports_routes
 from app.modules.p2p.routes import service_entries as p2p_service_entries_routes
 from app.modules.p2p.routes import landed_cost as p2p_landed_cost_routes
 from app.modules.p2p.routes import account_assignment as p2p_account_assignment_routes
+from app.modules.p2p.routes import pre_po_receipts as p2p_pre_po_receipts_routes
+from app.modules.store.routes import pre_po_receipts as store_pre_po_receipts_routes
 from app.modules.p2p.routes import mm_quotations as p2p_mm_quotations_routes
 from app.modules.p2p.routes import rfq_invites as p2p_rfq_invites_routes
 from app.modules.p2p.routes import po_amendments as p2p_po_amendments_routes
@@ -365,7 +367,6 @@ from app.modules.sales.routes import documents as sales_documents_routes
 from app.modules.sales.routes import settings as sales_settings_routes
 from app.modules.sales.routes import delivery as sales_delivery_routes
 from app.modules.sales.routes import proforma as sales_proforma_routes
-from app.modules.sales.routes import order_projects as sales_order_projects_routes
 from app.modules.accounts.routes import sales_billing as accounts_sales_billing_routes
 from app.modules.accounts.routes import receivables as accounts_receivables_routes
 from app.modules.production.routes import workstations as production_workstations_routes
@@ -421,6 +422,7 @@ from app.modules.products.routes import products as products_products_routes
 from app.modules.products.routes import price_conditions as products_price_conditions_routes
 from app.modules.products.routes import product_mapping as products_mapping_routes
 from app.modules.products import linking as _products_linking  # noqa: F401 — before_flush auto-link to the product master
+from app.modules.projects.routes import units as project_units_routes
 from app.modules.projects.routes import project as pm_project_routes
 from app.modules.projects.routes import milestones as pm_milestones_routes
 from app.modules.projects.routes import documents as pm_documents_routes
@@ -452,6 +454,7 @@ from app.modules.store.routes import serials as store_serials_routes
 from app.modules.store.routes import bin_stock as store_bin_stock_routes
 import app.modules.store.reports.job_work_challan  # noqa: E402,F401 — registers the managed Word job-work challan
 from app.modules.crm.routes import organizations as crm_organizations_routes
+from app.modules.crm.routes import engagements as crm_engagements_routes
 from app.modules.crm.routes import inquiries as crm_inquiries_routes
 from app.modules.crm.routes import tenders as crm_tenders_routes
 from app.modules.crm.routes import activities as crm_activities_routes
@@ -491,6 +494,7 @@ from app.modules.organization.routes import department as organization_departmen
 from app.modules.organization.routes import cost_center as organization_cost_center_routes
 from app.modules.organization.routes import audit_log as organization_audit_log_routes
 from app.modules.organization.routes import workflows as organization_workflows_routes
+from app.modules.organization.routes import approval_mail as organization_approval_mail_routes
 from app.modules.organization.routes import delegations as organization_delegations_routes
 from app.modules.organization.routes import security as organization_security_routes
 from app.modules.organization.services.approval_engine import run_escalations
@@ -621,6 +625,8 @@ app.include_router(p2p_po_reports_routes.router, prefix="/api/v1")
 app.include_router(p2p_service_entries_routes.router, prefix="/api/v1")
 app.include_router(p2p_landed_cost_routes.router, prefix="/api/v1")
 app.include_router(p2p_account_assignment_routes.router, prefix="/api/v1")
+app.include_router(p2p_pre_po_receipts_routes.router, prefix="/api/v1")
+app.include_router(store_pre_po_receipts_routes.router, prefix="/api/v1")
 app.include_router(p2p_mm_quotations_routes.router, prefix="/api/v1")
 app.include_router(p2p_rfq_invites_routes.router, prefix="/api/v1")
 app.include_router(p2p_po_amendments_routes.router, prefix="/api/v1")
@@ -674,7 +680,6 @@ app.include_router(sales_documents_routes.router, prefix="/api/v1")
 app.include_router(sales_settings_routes.router, prefix="/api/v1")
 app.include_router(sales_delivery_routes.router, prefix="/api/v1")
 app.include_router(sales_proforma_routes.router, prefix="/api/v1")
-app.include_router(sales_order_projects_routes.router, prefix="/api/v1")
 app.include_router(accounts_sales_billing_routes.router, prefix="/api/v1")
 app.include_router(accounts_receivables_routes.router, prefix="/api/v1")
 app.include_router(production_workstations_routes.router, prefix="/api/v1")
@@ -731,6 +736,7 @@ app.include_router(products_applications_routes.router, prefix="/api/v1")
 app.include_router(products_price_conditions_routes.router, prefix="/api/v1")  # before /products/{product_id}
 app.include_router(products_mapping_routes.router, prefix="/api/v1")
 app.include_router(products_products_routes.router, prefix="/api/v1")
+app.include_router(project_units_routes.router, prefix="/api/v1")  # before /projects/{id}
 app.include_router(pm_project_routes.router, prefix="/api/v1")
 app.include_router(pm_milestones_routes.router, prefix="/api/v1")
 app.include_router(pm_documents_routes.router, prefix="/api/v1")
@@ -762,6 +768,7 @@ app.include_router(store_job_work_routes.router, prefix="/api/v1")
 app.include_router(store_serials_routes.router, prefix="/api/v1")
 app.include_router(store_bin_stock_routes.router, prefix="/api/v1")
 app.include_router(crm_organizations_routes.router, prefix="/api/v1")
+app.include_router(crm_engagements_routes.router, prefix="/api/v1")
 app.include_router(crm_inquiries_routes.router, prefix="/api/v1")
 app.include_router(crm_tenders_routes.router, prefix="/api/v1")
 app.include_router(crm_activities_routes.router, prefix="/api/v1")
@@ -838,6 +845,7 @@ app.include_router(organization_cost_center_routes.router, prefix="/api/v1")
 app.include_router(organization_audit_log_routes.router, prefix="/api/v1")
 app.include_router(organization_workflows_routes.router, prefix="/api/v1")
 app.include_router(organization_workflows_routes.approvals_router, prefix="/api/v1")
+app.include_router(organization_approval_mail_routes.router, prefix="/api/v1")
 app.include_router(organization_delegations_routes.router, prefix="/api/v1")
 app.include_router(organization_security_routes.router, prefix="/api/v1")
 app.include_router(hr_employees_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])

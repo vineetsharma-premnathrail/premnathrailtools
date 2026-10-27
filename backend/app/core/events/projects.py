@@ -10,6 +10,13 @@ The people on the work (owner, whoever gave it, the project manager,
 assignees) keep their direct notices and are skipped here."""
 from app.core.notification_events import register_event
 
+# ── Service Projects (machines; fired from app/modules/erp/routes/projects.py) ──
+register_event(
+    "projects", "machine_registered", "New machine registered",
+    "a machine is registered in the installed base (the notice says when it is waiting for approval)",
+    ("service_projects", "view"), default_channels=("bell",), kind="info",
+)
+
 # ── Milestones ───────────────────────────────────────────────────────────────
 register_event(
     "projects", "milestone_assigned", "Milestone given to someone",

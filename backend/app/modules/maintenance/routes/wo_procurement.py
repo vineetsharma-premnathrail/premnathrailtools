@@ -88,7 +88,7 @@ async def raise_wo_purchase_request(
 ):
     from app.modules.p2p import approvals as p2p_approvals
     from app.modules.p2p.models.p2p_request import (
-        ENGINE_SCHEME, P2P_CATEGORIES, P2P_REQUEST_PRIORITIES, P2P_REQUIREMENT_TYPES, P2PRequest, resolve_auto_buyer_id,
+        ENGINE_SCHEME, LINE_CATEGORY, P2P_CATEGORIES, P2P_REQUEST_PRIORITIES, P2P_REQUIREMENT_TYPES, P2PRequest, resolve_auto_buyer_id,
     )
     from app.modules.p2p.routes.p2p_requests import _sync_pr_lines, _validate_pr_payload, _write_audit as p2p_audit
     from app.modules.p2p.schemas.p2p_request import P2PRequestCreate, P2PRequestItemPayload
@@ -105,7 +105,7 @@ async def raise_wo_purchase_request(
     # the PR then goes through the normal Procurement approval.
     if payload.purpose not in MAINTENANCE_WO_PR_PURPOSES:
         raise HTTPException(status_code=400, detail=f"Invalid purpose '{payload.purpose}'. Valid: spares (out-of-stock parts) or external_service (outside repair).")
-    if payload.category_code not in P2P_CATEGORIES:
+    if payload.category_code not in P2P_CATEGORIES or payload.category_code == LINE_CATEGORY:
         raise HTTPException(status_code=400, detail=f"Pick a valid Purchase Requisition category (got '{payload.category_code}').")
     if payload.priority not in P2P_REQUEST_PRIORITIES:
         raise HTTPException(status_code=400, detail=f"Invalid priority '{payload.priority}' — use {', '.join(P2P_REQUEST_PRIORITIES)}.")

@@ -79,7 +79,7 @@ export const PROJECT_FORM_STEPS: TourStep[] = [
     target: 'pm-form-code',
     title: 'Project number',
     purpose: 'The short order number every department already knows the job by.',
-    whatToEnter: 'Under "More details". Leave blank on a new project to get the next PEW-<year>-NNNN number — one series with the Order Projects of Sales Orders, so a number is never used twice. Letters are turned to capitals automatically.',
+    whatToEnter: 'Under "More details". Leave blank on a new project to get the next number (PEW-78, PEW-79 ...) — it continues the past project series and is shared with the projects made from Sales Orders, so a number is never used twice. Or type your own, such as PEW-64A for a repeat of PEW-64; a number already used is refused. Letters are turned to capitals automatically.',
     validExample: 'PEW-39',
     invalidExample: 'new project for ircon (a description, not a code)',
     why: 'Store issues, purchase requests, drawings and inspection reports all quote this code, so it must be short, unique and stable.',

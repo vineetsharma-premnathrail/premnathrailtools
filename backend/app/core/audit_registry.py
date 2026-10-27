@@ -197,6 +197,8 @@ register_audited(StoreItem, entity_type="store_item", module_key="store", label=
 register_audited(StoreItemCategory, entity_type="store_item_category", module_key="store", label="Item category", ref=lambda o: o.code)
 register_audited(StoreLocation, entity_type="store_location", module_key="store", label="Store", ref=lambda o: o.code)
 register_audited(StoreBin, entity_type="store_bin", module_key="store", label="Bin", ref=lambda o: o.code)
+from app.modules.store.models.pre_po_receipt import StorePrePoReceipt as _StorePrePoReceipt  # noqa: E402
+register_audited(_StorePrePoReceipt, entity_type="store_pre_po_receipt", module_key="store", label="Before-PO receipt", ref=lambda o: o.receipt_number)
 
 register_audited(StoreMaterialIssue, entity_type="store_material_issue", module_key="store", label="Material issue", ref=lambda o: o.issue_number)
 register_audited(

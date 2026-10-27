@@ -1,4 +1,4 @@
-"""Quality against Order Projects (Sales › Order Projects).
+"""Quality against PM project units (Project Management › All Projects).
 
 The inspection requirement of a build comes from its Sales Order — the SO's
 `inspection_agency` + `third_party_inspection_required` are the single source
@@ -26,7 +26,8 @@ from sqlalchemy.orm import Session
 
 from app.modules.quality.models.inspection_call import QualityInspectionCall
 from app.modules.sales.models.order import SalesOrder
-from app.modules.sales.models.order_project import OrderProject, OrderProjectElement
+from app.modules.projects.models.element import PmProjectElement
+from app.modules.projects.models.project import PmProject
 
 logger = logging.getLogger("quality")
 
@@ -45,27 +46,28 @@ def agency_label(db: Session, value: str | None) -> str:
     return _agency_label(db, value)
 
 
-def _so_for_project(db: Session, project: OrderProject) -> SalesOrder | None:
-    return db.get(SalesOrder, project.sales_order_id)
+def _so_for_project(db: Session, project: PmProject) -> SalesOrder | None:
+    # A PM project made by hand has no sales order (then no agency rule applies).
+    return db.get(SalesOrder, project.sales_order_id) if project.sales_order_id else None
 
 
 def resolve_link(db: Session, project_id: int | None, element_id: int | None, *,
-                 allow_cancelled: bool = False) -> tuple[OrderProject | None, OrderProjectElement | None]:
-    """Validate an Order Project pick from a form. Element given → it must
+                 allow_cancelled: bool = False) -> tuple[PmProject | None, PmProjectElement | None]:
+    """Validate a project pick from a form. Element given → it must
     belong to the project (when both are sent). Project only → allowed (the
     whole order). Raises LinkError with the reason and the fix."""
-    from app.modules.sales import order_projects as ops
+    from app.modules.projects import so_projects as op_core
     if not element_id and not project_id:
         return None, None
     try:
         if element_id:
-            return ops.resolve_element(db, element_id, project_id=project_id, allow_cancelled=allow_cancelled)
-        return ops.resolve_project(db, project_id, allow_closed=allow_cancelled), None
+            return op_core.resolve_element(db, element_id, project_id=project_id, allow_cancelled=allow_cancelled)
+        return op_core.resolve_project(db, project_id, allow_closed=allow_cancelled), None
     except HTTPException as e:
         raise LinkError(str(e.detail), e.status_code)
 
 
-def so_requirement(db: Session, element: OrderProjectElement | None, project: OrderProject | None = None) -> dict | None:
+def so_requirement(db: Session, element: PmProjectElement | None, project: PmProject | None = None) -> dict | None:
     project = project or (element.project if element is not None else None)
     if project is None:
         return None
@@ -81,16 +83,16 @@ def so_requirement(db: Session, element: OrderProjectElement | None, project: Or
     }
 
 
-def apply_to_call(db: Session, data: dict, project: OrderProject, element: OrderProjectElement | None) -> dict:
+def apply_to_call(db: Session, data: dict, project: PmProject, element: PmProjectElement | None) -> dict:
     """The SO decides the agency: fill it in, refuse a different one, and
     default the order reference / customer from the SO. Returns the
     requirement dict."""
     req = so_requirement(db, element, project)
     if req is None:
-        raise LinkError(f"The Sales Order of {project.op_number} can't be read — reload and pick the project again.", 404)
+        raise LinkError(f"The Sales Order of {project.project_code} can't be read — reload and pick the project again.", 404)
     where = f"Sales Order {req['so_number']}"
     if not req["agency"]:
-        raise LinkError(f"{where} ({project.op_number}) has no inspecting agency, so no customer / third-party inspection "
+        raise LinkError(f"{where} ({project.project_code}) has no inspecting agency, so no customer / third-party inspection "
                         f"is due for it. If the customer now wants one, ask Sales to amend the order's inspection agency "
                         f"first — the agency is taken from the Sales Order, not typed on the call.", 422)
     entered = (data.get("agency") or "").strip() or None
@@ -118,7 +120,7 @@ def cleared_qty(calls: list[QualityInspectionCall], item_id: int | None = None) 
                if c.status in CLEARED_STATUSES and c.certificate_number and (item_id is None or c.item_id == item_id))
 
 
-def inspection_required_for_element(db: Session, element: OrderProjectElement) -> tuple[bool, str | None, bool]:
+def inspection_required_for_element(db: Session, element: PmProjectElement) -> tuple[bool, str | None, bool]:
     """(required, agency, cleared) from the element's Sales Order. Not
     required → cleared is True (nothing stands in the way)."""
     req = so_requirement(db, element)
@@ -137,8 +139,8 @@ def trigger_inspection_milestone(db: Session, call: QualityInspectionCall) -> No
     from app.modules.sales.service import today_ist
     on = call.result_date or today_ist()
     if call.order_project_id:
-        project = db.get(OrderProject, call.order_project_id)
-        if project is not None:
+        project = db.get(PmProject, call.order_project_id)
+        if project is not None and project.sales_order_id:
             from app.modules.sales.views import get_order
             try:
                 so = get_order(db, project.sales_order_id)
@@ -153,10 +155,10 @@ def trigger_inspection_milestone(db: Session, call: QualityInspectionCall) -> No
 def element_dispatch_problems(db: Session, *, element_id: int, item_id: int, item_name: str, quantity: float,
                               dispatched_qty: float = 0.0) -> list[str]:
     """Rule 8b against the element's Sales Order (used by dispatch.check when
-    a dispatch names the Order Project element)."""
-    el = db.get(OrderProjectElement, element_id)
+    a dispatch names the project unit)."""
+    el = db.get(PmProjectElement, element_id)
     if el is None:
-        return [f"Order project element #{element_id} doesn't exist — pick the vehicle / lot again."]
+        return [f"Project unit #{element_id} doesn't exist — pick the vehicle / lot again."]
     req = so_requirement(db, el)
     if not req or not req["required"]:
         return []
@@ -167,7 +169,7 @@ def element_dispatch_problems(db: Session, *, element_id: int, item_id: int, ite
     if cleared <= EPS:
         return [f"Rule 8: Sales Order {req['so_number']} needs {agency} inspection before dispatch, and {item_name} has no "
                 f"accepted inspection call with a certificate number for {what}. Raise / record the call in "
-                "Quality → Inspection Calls (pick the Order Project)."]
+                "Quality → Inspection Calls (pick the project)."]
     if dispatched_qty + quantity > cleared + 1e-9:
         return [f"Rule 8: {agency} has cleared {cleared:g} of {item_name} for {what} "
                 f"({', '.join(c.certificate_number for c in calls if c.certificate_number)}) and {dispatched_qty:g} is already "
@@ -182,19 +184,19 @@ def link_display(db: Session, rows: list) -> dict[int, dict]:
     eids = {r.order_project_element_id for r in rows if getattr(r, "order_project_element_id", None)}
     if not pids and not eids:
         return {}
-    els = {e.id: e for e in db.query(OrderProjectElement).filter(OrderProjectElement.id.in_(eids)).all()} if eids else {}
-    pids |= {e.order_project_id for e in els.values()}
-    projects = {p.id: p for p in db.query(OrderProject).filter(OrderProject.id.in_(pids)).all()}
-    sos = {s.id: s for s in db.query(SalesOrder).filter(SalesOrder.id.in_({p.sales_order_id for p in projects.values()})).all()}
+    els = {e.id: e for e in db.query(PmProjectElement).filter(PmProjectElement.id.in_(eids)).all()} if eids else {}
+    pids |= {e.project_id for e in els.values()}
+    projects = {p.id: p for p in db.query(PmProject).filter(PmProject.id.in_(pids)).all()}
+    sos = {s.id: s for s in db.query(SalesOrder).filter(SalesOrder.id.in_({p.sales_order_id for p in projects.values() if p.sales_order_id})).all()}
     out = {}
     for r in rows:
         el = els.get(r.order_project_element_id) if r.order_project_element_id else None
-        p = projects.get(r.order_project_id or (el.order_project_id if el else None))
+        p = projects.get(r.order_project_id or (el.project_id if el else None))
         if p is None:
             continue
         so = sos.get(p.sales_order_id)
         out[r.id] = {
-            "op_number": p.op_number, "element_no": el.element_no if el else None, "element_label": el.label if el else None,
+            "op_number": p.project_code, "element_no": el.element_no if el else None, "element_label": el.label if el else None,
             "so_id": so.id if so else None, "so_number": so.display_number if so else None,
             "so_inspection_agency": so.inspection_agency if so else None,
             "so_third_party_inspection_required": bool(so.third_party_inspection_required) if so else False,

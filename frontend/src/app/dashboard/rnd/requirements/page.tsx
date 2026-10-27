@@ -8,11 +8,17 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { RndRequirement, RndTask } from '@/types'
-import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER, BRAND, CONTROL } from '@/lib/theme'
 import RndNav from '@/components/rnd/RndNav'
 import { rndRequestBadge } from '@/components/crm/RndRequestBlock'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
+
+// Nothing picked = both. Clicking the picked one again clears it.
+const SOURCE_RADIOS = [
+  { value: 'inquiry', label: 'Inquiries only' },
+  { value: 'tender', label: 'Tenders only' },
+]
 
 const PRIORITY_HEX: Record<string, string> = { Urgent: '#DC2626', High: '#EA580C', Medium: '#2563EB', Low: '#78716c' }
 
@@ -62,9 +68,6 @@ export default function RndRequirementsPage() {
 
       <div data-tour="rnd-req-header" style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
-        <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-          R&amp;D Module
-        </p>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Requirements</h1>
         <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>
           Customer requirements sent from CRM as Technical Offer Requests.
@@ -108,11 +111,22 @@ export default function RndRequirementsPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <Select data-tour="rnd-req-source" style={{ ...inputStyle, flex: '0 1 170px' }} value={source} onChange={(e) => setSource(e.target.value)}>
-          <option value="">Inquiries &amp; Tenders</option>
-          <option value="inquiry">Inquiries only</option>
-          <option value="tender">Tenders only</option>
-        </Select>
+        <div data-tour="rnd-req-source" role="radiogroup" aria-label="Source" style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>
+          {SOURCE_RADIOS.map((o) => {
+            const on = source === o.value
+            return (
+              <label key={o.value} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, height: CONTROL.height, boxSizing: 'border-box', padding: '0 12px',
+                borderRadius: 999, fontSize: CONTROL.fontSize, fontWeight: 600, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap',
+                border: `1.5px solid ${on ? BRAND.primaryHover : BORDER.normal}`, background: on ? BRAND.primarySoft : 'rgba(255,255,255,.7)', color: on ? BRAND.primaryActive : TEXT.body,
+              }}>
+                <input type="radio" name="rnd-req-source" value={o.value} checked={on} onChange={() => setSource(o.value)} onClick={() => { if (on) setSource('') }}
+                  style={{ margin: 0, accentColor: BRAND.primaryHover, cursor: 'inherit' }} />
+                {o.label}
+              </label>
+            )
+          })}
+        </div>
         <Select data-tour="rnd-req-mine" style={{ ...inputStyle, flex: '0 1 170px' }} value={mine ? 'mine' : ''} onChange={(e) => setMine(e.target.value === 'mine')}>
           <option value="">Everyone&apos;s</option>
           <option value="mine">Awaiting my response</option>

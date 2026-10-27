@@ -10,9 +10,9 @@ import pytest
 from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
 from app.modules.production.models.rrv_build import ProductionRrvBuild
 from app.modules.production.models.work_order import ProductionWorkOrder
-from app.modules.sales import order_projects as ops
+from app.modules.projects import so_projects as ops
 from app.modules.sales.models.order import SalesOrder
-from app.modules.sales.models.order_project import OrderProject
+from app.modules.projects.models.project import PmProject
 from app.modules.store.models.item import StoreItem
 from app.modules.store.models.location import StoreLocation
 from app.modules.store.models.material_issue import StoreMaterialIssue
@@ -33,7 +33,7 @@ def env(client, db):
     _org, inq, _ = setup_customer(db, qty=2, price=1000000)
     so = confirm(client, db, create_order(client, db, maker, inq), maker, head, director)
     db.expire_all()
-    project = db.query(OrderProject).filter(OrderProject.sales_order_id == so["id"]).one()
+    project = db.query(PmProject).filter(PmProject.sales_order_id == so["id"]).one()
     v1, v2 = sorted(project.elements, key=lambda e: e.element_no)
     keeper = make_user(db, "op.keeper@premnathrail.com", apps=("store",))
     manager = make_user(db, "op.storemgr@premnathrail.com", apps=("store",), is_store_manager=True)
@@ -78,7 +78,7 @@ def _balance(db, env):
 
 def test_project_reservation_blocks_free_stock_and_is_consumed_by_its_element(client, db, env):
     res = _reserve(client, env, env["v1"], 8)
-    assert res["op_number"] == env["project"].op_number and res["element_no"] == env["v1"].element_no
+    assert res["op_number"] == env["project"].project_code and res["element_no"] == env["v1"].element_no
     assert res["original_qty"] == 8 and res["source_type"] == "manual"
     assert _balance(db, env).reserved_qty == 8
 
@@ -97,7 +97,7 @@ def test_project_reservation_blocks_free_stock_and_is_consumed_by_its_element(cl
     r = _issue(client, env, 5, order_project_id=env["project"].id, order_project_element_id=env["v1"].id)
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["order_project_element_id"] == env["v1"].id and body["op_number"] == env["project"].op_number
+    assert body["order_project_element_id"] == env["v1"].id and body["op_number"] == env["project"].project_code
     assert body["items"][0]["order_project_element_id"] == env["v1"].id
     assert env["v1"].label in body["items"][0]["element_display"]
     bal = _balance(db, env)
@@ -155,7 +155,7 @@ def test_rrv_order_issue_must_carry_the_element(client, db, env):
 
     # Work order of the RRV order without a build → the element is mandatory.
     r = _issue(client, env, 1, project_or_work_order="WO-OPS-0001")
-    assert r.status_code == 422 and env["project"].op_number in r.json()["detail"]
+    assert r.status_code == 422 and env["project"].project_code in r.json()["detail"]
     r = _issue(client, env, 1, project_or_work_order="WO-OPS-0001", order_project_element_id=v2.id)
     assert r.status_code == 200, r.text
     assert r.json()["order_project_element_id"] == v2.id
@@ -189,7 +189,7 @@ def test_dispatch_lines_take_the_delivery_row_element(client, db, env):
               items=[NS(sales_schedule_id=None, order_project_element_id=None)])
     with pytest.raises(Exception) as e:
         project_stock.resolve_issue_project(db, "dispatch", bare)
-    assert env["project"].op_number in str(getattr(e.value, "detail", e.value))
+    assert env["project"].project_code in str(getattr(e.value, "detail", e.value))
 
 
 def test_grn_of_project_line_is_held_for_the_element_and_released_on_reversal(client, db, env):
@@ -230,7 +230,7 @@ def test_grn_of_project_line_is_held_for_the_element_and_released_on_reversal(cl
 
     # 360 store column.
     db.expire_all()
-    project = db.get(OrderProject, env["project"].id)
+    project = db.get(PmProject, env["project"].id)
     so = db.get(SalesOrder, project.sales_order_id)
     cells = ops.department_cells(db, project, so, list(project.elements))
     assert cells[v2.id]["store"]["tone"] == "info" and cells[v2.id]["store"]["label"] == "1 item(s) held"
@@ -256,13 +256,13 @@ def test_store_cell_warns_when_build_material_is_not_held(client, db, env):
     db.commit()
     _reserve(client, env, v1, 2)
     db.expire_all()
-    project = db.get(OrderProject, env["project"].id)
+    project = db.get(PmProject, env["project"].id)
     so = db.get(SalesOrder, project.sales_order_id)
     cell = ops.department_cells(db, project, so, list(project.elements))[v1.id]["store"]
     assert cell["tone"] == "warning" and cell["label"] == "Short: 1 item(s)" and "MT-OPS-0001" in cell["detail"]
     _reserve(client, env, v1, 3)
     db.expire_all()
-    project = db.get(OrderProject, env["project"].id)
+    project = db.get(PmProject, env["project"].id)
     cell = ops.department_cells(db, project, so, list(project.elements))[v1.id]["store"]
     assert cell["tone"] == "info"
 

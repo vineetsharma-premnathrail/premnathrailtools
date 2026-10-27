@@ -7,7 +7,7 @@ it must be charged to, so every rupee lands on a real cost object:
                    sales order is accepted too — its project is derived);
                    lines name their vehicle / lot
   machine_project  service of a delivered machine (ERP project); the charge
-                   is optional (work order, internal order, sales order, order project)
+                   is optional (work order, internal order, sales order, project)
   development      an R&D project (R&D › Prototype / Research); its Finance
                    internal order is opened and linked automatically
   department       nothing on the PR — Purchase picks the cost centre on the
@@ -109,7 +109,7 @@ CHARGED_TO_LABELS = {"order_project": "Project", "sales_order": "Sales order", "
 
 # How a requisition line says what project it is for (2026-10-24 - one project
 # per machine, so a line never picks a vehicle / lot or Project-vs-Inhouse):
-#   inherit   the header names the one project (Order project / Machine project);
+#   inherit   the header names the one project (Project / Machine project);
 #             every line is stored as "Project" - what Service-raised requisitions
 #             store - tied to that project (see p2p/order_project_links.py)
 #   inhouse   overhead buying: every line is Inhouse
@@ -171,7 +171,7 @@ def validate_rules(purpose: str, raw: dict) -> dict:
             raise ValueError(f"{label}: pick at least one option for {what} - with none, the requisition form could not be filled.")
         return v
 
-    cats = _list("categories", "categories", [c for c in P2P_CATEGORIES if c != "OTH"], P2P_CATEGORIES)
+    cats = _list("categories", "categories", [c for c in P2P_CATEGORIES if c not in ("OTH", "ITM")], P2P_CATEGORIES)
     reqs = _list("requirement_types", "requirement types", list(P2P_REQUIREMENT_TYPES), {})
     types = _list("item_types", "item types", list(STORE_ITEM_TYPES), {t: t.replace("_", " ") for t in STORE_ITEM_TYPES})
     kinds = _list("charged_to_kinds", "Charged To", list(VALID_CHARGED_TO[purpose]), CHARGED_TO_LABELS, empty_ok=True)

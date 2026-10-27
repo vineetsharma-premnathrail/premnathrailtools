@@ -409,7 +409,7 @@ def test_dataset_row_ids_and_links_are_declared(db):
     assert sr.id_keys == ("sr_id", "project_id") and "visit_id" in visit.id_keys
     link = {c.key: c.link for c in sr.columns}
     assert link["request_number"] == ("sr_id", "/dashboard/erp/service-requests")
-    assert link["serial"] == ("project_id", "/dashboard/erp/projects")
+    assert link["serial"] == ("project_id", "/dashboard/projects/service-projects")
     cols = {c.key: c for c in sr.columns}
     assert cols["issue"].cut and cols["total_bill"].money and cols["total_bill"].total == "sum"
 

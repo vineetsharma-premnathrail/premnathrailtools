@@ -12,7 +12,7 @@ const config: TourConfig = {
     },
     {
       target: 'rnd-proj-new-btn',
-      title: '+ New Project',
+      title: '+ New R&D Project',
       purpose: 'Opens the form to start a new R&D project.',
     },
     {
@@ -22,20 +22,15 @@ const config: TourConfig = {
       validExample: 'bogie',
     },
     {
-      target: 'rnd-proj-stage-filter',
-      title: 'Stage filter',
-      purpose: 'Show only projects in one stage. Clicking a stage on the R&D Dashboard opens this list already filtered.',
-      options: [{ value: 'All stages', meaning: 'No stage filter.' }, ...RND_STAGE_OPTIONS],
-    },
-    {
-      target: 'rnd-proj-status-filter',
-      title: 'Status filter',
-      options: [{ value: 'All statuses', meaning: 'No status filter.' }, ...RND_STATUS_OPTIONS],
-    },
-    {
-      target: 'rnd-proj-priority-filter',
-      title: 'Priority filter',
-      options: [{ value: 'All priorities', meaning: 'No priority filter.' }, ...RND_PRIORITY_OPTIONS],
+      target: 'rnd-proj-filter-btn',
+      title: 'Filters',
+      purpose: 'Opens the filters popup: Stage, Status, Priority and Origin. Press Apply to filter the list; the number on the button shows how many filters are on, and Clear removes them. Clicking a stage on the R&D Dashboard opens this list already filtered by that stage.',
+      options: [
+        { value: 'Stage', meaning: 'All stages, or one of: ' + RND_STAGE_OPTIONS.map((o) => o.value).join(', ') + '.' },
+        { value: 'Status', meaning: 'All statuses, or one of: ' + RND_STATUS_OPTIONS.map((o) => o.value).join(', ') + '.' },
+        { value: 'Priority', meaning: 'All priorities, or one of: ' + RND_PRIORITY_OPTIONS.map((o) => o.value).join(', ') + '.' },
+        { value: 'Origin', meaning: 'Why the project exists: customer requirement, product improvement, new product, process research.' },
+      ],
     },
     {
       target: 'rnd-proj-table',

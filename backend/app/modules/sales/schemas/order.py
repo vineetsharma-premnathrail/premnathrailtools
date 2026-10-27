@@ -144,6 +144,9 @@ class SalesOrderScheduleResponse(BaseModel):
     build_number: str | None = None
     build_status: str | None = None
     build_stage: str | None = None
+    # The Order Project vehicle / lot this row is (PEW-80/01) and its project (PEW-80).
+    project_number: str | None = None
+    project_element_no: str | None = None
     ld_forecast_periods: int | None = None
     ld_forecast_amount: float | None = None
     risk: str | None = None
@@ -364,7 +367,10 @@ class SalesOrderResponse(BaseModel):
     approvals: list[SalesApprovalResponse] = Field(default_factory=list)
     credit: dict | None = None
     open_amendment_id: int | None = None
-    # The execution project created at confirmation: {id, op_number, status} (sales/order_projects.py).
+    # The Project Management project created at confirmation (projects/so_projects.py).
+    pm_project_id: int | None = None
+    pm_project_code: str | None = None
+    # Deprecated alias of the two above: {id, op_number, status}; filled from the PM project.
     order_project: dict | None = None
     can: dict = Field(default_factory=dict)
     prices_hidden: bool = False  # amounts blanked — no Sales › Sales Orders › Prices & margins

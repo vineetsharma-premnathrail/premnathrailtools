@@ -1,35 +1,14 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
-import { useRequireErpPermission } from '@/hooks/useAuth'
-import { erpApi } from '@/lib/api'
-import ErpNav from '@/components/erp/ErpNav'
-import ProjectForm from '@/components/erp/ProjectForm'
-import { recordPath } from '@/lib/recordRef'
+import { useEffect } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 
-export default function NewProjectPage() {
-  const { user, isAuthorized, isLoading } = useRequireErpPermission('project_create', '/dashboard/erp/projects')
+// Service Projects moved to Project Management (2026-10-26). Old links (bookmarks, notifications) land here and go on.
+export default function MovedServiceProjectNew() {
   const router = useRouter()
-
-  if (isLoading || !isAuthorized) return null
-
-  return (
-    <div>
-      <ProjectForm
-        nav={<ErpNav />}
-        title="Add New Project"
-        subtitle="Register a machine in the asset register — identity, client & site, specs, warranty and documents."
-        submitLabel="Save Project"
-        currentUserId={user?.id}
-        onCancel={() => router.push('/dashboard/erp/projects')}
-        onSubmit={async (payload, files, shareOptions) => {
-          const created = await erpApi.createProject(payload)
-          if (files.length > 0) {
-            await erpApi.uploadProjectAttachments(created.id, files, shareOptions)
-          }
-          router.push(recordPath('/dashboard/erp/projects', created))
-        }}
-      />
-    </div>
-  )
+  const params = useParams<{ id?: string }>()
+  useEffect(() => {
+    router.replace(`/dashboard/projects/service-projects/new${window.location.search}`)
+  }, [router, params])
+  return <p style={{ fontSize: 13, color: '#78716c' }}>Service Projects moved to Project Management - opening...</p>
 }

@@ -7,8 +7,8 @@ const config: TourConfig = {
   steps: [
     {
       target: 'pm-proj-badges',
-      title: 'Status',
-      purpose: 'The project code and its status badge (no badge while the project is simply Open). Customer, project manager and closing date are in the Overview summary.',
+      title: 'Stage and status',
+      purpose: 'The project code, its lifecycle stage (Planned, Design, Manufacturing ... Closed / Delivered) and, only when paused or cancelled, an On hold / Cancelled badge. Customer, project manager and closing date are in the Overview summary.',
       options: PROJECT_STATUS_OPTIONS,
     },
     {
@@ -48,6 +48,17 @@ const config: TourConfig = {
       purpose: 'Opens the project details as a form (management / project manager only, not on closed or cancelled projects). Start the tour again while editing for a field-by-field guide.',
     },
     {
+      target: 'pm-ov-stage',
+      title: 'Stage',
+      purpose: 'Where the project stands in its life. The project manager or management moves it forward (Move to next stage, or pick a later stage). Only an admin or Partner can move it back, and must give a reason. When every unit is dispatched it moves to Dispatched by itself.',
+      why: 'Service can raise requests only for machines that have reached Dispatched or later.',
+    },
+    {
+      target: 'pm-ov-machine',
+      title: 'Machine details',
+      purpose: 'The machine registered with this project: identity, client and site, specs, timeline and warranty. Use Edit machine to change it.',
+    },
+    {
       target: 'pm-proj-tab-milestones',
       title: 'Milestones tab',
       purpose: 'The milestones of this project — each with one responsible person, and the tasks created inside it.',
@@ -67,6 +78,12 @@ const config: TourConfig = {
         { value: 'Reopen', meaning: 'Project manager: sends a Done milestone back, with a reason the owner sees.' },
         { value: 'Cancel', meaning: 'Project manager: the milestone is no longer needed. A reason is required.' },
       ],
+    },
+    {
+      target: 'pm-proj-tab-units',
+      title: 'Units tab',
+      purpose: 'Only on a project made from a sales order: the sales order link and one row per vehicle or spares lot, with a column per department (Design, Purchase, Store, Production, Quality, Dispatch, Delivered).',
+      autoActivate: true,
     },
     {
       target: 'pm-proj-tab-documents',

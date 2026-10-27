@@ -1,4 +1,4 @@
-"""Quality's column on the Order Project 360 (Sales › Order Projects).
+"""Quality's column on the project Units 360 (Project Management › All Projects › Units).
 
 Registered at startup (imported from quality/routes/__init__.py):
 
@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.quality.models.inspection_call import QualityInspectionCall
 from app.modules.quality.models.inspection_lot import QualityInspectionLot, QUALITY_LOT_DECISION_LABELS
-from app.modules.sales import order_projects as ops
+from app.modules.projects import so_projects as op_core
 from app.modules.sales.models.order import SalesOrder
 
 _ACCEPTING = ("accept", "accept_with_deviation", "partial")
@@ -54,7 +54,7 @@ def _lot_text(lot: QualityInspectionLot | None) -> tuple[str | None, str | None]
 
 def quality_cells(db: Session, project, elements) -> dict[int, dict | None]:
     from app.modules.quality.services.dispatch import _agency_label
-    so = db.get(SalesOrder, project.sales_order_id)
+    so = db.get(SalesOrder, project.sales_order_id) if project.sales_order_id else None
     if so is None:
         return {}
     live = [el for el in elements if el.status != "cancelled"]
@@ -120,4 +120,4 @@ def quality_cells(db: Session, project, elements) -> dict[int, dict | None]:
     return out
 
 
-ops.register_department_provider("quality", quality_cells)
+op_core.register_department_provider("quality", quality_cells)

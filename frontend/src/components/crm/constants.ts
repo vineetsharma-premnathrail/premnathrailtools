@@ -5,6 +5,27 @@ export const RAILWAY_ZONES = [
   'North Western Railway', 'South Western Railway', 'Metro Railway Kolkata', 'Not Applicable', 'Other',
 ]
 
+/** Contact person designations; "Other" opens a free-text box. */
+export const CONTACT_DESIGNATIONS = [
+  'Owner / Proprietor', 'Founder / Co-Founder', 'Chairman', 'Managing Director (MD)', 'Chief Executive Officer (CEO)',
+  'Director', 'General Manager (GM)', 'Deputy General Manager (DGM)', 'Assistant General Manager (AGM)', 'Plant Head',
+  'Factory Manager', 'Operations Manager', 'Production Manager', 'Purchase Head', 'Purchase Manager',
+  'Procurement Executive', 'Project Manager', 'Design Head', 'Design Engineer', 'R&D Manager',
+  'Technical Manager', 'Maintenance Manager', 'Quality Manager', 'Quality Engineer', 'Electrical Engineer',
+  'Mechanical Engineer', 'Service Manager', 'Sales Manager', 'Business Development Manager', 'Finance Manager',
+  'Accounts Manager', 'HR Manager', 'Store Manager', 'Supervisor', 'Executive',
+  'Assistant', 'Consultant', 'Other',
+]
+
+/** Contact person departments; "Other" opens a free-text box. */
+export const CONTACT_DEPARTMENTS = [
+  'Sales', 'Marketing', 'Business Development', 'Purchase / Procurement', 'Design & Engineering',
+  'Research & Development (R&D)', 'Production / Manufacturing', 'Project Management', 'Operations',
+  'Quality Assurance / Quality Control', 'Service & Commissioning', 'Maintenance', 'Accounts & Finance',
+  'Administration', 'Human Resources (HR)', 'Technical Support', 'Customer Service',
+  'Supply Chain & Logistics', 'Export & Import', 'Other',
+]
+
 export const ACTIVITY_TYPES = ['Call', 'Email', 'Meet at Client/Site Office', 'Meet at Own Office']
 
 export const FOLLOW_UP_STATUSES = ['Open', 'Closed', 'Hold']

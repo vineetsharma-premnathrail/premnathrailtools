@@ -38,9 +38,9 @@ class StoreStockReservation(Base, TimestampMixin):
     # for anything else is refused unless a Store Manager overrides it with a
     # reason. The free-text project / production_order above stay for old rows.
     order_project_id: Mapped[int | None] = mapped_column(
-        ForeignKey("sales_order_projects.id", ondelete="SET NULL"), nullable=True, index=True)
+        ForeignKey("pm_projects.id", ondelete="SET NULL"), nullable=True, index=True)
     order_project_element_id: Mapped[int | None] = mapped_column(
-        ForeignKey("sales_order_project_elements.id", ondelete="SET NULL"), nullable=True, index=True)
+        ForeignKey("pm_project_elements.id", ondelete="SET NULL"), nullable=True, index=True)
     # Where an automatic hold came from: "grn_item" (bought-out material of a
     # project PO line, source_id = the GRN line), "manual" / NULL by hand.
     source_type: Mapped[str | None] = mapped_column(String(30), nullable=True)

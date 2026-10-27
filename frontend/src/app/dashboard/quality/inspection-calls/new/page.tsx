@@ -6,7 +6,7 @@ import { recordPath } from '@/lib/recordRef'
 import { useRequireApp } from '@/hooks/useAuth'
 import { qualityApi } from '@/lib/api'
 import { QualityContract, QualityInspectionLot, QualityOrderProjectRequirement } from '@/types'
-import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
+import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import QualityNav from '@/components/quality/QualityNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
@@ -35,7 +35,7 @@ export default function NewInspectionCallPage() {
   })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
-  // Order Project (the build): its Sales Order decides the agency.
+  // Project (the build): its Sales Order decides the agency.
   const [op, setOp] = useState<OrderProjectValue | null>(null)
   const [req, setReq] = useState<QualityOrderProjectRequirement | null>(null)
   const [reqError, setReqError] = useState('')
@@ -77,7 +77,7 @@ export default function NewInspectionCallPage() {
 
   const submit = async () => {
     setError('')
-    if (!op && !form.erp_project_id && !form.order_reference.trim()) return setError('Pick the Order Project vehicle / lot (or the ERP machine / order), or type the customer order reference.')
+    if (!op && !form.erp_project_id && !form.order_reference.trim()) return setError('Pick the Project unit (vehicle / lot), or the ERP machine / order, or type the customer order reference.')
     if (op && req && !req.agency) return setError(`Sales Order ${req.so_number} has no inspecting agency, so no third-party inspection is due for ${req.op_number}. Ask Sales to amend the order's inspection agency first.`)
     if (!form.item_id) return setError('Pick the item offered for inspection.')
     if (!(Number(form.quantity) > 0)) return setError('Enter the quantity offered for inspection.')
@@ -114,7 +114,7 @@ export default function NewInspectionCallPage() {
           <ErrorBanner error={error} />
           <SheetSection icon="building" title="Order">
             <div style={row}>
-              <F label="Order Project — vehicle / lot" flex="1 1 100%">
+              <F label="Project — Unit (vehicle / lot)" flex="1 1 100%">
                 <OrderProjectPicker value={op} onChange={(v) => { setOp(v); setReq(null); setReqError('') }} />
               </F>
             </div>
@@ -148,7 +148,7 @@ export default function NewInspectionCallPage() {
                 ? (contract.third_party_inspection_required
                   ? `This contract needs ${contract.inspection_agency_label || contract.inspection_agency} inspection before dispatch.`
                   : 'This contract has no third-party inspection requirement — the call is for the record.')
-                : 'Pick the Order Project vehicle / lot, the ERP machine / order, or type the customer order reference.'}
+                : 'Pick the Project unit (vehicle / lot), the ERP machine / order, or type the customer order reference.'}
             </p>
           </SheetSection>
           <SheetSection icon="box" title="Material offered">

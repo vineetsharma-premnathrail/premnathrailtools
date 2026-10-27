@@ -16,7 +16,7 @@ import { recordPath, useRecordId } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
-import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
+import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
 
 const inputStyle: React.CSSProperties = sheetInput

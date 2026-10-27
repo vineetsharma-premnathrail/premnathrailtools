@@ -1,6 +1,7 @@
 'use client'
 
 import Select from '@/components/shared/Select'
+import SearchableSelect from '@/components/erp/SearchableSelect'
 import { useEffect, useRef, useState } from 'react'
 import { Organization, OrgContact } from '@/types'
 import { crmApi } from '@/lib/api'
@@ -10,7 +11,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { segmentBtnStyle } from '@/components/shared/ui'
-import { orgTypesFor, ORG_TYPE_LABELS, RAILWAY_ZONES, COUNTRIES, INDIA_STATES, orgTypeHasRailwayFields, dialCodeFor, phoneOrBlank } from './constants'
+import { orgTypesFor, ORG_TYPE_LABELS, RAILWAY_ZONES, COUNTRIES, INDIA_STATES, CONTACT_DESIGNATIONS, CONTACT_DEPARTMENTS, orgTypeHasRailwayFields, dialCodeFor, phoneOrBlank } from './constants'
 import { AddMoreButton, RemoveValueButton, ValueRow, canAddMore } from '@/components/shared/MoreValuesButtons'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 
@@ -45,7 +46,11 @@ type ContactRow = {
   id?: number
   name: string
   designation: string
+  /** "Other" picked: `designation` holds the typed text. */
+  designationOther: boolean
   department: string
+  /** "Other" picked: `department` holds the typed text. */
+  departmentOther: boolean
   mobile: string
   email: string
   additionalMobiles: string[]
@@ -90,7 +95,10 @@ function toContactRow(c: OrgContact): ContactRow {
     id: c.id,
     name: c.name,
     designation: c.designation || '',
+    // An older typed designation that isn't on the list shows as Other + its text.
+    designationOther: !!c.designation && !CONTACT_DESIGNATIONS.includes(c.designation),
     department: c.department || '',
+    departmentOther: !!c.department && !CONTACT_DEPARTMENTS.includes(c.department),
     mobile: c.mobile || '',
     email: c.email || '',
     additionalMobiles: c.additional_mobiles?.length ? c.additional_mobiles : [],
@@ -98,7 +106,7 @@ function toContactRow(c: OrgContact): ContactRow {
   }
 }
 
-const emptyContact = (code = ''): ContactRow => ({ name: '', designation: '', department: '', mobile: code, email: '', additionalMobiles: [], additionalEmails: [] })
+const emptyContact = (code = ''): ContactRow => ({ name: '', designation: '', designationOther: false, department: '', departmentOther: false, mobile: code, email: '', additionalMobiles: [], additionalEmails: [] })
 
 const inputStyle = sheetInput
 
@@ -315,6 +323,15 @@ export default function OrganizationForm({
 
   const setContact = (index: number, field: 'name' | 'designation' | 'department' | 'mobile' | 'email', value: string) => {
     setContacts((rows) => rows.map((r, i) => (i === index ? { ...r, [field]: value } : r)))
+  }
+  // Picking "Other" clears the value and opens the text box; a listed designation is stored as is.
+  const pickDesignation = (index: number, value: string) => {
+    const other = value === 'Other'
+    setContacts((rows) => rows.map((r, i) => (i === index ? { ...r, designationOther: other, designation: other ? '' : value } : r)))
+  }
+  const pickDepartment = (index: number, value: string) => {
+    const other = value === 'Other'
+    setContacts((rows) => rows.map((r, i) => (i === index ? { ...r, departmentOther: other, department: other ? '' : value } : r)))
   }
 
   // Fill the contacts above before adding another — never a second empty card.
@@ -672,7 +689,12 @@ export default function OrganizationForm({
               <Field label="City" tourId="org-city"><input value={form.city} onChange={(e) => set('city', e.target.value)} placeholder="e.g. New Delhi" style={inputStyle} /></Field>
             </div>
             <div style={{ flex: '1 1 120px', minWidth: 110 }}>
-              <Field label="PIN Code" tourId="org-pin"><input value={form.pin_code} onChange={(e) => set('pin_code', e.target.value)} maxLength={6} placeholder="110001" style={inputStyle} /></Field>
+              {/* India uses a 6-digit PIN; abroad it is a ZIP / postal code (letters and spaces allowed, e.g. SW1A 1AA). */}
+              {isInternational ? (
+                <Field label="ZIP / Postal Code" tourId="org-pin"><input value={form.pin_code} onChange={(e) => set('pin_code', e.target.value)} maxLength={20} placeholder="e.g. 10001" style={inputStyle} /></Field>
+              ) : (
+                <Field label="PIN Code" tourId="org-pin"><input value={form.pin_code} onChange={(e) => set('pin_code', e.target.value)} maxLength={6} placeholder="110001" style={inputStyle} /></Field>
+              )}
             </div>
           </div>
           </div>
@@ -762,11 +784,21 @@ export default function OrganizationForm({
                       <div style={{ flex: '1 1 150px', minWidth: 130 }}>
                         <Field label={<>Name <Req /></>} tourId={i === 0 ? 'contact-name' : undefined}><input value={row.name} onChange={(e) => setContact(i, 'name', e.target.value)} placeholder="Contact name" style={contactInputStyle} /></Field>
                       </div>
-                      <div style={{ flex: '1 1 120px', minWidth: 100 }}>
-                        <Field label="Designation" tourId={i === 0 ? 'contact-designation' : undefined}><input value={row.designation} onChange={(e) => setContact(i, 'designation', e.target.value)} placeholder="e.g. DEN" style={contactInputStyle} /></Field>
+                      <div style={{ flex: '1 1 150px', minWidth: 140 }}>
+                        <Field label="Designation" tourId={i === 0 ? 'contact-designation' : undefined}>
+                          <SearchableSelect typeIn value={row.designationOther ? 'Other' : row.designation} onChange={(v) => pickDesignation(i, v)} options={CONTACT_DESIGNATIONS.map((d) => ({ value: d, label: d }))} placeholder="Type or select" ariaLabel="Designation" triggerStyle={contactInputStyle} />
+                          {row.designationOther && (
+                            <input value={row.designation} onChange={(e) => setContact(i, 'designation', e.target.value)} placeholder="Type designation, e.g. DEN" maxLength={100} autoFocus={!row.designation} style={{ ...contactInputStyle, marginTop: 6 }} />
+                          )}
+                        </Field>
                       </div>
-                      <div style={{ flex: '1 1 100px', minWidth: 90 }}>
-                        <Field label="Department" tourId={i === 0 ? 'contact-department' : undefined}><input value={row.department} onChange={(e) => setContact(i, 'department', e.target.value)} placeholder="Dept." style={contactInputStyle} /></Field>
+                      <div style={{ flex: '1 1 150px', minWidth: 140 }}>
+                        <Field label="Department" tourId={i === 0 ? 'contact-department' : undefined}>
+                          <SearchableSelect typeIn value={row.departmentOther ? 'Other' : row.department} onChange={(v) => pickDepartment(i, v)} options={CONTACT_DEPARTMENTS.map((d) => ({ value: d, label: d }))} placeholder="Type or select" ariaLabel="Department" triggerStyle={contactInputStyle} />
+                          {row.departmentOther && (
+                            <input value={row.department} onChange={(e) => setContact(i, 'department', e.target.value)} placeholder="Type department, e.g. Stores" maxLength={100} autoFocus={!row.department} style={{ ...contactInputStyle, marginTop: 6 }} />
+                          )}
+                        </Field>
                       </div>
                       <div style={{ flex: '1 1 140px', minWidth: 120 }}>
                         <Field label="Phone" tourId={i === 0 ? 'contact-mobile' : undefined}>

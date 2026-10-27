@@ -73,7 +73,7 @@ class P2PGoodsReceiptItemResponse(BaseModel):
     bin_id: int | None = None
     bin_code: str | None = None
     serial_numbers: list[str] | None = None
-    # Order Project element (vehicle / lot) this line is for (from its PO line) — Store tags the stock with it — OrderProjectChip.
+    # Project unit (vehicle / lot) this line is for (from its PO line) — Store tags the stock with it — ProjectUnitChip.
     order_project_id: int | None = None
     order_project_element_id: int | None = None
     order_project_number: str | None = None

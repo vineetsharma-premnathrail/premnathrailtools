@@ -499,6 +499,8 @@ async def create_service_request(
                " Its approvers (Organization › Approval Workflows › New machine) approve it on the machine's page.")
         raise HTTPException(status_code=409, detail=f"Machine {project.serial_number} is not approved yet, so service requests "
                                                     f"can't be raised on it.{why}")
+    from app.modules.projects.lifecycle import require_serviceable
+    require_serviceable(project)  # only Dispatched or later machines can be serviced
 
     sr_number = _generate_sr_number(db)
     values = data.model_dump()

@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 class QualityInspectionCallCreate(BaseModel):
     erp_project_id: int | None = None
-    # Sales › Order Projects: the vehicle / lot this call is for. The agency
+    # Project Management › All Projects: the vehicle / lot this call is for. The agency
     # then comes from its Sales Order (a different one is refused).
     order_project_id: int | None = None
     order_project_element_id: int | None = None
@@ -93,7 +93,7 @@ class QualityInspectionCallResponse(BaseModel):
     created_at: datetime | None = None
 
     project_label: str | None = None
-    # Order Project link display + the SO's requirement (read-only on the call).
+    # project link display + the SO's requirement (read-only on the call).
     op_number: str | None = None
     element_no: str | None = None
     element_label: str | None = None

@@ -13,15 +13,19 @@ from app.modules.projects.models.project import PmProject, PM_PROJECT_STATUSES, 
 from app.modules.projects.models.milestone import PmProjectMilestone
 from app.modules.projects.models.task import PmProjectTask, PM_TASK_OPEN_STATUSES
 from app.modules.projects.schemas.project import (
-    PmProjectCreate, PmProjectUpdate, PmProjectTransitionPayload, PmProjectResponse, PmClosureResponse,
+    PmProjectCreate, PmProjectUpdate, PmProjectTransitionPayload, PmStagePayload, PmProjectResponse, PmClosureResponse,
+    PmProjectWithMachineCreate, _clean_ref,
 )
+from app.modules.erp.models.project import Project as MachineProject
 from app.modules.projects.schemas.task import PmCommItem, PmProjectTaskResponse
 from app.modules.projects import views, workflow as wf
 from app.modules.projects import access as pm_access
 from app.modules.projects import closure
+from app.modules.projects import lifecycle
 from app.modules.projects.events import pm_event
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.core.pew_numbers import next_pew_number, pew_number_taken
+from app.modules.accounts.services import project_budget
 
 router = APIRouter(
     prefix="/projects", tags=["Project Management"],
@@ -47,12 +51,12 @@ def _check_code(db: Session, code: str, exclude_id: int | None = None) -> str:
     # One PEW series with the Order Projects (core/pew_numbers.py): clash with either.
     other = pew_number_taken(db, code, exclude_pm_id=exclude_id)
     if other:
-        raise HTTPException(status_code=409, detail=f"Project number {code} is already used by {other}. Leave it blank for the next free PEW number.")
+        raise HTTPException(status_code=409, detail=f"{code} is already used by {other} - type another number (e.g. {code}A for a repeat) or leave it blank for the next free number {next_pew_number(db)}.")
     return code
 
 
 def _next_code(db: Session) -> str:
-    """Next PEW-<year>-NNNN (shared with Order Projects), used when the number is left blank."""
+    """Next PEW-<N> (shared with Order Projects and past machines), used when the number is left blank."""
     return next_pew_number(db)
 
 
@@ -67,6 +71,7 @@ def _check_user(db: Session, user_id: int, label: str) -> User:
 async def get_project_meta(user: User = Depends(require_app_access("projects"))):
     return {
         "statuses": PM_PROJECT_STATUSES, "priorities": PM_PROJECT_PRIORITIES,
+        "lifecycle_stages": lifecycle.stage_options(),
         # All Projects › Create is itself the management grant (an authority
         # grant); Partners and Directors hold that authority by flag.
         "can_create": wf.is_management(user),
@@ -105,6 +110,7 @@ async def lookup_department_people(department_id: int, db: Session = Depends(get
 @router.get("", response_model=list[PmProjectResponse])
 async def list_projects(
     status_filter: str | None = Query(None, alias="status"),
+    stage: str | None = Query(None, description="Lifecycle stage key, e.g. manufacturing"),
     priority: str | None = None,
     health: str | None = None,
     search: str | None = None,
@@ -114,6 +120,8 @@ async def list_projects(
     query = apply_scope(db.query(PmProject), user, PmProject)
     if status_filter:
         query = query.filter(PmProject.status == status_filter)
+    if stage:
+        query = query.filter(PmProject.lifecycle_stage == lifecycle.validate_stage(stage))
     if priority:
         query = query.filter(PmProject.priority == priority)
     if search:
@@ -123,7 +131,9 @@ async def list_projects(
             | (PmProject.customer_po_ref.ilike(like)) | (PmProject.sales_order_ref.ilike(like))
         )
     cache = views.names(db)
-    rows = [views.project_response(db, p, user, cache) for p in query.order_by(PmProject.created_at.desc()).all()]
+    projects = query.order_by(PmProject.created_at.desc()).all()
+    cache.preload_machines(p.id for p in projects)
+    rows = [views.project_response(db, p, user, cache) for p in projects]
     if health:
         rows = [r for r in rows if r.health == health]
     return rows
@@ -136,6 +146,7 @@ async def projects_dashboard(db: Session = Depends(get_db), user: User = Depends
     cache = views.names(db)
     today = date.today()
     projects = apply_scope(db.query(PmProject).filter(PmProject.status.in_(_LIVE_STATUSES)), user, PmProject).order_by(PmProject.target_handover_date).all()
+    cache.preload_machines(p.id for p in projects)
     summaries = [views.project_response(db, p, user, cache) for p in projects]
     counts = {s: 0 for s in ("planning", "active", "on_hold", "technically_complete", "on_track", "at_risk", "delayed")}
     for s in summaries:
@@ -209,6 +220,31 @@ async def department_board(db: Session = Depends(get_db), user: User = Depends(r
     }
 
 
+@router.get("/budget-options")
+async def budget_options(
+    project_id: int | None = Query(None, description="The project being edited — its current budget stays listed"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_tab_access("projects", "all_projects")),
+):
+    """Finance budgets a project can link to: Open / In progress, not held by another project."""
+    keep = None
+    if project_id is not None:
+        project = _get_or_404(db, project_id, user)
+        wf.require_manage(project, user, "link a Finance budget")
+        wf.require_management(user, "link or change a project's Finance budget")
+        keep = project.internal_order_id
+    else:
+        wf.require_management(user, "link a Finance budget to a new project")
+    return project_budget.budget_options(db, keep_id=keep)
+
+
+def _linkable_budget(db: Session, internal_order_id: int, keep_id: int | None = None):
+    try:
+        return project_budget.check_linkable(db, internal_order_id, keep_id=keep_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
 @router.post("", response_model=PmProjectResponse)
 async def create_project(
     payload: PmProjectCreate,
@@ -219,6 +255,16 @@ async def create_project(
     user: User = Depends(require_tab_access("projects", "all_projects")),
 ):
     wf.require_management(user, "create projects")
+    project = _add_project(db, user, payload)
+    db.commit()
+    db.refresh(project)
+    return views.project_response(db, project, user)
+
+
+def _add_project(db: Session, user: User, payload) -> PmProject:
+    """Validates and adds a Planning project (flushed, NOT committed) — shared by
+    create_project and create_project_with_machine so the rules live once.
+    `payload` has the PmProjectCreate fields."""
     code = _check_code(db, payload.project_code) if (payload.project_code or "").strip() else _next_code(db)
     for field, label in (("name", "Project name"), ("client_name", "Customer")):
         if not (getattr(payload, field) or "").strip():
@@ -229,6 +275,8 @@ async def create_project(
         raise HTTPException(status_code=422, detail=f"Target handover date {payload.target_handover_date:%d-%m-%Y} is before the start date {payload.start_date:%d-%m-%Y}. Fix one of the dates.")
     pm_id = payload.project_manager_id or user.id
     _check_user(db, pm_id, "project manager")
+    io_id = getattr(payload, "internal_order_id", None)
+    budget = _linkable_budget(db, io_id) if io_id else None
 
     project = PmProject(
         project_code=code, name=payload.name.strip(), client_name=payload.client_name.strip(),
@@ -236,15 +284,65 @@ async def create_project(
         description=payload.description,
         project_manager_id=pm_id, start_date=payload.start_date,
         target_handover_date=payload.target_handover_date, priority=payload.priority,
-        status="planning", created_by_id=user.id,
+        status="planning", created_by_id=user.id, internal_order_id=budget.id if budget else None,
     )
     db.add(project)
     db.flush()
     wf.audit(db, project.id, user, "created", f"Project {project.project_code} ({project.name}) created by {wf.user_label(user)}.", subtab_key="overview")
+    if budget:
+        wf.audit(db, project.id, user, "updated", f"Finance budget {budget.code} ({budget.name}) linked.", subtab_key="overview")
     wf.notify_many(db, [project.project_manager_id], user, "You are project manager",
                    f"{wf.user_label(user)} made you project manager of {project.project_code} {project.name}.",
                    "pm_project_manager", "pm_project", project.id)
-    db.commit()
+    # No existing machine can carry this number: _check_code refuses a number held by a machine
+    # serial (PEW-34 or PEW-34-A1), and a blank number is highest-used + 1. Machines created later
+    # join by number from the machine side (link_machine_by_number).
+    return project
+
+
+@router.post("/with-machine", response_model=PmProjectResponse)
+async def create_project_with_machine(
+    payload: PmProjectWithMachineCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    # Same authority as create_project; the machine is part of the project, so the
+    # separate ERP 'create machines' grant is not needed here.
+    user: User = Depends(require_tab_access("projects", "all_projects")),
+):
+    """'Add New Project': registers the machine AND the Project Management
+    project in one transaction — any error saves nothing."""
+    wf.require_management(user, "create projects")
+    m = payload.machine
+    client = (payload.client_name or m.client_company or "").strip()
+    if not client:
+        raise HTTPException(status_code=422, detail="Client company is required — enter it on the Client & Site tab.")
+    try:
+        po = _clean_ref(payload.customer_po_ref or m.po_number, "Customer PO number is required — enter it on the Timeline & Warranty tab (PO number).")
+        so = _clean_ref(payload.sales_order_ref, "Sales order (SO) number is required — enter it on the Project tab.")
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    pm_payload = PmProjectCreate.model_construct(
+        project_code=payload.project_code, name=payload.name, client_name=client, customer_po_ref=po,
+        sales_order_ref=so, description=payload.description, project_manager_id=payload.project_manager_id,
+        start_date=payload.start_date, target_handover_date=payload.target_handover_date, priority=payload.priority,
+        internal_order_id=payload.internal_order_id,
+    )
+    try:
+        project = _add_project(db, user, pm_payload)
+        values = m.model_dump()
+        values["serial_number"] = m.serial_number or project.project_code
+        if not values.get("client_company"):
+            values["client_company"] = client
+        if not values.get("po_number"):
+            values["po_number"] = po
+        values["pm_project_id"] = project.id
+        from app.modules.erp.routes.projects import register_machine
+        machine = register_machine(db, background_tasks, values, user)
+        wf.audit(db, project.id, user, "updated", f"Machine {machine.serial_number} registered with the project.", subtab_key="overview")
+        db.commit()
+    except Exception:
+        db.rollback()  # nothing is saved: neither the project nor the machine
+        raise
     db.refresh(project)
     return views.project_response(db, project, user)
 
@@ -273,6 +371,16 @@ async def update_project(
         if project.status != "planning" and (updates["project_code"] or "").strip().upper() != project.project_code:
             raise HTTPException(status_code=409, detail=f"The project code can only change while the project is in Planning — departments already know it as {project.project_code}.")
         updates["project_code"] = _check_code(db, updates["project_code"], exclude_id=project.id)
+        if updates["project_code"] != project.project_code:
+            # The machine registered with the project carries the project number as its
+            # serial: it follows the new number (409 if an RRV build froze the serial).
+            linked = db.query(MachineProject).filter(
+                MachineProject.pm_project_id == project.id, MachineProject.is_deleted == False,  # noqa: E712
+            ).order_by(MachineProject.id).first()
+            if linked and (linked.serial_number or "").strip().upper() == project.project_code:
+                from app.modules.erp.routes.projects import rename_machine_serial
+                rename_machine_serial(db, linked, updates["project_code"], user)
+                wf.audit(db, project.id, user, "updated", f"Machine serial changed from {project.project_code} to {updates['project_code']} with the project number.", subtab_key="overview")
     for field, label in (("name", "Project name"), ("client_name", "Customer")):
         if field in updates and not (updates[field] or "").strip():
             raise HTTPException(status_code=422, detail=f"{label} can't be empty.")
@@ -294,6 +402,25 @@ async def update_project(
         ).order_by(PmProjectMilestone.target_date.desc()).first()
         if late:
             raise HTTPException(status_code=422, detail=f"WBS '{late.title}' is due {late.target_date:%d-%m-%Y}, after the new handover date {end:%d-%m-%Y}. Move that WBS first, or pick a later handover date.")
+
+    # Linked separately (validated + its own audit line), never through the loop below.
+    new_io_id = updates.pop("internal_order_id", project.internal_order_id)
+    if new_io_id != project.internal_order_id:
+        wf.require_management(user, "link or change a project's Finance budget")
+        new_io = _linkable_budget(db, new_io_id, keep_id=project.internal_order_id) if new_io_id else None
+        from app.modules.accounts.models.internal_order import InternalOrder
+        old_io = db.get(InternalOrder, project.internal_order_id) if project.internal_order_id else None
+        if old_io is not None:
+            try:
+                project_budget.check_unlinkable(db, old_io)
+            except ValueError as e:
+                raise HTTPException(status_code=409, detail=str(e))
+        text =(f"Finance budget changed from {old_io.code} to {new_io.code} ({new_io.name})" if old_io and new_io
+                else f"Finance budget {new_io.code} ({new_io.name}) linked" if new_io
+                else f"Finance budget {old_io.code if old_io else ''} unlinked")
+        wf.audit(db, project.id, user, "updated", f"{text} by {wf.user_label(user)}.", subtab_key="overview", field_name="internal_order_id",
+                 old_value=old_io.code if old_io else None, new_value=new_io.code if new_io else None)
+        project.internal_order_id = new_io.id if new_io else None
 
     old_pm = project.project_manager_id
     for field, val in updates.items():
@@ -320,6 +447,33 @@ def _open_work_people(db: Session, project_id: int) -> tuple[list[PmProjectMiles
         PmProjectTask.project_id == project_id, PmProjectTask.status.in_(PM_TASK_OPEN_STATUSES),
     ).all() if t.assignee_id]
     return milestones, assignees
+
+
+@router.post("/{project_id}/stage", response_model=PmProjectResponse)
+async def move_project_stage(
+    project_id: int,
+    payload: PmStagePayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_tab_action("projects", "overview", "edit")),
+):
+    """Moves the project's lifecycle stage (Planned to Closed / Delivered). Forward by any number of
+    steps: the project manager or management. Backwards: admin or Partner, with a reason."""
+    project = _get_or_404(db, project_id, user)
+    wf.require_manage(project, user, "move the project stage")
+    if project.status in ("closed", "cancelled"):
+        raise HTTPException(status_code=409, detail=f"Project {project.project_code} is {wf.PROJECT_STATUS_LABELS[project.status]} — its stage can't change. Reopen it first if work continues.")
+    if (lifecycle.stage_index(lifecycle.validate_stage(payload.stage)) >= lifecycle.stage_index("dispatched")
+            and not wf.is_management(user)):
+        from app.modules.projects.models.element import PmProjectElement
+        waiting = [el.element_no for el in db.query(PmProjectElement).filter(
+            PmProjectElement.project_id == project.id, PmProjectElement.status.notin_(("cancelled", "dispatched", "delivered"))).all()]
+        if waiting:
+            raise HTTPException(status_code=403, detail=f"Units {', '.join(waiting[:5])}{' …' if len(waiting) > 5 else ''} of {project.project_code} are not dispatched yet — "
+                                                        f"the stage moves to Dispatched by itself when they ship. Only management can set it earlier.")
+    if lifecycle.set_stage(db, project, payload.stage, user, payload.reason):
+        db.commit()
+        db.refresh(project)
+    return views.project_response(db, project, user)
 
 
 @router.post("/{project_id}/transition", response_model=PmProjectResponse)
@@ -452,6 +606,13 @@ async def transition_project(
     return views.project_response(db, project, user)
 
 
+@router.get("/{project_id}/budget")
+async def project_budget_spend(project_id: int, db: Session = Depends(get_db), user: User = Depends(require_tab_access("projects", "overview"))):
+    """The linked Finance budget: budget, committed (open POs), actual (posted vouchers), available."""
+    project = _get_or_404(db, project_id, user)
+    return project_budget.budget_spend(db, project.internal_order_id, ledger_detail=project_budget.can_see_ledger(user))
+
+
 @router.get("/{project_id}/closure", response_model=PmClosureResponse)
 async def project_closure(project_id: int, db: Session = Depends(get_db), user: User = Depends(require_tab_access("projects", "overview"))):
     """Closure checklist: what still stands between this project and Closed."""
@@ -469,6 +630,11 @@ async def delete_project(project_id: int, db: Session = Depends(get_db), user: U
     wf.require_manage(project, user, "delete the project")
     if project.status != "planning":
         raise HTTPException(status_code=409, detail=f"Project {project.project_code} is {wf.PROJECT_STATUS_LABELS.get(project.status, project.status)}. Only projects still in Planning can be deleted; cancel it instead so its history is kept.")
+    machine = db.query(MachineProject.serial_number).filter(
+        MachineProject.pm_project_id == project_id, MachineProject.is_deleted == False,  # noqa: E712
+    ).order_by(MachineProject.id).first()
+    if machine:
+        raise HTTPException(status_code=409, detail=f"Machine {machine[0]} belongs to this project. Cancel the project instead (its history is kept), or open the machine from the project Overview (Open machine record) and delete it first.")
     if db.query(PmProjectMilestone.id).filter(PmProjectMilestone.project_id == project_id, PmProjectMilestone.status != "cancelled").first():
         raise HTTPException(status_code=409, detail="This project has WBS elements. Delete its WBS elements first, or cancel the project instead.")
     if db.query(PmProjectMilestone.id).filter(PmProjectMilestone.project_id == project_id).first():

@@ -35,16 +35,44 @@ def ensure_not_with_sales(db: Session, *, inquiry_id: int | None = None, tender_
             f"If it really has to change, cancel {order.display_number} in Sales first."))
 
 
+def record_links(db: Session, *, inquiry_id: int | None = None, tender_id: int | None = None) -> list[str]:
+    """What still points at an inquiry / tender in Sales or R&D (owner, 2026-10-27:
+    a linked record is never deleted). Plain words, one entry per kind."""
+    from app.modules.crm.models.rnd_request import CrmRndRequest
+    from app.modules.rnd.models.project import RndProject
+    from app.modules.rnd.models.requirement_work import RndRequirementProjectLink, RndRequirementTask
+    from app.modules.sales.models.order import SalesOrder
+
+    source, rid = ("inquiry", inquiry_id) if inquiry_id else ("tender", tender_id)
+    out: list[str] = []
+    so_col = SalesOrder.source_inquiry_id if inquiry_id else SalesOrder.source_tender_id
+    orders = db.query(SalesOrder).filter(so_col == rid, SalesOrder.is_deleted == False).order_by(SalesOrder.id).limit(4).all()  # noqa: E712
+    if orders:
+        out.append("sales order " + ", ".join(o.display_number for o in orders[:3]) + (" and more" if len(orders) > 3 else ""))
+    if db.query(CrmRndRequest.id).filter(CrmRndRequest.source == source, CrmRndRequest.record_id == rid).first():
+        out.append("an R&D technical offer request")
+    if db.query(RndRequirementTask.id).filter(RndRequirementTask.source == source, RndRequirementTask.record_id == rid).first():
+        out.append("R&D requirement tasks")
+    links = (db.query(RndProject.project_number)
+             .join(RndRequirementProjectLink, RndRequirementProjectLink.project_id == RndProject.id)
+             .filter(RndRequirementProjectLink.source == source, RndRequirementProjectLink.record_id == rid,
+                     RndProject.is_deleted == False).all())  # noqa: E712
+    origin = (db.query(RndProject.project_number)
+              .filter(RndProject.source_kind == source, RndProject.source_id == rid, RndProject.is_deleted == False).all())  # noqa: E712
+    projects = sorted({n for (n,) in [*links, *origin]})
+    if projects:
+        out.append("R&D project " + ", ".join(projects[:3]) + (" and more" if len(projects) > 3 else ""))
+    return out
+
+
 def ensure_deletable(db: Session, *, inquiry_id: int | None = None, tender_id: int | None = None, label: str) -> None:
-    """A record that a live sales order was raised from is that order's reference
-    document — deleting it would orphan the order's source. Cancel the order first."""
-    from app.modules.sales import service as sales_svc
-    order = sales_svc.live_order_for_source(db, inquiry_id, tender_id)
-    if order:
+    """A record that Sales or R&D still refers to (a sales order raised from it, an
+    R&D offer request, requirement tasks or an R&D project) can't be deleted."""
+    links = record_links(db, inquiry_id=inquiry_id, tender_id=tender_id)
+    if links:
         raise HTTPException(status_code=409, detail=(
-            f"This {label} can't be deleted: sales order {order.display_number} "
-            f"({sales_svc.STATUS_LABEL.get(order.status, order.status)}) was raised from it and refers to it. "
-            f"Cancel {order.display_number} in Sales first if the {label} really has to go."))
+            f"This {label} can't be deleted: it is linked to {'; '.join(links)}. "
+            f"Only a {label} with no Sales or R&D link can be deleted."))
 
 
 def check_stage_move(

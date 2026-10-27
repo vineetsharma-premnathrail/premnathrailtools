@@ -48,6 +48,11 @@ register_event(
     "a buyer is assigned to (or changed on) an approved requisition", ("purchase_requisitions", "buyer", "view"),
     kind="assignment",
 )
+register_event(
+    "p2p", "pre_po_receipt_recorded", "Material received before its PO — PO to be made",
+    "Store records goods that arrived before their purchase order (Store › Inward › Before PO); Procurement makes the PO", ("purchase_orders", "create"),
+    kind="assignment",
+)
 
 # ── Reminders ────────────────────────────────────────────────────────────────
 register_event(

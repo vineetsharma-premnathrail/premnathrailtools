@@ -44,7 +44,7 @@ def _dispatched(db: Session, *, item_id: int, batch_number: str | None = None, e
 
 
 def _dispatched_for_element(db: Session, *, item_id: int, element_id: int, exclude_issue_id: int | None = None) -> float:
-    """Already dispatched for an Order Project element - counted once the
+    """Already dispatched for a project unit - counted once the
     Store dispatch issue carries order_project_element_id (0 until then)."""
     from app.modules.store.models.material_issue import StoreMaterialIssue, StoreMaterialIssueItem
     if not hasattr(StoreMaterialIssue, "order_project_element_id"):
@@ -69,7 +69,7 @@ def check(db: Session, *, item_id: int, quantity: float, batch_number: str | Non
     """Every reason this quantity can't be dispatched yet (empty = allowed).
     contract_qty: the item's total on the whole dispatch (several batches)
     for the contract check; defaults to quantity.
-    order_project_element_id: the Order Project vehicle / lot being
+    order_project_element_id: the project unit (vehicle / lot being
     dispatched - the third-party requirement then comes from its Sales Order
     (single source of truth) instead of the ERP machine."""
     item = db.query(StoreItem).filter(StoreItem.id == item_id).first()
