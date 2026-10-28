@@ -196,27 +196,17 @@ def test_migration_maps_exact_only_and_mapping_screen_assigns(client, db):
     assert db.get(Inquiry, i1.id).product_id == p1.id
     assert db.get(Inquiry, i2.id).product_id is None
 
-    admin = mk_user(db, "map_admin@premnathrail.com", apps=("products", "crm", "sales"))
-    um = client.get("/api/v1/products/mapping/unmapped", headers=hdr(admin)).json()
-    assert {r["crm_product_id"] for r in um["crm_products"]} >= {near.id, ambiguous.id}
-    assert any(g["text"] == "Towr wagon" for g in um["inquiries"])
-    r = client.post("/api/v1/products/mapping/assign", json={"source": "inquiries", "text": "towr wagon", "product_id": p1.id}, headers=hdr(admin))
-    assert r.status_code == 200 and r.json()["updated"] == 1
-    db.expire_all()
-    assert db.get(Inquiry, i2.id).product_id == p1.id
-    # Products-only user can't run the mapping edit without the tab.
-    plain = mk_user(db, "map_plain@premnathrail.com", role="user", apps=())
-    assert client.post("/api/v1/products/mapping/assign", json={"source": "inquiries", "text": "x", "product_id": p1.id},
-                       headers=hdr(plain)).status_code == 403
 
 
 def test_product_order_book_and_quotation_history(client, db):
     maker, head, director, _ = setup_people(db)
     org, inq, q = setup_customer(db, qty=2, price=1000000)
     p = _product(db)  # code RRV-10T = the quotation line's model number
-    from app.modules.products.routes.product_mapping import auto_link  # noqa: F401
     admin = mk_user(db, "ob_admin@premnathrail.com", apps=("products", "sales", "crm"))
-    assert client.post("/api/v1/products/mapping/auto-link", headers=hdr(admin)).status_code == 200
+    # Quotation lines now carry the product picked on the line (no Mapping screen since 2026-10-28).
+    from app.modules.crm.models.inquiry import QuotationLineItem
+    db.query(QuotationLineItem).filter(QuotationLineItem.quotation_id == q.id).update({"product_id": p.id})
+    db.commit()
     body = payload_from_prefill(client, hdr(maker), inq)
     so = client.post(f"{SALES}/orders", json=body, headers=hdr(maker)).json()
     assert db.query(SalesOrderLine).filter(SalesOrderLine.so_id == so["id"]).first().product_id == p.id

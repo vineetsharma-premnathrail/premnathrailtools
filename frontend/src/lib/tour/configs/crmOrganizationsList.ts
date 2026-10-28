@@ -7,7 +7,7 @@ const config: TourConfig = {
     {
       target: 'crm-org-stats',
       title: 'Counter chips',
-      purpose: 'Quick counts of the customer organizations in the list: total, Domestic, International, Railway and added this month. They follow the search box and the column filters, exactly like the table.',
+      purpose: 'Quick counts of the customer organizations in the list: total, Domestic and International. They follow the search box and the column filters, exactly like the table.',
     },
     {
       target: 'orgs-add-btn',

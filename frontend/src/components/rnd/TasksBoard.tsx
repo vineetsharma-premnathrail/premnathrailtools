@@ -31,6 +31,8 @@ import { dangerBtnStyle, smallSecondaryBtnStyle, btnBase, smallBtnSize, chipBtnS
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, SheetIconName, FileDropZone, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
 import { useAuthStore } from '@/store/authStore'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 export type TaskInput = RndTaskCreateInput
 
@@ -333,8 +335,10 @@ const DEPT_HEX: Record<string, string> = { rnd: '#16A34A', design: '#7C3AED', el
 
 /** One popup form for a new task, a new sub-task and editing a task (no files when editing) — same layout as PM's Create Task. */
 function TaskForm({
-  mode, people, labels, onSubmit, onCancel, initial, maxDue, parentTitle, milestoneChoices,
+  mode, people, labels, onSubmit, onCancel, initial, maxDue, parentTitle, milestoneChoices, draftId,
 }: {
+  /** Create mode only: keeps the typed task across a refresh (lib/formDraft.ts). */
+  draftId?: string
   mode: 'create' | 'subtask' | 'edit'
   people: RndPerson[]
   labels: TaskLabels
@@ -359,6 +363,12 @@ function TaskForm({
   const [files, setFiles] = useState<File[]>([])
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
+  const draft = useFormDraft(mode === 'create' && !initial && draftId ? draftId : null,
+    { title, assignee, due, remarks, priority, start, workStatus, steps, milestone, files },
+    (d) => {
+      setTitle(d.title || ''); setAssignee(d.assignee || ''); setDue(d.due || ''); setRemarks(d.remarks || ''); setPriority(d.priority || 'medium')
+      setStart(d.start || ''); setWorkStatus(d.workStatus || 'not_started'); setSteps(Array.isArray(d.steps) ? d.steps : []); setMilestone(d.milestone || '')
+    })
 
   const submit = async () => {
     if (!title.trim()) { setError('Give the task a title — what should be done.'); return }
@@ -377,6 +387,7 @@ function TaskForm({
         priority, start_date: start || undefined, work_status: workStatus, checklist, files,
         ...(milestoneChoices && milestone ? { milestone_id: Number(milestone) } : {}),
       })
+      draft.clear()
     } catch (err) {
       setError(extractErrorMessages(err, `Could not save the task.`))
     } finally {
@@ -399,6 +410,7 @@ function TaskForm({
       <SheetColumns
         left={<>
           <SheetError error={error} />
+          <DraftBanner draft={draft} />
           <SheetSection icon="list" title="Basic Information">
             <label style={sheetLabel}>{noun} Name <Req /></label>
             <input style={sheetInput} value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} placeholder="Enter task name (e.g. Feasibility + GA drawing for 600 mm platform)" autoFocus />
@@ -965,8 +977,10 @@ function TaskView({
 
 type Filter = 'all' | 'pending' | 'completed' | 'overdue' | 'mine' | 'given'
 
-export default function TasksBoard({ api, userId, canManage, canCreate = canManage, rights: rightsIn, departmentFilter, milestoneChoices, labels, reloadKey, onTasksChange }: {
+export default function TasksBoard({ api, userId, canManage, canCreate = canManage, rights: rightsIn, departmentFilter, milestoneChoices, labels, reloadKey, onTasksChange, draftKey }: {
   api: TaskApi
+  /** Names this board's "Create Task" draft (e.g. the project / requirement / milestone it belongs to). */
+  draftKey?: string
   userId: number
   /** Head / lead: create top-level tasks and review every task. */
   canManage: boolean
@@ -1074,7 +1088,7 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
       <SheetError error={error} />
       {creating && (
         <TaskForm
-          mode="create" labels={labels} people={people}
+          mode="create" labels={labels} people={people} draftId={draftKey ? `rnd-task-new-${draftKey}` : undefined}
           onCancel={() => setCreating(false)}
           onSubmit={async (p) => { const t = await api.create(p); setCreating(false); await load(); setOpen({ id: t.id }) }}
         />

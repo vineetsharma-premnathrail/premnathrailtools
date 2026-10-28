@@ -7,10 +7,14 @@ from app.modules.products.models.application import ProductApplication
 
 # Product types are fixed (coded): they decide how a product is built and
 # serviced — a vehicle has a chassis/engine and is commissioned on track, an
-# attachment is fitted to another product.
-PRODUCT_TYPES = ("vehicle", "machine", "equipment", "attachment")
+# attachment is fitted to another product; a paid service is work we sell
+# (repair, overhaul, AMC, operator hire) with no physical product built.
+# An application (2026-10-28) is an add-on sold with a product only when the
+# customer asks for it — same master, same form, picked on a quotation line.
+PRODUCT_TYPES = ("vehicle", "machine", "equipment", "attachment", "service", "application")
 PRODUCT_TYPE_LABELS = {
     "vehicle": "Rail-road vehicle", "machine": "Machine", "equipment": "Equipment", "attachment": "Attachment / accessory",
+    "service": "Paid service", "application": "Application",
 }
 
 # Product lifecycle (standard PLM states). Only `active` products should be
@@ -45,6 +49,9 @@ class FinishedProduct(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(20), default="active", server_default="active", nullable=False)
     short_description: Mapped[str | None] = mapped_column(String(300), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Technical specifications as free text, one per line (2026-10-28; replaced the
+    # parameter / value / unit rows in product_specifications, which stay for history).
+    technical_specification: Mapped[str | None] = mapped_column(Text, nullable=True)
     # GST classification + selling unit — what an invoice line needs.
     hsn_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     uom: Mapped[str] = mapped_column(String(20), default="Nos", server_default="Nos", nullable=False)

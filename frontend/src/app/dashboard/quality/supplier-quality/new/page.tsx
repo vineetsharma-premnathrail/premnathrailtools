@@ -10,6 +10,8 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, Req, Optional } from '@/components/shared/FormSheet'
 import { ErrorBanner, sheetGap } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 interface ItemOpt { id: number; item_code: string; item_name: string }
 
@@ -18,6 +20,7 @@ export default function NewAvlPage() {
   const router = useRouter()
   const [items, setItems] = useState<ItemOpt[]>([])
   const [form, setForm] = useState({ item_id: '', vendor_name: '', remarks: '' })
+  const draft = useFormDraft('quality-supplier-avl-new', form, (d) => setForm((f) => ({ ...f, ...d })))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
 
@@ -32,6 +35,7 @@ export default function NewAvlPage() {
     setBusy(true)
     try {
       const a = await qualityApi.createAvl({ item_id: Number(form.item_id), vendor_name: form.vendor_name.trim(), remarks: form.remarks || null })
+      draft.clear()
       router.push(recordPath('/dashboard/quality/supplier-quality', a))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to add the vendor.'))
@@ -52,6 +56,7 @@ export default function NewAvlPage() {
       <SheetColumns
         left={<>
           <ErrorBanner error={error} />
+          <DraftBanner draft={draft} />
           <SheetSection icon="building" title="Vendor">
             <label style={sheetLabel}>Item <Req /></label>
             <SearchableSelect value={form.item_id} onChange={(v) => setForm({ ...form, item_id: v })} placeholder="Select item"

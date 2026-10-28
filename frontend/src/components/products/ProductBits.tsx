@@ -5,6 +5,7 @@ import { pillStyle } from '@/components/shared/ui'
 
 export const PRODUCT_TYPE_LABELS: Record<string, string> = {
   vehicle: 'Rail-road vehicle', machine: 'Machine', equipment: 'Equipment', attachment: 'Attachment / accessory',
+  service: 'Paid service', application: 'Application',
 }
 export const PRODUCT_STATUS_LABELS: Record<string, string> = {
   development: 'In development', active: 'Active', phased_out: 'Phased out', discontinued: 'Discontinued',

@@ -1,6 +1,7 @@
 """Before-PO receipts: Store records goods that came before their PO (no stock
 posted); Procurement makes the PO for them; the PO goes through normal approval
 and GRN; the GRN closes the receipt."""
+from app.tests.p2p_workflow_helpers import attach_tally_po
 from datetime import date
 
 from app.modules.accounts.models.vendor import Vendor
@@ -153,6 +154,7 @@ def test_procurement_creates_the_po_it_is_approved_received_and_the_receipt_clos
     assert client.post(f"{RFQS}/{rfq['id']}/po-draft/{po['id']}/submit", headers=auth_header(buyer)).status_code == 400
     assert client.patch(f"{RFQS}/{rfq['id']}/po-draft/{po['id']}", json={"items": [{"id": line, "unit_price": 20}]},
                         headers=auth_header(buyer)).status_code == 200
+    attach_tally_po(db, po['id'])
     s = client.post(f"{RFQS}/{rfq['id']}/po-draft/{po['id']}/submit", headers=auth_header(buyer))
     assert s.status_code == 200, s.text
     _decide_all(client, db, "p2p_purchase_order", po["id"], [approver, partner])
@@ -224,6 +226,7 @@ def test_rejected_po_sends_the_receipt_back_to_pending_and_a_new_po_can_be_made(
     # Raise the quantity above the requisition: the approver sees it in the request title.
     assert client.patch(f"{RFQS}/{rfq['id']}/po-draft/{po['id']}", json={"items": [{"id": line, "unit_price": 9, "quantity": 9}]},
                         headers=auth_header(buyer)).status_code == 200
+    attach_tally_po(db, po['id'])
     sub = client.post(f"{RFQS}/{rfq['id']}/po-draft/{po['id']}/submit", headers=auth_header(buyer))
     assert sub.status_code == 200, sub.text
     req = engine.latest_request(db, "p2p_purchase_order", po["id"])

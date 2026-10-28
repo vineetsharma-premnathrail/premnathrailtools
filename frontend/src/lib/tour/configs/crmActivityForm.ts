@@ -29,7 +29,7 @@ const config: TourConfig = {
       target: 'activity-contacts',
       title: 'Contact Person(s)',
       required: false,
-      purpose: 'Who you interacted with — pick one or more existing contacts from this customer organization, or add a brand-new one inline via "+ Add New Contact" in the dropdown.',
+      purpose: 'Who you interacted with — type a name right in the field to filter, pick one or more existing contacts from this customer organization, or add a brand-new one inline via "+ Add New Contact" in the dropdown.',
       after: 'Selected contacts show as removable chips; click the × on a chip to drop that person from this follow-up.',
     },
     {

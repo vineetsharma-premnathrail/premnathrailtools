@@ -13,6 +13,8 @@ import HrNav from '@/components/hr/HrNav'
 import EventFields, { EMPTY_EVENT_FORM, EventFormState, formToPayload } from '@/components/hr/lifecycle/EventFields'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 const TYPES: { value: HrLifecycleEventType; label: string; hint: string; hex: string }[] = [
   { value: 'joining', label: 'Joining', hint: 'New hire or rehire — onboarding checklist', hex: '#16A34A' },
@@ -39,6 +41,17 @@ function NewEventInner() {
   const [form, setForm] = useState<EventFormState>(EMPTY_EVENT_FORM)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string[]>([])
+
+  const draft = useFormDraft(
+    !userLinkLoading && (!presetUserId || userId) ? 'hr-lifecycle-event-new' : null,
+    { type, subjectMode, userId, form },
+    (d: { type?: HrLifecycleEventType; subjectMode?: 'candidate' | 'user'; userId?: string; form?: EventFormState }) => {
+      if (d.type) setType(d.type)
+      if (d.subjectMode) setSubjectMode(d.subjectMode)
+      if (d.userId !== undefined) setUserId(d.userId)
+      if (d.form) setForm({ ...EMPTY_EVENT_FORM, ...d.form })
+    },
+  )
 
   useEffect(() => {
     if (!isAuthorized || userLinkLoading) return
@@ -69,6 +82,7 @@ function NewEventInner() {
       if (needsUser) payload.user_id = Number(userId)
       if (type === 'joining' && subjectMode === 'user') { payload.candidate_name = null; payload.candidate_email = null }
       const ev = await hrApi.createLifecycleEvent(payload)
+      draft.clear()
       router.push(recordPath('/dashboard/hr/lifecycle', ev))
     } catch (err) {
       setError(extractErrorMessages(err, 'Could not create the lifecycle event.'))
@@ -96,6 +110,7 @@ function NewEventInner() {
         </>}>
         <SheetColumns
           left={<>
+            <DraftBanner draft={draft} />
             {(error.length > 0 || metaError.length > 0) && (
               <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
                 {[...metaError, ...error].join(' ')}

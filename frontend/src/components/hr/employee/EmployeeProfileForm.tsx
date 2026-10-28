@@ -8,6 +8,8 @@ import { hrApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
 import { HrEmployeeProfile, HrFormField, HrFormRules, HrLookups, HrRuleCondition } from '@/types'
 import { TEXT } from '@/lib/theme'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
@@ -174,6 +176,12 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
     if (!id || isNewWorker) return
     ;(isWorker ? hrApi.getWorker(id) : hrApi.getEmployee(id)).then(setEmp).catch(() => { /* the status pill just stays as it was */ })
   }
+  // New employee only. PAN / Aadhaar / UAN / ESIC numbers are never kept in the draft.
+  const formDraft = useFormDraft(
+    isNewWorker && form ? 'hr-employee-new' : null,
+    form ? Object.fromEntries(Object.entries(form).filter(([k]) => !STATUTORY_KEYS.includes(k))) : {},
+    (d: Record<string, unknown>) => setForm((f) => (f ? { ...f, ...d } as FormState : f)),
+  )
   const dirty = !!form && !!initial && (JSON.stringify(form) !== JSON.stringify(initial) || staged.length > 0)
 
   // A new record takes the worker category's starting values (employment type, attendance policy, OT, portal access…).
@@ -278,6 +286,7 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
     setNotice('')
     try {
       const res = isNewWorker ? await hrApi.createWorker(payload) : await (isWorker ? hrApi.saveWorker(id, payload) : hrApi.saveEmployee(id, payload))
+      if (isNewWorker) formDraft.clear()
       const failed: string[] = []
       if (isNewWorker && staged.length) {
         // Saving the record worked; a failed document upload must not lose it — say which files to upload again.
@@ -405,6 +414,7 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
           <>
             <SheetColumns
               left={<>
+                <DraftBanner draft={formDraft} />
                 <p style={{ ...sheetHint, margin: '0 0 16px' }}><Req /> required to save · ◦ needed for a Complete record · hover ⓘ to see why a field is asked for and what uses it.</p>
           {/* 1. Workforce information */}
           <SheetSection icon="user" title={secTitle('classification', 1)}>

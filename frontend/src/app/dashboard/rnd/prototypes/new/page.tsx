@@ -15,6 +15,8 @@ import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath } from '@/lib/recordRef'
 import { useUrlProjectId } from '@/components/rnd/projectLink'
 import { extractErrorMessages } from '@/lib/validation'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 const inputStyle = sheetInput
 const labelStyle = sheetLabel
@@ -261,6 +263,13 @@ function NewRndPrototypePageInner() {
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  // A new prototype's typed data survives a refresh / network failure (lib/formDraft.ts). Id stays null while a ?project_id link is resolving.
+  const draft = useFormDraft(projectLink.loading ? null : 'rnd-prototype-new',
+    { projectId, name, version, buildDate, description, bomLines },
+    (d) => {
+      setProjectId(d.projectId || ''); setName(d.name || ''); setVersion(d.version || 'v1'); setBuildDate(d.buildDate || ''); setDescription(d.description || '')
+      setBomLines(d.bomLines?.length ? d.bomLines.map((l: BomLine) => ({ ...l, key: ++bomKeySeq })) : [blankLine()])
+    })
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -290,6 +299,7 @@ function NewRndPrototypePageInner() {
         description: description.trim() || undefined,
         bom_items: bom.items,
       })
+      draft.clear()
       router.push(recordPath('/dashboard/rnd/prototypes', proto))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to create prototype.'))
@@ -321,6 +331,7 @@ function NewRndPrototypePageInner() {
           </button>
         </>}
       >
+        {draft.restored && <div style={{ padding: '16px 24px 0' }}><DraftBanner draft={draft} style={{ marginBottom: 0 }} /></div>}
         {error && (
           <div style={{ padding: '16px 24px 0' }}>
             <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>

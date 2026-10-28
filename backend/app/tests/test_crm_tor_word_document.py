@@ -70,14 +70,15 @@ def test_send_without_draft_is_refused(client, db, sp, monkeypatch):
     assert emails == [] and db.query(CrmDocument).count() == 0
 
 
-def test_tor_needs_only_product_and_spec_or_requirement(client, db, sp, monkeypatch):
+def test_tor_needs_only_product_and_spec(client, db, sp, monkeypatch):
     _env(monkeypatch)
     bd = make_user(db, "tor.word.bd3@premnathrail.com")
     rnd = make_user(db, "tor.word.rnd3@premnathrail.com", apps=("rnd",))
-    inq = make_inquiry(db, bd, uid="INQ-20261007-0003", product_spec=None)
+    inq = make_inquiry(db, bd, uid="INQ-20261007-0003", product_spec=None, requirement_desc="Needs RDSO approval")
     resp = _send(client, inq.id, bd, rnd)
-    assert resp.status_code == 422 and "Specification or Requirement Description" in resp.json()["detail"]
-    inq.requirement_desc = "Needs RDSO approval"  # no category / quantity — still fine
+    # Requirement description is no longer used: it does not unblock the send.
+    assert resp.status_code == 422 and "Fill Specification" in resp.json()["detail"]
+    inq.product_spec = "Needs RDSO approval"  # no category / quantity — still fine
     db.commit()
     assert client.post(f"{DOCS}/{inq.id}", headers=auth(bd)).status_code == 200
     assert _send(client, inq.id, bd, rnd).status_code == 200

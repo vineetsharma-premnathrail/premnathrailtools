@@ -383,6 +383,7 @@ export default function RndMilestonePlan({ plan, userId, isManager, taskApi, lab
               {f('tasks', 'view') ? (
                 <TasksBoard
                   key={sel.id}
+                  draftKey={`${plan.key}-ms-${sel.id}`}
                   api={{
                     ...taskApi,
                     list: async () => (await taskApi.list()).filter((t) => t.milestone_id === sel.id),
@@ -447,6 +448,7 @@ export default function RndMilestonePlan({ plan, userId, isManager, taskApi, lab
           <h3 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 4px' }}>Tasks not in a milestone</h3>
           <p style={{ fontSize: 12.5, color: MUTED, margin: '0 0 12px' }}>{texts.looseHint}</p>
           <TasksBoard
+            draftKey={`${plan.key}-loose`}
             api={{ ...taskApi, list: async () => (await taskApi.list()).filter((t) => !t.milestone_id) }}
             userId={userId} canManage={isManager} labels={labels} canCreate={looseCreate && live.length === 0 && rights.create} rights={rights}
             reloadKey={plan.key}

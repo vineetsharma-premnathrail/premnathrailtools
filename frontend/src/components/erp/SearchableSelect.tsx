@@ -14,7 +14,7 @@ export interface SearchableOption {
   group?: string
 }
 
-/** Lists this long or shorter skip the search box — it only gets in the way. */
+/** Lists this long or shorter are click-only; longer ones are typed into, right in the field. */
 const SEARCH_THRESHOLD = 8
 const LIST_MAX_HEIGHT = 280
 const MIN_LIST_WIDTH = 240
@@ -55,9 +55,9 @@ export default function SearchableSelect({
    *  `options` are then shown as given, without client-side filtering. Keep the
    *  selected option in `options` so its label stays visible. */
   onSearch?: (query: string) => void
-  /** Force the search box on/off. Default: on when there are more than 8 options. */
+  /** Force typing on/off. Default: on when there are more than 8 options or `onSearch` is given. */
   searchable?: boolean
-  /** Type straight into the field (no separate search box); the list filters as you type. */
+  /** Always type straight into the field, even for a short list. */
   typeIn?: boolean
   /** Outer box (width, flex, margin). */
   style?: React.CSSProperties
@@ -71,6 +71,8 @@ export default function SearchableSelect({
   /** Focus the trigger on mount (keyboard: Enter / ↓ opens the list). */
   autoFocus?: boolean
 }) {
+  // Searching always happens in the field itself; there is never a second search box in the list.
+  const inline = typeIn || (searchable ?? (!!onSearch || options.length > SEARCH_THRESHOLD))
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(-1)
@@ -112,7 +114,6 @@ export default function SearchableSelect({
   // An empty-value option ("Select…", "All") reads as the placeholder, not a value.
   const selectedLabel = selected && selected.value !== '' ? selected.label : ''
   const shownPlaceholder = selected && selected.value === '' ? selected.label : placeholder
-  const showSearch = !typeIn && (!!onSearch || (searchable ?? options.length > SEARCH_THRESHOLD))
 
   // Portaled to <body> with position:fixed so glass cards (backdrop-filter /
   // overflow / transform) never clip it. While open, a requestAnimationFrame loop
@@ -234,7 +235,7 @@ export default function SearchableSelect({
     if (disabled) return
     if (!open) {
       // Space types a space in the type-in field; it doesn't open the list.
-      if (e.key === 'Enter' || (e.key === ' ' && !typeIn) || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (e.key === 'Enter' || (e.key === ' ' && !inline) || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault()
         openList()
       }
@@ -256,11 +257,11 @@ export default function SearchableSelect({
       <div
         ref={triggerRef}
         id={id}
-        role={typeIn ? undefined : 'combobox'}
-        tabIndex={disabled || typeIn ? -1 : 0}
-        aria-expanded={typeIn ? undefined : open}
+        role={inline ? undefined : 'combobox'}
+        tabIndex={disabled || inline ? -1 : 0}
+        aria-expanded={inline ? undefined : open}
         aria-controls={open ? listId : undefined}
-        aria-activedescendant={showSearch ? undefined : activeId}
+        aria-activedescendant={inline ? undefined : activeId}
         aria-haspopup="listbox"
         aria-disabled={disabled || undefined}
         aria-required={required || undefined}
@@ -269,7 +270,7 @@ export default function SearchableSelect({
         data-name={name}
         data-value={value}
         className="ui-select-trigger"
-        onClick={() => { if (disabled) return; if (open) { if (!typeIn) close() } else openList() }}
+        onClick={() => { if (disabled) return; if (open) { if (!inline) close() } else openList() }}
         onKeyDown={onKeyDown}
         style={{
           ...inputStyle,
@@ -277,14 +278,14 @@ export default function SearchableSelect({
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 8,
-          cursor: disabled ? 'not-allowed' : typeIn ? 'text' : 'pointer',
+          cursor: disabled ? 'not-allowed' : inline ? 'text' : 'pointer',
           background: disabled ? '#f5f5f4' : inputStyle.background,
           color: disabled ? '#78716c' : undefined,
           userSelect: 'none',
           ...triggerStyle,
         }}
       >
-        {typeIn ? (
+        {inline ? (
           <input
             ref={typeInRef}
             className="ui-select-typein"
@@ -298,7 +299,7 @@ export default function SearchableSelect({
             // Closed: shows the picked value. Open: shows what is being typed (empty = whole list).
             value={open ? query : selectedLabel}
             placeholder={open && selectedLabel ? selectedLabel : shownPlaceholder}
-            onChange={(e) => { setQuery(e.target.value); queryRef.current = e.target.value; setActive(0); if (!open) setOpen(true) }}
+            onChange={(e) => { setQuery(e.target.value); queryRef.current = e.target.value; setActive(0); onSearch?.(e.target.value); if (!open) setOpen(true) }}
             style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', padding: 0, margin: 0, font: 'inherit', color: '#1f1108', boxShadow: 'none', textOverflow: 'ellipsis' }}
           />
         ) : (
@@ -331,24 +332,6 @@ export default function SearchableSelect({
             overflow: 'hidden',
           }}
         >
-          {showSearch && (
-            <div style={{ padding: 8, borderBottom: '1px solid rgba(0,0,0,0.06)', flex: 'none' }}>
-              <input
-                autoFocus
-                role="combobox"
-                aria-expanded="true"
-                aria-controls={listId}
-                aria-activedescendant={activeId}
-                aria-autocomplete="list"
-                aria-label={ariaLabel ? `Search ${ariaLabel}` : title ? `Search ${title}` : 'Search options'}
-                value={query}
-                onKeyDown={onKeyDown}
-                onChange={(e) => { setQuery(e.target.value); queryRef.current = e.target.value; setActive(0); onSearch?.(e.target.value) }}
-                placeholder="Type to search..."
-                style={{ ...inputStyle, minHeight: 34, padding: '8px 10px' }}
-              />
-            </div>
-          )}
           <div ref={listRef} id={listId} role="listbox" aria-label={ariaLabel || title || placeholder} style={{ overflowY: 'auto', flex: '1 1 auto', minHeight: 0 }}>
             {filtered.length === 0 ? (
               <p style={{ fontSize: 12.5, color: '#78716c', padding: '10px 14px', margin: 0 }}>

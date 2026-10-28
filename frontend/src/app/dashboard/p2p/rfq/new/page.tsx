@@ -16,6 +16,8 @@ import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { chipBtnStyle } from '@/components/shared/ui'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 const textArea: React.CSSProperties = { ...sheetInput, minHeight: 60, resize: 'vertical' }
 
@@ -57,6 +59,17 @@ export default function NewRfqPage() {
   // the created draft (the API object — its id_ref builds the RFQ link)
   const [draftRfq, setDraftRfq] = useState<{ id: number } | null>(null)
 
+  // Typed RFQ data survives a refresh / network failure (lib/formDraft.ts). Off for a PR-linked
+  // form, and until the settings default quote date is in (else an untouched form looks changed).
+  const [settingsReady, setSettingsReady] = useState(false)
+  const draft = useFormDraft(initialPrId || !settingsReady ? null : 'p2p-rfq-new',
+    { prId, pickedIds, quoteDueDate, singleQuotationReason, lateDeliveryClause, inviteMessage },
+    (d) => {
+      setPrId(d.prId || ''); setPickedIds(Array.isArray(d.pickedIds) ? d.pickedIds : [])
+      if (d.quoteDueDate) { dueDateTouched.current = true; setQuoteDueDate(d.quoteDueDate) }
+      setSingleQuotationReason(d.singleQuotationReason || ''); setLateDeliveryClause(d.lateDeliveryClause || ''); setInviteMessage(d.inviteMessage || '')
+    })
+
   useEffect(() => {
     if (!isAuthorized) return
     p2pApi.list({ status: 'approved', limit: 500 }).then(setPrs).catch(() => {})
@@ -66,7 +79,7 @@ export default function NewRfqPage() {
       const min = Number(s.values?.rfq_min_vendors)
       if (Number.isFinite(min) && min > 0) setMinVendors(min)
       if (Number.isFinite(days) && days >= 0 && !dueDateTouched.current) setQuoteDueDate(addDays(days))
-    }).catch(() => {})
+    }).catch(() => {}).finally(() => setSettingsReady(true))
   }, [isAuthorized])
 
   // Vendors whose catalog lists this PR's items — most items, then cheapest total first.
@@ -157,6 +170,7 @@ export default function NewRfqPage() {
       })
       // Submit validates, locks the RFQ and emails every invited vendor.
       await rfqApi.submit(rfq.id)
+      draft.clear()
       router.push(recordPath('/dashboard/p2p/rfq', rfq))
     } catch (err) {
       setError(extractErrorMessages(err, 'The RFQ could not be sent.'))
@@ -176,6 +190,7 @@ export default function NewRfqPage() {
         <button data-tour="rfq-new-save" type="button" disabled={busy} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="send" size={16} />{busy ? 'Sending…' : 'Send RFQ'}</button>
       </>}>
       <MessageDialog open={!!error} variant="error" title="Cannot Send RFQ" message={error} onClose={() => setError('')} />
+      {draft.restored && <div style={{ padding: '16px 24px 0' }}><DraftBanner draft={draft} style={{ marginBottom: 0 }} /></div>}
       <SheetColumns
         left={<>
           <SheetSection icon="doc" title="1. Purchase Requisition">

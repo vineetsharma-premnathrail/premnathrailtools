@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { designApi } from '@/lib/api'
@@ -14,6 +14,7 @@ export default function NewChangeNoticePage() {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  const draftRef = useRef<{ clear: () => void } | null>(null)
 
   if (isLoading || !isAuthorized) return null
 
@@ -22,6 +23,7 @@ export default function NewChangeNoticePage() {
     setError('')
     try {
       const ecn = await designApi.createChangeNotice(payload)
+      draftRef.current?.clear()
       router.push(recordPath('/dashboard/design/change-notices', ecn))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to raise the change notice.'))
@@ -44,6 +46,7 @@ export default function NewChangeNoticePage() {
       onSubmit={create}
       onCancel={() => router.push('/dashboard/design/change-notices')}
       onError={setError}
+      draftRef={draftRef}
     />
   )
 }

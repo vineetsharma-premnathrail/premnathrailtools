@@ -8,7 +8,7 @@ import { useSearchParams } from 'next/navigation'
 // popup's cookie jar is separate from the main Teams iframe, so we don't try
 // to complete the session here — we just hand the one-time code back to the
 // parent window via notifySuccess(); the parent exchanges it for real
-// session cookies (see authApi.teamsExchange in the login page).
+// session (see teamsPopupSignIn in lib/teamsAuth.ts).
 export default function TeamsAuthSuccessPage() {
   return (
     <Suspense fallback={null}>

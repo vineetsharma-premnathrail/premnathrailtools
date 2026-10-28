@@ -17,6 +17,8 @@ import { FormSheet, FormPage, SheetColumns, SheetSection, SheetIcon, Optional, S
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
+import DraftBanner from '@/components/shared/DraftBanner'
+import { useFormDraft } from '@/lib/formDraft'
 import SalesBillingDueTab from '@/components/finance/SalesBillingDue'
 import FinanceAttachments, { ProofPicker, PickedProof, uploadPickedProof, useProofCounts, ProofClip } from '@/components/finance/FinanceAttachments'
 import {
@@ -502,6 +504,17 @@ function SalesInvoiceForm({ setup, ledgers, rates, customers, onSaved, onCancel 
   const [proof, setProof] = useState<PickedProof[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<Errors>('')
+  // A new invoice's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft('finance-sales-invoice-new',
+    { customerId, invoiceDate, posChoice, poNumber, poDate, billing, shipping, narration, roundOff, lines, irn, ackNo, ackDate, ewb, ewbDate, vehicle,
+      cur: { currency: docCur.currency, rate: docCur.rate, amountFc: docCur.amountFc } },
+    (d) => {
+      setCustomerId(d.customerId || ''); setInvoiceDate(d.invoiceDate || todayIso()); setPlaceOfSupply(d.posChoice || ''); setPoNumber(d.poNumber || ''); setPoDate(d.poDate || '')
+      setBilling(d.billing || ''); setShipping(d.shipping || ''); setNarration(d.narration || ''); setRoundOff(d.roundOff ?? '0')
+      setLines(d.lines?.length ? d.lines : [newTaxLine()]); setIrn(d.irn || ''); setAckNo(d.ackNo || ''); setAckDate(d.ackDate || ''); setEwb(d.ewb || ''); setEwbDate(d.ewbDate || ''); setVehicle(d.vehicle || '')
+      if (d.irn || d.ewb || d.ackNo || d.vehicle) setShowE(true)
+      docCur.restore(d.cur)
+    })
 
   const customer = customers.find((c) => String(c.id) === customerId)
   const placeOfSupply = posChoice || companyState
@@ -535,6 +548,7 @@ function SalesInvoiceForm({ setup, ledgers, rates, customers, onSaved, onCancel 
         eway_bill_no: ewb.trim() || null, eway_bill_date: ewbDate || null, vehicle_no: vehicle.trim().toUpperCase() || null,
         lines: toLinePayload(lines),
       })
+      draft.clear()
       // Supporting documents go up before the draft reaches its approvers.
       const proofWarning = proof.length ? await uploadPickedProof('ar_transaction', created.id, proof, 'The sales invoice') : ''
       // A drafted invoice goes straight to its approvers (Organization › Approval Workflows).
@@ -557,6 +571,7 @@ function SalesInvoiceForm({ setup, ledgers, rates, customers, onSaved, onCancel 
         <button type="button" data-tour="fin-sinv-save" style={sheetBtn('primary', SHEET.BLUE, saving)} disabled={saving} onClick={submit}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save draft'}</button>
       </>}>
       <div style={{ padding: '20px 24px 0' }}>
+        <DraftBanner draft={draft} />
         <ErrorBanner error={error} />
         <InfoBanner>
           The tax-invoice number (SI/FY/NNNN) is issued only when another finance user posts it, so the series stays consecutive with no gaps
@@ -795,6 +810,12 @@ function CreditNoteForm({ ledgers, rates, onSaved, onCancel }: Ctx & { onSaved: 
   const [proof, setProof] = useState<PickedProof[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<Errors>('')
+  // A new credit note's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft('finance-credit-note-new', { invoiceId, noteDate, reason, roundOff, narration, lines },
+    (d) => {
+      setInvoiceId(d.invoiceId || ''); setNoteDate(d.noteDate || todayIso()); setReason(d.reason || 'return'); setRoundOff(d.roundOff ?? '0')
+      setNarration(d.narration || ''); setLines(d.lines?.length ? d.lines : [newTaxLine()])
+    })
 
   useEffect(() => {
     accountsApi.listARTransactions({ status: 'posted' }).then(setPostedInvoices)
@@ -819,6 +840,7 @@ function CreditNoteForm({ ledgers, rates, onSaved, onCancel }: Ctx & { onSaved: 
         note_type: 'credit_note', note_date: noteDate, reason, ar_transaction_id: Number(invoiceId),
         round_off: ro, narration: narration.trim() || null, lines: toLinePayload(lines),
       })
+      draft.clear()
       const proofWarning = proof.length ? await uploadPickedProof('party_note', created.id, proof, 'The credit note') : ''
       const submitWarning = can('accounts', 'credit_notes', 'submit')
         ? await submitAfterSave(() => accountsApi.submitNote(created.id), 'The credit note') : ''
@@ -836,6 +858,7 @@ function CreditNoteForm({ ledgers, rates, onSaved, onCancel }: Ctx & { onSaved: 
         <button type="button" data-tour="fin-cn-save" style={sheetBtn('primary', SHEET.BLUE, saving)} disabled={saving} onClick={submit}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save credit note'}</button>
       </>}>
       <div style={{ padding: '20px 24px 0' }}>
+        <DraftBanner draft={draft} />
         <ErrorBanner error={error} />
         <InfoBanner>
           A credit note must name the original invoice. GST can be reduced only if the note is issued by 30 November after the end of the

@@ -18,7 +18,7 @@ from app.modules.sales import approvals as sap
 from app.modules.sales.access import ensure_order, scoped_orders
 from app.modules.sales.models.order import (
     SalesOrder, SalesOrderSchedule, SALES_SOURCE_TYPES, SALES_ORDER_OPEN_STATUSES, SALES_ORDER_LIVE_STATUSES,
-    SALES_DEFAULT_ORDER_TYPE, SALES_DEFAULT_CURRENCY,
+    SALES_DEFAULT_ORDER_TYPE, SALES_DEFAULT_CURRENCY, SALES_ORDER_CATEGORIES, SALES_ORDER_CATEGORY_LABELS,
 )
 from app.modules.sales.models.approval import SalesApproval
 from app.modules.sales.models.amendment import SalesOrderAmendment, SALES_AMENDMENT_OPEN_STATUSES
@@ -152,8 +152,8 @@ def _check_source_ordered(db: Session, inquiry_id: int | None, tender_id: int | 
             raise HTTPException(status_code=404, detail=f"Inquiry #{inquiry_id} not found in CRM.")
         if inq.current_stage != INQUIRY_ORDER_STAGE or inq.status == INQUIRY_NOT_ORDERED_STATUS:
             raise HTTPException(status_code=422, detail=(
-                f"Inquiry {inq.universal_id} is at stage '{inq.current_stage}' (status '{inq.status}'). A sales order can only be "
-                f"raised once the customer's order is in — move the inquiry to stage '{INQUIRY_ORDER_STAGE}' in CRM first."))
+                f"Inquiry {inq.universal_id} has status '{inq.status}'. A sales order can only be "
+                f"raised once the customer's order is in — set the inquiry's Status to 'Order Received' in CRM first."))
     elif tender_id:
         t = db.query(Tender).filter(Tender.id == tender_id, Tender.is_deleted == False).first()  # noqa: E712
         if not t:
@@ -188,6 +188,72 @@ async def customer_quotations(customer_id: int, db: Session = Depends(get_db), _
                     "inquiry_id": inq.id, "inquiry_number": inq.universal_id, "inquiry_stage": inq.current_stage,
                     "order_received": inq.current_stage == INQUIRY_ORDER_STAGE and inq.status != INQUIRY_NOT_ORDERED_STATUS,
                     "existing_order": so.display_number if so else None})
+    return out
+
+
+@router.get("/service-machines")
+async def service_machines(db: Session = Depends(get_db), _app: User = _SALES,
+                           _user: User = Depends(require_tab_action("sales", "orders", "create"))):
+    """Machines a Service order can be raised for (New Sales Order › Service › Project / machine):
+    every machine with a customer organisation, with its project number."""
+    from app.modules.erp.models.project import Project as Machine
+    from app.modules.projects.models.project import PmProject
+    rows = (db.query(Machine).filter(Machine.is_deleted == False, Machine.customer_id.isnot(None))  # noqa: E712
+            .order_by(Machine.serial_number).all())
+    codes = dict(db.query(PmProject.id, PmProject.project_code)
+                 .filter(PmProject.id.in_({m.pm_project_id for m in rows if m.pm_project_id})).all())
+    return [{"id": m.id, "serial_number": m.serial_number, "model_name": m.model_name, "customer_id": m.customer_id,
+             "customer_name": m.client_name, "project_code": codes.get(m.pm_project_id), "label": svc.machine_label(m)} for m in rows]
+
+
+@router.get("/service-requests")
+async def service_requests_for_machine(machine_id: int, db: Session = Depends(get_db), _app: User = _SALES,
+                                       _user: User = Depends(require_tab_action("sales", "orders", "create"))):
+    """The machine's SRs a Service order can bill for; ones already on a live order are flagged."""
+    from app.modules.erp.models.service_request import ServiceRequest
+    from app.modules.sales.models.order import SalesOrderServiceRequest
+    rows = (db.query(ServiceRequest).filter(ServiceRequest.project_id == machine_id, ServiceRequest.is_deleted == False,  # noqa: E712
+                                            ServiceRequest.status.notin_(svc.SERVICE_ORDER_SR_EXCLUDED))
+            .order_by(ServiceRequest.request_number).all())
+    taken = dict(db.query(SalesOrderServiceRequest.service_request_id, SalesOrder.id)
+                 .join(SalesOrder, SalesOrder.id == SalesOrderServiceRequest.so_id)
+                 .filter(SalesOrderServiceRequest.service_request_id.in_([r.id for r in rows]), SalesOrder.is_deleted == False,  # noqa: E712
+                         SalesOrder.status.in_(SALES_ORDER_LIVE_STATUSES)).all())
+    orders = {o.id: o.display_number for o in db.query(SalesOrder).filter(SalesOrder.id.in_(set(taken.values()))).all()}
+    return [{"id": r.id, "request_number": r.request_number, "issue_title": r.issue_title, "status": r.status,
+             "existing_order": orders.get(taken.get(r.id))} for r in rows]
+
+
+@router.get("/sources")
+async def order_sources(kind: str = Query("inquiry", pattern="^(inquiry|tender)$"), db: Session = Depends(get_db), _app: User = _SALES,
+                        _user: User = Depends(require_tab_action("sales", "orders", "create"))):
+    """CRM inquiries (stage 'Order Received') or tenders (LOA / order received) a new
+    order can be raised from: New Sales Order › Inquiry / Tender. Ones that already
+    have a live order are flagged, not hidden, so the user sees why they can't pick them."""
+    from app.modules.crm.models.inquiry import Inquiry
+    from app.modules.crm.models.tender import Tender
+    from app.modules.crm.models.organization import Organization
+    live = {}
+    for so in db.query(SalesOrder).filter(SalesOrder.is_deleted == False, SalesOrder.status.in_(SALES_ORDER_LIVE_STATUSES)).all():  # noqa: E712
+        live[("inquiry", so.source_inquiry_id) if so.source_inquiry_id else ("tender", so.source_tender_id)] = so.display_number
+    out = []
+    if kind == "inquiry":
+        rows = (db.query(Inquiry).filter(Inquiry.is_deleted == False, Inquiry.current_stage == INQUIRY_ORDER_STAGE,  # noqa: E712
+                                         Inquiry.status != INQUIRY_NOT_ORDERED_STATUS)
+                .order_by(Inquiry.universal_id).all())
+        names = dict(db.query(Organization.id, Organization.name).filter(Organization.id.in_({r.org_id for r in rows})).all())
+        for inq in rows:
+            out.append({"id": inq.id, "number": inq.universal_id, "title": inq.product,
+                        "customer_id": inq.org_id, "customer_name": names.get(inq.org_id),
+                        "existing_order": live.get(("inquiry", inq.id))})
+    else:
+        rows = (db.query(Tender).filter(Tender.is_deleted == False, Tender.status.in_(TENDER_ORDER_STATUSES))  # noqa: E712
+                .order_by(Tender.universal_id).all())
+        names = dict(db.query(Organization.id, Organization.name).filter(Organization.id.in_({r.org_id for r in rows})).all())
+        for t in rows:
+            out.append({"id": t.id, "number": t.tender_number or t.universal_id, "title": t.tender_name,
+                        "customer_id": t.org_id, "customer_name": names.get(t.org_id),
+                        "existing_order": live.get(("tender", t.id))})
     return out
 
 
@@ -418,11 +484,37 @@ def _check_owner(db: Session, owner_id: int | None) -> None:
 @router.post("", response_model=SalesOrderResponse)
 async def create_order(payload: SalesOrderCreate, db: Session = Depends(get_db), _app: User = _SALES,
                        user: User = Depends(require_tab_action("sales", "orders", "create"))):
-    data = {k: (v.strip() if isinstance(v, str) else v) for k, v in payload.model_dump(exclude={"lines", "schedule", "billing_plan"}).items()}
+    data = {k: (v.strip() if isinstance(v, str) else v) for k, v in payload.model_dump(exclude={"lines", "schedule", "billing_plan", "crm_document_ids", "service_request_ids"}).items()}
     with sales_errors(db):
         svc.validate_header(data)
     if data["source_type"] not in SALES_SOURCE_TYPES:
         raise HTTPException(status_code=422, detail=f"Source '{data['source_type']}' isn't valid — use one of: {', '.join(SALES_SOURCE_TYPES)}.")
+    if data["order_category"] not in SALES_ORDER_CATEGORIES:
+        raise HTTPException(status_code=422, detail=(
+            f"Order category '{data['order_category']}' isn't valid — pick one of: "
+            f"{', '.join(SALES_ORDER_CATEGORY_LABELS[c] for c in SALES_ORDER_CATEGORIES)}."))
+    from_crm = (data["source_type"] == "inquiry" and payload.source_inquiry_id) or (data["source_type"] == "tender" and payload.source_tender_id)
+    if data["order_category"] == "new_project":
+        # A New Project order comes from a won CRM inquiry or an awarded tender (the customer and
+        # lines are taken from it), so the CRM funnel and win rate count it.
+        if not from_crm:
+            raise HTTPException(status_code=422, detail=(
+                "A New Project order must be raised from a CRM inquiry or tender — pick the inquiry (status 'Order Received') "
+                "or the tender (LOA / order received) on the form. If it isn't in CRM yet, create it there and move it to that status first."))
+        data["service_machine_id"] = None
+    elif data["order_category"] == "service":
+        # A Service order is for one machine and its SRs; the customer is the machine's customer.
+        with sales_errors(db):
+            machine = svc.check_service_order(db, payload.service_machine_id, payload.service_request_ids)
+        if payload.customer_id != machine.customer_id:
+            raise HTTPException(status_code=422, detail=(
+                f"The customer must be machine {machine.serial_number}'s customer — re-pick the machine so the customer is filled from it."))
+        data.update(source_type="direct", source_inquiry_id=None, source_tender_id=None, source_quotation_id=None)
+    else:
+        # Rental: the organisation the machine is rented to, picked directly.
+        data["service_machine_id"] = None
+        if not from_crm:
+            data.update(source_type="direct", source_inquiry_id=None, source_tender_id=None, source_quotation_id=None)
     org = _check_customer(db, payload.customer_id)
     _check_contact(db, payload.customer_id, payload.customer_contact_id)
     existing = svc.live_order_for_source(db, payload.source_inquiry_id, payload.source_tender_id)
@@ -462,6 +554,13 @@ async def create_order(payload: SalesOrderCreate, db: Session = Depends(get_db),
             svc.apply_schedule(db, so, [r.model_dump() for r in payload.schedule], mode="draft")
         svc.apply_billing(db, so, [b.model_dump() for b in payload.billing_plan])
         svc.recompute_totals(so)
+    if payload.crm_document_ids:
+        from app.modules.sales.crm_documents import set_links
+        set_links(db, so, payload.crm_document_ids, user)
+    if so.order_category == "service":
+        from app.modules.sales.models.order import SalesOrderServiceRequest
+        for sr_id in sorted(set(payload.service_request_ids)):
+            db.add(SalesOrderServiceRequest(so_id=so.id, service_request_id=sr_id))
     return _ok(db, so.id, user)
 
 

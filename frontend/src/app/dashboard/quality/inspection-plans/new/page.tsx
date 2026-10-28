@@ -11,6 +11,8 @@ import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheet
 import { ErrorBanner, INSPECTION_TYPE_LABELS, sheetGap } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 interface ItemOpt { id: number; item_code: string; item_name: string }
 
@@ -19,6 +21,7 @@ export default function NewInspectionPlanPage() {
   const router = useRouter()
   const [items, setItems] = useState<ItemOpt[]>([])
   const [form, setForm] = useState({ item_id: '', inspection_type: 'incoming', title: '', sampling_type: 'aql', aql: '1.0', inspection_level: 'II', fixed_sample_size: '' })
+  const draft = useFormDraft('quality-inspection-plan-new', form, (d) => setForm((f) => ({ ...f, ...d })))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
 
@@ -43,6 +46,7 @@ export default function NewInspectionPlanPage() {
         inspection_level: form.inspection_level, fixed_sample_size: form.sampling_type === 'fixed' ? Number(form.fixed_sample_size) : null,
         lines: [],
       })
+      draft.clear()
       router.push(recordPath('/dashboard/quality/inspection-plans', plan))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to create the plan.'))
@@ -63,6 +67,7 @@ export default function NewInspectionPlanPage() {
       <SheetColumns
         left={<>
           <ErrorBanner error={error} />
+          <DraftBanner draft={draft} />
           <SheetSection icon="list" title="Plan header">
             <label style={sheetLabel}>Item <Req /></label>
             <SearchableSelect value={form.item_id} onChange={(v) => setForm({ ...form, item_id: v })} placeholder="Search item"

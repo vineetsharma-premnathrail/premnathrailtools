@@ -6,7 +6,7 @@ import { DirectoryUser, RndProjectDetail } from '@/types'
 import { extractErrorMessages } from '@/lib/validation'
 import TeamMemberPicker from '@/components/rnd/TeamMemberPicker'
 import { SHEET, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
-import { primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, tableStyle, thStyle, tdStyle, TableScroll } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, tableStyle, thStyle, tdStyle, TableScroll, RowCount } from '@/components/shared/ui'
 
 // Members tab of an R&D project: who leads it and who works on it.
 // Leads hand out tasks and plan milestones; team members can be given tasks.
@@ -84,7 +84,7 @@ export default function RndProjectMembers({
           <table style={tableStyle}>
             <thead>
               <tr>
-                <th style={thStyle}>Name</th>
+                <th style={thStyle}>Name<RowCount count={rows.length} /></th>
                 <th style={thStyle}>Role on project</th>
                 <th style={thStyle}>Email</th>
                 <th style={thStyle}>Department</th>

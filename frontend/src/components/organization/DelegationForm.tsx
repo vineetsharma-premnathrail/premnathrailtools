@@ -6,6 +6,8 @@ import { ApprovalTransactionType, DirectoryUser } from '@/types'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import DateField from '@/components/erp/DateField'
 import UserChipsPicker from '@/components/organization/UserChipsPicker'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 // Local date — toISOString() is UTC and gives yesterday before 05:30 IST.
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
@@ -30,6 +32,16 @@ export default function DelegationForm({ users, types, forOthers, onSubmit, onCl
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const draft = useFormDraft(
+    `org-delegation-new-${forOthers ? 'others' : 'self'}`,
+    { delegator, delegate, start, end, scope, reason },
+    (d: { delegator?: number[]; delegate?: number[]; start?: string; end?: string; scope?: string; reason?: string }) => {
+      setDelegator(d.delegator || []); setDelegate(d.delegate || [])
+      if (d.start) setStart(d.start)
+      if (d.end) setEnd(d.end)
+      setScope(d.scope || ''); setReason(d.reason || '')
+    },
+  )
   const modules = Array.from(new Map(types.map((t) => [t.module_key, t.module_label])).entries())
 
   const submit = async () => {
@@ -40,7 +52,7 @@ export default function DelegationForm({ users, types, forOthers, onSubmit, onCl
       module_key: kind === 'm' ? key : undefined, workflow_key: kind === 'w' ? scope.slice(2) : undefined, reason,
     })
     setBusy(false)
-    if (out === true) onClose()
+    if (out === true) { draft.clear(); onClose() }
     else setError(out)
   }
 
@@ -52,6 +64,7 @@ export default function DelegationForm({ users, types, forOthers, onSubmit, onCl
         <button type="button" onClick={submit} disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Add delegation'}</button>
       </>}>
       <div style={{ padding: '20px 24px' }}>
+        <DraftBanner draft={draft} />
         {error && (
           <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
             {error}

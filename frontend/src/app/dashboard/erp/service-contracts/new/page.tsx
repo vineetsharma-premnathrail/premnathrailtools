@@ -17,15 +17,17 @@ export default function NewServiceContractPage() {
 
   if (isLoading || !isAuthorized) return null
 
-  const save = async (f: ContractFormValue) => {
-    if (!f.customer_id) { setError(['Pick the customer the contract is with.']); return }
+  const save = async (f: ContractFormValue): Promise<boolean> => {
+    if (!f.customer_id) { setError(['Pick the customer the contract is with.']); return false }
     setSaving(true)
     try {
       const c = await serviceContractsApi.create(formToPayload(f))
       router.push(recordPath('/dashboard/erp/service-contracts', c))
+      return true
     } catch (e) {
       setError(extractErrorMessages(e, 'Could not save the contract.'))
       setSaving(false)
+      return false
     }
   }
 

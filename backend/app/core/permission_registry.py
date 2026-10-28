@@ -260,9 +260,9 @@ MODULES: dict[str, dict] = {
         # tabs give the internal "products" app (User.get_apps). The retired
         # "products" module's grants (products:*) alias to these.
         ("products", "Products", CRUD, "Products"),
-        ("applications", "Applications", _with(V, "create", "edit"), "Products"),
-        ("product_mapping", "Product Mapping", VE, "Products"),  # legacy crm_products / free-text product → product master
-        ("pricing", "Pricing", CRUD),  # VK11 price / discount / freight conditions (products/pricing.py)
+        # Prices live inside each product (and Sales Settings for freight / spares / service rates)
+        # since 2026-10-28 — no Pricing tab, so the Role editor groups it under Products.
+        ("pricing", "Pricing", CRUD, "Products"),  # price / discount / freight conditions (products/pricing.py)
         ("reports", "Sales Reports", REPORT),
         ("settings", "Settings", SETTINGS),
     ),

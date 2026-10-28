@@ -10,7 +10,6 @@ from app.modules.crm.models.payment_term import PaymentTerm
 from app.modules.crm.models.document_category import CrmDocumentCategory
 from app.modules.crm.models.rnd_request import CrmRndRequest
 from app.modules.crm.models.requirement_comment import CrmRequirementComment
-from app.modules.crm.models.engagement import CrmEngagement
 
 __all__ = [
     "Organization",
@@ -29,6 +28,5 @@ __all__ = [
     "PaymentTerm",
     "CrmDocumentCategory",
     "CrmRndRequest",
-    "CrmEngagement",
     "CrmRequirementComment",
 ]

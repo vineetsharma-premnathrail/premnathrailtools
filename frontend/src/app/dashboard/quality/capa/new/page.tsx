@@ -16,6 +16,8 @@ import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheet
 import { ErrorBanner } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 interface ItemOpt { id: number; item_code: string; item_name: string }
 
@@ -41,6 +43,11 @@ export default function NewCapaPage() {
   const { id: linkedNcrId, error: linkError } = useRecordId(params.get('ncr'))
   const [ncrIds, setNcrIds] = useState<number[]>([])
   const [ncrSearch, setNcrSearch] = useState('')
+  const draft = useFormDraft('quality-capa-new', { form, ncrIds, ncrSearch }, (d) => {
+    if (d.form) setForm((f) => ({ ...f, ...d.form }))
+    if (d.ncrIds?.length) setNcrIds(d.ncrIds)
+    setNcrSearch(d.ncrSearch || '')
+  })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
 
@@ -68,6 +75,7 @@ export default function NewCapaPage() {
         problem_statement: form.problem_statement.trim() || null, audit_reference: form.audit_reference.trim() || null,
         responsible_user_id: form.responsible_user_id ? Number(form.responsible_user_id) : null, due_date: form.due_date || null,
       })
+      draft.clear()
       router.push(recordPath('/dashboard/quality/capa', capa))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to raise the CAPA.'))
@@ -92,6 +100,7 @@ export default function NewCapaPage() {
       <SheetColumns
         left={<>
           <ErrorBanner error={error} />
+          <DraftBanner draft={draft} />
           <SheetSection icon="alert" title="Problem">
             <label style={sheetLabel}>Title <Req /></label>
             <input style={{ ...sheetInput, marginBottom: 14 }} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="The problem in one line" autoFocus />

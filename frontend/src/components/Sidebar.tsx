@@ -9,7 +9,7 @@ import { useAuthStore } from '@/store/authStore'
 import { TEXT, GLASS, SHADOWS, GRADIENTS } from '@/lib/theme'
 import UpdatesButton from '@/components/UpdatesButton'
 import FeedbackButton from '@/components/FeedbackButton'
-import { House, Briefcase, Flask, Users, FileText, User as UserIcon, Storefront, Tray, Buildings, ShieldCheck, Factory, Package, ShoppingCart, Wrench, PenNib, Lightning, Drop, Kanban, IdentificationCard, CurrencyInr, CaretLeft, CaretUp, CaretDown, Envelope, SignOut } from '@phosphor-icons/react'
+import { House, Briefcase, Flask, Users, FileText, User as UserIcon, Storefront, Tray, Buildings, ShieldCheck, Factory, Package, ShoppingCart, Wrench, PenNib, Lightning, Drop, Kanban, IdentificationCard, CurrencyInr, SidebarSimple, CaretUp, CaretDown, Envelope, SignOut } from '@phosphor-icons/react'
 import { secondaryBtnStyle, dangerBtnStyle, pillStyle } from '@/components/shared/ui'
 import AnchoredPopover from '@/components/shared/AnchoredPopover'
 
@@ -42,6 +42,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
   const logout = useAuthStore((state) => state.logout)
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  const [toggleHover, setToggleHover] = useState(false)
   // "Upcoming" modules are folded away by default (opens itself when the current page is one of them).
   const [upcomingOpen, setUpcomingOpen] = useState(false)
   const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -185,29 +186,33 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
             transition: 'width .28s cubic-bezier(.4,0,.2,1)',
           }}
         />
-        {/* ui-audit-ignore-next-line custom-button — sidebar collapse/expand chevron (26px sidebar chrome), not an action pill */}
+        {/* ui-audit-ignore-next-line custom-button — sidebar collapse/expand panel toggle (28px sidebar chrome), not an action pill */}
         <button
           type="button"
           onClick={toggleCollapsed}
+          onMouseEnter={() => setToggleHover(true)}
+          onMouseLeave={() => setToggleHover(false)}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!collapsed}
           style={{
             marginLeft: collapsed ? 0 : 'auto',
-            width: 26,
-            height: 26,
+            width: 28,
+            height: 28,
             flex: 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             borderRadius: 8,
-            border: '1px solid rgba(15,23,42,0.12)',
-            background: GLASS.surface,
-            color: TEXT.muted,
+            border: 'none',
+            background: toggleHover ? 'rgba(15,23,42,0.07)' : 'transparent',
+            color: toggleHover ? TEXT.heading : TEXT.muted,
             cursor: 'pointer',
             padding: 0,
+            transition: 'background .15s, color .15s',
           }}
         >
-          <CaretLeft size={14} style={{ transform: collapsed ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
+          <SidebarSimple size={18} weight={toggleHover ? 'fill' : 'regular'} style={{ transform: collapsed ? 'scaleX(-1)' : 'none' }} />
         </button>
       </div>
 

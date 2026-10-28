@@ -8,6 +8,8 @@ import { HrLeavePreview, HrLeaveType } from '@/types'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 function fmtDays(v: string | number | null | undefined) {
   const n = Number(v || 0)
@@ -61,6 +63,16 @@ export default function LeaveApplyForm({
   const fromSession = !single && pickedFromSession === 'first_half' ? 'full' : pickedFromSession
   const preview = leaveTypeId && fromDate ? rawPreview : null
 
+  const draft = useFormDraft(
+    `hr-leave-apply-${userId ?? 'self'}`,
+    { pickedTypeId, fromDate, toDate, pickedFromSession, toSession, reason, contact },
+    (d: { pickedTypeId?: string; fromDate?: string; toDate?: string; pickedFromSession?: string; toSession?: string; reason?: string; contact?: string }) => {
+      setLeaveTypeId(d.pickedTypeId || ''); setFromDate(d.fromDate || ''); setToDate(d.toDate || '')
+      setFromSession(d.pickedFromSession || 'full'); setToSession(d.toSession || 'full')
+      setReason(d.reason || ''); setContact(d.contact || '')
+    },
+  )
+
   useEffect(() => {
     if (!leaveTypeId || !fromDate) return
     const to = toDate || fromDate
@@ -95,6 +107,7 @@ export default function LeaveApplyForm({
       }, file)
       setFromDate(''); setToDate(''); setFromSession('full'); setToSession('full'); setReason(''); setContact(''); setFile(null); setPreview(null)
       if (fileRef.current) fileRef.current.value = ''
+      draft.clear()
       onSubmitted(res.request_no)
     } catch (err) {
       setError(extractErrorMessages(err, 'The leave request could not be submitted.'))
@@ -120,6 +133,7 @@ export default function LeaveApplyForm({
       </>}>
       <SheetColumns
         left={<>
+          <DraftBanner draft={draft} />
           {error.length > 0 && (
             <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
               {error.join(' ')}

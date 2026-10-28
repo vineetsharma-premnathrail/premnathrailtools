@@ -15,6 +15,8 @@ import { useDesignMe } from '@/components/design/useDesignMe'
 import { DOC_TYPE_LABELS, DISCIPLINE_LABELS, FILE_ROLE_LABELS, DESIGN_FILE_ACCEPT, formatBytes, toOptions } from '@/components/design/designMeta'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 
 type Staged = { file: File; role: string }
@@ -65,6 +67,16 @@ export default function NewDesignDocumentPage() {
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+
+  const draft = useFormDraft(requestLinkLoading ? null : `design-document-new-${requestParamId ?? 0}`,
+    { title, description, documentType, discipline, pmProjectId, erpProjectId, storeItemId, departmentId, customerId, customerApproval, standardId, requestId, legacyNumber, ownerChoice, reviewerId, approverId, changeSummary, staged, nextRole, submitNow },
+    (d) => {
+      setTitle(d.title ?? ''); setDescription(d.description ?? ''); setDocumentType(d.documentType ?? 'part_drawing'); setDiscipline(d.discipline ?? 'mechanical')
+      setPmProjectId(d.pmProjectId ?? ''); setErpProjectId(d.erpProjectId ?? ''); setStoreItemId(d.storeItemId ?? ''); setDepartmentId(d.departmentId ?? '')
+      setCustomerId(d.customerId ?? ''); setCustomerApproval(!!d.customerApproval); setStandardId(d.standardId ?? ''); setRequestId(d.requestId ?? '')
+      setLegacyNumber(d.legacyNumber ?? ''); setOwnerId(d.ownerChoice ?? ''); setReviewerId(d.reviewerId ?? ''); setApproverId(d.approverId ?? '')
+      setChangeSummary(d.changeSummary ?? ''); setNextRole(d.nextRole ?? 'primary'); setSubmitNow(d.submitNow ?? true)
+    })
 
   // Picking a request fills customer / project only where still empty.
   const fillFromRequest = (req: DesignRequest) => {
@@ -210,6 +222,7 @@ export default function NewDesignDocumentPage() {
       }
     }
     const query = problems.length ? `?notice=${encodeURIComponent(problems.join(' '))}` : ''
+    draft.clear()
     router.push(`${recordPath('/dashboard/design/documents', created)}${query}`)
   }
 
@@ -238,8 +251,9 @@ export default function NewDesignDocumentPage() {
         )}
       </>}
     >
-      {(error || isViewer) && (
+      {(error || isViewer || draft.restored) && (
         <div style={{ padding: '20px 24px 0' }}>
+          <DraftBanner draft={draft} />
           <SheetError error={error} />
           {isViewer && (
             <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', color: '#92400E', fontSize: 13 }}>

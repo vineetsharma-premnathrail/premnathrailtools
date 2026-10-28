@@ -217,14 +217,10 @@ export default function OrganizationsPage() {
   if (isLoading || !isAuthorized) return null
 
   // Counter chips follow the search and the column filters, like the table.
-  const monthIST = (d: string | Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date(d))
-  const thisMonth = monthIST(new Date())
   const orgStats = {
     total: filteredOrgs.length,
     domestic: filteredOrgs.filter((o) => o.org_scope !== 'international').length,
     international: filteredOrgs.filter((o) => o.org_scope === 'international').length,
-    railway: filteredOrgs.filter((o) => (o.org_type || '').includes('Railway')).length,
-    addedThisMonth: filteredOrgs.filter((o) => !!o.created_at && monthIST(o.created_at) === thisMonth).length,
   }
 
   const header = (
@@ -234,10 +230,7 @@ export default function OrganizationsPage() {
         <div data-tour="crm-org-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0 14px' }}>
           <StatChip label="Organizations" value={orgStats.total} color="#3b82f6" />
           <StatChip label="Domestic" value={orgStats.domestic} color="#16a34a" />
-          <StatChip label="International" value={orgStats.international} color="#ea580c" />
-          <StatChip label="Railway" value={orgStats.railway} color="#ca8a04" />
-          <StatChip label="Added this month" value={orgStats.addedThisMonth} color="#78716c" />
-        </div>
+          <StatChip label="International" value={orgStats.international} color="#ea580c" />        </div>
         {/* One toolbar row: add, search, clear, then export / import; wraps on narrow screens. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {can('crm', 'organizations', 'create') && <Link

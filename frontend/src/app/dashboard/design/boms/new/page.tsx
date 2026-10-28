@@ -14,6 +14,8 @@ import { useDesignMe } from '@/components/design/useDesignMe'
 import { extractErrorMessages } from '@/lib/validation'
 import BomLinesEditor, { BomImportButton, BomLineDraft, bomDraftsToPayload, bomLinesToDrafts, emptyBomLine, itemsFromBomLines } from '../BomLinesEditor'
 import { recordPath, useRecordId } from '@/lib/recordRef'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 
@@ -56,6 +58,15 @@ export default function NewDesignBomPage() {
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+
+  const draft = useFormDraft(requestParam ? `design-bom-new-${requestParam}` : 'design-bom-new',
+    { productId, title, description, documentId, pmProjectId, erpProjectId, requestId, orderProject, reviewerId, approverId, rows },
+    (d) => {
+      setProductId(d.productId ?? ''); setTitle(d.title ?? ''); setDescription(d.description ?? ''); setDocumentId(d.documentId ?? '')
+      setPmProjectId(d.pmProjectId ?? ''); setErpProjectId(d.erpProjectId ?? ''); setRequestId(d.requestId ?? '')
+      setOrderProject(d.orderProject ?? null); setReviewerId(d.reviewerId ?? ''); setApproverId(d.approverId ?? '')
+      setRows(d.rows?.length ? d.rows : [emptyBomLine('10')])
+    })
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -153,6 +164,7 @@ export default function NewDesignBomPage() {
         approver_id: approverId ? Number(approverId) : null,
         lines: built.lines,
       })
+      draft.clear()
       router.push(recordPath('/dashboard/design/boms', created))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to create the BOM.'))
@@ -180,8 +192,9 @@ export default function NewDesignBomPage() {
         )}
       </>}
     >
-      {(error || isViewer) && (
+      {(error || isViewer || draft.restored) && (
         <div style={{ padding: '20px 24px 0' }}>
+          <DraftBanner draft={draft} />
           <SheetError error={error} />
           {isViewer && (
             <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', color: '#92400E', fontSize: 13 }}>

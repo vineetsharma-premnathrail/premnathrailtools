@@ -19,6 +19,8 @@ import {
   ErrorBanner, FlagPill, Notice, MILESTONE_HEX, MILESTONE_LABELS, Pill, ProgressBar, actionBtn, smallActionBtn, sectionStyle,
   tdStyle, thStyle, todayIso,
 } from '@/components/projects/work/pmUi'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { FormSheet, Optional, Req, SHEET, SheetColumns, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import { RowCount } from '@/components/shared/ui'
 
@@ -77,6 +79,7 @@ export default function MilestonesTab({ project, onChange }: { project: PmProjec
   useEffect(() => { load() }, [load])
   useEffect(() => { projectsApi.departments().then(setDepts).catch(() => setDepts([])) }, [])
 
+  const draft = useFormDraft(form && !form.id ? `projects-wbs-new-${project.id}` : null, form, (d) => setForm({ ...emptyForm(), ...d }))
   const candidates = useTeamCandidates(form?.department_id ? Number(form.department_id) : null)
   const done = () => { load(); onChange() }
   const act = async (fn: () => Promise<unknown>, fallback: string) => {
@@ -110,7 +113,7 @@ export default function MilestonesTab({ project, onChange }: { project: PmProjec
     if (moved) payload.date_change_reason = form.date_change_reason.trim()
     try {
       if (form.id) await projectsApi.updateMilestone(project.id, form.id, payload)
-      else await projectsApi.createMilestone(project.id, payload)
+      else { await projectsApi.createMilestone(project.id, payload); draft.clear() }
       setForm(null)
       done()
     } catch (err) {
@@ -150,6 +153,7 @@ export default function MilestonesTab({ project, onChange }: { project: PmProjec
           </>}>
           <SheetColumns
             left={<>
+              <DraftBanner draft={draft} />
               <ErrorBanner error={error} />
               <SheetSection icon="list" title="Basic Information">
                 <div data-tour="pm-ms-form-title">

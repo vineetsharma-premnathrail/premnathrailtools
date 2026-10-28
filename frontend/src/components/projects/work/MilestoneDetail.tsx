@@ -15,6 +15,8 @@ import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { ErrorBanner, FlagPill, Pill, TASK_HEX, TASK_LABELS, actionBtn, linkBtn, usePmFeature } from './pmUi'
 import { FormSheet, Req, SHEET, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import { RowCount } from '@/components/shared/ui'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 type Person = { id: number; name: string; designation?: string | null; department?: string | null }
 type NewTask = { parentId: number | null; title: string; assignee_id: string; due_date: string; limit?: string | null }
@@ -111,6 +113,11 @@ export default function MilestoneDetail({ t, onBack, onChanged, onEdit, onDelete
     try { onChanged(await fn()); return true } catch (err) { onErr(extractErrorMessages(err, fallback)); return false } finally { setBusy(false) }
   }
 
+  // The typed part of the new task / sub-task form survives a refresh (the date limit comes from the milestone, so it is not kept).
+  const draft = useFormDraft(form ? `projects-milestone-task-new-${t.id}-${form.parentId ?? 0}` : null,
+    form ? { title: form.title, assignee_id: form.assignee_id, due_date: form.due_date } : null,
+    (d) => { if (d) setForm((f) => (f ? { ...f, title: d.title ?? '', assignee_id: d.assignee_id ?? '', due_date: d.due_date ?? '' } : f)) })
+
   const openForm = (parent: PmDeptSubtask | null) => {
     setFormError('')
     setForm({ parentId: parent?.id ?? null, title: '', assignee_id: '', due_date: '', limit: parent ? (parent.due_date || t.due_date) : t.due_date })
@@ -129,7 +136,7 @@ export default function MilestoneDetail({ t, onBack, onChanged, onEdit, onDelete
       () => (form.parentId ? pmOngoingApi.addChildSubtask(form.parentId, payload) : pmOngoingApi.addSubtask(t.id, payload)),
       form.parentId ? 'Could not add the sub-task.' : 'Could not create the task.', setFormError,
     )
-    if (ok) setForm(null)
+    if (ok) { draft.clear(); setForm(null) }
   }
 
   const removeRow = async (s: PmDeptSubtask) => {
@@ -337,6 +344,7 @@ export default function MilestoneDetail({ t, onBack, onChanged, onEdit, onDelete
             <button type="button" onClick={saveForm} disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="plus" size={16} />{busy ? 'Saving…' : form.parentId ? 'Add sub-task' : 'Create task'}</button>
           </>}>
           <div style={{ padding: '20px 24px' }}>
+            <DraftBanner draft={draft} />
             <ErrorBanner error={formError} />
             <SheetSection icon="list" title="Basic Information">
               <label style={sheetLabel}>{form.parentId ? 'Sub-task name' : 'Task name'} <Req /></label>

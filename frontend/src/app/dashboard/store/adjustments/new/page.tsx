@@ -6,6 +6,8 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { storeApi, usersApi } from '@/lib/api'
 import { StoreItem, StoreLocation, StoreStockBalance, DirectoryUser } from '@/types'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import StoreNav from '@/components/store/StoreNav'
@@ -33,6 +35,11 @@ export default function NewStockAdjustmentPage() {
   const [reason, setReason] = useState('')
   const [remarks, setRemarks] = useState('')
   const [lines, setLines] = useState<Line[]>([{ itemId: '', actualQuantity: '', remarks: '' }])
+
+  const draft = useFormDraft('store-adjustment-new', { locationId, approvedById, reason, remarks, lines }, (d) => {
+    setLocationId(d.locationId ?? ''); setApprovedById(d.approvedById ?? ''); setReason(d.reason ?? ''); setRemarks(d.remarks ?? '')
+    setLines(d.lines?.length ? d.lines : [{ itemId: '', actualQuantity: '', remarks: '' }])
+  })
 
   const [busy, setBusy] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
@@ -95,6 +102,7 @@ export default function NewStockAdjustmentPage() {
           remarks: l.remarks.trim() || undefined,
         })),
       })
+      draft.clear()
       router.push(recordPath('/dashboard/store/adjustments', adjustment))
     } catch (err) {
       setErrors(extractErrorMessages(err, 'Failed to create stock adjustment.'))
@@ -112,6 +120,7 @@ export default function NewStockAdjustmentPage() {
         <button data-tour="adjustment-cancel-btn" type="button" disabled={busy} onClick={() => router.push('/dashboard/store/adjustments')} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
         <button data-tour="adjustment-save-btn" type="button" disabled={busy} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="send" size={16} />{busy ? 'Saving…' : 'Send for Approval'}</button>
       </>}>
+      <DraftBanner draft={draft} />
       <MessageDialog open={errors.length > 0} variant="error" title="Cannot Save Stock Adjustment" message={errors} onClose={() => setErrors([])} />
       <MessageDialog open={loadErrors.length > 0} variant="error" title="Couldn't Load Form Data" message={loadErrors} onClose={() => setLoadErrors([])} />
 

@@ -16,6 +16,8 @@ import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
 import { PRIORITY_LABELS, WO_TYPE_LABELS, localInputToIso, nowLocalInput } from '@/components/maintenance/labels'
 import Select from '@/components/shared/Select'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 
 export default function NewMaintenanceWorkOrderPage() {
@@ -43,6 +45,17 @@ export default function NewMaintenanceWorkOrderPage() {
   const [tasks, setTasks] = useState<{ description: string; expected_value: string }[]>([])
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
+  const draft = useFormDraft(presetLoading ? null : 'maintenance-work-order-new',
+    { assetId, woType, priority, title, description, machineDown, downtimeStart, assignedTo, plannedStart, plannedEnd, estimatedHours, tasks },
+    (d) => {
+      if (d.assetId) setAssetId(d.assetId)
+      if (d.woType) setWoType(d.woType)
+      if (d.priority) setPriority(d.priority)
+      setTitle(d.title || ''); setDescription(d.description || ''); setMachineDown(!!d.machineDown)
+      if (d.downtimeStart) setDowntimeStart(d.downtimeStart)
+      setAssignedTo(d.assignedTo || ''); setPlannedStart(d.plannedStart || ''); setPlannedEnd(d.plannedEnd || '')
+      setEstimatedHours(d.estimatedHours || ''); setTasks(Array.isArray(d.tasks) ? d.tasks : [])
+    })
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -80,6 +93,7 @@ export default function NewMaintenanceWorkOrderPage() {
         estimated_hours: hrs,
         tasks: tasks.map((t, i) => ({ sequence: (i + 1) * 10, description: t.description.trim(), expected_value: t.expected_value.trim() || null })),
       })
+      draft.clear()
       router.push(recordPath('/dashboard/maintenance/work-orders', wo))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to create work order.'))
@@ -108,6 +122,8 @@ export default function NewMaintenanceWorkOrderPage() {
             {Array.isArray(error) ? error.join(' ') : error}
           </div>
         )}
+
+        <DraftBanner draft={draft} />
 
         <SheetSection icon="tool" title="Job">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>

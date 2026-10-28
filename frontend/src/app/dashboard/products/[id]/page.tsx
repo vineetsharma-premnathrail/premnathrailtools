@@ -12,9 +12,9 @@ import { TEXT } from '@/lib/theme'
 import ProductsNav from '@/components/products/ProductsNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ProductSalesPanels from '@/components/products/ProductSalesPanels'
-import { Section, DetailCard, DetailSummary, DetailGroup, DetailRow, dangerBtnStyle, primaryBtnStyle, secondaryBtnStyle, RowCount } from '@/components/shared/ui'
+import { Section, DetailCard, DetailSummary, DetailGroup, DetailRow, dangerBtnStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import {
-  ErrorBanner, PageHeader, Pill, PRODUCT_STATUS_HEX, PRODUCT_STATUS_LABELS, PRODUCT_TYPE_LABELS, tableWrapStyle, tdStyle, thStyle,
+  ErrorBanner, PageHeader, Pill, PRODUCT_STATUS_HEX, PRODUCT_STATUS_LABELS, PRODUCT_TYPE_LABELS,
 } from '@/components/products/ProductBits'
 import { extractErrorMessages } from '@/lib/validation'
 
@@ -62,7 +62,7 @@ export default function ProductDetailPage() {
 
       {p && (
         <>
-          {/* One card: what the product is, then its master data and applications. */}
+          {/* One card: what the product is, then its master data and description. */}
           <DetailCard>
             <DetailSummary
               title={p.name}
@@ -81,37 +81,19 @@ export default function ProductDetailPage() {
               <DetailRow label="Warranty">{p.warranty_months != null ? `${p.warranty_months} months` : null}</DetailRow>
               <DetailRow label="Store item">{p.store_item_code ? `${p.store_item_code} — ${p.store_item_name}` : 'Not linked'}</DetailRow>
             </DetailGroup>
-            <DetailGroup title="Description & applications" last>
+            <DetailGroup title="Description" last>
               <DetailRow label="Description">{p.description}</DetailRow>
-              <DetailRow label="Applications">
-                {p.applications.length === 0 ? null : (
-                  <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {p.applications.map((a) => <Pill key={a.id} text={a.is_active ? a.name : `${a.name} (retired)`} hex="#7c3aed" />)}
-                  </span>
-                )}
-              </DetailRow>
             </DetailGroup>
           </DetailCard>
 
           {canFeature('sales', 'products', 'specifications', 'view') && <Section title="Technical specifications" style={{ marginBottom: 16 }}>
-            {p.specifications.length === 0 ? (
-              <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No specifications recorded yet.</p>
-            ) : (
-              <div style={{ ...tableWrapStyle, maxHeight: 'none' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
-                  <thead><tr>{['Parameter', 'Value', 'Unit'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={p.specifications.length} />}</th>)}</tr></thead>
-                  <tbody>
-                    {p.specifications.map((s) => (
-                      <tr key={s.id}>
-                        <td style={{ ...tdStyle, fontWeight: 600 }}>{s.parameter}</td>
-                        <td style={tdStyle}>{s.value}</td>
-                        <td style={tdStyle}>{s.unit || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            {(() => {
+              // Free text, one per line; a product saved before 2026-10-28 falls back to its old rows.
+              const text = p.technical_specification || p.specifications.map((r) => `${r.parameter}: ${r.value}${r.unit ? ` ${r.unit}` : ''}`).join('\n')
+              return text
+                ? <div style={{ fontSize: 13.5, color: TEXT.body, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{text}</div>
+                : <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No specifications recorded yet.</p>
+            })()}
           </Section>}
 
           <ProductSalesPanels productId={p.id} />

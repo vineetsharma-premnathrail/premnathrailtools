@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
@@ -37,6 +39,11 @@ export default function StoreCategoriesPage() {
   const [editing, setEditing] = useState<StoreItemCategory | null>(null)
   const [saving, setSaving] = useState(false)
   const [formErrors, setFormErrors] = useState<string[]>([])
+  // Add only; editing an existing category is not kept.
+  const draft = useFormDraft(showModal && !editing ? 'store-category-new' : null, { name, code, parentId, itemType, isActive, purchaseGl, salesGl }, (d) => {
+    setName(d.name ?? ''); setCode(d.code ?? ''); setParentId(d.parentId ?? ''); setItemType(d.itemType || 'material'); setIsActive(d.isActive ?? true)
+    setPurchaseGl(d.purchaseGl ?? ''); setSalesGl(d.salesGl ?? '')
+  })
   const [deleteTarget, setDeleteTarget] = useState<StoreItemCategory | null>(null)
   const [deleteErrors, setDeleteErrors] = useState<string[]>([])
 
@@ -104,6 +111,7 @@ export default function StoreCategoriesPage() {
       } else {
         await storeApi.createCategory({ name: name.trim(), code: code.trim() || undefined, parent_id: parentId ? Number(parentId) : undefined, ...(parentId ? {} : { item_type: itemType, ...ledgerPayload }) })
       }
+      draft.clear()
       setShowModal(false)
       load()
     } catch (err) {
@@ -169,6 +177,7 @@ export default function StoreCategoriesPage() {
             <button data-tour="cat-save-btn" type="button" onClick={handleCreate} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save Category'}</button>
           </>}>
           <div style={{ padding: '20px 24px' }}>
+            <DraftBanner draft={draft} />
             {formErrors.length > 0 && (
               <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
                 {formErrors.map((e, i) => <div key={i}>{e}</div>)}

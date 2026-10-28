@@ -3,7 +3,7 @@ import re
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import or_
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, object_session, selectinload
 
 from app.db.session import get_db
 from app.core.permissions import ensure_can_delete, ensure_feature_action, require_feature_action, require_tab_access, require_tab_action
@@ -15,11 +15,13 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.crm.models.inquiry import Inquiry, Quotation, QuotationLineItem
 from app.modules.crm.models.organization import Organization as OrgModel
 from app.modules.crm.schemas.workflow import (
-    QuotationCreate, QuotationUpdate, QuotationResponse,
+    QuotationCreate, QuotationUpdate, QuotationResponse, QuotationLineItemPayload,
 )
+from app.modules.products.models.product import FinishedProduct
 from app.modules.crm.reports.quotation_pdf import build_quotation_pdf
 from app.modules.crm.reports.quotation_docx import build_quotation_docx
 from app.modules.main.services import managed_documents
+from app.utils.document_merge import merge_docx, merge_pdf
 from app.modules.rnd.models.technical_offer import RndTechnicalOffer
 from app.modules.rnd.services import technical_offers
 from app.modules.crm.services import quotation_status as qstatus
@@ -51,11 +53,106 @@ def quotation_out(quot: Quotation, user: User) -> QuotationResponse:
     """A quotation as the API returns it — prices blanked for a user without
     CRM › Inquiries & Tenders › Prices & margins (access.sees_quotation_prices)."""
     out = QuotationResponse.model_validate(quot)
+    _fill_line_names(object_session(quot), out)
     if not sees_quotation_prices(user):
         blank(out, QUOTATION_MONEY_FIELDS)
         for it in out.items:
             blank(it, QUOTATION_LINE_MONEY_FIELDS)
     return out
+
+
+QUOTABLE_PRODUCT_STATUSES = ("active", "development")
+
+
+def _fill_line_names(db: Session | None, out: QuotationResponse) -> None:
+    """Product code / name and application name for display on each line (old lines stay blank)."""
+    if db is None:
+        return
+    pids = {it.product_id for it in out.items if it.product_id}
+    aids = {it.application_id for it in out.items if it.application_id}
+    prods = {p.id: p for p in db.query(FinishedProduct).filter(FinishedProduct.id.in_(pids)).all()} if pids else {}
+    apps = {a.id: a for a in db.query(FinishedProduct).filter(FinishedProduct.id.in_(aids)).all()} if aids else {}
+    for it in out.items:
+        p = prods.get(it.product_id) if it.product_id else None
+        a = apps.get(it.application_id) if it.application_id else None
+        it.product_code, it.product_name = (p.code, p.name) if p else (None, None)
+        it.application_name = a.name if a else None
+
+
+def _line_is_blank(it: QuotationLineItemPayload) -> bool:
+    return not (it.product_id or it.application_id or (it.description or "").strip() or (it.model_number or "").strip()
+                or it.quantity or it.unit_price or (it.details or "").strip())
+
+
+def prepare_quotation_lines(db: Session, items: list[QuotationLineItemPayload]) -> list[QuotationLineItemPayload]:
+    """Every quotation line is chosen from the Product master: a Product is required;
+    an Application / attachment is optional. Description / model number fill from
+    the product when left blank. Entirely blank rows are dropped. Raises 422 naming
+    the line and how to fix it."""
+    kept = [it for it in items if not _line_is_blank(it)]
+    for n, it in enumerate(kept, start=1):
+        if not it.product_id:
+            raise HTTPException(status_code=422, detail=(
+                f"Line {n}: pick the product — every quotation line is chosen from the Product master (including Paid services). "
+                "Open the line and choose a Product; if it is missing, ask Products to add it."))
+        product = db.query(FinishedProduct).filter(FinishedProduct.id == it.product_id).first()
+        if not product:
+            raise HTTPException(status_code=422, detail=f"Line {n}: product #{it.product_id} does not exist — pick the product again from the list.")
+        if product.product_type == "application":
+            raise HTTPException(status_code=422, detail=(
+                f"Line {n}: {product.name} is an application / attachment, not a product. "
+                "Pick the product in the Product field, and put this one in Application / attachment (optional)."))
+        if product.status not in QUOTABLE_PRODUCT_STATUSES:
+            raise HTTPException(status_code=422, detail=(
+                f"Line {n}: {product.name} is {product.status.replace('_', ' ')} and can't be quoted. "
+                "Pick an active or in-development product, or ask Products to reactivate it."))
+        # Application / attachment is optional (sold with the product only if the customer asks).
+        # It is a Product-master row of type "application", not tied to the product.
+        if it.application_id:
+            app_row = db.query(FinishedProduct).filter(FinishedProduct.id == it.application_id).first()
+            if not app_row or app_row.product_type != "application":
+                raise HTTPException(status_code=422, detail=(
+                    f"Line {n}: that is not an application / attachment in the Product master. "
+                    "Pick one from the Application / attachment list, or clear it if the customer did not ask for one."))
+            if app_row.status not in QUOTABLE_PRODUCT_STATUSES:
+                raise HTTPException(status_code=422, detail=(
+                    f"Line {n}: {app_row.name} is {app_row.status.replace('_', ' ')} and can't be quoted. "
+                    "Pick an active or in-development application, or ask Products to reactivate it."))
+        if not (it.description or "").strip():
+            it.description = product.name
+        if not (it.model_number or "").strip() and product.model_number:
+            it.model_number = product.model_number
+    return kept
+
+
+@router.get("/quotation-products")
+async def list_quotation_products(db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "view"))):
+    """Product master choices for the quotation line editor: active and in-development
+    products (type other than application), plus the applications / attachments (type application) as a separate list. CRM users may
+    not have the Products app, so this lookup sits under the quotation permission."""
+    rows = db.query(FinishedProduct).filter(FinishedProduct.status.in_(QUOTABLE_PRODUCT_STATUSES)).order_by(FinishedProduct.code.asc()).all()
+
+    def row(p: FinishedProduct) -> dict:
+        return {"id": p.id, "code": p.code, "name": p.name, "model_number": p.model_number, "product_type": p.product_type}
+    return {
+        "products": [row(p) for p in rows if p.product_type != "application"],
+        "applications": [row(p) for p in rows if p.product_type == "application"],
+    }
+
+
+@router.get("/inquiries/{inquiry_id}/quotation-products/{product_id}/price")
+async def quotation_product_price(inquiry_id: int, product_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "view"))):
+    """The price the Product master's pricing conditions give this customer today — prefills the
+    unit price on a quotation line (a typed different price still needs a reason, see
+    products/linking.py). Blank for a user without CRM › Prices & margins."""
+    from app.modules.products import pricing
+    inquiry = _load_live_inquiry(db, inquiry_id, _user)
+    if not sees_quotation_prices(_user):
+        return {"price": None}
+    if not db.query(FinishedProduct.id).filter(FinishedProduct.id == product_id).first():
+        raise HTTPException(status_code=404, detail="Product not found — pick the product again from the list.")
+    r = pricing.resolve(db, product_id=product_id, customer_id=inquiry.org_id)
+    return {"price": r["price"], "price_source": r["price_source"]}
 
 
 def ensure_quotation_prices(user: User) -> None:
@@ -197,6 +294,7 @@ async def create_quotation(inquiry_id: int, payload: QuotationCreate, db: Sessio
             status_code=403,
             detail=f"Only the inquiry owner or an admin can create a quotation on this inquiry — ask {_user_label(db, inquiry.created_by_id)} or an admin.",
         )
+    payload.items = prepare_quotation_lines(db, payload.items)
     quot_number = _next_quot_number(db, inquiry)
     data = payload.model_dump(exclude={"items"})
     if payload.technical_offer_id:
@@ -312,8 +410,10 @@ async def update_quotation(inquiry_id: int, quot_id: int, payload: QuotationUpda
     if lumpsum and not after["price"]:
         raise HTTPException(status_code=422, detail=(
             "Pricing is Lump sum but Total Price is empty. Enter the total price for the whole offer, or switch Pricing to Item-wise."))
+    if payload.items is not None:
+        payload.items = prepare_quotation_lines(db, payload.items)
     if payload.items is not None and not any((it.description or "").strip() for it in payload.items):
-        raise HTTPException(status_code=422, detail="A quotation needs at least one line item with an Item Name — add one before saving the revision.")
+        raise HTTPException(status_code=422, detail="A quotation needs at least one line item with a Product and Application — add one before saving the revision.")
     if "technical_offer_id" in updates and updates["technical_offer_id"] != quot.technical_offer_id:
         if updates["technical_offer_id"]:
             offer = _quotable_offer(db, inquiry, updates["technical_offer_id"])
@@ -487,10 +587,15 @@ async def download_quotation_pdf(inquiry_id: int, quot_id: int, db: Session = De
     # Once a Word document exists for this revision it is the document of
     # record: the PDF is its latest version (with any edits made in Word),
     # not a fresh render from the quotation data.
-    content = await managed_documents.pdf_of_record(
-        db, QUOTATION_ENTITY, quot.id, quot.revision_number,
-        render=lambda: build_quotation_pdf(quotation_document_context(db, quot)).getvalue(),
-    )
+    word = managed_documents.active_for_revision(db, QUOTATION_ENTITY, quot.id, quot.revision_number)
+    if word:
+        content = await managed_documents.current_pdf(word)
+    else:
+        # No Word document yet: the Technical Offer's PDF on top, then the commercial quotation.
+        content = build_quotation_pdf(quotation_document_context(db, quot)).getvalue()
+        offer_doc = _technical_offer_document(db, quot)
+        if offer_doc:
+            content = merge_pdf(await managed_documents.current_pdf(offer_doc), content)
     return Response(
         content=content, media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
@@ -548,8 +653,26 @@ def _quotation_document_target(db: Session, quot_id: int, user: User, modify: bo
         entity_id=quot.id, revision=quot.revision_number, title=f"Quotation {number}",
         folder=managed_documents.sharepoint_folder("CRM-Quotations", quot.quot_number_base or number),
         filename_stem=managed_documents.safe_filename(number),
-        build_docx=lambda: build_quotation_docx(quotation_document_context(db, quot)).getvalue(),
+        build_docx=lambda: _quotation_docx(db, quot),
     )
+
+
+def _technical_offer_document(db: Session, quot: Quotation):
+    """The Word document of the R&D Technical Offer this quotation quotes against, if any."""
+    if not quot.technical_offer_id:
+        return None
+    return managed_documents.get_active(db, technical_offers.ENTITY, quot.technical_offer_id)
+
+
+async def _quotation_docx(db: Session, quot: Quotation) -> bytes:
+    """Owner, 2026-10-27: the quotation the customer gets is one Word file — R&D's
+    Technical Offer (as R&D last saved it) on top, the commercial quotation below,
+    editable together in Word."""
+    commercial = build_quotation_docx(quotation_document_context(db, quot)).getvalue()
+    offer_doc = _technical_offer_document(db, quot)
+    if not offer_doc:
+        return commercial
+    return merge_docx(await managed_documents.current_docx(offer_doc), commercial)
 
 
 managed_documents.register(managed_documents.DocumentAdapter(entity_type=QUOTATION_ENTITY, app="crm", load=_quotation_document_target,

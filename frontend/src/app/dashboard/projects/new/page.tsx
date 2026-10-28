@@ -13,6 +13,8 @@ import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { Notice } from '@/components/projects/work/pmUi'
 import { recordPath } from '@/lib/recordRef'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 const SUBTITLE = 'Fill the project and its machine once. Then open the project and add its milestones — the first milestone releases it to the departments.'
 
@@ -22,6 +24,9 @@ export default function NewProjectPage() {
   const [pf, setPf] = useState<ProjectFormValues>(emptyProjectForm())
   const [users, setUsers] = useState<DirectoryUser[]>([])
   const [canCreate, setCanCreate] = useState<boolean | null>(null)
+  // Only the Project tab is kept; the machine tabs belong to the shared machine form.
+  const draft = useFormDraft(canCreate ? 'projects-project-new' : null, pf,
+    (d) => setPf({ ...emptyProjectForm(), ...d }))
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -63,6 +68,7 @@ export default function NewProjectPage() {
 
   const renderProjectTab = () => (
     <>
+      {draft.restored && <DraftBanner draft={draft} />}
       <SheetSection icon="list" title="Project">
         <div style={row}>
           <div data-tour="pm-form-name" style={{ flex: '1 1 300px', maxWidth: 520 }}>
@@ -132,6 +138,7 @@ export default function NewProjectPage() {
           internal_order_id: pf.internal_order_id ? Number(pf.internal_order_id) : null,
           machine,
         })
+        draft.clear()
         let uploadFailed = false
         if (files.length > 0 && created.machine_id) {
           try { await erpApi.uploadProjectAttachments(created.machine_id, files, shareOptions) } catch { uploadFailed = true }

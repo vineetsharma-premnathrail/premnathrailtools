@@ -10,6 +10,8 @@ import DateField from '@/components/erp/DateField'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetHint, Optional } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import {
   ErrorBanner, useLookupErrors, F, rowStyle, PRIORITY_LABELS, toOptions, strOrNull,
 } from '@/components/electrical/shared'
@@ -65,6 +67,13 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel, titl
   // Label of the machine picked in this session, so it stays visible after
   // the search text (and so the option list) changes.
   const [pickedProjectLabel, setPickedProjectLabel] = useState('')
+
+  const draft = useFormDraft(initial ? null : 'elec-job-new',
+    { values, orderProject },
+    (d) => {
+      setValues((v) => ({ ...v, ...(d.values || {}) }))
+      setOrderProject(d.orderProject ?? null)
+    })
 
   useEffect(() => {
     electricalApi.lookupBranches().then(setBranches).catch((err) => addLookupError(extractErrorMessages(err,
@@ -135,6 +144,7 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel, titl
     setSaving(true)
     try {
       await onSubmit(payload)
+      draft.clear()
     } catch (err) {
       setError(extractErrorMessages(err, initial ? 'Failed to save the job.' : 'Failed to create the job.'))
       setSaving(false)
@@ -155,6 +165,7 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel, titl
         <SheetColumns
           left={<>
             <ErrorBanner error={error} />
+            <DraftBanner draft={draft} />
             <ErrorBanner error={lookupErrors} />
             <SheetSection icon="truck" title="RRV & Job">
               <div style={rowStyle}>

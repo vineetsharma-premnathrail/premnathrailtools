@@ -8,6 +8,8 @@ import { approvalsApi, organizationApi, rolesApi, usersApi } from '@/lib/api'
 import { ApprovesInRow, DirectoryUser, PermissionRegistry, Role } from '@/types'
 import { BRAND } from '@/lib/theme'
 import { useCan } from '@/lib/permissions'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { FormPage, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -111,6 +113,17 @@ export default function RoleDetailPage() {
       .catch((err) => setEventError(extractErrorMessages(err, 'Could not load the list of notification events. Reload the page; if it persists, the backend may not be updated yet.').join(' ')))
   }, [isAuthorized])
 
+  const draft = useFormDraft(
+    isNew ? 'org-role-new' : null,
+    { name, description, isActive, isDefault, permissions, dataScopes, notifyEvents, assigneeRules, memberIds },
+    (d: { name?: string; description?: string; isActive?: boolean; isDefault?: boolean; permissions?: string[]; dataScopes?: Record<string, string>; notifyEvents?: Record<string, string[]>; assigneeRules?: NonNullable<Role['assignee_rules']>; memberIds?: number[] }) => {
+      setName(d.name || ''); setDescription(d.description || '')
+      setIsActive(d.isActive ?? true); setIsDefault(d.isDefault ?? false)
+      setPermissions(d.permissions || []); setDataScopes(d.dataScopes || {}); setNotifyEvents(d.notifyEvents || {})
+      setAssigneeRules(d.assigneeRules || {}); setMemberIds(d.memberIds || [])
+    },
+  )
+
   const readOnly = !!role?.is_system
   const grantCount = useMemo(() => (catalog ? expandGrants(catalog, permissions).size : 0), [catalog, permissions])
   const moduleCount = useMemo(() => new Set(Array.from(catalog ? expandGrants(catalog, permissions) : []).map((g) => g.split(':')[0])).size, [catalog, permissions])
@@ -142,6 +155,7 @@ export default function RoleDetailPage() {
     try {
       if (isNew) {
         const created = await rolesApi.create(payload())
+        draft.clear()
         const path = recordPath('/dashboard/organization/roles', created)
         // Users picked while creating are saved with the role, in one click.
         if (!isDefault && memberIds.length > 0) {
@@ -266,6 +280,7 @@ export default function RoleDetailPage() {
         onConfirm={() => saveMembers(true)} onCancel={() => setAskEmptyMembers(false)} />
 
       <div style={{ padding: '20px 24px' }}>
+        <DraftBanner draft={draft} />
         {loadError && <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13, marginBottom: 14 }}>{loadError}</div>}
         {readOnly && (
           <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(37,99,235,0.07)', border: '1px solid rgba(37,99,235,0.2)', color: '#1e40af', fontSize: 12.5, marginBottom: 14 }}>

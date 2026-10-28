@@ -13,6 +13,8 @@ import DateField from '@/components/erp/DateField'
 import Checkbox from '@/components/Checkbox'
 import { extractErrorMessages } from '@/lib/validation'
 import { MAINTENANCE_TYPE_LABELS } from '@/components/hydraulic/labels'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 const inputStyle: React.CSSProperties = sheetInput
 const labelStyle: React.CSSProperties = sheetLabel
@@ -82,6 +84,15 @@ export default function MaintenancePlanForm({
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
 
+  const draft = useFormDraft(initial ? null : 'hyd-plan-new',
+    { title, systemId, maintenanceType, frequencyDays, frequencyHours, startDate, lastDoneDate, lastDoneHours, assignedTo, checklist, isActive, remarks },
+    (d) => {
+      setTitle(d.title ?? ''); setSystemId(d.systemId ?? ''); setMaintenanceType(d.maintenanceType || 'preventive')
+      setFrequencyDays(d.frequencyDays ?? ''); setFrequencyHours(d.frequencyHours ?? ''); setStartDate(d.startDate ?? '')
+      setLastDoneDate(d.lastDoneDate ?? ''); setLastDoneHours(d.lastDoneHours ?? ''); setAssignedTo(d.assignedTo ?? '')
+      setChecklist(d.checklist ?? ''); setIsActive(d.isActive ?? true); setRemarks(d.remarks ?? '')
+    })
+
   useEffect(() => {
     if (!initial) hydraulicApi.lookupSystems().then(setSystems).catch((err) => setError(extractErrorMessages(err, 'Failed to load the system list.')))
     hydraulicApi.lookupUsers().then(setUsers).catch((err) => setError(extractErrorMessages(err, 'Failed to load the user list.')))
@@ -124,6 +135,7 @@ export default function MaintenancePlanForm({
         is_active: isActive,
         remarks: remarks.trim() || null,
       })
+      draft.clear()
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save maintenance plan.'))
     } finally {
@@ -139,6 +151,7 @@ export default function MaintenancePlanForm({
     >
       <SheetBody>
         <SheetError error={error} />
+        <DraftBanner draft={draft} />
 
         <SheetSection icon="tool" title="Task">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>

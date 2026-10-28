@@ -11,6 +11,8 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import { SYSTEM_TYPE_LABELS, SYSTEM_TYPE_HEX, SYSTEM_STATUS_LABELS, flowUnit } from '@/components/hydraulic/labels'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 
 const numOrNull = (v: string) => (v.trim() === '' ? null : Number(v))
@@ -63,6 +65,16 @@ export default function SystemForm({
   const allowOwner = useAssigneeFilter('hydraulic:systems.owner')
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
+
+  const draft = useFormDraft(initial ? null : 'hyd-system-new',
+    { name, systemType, application, status, projectId, branchId, orderProject, ownerId, equipmentRef, nums, fluidMedium, cleanliness, description, remarks },
+    (d) => {
+      setName(d.name ?? ''); setSystemType(d.systemType || defaultSystemType || 'hydraulic'); setApplication(d.application ?? ''); setStatus(d.status || 'design')
+      setProjectId(d.projectId ?? ''); setBranchId(d.branchId ?? ''); setOrderProject(d.orderProject ?? null); setOwnerId(d.ownerId ?? '')
+      setEquipmentRef(d.equipmentRef ?? '')
+      setNums((prev) => ({ ...prev, ...(d.nums || {}) }))
+      setFluidMedium(d.fluidMedium ?? ''); setCleanliness(d.cleanliness ?? ''); setDescription(d.description ?? ''); setRemarks(d.remarks ?? '')
+    })
 
   useEffect(() => {
     hydraulicApi.lookupProjects().then(setProjects).catch((err) => setError(extractErrorMessages(err, 'Failed to load ERP projects for the Project picker.')))
@@ -125,6 +137,7 @@ export default function SystemForm({
         description: description.trim() || null,
         remarks: remarks.trim() || null,
       })
+      draft.clear()
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save system.'))
     } finally {
@@ -149,6 +162,7 @@ export default function SystemForm({
       <SheetColumns
         left={<>
           <SheetError error={error} />
+          <DraftBanner draft={draft} />
           <SheetSection icon="gear" title="System">
             <div style={{ ...fieldRow, marginBottom: 0 }}>
               <Cell tour="hyd-sys-type" basis={140}>

@@ -80,7 +80,7 @@ export default function RequirementTasksTab({ source, recordId, userId, access, 
       )}
       <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '4px 0 10px' }}>Tasks — all departments</p>
       {createDisabledHint && <p data-tour="rnd-req-tasks-milestone-hint" style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 10px' }}>{createDisabledHint}</p>}
-      <TasksBoard api={api} userId={userId} canManage={access.is_head} canCreate={access.view && (gates?.tasks.create ?? true) && !createDisabledHint} rights={gates?.tasks} labels={REQUIREMENT_TASK_LABELS}
+      <TasksBoard api={api} userId={userId} canManage={access.is_head} canCreate={access.view && (gates?.tasks.create ?? true) && !createDisabledHint} rights={gates?.tasks} labels={REQUIREMENT_TASK_LABELS} draftKey={`${source}-${recordId}`}
         departmentFilter={{ options, mine: access.departments || [] }}
         reloadKey={`${source}-${recordId}-${shareKey}`} />
     </div>

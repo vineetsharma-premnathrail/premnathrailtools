@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
-import { organizationApi, p2pApi, storeApi } from '@/lib/api'
+import { organizationApi, p2pApi, storeApi, PrStockAvailability } from '@/lib/api'
 import { P2PPurposeMeta, P2PRequest, P2PRequestLineItemInput, StoreItem } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { accountAssignmentApi, ACCOUNT_ASSIGNMENTS } from '@/lib/mmLogisticsApi'
@@ -16,6 +16,8 @@ import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { RowCount, pillStyle } from '@/components/shared/ui'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 type LineFilter = { type: string; category: string; q?: string; custom?: boolean }
 
@@ -88,6 +90,7 @@ function AttachRow({ label, files, onChange, tour }: { label: string; files: Fil
   )
 }
 const labelStyle = sheetLabel
+const fmtStock = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 3 })
 const readCell: React.CSSProperties = { padding: '6px 8px', fontSize: 13, color: SHEET.BODY, whiteSpace: 'nowrap' }
 const th: React.CSSProperties = { textAlign: 'left', padding: '8px 8px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: SHEET.MUTED, whiteSpace: 'nowrap', background: SHEET.SOFT, borderBottom: `1px solid ${SHEET.LINE}` }
 
@@ -170,6 +173,18 @@ export default function NewP2PRequestPage() {
   const [submitting, setSubmitting] = useState<'' | 'draft' | 'submit'>('')
   const [error, setError] = useState<string | string[]>('')
   const [uploadWarning, setUploadWarning] = useState<{ prHref: string; message: string } | null>(null)
+
+  // A new requisition's typed data survives a refresh / network failure (lib/formDraft.ts).
+  // Off while editing and when the form is pre-filled from Store / Maintenance / MRP.
+  const prefilled = !!searchParams.get('prefill') || !!searchParams.get('store_item_id')
+  const draft = useFormDraft(editRef || prefilled || !metaLoaded ? null : 'p2p-pr-new',
+    { purpose, projectId, acctKind, acctId, requiredDate, priority, remarks, items, lineFilters },
+    (d) => {
+      setPurpose(d.purpose || ''); setProjectId(d.projectId || ''); setAcctKind(d.acctKind || ''); setAcctId(d.acctId || '')
+      setRequiredDate(d.requiredDate || ''); setPriority(d.priority || 'medium'); setRemarks(d.remarks || '')
+      setItems(d.items?.length ? d.items : [emptyItem()])
+      setLineFilters(d.lineFilters?.length ? d.lineFilters : [{ type: '', category: '' }])
+    })
 
   // Pre-fill from Store's "Raise P2P Request" low-stock action — see
   // docs/product/PURCHASE_STORE_INTEGRATION.md integration point 2. Pure
@@ -298,6 +313,21 @@ export default function NewP2PRequestPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized])
 
+  // Free stock of the picked items, per store (owner, 2026-10-27): the requester
+  // sees before raising the PR whether the store already has it, and where.
+  const [stock, setStock] = useState<Record<number, PrStockAvailability | 'error'>>({})
+  const pickedIds = [...new Set(items.map((i) => i.store_item_id).filter((v): v is number => !!v))].sort((a, b) => a - b).join(',')
+  useEffect(() => {
+    const missing = pickedIds ? pickedIds.split(',').map(Number).filter((id) => !(id in stock)) : []
+    if (!missing.length) return
+    let cancelled = false
+    p2pApi.stockAvailability(missing)
+      .then((rows) => { if (!cancelled) setStock((prev) => ({ ...prev, ...Object.fromEntries(rows.map((r) => [r.store_item_id, r])) })) })
+      .catch(() => { if (!cancelled) setStock((prev) => ({ ...prev, ...Object.fromEntries(missing.map((id) => [id, 'error' as const])) })) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickedIds])
+
   // Lines whose picked item is of a type this purpose doesn't buy.
   const typeMismatches = allowedTypes
     ? items.flatMap((it, idx) => {
@@ -419,6 +449,7 @@ export default function NewP2PRequestPage() {
         })),
       }
       const pr = editing ? await p2pApi.edit(editing.id, payload) : await p2pApi.create(payload)
+      draft.clear()
 
       // The PR is already created — an upload failure mustn't undo that, but
       // the requester must be told which files didn't make it and why.
@@ -470,6 +501,7 @@ export default function NewP2PRequestPage() {
         </button>
       </>}>
       <MessageDialog open={!!error} variant="error" title="Cannot Save Request" message={error} onClose={closeError} />
+      {draft.restored && <div style={{ padding: '16px 24px 0' }}><DraftBanner draft={draft} style={{ marginBottom: 0 }} /></div>}
       <MessageDialog
         open={!!uploadWarning}
         variant="warning"
@@ -595,7 +627,7 @@ export default function NewP2PRequestPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
               <thead>
                 <tr>
-                  {['Actions', 'SL', 'Item (from Item Master) *', 'Make', 'Part Code', 'UOM', 'Qty *', 'Ship To'].map((h, i) => (
+                  {['Actions', 'SL', 'Item (from Item Master) *', 'Make', 'Part Code', 'UOM', 'In Stock', 'Qty *', 'Ship To'].map((h, i) => (
                     <th key={h} style={th}>{h === 'Actions' ? <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>Actions</span> : h}{i === 1 && <RowCount count={items.length} />}</th>
                   ))}
                 </tr>
@@ -667,6 +699,28 @@ export default function NewP2PRequestPage() {
                     <td data-tour="pr-new-item-make" style={readCell}>{m?.make || '—'}</td>
                     <td data-tour="pr-new-item-partcode" style={readCell}>{m?.part_number || m?.manufacturer_part_number || '—'}</td>
                     <td data-tour="pr-new-item-unit" style={readCell}>{m?.uom || '—'}</td>
+                    <td data-tour="pr-new-item-stock" style={{ padding: '6px 8px', fontSize: 12.5, minWidth: 150 }}>
+                      {(() => {
+                        if (!m) return <span style={{ color: SHEET.MUTED }}>—</span>
+                        const st = stock[m.id]
+                        if (st === undefined) return <span style={{ color: SHEET.MUTED }}>Checking…</span>
+                        if (st === 'error') return <span style={{ color: '#b45309' }} title="The stock check failed — reload the page to try again.">Couldn&apos;t check</span>
+                        if (st.available_qty <= 0) return <span style={{ color: '#b91c1c', fontWeight: 600 }}>Not in stock</span>
+                        const short = Number(item.quantity) > st.available_qty
+                        return (
+                          <div>
+                            <span style={{ color: short ? '#b45309' : '#15803d', fontWeight: 700 }}>
+                              {fmtStock(st.available_qty)} {m.uom || ''} {short ? 'available (less than asked)' : 'available'}
+                            </span>
+                            {st.locations.map((l) => (
+                              <div key={`${l.plant}-${l.store}`} style={{ color: SHEET.MUTED, whiteSpace: 'nowrap' }}>
+                                {l.plant ? `${l.plant} · ` : ''}{l.store}: <b style={{ color: SHEET.BODY }}>{fmtStock(l.available_qty)}</b>
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      })()}
+                    </td>
                     <td style={{ padding: '6px 8px', width: 96 }}>
                       <input data-tour="pr-new-item-qty" id={`pr-line-${idx + 1}-qty`} aria-label={`Quantity, line ${idx + 1}`} type="number" min={0} step="any" style={{ ...inputStyle, width: 88 }} value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} />
                     </td>

@@ -89,23 +89,6 @@ const steps: TourStep[] = [
     autoActivateOnAdvance: true,
   },
   {
-    target: 'orgdetail-tab-Engagements',
-    title: 'Engagements',
-    purpose: 'Every meeting, call, visit or general discussion logged with this customer organization — with whom, what was discussed, the outcome and the next follow-up date. Any CRM user can log one on any organization.',
-    autoActivate: true,
-  },
-  {
-    target: 'orgdetail-add-engagement-btn',
-    title: '+ Add Engagement',
-    purpose: 'Opens the Add Customer Engagement popup: contact person, engagement date (today by default), type (Meeting, Call, Visit, General Discussion), discussion summary, outcome (No Requirement, Future Requirement, Feedback Received, Inquiry Required) and an optional next follow-up date.',
-    why: 'Keeps a record of customer contact that has not (yet) become an inquiry. Only the person who logged an engagement (or an admin) can edit or delete it.',
-  },
-  {
-    target: 'orgdetail-engagements-table',
-    title: 'Engagement list',
-    purpose: 'Newest first. A next follow-up date that is today or past shows in orange.',
-  },
-  {
     target: 'orgdetail-tab-Inquiries',
     title: 'Inquiries',
     purpose: 'Every inquiry raised for this customer organization, with its contact person plus quick status/priority/follow-up info. Click a row to open that inquiry\'s full detail page. Shown only if your role includes Customer Organizations › Inquiries & Tenders of the customer organization.',

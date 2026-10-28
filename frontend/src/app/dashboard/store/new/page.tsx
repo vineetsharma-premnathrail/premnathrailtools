@@ -6,6 +6,8 @@ import ItemTypeSelect, { ItemTypeOption } from '@/components/store/ItemTypeSelec
 import CategorySelect from '@/components/store/CategorySelect'
 import SubcategorySelect from '@/components/store/SubcategorySelect'
 import { useEffect, useState } from 'react'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
@@ -41,6 +43,13 @@ export default function NewStoreItemPage() {
 
   const [busy, setBusy] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
+  const draft = useFormDraft('store-item-new',
+    { itemName, itemType, category, subcategory, description, partCode, leadTime, legacyCode, uom, erp },
+    (d) => {
+      setItemName(d.itemName ?? ''); setItemType(d.itemType || 'material'); setCategory(d.category ?? ''); setSubcategory(d.subcategory ?? '')
+      setDescription(d.description ?? ''); setPartCode(d.partCode ?? ''); setLeadTime(d.leadTime ?? ''); setLegacyCode(d.legacyCode ?? '')
+      setUom(d.uom ?? ''); setErp({ ...EMPTY_ERP_VALUES, ...(d.erp ?? {}) })
+    })
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -86,6 +95,7 @@ export default function NewStoreItemPage() {
         legacy_code: legacyCode.trim() || null,
         ...erpPayload(erp),
       })
+      draft.clear()
       if (photo) {
         try {
           await storeApi.uploadItemPhoto(item.id, photo)
@@ -112,6 +122,7 @@ export default function NewStoreItemPage() {
         <button data-tour="item-cancel-btn" type="button" disabled={busy} onClick={() => router.push('/dashboard/store')} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
         <button data-tour="item-save-btn" type="button" disabled={busy} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="plus" size={16} />{busy ? 'Saving…' : 'Save Item'}</button>
       </>}>
+      <DraftBanner draft={draft} />
       <MessageDialog open={errors.length > 0} variant="error" title="Cannot Save Item" message={errors} onClose={() => setErrors([])} />
       <MessageDialog open={!!photoWarning} variant="error" title="Photo Not Uploaded" message={photoWarning?.message || ''}
         onClose={() => photoWarning && router.push(photoWarning.href)} />

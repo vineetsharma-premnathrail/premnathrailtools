@@ -173,12 +173,9 @@ def requirement_summary(db: Session, source: str, record) -> dict:
 
     if source == "inquiry":
         fields = [
-            ("Product", record.product), ("Category", record.product_category),
-            ("Quantity", f"{record.quantity:g}" if record.quantity is not None else None),
-            ("Required Delivery", record.required_delivery_date.isoformat() if record.required_delivery_date else None),
-            ("Delivery Location", record.delivery_location), ("Inspection Req.", record.inspection_req),
-            ("Warranty Req.", record.warranty_req), ("Specification", record.product_spec),
-            ("Requirement Summary", record.requirement_desc), ("Project Details", record.project_details),
+            ("Product", record.product),
+            ("Specification", record.product_spec),
+            ("Project Details", record.project_details),
         ]
         title = record.product or record.universal_id
     else:

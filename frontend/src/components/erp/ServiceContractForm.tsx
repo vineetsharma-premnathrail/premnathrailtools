@@ -6,6 +6,8 @@ import Select from '@/components/shared/Select'
 
 import { useEffect, useState } from 'react'
 import { erpApi } from '@/lib/api'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { ServiceContract } from '@/lib/sdServiceApi'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
@@ -54,7 +56,7 @@ export function formToPayload(f: ContractFormValue): Record<string, unknown> {
 /** Contract form. `variant="page"` renders a FormPage (the /new route);
  * `variant="sheet"` renders a FormSheet popup (edit on the detail page). */
 export default function ServiceContractForm({ initial, saving, onSave, onCancel, lockCustomer, error, variant, title, subtitle, nav }: {
-  initial: ContractFormValue; saving: boolean; onSave: (f: ContractFormValue) => void; onCancel: () => void; lockCustomer?: boolean
+  initial: ContractFormValue; saving: boolean; onSave: (f: ContractFormValue) => void | boolean | Promise<boolean | void>; onCancel: () => void; lockCustomer?: boolean
   /** Shown as the red banner inside the form. */
   error?: string[]
   variant: 'page' | 'sheet'
@@ -67,6 +69,9 @@ export default function ServiceContractForm({ initial, saving, onSave, onCancel,
   const [customers, setCustomers] = useState<{ value: string; label: string }[]>([])
   const [machines, setMachines] = useState<{ id: number; serial_number: string; model_name: string | null; site_name: string | null }[]>([])
   const set = (p: Partial<ContractFormValue>) => setF((x) => ({ ...x, ...p }))
+  // A new contract's typed data survives a refresh / network failure (lib/formDraft.ts). The page's onSave returns true once saved.
+  const draft = useFormDraft(variant === 'page' ? 'erp-service-contract-new' : null, f,
+    (d) => setF({ ...initial, ...d, machine_ids: Array.isArray(d.machine_ids) ? d.machine_ids : [] }))
 
   useEffect(() => {
     erpApi.getProjectLinkOptions().then((o) => setCustomers(o.customers.map((c) => ({ value: String(c.id), label: c.label || c.name })))).catch(() => setCustomers([]))
@@ -86,7 +91,7 @@ export default function ServiceContractForm({ initial, saving, onSave, onCancel,
   const footer = (
     <>
       <button type="button" style={sheetBtn('secondary', SHEET.INK, saving)} onClick={onCancel} disabled={saving}>Cancel</button>
-      <button type="button" style={sheetBtn('primary', SHEET.BLUE, saving)} onClick={() => onSave(f)} disabled={saving}>
+      <button type="button" style={sheetBtn('primary', SHEET.BLUE, saving)} onClick={() => { Promise.resolve(onSave(f)).then((ok) => { if (ok === true) draft.clear() }) }} disabled={saving}>
         <SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save draft'}
       </button>
     </>
@@ -95,6 +100,7 @@ export default function ServiceContractForm({ initial, saving, onSave, onCancel,
   const body = (
     <SheetColumns
       left={<>
+        <DraftBanner draft={draft} />
         {error && error.length > 0 && (
           <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{error.join(' ')}</div>
         )}

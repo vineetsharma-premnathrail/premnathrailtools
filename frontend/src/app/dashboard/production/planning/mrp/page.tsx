@@ -21,6 +21,8 @@ import { canFeature } from '@/lib/permissions'
 import { recordPath } from '@/lib/recordRef'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import Select from '@/components/shared/Select'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 type Lookup = { id: number; label: string; code?: string | null; extra?: string | null }
 type Tab = 'orders' | 'list' | 'exceptions' | 'log'
@@ -197,9 +199,13 @@ export default function MrpPage() {
     try {
       await mrpApi.createPlannedOrder({ item_id: Number(newForm.item_id), quantity: Number(newForm.quantity), finish_date: newForm.finish_date,
         procurement: newForm.procurement || null, branch_id: branchId ? Number(branchId) : null, remarks: newForm.remarks.trim() || null })
+      newDraft.clear()
       setNewOpen(false); setNewForm({ item_id: '', quantity: '', finish_date: '', procurement: '', remarks: '' }); loadOrders()
     } catch (err) { fail(err, 'Failed to create the planned order.') } finally { setBusy(false) }
   }
+
+  const newDraft = useFormDraft(newOpen ? 'production-planned-order-new' : null, newForm,
+    (d) => setNewForm({ item_id: d.item_id ?? '', quantity: d.quantity ?? '', finish_date: d.finish_date ?? '', procurement: d.procurement ?? '', remarks: d.remarks ?? '' }))
 
   const popupOpen = !!editing || prOpen || newOpen
   const openSelected = useMemo(() => orders.filter((o) => selected.includes(o.id) && o.status === 'open'), [orders, selected])
@@ -512,6 +518,7 @@ export default function MrpPage() {
             </button>
           </>}>
           <div style={{ padding: '20px 24px' }}>
+            <DraftBanner draft={newDraft} />
             {error && errorBox(error)}
             <SheetSection icon="box" title="Item & Quantity">
               <label style={sheetLabel}>Item <Req /></label>

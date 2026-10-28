@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { organizationApi, storeApi } from '@/lib/api'
@@ -45,6 +47,14 @@ export default function NewMaterialReturnPage() {
   const [busy, setBusy] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
   const [loadErrors, setLoadErrors] = useState<string[]>([])
+  // Off until the source / condition defaults are loaded, so an untouched form is not seen as typed.
+  const draft = useFormDraft(sources.length && conditions.length ? 'store-return-new' : null,
+    { locationId, sourceType, sourceIssueId, sourceDescription, departmentId, reason, remarks, lines },
+    (d) => {
+      setLocationId(d.locationId ?? ''); setSourceType(d.sourceType || sourceType); setSourceIssueId(d.sourceIssueId ?? ''); setSourceDescription(d.sourceDescription ?? '')
+      setDepartmentId(d.departmentId ?? ''); setReason(d.reason ?? ''); setRemarks(d.remarks ?? '')
+      setLines(d.lines?.length ? d.lines : [{ itemId: '', quantity: '', condition: conditions[0]?.value || '', batchNumber: '' }])
+    })
 
   // Load failures go to the error dialog with the server's reason, so an
   // empty dropdown never hides why (e.g. a Store data-access 403).
@@ -124,6 +134,7 @@ export default function NewMaterialReturnPage() {
           batch_number: l.batchNumber.trim() || undefined,
         })),
       })
+      draft.clear()
       router.push(recordPath('/dashboard/store/returns', ret))
     } catch (err) {
       setErrors(extractErrorMessages(err, 'Failed to create material return.'))
@@ -141,6 +152,7 @@ export default function NewMaterialReturnPage() {
         <button data-tour="return-cancel-btn" type="button" disabled={busy} onClick={() => router.push('/dashboard/store/returns')} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
         <button data-tour="return-save-btn" type="button" disabled={busy} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name={approvalSteps.length ? 'send' : 'check'} size={16} />{busy ? 'Saving…' : approvalSteps.length ? 'Submit for Approval' : 'Record Return'}</button>
       </>}>
+      <DraftBanner draft={draft} />
       <MessageDialog open={errors.length > 0} variant="error" title="Cannot Save Material Return" message={errors} onClose={() => setErrors([])} />
       <MessageDialog open={loadErrors.length > 0} variant="error" title="Couldn't Load Form Data" message={loadErrors} onClose={() => setLoadErrors([])} />
 

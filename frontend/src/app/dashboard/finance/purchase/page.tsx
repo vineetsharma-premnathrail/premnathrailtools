@@ -17,6 +17,8 @@ import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheet
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
+import DraftBanner from '@/components/shared/DraftBanner'
+import { useFormDraft } from '@/lib/formDraft'
 import {
   inputStyle, labelStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle,
   thStyle, tdStyle, numTd, numTh, inr, dmy, todayIso, Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, useFinanceSubTabs, PageHeader,
@@ -422,6 +424,15 @@ function PurchaseInvoiceForm({ setup, ledgers, rates, vendors, pos, onSaved, onC
   const [error, setError] = useState<Errors>('')
   const proofRules = useProofRules()
   const [proof, setProof] = useState<PickedProof[]>([])
+  // A new bill's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft('finance-purchase-invoice-new',
+    { mode, poId, vendorId, invoiceNumber, invoiceDate, dueDate, posChoice, rcm, roundOff, narration, lines,
+      cur: { currency: docCur.currency, rate: docCur.rate, amountFc: docCur.amountFc } },
+    (d) => {
+      setMode(d.mode === 'direct' ? 'direct' : 'po'); setPoId(d.poId || ''); setVendorId(d.vendorId || ''); setInvoiceNumber(d.invoiceNumber || '')
+      setInvoiceDate(d.invoiceDate || todayIso()); setDueDate(d.dueDate || ''); setPlaceOfSupply(d.posChoice || ''); setRcm(!!d.rcm)
+      setRoundOff(d.roundOff ?? '0'); setNarration(d.narration || ''); setLines(d.lines?.length ? d.lines : [newTaxLine()]); docCur.restore(d.cur)
+    })
 
   // Inward supply is delivered to us, so place of supply defaults to the company's state.
   const placeOfSupply = posChoice || companyState
@@ -501,6 +512,7 @@ function PurchaseInvoiceForm({ setup, ledgers, rates, vendors, pos, onSaved, onC
         narration: narration.trim() || null, lines: toLinePayload(lines), ...docCur.payload(),
       })
       // Upload the picked files first — the invoice can't go for approval without them.
+      draft.clear()
       const proofError = proof.length ? await uploadPickedProof('vendor_invoice', created.id, proof, `Invoice ${created.invoice_number}`) : ''
       setProof([])
       if (proofError) { onSaved(`${proofError} It stays pending until then — submit it for approval after.`); return }
@@ -524,6 +536,7 @@ function PurchaseInvoiceForm({ setup, ledgers, rates, vendors, pos, onSaved, onC
         <button type="button" data-tour="fin-pinv-save" style={sheetBtn('primary', SHEET.BLUE, saving)} disabled={saving} onClick={submit}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Record invoice'}</button>
       </>}>
       <div style={{ padding: '20px 24px 0' }}>
+        <DraftBanner draft={draft} />
         <ErrorBanner error={error} />
         <InfoBanner>
           A bill against a PO is checked against the PO and goods received (3-way match); a difference beyond tolerance needs a Finance
@@ -853,6 +866,12 @@ function DebitNoteForm({ setup, ledgers, rates, vendors, onSaved, onCancel }: Ct
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<Errors>('')
   const [proof, setProof] = useState<PickedProof[]>([])
+  // A new debit note's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft('finance-debit-note-new', { invoiceId, vendorId, noteDate, reason, roundOff, narration, lines },
+    (d) => {
+      setInvoiceId(d.invoiceId || ''); setVendorId(d.vendorId || ''); setNoteDate(d.noteDate || todayIso()); setReason(d.reason || 'return')
+      setRoundOff(d.roundOff ?? '0'); setNarration(d.narration || ''); setLines(d.lines?.length ? d.lines : [newTaxLine()])
+    })
 
   useEffect(() => {
     accountsApi.listVendorInvoices({ status: 'posted' }).then(setPostedBills)
@@ -881,6 +900,7 @@ function DebitNoteForm({ setup, ledgers, rates, vendors, onSaved, onCancel }: Ct
         vendor_invoice_id: invoiceId ? Number(invoiceId) : null, vendor_id: invoiceId ? null : Number(vendorId),
         round_off: ro, narration: narration.trim() || null, lines: toLinePayload(lines),
       })
+      draft.clear()
       const proofError = proof.length ? await uploadPickedProof('party_note', created.id, proof, 'The debit note') : ''
       setProof([])
       if (proofError) { onSaved(`${proofError} It stays pending — submit it for approval after.`); return }
@@ -898,6 +918,7 @@ function DebitNoteForm({ setup, ledgers, rates, vendors, onSaved, onCancel }: Ct
         <button type="button" data-tour="fin-dn-save" style={sheetBtn('primary', SHEET.BLUE, saving)} disabled={saving} onClick={submit}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save debit note'}</button>
       </>}>
       <div style={{ padding: '20px 24px 0' }}>
+        <DraftBanner draft={draft} />
         <ErrorBanner error={error} />
         <InfoBanner>
           A debit note covers a rate difference, discount, shortage or goods sent back. Once posted it is set off against the bill automatically,

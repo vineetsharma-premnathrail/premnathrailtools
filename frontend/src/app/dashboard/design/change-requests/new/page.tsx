@@ -13,6 +13,8 @@ import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, 
 import { ECR_SOURCE_LABELS, ECR_URGENCY_LABELS, toOptions } from '@/components/design/designMeta'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 
 const inputStyle = sheetInput
@@ -52,6 +54,14 @@ export default function RaiseChangeRequestPage() {
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+
+  const draft = useFormDraft(docLinkLoading || bomLinkLoading ? null : `design-ecr-new-${docId ?? 0}-${bomId ?? 0}`,
+    { title, source, qualityId, sourceReference, urgency, reason, proposed, pmProjectId, erpProjectId, items },
+    (d) => {
+      setTitle(d.title ?? ''); setSource(d.source ?? 'production'); setQualityId(d.qualityId ?? ''); setSourceReference(d.sourceReference ?? '')
+      setUrgency(d.urgency ?? 'normal'); setReason(d.reason ?? ''); setProposed(d.proposed ?? '')
+      setPmProjectId(d.pmProjectId ?? ''); setErpProjectId(d.erpProjectId ?? ''); setItems(d.items ?? [])
+    })
 
   useEffect(() => {
     if (!isAuthorized || docLinkLoading || bomLinkLoading) return
@@ -120,6 +130,7 @@ export default function RaiseChangeRequestPage() {
           document_id: r.kind === 'document' ? r.id : null, bom_id: r.kind === 'bom' ? r.id : null, note: r.note.trim() || null,
         })),
       })
+      draft.clear()
       router.push(recordPath('/dashboard/design/change-requests', ecr))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to raise the change request.'))
@@ -144,6 +155,7 @@ export default function RaiseChangeRequestPage() {
             <SheetIcon name="send" size={16} />{saving ? 'Raising…' : 'Raise ECR'}
           </button>
         </>}>
+        {draft.restored && <div style={{ padding: '20px 24px 0' }}><DraftBanner draft={draft} style={{ marginBottom: 0 }} /></div>}
         {error && (Array.isArray(error) ? error.length > 0 : true) && <div style={{ padding: '20px 24px 0' }}><SheetError error={error} /></div>}
         <SheetColumns
           left={

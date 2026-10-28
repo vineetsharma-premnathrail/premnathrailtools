@@ -24,6 +24,9 @@ class QuotationLineItemPayload(BaseModel):
     total: float | None = None
     # Product master link + pricing-condition override reason (products/linking.py).
     product_id: int | None = None
+    # The product's application this line is quoted for — required on every saved line
+    # (checked in routes/workflow.py so the message can name the product's applications).
+    application_id: int | None = None
     price_override_reason: str | None = None
 
 
@@ -40,6 +43,11 @@ class QuotationLineItemResponse(BaseModel):
     subtotal: float | None = None
     total: float | None = None
     product_id: int | None = None
+    application_id: int | None = None
+    # Display names, filled by routes/workflow.quotation_out (not columns).
+    product_code: str | None = None
+    product_name: str | None = None
+    application_name: str | None = None
     list_price: float | None = None
     price_override_reason: str | None = None
 

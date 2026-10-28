@@ -1,6 +1,7 @@
 """MM purchasing (2026-10-14): ME47/ME49 line quotations + comparison +
 award, ME21N split of one PR into POs by vendor, ME22N amendment with
 re-release, ME11/ME01/ME1P info records, source list and price history."""
+from app.tests.p2p_workflow_helpers import attach_tally_po
 import pytest
 
 from app.modules.accounts.models.vendor import Vendor
@@ -153,6 +154,7 @@ def test_split_one_pr_into_pos_by_vendor_release_and_rollup(client, db, setup):
     assert db.get(P2PRequest, s["pr"]["id"]).status == "po_drafted"
 
     for p in (p_a, p_b):
+        attach_tally_po(db, p['id'])
         r = client.post(f"{RFQS}/{s['rfq'].id}/po-draft/{p['id']}/submit", headers=auth_header(s["buyer"]))
         assert r.status_code == 200, r.text
     db.expire_all()
@@ -187,6 +189,7 @@ def test_po_amendment_floors_rerelease_and_versions(client, db, setup):
     r = client.post(f"{POS}/{p_a['id']}/amendments", json={"reason": "Vendor revised rate", "changes": [{"po_item_id": line, "unit_price": 85}]},
                     headers=auth_header(s["buyer"]))
     assert r.status_code == 409
+    attach_tally_po(db, p_a['id'])
     client.post(f"{RFQS}/{s['rfq'].id}/po-draft/{p_a['id']}/submit", headers=auth_header(s["buyer"]))
     _decide_all(client, db, "p2p_purchase_order", p_a["id"], s["approvers"])
 
@@ -284,6 +287,7 @@ def test_item_overview_shows_every_vendor_without_typing_anything(client, db, se
     q1, q2 = _quoted_and_awarded(client, s)
     pos, _loc = _split(client, s, q1, q2)
     p_a = pos[s["v2"].id]
+    attach_tally_po(db, p_a['id'])
     client.post(f"{RFQS}/{s['rfq'].id}/po-draft/{p_a['id']}/submit", headers=auth_header(s["buyer"]))
     _decide_all(client, db, "p2p_purchase_order", p_a["id"], s["approvers"])
     # The release mirrored its rate into an info record — that is "last PO",

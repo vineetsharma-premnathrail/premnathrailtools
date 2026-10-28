@@ -16,6 +16,7 @@ from app.modules.crm.models.rnd_request import CrmRndRequest
 from app.modules.crm.routes import inquiries as inquiry_routes
 from app.modules.main.models.notification import Notification
 from app.modules.main.models.user import User
+from app.tests.quote_lines import LINE_REF, quote_product  # noqa: F401 — autouse fixture
 from app.tests.test_crm_quotation_documents import sp  # noqa: F401 — fixture
 
 API = "/api/v1/crm"
@@ -50,7 +51,7 @@ def make_inquiry(db, owner, uid="INQ-20261007-0001", **extra):
     return inq
 
 
-ITEM = {"description": "Rail drill", "quantity": 2, "unit_price": 1000, "gst_percent": 18}
+ITEM = {"description": "Rail drill", "quantity": 2, "unit_price": 1000, "gst_percent": 18, **LINE_REF}
 
 
 def create_quot(client, inq_id, user, **extra):
@@ -114,7 +115,7 @@ def test_revision_numbering_and_log(client, db):
     assert [r["revision_id"] for r in revs] == ["r2", "r1"]
     latest = {c["field"]: (c["old"], c["new"]) for c in revs[0]["changes"]}
     assert latest["payment_terms"] == ("100% advance", "30 days credit")
-    assert latest["items"] == ("Rail drill × 2 @ 1000 GST 18%", "Rail drill × 2 @ 900 GST 18%")
+    assert latest["items"] == ("Rail drill (RRV-MC) × 2 @ 1000 GST 18%", "Rail drill (RRV-MC) × 2 @ 900 GST 18%")
     assert revs[1]["changes"] == [{"field": "delivery_time", "old": "8 weeks", "new": "10 weeks"}]
     assert revs[0]["performed_by"] == "q.rev"
 
@@ -126,7 +127,7 @@ def test_revision_can_change_everything(client, db):
     base = f"{API}/inquiries/{inq.id}/quotations/{q['id']}"
     resp = client.patch(base, json={
         "discount": 10, "discount_type": "percent", "notes": "Revised scope", "client_name": "New Client",
-        "items": [{**ITEM, "quantity": 3}, {"description": "Spare bits", "quantity": 10, "unit_price": 50, "gst_percent": 18}],
+        "items": [{**ITEM, "quantity": 3}, {"description": "Spare bits", "quantity": 10, "unit_price": 50, "gst_percent": 18, **LINE_REF}],
     }, headers=auth(owner)).json()
     assert resp["revision_number"] == 1 and resp["discount"] == 10 and resp["notes"] == "Revised scope" and resp["client_name"] == "New Client"
     assert [(i["description"], i["quantity"], i["total"]) for i in resp["items"]] == [("Rail drill", 3.0, 3540.0), ("Spare bits", 10.0, 590.0)]
@@ -323,7 +324,7 @@ def test_tor_send_creates_shared_doc_movement_and_rnd_request(client, db, people
     moves = client.get(f"{API}/inquiries/{inq.id}/requirement-movements", headers=auth(people["bd"])).json()
     assert len(moves) == 1 and moves[0]["sequence"] == 1 and moves[0]["changes"] == []
     snap = {s["field"]: s["value"] for s in moves[0]["snapshot"]}
-    assert snap["product"] == "USFD tester" and snap["quantity_display"] == "3"
+    assert snap["product"] == "USFD tester" and snap["quantity_display"] is None  # quantity is no longer sent to R&D
     assert moves[0]["rnd_request"]["assigned_to"] is None and moves[0]["rnd_request"]["status"] == "open"
 
 
@@ -393,7 +394,11 @@ def test_response_to_request_of_deleted_inquiry_is_404(client, db, people, tor_e
     inq = make_inquiry(db, people["bd"])
     assert send_tor(client, inq.id, people["bd"]).status_code == 200
     req = db.query(CrmRndRequest).one()
-    assert client.delete(f"{API}/inquiries/{inq.id}", headers=auth(people["bd"])).status_code == 204
+    # An inquiry linked to R&D can't be deleted any more...
+    assert client.delete(f"{API}/inquiries/{inq.id}", headers=auth(people["bd"])).status_code == 409
+    # ...but one deleted before that rule (or from the recycle bin) still can't be answered.
+    inq.is_deleted = True
+    db.commit()
     resp = client.post(f"/api/v1/rnd/requirements/requests/{req.id}/respond", data={"remarks": "x"}, headers=auth(people["rnd"]))
     assert resp.status_code == 404 and "was deleted" in resp.json()["detail"]
 

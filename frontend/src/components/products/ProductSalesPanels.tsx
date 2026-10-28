@@ -1,6 +1,6 @@
 'use client'
 
-// Product detail extras (COMMPR01 merge): the product's price conditions,
+// Product detail extras: the product's prices,
 // product-wise order book (Sales) and quotation history (CRM). Each panel
 // shows only when the user has the module that owns the data.
 
@@ -8,7 +8,8 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
-import { pricingApi, productMappingApi, PriceCondition } from '@/lib/sdServiceApi'
+import { productMappingApi } from '@/lib/sdServiceApi'
+import PriceConditionsPanel from '@/components/products/PriceConditionsPanel'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { formatINR, SO_STATUS_LABELS, SO_STATUS_HEX } from '@/components/sales/labels'
@@ -23,20 +24,18 @@ interface QuoteRow { quotation_id: number; quot_number: string | null; quote_dat
 export default function ProductSalesPanels({ productId }: { productId: number }) {
   const { user } = useAuth()
   const apps = (user?.apps as string[] | undefined) || []
-  const [prices, setPrices] = useState<PriceCondition[]>([])
   const [book, setBook] = useState<{ rows: OrderBookRow[]; totals: Record<string, number | null> } | null>(null)
   const [quotes, setQuotes] = useState<QuoteRow[]>([])
   const [error, setError] = useState<string | string[]>('')
   // Product › Products features (core/features/products.py): the sections, and the
   // Prices & sales values switch (the server blanks order-book / quotation prices too).
-  const { canFeature } = useCan()
+  const { canFeature, can } = useCan()
   const seePrices = canFeature('sales', 'products', 'prices', 'view')
   const seeOrderBook = apps.includes('sales') && canFeature('sales', 'products', 'order_book', 'view')
   const seeQuotes = apps.includes('crm') && canFeature('sales', 'products', 'quotation_history', 'view')
 
   useEffect(() => {
     if (!productId) return
-    if (seePrices) pricingApi.list({ product_id: productId }).then(setPrices).catch(() => setPrices([]))
     if (seeOrderBook) productMappingApi.orderBook(productId).then(setBook).catch((e) => setError(extractErrorMessages(e, 'Could not load the order book.')))
     if (seeQuotes) productMappingApi.quotationHistory(productId).then((d) => setQuotes(d.quotations || [])).catch(() => setQuotes([]))
   }, [productId, seePrices, seeOrderBook, seeQuotes])
@@ -44,26 +43,9 @@ export default function ProductSalesPanels({ productId }: { productId: number })
   return (
     <>
       <ErrorBanner error={error} />
-      {seePrices && <Section title="Prices (Sales › Pricing)" style={{ marginBottom: 16 }}>
-        {prices.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No price conditions — this product is priced per quotation.</p> : (
-          <div style={{ ...tableWrapStyle, maxHeight: 320 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
-              <thead><tr>{['Type', 'Customer', 'Value', 'Min. price', 'Valid', 'Today'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={prices.length} />}</th>)}</tr></thead>
-              <tbody>
-                {prices.map((c) => (
-                  <tr key={c.id}>
-                    <td style={tdStyle}>{c.condition_type}</td>
-                    <td style={tdStyle}>{c.customer_name || 'All (list)'}</td>
-                    <td style={tdStyle}>{c.condition_type === 'discount' ? `${c.percent}%` : formatINR(c.amount)}</td>
-                    <td style={tdStyle}>{c.min_price == null ? '—' : formatINR(c.min_price)}</td>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(c.valid_from)} → {c.valid_to ? formatDate(c.valid_to) : 'open'}</td>
-                    <td style={tdStyle}>{c.is_current ? 'Valid' : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+      {seePrices && can('sales', 'pricing', 'view') && <Section title="Pricing" style={{ marginBottom: 16 }}>
+        <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>List price, customer-specific prices and discounts for this product. Sales orders and quotations default their price from here; with no price the line is priced per quotation.</p>
+        <PriceConditionsPanel productId={productId} emptyText="No prices for this product" />
       </Section>}
 
       {book && seeOrderBook && (

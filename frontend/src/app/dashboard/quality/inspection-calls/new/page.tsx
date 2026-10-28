@@ -14,6 +14,8 @@ import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheet
 import { ErrorBanner } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 interface ItemOpt { id: number; item_code: string; item_name: string; uom?: string }
 
@@ -39,6 +41,10 @@ export default function NewInspectionCallPage() {
   const [op, setOp] = useState<OrderProjectValue | null>(null)
   const [req, setReq] = useState<QualityOrderProjectRequirement | null>(null)
   const [reqError, setReqError] = useState('')
+  const draft = useFormDraft('quality-inspection-call-new', { form, op }, (d) => {
+    if (d.form) setForm((f) => ({ ...f, ...d.form }))
+    setOp(d.op || null)
+  })
 
   useEffect(() => {
     if (!op) return
@@ -92,6 +98,7 @@ export default function NewInspectionCallPage() {
         agency: form.agency || null, requested_date: form.requested_date || null, call_date: form.call_date || null,
         inspector_name: form.inspector_name.trim() || null, remarks: form.remarks.trim() || null,
       })
+      draft.clear()
       router.push(recordPath('/dashboard/quality/inspection-calls', call))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to raise the inspection call.'))
@@ -112,6 +119,7 @@ export default function NewInspectionCallPage() {
       <SheetColumns
         left={<>
           <ErrorBanner error={error} />
+          <DraftBanner draft={draft} />
           <SheetSection icon="building" title="Order">
             <div style={row}>
               <F label="Project — Unit (vehicle / lot)" flex="1 1 100%">

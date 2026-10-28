@@ -17,6 +17,8 @@ import { recordPath } from '@/lib/recordRef'
 import { useUrlProjectId } from '@/components/rnd/projectLink'
 import { extractErrorMessages } from '@/lib/validation'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 type ParamRow = { parameter: string; specification: string; measured: string; unit: string; result: '' | 'pass' | 'fail' }
 const emptyRow = (): ParamRow => ({ parameter: '', specification: '', measured: '', unit: '', result: '' })
@@ -58,6 +60,14 @@ function NewRndExperimentPageInner() {
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  // A new experiment's typed data survives a refresh / network failure (lib/formDraft.ts). Id stays null while a ?project_id link is resolving.
+  const draft = useFormDraft(projectLink.loading ? null : 'rnd-experiment-new',
+    { projectId, prototypeId, title, experimentType, experimentDate, conductedById, objective, method, rows },
+    (d) => {
+      setProjectId(d.projectId || ''); setPrototypeId(d.prototypeId || ''); setTitle(d.title || ''); setExperimentType(d.experimentType || 'lab_test')
+      setExperimentDate(d.experimentDate || ''); setConductedById(d.conductedById || ''); setObjective(d.objective || ''); setMethod(d.method || '')
+      setRows(d.rows?.length ? d.rows : [emptyRow()])
+    })
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -111,6 +121,7 @@ function NewRndExperimentPageInner() {
         method: method.trim() || undefined,
         parameters,
       })
+      draft.clear()
       router.push(recordPath('/dashboard/rnd/experiments', exp))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to create experiment.'))
@@ -140,6 +151,7 @@ function NewRndExperimentPageInner() {
           </button>
         </>}
       >
+        {draft.restored && <div style={{ padding: '16px 24px 0' }}><DraftBanner draft={draft} style={{ marginBottom: 0 }} /></div>}
         {error && (
           <div style={{ padding: '16px 24px 0' }}>
             <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>

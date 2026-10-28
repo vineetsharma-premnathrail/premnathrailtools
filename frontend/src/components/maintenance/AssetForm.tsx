@@ -10,6 +10,8 @@ import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
 import { ASSET_CATEGORY_LABELS, ASSET_STATUS_LABELS, CRITICALITY_LABELS } from '@/components/maintenance/labels'
 import Select from '@/components/shared/Select'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 const MANUAL_STATUSES = ['operational', 'standby', 'decommissioned']
 
@@ -65,6 +67,7 @@ export default function AssetForm({
     description: str(initial?.description),
     remarks: str(initial?.remarks),
   })
+  const draft = useFormDraft(isEdit ? null : 'maintenance-asset-new', f, (d) => setF((prev) => ({ ...prev, ...d })))
   const set = (key: string) => (value: string) => setF((prev) => ({ ...prev, [key]: value }))
   const [lookups, setLookups] = useState<MaintenanceLookups | null>(null)
   const [error, setError] = useState<string | string[]>('')
@@ -139,6 +142,7 @@ export default function AssetForm({
     setSaving(true)
     try {
       await onSubmit(payload)
+      draft.clear()
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save asset.'))
     } finally {
@@ -157,6 +161,7 @@ export default function AssetForm({
         </>}>
         <SheetColumns
           left={<>
+      <DraftBanner draft={draft} />
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
           {Array.isArray(error) ? error.join(' ') : error}

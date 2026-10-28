@@ -18,7 +18,7 @@ from app.modules.crm.models.organization import Organization, OrgContact
 from app.modules.crm.services.org_code import generate_org_code
 from app.modules.crm.services.customer_master import apply_to_org as apply_tax_ids, check_contact_address
 from app.modules.crm.services.cascade import cascade_delete_organization
-from app.modules.crm.services.org_scope import clear_other_scope, domestic_country_message, wrong_scope_message
+from app.modules.crm.services.org_scope import blank_to_none, clear_other_scope, domestic_country_message, international_country_message, wrong_scope_message
 from app.modules.crm.models.inquiry import Inquiry
 from app.modules.crm.models.tender import Tender
 from app.modules.crm.schemas.organization import (
@@ -351,6 +351,11 @@ async def update_organization(
     if new_scope == "domestic" and updates.get("gst_number"):
         _check_gst_free(db, updates["gst_number"], org_id)
     if new_scope == "international":
+        if "country" in updates and blank_to_none(updates["country"]) is None:
+            raise HTTPException(status_code=422, detail="Country is required for an International organization — pick its country in the Address section.")
+        country_msg = international_country_message(updates["country"] if "country" in updates else org.country)
+        if country_msg:
+            raise HTTPException(status_code=422, detail=country_msg)
         vat = updates.get("tax_vat_id", None if scope_changed else org.tax_vat_id)
         if vat and ("tax_vat_id" in updates or "country" in updates or scope_changed):
             _check_tax_vat_free(db, vat, updates.get("country", org.country), org_id)

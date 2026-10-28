@@ -8,6 +8,8 @@ import { DesignChangeNotice, DesignLookupOption } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { DISPOSITION_LABELS, ECN_EFFECTIVITY_LABELS, ECN_PRIORITY_LABELS, ECN_REASON_LABELS, toOptions } from '@/components/design/designMeta'
 
 const inputStyle = sheetInput
@@ -25,7 +27,7 @@ type AffectedBomRow = { bom_id: number; label: string; change_description: strin
 
 export default function ChangeNoticeForm({
   initial, currentUserId, submitLabel, saving, onSubmit, onCancel, onError,
-  error, title: pageTitle, subtitle, nav, onBack, backTour, tour,
+  error, title: pageTitle, subtitle, nav, onBack, backTour, tour, draftRef,
 }: {
   initial?: DesignChangeNotice | null
   currentUserId?: number
@@ -46,6 +48,8 @@ export default function ChangeNoticeForm({
   /** data-tour on the Back pill. */
   backTour?: string
   tour?: string
+  /** Create only: receives the draft handle so the page can call clear() once the save succeeded. */
+  draftRef?: React.MutableRefObject<{ clear: () => void } | null>
 }) {
   const [users, setUsers] = useState<DesignLookupOption[]>([])
   const [projects, setProjects] = useState<DesignLookupOption[]>([])
@@ -77,6 +81,18 @@ export default function ChangeNoticeForm({
   const [stockDisposition, setStockDisposition] = useState<string>(initial?.stock_disposition || 'not_applicable')
   const [wipDisposition, setWipDisposition] = useState<string>(initial?.wip_disposition || 'not_applicable')
   const [dispositionNote, setDispositionNote] = useState(initial?.disposition_note || '')
+
+  const draft = useFormDraft(initial ? null : 'design-change-notice-new',
+    { title, reason, priority, description, impact, targetDate, pmProjectId, erpProjectId, approverId, rows, bomRows, effectivityType, effectivityDate, effectivitySerial, effectivityNote, stockDisposition, wipDisposition, dispositionNote },
+    (d) => {
+      setTitle(d.title ?? ''); setReason(d.reason ?? 'design_improvement'); setPriority(d.priority ?? 'medium'); setDescription(d.description ?? '')
+      setImpact(d.impact ?? ''); setTargetDate(d.targetDate ?? ''); setPmProjectId(d.pmProjectId ?? ''); setErpProjectId(d.erpProjectId ?? '')
+      setApproverId(d.approverId ?? ''); setRows(d.rows ?? []); setBomRows(d.bomRows ?? [])
+      setEffectivityType(d.effectivityType ?? 'immediate'); setEffectivityDate(d.effectivityDate ?? ''); setEffectivitySerial(d.effectivitySerial ?? '')
+      setEffectivityNote(d.effectivityNote ?? ''); setStockDisposition(d.stockDisposition ?? 'not_applicable'); setWipDisposition(d.wipDisposition ?? 'not_applicable')
+      setDispositionNote(d.dispositionNote ?? '')
+    })
+  useEffect(() => { if (draftRef) draftRef.current = draft })
 
   useEffect(() => {
     Promise.all([designApi.lookupUsers(), designApi.lookupProjects(), designApi.lookupMachines(), designApi.lookupDocuments(), designApi.lookupBoms()])
@@ -128,6 +144,7 @@ export default function ChangeNoticeForm({
             <SheetIcon name="check" size={16} />{saving ? 'Saving…' : submitLabel}
           </button>
         </>}>
+        {draft.restored && <div style={{ padding: '20px 24px 0' }}><DraftBanner draft={draft} style={{ marginBottom: 0 }} /></div>}
         {hasError && <div style={{ padding: '20px 24px 0' }}><SheetError error={error || ''} /></div>}
         <SheetColumns
           left={

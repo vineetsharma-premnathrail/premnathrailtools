@@ -13,6 +13,8 @@ import { recordPath } from '@/lib/recordRef'
 import TeamMemberPicker from '@/components/rnd/TeamMemberPicker'
 import { extractErrorMessages } from '@/lib/validation'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import RndBudgetFields, { EMPTY_RND_BUDGET, RndBudgetDraft, rndBudgetError, rndBudgetPayload } from '@/components/rnd/RndBudgetFields'
 import ProjectOriginFields, { EMPTY_ORIGIN, OriginDraft, originError, originPayload, originProofRequired } from '@/components/rnd/ProjectOriginFields'
 
@@ -46,6 +48,14 @@ export default function NewRndProjectPage() {
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  // A new R&D project's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft('rnd-project-new',
+    { title, priority, objective, scope, leadChoice, teamIds, startDate, targetEndDate, remarks, files, origin, budget },
+    (d) => {
+      setTitle(d.title || ''); setPriority(d.priority || 'medium'); setObjective(d.objective || ''); setScope(d.scope || '')
+      setLeadChoice(Array.isArray(d.leadChoice) ? d.leadChoice : null); setTeamIds(d.teamIds || []); setStartDate(d.startDate || ''); setTargetEndDate(d.targetEndDate || '')
+      setRemarks(d.remarks || ''); setOrigin({ ...EMPTY_ORIGIN, ...d.origin }); setBudget({ ...EMPTY_RND_BUDGET, ...d.budget })
+    })
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -85,6 +95,7 @@ export default function NewRndProjectPage() {
         ...originPayload(origin),
         attachment_count: files.length,
       })
+      draft.clear()
       // Attachments go up after the project exists (they're R&D documents
       // keyed to it). A failed file never undoes the project — it's reported
       // with the reason so the user can retry from the project's Documents.
@@ -138,6 +149,7 @@ export default function NewRndProjectPage() {
           </button>
         </>}
       >
+        {draft.restored && <div style={{ padding: '16px 24px 0' }}><DraftBanner draft={draft} style={{ marginBottom: 0 }} /></div>}
         {error && (
           <div style={{ padding: '16px 24px 0' }}>
             <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>

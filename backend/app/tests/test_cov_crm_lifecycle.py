@@ -396,6 +396,12 @@ def test_org_delete_by_creator_cascades_everything(client, ctx):
 
     resp = client.delete(f"{API}/organizations/{org['id']}", headers=auth(ctx["other"]))
     assert resp.status_code == 403 and "created yourself" in resp.json()["detail"]
+    # An organization with live inquiries / tenders isn't deleted with them any more:
+    # they are deleted one by one first (a Sales / R&D-linked one can't be).
+    resp = client.delete(f"{API}/organizations/{org['id']}", headers=h)
+    assert resp.status_code == 409 and "still has inquiries / tenders" in resp.json()["detail"]
+    assert client.delete(f"{API}/inquiries/{inq['id']}", headers=h).status_code in (200, 204)
+    assert client.delete(f"{API}/tenders/{t['id']}", headers=h).status_code in (200, 204)
     assert client.delete(f"{API}/organizations/{org['id']}", headers=h).status_code == 204
 
     assert client.get(f"{API}/inquiries/{inq['id']}", headers=h).status_code == 404

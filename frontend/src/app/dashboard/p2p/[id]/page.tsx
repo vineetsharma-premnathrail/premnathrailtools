@@ -908,7 +908,10 @@ export default function MyP2PRequestDetailPage() {
             <DetailRow label="Expected delivery">{po.expected_delivery ? formatDate(po.expected_delivery) : null}</DetailRow>
             {seePrices && <DetailRow label="PO value (incl. tax)">{poLinesTotal != null ? money(poLinesTotal) : null}</DetailRow>}
             {canFeature('p2p', 'purchase_orders', 'po_document', 'view') && (
-              <DetailRow label="PO document">
+              <DetailRow label="Tally PO no.">{po.external_ref || null}</DetailRow>
+            )}
+            {canFeature('p2p', 'purchase_orders', 'po_document', 'view') && (
+              <DetailRow label="Tally PO (PDF)">
                 {po.document_filename && rfq ? (
                   <a
                     href="#"

@@ -12,6 +12,8 @@ import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheet
 import { ErrorBanner, sheetGap } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 export default function NewQualityStandardPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
@@ -24,6 +26,10 @@ export default function NewQualityStandardPage() {
   const [effectiveDate, setEffectiveDate] = useState('')
   const [status, setStatus] = useState<QualityStandardStatus>('draft')
 
+  const draft = useFormDraft('quality-standard-new', { standardCode, title, category, description, effectiveDate, status }, (d) => {
+    setStandardCode(d.standardCode || ''); setTitle(d.title || ''); setCategory(d.category || '')
+    setDescription(d.description || ''); setEffectiveDate(d.effectiveDate || ''); if (d.status) setStatus(d.status)
+  })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | string[]>('')
 
@@ -42,6 +48,7 @@ export default function NewQualityStandardPage() {
         effective_date: effectiveDate || undefined,
         status,
       })
+      draft.clear()
       router.push(recordPath('/dashboard/quality/standards', standard))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to create Quality Standard.'))
@@ -62,6 +69,7 @@ export default function NewQualityStandardPage() {
       <SheetColumns
         left={<>
           <ErrorBanner error={error} />
+          <DraftBanner draft={draft} />
           <SheetSection icon="doc" title="Standard Details">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '0 1 180px', minWidth: 0 }}>

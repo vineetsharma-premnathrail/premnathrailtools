@@ -42,7 +42,7 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     bd_owner_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     sales_engineer_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
-    status: Mapped[str] = mapped_column(String(50), default="Requirement Received", nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="Lead", nullable=False)
     current_stage: Mapped[str] = mapped_column(String(50), default="Requirement Received", nullable=False)
     # Free-text running note on where things stand right now — distinct from the
     # fixed `status`/`current_stage` values, edited independently and logged like
@@ -192,6 +192,9 @@ class QuotationLineItem(Base):
     # Product master link (COMMPR01 merge): set by exact code / name+model match or the
     # Product Mapping screen (products/linking.py); the text above stays as typed.
     product_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Optional application (add-on) sold with the product on this line — a products row of
+    # product_type 'application' (2026-10-28).
+    application_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
     # Pricing conditions (VK11): the price the conditions gave when the line was saved, and
     # why a different price / higher discount was typed (products/pricing.py).
     list_price: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -501,25 +501,6 @@ export interface Feedback {
 
 // ── CRM ──────────────────────────────────────────────────────────────────
 
-/** CRM › Customer Organizations › Engagements. */
-export interface CrmEngagement {
-  id: number
-  org_id: number
-  org_contact_id: number
-  contact_name?: string | null
-  engagement_date: string
-  engagement_type: string
-  engagement_type_label: string
-  summary: string
-  outcome: string
-  outcome_label: string
-  next_followup_date?: string | null
-  created_by_id?: number | null
-  created_by_name?: string | null
-  created_at?: string | null
-  can_edit: boolean
-}
-
 export interface OrgContact {
   id: number
   org_id: number
@@ -1228,6 +1209,34 @@ export interface QuotationLineItem {
   gst_percent?: number
   subtotal?: number
   total?: number
+  product_id?: number | null
+  application_id?: number | null
+  product_code?: string | null
+  product_name?: string | null
+  application_name?: string | null
+}
+
+/** A Product-master choice on the quotation line editor (GET /crm/quotation-products). */
+export interface CrmQuotationProduct {
+  id: number
+  code: string
+  name: string
+  model_number: string | null
+  product_type: string
+}
+
+/** An application / attachment (a Product-master row of type 'application') sold with a product only if the customer asks. */
+export interface CrmQuotationApplication {
+  id: number
+  code: string
+  name: string
+  model_number: string | null
+  product_type: string
+}
+
+export interface CrmQuotationLookup {
+  products: CrmQuotationProduct[]
+  applications: CrmQuotationApplication[]
 }
 
 export interface QuotationItem {
@@ -3949,6 +3958,9 @@ export interface P2PPurchaseOrder {
   document_size?: number
   document_uploaded_at?: string
   document_uploaded_by_name?: string
+  /** Tally PO number (portal POs: uploaded on the draft; source 'tally': bulk-uploaded before 2026-10-27). */
+  external_ref?: string | null
+  source?: string | null
   assigned_buyer_id?: number
   assigned_buyer_name?: string
 }
@@ -9906,6 +9918,10 @@ export interface SalesOrder {
   display_number: string
   status: string
   order_type: string
+  order_category?: string
+  service_machine_id?: number | null
+  service_machine_label?: string | null
+  service_requests?: { id: number; request_number: string; issue_title: string; status: string }[]
   customer_id: number
   customer_contact_id: number | null
   customer_contact_name: string | null
@@ -10074,6 +10090,20 @@ export interface SalesAttachment {
   created_at: string | null
 }
 
+/** A CRM document of the order's source inquiry / tender (link only — the file stays in CRM). */
+export interface SalesCrmDocument {
+  id: number
+  file_name: string
+  folder: string
+  category: string | null
+  description: string | null
+  file_size: number | null
+  mime_type: string | null
+  uploaded_by_name: string | null
+  uploaded_at: string | null
+  linked_at: string | null
+}
+
 export interface SalesTimelineEntry {
   id: number
   at: string
@@ -10232,7 +10262,7 @@ export interface P2PEngineApproval {
 }
 
 // ── Product Management ──────────────────────────────────────────────
-export type ProductType = 'vehicle' | 'machine' | 'equipment' | 'attachment'
+export type ProductType = 'vehicle' | 'machine' | 'equipment' | 'attachment' | 'service' | 'application'
 export type ProductStatus = 'development' | 'active' | 'phased_out' | 'discontinued'
 
 export interface ProductApplication {
@@ -10261,6 +10291,7 @@ export interface FinishedProduct {
   status: ProductStatus
   short_description?: string | null
   description?: string | null
+  technical_specification?: string | null
   hsn_code?: string | null
   uom: string
   warranty_months?: number | null

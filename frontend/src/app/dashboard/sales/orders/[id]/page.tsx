@@ -27,12 +27,13 @@ import AmendmentPanel from '@/components/sales/AmendmentPanel'
 import ProformaPanel from '@/components/sales/ProformaPanel'
 import {
   SO_STATUS_LABELS, SO_STATUS_HEX, LEVEL_LABELS, DEVIATION_LABELS, PRICE_BASIS_LABELS, LD_PERIOD_LABELS, LD_BASIS_LABELS,
-  WARRANTY_RULE_LABELS, MILESTONE_LABELS, LINE_TYPE_LABELS, DOC_TYPE_LABELS, ORDER_TYPE_LABELS, formatINR, formatMoney,
+  WARRANTY_RULE_LABELS, MILESTONE_LABELS, LINE_TYPE_LABELS, DOC_TYPE_LABELS, ORDER_TYPE_LABELS, ORDER_CATEGORY_LABELS, formatINR, formatMoney,
 } from '@/components/sales/labels'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import { ProjectUnitChip } from '@/components/sales/ProjectUnitPicker'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import CreditReleaseDialog from '@/components/finance/CreditReleaseDialog'
+import SoCrmDocuments from '@/components/sales/SoCrmDocuments'
 
 const TABS = [
   ['overview', 'Overview'], ['lines', 'Lines'], ['schedule', 'Delivery Schedule'], ['billing', 'Billing Plan'],
@@ -272,7 +273,7 @@ export default function SalesOrderDetailPage() {
           <DetailCard tour="sales-detail-overview">
             <DetailSummary
               title={so.customer_name || 'Customer not set'}
-              text={`${ORDER_TYPE_LABELS[so.order_type] || 'Sales'} order${so.source_label ? ` — from ${so.source_label}${so.source_quotation_number ? ` ${so.source_quotation_number}` : ''}` : ''}.`}
+              text={`${ORDER_CATEGORY_LABELS[so.order_category || 'new_project']} · ${ORDER_TYPE_LABELS[so.order_type] || 'Sales'} order${so.service_machine_label ? ` — machine ${so.service_machine_label}${so.service_requests?.length ? ` (${so.service_requests.map((r) => r.request_number).join(', ')})` : ''}` : so.source_label ? ` — from ${so.source_label}${so.source_quotation_number ? ` ${so.source_quotation_number}` : ''}` : ''}.`}
               meta={<>
                 <Pill label={SO_STATUS_LABELS[so.status] || so.status} hex={SO_STATUS_HEX[so.status] || '#78716c'} />
                 {seePrices && <><span style={{ color: '#cbd5e1' }}>·</span><span>Order value <strong style={{ color: '#0f172a' }}>{formatMoney(so.grand_total, so.currency)}</strong> incl. GST</span></>}
@@ -448,6 +449,7 @@ export default function SalesOrderDetailPage() {
               </TableScroll>
             )}
           </div>
+          {(so.source_inquiry_id || so.source_tender_id) && <SoCrmDocuments so={so} canEdit={canUploadDocs} />}
         </>
       )}
 

@@ -27,6 +27,7 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.managed_document import ManagedDocument, ManagedDocumentEvent
 from app.modules.main.models.notification import Notification
 from app.modules.main.models.user_session import UserSession
+from app.modules.main.models.idempotency_record import IdempotencyRecord  # noqa: F401
 from app.modules.main.models.user_document import UserDocument
 from app.modules.main.models.module import Module
 from app.modules.main.models.role import Role  # noqa: F401
@@ -102,9 +103,10 @@ from app.modules.maintenance.models.counters import MaintenanceMeasuringPoint, M
 from app.modules.maintenance.models.permit import MaintenanceWorkPermit
 from app.modules.maintenance.models.wo_procurement import MaintenanceWorkOrderPurchaseRequest
 from app.modules.erp.models.service_visit import ServiceVisit
-from app.modules.sales.models.order import SalesOrder, SalesOrderLine, SalesOrderSchedule, SalesBillingPlanLine
+from app.modules.sales.models.order import SalesOrder, SalesOrderLine, SalesOrderSchedule, SalesBillingPlanLine, SalesOrderServiceRequest  # noqa: F401
 from app.modules.sales.models.amendment import SalesOrderAmendment
 from app.modules.sales.models.extension import SalesDeliveryExtension
+from app.modules.sales.models.crm_document_link import SalesOrderCrmDocument
 from app.modules.sales.models.approval import SalesApproval
 from app.modules.sales.models.attachment import SalesAttachment
 from app.modules.sales.models.delivery import SalesDeliveryEvent, SalesInvoiceLink
@@ -182,7 +184,7 @@ from app.modules.crm.models import (
     Organization, OrgContact, Inquiry, InquiryLineItem, Quotation, QuotationLineItem,
     Tender, Activity,
     CrmDocument, CrmStageLog, Product, PaymentTerm, CrmRndRequest, CrmRequirementComment,
-    CrmDocumentCategory, CrmEngagement,
+    CrmDocumentCategory,
 )
 from app.modules.accounts.models.gl_account import GLAccount
 from app.modules.accounts.models.bank_account import BankAccount
@@ -420,7 +422,7 @@ from app.modules.design.routes import insights as design_insights_routes
 from app.modules.products.routes import applications as products_applications_routes
 from app.modules.products.routes import products as products_products_routes
 from app.modules.products.routes import price_conditions as products_price_conditions_routes
-from app.modules.products.routes import product_mapping as products_mapping_routes
+from app.modules.products.routes import product_mapping as products_mapping_routes  # product order book / quotation history
 from app.modules.products import linking as _products_linking  # noqa: F401 — before_flush auto-link to the product master
 from app.modules.projects.routes import units as project_units_routes
 from app.modules.projects.routes import project as pm_project_routes
@@ -454,7 +456,6 @@ from app.modules.store.routes import serials as store_serials_routes
 from app.modules.store.routes import bin_stock as store_bin_stock_routes
 import app.modules.store.reports.job_work_challan  # noqa: E402,F401 — registers the managed Word job-work challan
 from app.modules.crm.routes import organizations as crm_organizations_routes
-from app.modules.crm.routes import engagements as crm_engagements_routes
 from app.modules.crm.routes import inquiries as crm_inquiries_routes
 from app.modules.crm.routes import tenders as crm_tenders_routes
 from app.modules.crm.routes import activities as crm_activities_routes
@@ -556,6 +557,10 @@ from app.core.optimistic_lock import OptimisticLockMiddleware, register_locked_m
 app.add_middleware(OptimisticLockMiddleware)
 register_locked_models()
 
+# Idempotency-Key: a save retried after a network failure is replayed, never saved twice.
+from app.middleware.idempotency import IdempotencyMiddleware  # noqa: E402
+app.add_middleware(IdempotencyMiddleware)
+
 # CSRF: block cookie-authenticated unsafe requests from non-portal origins (C-07).
 from app.middleware.csrf import CSRFOriginMiddleware  # noqa: E402
 app.add_middleware(CSRFOriginMiddleware)
@@ -566,7 +571,7 @@ app.add_middleware(
     allow_origins=settings.allowed_origins_list,
     allow_credentials=True,            # Allow cookies/auth headers
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "X-Record-Refs", "X-Lock-Version", "X-User-Active"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "X-Record-Refs", "X-Lock-Version", "X-User-Active", "Idempotency-Key"],
     expose_headers=["X-Reports-Skipped", "Content-Disposition"],  # Excel export: which reports of a pack were left out
 )
 
@@ -768,7 +773,6 @@ app.include_router(store_job_work_routes.router, prefix="/api/v1")
 app.include_router(store_serials_routes.router, prefix="/api/v1")
 app.include_router(store_bin_stock_routes.router, prefix="/api/v1")
 app.include_router(crm_organizations_routes.router, prefix="/api/v1")
-app.include_router(crm_engagements_routes.router, prefix="/api/v1")
 app.include_router(crm_inquiries_routes.router, prefix="/api/v1")
 app.include_router(crm_tenders_routes.router, prefix="/api/v1")
 app.include_router(crm_activities_routes.router, prefix="/api/v1")

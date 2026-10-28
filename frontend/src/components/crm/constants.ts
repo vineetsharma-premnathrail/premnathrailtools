@@ -120,12 +120,12 @@ export const priorityOptions = (current?: string | null) =>
 export const priorityLabel = (p: string) => (PRIORITY_MEANINGS[p] ? `${p} — ${PRIORITY_MEANINGS[p]}` : p)
 
 export const INQUIRY_STATUSES = [
+  'Lead',
   'Requirement Received',
   'R&D / Technical Review',
   'Qualified',
   'Quotation Sent',
   'Order Received',
-  'Under Production',
   'Closed - Ordered',
   'Closed - Not Ordered',
 ]
@@ -136,6 +136,7 @@ export const inquiryStatusOptions = (current?: string | null) =>
   current && !INQUIRY_STATUSES.includes(current) ? [...INQUIRY_STATUSES, current] : INQUIRY_STATUSES
 
 export const INQUIRY_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+  Lead: { bg: 'rgba(100,116,139,0.12)', text: '#475569' },
   'Requirement Received': { bg: 'rgba(37,99,235,0.1)', text: '#1d4ed8' },
   'R&D / Technical Review': { bg: 'rgba(14,165,233,0.12)', text: '#0369a1' },
   Qualified: { bg: 'rgba(234,179,8,0.14)', text: '#a16207' },

@@ -13,6 +13,8 @@ import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheet
 import { ErrorBanner, sheetGap } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 interface ItemOpt { id: number; item_code: string; item_name: string; uom?: string }
 
@@ -33,6 +35,7 @@ export default function NewNcrPage() {
     source: 'internal', severity: 'minor', item_id: '', item_name: '', quantity: '', block_stock: false, location_id: '',
     batch_number: '', vendor_name: '', defect_code_id: '', source_reference: '', description: '', ncr_date: today,
   })
+  const draft = useFormDraft('quality-ncr-new', form, (d) => setForm((f) => ({ ...f, ...d })))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
 
@@ -60,6 +63,7 @@ export default function NewNcrPage() {
         defect_code_id: form.defect_code_id ? Number(form.defect_code_id) : null, source_reference: form.source_reference.trim() || null,
         description: form.description.trim(), ncr_date: form.ncr_date,
       })
+      draft.clear()
       router.push(recordPath('/dashboard/quality/ncr', ncr))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to raise the NCR.'))
@@ -81,6 +85,7 @@ export default function NewNcrPage() {
       <SheetColumns
         left={<>
           <ErrorBanner error={error} />
+          <DraftBanner draft={draft} />
           <SheetSection icon="alert" title="Non-conformance" color="#DC2626">
             <div style={row}>
               <F label="Source">

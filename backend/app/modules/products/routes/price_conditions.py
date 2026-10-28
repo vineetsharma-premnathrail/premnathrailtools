@@ -84,6 +84,34 @@ async def lookup_items(kind: str = "product", search: str = "", db: Session = De
     return [{"id": p.id, "label": f"{p.code} — {p.name}", "uom": p.uom} for p in q.order_by(FinishedProduct.name).limit(200).all()]
 
 
+@router.get("/convert")
+async def convert_price(amount: float, currency: str = "INR", on: date | None = None,
+                        db: Session = Depends(get_db), _user: User = Depends(_READ)):
+    """A price in every active currency at Finance's exchange rate in force on the
+    day (Finance › Masters › Currencies & FX: 1 unit = rate INR). A currency with
+    no rate yet comes back without an amount and says where to enter the rate."""
+    from app.modules.accounts.models.fx import BOOKS_CURRENCY, Currency
+    from app.modules.accounts.services import fx
+    on = on or date.today()
+    src = (currency or BOOKS_CURRENCY).upper()
+    try:
+        inr = amount * fx.rate_on(db, src, on)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    out = []
+    for c in db.query(Currency).filter(Currency.is_active == True).order_by(Currency.code).all():  # noqa: E712
+        row = {"currency": c.code, "name": c.name, "symbol": c.symbol, "rate": None, "amount": None, "note": None}
+        try:
+            rate = fx.rate_on(db, c.code, on)
+            row.update(rate=rate, amount=round(inr / rate, 2))
+        except ValueError:
+            row["note"] = f"No exchange rate for {c.code} yet — enter it under Finance › Masters › Currencies & FX."
+        out.append(row)
+    if not any(r["currency"] == BOOKS_CURRENCY for r in out):
+        out.insert(0, {"currency": BOOKS_CURRENCY, "name": "Indian Rupee", "symbol": "₹", "rate": 1.0, "amount": round(inr, 2), "note": None})
+    return {"on": on, "amount": amount, "currency": src, "inr": round(inr, 2), "rows": out}
+
+
 @router.get("/resolve")
 async def resolve_price(
     product_id: int | None = None, store_item_id: int | None = None, service_code: str | None = None,
@@ -141,8 +169,8 @@ async def update_condition(cid: int, payload: ProductPriceConditionUpdate, db: S
     doesn't — end the record and create a new one for a different key."""
     c = _get(db, cid)
     changes = payload.model_dump(exclude_unset=True)
-    keys = ("condition_type", "item_kind", "product_id", "store_item_id", "service_code", "customer_id", "amount", "percent",
-            "freight_basis", "min_price", "uom", "valid_from", "valid_to", "is_active", "remarks")
+    keys = ("condition_type", "item_kind", "product_id", "store_item_id", "service_code", "customer_id", "country", "amount", "percent",
+            "freight_basis", "min_price", "uom", "currency", "valid_from", "valid_to", "is_active", "remarks")
     data = {k: getattr(c, k) for k in keys}
     data.update({k: v for k, v in changes.items() if not (k in ("valid_from", "is_active") and v is None)})
     data = pricing.validate(db, data, exclude_id=c.id)

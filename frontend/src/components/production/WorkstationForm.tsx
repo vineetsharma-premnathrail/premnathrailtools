@@ -7,6 +7,8 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import Select from '@/components/shared/Select'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 export const WORKSTATION_TYPE_LABELS: Record<string, string> = {
   machine: 'Machine', work_center: 'Work Center', assembly_bay: 'Assembly Bay',
@@ -44,6 +46,13 @@ export default function WorkstationForm({
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
 
+  const draft = useFormDraft(initial ? null : 'production-workstation-new',
+    { code, name, workstationType, status, branchId, departmentId, capacity, rate, description },
+    (d) => {
+      setCode(d.code ?? ''); setName(d.name ?? ''); setWorkstationType(d.workstationType ?? 'machine'); setStatus(d.status ?? 'active')
+      setBranchId(d.branchId ?? ''); setDepartmentId(d.departmentId ?? ''); setCapacity(d.capacity ?? '8'); setRate(d.rate ?? '0'); setDescription(d.description ?? '')
+    })
+
   useEffect(() => {
     productionApi.lookupBranches().then(setBranches).catch((err) => setError(extractErrorMessages(err, 'Failed to load plants.')))
     productionApi.lookupDepartments().then(setDepartments).catch((err) => setError(extractErrorMessages(err, 'Failed to load departments.')))
@@ -78,6 +87,7 @@ export default function WorkstationForm({
         hourly_rate: hourly,
         description: description.trim() || null,
       })
+      draft.clear()
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save workstation.'))
     } finally {
@@ -97,6 +107,7 @@ export default function WorkstationForm({
       </>}>
       <SheetColumns
         left={<>
+          <DraftBanner draft={draft} />
           {error && (
             <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
               {Array.isArray(error) ? error.join(' ') : error}

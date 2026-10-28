@@ -2,7 +2,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, field_validator, model_validator
 from app.core.validators import validate_email_format, validate_gst_format
 from app.modules.crm.services.org_scope import (
-    ORG_SCOPES, blank_to_none, check_foreign_id, domestic_country_message, wrong_scope_message,
+    ORG_SCOPES, blank_to_none, check_foreign_id, domestic_country_message, international_country_message, wrong_scope_message,
 )
 
 
@@ -170,6 +170,12 @@ class OrganizationCreate(BaseModel):
             if country_msg:
                 raise ValueError(country_msg)
             self.country = "India"
+        elif self.org_scope == "international":
+            if "country" not in self.model_fields_set or blank_to_none(self.country) is None:
+                raise ValueError("Country is required for an International organization — pick its country in the Address section.")
+            country_msg = international_country_message(self.country)
+            if country_msg:
+                raise ValueError(country_msg)
         return self
 
 

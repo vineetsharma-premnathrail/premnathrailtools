@@ -271,10 +271,9 @@ export default function ActivityForm({
             <SheetSection icon="users" title="Contact Person(s)" extra={<Optional />}>
               <div ref={contactsRef} data-tour="activity-contacts" style={{ position: 'relative' }}>
                 <div
-                  onClick={() => setContactsOpen((v) => !v)}
-                  style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minHeight: 20, cursor: 'pointer' }}
+                  onClick={() => setContactsOpen(true)}
+                  style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minHeight: 20, cursor: 'text' }}
                 >
-                  {selectedContactIds.length === 0 && <span style={{ color: SHEET.MUTED }}>Select contacts…</span>}
                   {selectedContactIds.map((id) => {
                     const c = contacts.find((x) => x.id === id)
                     if (!c) return null
@@ -285,7 +284,17 @@ export default function ActivityForm({
                       </span>
                     )
                   })}
-                  <CaretDown size={14} color="#94a3b8" style={{ flex: 'none', marginLeft: 'auto' }} />
+                  {/* Typed right in the field; the list below filters as you type. */}
+                  <input
+                    value={contactSearch}
+                    onChange={(e) => { setContactSearch(e.target.value); setContactsOpen(true) }}
+                    onFocus={() => setContactsOpen(true)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setContactsOpen(false) }}
+                    placeholder={selectedContactIds.length === 0 ? 'Select contacts…' : ''}
+                    aria-label="Search contacts"
+                    style={{ flex: '1 1 80px', minWidth: 80, border: 'none', outline: 'none', background: 'transparent', padding: 0, margin: 0, font: 'inherit', color: SHEET.INK, boxShadow: 'none' }}
+                  />
+                  <CaretDown size={14} color="#94a3b8" onClick={(e) => { e.stopPropagation(); setContactsOpen((v) => !v) }} style={{ flex: 'none', marginLeft: 'auto', cursor: 'pointer' }} />
                 </div>
 
                 {/* Portaled so the sheet's scroll body can't clip it; flips up near the screen bottom. */}
@@ -311,9 +320,6 @@ export default function ActivityForm({
                       </div>
                     ) : (
                       <>
-                        <div style={{ padding: 8, borderBottom: `1px solid ${SHEET.LINE}` }}>
-                          <input autoFocus value={contactSearch} onChange={(e) => setContactSearch(e.target.value)} placeholder="Search contacts…" style={{ ...inputStyle, padding: '8px 10px' }} />
-                        </div>
                         <div style={{ maxHeight: 160, overflowY: 'auto' }}>
                           {contacts.filter((c) => c.name.toLowerCase().includes(contactSearch.trim().toLowerCase())).length === 0 ? (
                             <p style={{ fontSize: 12.5, color: SHEET.MUTED, padding: '10px 14px', margin: 0 }}>No matches.</p>

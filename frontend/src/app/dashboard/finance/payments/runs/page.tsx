@@ -13,6 +13,8 @@ import { financePaymentsApi } from '@/lib/financePaymentsApi'
 import { BankAccount, PaymentProposal, PaymentProposalLine, Vendor } from '@/types'
 import { TEXT } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
+import DraftBanner from '@/components/shared/DraftBanner'
+import { useFormDraft } from '@/lib/formDraft'
 import FinanceNav from '@/components/finance/FinanceNav'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { SheetFooter, SField, SRow, sw, sg } from '@/components/finance/financeSheet'
@@ -68,6 +70,9 @@ export default function PaymentRunsPage() {
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string[] | null>(null)
+  // A new payment run's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft(showForm ? 'finance-payment-run-new' : null, { payBy, bankId, mode, vendorId, notes },
+    (d) => { setPayBy(d.payBy || plusDays(7)); setBankId(d.bankId || ''); setMode(d.mode || 'neft'); setVendorId(d.vendorId || ''); setNotes(d.notes || '') })
 
   const [excludeLine, setExcludeLine] = useState<{ run: PaymentProposal; line: PaymentProposalLine } | null>(null)
   const [cancelRun, setCancelRun] = useState<PaymentProposal | null>(null)
@@ -111,6 +116,7 @@ export default function PaymentRunsPage() {
         pay_by_date: payBy, bank_account_id: Number(bankId), payment_mode: mode,
         vendor_ids: vendorId ? [Number(vendorId)] : [], notes: notes.trim() || null,
       })
+      draft.clear()
       setShowForm(false)
       setNotes('')
       setRuns((rs) => [pp, ...rs])
@@ -170,6 +176,7 @@ export default function PaymentRunsPage() {
           footer={<SheetFooter onCancel={() => setShowForm(false)} onSubmit={create} busy={saving} busyLabel="Building…" label="Build proposal" icon="list" />}>
           <SheetColumns
             left={<>
+              <DraftBanner draft={draft} />
               <ErrorBanner error={formError} />
               <SheetSection icon="calendar" title="Run">
                 <SRow>

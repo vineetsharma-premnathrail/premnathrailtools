@@ -157,6 +157,7 @@ async def create_product(payload: ProductCreate, db: Session = Depends(get_db), 
         model_number=(payload.model_number or "").strip() or None,
         short_description=(payload.short_description or "").strip() or None,
         description=(payload.description or "").strip() or None,
+        technical_specification=(payload.technical_specification or "").strip() or None,
         hsn_code=(payload.hsn_code or "").strip() or None,
         uom=(payload.uom or "").strip() or "Nos",
         warranty_months=payload.warranty_months, store_item_id=payload.store_item_id, created_by_id=user.id,
@@ -190,7 +191,7 @@ async def update_product(product_id: int, payload: ProductUpdate, db: Session = 
         _store_item(db, data["store_item_id"], p.id)
     app_ids = data.pop("application_ids", None)
     specs = data.pop("specifications", None)
-    for field in ("model_number", "short_description", "description", "hsn_code"):
+    for field in ("model_number", "short_description", "description", "technical_specification", "hsn_code"):
         if field in data:
             data[field] = (data[field] or "").strip() or None
     if "uom" in data:

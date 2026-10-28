@@ -10,9 +10,10 @@ the workflow to a new document is just an adapter + a builder.
 
 from __future__ import annotations
 
+import inspect
 import re
 from dataclasses import dataclass
-from typing import Callable
+from typing import Awaitable, Callable
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -43,7 +44,8 @@ class DocumentTarget:
     title: str             # "Quotation QT-…-01-r1" — shown in messages and History
     folder: str            # SharePoint folder (build with sharepoint_folder())
     filename_stem: str     # safe file name without extension
-    build_docx: Callable[[], bytes]
+    # May be async, e.g. when the document embeds another managed document (quotation + Technical Offer).
+    build_docx: Callable[[], bytes | Awaitable[bytes]]
 
 
 @dataclass
@@ -98,6 +100,11 @@ async def pdf_of_record(db: Session, entity_type: str, entity_id: int, revision:
 async def docx_of_record(db: Session, entity_type: str, entity_id: int, revision: int, render: Callable[[], bytes]) -> bytes:
     doc = active_for_revision(db, entity_type, entity_id, revision)
     return await current_docx(doc) if doc else render()
+
+
+async def build_bytes(target: DocumentTarget) -> bytes:
+    data = target.build_docx()
+    return await data if inspect.isawaitable(data) else data
 
 
 def _site() -> str:

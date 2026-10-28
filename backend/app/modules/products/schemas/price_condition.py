@@ -10,11 +10,13 @@ class ProductPriceConditionCreate(BaseModel):
     store_item_id: int | None = None
     service_code: str | None = None
     customer_id: int | None = None
+    country: str | None = None
     amount: float | None = None
     percent: float | None = None
     freight_basis: str | None = None
     min_price: float | None = None
     uom: str | None = None
+    currency: str = "INR"
     valid_from: date
     valid_to: date | None = None
     is_active: bool = True
@@ -23,6 +25,7 @@ class ProductPriceConditionCreate(BaseModel):
 
 class ProductPriceConditionUpdate(BaseModel):
     amount: float | None = None
+    currency: str | None = None
     percent: float | None = None
     freight_basis: str | None = None
     min_price: float | None = None
@@ -43,6 +46,7 @@ class ProductPriceConditionResponse(BaseModel):
     store_item_id: int | None = None
     service_code: str | None = None
     customer_id: int | None = None
+    country: str | None = None
     amount: float | None = None
     percent: float | None = None
     freight_basis: str | None = None

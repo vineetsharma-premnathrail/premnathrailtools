@@ -9,6 +9,8 @@ import HydFormShell, { HydShellProps, Cell, fieldRow } from '@/components/hydrau
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
 import { SYSTEM_TYPE_LABELS } from '@/components/hydraulic/labels'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 /**
  * Create / edit form for a circuit revision. Only rendered while the
@@ -39,6 +41,13 @@ export default function CircuitForm({
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
 
+  const draft = useFormDraft(initial ? null : 'hyd-circuit-new',
+    { title, systemId, systemType, drawingNumber, symbolStandard, description, changeNote },
+    (d) => {
+      setTitle(d.title ?? ''); setSystemId(d.systemId ?? ''); setSystemType(d.systemType || 'hydraulic')
+      setDrawingNumber(d.drawingNumber ?? ''); setSymbolStandard(d.symbolStandard ?? ''); setDescription(d.description ?? ''); setChangeNote(d.changeNote ?? '')
+    })
+
   useEffect(() => {
     hydraulicApi.lookupSystems().then(setSystems).catch((err) => setError(extractErrorMessages(err, 'Failed to load systems.')))
   }, [])
@@ -62,6 +71,7 @@ export default function CircuitForm({
         description: description.trim() || null,
         change_note: changeNote.trim() || null,
       })
+      draft.clear()
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save circuit.'))
     } finally {
@@ -78,6 +88,7 @@ export default function CircuitForm({
       <SheetColumns
         left={<>
           <SheetError error={error} />
+          <DraftBanner draft={draft} />
           <SheetSection icon="link" title="Circuit">
             <div style={fieldRow}>
               <Cell basis={260} grow>

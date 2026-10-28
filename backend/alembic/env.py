@@ -20,6 +20,7 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.managed_document import ManagedDocument, ManagedDocumentEvent
 from app.modules.main.models.notification import Notification
 from app.modules.main.models.user_session import UserSession
+from app.modules.main.models.idempotency_record import IdempotencyRecord  # noqa: F401
 from app.modules.main.models.user_document import UserDocument
 from app.modules.main.models.module import Module
 from app.modules.main.models.role import Role  # noqa: F401
@@ -96,11 +97,12 @@ from app.modules.maintenance.models.counters import MaintenanceMeasuringPoint, M
 from app.modules.maintenance.models.permit import MaintenanceWorkPermit
 from app.modules.maintenance.models.wo_procurement import MaintenanceWorkOrderPurchaseRequest
 from app.modules.erp.models.service_visit import ServiceVisit
-from app.modules.sales.models.order import SalesOrder, SalesOrderLine, SalesOrderSchedule, SalesBillingPlanLine
+from app.modules.sales.models.order import SalesOrder, SalesOrderLine, SalesOrderSchedule, SalesBillingPlanLine, SalesOrderServiceRequest  # noqa: F401
 from app.modules.sales.models.amendment import SalesOrderAmendment
 from app.modules.sales.models.extension import SalesDeliveryExtension
 from app.modules.sales.models.approval import SalesApproval
 from app.modules.sales.models.attachment import SalesAttachment
+from app.modules.sales.models.crm_document_link import SalesOrderCrmDocument
 from app.modules.sales.models.delivery import SalesDeliveryEvent, SalesInvoiceLink
 from app.modules.sales.models.proforma import SalesProformaInvoice
 from app.modules.production.models.workstation import ProductionWorkstation
@@ -180,7 +182,7 @@ from app.modules.crm.models import (
     Organization, OrgContact, Inquiry, InquiryLineItem, Quotation, QuotationLineItem,
     Tender, Activity,
     CrmDocument, CrmStageLog, Product, PaymentTerm, CrmRndRequest, CrmRequirementComment,
-    CrmDocumentCategory, CrmEngagement,
+    CrmDocumentCategory,
 )
 from app.modules.accounts.models.gl_account import GLAccount
 from app.modules.accounts.models.bank_account import BankAccount

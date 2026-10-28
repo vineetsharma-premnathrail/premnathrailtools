@@ -13,6 +13,8 @@ import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, Req, Optional, 
 import { RRV_DEFAULT_REQUIRED_TESTS, RRV_PRIORITY_LABELS, RRV_TEST_TYPES, toOptions } from '@/components/production/rrvMeta'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import Select from '@/components/shared/Select'
 
 const errorBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
@@ -35,6 +37,12 @@ export default function NewRrvBuildPage() {
   const [tests, setTests] = useState<string[]>(RRV_DEFAULT_REQUIRED_TESTS)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+
+  const draft = useFormDraft('production-rrv-build-new', { form, tests },
+    (d) => {
+      if (d.form) setForm((f) => ({ ...f, ...d.form }))
+      if (Array.isArray(d.tests)) setTests(d.tests)
+    })
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -69,6 +77,7 @@ export default function NewRrvBuildPage() {
         target_completion_date: form.target_completion_date || null, target_handover_date: form.target_handover_date || null,
         warranty_months: months, required_tests: tests, remarks: blank(form.remarks),
       })
+      draft.clear()
       router.push(recordPath('/dashboard/production/rrv-builds', build))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to create the RRV build.'))
@@ -91,6 +100,7 @@ export default function NewRrvBuildPage() {
         </>}>
         <SheetColumns
           left={<>
+            <DraftBanner draft={draft} />
             {error && <div style={errorBox}>{Array.isArray(error) ? error.join(' ') : error}</div>}
 
             <SheetSection icon="building" title="Vehicle & Order">

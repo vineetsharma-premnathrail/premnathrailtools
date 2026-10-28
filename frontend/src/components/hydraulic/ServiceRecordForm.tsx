@@ -12,6 +12,8 @@ import DateField from '@/components/erp/DateField'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { SERVICE_TYPE_LABELS } from '@/components/hydraulic/labels'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 const inputStyle: React.CSSProperties = sheetInput
 const labelStyle: React.CSSProperties = sheetLabel
@@ -78,6 +80,21 @@ export default function ServiceRecordForm({
   const [users, setUsers] = useState<HydLookupOption[]>([])
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
+
+  const draft = useFormDraft(initial ? null : 'hyd-service-new',
+    {
+      systemId, planId, serviceType, serviceDate, reportedProblem, rootCause, workDone, checklist, performedBy, externalAgency,
+      runningHours, downtimeHours, fluidAdded, oilCondition, labourCost, otherCost, nextServiceDate, remarks,
+      parts: parts.map((p) => ({ ...p, key: 0 })),
+    },
+    (d) => {
+      setSystemId(d.systemId ?? ''); setPlanId(d.planId ?? ''); setServiceType(d.serviceType || 'preventive'); setServiceDate(d.serviceDate || todayIso())
+      setReportedProblem(d.reportedProblem ?? ''); setRootCause(d.rootCause ?? ''); setWorkDone(d.workDone ?? ''); setChecklist(d.checklist ?? '')
+      setPerformedBy(d.performedBy ?? ''); setExternalAgency(d.externalAgency ?? ''); setRunningHours(d.runningHours ?? '')
+      setDowntimeHours(d.downtimeHours ?? ''); setFluidAdded(d.fluidAdded ?? ''); setOilCondition(d.oilCondition ?? '')
+      setLabourCost(d.labourCost ?? ''); setOtherCost(d.otherCost ?? ''); setNextServiceDate(d.nextServiceDate ?? ''); setRemarks(d.remarks ?? '')
+      setParts((d.parts || []).map((p: Omit<PartRow, 'key'>) => ({ ...p, key: nextKey() })))
+    })
 
   useEffect(() => {
     if (!initial) hydraulicApi.lookupSystems().then(setSystems).catch((err) => setError(extractErrorMessages(err, 'Failed to load the system list.')))
@@ -168,6 +185,7 @@ export default function ServiceRecordForm({
         remarks: remarks.trim() || null,
         parts: filled.map((r) => ({ spare_part_id: Number(r.spare_part_id), quantity: Number(r.quantity), remarks: r.remarks.trim() || null })),
       })
+      draft.clear()
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save service record.'))
     } finally {
@@ -186,6 +204,7 @@ export default function ServiceRecordForm({
     >
       <SheetBody>
         <SheetError error={error} />
+        <DraftBanner draft={draft} />
 
         <SheetSection icon="tool" title="Job">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>

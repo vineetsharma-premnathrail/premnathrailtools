@@ -13,6 +13,8 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import Select from '@/components/shared/Select'
 import { CONTROL } from '@/lib/theme'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { FormSheet, SheetSection, SheetIcon, SheetError, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
 type Line = { itemId: string; quantity: string; remarks: string }
@@ -33,6 +35,11 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
   const [lines, setLines] = useState<Line[]>([emptyLine()])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  const draft = useFormDraft('store-before-po-receipt-new', { vendorId, receivedDate, locationId, challan, invoice, remarks, lines }, (d) => {
+    setVendorId(d.vendorId ?? ''); setReceivedDate(d.receivedDate || new Date().toLocaleDateString('en-CA')); setLocationId(d.locationId ?? '')
+    setChallan(d.challan ?? ''); setInvoice(d.invoice ?? ''); setRemarks(d.remarks ?? '')
+    setLines(d.lines?.length ? d.lines : [emptyLine()])
+  })
 
   useEffect(() => {
     const fail = (what: string) => (err: unknown) => setError(extractErrorMessages(err, `Could not load ${what} — close this form and open it again.`))
@@ -75,6 +82,7 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
         try { latest = await prePoStoreApi.uploadAttachment(saved.id, file, type) }
         catch (err) { notes.push(`${file.name}: ${extractErrorMessages(err, 'upload failed').join(' ')}`) }
       }
+      draft.clear()
       onSaved(latest, notes.length ? `${saved.receipt_number} is saved, but a file could not be attached — ${notes.join(' ')} Open the receipt and attach it again.` : undefined)
     } catch (err) {
       setError(extractErrorMessages(err, 'Could not save the Before PO receipt — check the vendor, items and quantities and try again.'))
@@ -89,6 +97,7 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
         <button type="submit" disabled={busy} data-tour="store-bpo-save-btn" style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Save receipt'}</button>
       </>}>
       <div style={{ padding: '20px 24px' }}>
+        <DraftBanner draft={draft} />
         <SheetError error={error} />
         <div role="note" style={{ padding: '10px 14px', marginBottom: 18, borderRadius: 10, background: 'rgba(234,88,12,0.08)', border: '1px solid rgba(234,88,12,0.25)', color: '#9a3412', fontSize: 13 }}>
           Goods recorded here are held in store and are NOT in stock yet. Stock is added by the GRN once Procurement&apos;s PO is approved.

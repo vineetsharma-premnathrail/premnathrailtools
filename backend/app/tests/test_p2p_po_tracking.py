@@ -2,6 +2,7 @@
 approval is "issued" in its own status but is not an order yet), server-side
 filters / paging with real totals, one row per split PO, and the daily overdue
 reminder that only chases released POs with a balance on an open requisition."""
+from app.tests.p2p_workflow_helpers import attach_tally_po
 from datetime import date, timedelta
 
 import pytest
@@ -196,6 +197,7 @@ def test_split_pos_are_separate_rows_with_their_own_vendor_stage_and_value(clien
     pos, _loc = _split(client, s, q1, q2)
     p_a, p_b = pos[s["v2"].id], pos[s["v1"].id]
     for p in (p_a, p_b):
+        attach_tally_po(db, p['id'])
         assert client.post(f"{RFQS}/{s['rfq'].id}/po-draft/{p['id']}/submit", headers=auth_header(s["buyer"])).status_code == 200
     _decide_all(client, db, "p2p_purchase_order", p_a["id"], s["approvers"])
     db.expire_all()

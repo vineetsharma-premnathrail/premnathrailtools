@@ -13,6 +13,8 @@ import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheet
 import { ErrorBanner, sheetGap } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { RowCount } from '@/components/shared/ui'
 
 function emptyResult(sortOrder: number): QualityInspectionResultInput {
@@ -45,6 +47,16 @@ export default function NewFinalInspectionPage() {
   const [status, setStatus] = useState<QualityInspectionStatus>('pending')
   const [results, setResults] = useState<QualityInspectionResultInput[]>([emptyResult(1)])
 
+  const draft = useFormDraft('quality-final-inspection-new',
+    { itemName, itemCode, batchNumber, quantityInspected, quantityAccepted, quantityRejected, projectLabel, inspectionPlanId, inspectionDate, remarks, status, results },
+    (d) => {
+      setItemName(d.itemName || ''); setItemCode(d.itemCode || ''); setBatchNumber(d.batchNumber || '')
+      setQuantityInspected(d.quantityInspected || ''); setQuantityAccepted(d.quantityAccepted || ''); setQuantityRejected(d.quantityRejected || '')
+      setProjectLabel(d.projectLabel || ''); setInspectionPlanId(d.inspectionPlanId || '')
+      if (d.inspectionDate) setInspectionDate(d.inspectionDate)
+      setRemarks(d.remarks || ''); if (d.status) setStatus(d.status)
+      setResults(d.results?.length ? d.results : [emptyResult(1)])
+    })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | string[]>('')
 
@@ -83,6 +95,7 @@ export default function NewFinalInspectionPage() {
         remarks: remarks.trim() || undefined,
         results: filledResults.map((r, i) => ({ ...r, sort_order: i + 1 })),
       })
+      draft.clear()
       router.push(recordPath('/dashboard/quality/final-inspection', inspection))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to create Final Inspection.'))
@@ -103,6 +116,7 @@ export default function NewFinalInspectionPage() {
       <SheetColumns
         left={<>
           <ErrorBanner error={error} />
+          <DraftBanner draft={draft} />
           <SheetSection icon="box" title="Inspection Details">
             <div style={row}>
               <F label={<>Item Name <Req /></>}><input style={sheetInput} value={itemName} onChange={(e) => setItemName(e.target.value)} /></F>

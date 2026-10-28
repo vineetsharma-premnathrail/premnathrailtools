@@ -17,6 +17,7 @@ from app.modules.crm.models.inquiry import Inquiry
 from app.modules.crm.models.organization import Organization
 from app.modules.main.models.user import User
 from app.modules.main.services import managed_documents
+from app.tests.quote_lines import LINE_REF, quote_product  # noqa: F401 — autouse fixture
 
 
 class FakeSharePoint:
@@ -81,7 +82,7 @@ def _quotation(client, db, owner):
     db.commit()
     resp = client.post(f"/api/v1/crm/inquiries/{inquiry.id}/quotations", json={
         "client_name": org.name, "payment_terms": "1. 30% advance. 2. Balance before dispatch.",
-        "items": [{"description": "Rail cum road vehicle", "model_number": "RRV-4", "quantity": 1, "unit_price": 4850000, "gst_percent": 18}],
+        "items": [{"description": "Rail cum road vehicle", "model_number": "RRV-4", "quantity": 1, "unit_price": 4850000, "gst_percent": 18, **LINE_REF}],
     }, headers=_auth(owner))
     assert resp.status_code == 201, resp.text
     return inquiry.id, resp.json()

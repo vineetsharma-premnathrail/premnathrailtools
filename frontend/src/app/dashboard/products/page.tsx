@@ -1,13 +1,13 @@
 'use client'
 
-import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { recordPath } from '@/lib/recordRef'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { productsApi } from '@/lib/api'
-import { FinishedProduct, ProductApplication } from '@/types'
+import { FinishedProduct } from '@/types'
 import { TEXT } from '@/lib/theme'
 import ProductsNav from '@/components/products/ProductsNav'
 import { inputStyle, primaryBtnStyle, RowCount } from '@/components/shared/ui'
@@ -21,13 +21,11 @@ export default function ProductsPage() {
   const { can } = useCan()
   const router = useRouter()
   const [rows, setRows] = useState<FinishedProduct[]>([])
-  const [applications, setApplications] = useState<ProductApplication[]>([])
-  const [filters, setFilters] = useState({ search: '', product_type: '', status: '', application_id: '' })
+  const [filters, setFilters] = useState({ search: '', product_type: '', status: '' })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
 
   useEffect(() => {
-    if (isAuthorized) productsApi.listApplications().then(setApplications).catch(() => {})
   }, [isAuthorized])
 
   useEffect(() => {
@@ -60,23 +58,21 @@ export default function ProductsPage() {
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
         <input style={{ ...inputStyle, flex: '1 1 220px', maxWidth: 320 }} placeholder="Search code, name or model…" value={filters.search} onChange={(e) => setF('search', e.target.value)} />
-        <Select style={{ ...inputStyle, flex: '0 1 200px' }} value={filters.product_type} onChange={(e) => setF('product_type', e.target.value)}>
-          <option value="">All types</option>
-          {Object.entries(PRODUCT_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </Select>
-        <Select style={{ ...inputStyle, flex: '0 1 170px' }} value={filters.status} onChange={(e) => setF('status', e.target.value)}>
-          <option value="">All statuses</option>
-          {Object.entries(PRODUCT_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </Select>
-        <Select style={{ ...inputStyle, flex: '0 1 220px' }} value={filters.application_id} onChange={(e) => setF('application_id', e.target.value)}>
-          <option value="">All applications</option>
-          {applications.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </Select>
+        <FilterMenu
+          fields={[
+            { key: 'product_type', label: 'Type', value: filters.product_type, allLabel: 'All types',
+              options: Object.entries(PRODUCT_TYPE_LABELS).map(([value, label]) => ({ value, label })) },
+            { key: 'status', label: 'Status', value: filters.status, allLabel: 'All statuses',
+              options: Object.entries(PRODUCT_STATUS_LABELS).map(([value, label]) => ({ value, label })) },
+          ]}
+          onChange={(k, v) => setF(k as keyof typeof filters, v)}
+          onClear={() => setFilters((f) => ({ ...f, product_type: '', status: '' }))}
+        />
       </div>
 
       <div style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-          <thead><tr>{['Code', 'Name', 'Type', 'Model', 'Applications', 'Status'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
+          <thead><tr>{['Code', 'Name', 'Type', 'Model', 'Status'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
             {loading && rows.length === 0 && <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>}
             {!loading && rows.length === 0 && (
@@ -90,7 +86,6 @@ export default function ProductsPage() {
                 <td style={tdStyle}>{p.name}</td>
                 <td style={tdStyle}>{PRODUCT_TYPE_LABELS[p.product_type] || p.product_type}</td>
                 <td style={tdStyle}>{p.model_number || '—'}</td>
-                <td style={tdStyle}>{p.applications.length ? p.applications.map((a) => a.name).join(', ') : '—'}</td>
                 <td style={tdStyle}><Pill text={PRODUCT_STATUS_LABELS[p.status] || p.status} hex={PRODUCT_STATUS_HEX[p.status]} /></td>
               </tr>
             ))}

@@ -4,7 +4,8 @@
                    see customer_master.derive_tax_ids).
 * International -> Tax / VAT ID, Company Registration Number (format only, no
                    country-specific checks).
-* The Country field is independent: nothing here reads it to decide the scope.
+* The Country field never decides the scope, but Domestic must be India and
+  International must not be India (owner, 2026-10-27).
 
 Pure functions: no database, no FastAPI, so the schemas and the routes share the
 same rules and the same wording.
@@ -69,6 +70,20 @@ def domestic_country_message(country: str | None) -> str | None:
     c = blank_to_none(country)
     if c is not None and c.lower() != "india":
         return DOMESTIC_COUNTRY_MESSAGE
+    return None
+
+
+INTERNATIONAL_COUNTRY_MESSAGE = (
+    "An International organization is outside India, so its country can't be India. Pick its country, "
+    "or switch Organization Scope to Domestic for an Indian organization."
+)
+
+
+def international_country_message(country: str | None) -> str | None:
+    """International organizations are never in India (owner, 2026-10-27)."""
+    c = blank_to_none(country)
+    if c is not None and c.lower() == "india":
+        return INTERNATIONAL_COUNTRY_MESSAGE
     return None
 
 

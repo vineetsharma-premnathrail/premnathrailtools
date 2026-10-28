@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi, organizationApi } from '@/lib/api'
 import { StoreLocation, Branch } from '@/types'
@@ -31,6 +33,9 @@ export default function StoreLocationsPage() {
   const [address, setAddress] = useState('')
   const [saving, setSaving] = useState(false)
   const [formErrors, setFormErrors] = useState<string[]>([])
+  const draft = useFormDraft(showModal ? 'store-location-new' : null, { name, code, branchId, warehouseType, address }, (d) => {
+    setName(d.name ?? ''); setCode(d.code ?? ''); setBranchId(d.branchId ?? ''); setWarehouseType(d.warehouseType ?? ''); setAddress(d.address ?? '')
+  })
   const [deleteTarget, setDeleteTarget] = useState<StoreLocation | null>(null)
   const [deleteErrors, setDeleteErrors] = useState<string[]>([])
 
@@ -83,6 +88,7 @@ export default function StoreLocationsPage() {
         warehouse_type: warehouseType.trim() || undefined,
         address: address.trim() || undefined,
       })
+      draft.clear()
       setShowModal(false)
       load()
     } catch (err) {
@@ -144,6 +150,7 @@ export default function StoreLocationsPage() {
             <button data-tour="wh-save-btn" type="button" onClick={handleCreate} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}><SheetIcon name="plus" size={16} />{saving ? 'Saving…' : 'Save Store'}</button>
           </>}>
           <div style={{ padding: '20px 24px' }}>
+            <DraftBanner draft={draft} />
             {formErrors.length > 0 && (
               <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
                 {formErrors.map((e, i) => <div key={i}>{e}</div>)}

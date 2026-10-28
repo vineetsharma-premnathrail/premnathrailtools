@@ -19,6 +19,7 @@ import { formatDate } from '@/lib/format'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ExportDialog from '@/components/erp/ExportDialog'
 import CrmImportDialog from '@/components/crm/CrmImportDialog'
+import { TENDER_STATUSES } from '@/components/crm/constants'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { PINNED_INQUIRY_TENDER_KEY } from '@/lib/crmShortcuts'
@@ -49,7 +50,6 @@ interface CombinedRow {
   org_id: number
   title: string
   product: string
-  stage: string
   status: string
   secondary: string
   date: string
@@ -144,17 +144,17 @@ export default function InquiriesPage() {
 
   const orgById = useMemo(() => new Map(organizations.map((o) => [o.id, o])), [organizations])
 
-  type ColFilterKey = 'stage' | 'status' | 'org_name' | 'created_by_name'
-  const COL_FILTER_KEYS: ColFilterKey[] = ['stage', 'status', 'org_name', 'created_by_name']
-  const [colFilters, setColFilters] = useState<Record<ColFilterKey, string>>({ stage: '', status: '', org_name: '', created_by_name: '' })
+  type ColFilterKey = 'status' | 'org_name' | 'created_by_name'
+  const COL_FILTER_KEYS: ColFilterKey[] = ['status', 'org_name', 'created_by_name']
+  const [colFilters, setColFilters] = useState<Record<ColFilterKey, string>>({ status: '', org_name: '', created_by_name: '' })
   const setColFilter = (key: ColFilterKey, value: string) => setColFilters((f) => ({ ...f, [key]: value }))
 
   const clearFilters = () => {
     setSearch('')
-    setColFilters({ stage: '', status: '', org_name: '', created_by_name: '' })
+    setColFilters({ status: '', org_name: '', created_by_name: '' })
   }
 
-  const combined = useMemo<CombinedRow[]>(() => {
+  const allRows = useMemo<CombinedRow[]>(() => {
     const fromInquiries: CombinedRow[] = inquiries.map((i) => ({
       key: `inquiry-${i.id}`,
       id: i.id,
@@ -164,7 +164,6 @@ export default function InquiriesPage() {
       org_id: i.org_id,
       title: i.product || 'Not provided',
       product: i.product || 'Not provided',
-      stage: i.current_stage || 'Not provided',
       status: i.status || 'Not provided',
       secondary: i.priority || 'Not provided',
       date: i.next_followup_date || 'Not provided',
@@ -181,7 +180,6 @@ export default function InquiriesPage() {
       org_id: t.org_id,
       title: t.tender_name || t.tender_number || 'Not provided',
       product: t.tender_category || 'Not provided',
-      stage: t.current_stage || 'Not provided',
       status: t.status || 'Not provided',
       secondary: t.tender_value != null ? `${t.currency || ''} ${t.tender_value.toLocaleString('en-IN')}` : 'Not provided',
       date: t.submission_date || 'Not provided',
@@ -189,12 +187,12 @@ export default function InquiriesPage() {
       created_by_name: t.created_by_name || 'Not provided',
       org_name: orgById.get(t.org_id)?.name || 'Not provided',
     }))
-    const all = [...fromInquiries, ...fromTenders]
-    return typeFilter === 'all' ? all : all.filter((r) => r.kind === typeFilter)
-  }, [inquiries, tenders, typeFilter, orgById])
+    return [...fromInquiries, ...fromTenders]
+  }, [inquiries, tenders, orgById])
+  const combined = useMemo(() => (typeFilter === 'all' ? allRows : allRows.filter((r) => r.kind === typeFilter)), [allRows, typeFilter])
 
   const colFilterOptions = useMemo(() => {
-    const options: Record<ColFilterKey, string[]> = { stage: [], status: [], org_name: [], created_by_name: [] }
+    const options: Record<ColFilterKey, string[]> = { status: [], org_name: [], created_by_name: [] }
     for (const key of COL_FILTER_KEYS) {
       const values = new Set<string>()
       for (const r of combined) {
@@ -228,7 +226,6 @@ export default function InquiriesPage() {
     { label: 'ID', key: 'universal_id', type: 'sort' },
     { label: 'Customer Organization', key: 'org_name', type: 'none' },
     { label: 'Product', key: 'product', type: 'none' },
-    { label: 'Stage', key: 'stage', type: 'filter' },
     { label: 'Created Date', key: 'created_at', type: 'sort', sortLabels: ['Old', 'Latest'] },
     { label: 'Created By', key: 'created_by_name', type: 'filter' },
   ]
@@ -255,23 +252,23 @@ export default function InquiriesPage() {
   }, [filteredRows, pinnedKeys, sortKey, sortDir])
 
   // Header counters: computed from the rows the table shows (search, type and column filters already applied).
+  // Counters follow Search and the column filters, but not Type — leads, inquiries and
+  // tenders are always all counted (owner, 2026-10-27).
   const stats = useMemo(() => {
+    const rows = allRows.filter((r) => COL_FILTER_KEYS.every((key) => !colFilters[key] || r[key] === colFilters[key]))
     const isClosed = (r: CombinedRow) => r.status.startsWith('Closed')
-    const notOrdered = (r: CombinedRow) => /not ordered/i.test(r.status)
     return {
-      // Active only (owner, 2026-10-27): closed (won / lost) and cancelled ones are not counted here.
-      inquiries: filteredRows.filter((r) => r.kind === 'inquiry' && !isClosed(r)).length,
-      tenders: filteredRows.filter((r) => r.kind === 'tender' && !isClosed(r) && r.status !== 'Tender Cancelled').length,
-      open: filteredRows.filter((r) => !isClosed(r) && r.status !== 'Tender Cancelled').length,
-      won: filteredRows.filter((r) => isClosed(r) && !notOrdered(r)).length,
-      lost: filteredRows.filter((r) => isClosed(r) && notOrdered(r)).length,
-      // Where the work sits now (owner, 2026-10-27): inquiry and tender rows at these statuses.
-      reqReceived: filteredRows.filter((r) => r.kind === 'inquiry' && r.status === 'Requirement Received').length,
-      quoteSent: filteredRows.filter((r) => r.kind === 'inquiry' && r.status === 'Quotation Sent').length,
-      published: filteredRows.filter((r) => r.kind === 'tender' && r.status === 'Tender Published').length,
-      participation: filteredRows.filter((r) => r.kind === 'tender' && r.status === 'Tender Participation').length,
+      leads: rows.filter((r) => r.kind === 'inquiry' && r.status === 'Lead').length,
+      // Active inquiries past the lead step; closed (won / lost) ones are not counted.
+      inquiries: rows.filter((r) => r.kind === 'inquiry' && r.status !== 'Lead' && !isClosed(r)).length,
+      // Every tender we logged was published; cancelled ones are left out.
+      published: rows.filter((r) => r.kind === 'tender' && r.status !== 'Tender Cancelled').length,
+      // Participated = reached 'Tender Participation' or any later status.
+      participation: rows.filter((r) => r.kind === 'tender' && r.status !== 'Tender Cancelled'
+        && TENDER_STATUSES.indexOf(r.status) >= TENDER_STATUSES.indexOf('Tender Participation')).length,
     }
-  }, [filteredRows])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allRows, colFilters])
 
   const openRow = (row: CombinedRow) => {
     router.push(recordHref('/dashboard/crm/inquiries', row.record, 'id', { type: row.kind }))
@@ -284,19 +281,11 @@ export default function InquiriesPage() {
   const header = (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 14 }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Inquiries &amp; Tenders</h1>
-          <p style={{ fontSize: 13, color: '#57534e', margin: '4px 0 0' }}>{loading ? 'Loading…' : `${sortedRows.length} found`}</p>
-        </div>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Inquiries &amp; Tenders</h1>
         {!loading && (
           <div data-tour="crm-inq-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0 14px' }}>
-            <StatChip label="Active inquiries" value={stats.inquiries} color="#3b82f6" />
-            <StatChip label="Active tenders" value={stats.tenders} color="#3b82f6" />
-            <StatChip label="Open" value={stats.open} color="#ca8a04" />
-            <StatChip label="Won" value={stats.won} color="#16a34a" />
-            <StatChip label="Lost" value={stats.lost} color="#78716c" />
-            <StatChip label="Requirement received" value={stats.reqReceived} color="#7c3aed" />
-            <StatChip label="Quotation sent" value={stats.quoteSent} color="#0891b2" />
+            <StatChip label="Leads" value={stats.leads} color="#475569" />
+            <StatChip label="Inquiries" value={stats.inquiries} color="#3b82f6" />
             <StatChip label="Tenders published" value={stats.published} color="#7c3aed" />
             <StatChip label="Tender participation" value={stats.participation} color="#0891b2" />
           </div>
@@ -314,19 +303,19 @@ export default function InquiriesPage() {
             data-tour="iq-search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search ID, customer organization, product, owner, zone, stage..."
+            placeholder="Search ID, customer organization, product, owner, zone..."
             style={{ ...inputStyle, flex: '1 1 260px', minWidth: 200, width: 'auto' }}
           />
           <FilterMenu
             tourId="iq-filter-btn"
             fields={[
               { key: 'kind', label: 'Type', value: typeFilter, defaultValue: 'inquiry', allLabel: 'Inquiries', options: [{ value: 'tender', label: 'Tenders' }, { value: 'all', label: 'Inquiries and tenders' }] },
-              ...([['status', 'Status'], ['stage', 'Stage'], ['org_name', 'Customer Organization'], ['created_by_name', 'Created By']] as [ColFilterKey, string][]).map(([key, label]) => ({
+              ...([['status', 'Status'], ['org_name', 'Customer Organization'], ['created_by_name', 'Created By']] as [ColFilterKey, string][]).map(([key, label]) => ({
                 key, label, value: colFilters[key], options: colFilterOptions[key].map((v) => ({ value: v, label: v })),
               })),
             ]}
             onChange={(key, v) => { if (key === 'kind') setTypeFilter(v as 'all' | Kind); else setColFilter(key as ColFilterKey, v) }}
-            onClear={() => { setTypeFilter('inquiry'); setColFilters({ stage: '', status: '', org_name: '', created_by_name: '' }) }}
+            onClear={() => { setTypeFilter('inquiry'); setColFilters({ status: '', org_name: '', created_by_name: '' }) }}
           />
           <button onClick={clearFilters} data-tour="iq-clear-btn" type="button" style={secondaryBtnStyle}>Clear</button>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -339,7 +328,7 @@ export default function InquiriesPage() {
       {showExport && (
         <ExportDialog onClose={() => setShowExport(false)} filename="inquiries_tenders" noun="inquiries & tenders" dateLabel="Created date"
           download={(params) => crmApi.exportExcel('inquiries-tenders', params)}
-          items={sortedRows.map((r) => ({ id: r.key, label: `${r.universal_id} — ${r.title || r.product || ''}`, sub: [r.kind === 'tender' ? 'Tender' : 'Inquiry', r.org_name, r.stage].filter(Boolean).join(' · ') }))}
+          items={sortedRows.map((r) => ({ id: r.key, label: `${r.universal_id} — ${r.title || r.product || ''}`, sub: [r.kind === 'tender' ? 'Tender' : 'Inquiry', r.org_name].filter(Boolean).join(' · ') }))}
           selectionParams={(keys) => {
             const byKey = new Map(sortedRows.map((r) => [r.key, r]))
             const picked = keys.map((k) => byKey.get(String(k))).filter((r): r is CombinedRow => !!r)
@@ -428,8 +417,8 @@ export default function InquiriesPage() {
             </tr>
           </thead>
           <tbody data-tour="iq-table-rows">
-            {loading && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && paged.length === 0 && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No records found.</td></tr>}
+            {loading && <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
+            {!loading && paged.length === 0 && <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No records found.</td></tr>}
             {paged.map((r, idx) => {
               const pinned = pinnedKeys.includes(r.key)
               return (
@@ -451,7 +440,6 @@ export default function InquiriesPage() {
                 </td>
                 <td style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: '#1f1108', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.35 }}>{orgById.get(r.org_id)?.name || 'Not provided'}</td>
                 <td title={r.product} style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.product}</td>
-                <td title={r.stage} style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.35 }}>{r.stage}</td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.created_at === 'Not provided' ? r.created_at : formatDate(r.created_at)}</td>
                 <td title={r.created_by_name} style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.created_by_name}</td>
               </tr>

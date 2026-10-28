@@ -13,6 +13,8 @@ import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheet
 import { ErrorBanner } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 interface ItemOpt { id: number; item_code: string; item_name: string }
 
@@ -34,6 +36,9 @@ export default function NewComplaintPage() {
     description: '', complaint_date: today,
   })
   const [photos, setPhotos] = useState<File[]>([])
+  const draft = useFormDraft(meta ? 'quality-complaint-new' : null, { form, photos }, (d) => {
+    if (d.form) setForm((f) => ({ ...f, ...d.form }))
+  })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
 
@@ -67,6 +72,7 @@ export default function NewComplaintPage() {
       if (photos.length) {
         try { await qualityApi.uploadComplaintPhotos(c.id, photos) } catch { /* photo upload failure shouldn't block logging the complaint */ }
       }
+      draft.clear()
       router.push(recordPath('/dashboard/quality/complaints', c))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to log the complaint.'))
@@ -87,6 +93,7 @@ export default function NewComplaintPage() {
       <SheetColumns
         left={<>
           <ErrorBanner error={error} />
+          <DraftBanner draft={draft} />
           <SheetSection icon="building" title="Where it came from">
             <div style={row}>
               <F label="Source">

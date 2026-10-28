@@ -16,6 +16,8 @@ import {
   AttachmentList, ErrorBanner, FlagPill, Notice, PRIORITY_HEX, PRIORITY_LABELS, PROJECT_LABELS, Pill, ProgressBar, TASK_HEX, TASK_LABELS,
   actionBtn, smallActionBtn, sectionStyle, todayIso,
 } from './pmUi'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { FormSheet, Optional, Req, SHEET, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import { MentionComposer, MentionText } from './PmChat'
 import { recordPath } from '@/lib/recordRef'
@@ -62,6 +64,9 @@ export default function TaskDetailView({ taskId }: { taskId: number }) {
     }
   }
 
+  const subDraft = useFormDraft(subOpen && d ? `projects-subtask-new-${d.task.id}` : null, { subTitle, subDue },
+    (v) => { setSubTitle(v.subTitle ?? ''); setSubDue(v.subDue ?? '') })
+
   if (!d) return <><ErrorBanner error={error} />{!error && <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>}</>
   const t = d.task
   const workable = t.is_assignee && t.project_status === 'active' && !['submitted', 'achieved', 'cancelled'].includes(t.milestone_status || '')
@@ -72,7 +77,7 @@ export default function TaskDetailView({ taskId }: { taskId: number }) {
 
   const addSub = async () => {
     if (!subTitle.trim()) { setError('Write the sub-task first.'); return }
-    if (await act(() => pmWorkApi.addSubtask(t.id, { title: subTitle.trim(), due_date: subDue || null }), 'Could not add the sub-task.')) { setSubTitle(''); setSubDue(''); setSubOpen(false) }
+    if (await act(() => pmWorkApi.addSubtask(t.id, { title: subTitle.trim(), due_date: subDue || null }), 'Could not add the sub-task.')) { subDraft.clear(); setSubTitle(''); setSubDue(''); setSubOpen(false) }
   }
   const addTime = async () => {
     const h = Number(logHours)
@@ -226,6 +231,7 @@ export default function TaskDetailView({ taskId }: { taskId: number }) {
             <button type="button" onClick={addSub} disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="plus" size={16} />{busy ? 'Saving…' : 'Add sub-task'}</button>
           </>}>
           <div style={{ padding: '20px 24px' }}>
+            <DraftBanner draft={subDraft} />
             <ErrorBanner error={error} />
             <SheetSection icon="list" title="Sub-task">
               <div data-tour="pm-task-sub-title">

@@ -36,6 +36,8 @@ class ProductCreate(BaseModel):
     status: str = "active"
     short_description: str | None = None
     description: str | None = None
+    # Free text, one specification per line (e.g. "Max speed on rail: 40 km/h").
+    technical_specification: str | None = None
     hsn_code: str | None = None
     uom: str = "Nos"
     warranty_months: int | None = None
@@ -51,6 +53,8 @@ class ProductUpdate(BaseModel):
     status: str | None = None
     short_description: str | None = None
     description: str | None = None
+    # Free text, one specification per line (e.g. "Max speed on rail: 40 km/h").
+    technical_specification: str | None = None
     hsn_code: str | None = None
     uom: str | None = None
     warranty_months: int | None = None
@@ -71,6 +75,8 @@ class ProductResponse(BaseModel):
     status: str
     short_description: str | None = None
     description: str | None = None
+    # Free text, one specification per line (e.g. "Max speed on rail: 40 km/h").
+    technical_specification: str | None = None
     hsn_code: str | None = None
     uom: str
     warranty_months: int | None = None

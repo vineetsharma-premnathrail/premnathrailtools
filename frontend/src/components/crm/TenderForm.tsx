@@ -4,6 +4,8 @@ import Select from '@/components/shared/Select'
 import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState } from 'react'
 import { useCan } from '@/lib/permissions'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { crmApi } from '@/lib/api'
 import { Tender, Organization, OrgContact } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
@@ -155,6 +157,9 @@ export default function TenderForm({
   useEffect(() => { if (error && (!Array.isArray(error) || error.length)) errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, [error])
 
   const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
+  // A new tender's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft(initial ? null : 'crm-tender-new', { form, tenderPortalCustom, newContact },
+    (d) => { setForm(d.form); setTenderPortalCustom(d.tenderPortalCustom || ''); if (d.newContact) setNewContact(d.newContact) })
 
   useEffect(() => { crmApi.listOrganizations({ picker: true }).then(setOrganizations) }, [])
 
@@ -261,6 +266,7 @@ export default function TenderForm({
         if (payload[k] === '' || payload[k] === undefined) delete payload[k]
       })
       await onSubmit(payload)
+      draft.clear()
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save tender.'))
     } finally {
@@ -288,6 +294,7 @@ export default function TenderForm({
         document.body,
       )}
       <div ref={errorRef} style={{ padding: hasError ? '16px 24px 0' : 0 }}><SheetError error={error} /></div>
+      {draft.restored && <div style={{ padding: '16px 24px 0' }}><DraftBanner draft={draft} style={{ marginBottom: 0 }} /></div>}
 
       <SheetColumns
         left={<>

@@ -59,9 +59,18 @@ INQ_STAGES = [
 
 # Mirrors INQUIRY_STATUSES in frontend/src/components/crm/constants.ts.
 INQ_STATUSES = [
-    "Requirement Received", "R&D / Technical Review", "Qualified", "Quotation Sent",
-    "Order Received", "Under Production", "Closed - Ordered", "Closed - Not Ordered",
+    "Lead", "Requirement Received", "R&D / Technical Review", "Qualified", "Quotation Sent",
+    "Order Received", "Closed - Ordered", "Closed - Not Ordered",
 ]
+
+# The stage is no longer shown or picked in CRM (owner, 2026-10-27): it follows the
+# status, so the Sales handoff (needs stage 'Order Received') and lost/won logic keep working.
+STATUS_STAGE = {
+    "Lead": "Requirement Received", "Requirement Received": "Requirement Received",
+    "R&D / Technical Review": "Requirement Received", "Qualified": "Requirement Qualified",
+    "Quotation Sent": "Quotation Sent", "Order Received": "Order Received",
+    "Closed - Ordered": "Order Received", "Closed - Not Ordered": "Closed – Not Ordered",
+}
 
 
 def _check_choice(updates: dict, record, field: str, allowed: list[str], label: str) -> None:
@@ -211,6 +220,7 @@ async def create_inquiry(
     _check_choice({"status": payload.status}, None, "status", INQ_STATUSES, "inquiry status")
 
     data = payload.model_dump(exclude={"additional_items"})
+    data["current_stage"] = STATUS_STAGE.get(data.get("status"), data.get("current_stage"))
     data["inquiry_date"] = data.get("inquiry_date") or date.today()
     _check_doc_date(data["inquiry_date"])
     # The BD owner is always the person who logs the inquiry — not picked on the form.
@@ -331,11 +341,11 @@ async def update_inquiry(
         "org_contact_id" in updates and updates["org_contact_id"] != inquiry.org_contact_id
     ):
         _check_org_and_contact(db, updates.get("org_id") or inquiry.org_id, updates.get("org_contact_id", inquiry.org_contact_id), "inquiry")
-    # Closing the lead as not ordered also closes its pipeline stage (owner, 2026-10-27:
-    # the status changed but the stage tracker still showed the old stage).
-    if (updates.get("status") == "Closed - Not Ordered" and "current_stage" not in updates
-            and inquiry.current_stage != "Closed – Not Ordered"):
-        updates["current_stage"] = "Closed – Not Ordered"
+    # The stage follows the status (STATUS_STAGE); a status change already passed
+    # ensure_no_live_order above, so no separate forward-only stage check here.
+    if ("status" in updates and "current_stage" not in updates
+            and STATUS_STAGE.get(updates["status"], inquiry.current_stage) != inquiry.current_stage):
+        updates["current_stage"] = STATUS_STAGE[updates["status"]]
     stage_changed = "current_stage" in updates and updates["current_stage"] != inquiry.current_stage
     changed = [f for f, v in updates.items() if str(getattr(inquiry, f, None)) != str(v)]
     # Stage changes get their own timeline entry (_log_stage below) — everything else
@@ -449,7 +459,7 @@ async def create_technical_offer_request(
     ensure_not_with_sales(db, inquiry_id=inquiry.id, label="inquiry")
     missing = [label for label, ok in (
         ("Product", bool(inquiry.product)),
-        ("Specification or Requirement Description", bool(inquiry.product_spec or inquiry.requirement_desc)),
+        ("Specification", bool(inquiry.product_spec)),
     ) if not ok]
     if missing:
         raise HTTPException(status_code=422, detail=f"Fill {' and '.join(missing)} on inquiry {inquiry.universal_id} (click Edit) before sending the Technical Requirement to R&D — otherwise R&D gets a document with no requirement details.")

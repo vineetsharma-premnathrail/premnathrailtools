@@ -6,6 +6,8 @@ import { ProductionBom, ProductionLookupOption } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import Checkbox from '@/components/Checkbox'
 import { extractErrorMessages } from '@/lib/validation'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import DateField from '@/components/erp/DateField'
 import { productionEngineeringLookups } from '@/lib/productionEngineeringApi'
 import { useCan } from '@/lib/permissions'
@@ -95,6 +97,15 @@ export default function BomForm({
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
 
+  const draft = useFormDraft(initial ? null : 'production-bom-new',
+    { productId, baseQty, description, remarks, validFrom, validTo, changeNumber, items, ops },
+    (d) => {
+      setProductId(d.productId ?? ''); setBaseQty(d.baseQty ?? '1'); setDescription(d.description ?? ''); setRemarks(d.remarks ?? '')
+      setValidFrom(d.validFrom ?? ''); setValidTo(d.validTo ?? ''); setChangeNumber(d.changeNumber ?? '')
+      setItems(d.items?.length ? d.items.map((r) => ({ ...r, key: nextKey() })) : [blankItem()])
+      setOps((d.ops ?? []).map((o) => ({ ...o, key: nextKey() })))
+    })
+
   useEffect(() => {
     productionApi.lookupItems({ limit: 5000 }).then(setItemOptions).catch((err) => setError(extractErrorMessages(err, 'Failed to load Store items.')))
     productionApi.lookupWorkstations().then(setWorkstations).catch((err) => setError(extractErrorMessages(err, 'Failed to load workstations.')))
@@ -157,6 +168,7 @@ export default function BomForm({
           external_cost: o.control_key === 'external' && o.external_cost !== '' ? Number(o.external_cost) : null,
         })),
       })
+      draft.clear()
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save BOM.'))
     } finally {
@@ -177,6 +189,7 @@ export default function BomForm({
         </>}>
         <SheetColumns
           left={<>
+            <DraftBanner draft={draft} />
             {error && (
               <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
                 {Array.isArray(error) ? error.join(' ') : error}

@@ -82,6 +82,12 @@ const config: TourConfig = {
       required: false,
     },
     {
+      target: 'pr-new-item-stock',
+      title: 'In Stock',
+      purpose: 'Free stock of the picked item right now (on hand minus reserved), with how much each store / plant holds. "Not in stock" means it has to be bought. If the store already has enough, ask the store to issue it instead of raising a PR; amber means the store has some, but less than you asked for.',
+      required: false,
+    },
+    {
       target: 'pr-new-item-qty',
       title: 'Qty',
       purpose: 'How many units of this item are needed.',

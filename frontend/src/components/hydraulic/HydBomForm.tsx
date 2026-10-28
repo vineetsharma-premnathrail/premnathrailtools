@@ -9,6 +9,8 @@ import HydFormShell, { HydShellProps, Cell, fieldRow } from '@/components/hydrau
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
 import { SYSTEM_TYPE_LABELS, useHydCosts } from '@/components/hydraulic/labels'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 const rowStyle: React.CSSProperties = {
   display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', padding: 12, borderRadius: 12,
@@ -64,6 +66,14 @@ export default function HydBomForm({
   const [unitCosts, setUnitCosts] = useState<Record<number, number>>({})
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
+
+  const draft = useFormDraft(initial ? null : 'hyd-bom-new',
+    { title, systemId, systemType, circuitId, remarks, lines: lines.map((l) => ({ ...l, key: 0 })) },
+    (d) => {
+      setTitle(d.title ?? ''); setSystemId(d.systemId ?? ''); setSystemType(d.systemType || 'hydraulic')
+      setCircuitId(d.circuitId ?? ''); setRemarks(d.remarks ?? '')
+      setLines(d.lines?.length ? d.lines.map((l: Omit<LineRow, 'key'>) => ({ ...l, key: nextKey() })) : [blankLine()])
+    })
 
   const selectedSystem = systems.find((s) => String(s.id) === systemId)
   // A linked system dictates the medium; otherwise the BOM keeps its own
@@ -179,6 +189,7 @@ export default function HydBomForm({
           remarks: r.remarks.trim() || null,
         })),
       })
+      draft.clear()
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save BOM.'))
     } finally {
@@ -197,6 +208,7 @@ export default function HydBomForm({
       <SheetColumns
         left={<>
           <SheetError error={error} />
+          <DraftBanner draft={draft} />
           <SheetSection icon="list" title="BOM">
             <div style={fieldRow}>
               <Cell basis={260} grow>

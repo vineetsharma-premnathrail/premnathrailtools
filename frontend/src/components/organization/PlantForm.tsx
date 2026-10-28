@@ -6,6 +6,8 @@ import { organizationApi, usersApi } from '@/lib/api'
 import { Branch, Company, DirectoryUser } from '@/types'
 import { extractErrorMessages } from '@/lib/validation'
 import DateField from '@/components/erp/DateField'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { FormPage, SheetSection, SheetIcon, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 
 const rowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 14 }
@@ -62,6 +64,8 @@ export default function PlantForm({ title, subtitle, nav, tabBar, initial, submi
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
+  const draft = useFormDraft(initial ? null : 'org-plant-new', form, (d: FormState) => setForm({ status: 'active', ...d }))
+
   useEffect(() => {
     organizationApi.getCompanyInfo().then(setCompany).catch(() => setCompany(null))
     usersApi.directory().then(setDirectory).catch(() => setDirectory([]))
@@ -93,6 +97,7 @@ export default function PlantForm({ title, subtitle, nav, tabBar, initial, submi
     setSubmitting(true)
     try {
       const result = await onSubmit(form)
+      draft.clear()
       onSaved(result)
     } catch (err: unknown) {
       setError(extractErrorMessages(err, 'Could not save the branch. Check the fields (the code must be unique) and try again.').join(' '))
@@ -120,6 +125,7 @@ export default function PlantForm({ title, subtitle, nav, tabBar, initial, submi
       >
         {tabBar && <div style={{ padding: '0 24px' }}>{tabBar}</div>}
         <div style={{ padding: '20px 24px' }}>
+          <DraftBanner draft={draft} />
           {error && (
             <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
               {error}

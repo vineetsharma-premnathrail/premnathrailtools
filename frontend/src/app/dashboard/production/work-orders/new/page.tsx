@@ -13,6 +13,8 @@ import DateField from '@/components/erp/DateField'
 import ProductionNav from '@/components/production/ProductionNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
@@ -71,6 +73,15 @@ export default function NewWorkOrderPage() {
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
 
+  const draft = useFormDraft(rrvLinkLoading ? null : `production-work-order-new${rrvBuildRef ? '-rrv' : ''}`,
+    { bomId, quantity, priority, projectId, branchId, sourceId, targetId, supervisorId, startDate, endDate, remarks, soLineId, orderProject },
+    (d) => {
+      setBomId(d.bomId ?? ''); setQuantity(d.quantity ?? '1'); setPriority(d.priority ?? 'normal'); setProjectId(d.projectId ?? '')
+      setBranchId(d.branchId ?? ''); setSourceId(d.sourceId ?? ''); setTargetId(d.targetId ?? ''); setSupervisorId(d.supervisorId ?? '')
+      setStartDate(d.startDate ?? ''); setEndDate(d.endDate ?? ''); setRemarks(d.remarks ?? ''); setSoLineId(d.soLineId ?? '')
+      setOrderProject(d.orderProject ?? null)
+    })
+
   useEffect(() => {
     if (!isAuthorized) return
     const fail = (what: string) => (err: unknown) => setError(extractErrorMessages(err, `Failed to load ${what}.`))
@@ -116,6 +127,7 @@ export default function NewWorkOrderPage() {
         order_project_element_id: !rrvBuildId && orderProject?.elementId ? orderProject.elementId : null,
         ...(rrvBuildId ? { rrv_build_id: Number(rrvBuildId), build_role: buildRole } : {}),
       })
+      draft.clear()
       router.push(rrvBuildRef ? `/dashboard/production/rrv-builds/${rrvBuildRef}` : recordPath('/dashboard/production/work-orders', wo))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to create work order.'))
@@ -147,6 +159,7 @@ export default function NewWorkOrderPage() {
                 This work order will be linked to the RRV build as its <strong>{buildRole === 'main' ? 'main (final vehicle assembly)' : 'sub-assembly'}</strong> order and uses the build&apos;s machine — leave Machine blank.
               </div>
             )}
+            <DraftBanner draft={draft} />
             {error && <div style={errorBox}>{Array.isArray(error) ? error.join(' ') : error}</div>}
 
             <SheetSection icon="box" title="What to Build">

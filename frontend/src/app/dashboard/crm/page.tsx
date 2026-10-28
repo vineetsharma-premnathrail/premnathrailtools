@@ -12,14 +12,11 @@ import { extractErrorMessages } from '@/lib/validation'
 import { getRecentVisits, RecentKind, RecentVisit } from '@/lib/crmShortcuts'
 import { recordPath } from '@/lib/recordRef'
 import { smallSecondaryBtnStyle } from '@/components/shared/ui'
-import { useCan } from '@/lib/permissions'
-import { primaryBtnStyle } from '@/components/crm/ui'
 
 export default function CrmDashboardPage() {
   const { user } = useAuth()
   const { isAuthorized, isLoading } = useRequireApp('crm')
   const router = useRouter()
-  const { can } = useCan()
   const [data, setData] = useState<CrmDashboard | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string[]>([])
@@ -53,11 +50,6 @@ export default function CrmDashboardPage() {
             Welcome back, {user?.name || 'there'}. Here is the state of your business development pipeline.
           </p>
         </div>
-        {can('crm', 'inquiries_tenders', 'create') && (
-          <Link href="/dashboard/crm/inquiries/new" data-tour="dash-new-inquiry-btn" style={{ ...primaryBtnStyle, textDecoration: 'none', whiteSpace: 'nowrap' }}>
-            <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> New inquiry
-          </Link>
-        )}
       </div>
 
       {loadError.length > 0 ? (

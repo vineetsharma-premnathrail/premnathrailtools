@@ -10,6 +10,8 @@ import { accountsApi } from '@/lib/api'
 import { ARDispute, OpenDocument } from '@/types'
 import { TEXT } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
+import DraftBanner from '@/components/shared/DraftBanner'
+import { useFormDraft } from '@/lib/formDraft'
 import { useCan } from '@/lib/permissions'
 import FinanceNav from '@/components/finance/FinanceNav'
 import OutstandingSubNav from '@/components/finance/OutstandingSubNav'
@@ -128,6 +130,9 @@ function NewDisputeDialog({ onClose, onDone }: { onClose: () => void; onDone: ()
   const [description, setDescription] = useState('')
   const [error, setError] = useState<string[] | null>(null)
   const [saving, setSaving] = useState(false)
+  // A new dispute's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft('finance-dispute-new', { invoiceId, amount, reason, description },
+    (d) => { setInvoiceId(d.invoiceId || ''); setAmount(d.amount || ''); setReason(d.reason || 'quality'); setDescription(d.description || '') })
 
   useEffect(() => {
     accountsApi.openBills('customer')
@@ -142,6 +147,7 @@ function NewDisputeDialog({ onClose, onDone }: { onClose: () => void; onDone: ()
     setSaving(true)
     try {
       await accountsApi.createDispute({ ar_transaction_id: picked.id, disputed_amount: Number(amount), reason, description })
+      draft.clear()
       onDone()
     } catch (err: unknown) {
       setError(extractErrorMessages(err, 'Could not raise the dispute.'))
@@ -154,6 +160,7 @@ function NewDisputeDialog({ onClose, onDone }: { onClose: () => void; onDone: ()
     <FormSheet width={580} tour="fin-disp-new-dialog" icon="flag" iconColor="#7c3aed" title="Raise dispute" subtitle="A customer claim against a posted sales invoice." onClose={onClose} busy={saving}
       footer={<SheetFooter onCancel={onClose} onSubmit={save} busy={saving} label="Raise dispute" icon="flag" color="#7c3aed" />}>
       <SheetBody>
+        <DraftBanner draft={draft} />
         <SheetError error={error} />
         <SheetSection icon="doc" title="Invoice" color="#7c3aed">
           <SField label="Sales invoice" req style={{ marginBottom: 14 }}>

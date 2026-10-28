@@ -1,10 +1,10 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useAuthStore } from '@/store/authStore'
-import { authApi } from '@/lib/api'
+import { useAuthStore, SIGNED_OUT_FLAG } from '@/store/authStore'
+import { initTeams, looksLikeTeams, teamsPopupSignIn, teamsSilentSignIn } from '@/lib/teamsAuth'
 import { GRADIENTS, TEXT } from '@/lib/theme'
 import { WarningCircle, Info } from '@phosphor-icons/react'
 import { extractErrorMessages } from '@/lib/validation'
@@ -23,6 +23,38 @@ export default function LoginPage() {
   )
 }
 
+const AUTO_SIGN_IN_AT = 'pr-auto-signin-at'
+// One automatic attempt per tab in this window: if it brings the person back
+// here still signed out (e.g. the browser blocks our cookies), show the
+// button and the reason instead of bouncing to Microsoft in a loop.
+const AUTO_RETRY_GAP_MS = 2 * 60 * 1000
+
+function readStore(key: string): string | null {
+  try { return sessionStorage.getItem(key) } catch { return null }
+}
+function writeStore(key: string, value: string | null) {
+  try {
+    if (value === null) sessionStorage.removeItem(key)
+    else sessionStorage.setItem(key, value)
+  } catch { /* storage blocked — the guards below just don't persist */ }
+}
+// Teams SDK / fetch errors are plain Errors (or strings), not axios errors.
+function reasonOf(err: unknown): string {
+  if (typeof err === 'string') return err
+  if (err instanceof Error && !('response' in err)) return err.message
+  return extractErrorMessages(err, '').join(' ')
+}
+// The deliberate-sign-out flag is browser-wide (localStorage), not per tab.
+function signedOutHere(): boolean {
+  try { return localStorage.getItem(SIGNED_OUT_FLAG) === '1' } catch { return false }
+}
+function clearSignedOut() {
+  try { localStorage.removeItem(SIGNED_OUT_FLAG) } catch { /* storage blocked */ }
+}
+function triedRecently(): boolean {
+  return Date.now() - Number(readStore(AUTO_SIGN_IN_AT) || 0) < AUTO_RETRY_GAP_MS
+}
+
 function LoginPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -30,6 +62,7 @@ function LoginPageInner() {
   const [busy, setBusy] = useState(false)
   const [inTeams, setInTeams] = useState(false)
   const [teamsMessage, setTeamsMessage] = useState('')
+  const autoStarted = useRef(false)
   const errorParam = searchParams.get('error')
   const errorMessage = errorParam ? ERROR_MESSAGES[errorParam] || 'Sign-in failed. Please try again.' : null
 
@@ -50,101 +83,92 @@ function LoginPageInner() {
     if (hasChecked && user) router.push('/dashboard')
   }, [hasChecked, user, router])
 
-  // Detect whether we're running inside a Microsoft Teams tab (app.initialize()
-  // only resolves inside a Teams/Office host — outside Teams it just hangs, so
-  // race it against a short timeout). If we are, try silent SSO immediately.
+  const finishWithToken = async (token: string) => {
+    if (token) setToken(token)
+    clearSignedOut()
+    await fetchUser()
+    if (!useAuthStore.getState().user) {
+      const reason = useAuthStore.getState().error
+      setTeamsMessage(`Microsoft sign-in worked, but the portal could not load your profile${reason ? ` (${reason})` : ''}. Tap below to try again; if it keeps happening, tell the portal admin.`)
+    }
+  }
+
+  // Sign in automatically, like a mobile app that keeps you logged in: the
+  // person is already signed in to Microsoft, so no button is needed.
+  //  * Inside Teams: silent Teams SSO (lib/teamsAuth.ts); the Microsoft
+  //    sign-in window opens by itself only if Teams needs the person
+  //    (first-time consent, MFA).
+  //  * In a browser: straight to Microsoft, which signs an already signed-in
+  //    browser back in without asking.
+  // Not after a deliberate sign-out, not after a sign-in error, and only once
+  // per two minutes per tab (loop guard).
   useEffect(() => {
-    if (hasChecked && user) return
-    let cancelled = false
+    if (!hasChecked || isLoading || user || autoStarted.current) return
+    autoStarted.current = true
+    let active = true
+    let committed = false
 
-    const tryTeams = async () => {
-      try {
-        const teams = await import('@microsoft/teams-js')
-        await Promise.race([
-          teams.app.initialize(),
-          // Teams mobile can take a few seconds to hand over the host context.
-          new Promise((_, reject) => setTimeout(() => reject(new Error('not in Teams')), 4000)),
-        ])
-        if (cancelled) return
-        setInTeams(true)
-        await silentTeamsLogin(teams)
-      } catch {
-        // Not running inside Teams — the normal button flow below handles it.
+    const run = async () => {
+      const signedOut = signedOutHere()
+      // A plain browser goes to Microsoft at once, without waiting on the Teams SDK.
+      const teams = looksLikeTeams() ? await initTeams() : null
+      if (!active) return
+      if (teams) setInTeams(true)
+      if (signedOut || errorParam) return
+      if (triedRecently()) {
+        setTeamsMessage(teams
+          ? "Automatic Teams sign-in didn't complete a moment ago. Tap below to sign in."
+          : "Automatic sign-in didn't keep you signed in — this browser may be blocking the portal's cookies. Tap below to sign in, and allow cookies for this site if it happens again.")
+        return
       }
-    }
-
-    // Auto sign-in inside Teams, with no button: silent SSO, one silent
-    // retry (Teams sometimes isn't ready to hand out a token on the first
-    // call), then the Microsoft sign-in window opens on its own. Only if
-    // that is blocked too (e.g. a browser popup blocker on Teams web) does
-    // the user see the reason and the button.
-    const finish = async () => {
-      if (cancelled) return
-      await fetchUser()
-      router.push('/dashboard')
-    }
-
-    const silentTeamsLogin = async (teams: typeof import('@microsoft/teams-js')) => {
-      let lastErr: unknown = null
-      for (let attempt = 0; attempt < 2 && !cancelled; attempt++) {
+      committed = true
+      writeStore(AUTO_SIGN_IN_AT, String(Date.now()))
+      setBusy(true)
+      if (!teams) {
+        window.location.href = `${process.env.NEXT_PUBLIC_API_URL}/auth/microsoft-login`
+        return
+      }
+      try {
+        await finishWithToken(await teamsSilentSignIn(useAuthStore.getState().token))
+      } catch (silentErr) {
         try {
-          if (attempt > 0) await new Promise((r) => setTimeout(r, 1500))
-          const token = await teams.authentication.getAuthToken()
-          await authApi.teamsTokenLogin(token)
-          await finish()
-          return
+          await finishWithToken(await teamsPopupSignIn())
         } catch (err) {
-          lastErr = err
+          // Keep the real reason visible (account not allowed, exited
+          // employee, consent missing, popup blocked).
+          const reason = reasonOf(err) || reasonOf(silentErr)
+          setTeamsMessage(reason
+            ? `Automatic Teams sign-in didn't work: ${reason} Tap below to sign in.`
+            : "Automatic Teams sign-in didn't work — tap below to sign in with Microsoft.")
         }
-      }
-      if (cancelled) return
-      try {
-        setBusy(true)
-        const code = await teams.authentication.authenticate({
-          url: `${process.env.NEXT_PUBLIC_API_URL}/auth/microsoft-login?next=/auth/teams-success`,
-          width: 600,
-          height: 640,
-        })
-        await authApi.teamsExchange(code)
-        await finish()
-      } catch (err) {
-        if (cancelled) return
-        // Keep the real reason visible (account not allowed, exited employee,
-        // consent missing, popup blocked) instead of a generic prompt.
-        const reason = extractErrorMessages(err, '').join(' ') || extractErrorMessages(lastErr, '').join(' ')
-        setTeamsMessage(reason
-          ? `Automatic Teams sign-in didn't work: ${reason} Tap below to sign in.`
-          : "Automatic Teams sign-in didn't work — tap below to sign in with Microsoft.")
       } finally {
-        if (!cancelled) setBusy(false)
+        setBusy(false)
       }
     }
 
-    tryTeams()
-    return () => { cancelled = true }
-  }, [hasChecked, user, fetchUser, router])
+    run()
+    return () => {
+      active = false
+      // React's dev double-mount: let the second mount start it again.
+      if (!committed) autoStarted.current = false
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasChecked, isLoading, user, errorParam])
 
   const popupTeamsLogin = async () => {
     setBusy(true)
     setTeamsMessage('')
     try {
-      const teams = await import('@microsoft/teams-js')
-      const code = await teams.authentication.authenticate({
-        url: `${process.env.NEXT_PUBLIC_API_URL}/auth/microsoft-login?next=/auth/teams-success`,
-        width: 600,
-        height: 640,
-      })
-      await authApi.teamsExchange(code)
-      await fetchUser()
-      router.push('/dashboard')
+      await finishWithToken(await teamsPopupSignIn())
     } catch (err) {
-      setTeamsMessage(extractErrorMessages(err, 'Sign-in failed. Please try again.').join(' '))
+      setTeamsMessage(reasonOf(err) || 'The Microsoft sign-in window closed before sign-in finished. Tap the button to try again.')
     } finally {
       setBusy(false)
     }
   }
 
   const handleLogin = () => {
+    clearSignedOut()
     if (inTeams) {
       popupTeamsLogin()
       return

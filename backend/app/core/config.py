@@ -76,7 +76,10 @@ class Settings(BaseSettings):
     # Refresh tokens are opaque (not JWTs) and stored hashed in `user_sessions`,
     # so — unlike a bare JWT — they can be revoked server-side (logout,
     # deactivation, password/security incident) before they naturally expire.
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    # Sliding: every refresh issues a new one with a fresh expiry, so only
+    # someone who has not opened the portal for this many days is signed out
+    # (and the login page then signs them back in with Microsoft by itself).
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     # SharePoint (ERP attachment storage)
     SHAREPOINT_SITE_ID: str = ""

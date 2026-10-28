@@ -12,6 +12,8 @@ export interface PriceCondition {
   store_item_id: number | null
   service_code: string | null
   customer_id: number | null
+  /** Country price: every customer whose CRM organisation is in this country. */
+  country: string | null
   amount: number | null
   percent: number | null
   freight_basis: string | null
@@ -25,6 +27,14 @@ export interface PriceCondition {
   item_label: string | null
   customer_name: string | null
   is_current: boolean
+}
+
+export interface PriceConversion {
+  on: string
+  amount: number
+  currency: string
+  inr: number
+  rows: { currency: string; name: string | null; symbol: string | null; rate: number | null; amount: number | null; note: string | null }[]
 }
 
 export interface ResolvedPrice {
@@ -107,6 +117,9 @@ export const pricingApi = {
     const { data } = await apiClient.patch(`/products/price-conditions/${id}`, payload); return data
   },
   remove: async (id: number) => { const { data } = await apiClient.delete(`/products/price-conditions/${id}`); return data },
+  convert: async (amount: number, currency = 'INR'): Promise<PriceConversion> => {
+    const { data } = await apiClient.get('/products/price-conditions/convert', { params: { amount, currency } }); return data
+  },
   resolve: async (params: { product_id?: number; store_item_id?: number; service_code?: string; customer_id?: number | null; on?: string }): Promise<ResolvedPrice> => {
     const { data } = await apiClient.get('/products/price-conditions/resolve', { params }); return data
   },
@@ -119,16 +132,7 @@ export const pricingApi = {
   },
 }
 
-export interface MappingGroup { text: string | null; model: string | null; count: number; ids?: number[]; crm_product_id?: number; category?: string | null }
-
 export const productMappingApi = {
-  unmapped: async (): Promise<{ sources: Record<string, string>; [k: string]: MappingGroup[] | Record<string, string> }> => {
-    const { data } = await apiClient.get('/products/mapping/unmapped'); return data
-  },
-  assign: async (payload: { source: string; product_id: number; crm_product_id?: number; text?: string | null; model?: string | null }) => {
-    const { data } = await apiClient.post('/products/mapping/assign', payload); return data
-  },
-  autoLink: async (): Promise<{ linked: number }> => { const { data } = await apiClient.post('/products/mapping/auto-link'); return data },
   orderBook: async (productId: number) => { const { data } = await apiClient.get(`/products/${productId}/order-book`); return data },
   quotationHistory: async (productId: number) => { const { data } = await apiClient.get(`/products/${productId}/quotation-history`); return data },
 }

@@ -53,9 +53,9 @@ export function extractErrorMessages(err: any, fallback = 'Something went wrong.
   // change is safe or not, instead of surfacing axios's raw "Network Error".
   if (!err?.response) {
     if (err?.code === 'ECONNABORTED' || /timeout/i.test(err?.message || '')) {
-      return ['The request timed out — the server took too long to respond. It may or may not have saved. Refresh the page to check before trying again.']
+      return ['The server took too long to answer. Try again — if you were saving, your data is still in the form, and if the first try did save it will not be saved twice.']
     }
-    return ["Couldn't reach the server. Nothing was saved — check your internet connection and try again."]
+    return ["Couldn't reach the server — check your internet connection and try again. If you were saving, your data is still in the form, and a save that already went through is never saved twice."]
   }
   const data = err.response.data
   // A 422 from this API puts the per-field problems in `errors` and leaves

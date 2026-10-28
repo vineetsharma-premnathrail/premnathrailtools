@@ -15,6 +15,8 @@ import { ErrorBanner, usePmFeature } from './pmUi'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { FileDropZone, FormSheet, Optional, Req, SHEET, SheetColumns, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import { chipBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 /* ── Look ─────────────────────────────────────────────────────────────── */
 
@@ -222,6 +224,11 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
   const [msForm, setMsForm] = useState<MsForm | null>(null)
   const [taskForm, setTaskForm] = useState<TaskForm | null>(null)
   const [formError, setFormError] = useState<string | string[]>('')
+  // New milestone / new task (or sub-task) forms survive a refresh; they are filled back in when the Add button is pressed again.
+  const msDraft = useFormDraft(msForm && !msForm.id ? `projects-plan-milestone-new-${project?.id ?? 0}` : null, msForm,
+    (d) => { if (d) setMsForm({ ...d, co_owner_ids: d.co_owner_ids ?? [] }) })
+  const taskDraft = useFormDraft(taskForm && !taskForm.id ? `projects-plan-task-new-${project?.id ?? 0}-${taskForm.msId}-${taskForm.parentId ?? 0}` : null, taskForm,
+    (d) => { if (d) setTaskForm({ ...d, collaborator_ids: d.collaborator_ids ?? [], labels: d.labels ?? [], checklist: d.checklist?.length ? d.checklist : [''], files: [] }) })
   const [reason, setReasonState] = useState<{ m: PmDeptTask; action: 'reopen' | 'cancel' } | null>(null)
   const [reasonText, setReasonText] = useState('')
   const [reasonError, setReasonError] = useState<string | string[]>('')
@@ -318,7 +325,7 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
     try {
       const saved: PmDeptTask = msForm.id ? await projectsApi.editProjectTask(pid, msForm.id, payload) : await projectsApi.createProjectTask(pid, payload)
       if (msForm.id) replace(saved)
-      else { setRows((rs) => [...rs, saved]); setSelId(saved.id); setTaskId(null) }
+      else { msDraft.clear(); setRows((rs) => [...rs, saved]); setSelId(saved.id); setTaskId(null) }
       setMsForm(null)
     } catch (err) {
       setFormError(extractErrorMessages(err, 'Could not save the milestone.'))
@@ -376,6 +383,7 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
       return
     }
     replace(saved)
+    if (!f.id) taskDraft.clear()
     // New task: its checklist, first remark and files go on it now.
     const problems: string[] = []
     if (!f.id) {
@@ -571,6 +579,7 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
           const editingClosed = !!msForm.id && !['todo', 'in_progress', 'blocked'].includes(msForm.status)
           return (
             <SheetColumns left={<>
+                <DraftBanner draft={msDraft} />
                 <ErrorBanner error={formError} />
                 <SheetSection icon="list" title="Basic Information">
                   <label style={sheetLabel}>Milestone Name <Req /></label>
@@ -686,6 +695,7 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
         </>}>
         {formMs && (
           <SheetColumns left={<>
+              <DraftBanner draft={taskDraft} />
               <ErrorBanner error={formError} />
               <SheetSection icon="list" title="Basic Information">
                 <label style={sheetLabel}>{taskForm.parentId ? 'Sub-task' : 'Task'} Name <Req /></label>

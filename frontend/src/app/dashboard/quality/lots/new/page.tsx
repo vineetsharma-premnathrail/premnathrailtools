@@ -12,6 +12,8 @@ import { ErrorBanner, INSPECTION_TYPE_LABELS, sheetGap } from '@/components/qual
 import { extractErrorMessages } from '@/lib/validation'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 interface ItemOpt { id: number; item_code: string; item_name: string; uom?: string }
 
@@ -34,6 +36,10 @@ export default function NewManualLotPage() {
   // Project (the vehicle / spares lot this inspection is for) — optional.
   const [op, setOp] = useState<OrderProjectValue | null>(null)
   const [error, setError] = useState<string | string[]>('')
+  const draft = useFormDraft('quality-lot-new', { form, op }, (d) => {
+    if (d.form) setForm((f) => ({ ...f, ...d.form }))
+    setOp(d.op || null)
+  })
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -57,6 +63,7 @@ export default function NewManualLotPage() {
         source_reference: form.source_reference.trim() || null, remarks: form.remarks.trim() || null,
         order_project_id: op?.projectId ?? null, order_project_element_id: op?.elementId ?? null,
       })
+      draft.clear()
       router.push(recordPath('/dashboard/quality/lots', lot))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to create the inspection lot.'))
@@ -78,6 +85,7 @@ export default function NewManualLotPage() {
       <SheetColumns
         left={<>
           <ErrorBanner error={error} />
+          <DraftBanner draft={draft} />
           <SheetSection icon="box" title="Lot">
             <label style={sheetLabel}>Inspection type</label>
             <Select style={sheetInput} value={form.inspection_type} onChange={(e) => setForm({ ...form, inspection_type: e.target.value })}>

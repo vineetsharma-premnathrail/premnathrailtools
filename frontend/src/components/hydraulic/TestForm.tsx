@@ -12,6 +12,8 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
 import { SYSTEM_TYPE_LABELS, TEST_TYPE_LABELS } from '@/components/hydraulic/labels'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 const rowStyle: React.CSSProperties = {
   display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', padding: 12, borderRadius: 12,
@@ -137,6 +139,21 @@ export default function TestForm({
   const dirty = snapshot !== initialSnapshot
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
 
+  const draft = useFormDraft(initial ? null : 'hyd-test-new',
+    {
+      title, testType, systemType, systemId, componentId, componentSerial, testDate, testStandard, testPressure, holdTime, testMedium,
+      ambientTemp, fluidTemp, testedById, witnessedBy, observations, remarks,
+      readings: readings.map((r) => ({ ...r, key: 0 })),
+    },
+    (d) => {
+      setTitle(d.title ?? ''); setTestType(d.testType || 'pressure_test'); setSystemType(d.systemType || 'hydraulic')
+      setSystemId(d.systemId ?? ''); setComponentId(d.componentId ?? ''); setComponentSerial(d.componentSerial ?? '')
+      setTestDate(d.testDate ?? ''); setTestStandard(d.testStandard ?? ''); setTestPressure(d.testPressure ?? ''); setHoldTime(d.holdTime ?? '')
+      setTestMedium(d.testMedium ?? ''); setAmbientTemp(d.ambientTemp ?? ''); setFluidTemp(d.fluidTemp ?? ''); setTestedById(d.testedById ?? '')
+      setWitnessedBy(d.witnessedBy ?? ''); setObservations(d.observations ?? ''); setRemarks(d.remarks ?? '')
+      setReadings(d.readings?.length ? d.readings.map((r: Omit<ReadingRow, 'key'>) => ({ ...r, key: nextKey() })) : [emptyRow()])
+    })
+
   // A new test opened from a system or component page starts on that
   // subject's medium, so the pickers below include it.
   useEffect(() => {
@@ -244,6 +261,7 @@ export default function TestForm({
           remarks: r.remarks.trim() || null,
         })),
       })
+      draft.clear()
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save test.'))
     } finally {
@@ -263,6 +281,7 @@ export default function TestForm({
       <SheetColumns
         left={<>
           <SheetError error={error} />
+          <DraftBanner draft={draft} />
           <SheetSection icon="check" title="Test">
             <div style={fieldRow}>
               <Cell tour="hyd-testf-title" basis={260} grow>

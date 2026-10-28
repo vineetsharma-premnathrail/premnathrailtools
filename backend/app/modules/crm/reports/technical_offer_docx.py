@@ -174,14 +174,6 @@ def _paragraph(doc: Any, text: str) -> None:
     run.font.size = Pt(10.5)
 
 
-def _bullet(doc: Any, text: str) -> None:
-    p = doc.add_paragraph(style="List Bullet")
-    p.paragraph_format.space_after = Pt(3)
-    run = p.add_run(text)
-    run.font.name = FONT_NAME
-    run.font.size = Pt(10.5)
-
-
 def _spec_table(doc: Any, rows: list[tuple[str, str]]) -> None:
     table = doc.add_table(rows=1, cols=2)
     table.style = "Light Grid Accent 1"
@@ -205,11 +197,9 @@ def _spec_table(doc: Any, rows: list[tuple[str, str]]) -> None:
 def build_technical_offer_docx(ctx: Mapping[str, Any]) -> io.BytesIO:
     """Build the numbered-section "Technical Offer" .docx from a plain dict context.
 
-    Expected keys: offer_number, universal_id, org_name, org_type, org_address, org_gst_number,
-    org_city, org_state, contact_name, contact_designation, contact_department, contact_mobile,
-    contact_email, product_category, product, quantity_display, required_delivery_date,
-    delivery_location, inspection_req, warranty_req, product_spec, requirement_desc,
-    project_details, documents_link, raised_by, raised_at. All are
+    Keys used: offer_number, universal_id, org_name, org_type, org_city, org_state,
+    product, product_category, product_spec, additional_items ([{product, product_spec}]),
+    requirement_desc (tenders), project_details, documents_link, raised_at. All are
     optional except offer_number/universal_id — every section degrades gracefully to a
     placeholder ("Not specified."/"Not provided.") rather than a fabricated value when its
     underlying field is empty on the record.
@@ -262,89 +252,55 @@ def build_technical_offer_docx(ctx: Mapping[str, Any]) -> io.BytesIO:
     subtitle_run.font.size = Pt(10)
     subtitle_run.font.color.rgb = MUTED
 
-    # 1. Customer / Organization Details
-    _heading(doc, 1, "Customer Organization Details")
-    org_rows = [("Customer Organization", ctx.get("org_name") or "-")]
-    if ctx.get("org_gst_number"):
-        org_rows.append(("GST Number", ctx["org_gst_number"]))
-    org_rows.append(("Customer Organization Type", ctx.get("org_type") or "-"))
-    city_state = ", ".join(v for v in (ctx.get("org_city"), ctx.get("org_state")) if v)
-    if city_state:
-        org_rows.append(("City / State", city_state))
-    if ctx.get("org_address"):
-        org_rows.append(("Address", ctx["org_address"]))
-    _spec_table(doc, org_rows)
+    # Owner, 2026-10-27: R&D gets only what bears on the technical answer. GST, postal
+    # address, the customer's contact person, commercial terms and the removed
+    # inquiry fields (quantity, delivery, inspection, warranty) stay in CRM.
+    # 1. Customer & Application
+    n = 1
+    _heading(doc, n, "Customer & Application")
+    cust_rows = [("Customer", ctx.get("org_name") or "-"), ("Customer Type", ctx.get("org_type") or "-")]
+    region = ", ".join(v for v in (ctx.get("org_city"), ctx.get("org_state")) if v)
+    if region:
+        cust_rows.append(("Region", region))
+    _spec_table(doc, cust_rows)
 
-    # 2. Contact Person
-    if any(ctx.get(k) for k in ("contact_name", "contact_designation", "contact_department", "contact_mobile", "contact_email")):
-        _heading(doc, 2, "Contact Person")
-        contact_rows = []
-        for label, key in (
-            ("Name", "contact_name"), ("Designation", "contact_designation"),
-            ("Department", "contact_department"), ("Mobile", "contact_mobile"), ("Email", "contact_email"),
-        ):
-            if ctx.get(key):
-                contact_rows.append((label, ctx[key]))
-        _spec_table(doc, contact_rows)
+    # 2. Products & Technical Specification - every product of the record with its own spec.
+    n += 1
+    _heading(doc, n, "Products & Technical Specification")
+    products = [{"product": ctx.get("product"), "product_category": ctx.get("product_category"),
+                 "product_spec": ctx.get("product_spec")}, *(ctx.get("additional_items") or [])]
+    for i, item in enumerate(products, start=1):
+        name = item.get("product") or "Product not filled in"
+        label = f"{i}. {name}" if len(products) > 1 else name
+        rows = [("Product", label)]
+        if item.get("product_category"):
+            rows.append(("Category", item["product_category"]))
+        _spec_table(doc, rows)
+        _paragraph(doc, item.get("product_spec") or "Specification not provided.")
 
-    # 3. Technical Requirement Summary
-    _heading(doc, 3, "Technical Requirement Summary")
-    req_rows = []
-    for label, key in (
-        ("Category", "product_category"), ("Product", "product"),
-        ("Required Delivery Date", "required_delivery_date"), ("Delivery Location", "delivery_location"),
-        ("Inspection", "inspection_req"), ("Warranty", "warranty_req"),
-    ):
-        if ctx.get(key):
-            req_rows.append((label, str(ctx[key])))
-    if req_rows:
-        _spec_table(doc, req_rows)
-    else:
-        _paragraph(doc, "No structured requirement fields have been filled in for this record yet.")
+    # Requirement Summary - tenders only (reason for not participating).
+    if ctx.get("requirement_desc"):
+        n += 1
+        _heading(doc, n, "Requirement Summary")
+        _paragraph(doc, ctx["requirement_desc"])
 
-    # 4. Technical Specification
-    _heading(doc, 4, "Technical Specification")
-    _paragraph(doc, ctx.get("product_spec") or "Not specified.")
-
-    # 5. Requirement Summary
-    _heading(doc, 5, "Requirement Summary")
-    _paragraph(doc, ctx.get("requirement_desc") or "Not provided.")
-
-    # 6. Project Background
-    _heading(doc, 6, "Project Background")
+    # Project Background
+    n += 1
+    _heading(doc, n, "Project Background")
     _paragraph(doc, ctx.get("project_details") or "Not provided.")
 
-    # 7. Inspection, Delivery and Warranty Requirements
-    _heading(doc, 7, "Inspection, Delivery and Warranty Requirements")
-    any_bullet = False
-    if ctx.get("quantity_display"):
-        _bullet(doc, f"Supply quantity: {ctx['quantity_display']}.")
-        any_bullet = True
-    if ctx.get("required_delivery_date"):
-        _bullet(doc, f"Delivery deadline: {ctx['required_delivery_date']}.")
-        any_bullet = True
-    if ctx.get("delivery_location"):
-        _bullet(doc, f"Delivery location: {ctx['delivery_location']}.")
-        any_bullet = True
-    if ctx.get("inspection_req"):
-        _bullet(doc, ctx["inspection_req"])
-        any_bullet = True
-    if ctx.get("warranty_req"):
-        _bullet(doc, f"Warranty: {ctx['warranty_req']}.")
-        any_bullet = True
-    if not any_bullet:
-        _paragraph(doc, "No inspection, delivery, or warranty requirements have been specified yet.")
-
-    # 8. Technical Compliance Statement
-    _heading(doc, 8, "Technical Compliance Statement")
+    # Technical Compliance Statement
+    n += 1
+    _heading(doc, n, "Technical Compliance Statement")
     _paragraph(
         doc,
         "The proposed technical offer shall be evaluated against the above customer requirements. "
         "All deviations, if any, shall be explicitly identified in the final technical compliance statement.",
     )
 
-    # 9. Document Control
-    _heading(doc, 9, "Document Control")
+    # Document Control
+    n += 1
+    _heading(doc, n, "Document Control")
     _spec_table(doc, [
         ("Document Title", f"Technical Offer – {ctx.get('product') or ctx.get('product_category') or ctx.get('universal_id') or '-'}"),
         ("Customer", ctx.get("org_name") or "-"),

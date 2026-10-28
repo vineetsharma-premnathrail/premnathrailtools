@@ -54,7 +54,7 @@ async def create_document(entity_type: str, entity_id: int, regenerate: bool = F
     target = _target(entity_type, entity_id, db, user, modify=True)
     doc = await md.generate(
         db, entity_type=entity_type, entity_id=entity_id, source_revision=target.revision, title=target.title,
-        folder=target.folder, filename=f"{target.filename_stem}.docx", docx_bytes=target.build_docx(),
+        folder=target.folder, filename=f"{target.filename_stem}.docx", docx_bytes=await md.build_bytes(target),
         user=user, regenerate=regenerate,
     )
     return {"document": await md.state(db, doc, target.revision)}

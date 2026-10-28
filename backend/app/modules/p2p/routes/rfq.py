@@ -1,6 +1,8 @@
 from datetime import date, datetime, timezone
+from urllib.parse import quote
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import Response
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
@@ -40,6 +42,7 @@ router = APIRouter(prefix="/p2p/rfqs", tags=["P2P"])
 
 # PR statuses at which a draft PO can still be edited / sent (ME21N split:
 # other POs of the same PR may already be in approval or released).
+MAX_TALLY_PDF_BYTES = 15 * 1024 * 1024
 _SPLIT_PO_PR_STATUSES = ("po_drafted", "po_raised", "po_approved", "partially_received", "received")
 
 
@@ -942,14 +945,17 @@ async def update_po_draft(
 async def upload_po_document(
     rfq_id: int,
     po_id: int,
+    tally_po_no: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: User = Depends(_purchase_tab("purchase_orders", "edit")),
 ):
-    """One-time upload of the signed PO document. Only allowed while the PO
-    is still an editable draft, and only once — after upload (and at every
-    later stage, including PO approval) the document is permanently locked;
-    there is no replace/delete route by design."""
+    """The Tally PO (owner, 2026-10-27): every portal PO is also made in Tally,
+    and its Tally PO number + the Tally print (PDF) must be on the draft before
+    it can be sent for approval (submit_po_draft). While the PO is a draft the
+    upload can be repeated (wrong file, Tally PO revised after a return for
+    changes); once it is in approval it is locked. The Tally number is kept as
+    external_ref and can be used on one live PO only."""
     ensure_feature_action(user, "p2p", "purchase_orders", "po_document", "create")
     rfq = _get_rfq_or_404(db, rfq_id, user)
     pr = _get_pr_for_rfq(db, rfq)
@@ -957,19 +963,38 @@ async def upload_po_document(
         P2PPurchaseOrder.id == po_id, P2PPurchaseOrder.p2p_request_id == pr.id
     ).first()
     if not po:
-        raise HTTPException(status_code=404, detail="Draft PO not found")
+        raise HTTPException(status_code=404, detail="Draft PO not found — it may have been cancelled; reload the page.")
     if po.status != "draft" or pr.status not in _SPLIT_PO_PR_STATUSES:
-        raise HTTPException(status_code=409, detail="The PO document can only be uploaded while the PO is still a draft.")
-    if po.document_filename:
-        raise HTTPException(status_code=409, detail="A PO document has already been uploaded and cannot be changed.")
+        raise HTTPException(status_code=409, detail=f"{po.po_number} is no longer a draft, so its Tally PO can't be changed. Raise a PO amendment if the Tally PO changed.")
+    ref = (tally_po_no or "").strip()
+    if not ref:
+        raise HTTPException(status_code=422, detail="Enter the Tally PO number — the voucher number of this PO in Tally.")
+    if len(ref) > 100:
+        raise HTTPException(status_code=422, detail="The Tally PO number is longer than 100 characters — enter only the voucher number.")
+    clash = db.query(P2PPurchaseOrder.po_number).filter(
+        P2PPurchaseOrder.id != po.id, P2PPurchaseOrder.status != "cancelled",
+        func.upper(P2PPurchaseOrder.external_ref) == ref.upper(),
+    ).first()
+    if clash:
+        raise HTTPException(status_code=409, detail=f"Tally PO {ref} is already on {clash[0]} — check the number in Tally; one Tally PO belongs to one portal PO.")
+    if (file.content_type or "").lower() != "application/pdf" or not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(status_code=415, detail="Attach the Tally PO as a PDF file (print it from Tally to PDF).")
+    head = await file.read(MAX_TALLY_PDF_BYTES + 1)
+    if len(head) > MAX_TALLY_PDF_BYTES:
+        raise HTTPException(status_code=413, detail=f"The PDF is larger than {MAX_TALLY_PDF_BYTES // (1024 * 1024)} MB — print it again at a lower quality.")
+    if not head.startswith(b"%PDF"):
+        raise HTTPException(status_code=415, detail="That file isn't a real PDF — print the Tally PO to PDF and attach that file.")
+    await file.seek(0)
     if not settings.SHAREPOINT_SITE_ID:
-        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+        raise HTTPException(status_code=503, detail="Document storage (SharePoint) isn't set up on this server — ask the admin to configure it, then upload again.")
 
     folder_path = build_sharepoint_folder_path(user.name or user.email or "", "po", po.po_number)
     result = await upload_file_to_sharepoint(settings.SHAREPOINT_SITE_ID, folder_path, file)
 
+    replaced = po.document_filename
+    po.external_ref = ref
     po.document_filename = result["name"]
-    po.document_content_type = file.content_type
+    po.document_content_type = "application/pdf"
     po.document_size = result["size"]
     po.document_sharepoint_path = result["path"]
     po.document_sharepoint_url = result.get("webUrl")
@@ -977,7 +1002,8 @@ async def upload_po_document(
     po.document_uploaded_at = datetime.now(timezone.utc)
 
     _write_pr_audit(db, pr.id, "po_document_uploaded", user,
-                 summary=f"{user.name or user.email} uploaded the PO document for '{po.po_number}'.")
+                 summary=(f"{user.name or user.email} uploaded Tally PO {ref} ({result['name']}) for '{po.po_number}'"
+                          + (f", replacing {replaced}." if replaced else ".")))
 
     db.commit()
     db.refresh(po)
@@ -985,6 +1011,12 @@ async def upload_po_document(
     resp.p2p_request_number = pr.p2p_number
     resp.document_uploaded_by_name = user.name or user.email
     return resp
+
+
+def _inline_disposition(name: str) -> str:
+    """inline Content-Disposition that survives non-ASCII file names (a Tally PDF named in Hindi)."""
+    ascii_name = name.encode("ascii", "ignore").decode().replace('"', "").replace("\\", "") or "document.pdf"
+    return f"inline; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}"
 
 
 @router.get("/{rfq_id}/po-draft/{po_id}/document/content")
@@ -1009,7 +1041,7 @@ async def get_po_document_content(
     return Response(
         content=content,
         media_type=po.document_content_type or content_type,
-        headers={"Content-Disposition": f'inline; filename="{po.document_filename}"'},
+        headers={"Content-Disposition": _inline_disposition(po.document_filename or f"{po.po_number}.pdf"), "X-Content-Type-Options": "nosniff"},
     )
 
 
@@ -1044,6 +1076,11 @@ async def submit_po_draft(
             status_code=400,
             detail=f"Enter a unit price for every line before sending the PO for approval — missing: {', '.join(unpriced)}.",
         )
+    # Owner, 2026-10-27: the PO is made in Tally too; approvers sign off on it.
+    if not (po.external_ref or "").strip() or not po.document_sharepoint_path:
+        raise HTTPException(status_code=400, detail=(
+            f"Upload the Tally PO for '{po.po_number}' before sending it for approval — enter its Tally PO number and "
+            "attach the Tally PO print (PDF) in the 'Tally PO' section."))
     # The vendor may have been blocked in the vendor master since the draft was made.
     if po.vendor_id:
         _ensure_vendor_can_get_po(db, po.vendor_id)

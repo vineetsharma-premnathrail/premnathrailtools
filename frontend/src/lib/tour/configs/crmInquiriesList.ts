@@ -7,7 +7,7 @@ const config: TourConfig = {
     {
       target: 'crm-inq-stats',
       title: 'Counters',
-      purpose: 'Small numbers under the title: Active inquiries and Active tenders (not closed or cancelled), Open, Won (closed as ordered), Lost (closed as not ordered), then inquiries at Requirement received and Quotation sent, and tenders at Published and Participation. They count exactly the rows in the table, so Search and the column filters change them.',
+      purpose: 'Small numbers under the title: Leads (inquiries still at status Lead), Inquiries (active ones past the lead step, not closed), Tenders published (every tender except cancelled) and Tender participation (tenders at Participation or any later status). They follow Search and the column filters, but always count leads, inquiries and tenders whatever the Type filter shows.',
     },
     {
       target: 'iq-add-btn',
@@ -28,13 +28,13 @@ const config: TourConfig = {
     {
       target: 'iq-search',
       title: 'Search',
-      purpose: 'Searches across ID, customer organization, product, owner, zone, and stage in one box — matching Inquiries and Tenders together.',
+      purpose: 'Searches across ID, customer organization, product, owner and zone in one box — matching Inquiries and Tenders together.',
       whatToEnter: 'Any part of an ID, customer organization name, product name, owner, etc. Updates the list automatically as you type.',
     },
     {
       target: 'iq-filter-btn',
       title: 'Filter',
-      purpose: 'Opens the filters: Type (Inquiries, Tenders or both), Status, Stage, Customer Organization and Created By. The number on the button shows how many filters are on; the counters and the table follow them.',
+      purpose: 'Opens the filters: Type (Inquiries, Tenders or both), Status, Customer Organization and Created By. The number on the button shows how many filters are on; the counters and the table follow them.',
     },
     {
       target: 'iq-clear-btn',
@@ -45,12 +45,6 @@ const config: TourConfig = {
       target: 'iq-col-product',
       title: 'Product',
       purpose: 'Shows the Inquiry\'s product, or the Tender\'s category — not filterable or sortable, for context only.',
-    },
-    {
-      target: 'iq-col-stage',
-      title: 'Stage (filterable)',
-      purpose: 'Narrows the list to records currently at a specific pipeline stage.',
-      after: 'Every filterable column here (Stage, Created By) combines with the others and with Search and Type above.',
     },
     {
       target: 'iq-col-created_at',

@@ -227,6 +227,10 @@ class SalesOrderHeaderFields(BaseModel):
 
 class SalesOrderCreate(SalesOrderHeaderFields):
     customer_id: int
+    order_category: str = "new_project"  # new_project | service | rental — fixed at creation
+    # Service orders: the machine and its SRs (the customer is the machine's customer).
+    service_machine_id: int | None = None
+    service_request_ids: list[int] = Field(default_factory=list)
     source_type: str = "direct"
     source_inquiry_id: int | None = None
     source_tender_id: int | None = None
@@ -234,6 +238,8 @@ class SalesOrderCreate(SalesOrderHeaderFields):
     lines: list[SalesOrderLinePayload] = Field(default_factory=list)
     schedule: list[SalesOrderSchedulePayload] | None = None
     billing_plan: list[SalesBillingPlanPayload] = Field(default_factory=list)
+    # CRM documents of the source inquiry / tender the user picked to link (not copied).
+    crm_document_ids: list[int] = Field(default_factory=list)
 
 
 class SalesOrderUpdate(SalesOrderHeaderFields):
@@ -270,6 +276,10 @@ class SalesOrderResponse(BaseModel):
     display_number: str
     status: str
     order_type: str
+    order_category: str = "new_project"
+    service_machine_id: int | None = None
+    service_machine_label: str | None = None
+    service_requests: list[dict] = Field(default_factory=list)  # [{id, request_number, issue_title, status}]
     customer_id: int
     customer_contact_id: int | None = None
     source_type: str

@@ -18,10 +18,9 @@ import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, s
 import { recordPath, refOf } from '@/lib/recordRef'
 import { formatDateTime, formatDate } from '@/lib/format'
 import { AddMoreButton, RemoveValueButton, ValueRow, canAddMore } from '@/components/shared/MoreValuesButtons'
-import OrgEngagementsTab from '@/components/crm/OrgEngagementsTab'
 import { segmentBtnStyle, RowCount, Pill, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 
-const TABS = ['Overview', 'Contacts', 'Engagements', 'Inquiries', 'Tenders', 'Audit Trail'] as const
+const TABS = ['Overview', 'Contacts', 'Inquiries', 'Tenders', 'Audit Trail'] as const
 
 // Links out to an inquiry/tender carry a `back` param so its Back button returns
 // here — to this organization, on the tab the link was clicked from.
@@ -73,7 +72,6 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
   // Organization sub-tabs are features of the Organizations tab (core/features/crm.py).
   const seeTab = (t: typeof TABS[number]) => t === 'Overview'
     || (t === 'Contacts' && canFeature('crm', 'organizations', 'contacts', 'view'))
-    || (t === 'Engagements' && canFeature('crm', 'organizations', 'engagements', 'view'))
     || ((t === 'Inquiries' || t === 'Tenders') && canFeature('crm', 'organizations', 'linked_records', 'view'))
     || (t === 'Audit Trail' && canFeature('crm', 'organizations', 'audit_trail', 'view'))
   const canDeleteOrg = !!org && canDelete('crm', 'organizations', org.created_by_id ?? null)
@@ -132,8 +130,6 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
 
       {(tab === 'Overview' || !seeTab(tab)) && <OverviewTab org={org} />}
       {tab === 'Contacts' && seeTab(tab) && <ContactsTab org={org} canModify={isOwnerOrAdmin && canFeature('crm', 'organizations', 'contacts', 'edit')} canCreate={canFeature('crm', 'organizations', 'contacts', 'create')} onRefresh={load} />}
-      {tab === 'Engagements' && seeTab(tab) && <OrgEngagementsTab org={org} canCreate={canFeature('crm', 'organizations', 'engagements', 'create')}
-        canEditOwn={canFeature('crm', 'organizations', 'engagements', 'edit')} canDeleteOwn={canFeature('crm', 'organizations', 'engagements', 'delete')} />}
       {tab === 'Inquiries' && seeTab(tab) && <InquiriesTab orgId={org.id} orgRef={refOf(org)} canModify={can('crm', 'inquiries_tenders', 'create')} contacts={org.contacts} />}
       {tab === 'Tenders' && seeTab(tab) && <TendersTab orgId={org.id} orgRef={refOf(org)} canModify={can('crm', 'inquiries_tenders', 'create')} />}
       {tab === 'Audit Trail' && seeTab(tab) && <AuditTab orgId={org.id} />}

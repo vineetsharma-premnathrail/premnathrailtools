@@ -11,6 +11,8 @@ import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheet
 import { ErrorBanner, sheetGap } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 interface ItemOpt { id: number; item_code: string; item_name: string; uom?: string }
 interface Requirement { applies: boolean; released: boolean; trigger?: string | null; drawing_ref?: string | null; open_fai?: string | null }
@@ -23,6 +25,7 @@ export default function NewFirstArticlePage() {
   const [locations, setLocations] = useState<{ id: number; code: string; name: string }[]>([])
   const [form, setForm] = useState({ item_id: '', vendor_name: '', quantity: '1', take_from_free: false, location_id: '', source_reference: '', remarks: '' })
   const [req, setReq] = useState<Requirement | null>(null)
+  const draft = useFormDraft('quality-first-article-new', form, (d) => setForm((f) => ({ ...f, ...d })))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
 
@@ -54,6 +57,7 @@ export default function NewFirstArticlePage() {
         take_from_free: form.take_from_free, location_id: form.take_from_free ? Number(form.location_id) : null,
         source_reference: form.source_reference.trim() || null, remarks: form.remarks.trim() || null,
       })
+      draft.clear()
       router.push(recordPath('/dashboard/quality/first-articles', fai))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to raise the first article inspection.'))
@@ -75,6 +79,7 @@ export default function NewFirstArticlePage() {
       <SheetColumns
         left={<>
           <ErrorBanner error={error} />
+          <DraftBanner draft={draft} />
           <SheetSection icon="box" title="First article">
             <label style={sheetLabel}>Item <Req /></label>
             <SearchableSelect value={form.item_id} onChange={(v) => setForm({ ...form, item_id: v })} placeholder="Search item code / name"

@@ -156,7 +156,7 @@ export default function SecurityPage() {
           <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 12px' }}>Session policy</h2>
           <div style={gridStyle}>
             {num('access_token_minutes', 'Access token (minutes)', 'How long a page session is trusted before it silently renews.', 5, 120)}
-            {num('refresh_token_days', 'Stay signed in (days)', 'After this, the user must sign in with Microsoft again.', 1, 30)}
+            {num('refresh_token_days', 'Stay signed in (days)', 'Days without opening the portal before the session ends. Every visit restarts the count; after it ends the portal signs the user back in with Microsoft on its own.', 1, 30)}
             {num('idle_timeout_minutes', 'Idle sign-out (minutes)', '0 = off. Signs out a session nobody has used for this long.', 0, 10080)}
             {num('max_sessions_per_user', 'Devices per user', '0 = unlimited. Signing in on one more device signs out the oldest.', 0, 20)}
           </div>

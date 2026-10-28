@@ -18,6 +18,8 @@ import {
 } from './pmUi'
 import { FileDropZone, FormSheet, Optional, Req, SHEET, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import { RowCount } from '@/components/shared/ui'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 type Person = { id: number; name: string; designation?: string | null; department?: string | null }
 type SubForm = { task: PmDeptTask; title: string; assignee_id: string; due_date: string; remark: string; files: File[] }
@@ -147,6 +149,11 @@ export function DeptTaskTable({ tasks, onChanged, mode, onEdit, onDelete, layout
     if (!people) loadPeople().then(setPeople).catch((err) => setSubError(extractErrorMessages(err, 'Could not load the people list.')))
   }
 
+  // The typed part of the Add Task form (not the milestone it belongs to) survives a refresh.
+  const subDraft = useFormDraft(sub ? `projects-dept-task-new-${sub.task.id}` : null,
+    sub ? { title: sub.title, assignee_id: sub.assignee_id, due_date: sub.due_date, remark: sub.remark, files: sub.files } : null,
+    (d) => { if (d) setSub((s) => (s ? { ...s, title: d.title ?? '', assignee_id: d.assignee_id ?? '', due_date: d.due_date ?? '', remark: d.remark ?? '', files: [] } : s)) })
+
   const saveSub = async () => {
     if (!sub) return
     const missing: string[] = []
@@ -165,6 +172,7 @@ export function DeptTaskTable({ tasks, onChanged, mode, onEdit, onDelete, layout
       setBusy(null)
       return
     }
+    subDraft.clear()
     // The new sub-task is the one with the highest id; its remark and files go on it.
     const newSub = created.subtasks.reduce((a, b) => (b.id > a.id ? b : a), created.subtasks[0])
     const problems: string[] = []
@@ -281,6 +289,7 @@ export function DeptTaskTable({ tasks, onChanged, mode, onEdit, onDelete, layout
             <button type="button" onClick={saveSub} disabled={busy !== null} style={sheetBtn('primary', SHEET.BLUE, busy !== null)}><SheetIcon name="plus" size={16} />{busy !== null ? 'Adding…' : 'Add task'}</button>
           </>}>
           <div style={{ padding: '20px 24px' }}>
+            <DraftBanner draft={subDraft} />
             <ErrorBanner error={subError} />
             <SheetSection icon="list" title="Task">
               <label style={sheetLabel}>Task <Req /></label>

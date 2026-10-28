@@ -3,6 +3,8 @@
 import Select from '@/components/shared/Select'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { useEffect, useRef, useState } from 'react'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { Organization, OrgContact } from '@/types'
 import { crmApi } from '@/lib/api'
 import { isPhoneValid, sanitizePhone } from '@/components/erp/PhoneField'
@@ -57,6 +59,8 @@ type ContactRow = {
   additionalEmails: string[]
 }
 
+// Railway Zone / Division are Indian Railways details — Domestic only (owner, 2026-10-27).
+const hasRailwayFields = (scope: Scope, orgType?: string | null) => scope === 'domestic' && orgTypeHasRailwayFields(orgType)
 const scopeOf = (i?: Organization): Scope => (i ? (i.org_scope === 'international' ? 'international' : 'domestic') : '')
 /** Saved type shown as itself when it is in the scope's list, otherwise as Other + the saved text. */
 const typeInScope = (i?: Organization) => !!i?.org_type && orgTypesFor(scopeOf(i)).includes(i.org_type)
@@ -208,10 +212,17 @@ export default function OrganizationForm({
   // Errors show in the banner at the top of the form; the dialog is only the "saved" notice.
   const [error, setError] = useState<string | string[]>('')
   const errorRef = useRef<HTMLDivElement>(null)
+  // A new organization's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft(initial ? null : 'crm-organization-new',
+    { form, orgTypeCustom, railwayZoneCustom, countryCustom, extraPhones, extraEmails, contacts },
+    (d) => {
+      setForm(d.form); setOrgTypeCustom(d.orgTypeCustom); setRailwayZoneCustom(d.railwayZoneCustom); setCountryCustom(d.countryCustom)
+      setExtraPhones(d.extraPhones); setExtraEmails(d.extraEmails); setContacts(d.contacts?.length ? d.contacts : [emptyContact()])
+    })
   useEffect(() => { if (error && (!Array.isArray(error) || error.length)) errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, [error])
   const fail = (message: string | string[]) => setError(message)
 
-  const showRailwayFields = orgTypeHasRailwayFields(form.org_type)
+  const showRailwayFields = hasRailwayFields(form.org_scope, form.org_type)
 
   // Real-time duplicate detection — recomputed on every render so the user sees the
   // warning the moment a repeated value is typed, not just at submit. Checked across
@@ -278,7 +289,7 @@ export default function OrganizationForm({
     }
     // The type must belong to the new scope's list; Other (with its text) always stays.
     const keepType = !form.org_type || form.org_type === 'Other' || orgTypesFor(next).includes(form.org_type)
-    const showsZone = keepType && orgTypeHasRailwayFields(form.org_type)
+    const showsZone = keepType && hasRailwayFields(next, form.org_type)
     setForm((f) => ({
       ...f,
       org_scope: next,
@@ -311,7 +322,7 @@ export default function OrganizationForm({
   const err = (k: string) => (fieldErrors[k] ? <p role="alert" style={errText}>{fieldErrors[k]}</p> : null)
 
   const setOrgType = (value: string) => {
-    const showsZone = orgTypeHasRailwayFields(value)
+    const showsZone = hasRailwayFields(form.org_scope, value)
     setForm((f) => ({
       ...f,
       org_type: value,
@@ -388,6 +399,7 @@ export default function OrganizationForm({
       if (form.tax_vat_id.trim() && !TAX_ID_RE.test(form.tax_vat_id.trim())) fe.tax_vat_id = 'Tax / VAT ID must be 2 to 50 characters: letters, digits, spaces, - . /'
       if (form.company_registration_no.trim() && !TAX_ID_RE.test(form.company_registration_no.trim())) fe.company_registration_no = 'Company Registration Number must be 2 to 50 characters: letters, digits, spaces, - . /'
       if (!countryValue || (countryValue === 'Other' && !countryCustom.trim())) fe.country = 'Choose the country of this international organization.'
+      else if ((countryValue === 'Other' ? countryCustom.trim() : countryValue).toLowerCase() === 'india') fe.country = 'An international organization is outside India — pick its country, or switch Organization Scope to Domestic for an Indian organization.'
     }
     if (Object.keys(fe).length) {
       setFieldErrors(fe)
@@ -509,6 +521,7 @@ export default function OrganizationForm({
         ])
         return
       }
+      draft.clear()
       setSavedOrg(saved)
       setDialog({ variant: 'success', title: 'Customer Organization Saved', message: `Customer Organization "${saved.name}" saved successfully.` })
     } catch (err) {
@@ -557,6 +570,7 @@ export default function OrganizationForm({
         onCancel={() => setPendingScope('')}
       />
       <div ref={errorRef} style={{ padding: error && (!Array.isArray(error) || error.length) ? '16px 24px 0' : 0 }}><SheetError error={error} /></div>
+      {draft.restored && <div style={{ padding: '16px 24px 0' }}><DraftBanner draft={draft} style={{ marginBottom: 0 }} /></div>}
       <SheetColumns
         left={<>
         <SheetSection icon="building" title="Customer Organization Details">
@@ -660,11 +674,12 @@ export default function OrganizationForm({
           <Field label="Address" tourId="org-address"><textarea value={form.address} onChange={(e) => set('address', e.target.value)} rows={2} placeholder="Street / locality" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ flex: '1 1 160px', minWidth: 140 }}>
-              <Field label="Country" tourId="org-country">
+              <Field label={isInternational ? <>Country <Req /></> : 'Country'} tourId="org-country">
                 {/* Independent of the scope. Switching country clears the state (India's list and a typed foreign state don't mix); it never touches the scope. */}
                 <Select value={countryValue} searchable disabled={isDomestic} title={isDomestic ? 'Domestic organizations are always in India' : undefined} onChange={(e) => changeCountry(e.target.value)} style={{ ...inputStyle, ...(fieldErrors.country ? errBorder : {}) }}>
                   {!isDomestic && <option value="">-- Select Country --</option>}
-                  {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  {/* International = outside India, so India isn't offered (owner, 2026-10-27). */}
+                  {COUNTRIES.filter((c) => isDomestic || c !== 'India').map((c) => <option key={c} value={c}>{c}</option>)}
                 </Select>
                 {countryValue === 'Other' && (
                   <input value={countryCustom} onChange={(e) => setCountryCustom(e.target.value)} placeholder="Specify country" style={{ ...inputStyle, marginTop: 8 }} />

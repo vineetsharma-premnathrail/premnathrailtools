@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
@@ -48,6 +50,10 @@ export default function StoreStockReservationsPage() {
   const [remarks, setRemarks] = useState('')
   const [saving, setSaving] = useState(false)
   const [formErrors, setFormErrors] = useState<string[]>([])
+  const draft = useFormDraft(showModal ? 'store-reservation-new' : null, { itemId, locationId, quantity, project, productionOrder, orderProject, requiredDate, remarks }, (d) => {
+    setItemId(d.itemId ?? ''); setLocationId(d.locationId ?? ''); setQuantity(d.quantity ?? ''); setProject(d.project ?? ''); setProductionOrder(d.productionOrder ?? '')
+    setOrderProject(d.orderProject ?? null); setRequiredDate(d.requiredDate ?? ''); setRemarks(d.remarks ?? '')
+  })
 
   const [confirmAction, setConfirmAction] = useState<{ id: number; type: 'cancel' | 'fulfill' } | null>(null)
 
@@ -111,6 +117,7 @@ export default function StoreStockReservationsPage() {
         required_date: requiredDate || undefined,
         remarks: remarks.trim() || undefined,
       })
+      draft.clear()
       setShowModal(false)
       load()
     } catch (err) {
@@ -176,6 +183,7 @@ export default function StoreStockReservationsPage() {
             <button data-tour="res-save-btn" type="button" onClick={handleCreate} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Reserve Stock'}</button>
           </>}>
           <div style={{ padding: '20px 24px' }}>
+            <DraftBanner draft={draft} />
             {formErrors.length > 0 && (
               <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
                 {formErrors.map((e, i) => <div key={i}>{e}</div>)}

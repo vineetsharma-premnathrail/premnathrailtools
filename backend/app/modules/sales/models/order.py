@@ -33,6 +33,12 @@ SALES_ORDER_OPEN_STATUSES = ("confirmed", "in_execution", "partially_delivered",
 SALES_ORDER_HOLDABLE_STATUSES = ("confirmed", "in_execution", "partially_delivered")
 SALES_ORDER_AMENDABLE_STATUSES = ("confirmed", "in_execution", "partially_delivered", "on_hold")
 
+# What kind of business the order is — asked first on a new order. Only a New Project
+# order builds machines, so only it gets a project in Project Management.
+SALES_ORDER_CATEGORIES = ("new_project", "service", "rental")
+SALES_ORDER_CATEGORY_LABELS = {"new_project": "New Project", "service": "Service", "rental": "Rental"}
+SALES_DEFAULT_ORDER_CATEGORY = "new_project"
+
 SALES_ORDER_TYPES = ("road_rail_vehicle", "rail_bound_vehicle", "accessories", "other")
 SALES_DEFAULT_ORDER_TYPE = "road_rail_vehicle"
 # One place for the labels (forms, documents, validation messages).
@@ -96,6 +102,10 @@ class SalesOrder(Base, TimestampMixin, SoftDeleteMixin):
     so_number: Mapped[str | None] = mapped_column(String(50), unique=True, index=True, nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="draft", index=True, nullable=False)
     order_type: Mapped[str] = mapped_column(String(20), default="road_rail_vehicle", nullable=False)
+    order_category: Mapped[str] = mapped_column(String(20), default="new_project", server_default="new_project", nullable=False)
+    # Service order: the machine (Service › machine register, erp_projects) the work is for;
+    # its SRs are in sales_order_service_requests. The customer is the machine's customer.
+    service_machine_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("erp_projects.id", ondelete="SET NULL"), index=True, nullable=True)
 
     customer_id: Mapped[int] = mapped_column(Integer, ForeignKey("crm_organizations.id"), index=True, nullable=False)
     customer_contact_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("crm_org_contacts.id"), nullable=True)
@@ -323,3 +333,16 @@ class SalesBillingPlanLine(Base, TimestampMixin):
     invoice_requested_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
 
     order: Mapped[SalesOrder] = relationship(back_populates="billing_lines")
+
+
+class SalesOrderServiceRequest(Base):
+    """The service requests (SRs) a Service order bills for — one order, one or
+    more SRs of the order's machine; an SR sits on one live order at a time."""
+
+    __tablename__ = "sales_order_service_requests"
+    __table_args__ = (UniqueConstraint("so_id", "service_request_id", name="uq_so_service_request"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    so_id: Mapped[int] = mapped_column(Integer, ForeignKey("sales_orders.id", ondelete="CASCADE"), index=True, nullable=False)
+    service_request_id: Mapped[int] = mapped_column(Integer, ForeignKey("erp_service_requests.id", ondelete="CASCADE"), index=True, nullable=False)
+

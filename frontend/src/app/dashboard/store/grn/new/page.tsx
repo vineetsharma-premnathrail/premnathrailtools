@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { goodsReceiptsApi, storeApi, storeBatchesApi } from '@/lib/api'
@@ -18,6 +18,8 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 const inputStyle: React.CSSProperties = sheetInput
 const labelStyle: React.CSSProperties = sheetLabel
@@ -95,6 +97,15 @@ export default function NewStoreGrnPage() {
   const [tcNote, setTcNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  // Kept per purchase order; waits until a PO is chosen (or opened from the list).
+  const draft = useFormDraft(poId ? `store-grn-new-${poId}` : null,
+    { poId, storeLocationId, receivedDate, remarks, receivedQty, invoiceQty, lineBin, lineSerials, docs, heats },
+    (d) => {
+      setStoreLocationId(d.storeLocationId ?? ''); setReceivedDate(d.receivedDate || new Date().toLocaleDateString('en-CA')); setRemarks(d.remarks ?? '')
+      setReceivedQty(d.receivedQty ?? {}); setInvoiceQty(d.invoiceQty ?? {}); setLineBin(d.lineBin ?? {}); setLineSerials(d.lineSerials ?? {})
+      setDocs({ ...emptyDocs, ...(d.docs ?? {}) }); setHeats(d.heats ?? {})
+    })
+  const binsFor = useRef('')
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -106,7 +117,9 @@ export default function NewStoreGrnPage() {
   useEffect(() => {
     if (!isAuthorized || !storeLocationId) { setBins([]); return }
     storeApi.listBins(Number(storeLocationId)).then((b: any[]) => setBins(b.filter((x) => x.is_active !== false))).catch(() => setBins([]))
-    setLineBin({})
+    // Keep restored bin picks when a kept draft fills the store; clear them when the store is changed.
+    if (binsFor.current && binsFor.current !== storeLocationId) setLineBin({})
+    binsFor.current = storeLocationId
   }, [isAuthorized, storeLocationId])
 
   if (isLoading || !isAuthorized) return null
@@ -173,6 +186,7 @@ export default function NewStoreGrnPage() {
           }
         }
       }
+      draft.clear()
       if (failed.length) {
         setTcNote(`GRN ${grn.grn_number} is saved, but the mill TC for heat ${failed.join(', ')} couldn't be uploaded — attach it from Store › Batches.`)
         return
@@ -192,6 +206,7 @@ export default function NewStoreGrnPage() {
         <button data-tour="store-grn-form-cancel-btn" type="button" disabled={busy} onClick={() => router.push('/dashboard/store/grn')} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
         <button data-tour="store-grn-form-save-btn" type="button" disabled={busy || !selectedPo} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy || !selectedPo)}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Save Goods Receipt'}</button>
       </>}>
+      <DraftBanner draft={draft} />
       <MessageDialog open={!!error} variant="error" title="Cannot Save Goods Receipt" message={error} onClose={() => setError('')} />
       <MessageDialog open={!!tcNote} variant="error" title="Mill TC Not Uploaded" message={tcNote} onClose={() => { setTcNote(''); router.push('/dashboard/store/grn') }} />
 

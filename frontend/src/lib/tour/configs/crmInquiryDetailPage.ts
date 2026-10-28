@@ -12,13 +12,6 @@ import { followUpListSteps } from './crmFollowUpList'
 // it, and every one of its steps would silently auto-skip first.
 const steps: TourStep[] = [
   {
-    target: 'inq-stage-progress',
-    title: 'Stage progress',
-    purpose: 'Shows where this inquiry sits in the sales pipeline — click to expand the full stage list and move it to a later stage. Moving a stage needs the Move pipeline stage permission in your role.',
-    why: 'Stages only move forward, with a confirmation, and each move is recorded on the Timeline. Only an admin can move a stage back, and must give a reason. Once a sales order is raised from it, the stage is locked until that order is cancelled in Sales.',
-    options: [{ value: 'Green circle', meaning: 'Completed stage' }, { value: 'Orange circle', meaning: 'Current stage' }, { value: 'Grey circle', meaning: 'Upcoming stage' }],
-  },
-  {
     target: 'inquiry-tab-Info',
     title: 'Info',
     purpose: 'A read-only summary of the inquiry\'s customer organization/contact, lead info, and full product requirement — click Edit (top right) to change any of it. The Customer Organization & contact card and money values (Expected Value) show only if your role includes them.',
@@ -104,17 +97,17 @@ const steps: TourStep[] = [
     // always be the one who decides to open it.
     target: 'inq-tor-btn',
     title: 'Send Technical Requirement to R&D',
-    purpose: 'Emails R&D a PDF summarizing the Customer Organization, Project, and Product Requirement details, and puts it in the R&D team queue with a Response Due Date and your remarks — any R&D user can answer. Shown only to roles with Send Technical Requirement (TOR) to R&D.',
-    why: 'Blocked until Product and at least one of Specification/Requirement Description are filled in — otherwise R&D would get an effectively empty document. Disabled once already sent, until the requirement is edited again.',
+    purpose: 'Sends R&D a Word document with only what bears on the technical answer — customer, its type and region, every product with its specification, and the project background (no GST, address, contact person or prices) — and puts it in the R&D team queue with a Response Due Date and your remarks — any R&D user can answer. Shown only to roles with Send Technical Requirement (TOR) to R&D.',
+    why: 'Blocked until Product and Specification are filled in — otherwise R&D would get an effectively empty document. Disabled once already sent, until the requirement is edited again.',
     after: 'Click it yourself: first create the Technical Offer Word document, then set the due date, remarks and reference documents and send — the tour won\'t open it for you. If you open it now, press Next for a walkthrough of the dialog.',
   },
   ...torDialogConfig.steps,
   {
-    // Only rendered for Sales-app users on an inquiry at stage Order Received (or one with an SO) — the tour skips it otherwise.
+    // Only rendered for Sales-app users on an inquiry at Status Order Received (or one with an SO) — the tour skips it otherwise.
     target: 'inq-create-so-btn',
     title: 'Create Sales Order',
     purpose: 'Hands the won inquiry over to Sales: opens a new Sales Order pre-filled with this customer and the accepted quotation\'s lines, prices and payment terms. Once an order exists, this becomes a green chip showing the SO number and status — click it to open the order.',
-    why: 'One live sales order per inquiry, so the same customer PO can\'t be booked twice. Shown only to people with the Sales app, and only once the inquiry is at stage "Order Received" — never before, and never on "Closed – Not Ordered".',
+    why: 'One live sales order per inquiry, so the same customer PO can\'t be booked twice. Shown only to people with the Sales app, and only once the inquiry Status is "Order Received" — never before, and never on "Closed – Not Ordered".',
     after: 'When Sales confirms the order (after its approvals), this inquiry is automatically set to Status "Closed - Ordered" and Stage "Order Received", and the timeline records which SO closed it.',
   },
   {

@@ -4,6 +4,7 @@ revisions supersede, and released offers are frozen."""
 from datetime import datetime, timezone
 
 from app.modules.main.models.notification import Notification
+from app.tests.quote_lines import quote_product  # noqa: F401 — autouse fixture
 from app.tests.test_cov_crm_quotations_rnd import ITEM, auth, make_inquiry, make_user
 from app.tests.test_crm_quotation_documents import sp  # noqa: F401 — fixture
 from app.tests.test_rnd_requirement_work import make_rnd_head

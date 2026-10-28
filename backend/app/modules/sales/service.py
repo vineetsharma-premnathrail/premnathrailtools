@@ -1276,3 +1276,64 @@ def notify_confirmed(db: Session, so: SalesOrder, actor_id: int) -> None:
                                exclude_user_id=actor_id, app_name="accounts")
     except Exception:  # pragma: no cover — a notification must never block confirmation
         logger.exception("Failed to broadcast confirmation of %s", so.so_number)
+
+
+# ---------------------------------------------------------------- service orders
+
+# SRs that can still be put on a Service order (not cancelled).
+SERVICE_ORDER_SR_EXCLUDED = ("cancelled",)
+
+
+def machine_label(m) -> str:
+    """'PEW-78 · RRV-10T · Central Railway' — how the Service order names a machine."""
+    return " · ".join(x for x in (m.serial_number, m.model_name, m.client_name) if x)
+
+
+def service_links(db: Session, so: SalesOrder) -> tuple[str | None, list[dict]]:
+    from app.modules.erp.models.project import Project as Machine
+    from app.modules.erp.models.service_request import ServiceRequest
+    from app.modules.sales.models.order import SalesOrderServiceRequest
+    m = db.get(Machine, so.service_machine_id) if so.service_machine_id else None
+    rows = (db.query(ServiceRequest).join(SalesOrderServiceRequest, SalesOrderServiceRequest.service_request_id == ServiceRequest.id)
+            .filter(SalesOrderServiceRequest.so_id == so.id).order_by(ServiceRequest.request_number).all())
+    return (machine_label(m) if m else None,
+            [{"id": r.id, "request_number": r.request_number, "issue_title": r.issue_title, "status": r.status} for r in rows])
+
+
+def check_service_order(db: Session, machine_id: int | None, sr_ids: list[int], exclude_so_id: int | None = None):
+    """A Service order needs its machine (with a CRM customer) and at least one SR
+    of that machine that isn't cancelled or already on another live order.
+    Returns the machine."""
+    from app.modules.erp.models.project import Project as Machine
+    from app.modules.erp.models.service_request import ServiceRequest
+    from app.modules.sales.models.order import SalesOrderServiceRequest
+    if not machine_id:
+        raise SalesError(422, "A Service order needs the project / machine — pick it on the form, then its service requests (SRs).")
+    m = db.query(Machine).filter(Machine.id == machine_id, Machine.is_deleted == False).first()  # noqa: E712
+    if not m:
+        raise SalesError(404, f"Machine #{machine_id} not found in Service — pick the machine again.")
+    if not m.customer_id:
+        raise SalesError(422, f"Machine {m.serial_number} has no customer organisation — set its customer in Service › Machines first, then raise the order.")
+    ids = sorted(set(sr_ids or []))
+    if not ids:
+        raise SalesError(422, f"Pick at least one service request (SR) of machine {m.serial_number} that this order bills for.")
+    srs = db.query(ServiceRequest).filter(ServiceRequest.id.in_(ids), ServiceRequest.is_deleted == False).all()  # noqa: E712
+    found = {r.id: r for r in srs}
+    missing = [i for i in ids if i not in found]
+    if missing:
+        raise SalesError(404, f"Service request(s) #{', #'.join(map(str, missing))} not found — pick the SRs again.")
+    for r in srs:
+        if r.project_id != m.id:
+            raise SalesError(422, f"{r.request_number} belongs to another machine — pick only SRs of {m.serial_number}.")
+        if (r.status or "").lower() in SERVICE_ORDER_SR_EXCLUDED:
+            raise SalesError(422, f"{r.request_number} is cancelled — it can't be billed. Pick another SR.")
+    taken = (db.query(SalesOrderServiceRequest.service_request_id, SalesOrder)
+             .join(SalesOrder, SalesOrder.id == SalesOrderServiceRequest.so_id)
+             .filter(SalesOrderServiceRequest.service_request_id.in_(ids), SalesOrder.is_deleted == False,  # noqa: E712
+                     SalesOrder.status.in_(SALES_ORDER_LIVE_STATUSES)))
+    if exclude_so_id:
+        taken = taken.filter(SalesOrder.id != exclude_so_id)
+    for sr_id, other in taken.all():
+        raise SalesError(409, f"{found[sr_id].request_number} is already on {other.display_number} — open that order, or pick another SR.")
+    return m
+

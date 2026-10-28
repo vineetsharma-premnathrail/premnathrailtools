@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
@@ -35,6 +37,10 @@ export default function NewStockTransferPage() {
   const [busy, setBusy] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
   const [loadErrors, setLoadErrors] = useState<string[]>([])
+  const draft = useFormDraft('store-transfer-new', { fromLocationId, toLocationId, reason, remarks, lines }, (d) => {
+    setFromLocationId(d.fromLocationId ?? ''); setToLocationId(d.toLocationId ?? ''); setReason(d.reason ?? ''); setRemarks(d.remarks ?? '')
+    setLines(d.lines?.length ? d.lines : [{ itemId: '', quantity: '', batchNumber: '' }])
+  })
 
   // Load failures go to the error dialog with the server's reason, so an
   // empty dropdown never hides why (e.g. a Store data-access 403).
@@ -80,6 +86,7 @@ export default function NewStockTransferPage() {
           batch_number: l.batchNumber.trim() || undefined,
         })),
       })
+      draft.clear()
       router.push(recordPath('/dashboard/store/transfers', transfer))
     } catch (err) {
       setErrors(extractErrorMessages(err, 'Failed to create stock transfer.'))
@@ -97,6 +104,7 @@ export default function NewStockTransferPage() {
         <button data-tour="transfer-cancel-btn" type="button" disabled={busy} onClick={() => router.push('/dashboard/store/transfers')} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
         <button data-tour="transfer-save-btn" type="button" disabled={busy} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="send" size={16} />{busy ? 'Submitting…' : 'Submit for Approval'}</button>
       </>}>
+      <DraftBanner draft={draft} />
       <MessageDialog open={errors.length > 0} variant="error" title="Cannot Save Stock Transfer" message={errors} onClose={() => setErrors([])} />
       <MessageDialog open={loadErrors.length > 0} variant="error" title="Couldn't Load Form Data" message={loadErrors} onClose={() => setLoadErrors([])} />
 

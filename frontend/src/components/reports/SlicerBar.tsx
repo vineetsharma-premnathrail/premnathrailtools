@@ -83,6 +83,7 @@ export default function SlicerBar({ module, optionsReport, defs, value, onChange
             const isOpen = openKey === d.key
             return (
               <div key={d.key} style={{ borderTop: '1px solid #f1f5f9' }}>
+                {/* ui-audit-ignore-next-line custom-button — a full-width accordion row header, not a pill button */}
                 <button type="button" aria-expanded={isOpen} onClick={() => setOpenKey(isOpen ? null : d.key)}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, minHeight: 36, padding: '0 12px', background: isOpen ? '#f8fafc' : 'transparent', border: 'none', cursor: 'pointer', fontSize: 13.5, fontWeight: 600, color: '#334155', textAlign: 'left' }}>
                   <span style={{ flex: 1 }}>{d.label}</span>

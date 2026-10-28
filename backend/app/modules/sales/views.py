@@ -183,6 +183,8 @@ def _order_response(db: Session, so: SalesOrder, user: User, *, light: bool = Fa
         from app.modules.crm.models.organization import Organization
         resp.customer_name = db.query(Organization.name).filter(Organization.id == so.customer_id).scalar()
     resp.source_label = _source_label(db, so)
+    if so.service_machine_id:
+        resp.service_machine_label, resp.service_requests = svc.service_links(db, so)
     rows = schedule_rows(db, so)
     live = [r for r in rows if r.status != "cancelled"]
     resp.units_total = int(sum(r.quantity for r in live))
@@ -280,6 +282,10 @@ def _source_label(db: Session, so: SalesOrder) -> str | None:
         from app.modules.crm.models.tender import Tender
         t = db.query(Tender).filter(Tender.id == so.source_tender_id).first()
         return f"Tender {t.tender_number or t.universal_id}" if t else f"Tender #{so.source_tender_id}"
+    if so.order_category == "rental":
+        return "Rental order"
+    if so.order_category == "service":
+        return "Service order"
     return "Direct order"
 
 

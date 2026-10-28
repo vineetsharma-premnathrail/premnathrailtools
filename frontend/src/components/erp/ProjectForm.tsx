@@ -2,6 +2,8 @@
 
 import Select from '@/components/shared/Select'
 import { useEffect, useRef, useState } from 'react'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { DirectoryUser, Project } from '@/types'
 import { usersApi } from '@/lib/api'
 import DateField from './DateField'
@@ -185,6 +187,13 @@ export default function ProjectForm({
   const [applicationTypeCustom, setApplicationTypeCustom] = useState(
     initial?.application_type && !APPLICATION_TYPES.includes(initial.application_type) ? initial.application_type : ''
   )
+  // A new machine's typed data survives a refresh / network failure (lib/formDraft.ts). The page-level project tab fields live in the page, not here.
+  const draft = useFormDraft(initial ? null : 'erp-machine-new',
+    { form, isExport, extendedWarranty, extendedWarrantyEnd, warrantyStatus, machineTypeCustom, applicationTypeCustom },
+    (d) => {
+      setForm(d.form); setIsExport(!!d.isExport); setExtendedWarranty(!!d.extendedWarranty); setExtendedWarrantyEnd(d.extendedWarrantyEnd || '')
+      setWarrantyStatus(d.warrantyStatus || 'none'); setMachineTypeCustom(d.machineTypeCustom || ''); setApplicationTypeCustom(d.applicationTypeCustom || '')
+    })
   const [queuedFiles, setQueuedFiles] = useState<File[]>([])
   const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -295,6 +304,7 @@ export default function ProjectForm({
         sharedDepartments: share.departments,
         sharedDesignations: share.designations,
       })
+      draft.clear()
     } catch (err) {
       const msgs = extractErrorMessages(err, projectTab ? 'Failed to create the project.' : 'Failed to save project.')
       setError(msgs)
@@ -350,6 +360,7 @@ export default function ProjectForm({
       </div>
 
       <div style={{ padding: '20px 24px' }}>
+        <DraftBanner draft={draft} />
         {errorText && (
           <div ref={errorRef} style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
             <b>{projectTab ? 'Cannot create the project:' : 'Cannot save the machine:'}</b> {errorText}

@@ -14,6 +14,8 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
+import DraftBanner from '@/components/shared/DraftBanner'
+import { useFormDraft } from '@/lib/formDraft'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import {
   FormSheet, FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint,
@@ -444,6 +446,12 @@ function JournalForm({ masters, onCancel, onCreated }: { masters: Masters; onCan
   // Files picked here upload once the draft is saved (cleared with the form on close).
   const [proof, setProof] = useState<PickedProof[]>([])
   const rules = useProofRules()
+  // A new journal's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft('finance-journal-new', { postingDate, postingType, description, autoReverseOn, lines },
+    (d) => {
+      setPostingDate(d.postingDate || todayIso()); setPostingType(d.postingType || 'adjustment'); setDescription(d.description || ''); setAutoReverseOn(d.autoReverseOn || '')
+      setLines(d.lines?.length ? d.lines : [emptyLine(), emptyLine()])
+    })
 
   const ledgerOpts = ledgerOptions(ledgers)
   const ccOpts = [{ value: '', label: '— None —' }, ...costCenters.filter((c) => c.status === 'active').map((c) => ({ value: String(c.id), label: `${c.code} — ${c.name}` }))]
@@ -512,6 +520,7 @@ function JournalForm({ masters, onCancel, onCreated }: { masters: Masters; onCan
           remarks: l.remarks.trim() || null,
         })),
       })
+      draft.clear()
       // Upload the picked proof before submitting — a failed upload leaves the journal as a draft.
       const proofError = proof.length ? await uploadPickedProof('journal', created.id, proof, 'The journal') : ''
       if (proofError) { onCreated(proofError); return }
@@ -536,6 +545,7 @@ function JournalForm({ masters, onCancel, onCreated }: { masters: Masters; onCan
         </button>
       </>}>
       <div style={{ padding: '20px 24px 0' }}>
+        <DraftBanner draft={draft} />
         <ErrorBanner error={error} />
         <InfoBanner>
           Use a journal only for entries no document covers — accruals, provisions, corrections, depreciation. Invoices, notes and payments

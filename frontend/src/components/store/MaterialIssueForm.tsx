@@ -6,6 +6,8 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi, salesApi } from '@/lib/api'
 import { StoreItem, StoreLocation, StoreDocType, StoreIssueFormStandard, StoreStockBalance } from '@/types'
 import { CONTROL, TEXT } from '@/lib/theme'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import BatchPicker from '@/components/store/BatchPicker'
@@ -155,6 +157,13 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
   // the row replaces the machine as what is being dispatched.
   const [soRows, setSoRows] = useState<DispatchRow[]>([])
   const [scheduleId, setScheduleId] = useState('')
+  // One draft for the issue form and one for the job-work challan.
+  const draft = useFormDraft(isChallan ? 'store-job-work-challan-new' : 'store-material-issue-new',
+    { issueType, locationId, vals, remarks, lines, orderProject, overrideReason, scheduleId },
+    (d) => {
+      setIssueType(d.issueType || (isChallan ? JOB_WORK : '')); setLocationId(d.locationId ?? ''); setVals(d.vals ?? {}); setRemarks(d.remarks ?? '')
+      setLines(d.lines?.length ? d.lines : [emptyLine()]); setOrderProject(d.orderProject ?? null); setOverrideReason(d.overrideReason ?? ''); setScheduleId(d.scheduleId ?? '')
+    })
   const pickedRow = soRows.find((r) => String(r.schedule_id) === scheduleId)
   useEffect(() => {
     if (!isDispatch) return
@@ -305,6 +314,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
           serials: l.serials && l.serials.length ? l.serials : undefined,
         })),
       })
+      draft.clear()
       router.push(recordPath('/dashboard/store/issues', issue))
     } catch (err) {
       setErrors(extractErrorMessages(err, 'Failed to create material issue.'))
@@ -330,6 +340,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
         </button>
       </>}>
 
+      <DraftBanner draft={draft} />
       <MessageDialog open={errors.length > 0} variant="error" title="Cannot Save Material Issue" message={errors} onClose={() => setErrors([])} />
       <MessageDialog open={importErrors.length > 0} variant="error" title="Excel Import" message={importErrors} onClose={() => setImportErrors([])} />
 

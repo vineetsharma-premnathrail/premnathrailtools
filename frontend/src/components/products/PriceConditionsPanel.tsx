@@ -1,27 +1,29 @@
 'use client'
 
-// Sales › Pricing — pricing conditions (SAP VK11 create / VK12 change / VK13
-// display): validity-dated prices for products, spares and service rates,
-// customer-specific prices and discounts, and freight. Documents (SO lines,
-// quotation lines, service invoices) default their price from these records.
+// Price conditions panel (list + create/edit popup). Used on the Product detail
+// page (locked to one product) and in Sales Settings (spares, service rates,
+// freight and general discounts). Validity-dated prices, customer-specific
+// prices and discounts; documents (sales order lines, quotation lines, service
+// invoices) default their price from these records.
 
 import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useRequireApp } from '@/hooks/useAuth'
 import { salesApi } from '@/lib/api'
 import { pricingApi, PriceCondition, Option } from '@/lib/sdServiceApi'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { useCan } from '@/lib/permissions'
-import SalesNav from '@/components/sales/SalesNav'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import { sectionStyle, inputStyle, labelStyle, thStyle, tdStyle, Pill, ErrorBanner, PageHeader } from '@/components/sales/SalesUi'
+import { sectionStyle, inputStyle, labelStyle, thStyle, tdStyle, Pill, ErrorBanner } from '@/components/sales/SalesUi'
 import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
-import { formatINR } from '@/components/sales/labels'
+import { formatMoney, CURRENCY_OPTIONS } from '@/components/sales/labels'
+import CurrencyConversions from '@/components/products/CurrencyConversions'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetSection, SheetIcon, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+
+export type PriceItemKind = 'product' | 'spare' | 'service' | 'any'
 
 const TYPE_HEX: Record<string, string> = { price: '#2563eb', discount: '#16a34a', freight: '#7c3aed' }
 const TYPE_LABELS: Record<string, string> = { price: 'Price', discount: 'Discount', freight: 'Freight' }
@@ -34,6 +36,8 @@ interface FormState {
   store_item_id: string
   service_code: string
   customer_id: string
+  country: string
+  currency: string
   amount: string
   percent: string
   freight_basis: string
@@ -46,21 +50,36 @@ interface FormState {
 
 // Local calendar date (YYYY-MM-DD) — toISOString() is UTC, i.e. yesterday before 05:30 IST.
 const today = () => new Date().toLocaleDateString('en-CA')
-const emptyForm = (): FormState => ({
-  condition_type: 'price', item_kind: 'product', product_id: '', store_item_id: '', service_code: '', customer_id: '',
-  amount: '', percent: '', freight_basis: 'per_order', min_price: '', uom: '', valid_from: today(), valid_to: '', remarks: '',
-})
 const num = (v: string) => (v.trim() === '' ? null : Number(v))
 
 function valueText(c: PriceCondition) {
-  if (c.condition_type === 'price') return `${formatINR(c.amount)}${c.uom ? ` / ${c.uom}` : ''}`
+  if (c.condition_type === 'price') return `${formatMoney(c.amount ?? 0, c.currency)}${c.uom ? ` / ${c.uom}` : ''}`
   if (c.condition_type === 'discount') return `${c.percent}%`
-  return c.freight_basis === 'percent' ? `${c.percent}% of value` : `${formatINR(c.amount)} / order`
+  return c.freight_basis === 'percent' ? `${c.percent}% of value` : `${formatMoney(c.amount ?? 0, c.currency)} / order`
 }
 
-export default function SalesPricingPage() {
-  const { isAuthorized, isLoading } = useRequireApp('sales')
+export default function PriceConditionsPanel({ productId, itemKinds, emptyText }: {
+  /** Lock the panel to one product: lists that product's conditions and hides the product picker. */
+  productId?: number
+  /** Restrict to these item kinds (ignored when productId is set). */
+  itemKinds?: PriceItemKind[]
+  emptyText?: string
+}) {
   const { can } = useCan()
+  const allowedKinds: PriceItemKind[] | null = productId ? ['product'] : (itemKinds && itemKinds.length ? itemKinds : null)
+  const kindOk = useCallback((k: string) => !allowedKinds || (allowedKinds as string[]).includes(k), [allowedKinds])
+  // Which item kinds a condition type can be set on (price: never "any"; freight: only "any").
+  const kindsFor = useCallback((type: string, all: Option[]) => {
+    const byType = type === 'price' ? all.filter((k) => k.value !== 'any') : type === 'freight' ? all.filter((k) => k.value === 'any') : all
+    return byType.filter((k) => kindOk(k.value))
+  }, [kindOk])
+
+  const emptyForm = useCallback((type = 'price', kind = ''): FormState => ({
+    condition_type: type, item_kind: kind || (productId ? 'product' : (allowedKinds?.[0] === 'any' ? 'any' : allowedKinds?.[0] || 'product')),
+    product_id: productId ? String(productId) : '', store_item_id: '', service_code: '', customer_id: '', country: '', currency: 'INR',
+    amount: '', percent: '', freight_basis: 'per_order', min_price: '', uom: '', valid_from: today(), valid_to: '', remarks: '',
+  }), [productId, allowedKinds])
+
   const [rows, setRows] = useState<PriceCondition[]>([])
   const [meta, setMeta] = useState<{ condition_types: Option[]; item_kinds: Option[]; service_codes: Option[]; freight_bases: Option[] } | null>(null)
   const [customers, setCustomers] = useState<{ value: string; label: string }[]>([])
@@ -81,25 +100,25 @@ export default function SalesPricingPage() {
     const params: Record<string, unknown> = { current_only: currentOnly }
     if (typeFilter) params.condition_type = typeFilter
     if (customerFilter) params.customer_id = Number(customerFilter)
+    if (productId) params.product_id = productId
     setLoading(true)
-    pricingApi.list(params).then((d) => { setRows(d); setError('') })
-      .catch((e) => setError(extractErrorMessages(e, 'Could not load the pricing conditions.')))
+    pricingApi.list(params).then((d) => { setRows(productId ? d : d.filter((c) => kindOk(c.item_kind))); setError('') })
+      .catch((e) => setError(extractErrorMessages(e, 'Could not load the prices.')))
       .finally(() => setLoading(false))
-  }, [typeFilter, customerFilter, currentOnly])
+  }, [typeFilter, customerFilter, currentOnly, productId, kindOk])
 
-  useEffect(() => { if (isAuthorized) load() }, [isAuthorized, load])
+  useEffect(() => { load() }, [load])
   useEffect(() => {
-    if (!isAuthorized) return
-    pricingApi.meta().then(setMeta).catch((e) => { setMeta(null); setMetaError(extractErrorMessages(e, 'Could not load the condition types and service rates, so new conditions cannot be added — reload the page.')) })
+    pricingApi.meta().then(setMeta).catch((e) => { setMeta(null); setMetaError(extractErrorMessages(e, 'Could not load the price types and service rates, so new prices cannot be added — reload the page.')) })
     salesApi.lookupCustomers().then((cs: { id: number; name: string; gst_number: string | null }[]) =>
       setCustomers(cs.map((c) => ({ value: String(c.id), label: c.gst_number ? `${c.name} (${c.gst_number})` : c.name })))).catch(() => setCustomers([]))
-  }, [isAuthorized])
+  }, [])
   useEffect(() => {
-    // Only products / spares pick from a list; other kinds never show it.
-    if (!form || (form.item_kind !== 'product' && form.item_kind !== 'spare')) return
+    // Only spares pick from a list here; a locked product needs no picker.
+    if (!form || productId || (form.item_kind !== 'product' && form.item_kind !== 'spare')) return
     pricingApi.lookupItems(form.item_kind as 'product' | 'spare').then((r) => setItems(r.map((x) => ({ value: String(x.id), label: x.label }))))
       .catch(() => setItems([]))
-  }, [form?.item_kind]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [form?.item_kind, productId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (patch: Partial<FormState>) => setForm((f) => (f ? { ...f, ...patch } : f))
   const edit = (c: PriceCondition) => {
@@ -107,6 +126,7 @@ export default function SalesPricingPage() {
     setForm({
       id: c.id, condition_type: c.condition_type, item_kind: c.item_kind, product_id: String(c.product_id || ''),
       store_item_id: String(c.store_item_id || ''), service_code: c.service_code || '', customer_id: String(c.customer_id || ''),
+      country: c.country || '', currency: c.currency || 'INR',
       amount: c.amount == null ? '' : String(c.amount), percent: c.percent == null ? '' : String(c.percent),
       freight_basis: c.freight_basis || 'per_order', min_price: c.min_price == null ? '' : String(c.min_price), uom: c.uom || '',
       valid_from: c.valid_from, valid_to: c.valid_to || '', remarks: c.remarks || '',
@@ -119,51 +139,52 @@ export default function SalesPricingPage() {
     setFormError('')
     const body: Record<string, unknown> = {
       amount: num(form.amount), percent: num(form.percent), freight_basis: form.freight_basis, min_price: num(form.min_price),
-      uom: form.uom || null, valid_from: form.valid_from, valid_to: form.valid_to || null, remarks: form.remarks || null,
+      uom: form.uom || null, currency: form.currency || 'INR', valid_from: form.valid_from, valid_to: form.valid_to || null, remarks: form.remarks || null,
     }
     try {
       if (form.id) await pricingApi.update(form.id, body)
       else await pricingApi.create({
         ...body, condition_type: form.condition_type, item_kind: form.item_kind,
-        product_id: form.product_id ? Number(form.product_id) : null, store_item_id: form.store_item_id ? Number(form.store_item_id) : null,
+        product_id: productId ? productId : (form.product_id ? Number(form.product_id) : null),
+        store_item_id: form.store_item_id ? Number(form.store_item_id) : null,
         service_code: form.service_code || null, customer_id: form.customer_id ? Number(form.customer_id) : null,
+        country: form.country.trim() || null,
       })
       setForm(null)
       load()
     } catch (e) {
-      setFormError(extractErrorMessages(e, 'Could not save the condition.'))
+      setFormError(extractErrorMessages(e, 'Could not save the price.'))
     } finally {
       setSaving(false)
     }
   }
 
   const endToday = async (c: PriceCondition) => {
-    try { await pricingApi.update(c.id, { valid_to: today() }); load() } catch (e) { setError(extractErrorMessages(e, 'Could not end the condition.')) }
+    try { await pricingApi.update(c.id, { valid_to: today() }); load() } catch (e) { setError(extractErrorMessages(e, 'Could not end the price.')) }
   }
   const doDelete = async () => {
     if (!toDelete) return
-    try { await pricingApi.remove(toDelete.id); setToDelete(null); load() } catch (e) { setToDelete(null); setError(extractErrorMessages(e, 'Could not delete the condition.')) }
+    try { await pricingApi.remove(toDelete.id); setToDelete(null); load() } catch (e) { setToDelete(null); setError(extractErrorMessages(e, 'Could not delete the price.')) }
   }
 
-  const kinds = useMemo(() => {
-    const all = meta?.item_kinds || []
-    if (!form) return all
-    if (form.condition_type === 'price') return all.filter((k) => k.value !== 'any')
-    if (form.condition_type === 'freight') return all.filter((k) => k.value === 'any')
-    return all
-  }, [meta, form])
+  const kinds = useMemo(() => (meta && form ? kindsFor(form.condition_type, meta.item_kinds) : []), [meta, form, kindsFor])
+  // Types that can be created in this panel at all.
+  const types = useMemo(() => (meta ? meta.condition_types.filter((t) => kindsFor(t.value, meta.item_kinds).length > 0) : []), [meta, kindsFor])
 
-  if (isLoading || !isAuthorized) return null
   const canCreate = can('sales', 'pricing', 'create')
   const canEdit = can('sales', 'pricing', 'edit')
   const canDel = can('sales', 'pricing', 'delete')
+  const showKindPicker = kinds.length > 1
+  const showForCol = !productId
+
+  const changeType = (t: string) => {
+    if (!meta) return
+    const ks = kindsFor(t, meta.item_kinds)
+    set({ condition_type: t, item_kind: ks[0]?.value || '', store_item_id: '', service_code: '' })
+  }
 
   return (
     <div>
-      <SalesNav />
-      <PageHeader title="Pricing" subtitle="Price lists for spares and service rates, customer prices and discounts, and freight. Vehicles and machines are priced per quotation.">
-        {canCreate && <button style={primaryBtnStyle} onClick={() => { setFormError(''); setForm(emptyForm()) }}>+ New condition</button>}
-      </PageHeader>
       <ErrorBanner error={error} />
       <ErrorBanner error={metaError} />
 
@@ -182,21 +203,27 @@ export default function SalesPricingPage() {
         <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, paddingBottom: 10 }}>
           <input type="checkbox" checked={currentOnly} onChange={(e) => setCurrentOnly(e.target.checked)} /> Valid today only
         </label>
+        {canCreate && (
+          <button type="button" style={{ ...primaryBtnStyle, marginLeft: 'auto' }} disabled={!meta || types.length === 0}
+            title={!meta ? 'Price types are still loading or could not be loaded.' : undefined}
+            onClick={() => { setFormError(''); setForm(emptyForm(types[0]?.value || 'price', meta ? kindsFor(types[0]?.value || 'price', meta.item_kinds)[0]?.value : '')) }}>+ New price</button>
+        )}
       </div>
 
       <div style={{ ...sectionStyle, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-          <thead><tr>{['Type', 'For', 'Customer', 'Value', 'Min. price', 'Valid from', 'Valid to', 'Remarks', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: showForCol ? 1000 : 860 }}>
+          <thead><tr>{['Type', ...(showForCol ? ['For'] : []), 'Customer', 'Country', 'Value', 'Min. price', 'Valid from', 'Valid to', 'Remarks', ''].map((h, hi) => <th key={h || 'actions'} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={9} style={{ ...tdStyle, color: '#a8a29e' }}>Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={9} style={{ ...tdStyle, color: '#a8a29e' }}>No pricing conditions{currentOnly ? ' valid today' : ''}.</td></tr>}
+            {loading && <tr><td colSpan={10} style={{ ...tdStyle, color: '#a8a29e' }}>Loading…</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={10} style={{ ...tdStyle, color: '#a8a29e' }}>{emptyText || 'No prices'}{currentOnly ? ' valid today' : ''}.</td></tr>}
             {rows.map((c) => (
               <tr key={c.id}>
                 <td style={tdStyle}><Pill label={TYPE_LABELS[c.condition_type] || c.condition_type} hex={TYPE_HEX[c.condition_type] || '#78716c'} /></td>
-                <td style={tdStyle}>{c.item_label}</td>
-                <td style={tdStyle}>{c.customer_name || <span style={{ color: '#a8a29e' }}>All (list)</span>}</td>
+                {showForCol && <td style={tdStyle}>{c.item_label}</td>}
+                <td style={tdStyle}>{c.customer_name || <span style={{ color: '#a8a29e' }}>{c.country ? 'All in country' : 'All (list)'}</span>}</td>
+                <td style={tdStyle}>{c.country || <span style={{ color: '#a8a29e' }}>—</span>}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 600 }}>{valueText(c)}</td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{c.min_price == null ? '—' : formatINR(c.min_price)}</td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{c.min_price == null ? '—' : formatMoney(c.min_price, c.currency)}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(c.valid_from)}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{c.valid_to ? formatDate(c.valid_to) : 'Open'}</td>
                 <td style={{ ...tdStyle, maxWidth: 240 }}>{c.remarks || ''}</td>
@@ -212,7 +239,7 @@ export default function SalesPricingPage() {
       </div>
 
       {form && (
-        <FormSheet tour="sales-pricing-form" width={640} icon="tag" title={form.id ? 'Change Condition' : 'New Pricing Condition'}
+        <FormSheet tour="price-condition-form" width={640} icon="tag" title={form.id ? 'Change Price' : 'New Price'}
           subtitle={form.id ? `${TYPE_LABELS[form.condition_type] || form.condition_type} for ${rows.find((r) => r.id === form.id)?.item_label || '—'}` : 'A validity-dated price, discount or freight that documents default from.'}
           onClose={() => setForm(null)} busy={saving}
           footer={<>
@@ -223,28 +250,28 @@ export default function SalesPricingPage() {
           </>}>
           <div style={{ padding: '20px 24px' }}>
             <ErrorBanner error={formError} />
-            <SheetSection icon="tag" title="Condition">
+            <SheetSection icon="tag" title="Price">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ flex: '0 1 150px', minWidth: 140 }}>
                   <label style={sheetLabel}>Type <Req /></label>
-                  <Select disabled={!!form.id} style={sheetInput} value={form.condition_type}
-                    onChange={(e) => set({ condition_type: e.target.value, item_kind: e.target.value === 'freight' ? 'any' : e.target.value === 'price' ? 'product' : form.item_kind })}>
-                    {(meta?.condition_types || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  <Select disabled={!!form.id} style={sheetInput} value={form.condition_type} onChange={(e) => changeType(e.target.value)}>
+                    {(form.id ? meta?.condition_types || [] : types).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </Select>
                 </div>
-                <div style={{ flex: '0 1 190px', minWidth: 170 }}>
-                  <label style={sheetLabel}>For <Req /></label>
-                  <Select disabled={!!form.id} style={sheetInput} value={form.item_kind} onChange={(e) => set({ item_kind: e.target.value, product_id: '', store_item_id: '', service_code: '' })}>
-                    {kinds.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </Select>
-                </div>
+                {showKindPicker && (
+                  <div style={{ flex: '0 1 190px', minWidth: 170 }}>
+                    <label style={sheetLabel}>For <Req /></label>
+                    <Select disabled={!!form.id} style={sheetInput} value={form.item_kind} onChange={(e) => set({ item_kind: e.target.value, product_id: '', store_item_id: '', service_code: '' })}>
+                      {kinds.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </Select>
+                  </div>
+                )}
               </div>
-              {(form.item_kind === 'product' || form.item_kind === 'spare') && (
+              {!productId && form.item_kind === 'spare' && (
                 <div style={{ marginTop: 14, maxWidth: 420 }}>
-                  <label style={sheetLabel}>{form.item_kind === 'product' ? 'Product' : 'Spare (Item Master)'} <Req /></label>
+                  <label style={sheetLabel}>Spare (Item Master) <Req /></label>
                   {form.id ? <div style={{ fontSize: 13, paddingTop: 4, color: SHEET.INK }}>{rows.find((r) => r.id === form.id)?.item_label}</div> : (
-                    <SearchableSelect value={form.item_kind === 'product' ? form.product_id : form.store_item_id} options={items} placeholder="Pick…"
-                      onChange={(v) => set(form.item_kind === 'product' ? { product_id: v } : { store_item_id: v })} />
+                    <SearchableSelect value={form.store_item_id} options={items} placeholder="Pick…" onChange={(v) => set({ store_item_id: v })} />
                   )}
                 </div>
               )}
@@ -263,8 +290,17 @@ export default function SalesPricingPage() {
                 {form.id ? <div style={{ fontSize: 13, paddingTop: 4, color: SHEET.INK }}>{rows.find((r) => r.id === form.id)?.customer_name || 'All (list)'}</div> : (
                   <SearchableSelect value={form.customer_id} onChange={(v) => set({ customer_id: v })} options={[{ value: '', label: 'All customers (list)' }, ...customers]} placeholder="All customers (list)" />
                 )}
-                {form.condition_type !== 'discount' && !form.id && <p style={sheetHint}>Blank = the list price for all customers.</p>}
+                {form.condition_type !== 'discount' && !form.id && <p style={sheetHint}>Blank = the list price for all customers (or for one country, below).</p>}
               </div>
+              {form.condition_type === 'price' && !form.customer_id && (
+                <div style={{ marginTop: 14, maxWidth: 420 }}>
+                  <label style={sheetLabel}>Country <Optional /></label>
+                  {form.id ? <div style={{ fontSize: 13, paddingTop: 4, color: SHEET.INK }}>{form.country || 'All countries'}</div> : (
+                    <input style={sheetInput} value={form.country} onChange={(e) => set({ country: e.target.value })} placeholder="e.g. Bangladesh — blank = all countries" maxLength={50} />
+                  )}
+                  <p style={sheetHint}>A country price applies to every customer whose CRM organisation is in that country. Customer price wins over country price, country price over the list price.</p>
+                </div>
+              )}
             </SheetSection>
             <SheetSection icon="rupee" title="Value">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
@@ -278,7 +314,7 @@ export default function SalesPricingPage() {
                 )}
                 {(form.condition_type === 'price' || (form.condition_type === 'freight' && form.freight_basis === 'per_order')) && (
                   <div style={{ flex: '0 1 150px', minWidth: 130 }}>
-                    <label style={sheetLabel}>{form.condition_type === 'price' ? 'Rate (₹)' : 'Amount (₹)'}</label>
+                    <label style={sheetLabel}>{form.condition_type === 'price' ? `Rate (${form.currency})` : `Amount (${form.currency})`}</label>
                     <input type="number" min={0} style={sheetInput} value={form.amount} onChange={(e) => set({ amount: e.target.value })} />
                   </div>
                 )}
@@ -291,8 +327,14 @@ export default function SalesPricingPage() {
                 {form.condition_type === 'price' && (
                   <>
                     <div style={{ flex: '0 1 150px', minWidth: 130 }}>
-                      <label style={sheetLabel}>Min. price (₹)</label>
+                      <label style={sheetLabel}>Min. price ({form.currency})</label>
                       <input type="number" min={0} style={sheetInput} value={form.min_price} onChange={(e) => set({ min_price: e.target.value })} />
+                    </div>
+                    <div style={{ flex: '0 1 200px', minWidth: 170 }}>
+                      <label style={sheetLabel}>Currency</label>
+                      <Select style={sheetInput} value={form.currency} onChange={(e) => set({ currency: e.target.value })}>
+                        {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </Select>
                     </div>
                     <div style={{ flex: '0 1 90px', minWidth: 80 }}>
                       <label style={sheetLabel}>Unit</label>
@@ -301,6 +343,7 @@ export default function SalesPricingPage() {
                   </>
                 )}
               </div>
+              {form.condition_type === 'price' && <CurrencyConversions amount={num(form.amount)} currency={form.currency} />}
             </SheetSection>
             <SheetSection icon="calendar" title="Validity">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
@@ -313,14 +356,14 @@ export default function SalesPricingPage() {
                   <DateField value={form.valid_to} onChange={(v) => set({ valid_to: v })} />
                 </div>
               </div>
-              <p style={sheetHint}>Leave “Valid to” blank for an open-ended condition.</p>
+              <p style={sheetHint}>Leave “Valid to” blank for an open-ended price.</p>
               <label style={{ ...sheetLabel, marginTop: 14 }}>Remarks</label>
               <input style={sheetInput} value={form.remarks} onChange={(e) => set({ remarks: e.target.value })} placeholder="e.g. Rate contract RC/2026/12" />
             </SheetSection>
           </div>
         </FormSheet>
       )}
-      <ConfirmDialog open={!!toDelete} title="Delete pricing condition"
+      <ConfirmDialog open={!!toDelete} title="Delete price"
         message={`Delete ${toDelete ? `${TYPE_LABELS[toDelete.condition_type]} for ${toDelete.item_label}` : ''}? Lines already priced from it keep their price. To stop using it from a date, use “End today” instead.`}
         onConfirm={doDelete} onCancel={() => setToDelete(null)} />
     </div>

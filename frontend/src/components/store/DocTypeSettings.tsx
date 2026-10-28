@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import Link from 'next/link'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
@@ -60,6 +62,8 @@ export default function DocTypeSettings({ kind, title, noun, intro }: { kind: St
   const [form, setForm] = useState<Form>(EMPTY)
   const [errors, setErrors] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
+  // Add only; editing an existing type is not kept.
+  const draft = useFormDraft(editing === 'new' ? `store-doctype-${kind}-new` : null, form, (d) => setForm({ ...EMPTY, ...d }))
   const [deleteTarget, setDeleteTarget] = useState<StoreDocType | null>(null)
   const [deleteErrors, setDeleteErrors] = useState<string[]>([])
   // Only stock entry / issue types can be deleted (and only while unused —
@@ -122,6 +126,7 @@ export default function DocTypeSettings({ kind, title, noun, intro }: { kind: St
     try {
       if (editing === 'new') await storeApi.createDocType(kind, payload)
       else if (editing) await storeApi.updateDocType(kind, editing.value, payload)
+      draft.clear()
       setEditing(null)
       load()
     } catch (err) {
@@ -175,6 +180,7 @@ export default function DocTypeSettings({ kind, title, noun, intro }: { kind: St
             <button data-tour="store-doctype-save-btn" type="button" onClick={save} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save'}</button>
           </>}>
           <div style={{ padding: '20px 24px' }}>
+            <DraftBanner draft={draft} />
             {errors.length > 0 && (
               <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
                 {errors.map((e, i) => <div key={i}>{e}</div>)}

@@ -23,10 +23,6 @@ register_features(
     _feature("audit_trail", "Audit trail", "subtab", {
         "view": "view",
     }, "The Audit Trail sub-tab of a customer organization: who created and changed it, and when."),
-    _feature("engagements", "Engagements", "subtab", {
-        "view": "view", "create": "view", "edit": "view", "delete": "view",
-    }, "The Engagements sub-tab of a customer organization: log meetings, calls, visits and discussions with its contacts "
-       "and their outcome. Anyone who can see organizations logs them; only the person who logged one (or an admin) edits / deletes it."),
 )
 
 register_features(

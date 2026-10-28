@@ -63,12 +63,11 @@ def build_context(db: Session, module: str, record, user: User, now: datetime | 
     }
     if module == "inquiry":
         ctx.update({
-            "product_category": record.product_category, "product": record.product,
-            "quantity_display": f"{record.quantity:g}" if record.quantity is not None else None,
-            "required_delivery_date": record.required_delivery_date.strftime("%d %b %Y") if record.required_delivery_date else None,
-            "delivery_location": record.delivery_location, "warranty_req": record.warranty_req,
-            "inspection_req": record.inspection_req, "product_spec": record.product_spec,
-            "requirement_desc": record.requirement_desc, "project_details": record.project_details,
+            "product": record.product,
+            "product_spec": record.product_spec,
+            "additional_items": [{"product": it.product, "product_spec": it.product_spec}
+                                 for it in record.additional_items if it.product or it.product_spec],
+            "project_details": record.project_details,
         })
     else:
         ctx.update({

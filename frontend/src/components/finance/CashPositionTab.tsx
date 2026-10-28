@@ -9,6 +9,8 @@ import { useCan } from '@/lib/permissions'
 import { CashForecastItem, CashPosition, financeTreasuryApi } from '@/lib/financeTreasuryApi'
 import { TEXT } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
+import DraftBanner from '@/components/shared/DraftBanner'
+import { useFormDraft } from '@/lib/formDraft'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import DateField from '@/components/erp/DateField'
 import { FormSheet, SheetSection, sheetInput, SheetError } from '@/components/shared/FormSheet'
@@ -194,6 +196,8 @@ function PlannedItems({ items, cats, canCreate, canEdit, canDelete, onChanged }:
   const set = (k: keyof typeof EMPTY, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const showForm = open && (editId != null ? canEdit : canCreate)
   const close = () => { setOpen(false); setEditId(null); setForm(EMPTY); setFormError(null) }
+  // A new planned item's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft(showForm && editId == null ? 'finance-cash-plan-item-new' : null, form, (d) => setForm({ ...EMPTY, ...d }))
 
   const save = async () => {
     setFormError(null)
@@ -203,7 +207,7 @@ function PlannedItems({ items, cats, canCreate, canEdit, canDelete, onChanged }:
     const payload = { ...form, amount: Number(form.amount), end_date: form.end_date || null }
     try {
       if (editId != null) await financeTreasuryApi.updateForecastItem(editId, payload)
-      else await financeTreasuryApi.createForecastItem(payload)
+      else { await financeTreasuryApi.createForecastItem(payload); draft.clear() }
       setForm(EMPTY); setEditId(null); setOpen(false); onChanged()
     } catch (err) { setFormError(extractErrorMessages(err, 'Could not save the planned item.')) } finally { setBusy(false) }
   }
@@ -233,6 +237,7 @@ function PlannedItems({ items, cats, canCreate, canEdit, canDelete, onChanged }:
           subtitle="Feeds the liquidity forecast only — nothing is posted." onClose={close} busy={busy}
           footer={<SheetFooter onCancel={close} onSubmit={save} busy={busy} label={editId != null ? 'Save' : 'Add'} icon={editId != null ? 'check' : 'plus'} />}>
           <SheetBody>
+            <DraftBanner draft={draft} />
             <SheetError error={formError} />
             <SheetSection icon="rupee" title="Flow">
               <SRow>

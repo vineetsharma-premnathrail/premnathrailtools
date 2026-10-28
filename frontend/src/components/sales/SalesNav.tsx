@@ -10,13 +10,10 @@ import TourButton from '@/components/tour/TourButton'
 import NavSettingsGear from '@/components/shared/NavSettingsGear'
 import { ChartBar, Gear, Package, Receipt, SquaresFour, Tag, Truck, type Icon } from '@phosphor-icons/react'
 
-// Phase 1 tabs (docs/02-modules/sales/plan.md §9). Billing, Quotations and
-// Pricing join in Phases 2–3; their permission subtabs already exist.
+// Sales tabs. Pricing is kept inside each Product (and Sales Settings).
 const TABS = [
   { href: '/dashboard/sales', label: 'Dashboard', icon: 'dashboard', subtabKey: 'dashboard' },
   { href: '/dashboard/sales/orders', label: 'Sales Orders', icon: 'orders', subtabKey: 'orders' },
-  { href: '/dashboard/sales/delivery', label: 'Delivery', icon: 'truck', subtabKey: 'delivery' },
-  { href: '/dashboard/sales/pricing', label: 'Pricing', icon: 'tag', subtabKey: 'pricing' },
   { href: '/dashboard/sales/reports', label: 'Reports', icon: 'bar-chart', subtabKey: 'reports' },
   { href: '/dashboard/sales/settings', label: 'Settings', icon: 'gear', subtabKey: 'settings' },
 ] as const
@@ -46,9 +43,9 @@ export default function SalesNav() {
   const visibleTabs: { href: string; label: string; icon: string }[] = (user?.apps?.includes('sales') ? allowedTabs : [])
     .filter((t) => t.subtabKey !== 'settings')
   // Product Management (the 'products' app) is shown inside Sales as one tab;
-  // its own Products / Applications / Mapping tabs sit in ProductsNav below.
-  if (user?.apps?.includes('products') && ['products', 'applications', 'product_mapping'].some((k) => canViewTab('sales', k, user))) {
-    const at = visibleTabs.findIndex((t) => t.href === '/dashboard/sales/pricing')
+  // its own Products / Applications tabs sit in ProductsNav below.
+  if (user?.apps?.includes('products') && canViewTab('sales', 'products', user)) {
+    const at = visibleTabs.findIndex((t) => t.href === '/dashboard/sales/reports')
     visibleTabs.splice(at < 0 ? visibleTabs.length : at, 0, { href: '/dashboard/products', label: 'Products', icon: 'box' })
   }
   const settingsTab = user?.apps?.includes('sales') && allowedTabs.find((t) => t.subtabKey === 'settings')

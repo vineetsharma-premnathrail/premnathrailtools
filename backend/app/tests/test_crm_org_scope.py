@@ -68,14 +68,24 @@ def test_international_with_tax_vat_and_registration(client, db):
     assert d["gst_number"] is None and d["pan"] is None and d["gst_state_code"] is None
 
 
-def test_international_organization_in_india_is_allowed(client, db):
+def test_international_organization_in_india_is_refused(client, db):
+    # Owner, 2026-10-27: International = outside India; an Indian customer is Domestic.
     u = make_user(db, "scope_d@premnathrail.com")
     r = client.post(URL, json=body(org_scope="international", name="Intl India", country="India", state="Delhi",
                                    tax_vat_id="AB-1234"), headers=h(u))
+    assert r.status_code == 422 and "can't be India" in r.text
+    r = client.post(URL, json=body(org_scope="international", name="Intl Nepal", country="Nepal", state="Bagmati",
+                                   tax_vat_id="AB-1234"), headers=h(u))
     assert r.status_code == 201, r.text
     d = r.json()
-    assert d["org_scope"] == "international" and d["country"] == "India"
+    assert d["org_scope"] == "international" and d["country"] == "Nepal"
     assert d["gst_state_code"] is None  # state name must not be turned into a GST state code
+    r = client.post(URL, json=body(org_scope="international", name="Intl No Country", tax_vat_id="AB-1"), headers=h(u))
+    assert r.status_code == 422 and "Country is required" in r.text
+    r = client.patch(f"{URL}/{d['id']}", json={"country": ""}, headers=h(u))
+    assert r.status_code == 422 and "Country is required" in detail(r)
+    r = client.patch(f"{URL}/{d['id']}", json={"country": "india"}, headers=h(u))
+    assert r.status_code == 422 and "can't be India" in detail(r)
 
 
 def test_domestic_must_be_in_india(client, db):
@@ -163,7 +173,7 @@ def test_blank_tax_fields_are_treated_as_not_sent(client, db):
     u = make_user(db, "scope_k@premnathrail.com")
     r = client.post(URL, json=body(name="Blank Dom", gst_number="", tax_vat_id="", company_registration_no=" "), headers=h(u))
     assert r.status_code == 201, r.text
-    r = client.post(URL, json=body(org_scope="international", name="Blank Intl", gst_number="", pan="", gst_state_code=""), headers=h(u))
+    r = client.post(URL, json=body(org_scope="international", name="Blank Intl", country="Japan", gst_number="", pan="", gst_state_code=""), headers=h(u))
     assert r.status_code == 201, r.text
     assert db.query(Organization).filter(Organization.gst_number == "").count() == 0
 
@@ -211,10 +221,10 @@ def test_edit_domestic_rejects_international_fields(client, db):
 def test_switch_domestic_to_international_clears_gst_fields(client, db):
     u = make_user(db, "scope_p@premnathrail.com")
     org = client.post(URL, json=body(name="Switch A", gst_number=GSTIN, state="Maharashtra"), headers=h(u)).json()
-    r = client.patch(f"{URL}/{org['id']}", json={"org_scope": "international", "tax_vat_id": "SW-100", "country": "India"}, headers=h(u))
+    r = client.patch(f"{URL}/{org['id']}", json={"org_scope": "international", "tax_vat_id": "SW-100", "country": "Germany"}, headers=h(u))
     assert r.status_code == 200, r.text
     d = r.json()
-    assert d["org_scope"] == "international" and d["tax_vat_id"] == "SW-100" and d["country"] == "India"
+    assert d["org_scope"] == "international" and d["tax_vat_id"] == "SW-100" and d["country"] == "Germany"
     assert d["gst_number"] is None and d["pan"] is None and d["gst_state_code"] is None
 
 

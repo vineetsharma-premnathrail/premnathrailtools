@@ -39,11 +39,6 @@ const config: TourConfig = {
       purpose: 'Alerts you when something needs your attention — a follow-up is due, a quotation status changed, a task was assigned to you.',
     },
     {
-      target: 'dash-new-inquiry-btn',
-      title: '+ New inquiry',
-      purpose: 'Top-right shortcut to the Create Inquiry form. Shown only if your role may create inquiries.',
-    },
-    {
       target: 'dash-stat-organizations',
       title: 'Organizations (count)',
       purpose: 'Total customer organizations on record.',

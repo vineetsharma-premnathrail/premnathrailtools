@@ -8,6 +8,7 @@ A control the code does NOT enforce yet keeps its test, marked
 xfail(strict=True) with the reason "OPEN: C-0x ...", so the test starts
 failing (XPASS) the day the fix lands and the marker must be removed.
 """
+from app.tests.p2p_workflow_helpers import attach_tally_po
 from datetime import date
 from itertools import count
 
@@ -289,6 +290,7 @@ def test_c04_rfq_po_draft_cannot_be_submitted_without_prices(client, db):
     ])
     db.commit()
 
+    attach_tally_po(db, po.id)
     r = client.post(f"/api/v1/p2p/rfqs/{rfq.id}/po-draft/{po.id}/submit", headers=_h(buyer))
     assert r.status_code == 400, r.text
     assert "Unpriced" in r.json()["detail"]

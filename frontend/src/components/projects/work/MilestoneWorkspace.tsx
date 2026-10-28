@@ -17,6 +17,8 @@ import {
   AttachmentList, DOC_TYPE_LABELS, ErrorBanner, FlagPill, MILESTONE_HEX, MILESTONE_LABELS, Notice, PRIORITY_LABELS, PROJECT_LABELS, Pill,
   ProgressBar, actionBtn, smallActionBtn, inputStyle, sectionStyle, todayIso,
 } from './pmUi'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { FormSheet, Optional, Req, SHEET, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import { TaskTable } from './DepartmentWork'
 import PeoplePicker, { useTeamCandidates } from './PeoplePicker'
@@ -77,6 +79,8 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
     try { await fn(); load() } catch (err) { setError(extractErrorMessages(err, fallback)) } finally { setBusy(false) }
   }
 
+  const draft = useFormDraft(form && !form.id ? `projects-task-new-${milestoneId}-${selfTask ? 'own' : 'assign'}` : null, form, (d) => setForm({ ...emptyTask(), ...d }))
+
   if (!ws) return <><ErrorBanner error={error} />{!error && <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>}</>
   const m = ws.milestone
   const projectActive = m.project_status === 'active'
@@ -115,6 +119,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
       if (selfTask) await pmWorkApi.createOwnTask(m.id, payload)
       else if (form.id) await pmWorkApi.updateTask(form.id, { ...payload, assignee_id: Number(form.assignee_id) })
       else await pmWorkApi.createTask(m.id, { ...payload, assignee_id: Number(form.assignee_id) })
+      if (!form.id) draft.clear()
       setForm(null)
     }, 'Could not save the task.')
   }
@@ -235,6 +240,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
               <button data-tour="pm-task-form-save" type="button" onClick={saveTask} disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name={form.id ? 'check' : 'plus'} size={16} />{busy ? 'Saving…' : form.id ? 'Save' : selfTask ? 'Add my task' : 'Create & assign'}</button>
             </>}>
             <div style={{ padding: '20px 24px' }}>
+              <DraftBanner draft={draft} />
               <ErrorBanner error={error} />
               <SheetSection icon="list" title="Basic Information">
                 <div data-tour="pm-task-form-title">

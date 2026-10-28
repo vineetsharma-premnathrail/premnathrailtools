@@ -11,15 +11,15 @@ import { extractErrorMessages } from '@/lib/validation'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import SalesNav from '@/components/sales/SalesNav'
 import { ErrorBanner } from '@/components/sales/SalesUi'
-import { formatINR, formatMoney } from '@/components/sales/labels'
+import { formatMoney, ORDER_CATEGORY_LABELS } from '@/components/sales/labels'
 import { useCan } from '@/lib/permissions'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, FileDropZone, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import OrderTermsFields, { OrderTerms } from '@/components/sales/OrderTermsFields'
 import { LinesEditor, ScheduleEditor, BillingPlanEditor, emptyLine, syncVehicleRows, lineTotals } from '@/components/sales/OrderEditors'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import CrmDocumentPicker from '@/components/sales/CrmDocumentPicker'
 
-type Customer = { id: number; name: string; gst_number: string | null; state: string | null }
 type Contact = { id: number; name: string; designation: string | null }
 
 const TERM_KEYS = [
@@ -29,6 +29,15 @@ const TERM_KEYS = [
   'warranty_months_from_delivery', 'warranty_months_from_commissioning', 'warranty_rule', 'warranty_terms_text',
   'delivery_terms_text', 'special_conditions',
 ]
+
+// Step 1 of a new order. Only a New Project order gets a project (and its vehicle units)
+// in Project Management when it is confirmed; Service and Rental orders don't.
+const CATEGORY_HINTS: Record<string, string> = {
+  new_project: 'New machines to design and build. A project with its vehicle units opens in Project Management when the order is approved.',
+  service: 'Paid service work on one of our machines: pick the project / machine, then its service requests (SRs). No build project.',
+  rental: 'A machine given on hire: pick the organisation it is rented to. No build project.',
+}
+type SourceKind = 'inquiry' | 'tender'
 
 export default function NewSalesOrderPage() {
   const { isAuthorized, isLoading } = useRequireApp('sales')
@@ -43,7 +52,18 @@ export default function NewSalesOrderPage() {
   const linkError = inquiryLink.error || tenderLink.error
   const linkLoading = inquiryLink.loading || tenderLink.loading
 
-  const [customers, setCustomers] = useState<Customer[]>([])
+  const [category, setCategory] = useState<string | null>(null)
+  const [sourceKind, setSourceKind] = useState<SourceKind>(params.get('tender') ? 'tender' : 'inquiry')
+  const [sources, setSources] = useState<Awaited<ReturnType<typeof salesApi.orderSources>>>([])
+  const [sourceId, setSourceId] = useState<number | null>(null)
+  const [sourceLoading, setSourceLoading] = useState(false)
+  const [customerName, setCustomerName] = useState('')
+  // Service order: the machine and its SRs. Rental: the organisation, picked directly.
+  const [machines, setMachines] = useState<Awaited<ReturnType<typeof salesApi.serviceMachines>>>([])
+  const [machineId, setMachineId] = useState<number | null>(null)
+  const [srs, setSrs] = useState<Awaited<ReturnType<typeof salesApi.serviceRequestsForMachine>>>([])
+  const [srIds, setSrIds] = useState<number[]>([])
+  const [orgs, setOrgs] = useState<{ id: number; name: string; gst_number: string | null; state: string | null }[]>([])
   const [contacts, setContacts] = useState<Contact[]>([])
   const [agencies, setAgencies] = useState<{ value: string; label: string }[]>([])
   const [customerId, setCustomerId] = useState<number | null>(null)
@@ -56,22 +76,20 @@ export default function NewSalesOrderPage() {
   const [rows, setRows] = useState<SalesOrderScheduleInput[]>([])
   const [billing, setBilling] = useState<SalesBillingLineInput[]>([{ milestone_type: 'advance', percent: 20 }, { milestone_type: 'delivery', percent: 80 }])
   const [poFiles, setPoFiles] = useState<File[]>([])
+  const [crmDocIds, setCrmDocIds] = useState<number[]>([])
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
-  // Direct order: pick one of the customer's quotations to copy lines + terms from (its inquiry becomes the source).
-  const [quotations, setQuotations] = useState<Awaited<ReturnType<typeof salesApi.customerQuotations>>>([])
-  const [quotationId, setQuotationId] = useState<number | null>(null)
-  const [quotLoading, setQuotLoading] = useState(false)
   const fromLink = !!(inquiryId || tenderId)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- prefill/defaults is a loose server payload
-  function applyPrefill(p: Record<string, any>, fromQuotation = false) {
+  function applyPrefill(p: Record<string, any>, switching = false) {
     const picked: OrderTerms = {}
     TERM_KEYS.forEach((k) => { if (p[k] !== undefined && p[k] !== null) picked[k] = p[k] })
-    // Switching quotation: the previous quotation's terms must not linger.
-    const cleared: OrderTerms = fromQuotation ? { payment_terms_label: '', delivery_terms_text: '', special_conditions: '' } : {}
+    // Switching inquiry / tender: the previous one's terms must not linger.
+    const cleared: OrderTerms = switching ? { payment_terms_label: '', delivery_terms_text: '', special_conditions: '', customer_po_number: '', purchaser_name: '' } : {}
     setTerms((t) => ({ ...t, ...cleared, ...picked }))
-    if (p.customer_id) { setCustomerId(p.customer_id); setContactId(p.customer_contact_id || null) }
+    if (p.customer_id) { setCustomerId(p.customer_id); setContactId(p.customer_contact_id || null); setCustomerName(p.customer_name || '') }
+    setCrmDocIds([])
     if (p.source_type) setSource({ source_type: p.source_type, source_inquiry_id: p.source_inquiry_id, source_tender_id: p.source_tender_id, source_quotation_id: p.source_quotation_id, label: p.source_label, quotation: p.source_quotation_number })
     setExisting(p.existing_order || null)
     setPrefillNote(typeof p.note === 'string' ? p.note : '')
@@ -83,7 +101,7 @@ export default function NewSalesOrderPage() {
 
   useEffect(() => {
     if (!isAuthorized || linkLoading) return
-    salesApi.lookupCustomers().then(setCustomers).catch(() => setCustomers([]))
+    if (fromLink) setSourceId(inquiryId || tenderId || null)
     salesApi.lookupAgencies().then(setAgencies).catch(() => setAgencies([]))
     const load = fromLink ? salesApi.prefill({ inquiry: inquiryId, tender: tenderId }) : salesApi.defaults()
     load.then((p) => applyPrefill(p)).catch((err) => setError(extractErrorMessages(err, 'Failed to load the order defaults.')))
@@ -96,41 +114,91 @@ export default function NewSalesOrderPage() {
   }, [customerId])
 
   useEffect(() => {
-    if (!customerId || fromLink) { setQuotations([]); return }
-    salesApi.customerQuotations(customerId).then(setQuotations).catch(() => setQuotations([]))
-  }, [customerId, fromLink])
-
-  async function pickQuotation(id: number | null) {
-    setError('')
-    setQuotationId(id)
-    if (!id) {  // back to a plain direct order — lines and terms stay as they are for editing
-      setSource({ source_type: 'direct' }); setExisting(null); setPrefillNote('')
-      return
+    if (!isAuthorized) return
+    if (category === 'service' && !machines.length) {
+      salesApi.serviceMachines().then(setMachines).catch((err) => setError(extractErrorMessages(err, 'Could not load the machines to pick from.')))
     }
-    setQuotLoading(true)
+    if (category === 'rental' && !orgs.length) {
+      salesApi.lookupCustomers().then(setOrgs).catch((err) => setError(extractErrorMessages(err, 'Could not load the organisations to pick from.')))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load each list once, when its order type is picked
+  }, [isAuthorized, category])
+
+  // Switching the order type starts step 2 again (a New Project's inquiry isn't a Service order's machine).
+  function pickCategory(k: string) {
+    if (k === category) return
+    setError(''); setMachineId(null); setSrs([]); setSrIds([])
+    setCategory(k)
+    // Opened from a CRM link: a New Project order keeps what the inquiry / tender filled in.
+    if (fromLink && k === 'new_project' && (source.source_inquiry_id || source.source_tender_id)) return
+    clearSource()
+    setTerms((t) => ({ ...t, order_type: k === 'new_project' ? 'road_rail_vehicle' : 'other' }))
+    setLines([{ ...emptyLine(1), line_type: k === 'new_project' ? 'rrv' : k === 'service' ? 'service' : 'other' }])
+  }
+
+  async function pickMachine(id: number | null) {
+    setError(''); setMachineId(id); setSrs([]); setSrIds([])
+    const m = machines.find((x) => x.id === id)
+    setCustomerId(m ? m.customer_id : null); setCustomerName(m?.customer_name || ''); setContactId(null)
+    if (!id) return
+    try { setSrs(await salesApi.serviceRequestsForMachine(id)) }
+    catch (err) { setError(extractErrorMessages(err, 'Could not load the service requests of this machine.')) }
+  }
+
+  function pickOrg(id: number | null) {
+    setCustomerId(id); setCustomerName(orgs.find((o) => o.id === id)?.name || ''); setContactId(null)
+  }
+
+  useEffect(() => {
+    if (!isAuthorized || category !== 'new_project') return
+    setSources([])
+    salesApi.orderSources(sourceKind).then(setSources)
+      .catch((err) => setError(extractErrorMessages(err, `Could not load the CRM ${sourceKind === 'tender' ? 'tenders' : 'inquiries'} to pick from.`)))
+  }, [isAuthorized, category, sourceKind])
+
+  function clearSource() {
+    setSourceId(null); setSource({ source_type: 'direct' }); setCustomerId(null); setCustomerName(''); setContactId(null)
+    setCrmDocIds([]); setExisting(null); setPrefillNote(''); setLines([emptyLine(1)]); setRows([])
+  }
+
+  // Picking the CRM inquiry / tender fills the customer, contact, lines and terms from it.
+  async function pickSource(id: number | null) {
+    setError('')
+    if (!id) { clearSource(); return }
+    setSourceId(id)
+    setSourceLoading(true)
     try {
-      applyPrefill(await salesApi.prefill({ quotation: id }), true)
+      applyPrefill(await salesApi.prefill(sourceKind === 'tender' ? { tender: id } : { inquiry: id }), true)
     } catch (err) {
-      setQuotationId(null); setSource({ source_type: 'direct' })
-      setError(extractErrorMessages(err, 'Could not copy the quotation into the order.'))
+      clearSource()
+      setError(extractErrorMessages(err, `Could not copy the ${sourceKind} into the order.`))
     } finally {
-      setQuotLoading(false)
+      setSourceLoading(false)
     }
   }
 
-  const customerName = customers.find((c) => c.id === customerId)?.name || ''
   const updateLines = (next: SalesOrderLineInput[]) => { setLines(next); setRows((r) => syncVehicleRows(next, r, customerName)) }
   const grandTotal = lines.reduce((s, l) => s + lineTotals(l).total, 0)
 
   async function save() {
     setError('')
-    if (!customerId) { setError('Pick the customer (CRM organisation) first.'); return }
+    if (!category) { setError('Pick what this order is first: New Project, Service or Rental.'); return }
+    if (category === 'new_project' && (!customerId || !(source.source_inquiry_id || source.source_tender_id))) {
+      setError('Pick the CRM inquiry or tender this order comes from — the customer is filled from it.'); return
+    }
+    if (category === 'service' && (!machineId || !srIds.length)) {
+      setError('Pick the project / machine and at least one of its service requests (SRs) this order bills for.'); return
+    }
+    if (category === 'rental' && !customerId) { setError('Pick the organisation the machine is rented to.'); return }
     if (lines.some((l) => !l.description.trim())) { setError('Every line needs a description — use the wording from the customer\'s PO.'); return }
     setSaving(true)
     try {
       const so = await salesApi.createOrder({
-        ...terms, customer_id: customerId, customer_contact_id: contactId, ...source,
+        ...terms, order_category: category, customer_id: customerId, customer_contact_id: contactId,
+        ...(category === 'new_project' ? source : { source_type: 'direct' }),
+        ...(category === 'service' ? { service_machine_id: machineId, service_request_ids: srIds } : {}),
         lines, schedule: rows, billing_plan: billing,
+        crm_document_ids: source.source_inquiry_id || source.source_tender_id ? crmDocIds : [],
       })
       if (poFiles.length) {
         try { await salesApi.uploadAttachments('sales_order', so.id, poFiles, 'customer_po') } catch { /* upload failure shouldn't block record creation */ }
@@ -150,6 +218,11 @@ export default function NewSalesOrderPage() {
   const vehicles = rows.filter((r) => lines.find((l) => l.line_number === r.line_number)?.line_type === 'rrv').length
   const billingSum = Math.round(billing.reduce((s, r) => s + (Number(r.percent) || 0), 0) * 1000) / 1000
   const block: React.CSSProperties = { padding: '20px 24px 4px', borderTop: `1px solid ${SHEET.LINE}` }
+  // The rest of the form opens once the order type and its CRM source are picked.
+  const ready = category === 'new_project' ? !!(customerId && (source.source_inquiry_id || source.source_tender_id))
+    : category === 'service' ? !!(customerId && machineId && srIds.length)
+    : category === 'rental' ? !!customerId : false
+  const kindWord = sourceKind === 'tender' ? 'tender' : 'inquiry'
 
   return (
     <div>
@@ -158,12 +231,12 @@ export default function NewSalesOrderPage() {
         nav={<SalesNav />}
         icon="cart"
         title="New Sales Order"
-        subtitle={source.label ? `From ${source.label}${source.quotation ? ` · quotation ${source.quotation}` : ''}` : 'Direct order from a customer PO'}
+        subtitle={[category && ORDER_CATEGORY_LABELS[category], source.label && `From ${source.label}${source.quotation ? ` · quotation ${source.quotation}` : ''}`].filter(Boolean).join(' · ') || 'Pick the order type, then the CRM inquiry or tender'}
         onBack={() => router.push('/dashboard/sales/orders')} backTour="sales-form-back"
         footer={<>
           <button type="button" onClick={() => router.push('/dashboard/sales/orders')} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
           {canCreate && (
-            <button data-tour="sales-form-save" type="button" disabled={saving || !!existing} onClick={save} style={sheetBtn('primary', SHEET.BLUE, saving || !!existing)}>
+            <button data-tour="sales-form-save" type="button" disabled={saving || !!existing || !ready} onClick={save} style={sheetBtn('primary', SHEET.BLUE, saving || !!existing || !ready)}>
               <SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save draft'}
             </button>
           )}
@@ -190,18 +263,110 @@ export default function NewSalesOrderPage() {
           </div>
         )}
 
+        <div data-tour="sales-form-category" style={{ padding: '20px 24px 4px' }}>
+          <SheetSection icon="cart" title="1. What is this order?">
+            <div role="radiogroup" aria-label="Order type" style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+              {Object.entries(ORDER_CATEGORY_LABELS).map(([k, label]) => {
+                const on = category === k
+                return (
+                  // ui-audit-ignore-next-line custom-button — a selection card (title + hint), not a pill button
+                  <button key={k} type="button" role="radio" aria-checked={on} onClick={() => pickCategory(k)}
+                    style={{ flex: '1 1 220px', textAlign: 'left', padding: '12px 14px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
+                      border: `${on ? 2 : 1}px solid ${on ? SHEET.BLUE : SHEET.LINE}`, background: on ? '#EFF6FF' : '#fff' }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: on ? SHEET.BLUE : SHEET.INK }}>{label}</div>
+                    <div style={{ fontSize: 12, color: SHEET.MUTED, marginTop: 4, lineHeight: 1.45 }}>{CATEGORY_HINTS[k]}</div>
+                  </button>
+                )
+              })}
+            </div>
+          </SheetSection>
+        </div>
+
+        {category === 'service' && (
+          <div data-tour="sales-form-source" style={block}>
+            <SheetSection icon="tool" title="2. Project / machine and its SRs">
+              <div style={{ flex: '1 1 420px', maxWidth: 780 }}>
+                <label style={sheetLabel}>Project / machine <Req /></label>
+                <SearchableSelect value={machineId ? String(machineId) : ''} onChange={(v) => pickMachine(v ? Number(v) : null)}
+                  options={machines.map((m) => ({ value: String(m.id), label: [m.label, m.project_code && m.project_code !== m.serial_number ? m.project_code : null].filter(Boolean).join(' · ') }))}
+                  placeholder={machines.length ? 'Pick the machine (serial / project number)…' : 'No machine with a customer organisation in Service'} />
+                <p style={sheetHint}>The customer is taken from the machine. A machine without a customer organisation isn&apos;t listed — set it in Service › Machines.</p>
+              </div>
+              {machineId && (
+                <div style={{ marginTop: 12 }}>
+                  <label style={sheetLabel}>Service requests (SRs) <Req /></label>
+                  {!srs.length ? <p style={{ ...sheetHint, marginTop: 0 }}>This machine has no open service request — raise the SR in Service first.</p> : (
+                    <div role="group" aria-label="Service requests" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {srs.map((r) => (
+                        <label key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13, color: r.existing_order ? SHEET.MUTED : SHEET.BODY }}>
+                          <input type="checkbox" disabled={!!r.existing_order} checked={srIds.includes(r.id)}
+                            onChange={(e) => setSrIds((ids) => e.target.checked ? [...ids, r.id] : ids.filter((x) => x !== r.id))} />
+                          <span><b>{r.request_number}</b> · {r.issue_title} · {r.status.replace(/_/g, ' ')}{r.existing_order ? ` · already on ${r.existing_order}` : ''}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </SheetSection>
+          </div>
+        )}
+
+        {category === 'rental' && (
+          <div data-tour="sales-form-source" style={block}>
+            <SheetSection icon="building" title="2. Rented to">
+              <div style={{ flex: '1 1 420px', maxWidth: 780 }}>
+                <label style={sheetLabel}>Organisation <Req /></label>
+                <SearchableSelect value={customerId ? String(customerId) : ''} onChange={(v) => pickOrg(v ? Number(v) : null)}
+                  options={orgs.map((o) => ({ value: String(o.id), label: `${o.name}${o.gst_number ? ` · ${o.gst_number}` : o.state ? ` · ${o.state}` : ''}` }))}
+                  placeholder="Pick the organisation the machine is rented to…" />
+                <p style={sheetHint}>The CRM organisation that takes the machine on hire. Not in the list? Add it in CRM › Organisations first.</p>
+              </div>
+            </SheetSection>
+          </div>
+        )}
+
+        {category === 'new_project' && (
+          <div data-tour="sales-form-source" style={block}>
+            <SheetSection icon="doc" title="2. Raised from (CRM)">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
+                <div role="radiogroup" aria-label="CRM record type" style={{ display: 'flex', gap: 6 }}>
+                  {(['inquiry', 'tender'] as SourceKind[]).map((k) => (
+                    <button key={k} type="button" role="radio" aria-checked={sourceKind === k} disabled={sourceLoading}
+                      onClick={() => { if (k !== sourceKind) { clearSource(); setSourceKind(k) } }}
+                      style={sheetBtn(sourceKind === k ? 'primary' : 'secondary', SHEET.BLUE, sourceLoading)}>
+                      {k === 'inquiry' ? 'Inquiry' : 'Tender'}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ flex: '1 1 420px', maxWidth: 780 }}>
+                  <label style={sheetLabel}>{sourceKind === 'tender' ? 'Tender' : 'Inquiry'} <Req /></label>
+                  <SearchableSelect value={sourceId ? String(sourceId) : ''} onChange={(v) => pickSource(v ? Number(v) : null)}
+                    options={sources.map((r) => ({
+                      value: String(r.id),
+                      label: [r.number, r.customer_name, r.title, r.existing_order ? `${r.existing_order} already raised` : null].filter(Boolean).join(' · '),
+                    }))}
+                    placeholder={sourceLoading ? 'Copying…' : sources.length ? `Pick the ${kindWord}…`
+                      : sourceKind === 'tender' ? 'No tender with LOA / order received' : 'No inquiry at status Order Received'} />
+                </div>
+              </div>
+              <p style={sheetHint}>
+                {sourceKind === 'tender'
+                  ? 'Only tenders whose LOA / order is received are listed. Picking one fills the customer, PO / LOA number and purchaser.'
+                  : 'Only inquiries at status "Order Received" in CRM are listed. Picking one fills the customer, contact, lines and prices from its accepted quotation.'}
+              </p>
+            </SheetSection>
+          </div>
+        )}
+
+        {ready && <>
         <SheetColumns
           left={<>
             <SheetSection icon="building" title="Customer">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div data-tour="sales-form-customer" style={{ flex: '1 1 300px', maxWidth: 480 }}>
-                  <label style={sheetLabel}>Customer (CRM organisation) <Req /></label>
-                  <SearchableSelect value={customerId ? String(customerId) : ''} onChange={(v) => {
-                    setCustomerId(v ? Number(v) : null); setContactId(null)
-                    if (quotationId) pickQuotation(null)  // a quotation belongs to one customer
-                  }}
-                    options={customers.map((c) => ({ value: String(c.id), label: `${c.name}${c.gst_number ? ` · ${c.gst_number}` : c.state ? ` · ${c.state}` : ''}` }))}
-                    placeholder="Pick the customer…" />
+                  <label style={sheetLabel}>Customer (CRM organisation)</label>
+                  <div style={{ ...sheetInput, background: SHEET.SOFT, display: 'flex', alignItems: 'center' }}>{customerName || '—'}</div>
                 </div>
                 <div style={{ flex: '0 1 280px', minWidth: 200 }}>
                   <label style={sheetLabel}>Contact Person</label>
@@ -211,23 +376,9 @@ export default function NewSalesOrderPage() {
                   </Select>
                 </div>
               </div>
-              {!fromLink && customerId && (
-                <div data-tour="sales-form-quotation" style={{ marginTop: 12, maxWidth: 780 }}>
-                  <label style={sheetLabel}>Quotation</label>
-                  <SearchableSelect value={quotationId ? String(quotationId) : ''} onChange={(v) => pickQuotation(v ? Number(v) : null)}
-                    options={quotations.map((q) => ({
-                      value: String(q.id),
-                      label: [q.quot_number || `#${q.id}`, q.inquiry_number, formatINR(q.net_value), q.status_label,
-                        q.existing_order ? `${q.existing_order} already raised` : !q.order_received ? `inquiry at ${q.inquiry_stage}` : null,
-                      ].filter(Boolean).join(' · '),
-                    }))}
-                    placeholder={quotations.length ? (quotLoading ? 'Copying…' : 'Pick a quotation to fill the order (optional)…') : 'No approved / sent quotation for this customer'} />
-                  <p style={sheetHint}>
-                    Picking a quotation copies its lines, prices, discount, payment / delivery terms and conditions, and links the order to its inquiry.
-                    The inquiry must be at stage &quot;Order Received&quot; in CRM.
-                  </p>
-                </div>
-              )}
+              <p style={sheetHint}>{category === 'service' ? 'Taken from the machine. To change it, pick another machine above.'
+                : category === 'rental' ? 'The organisation picked above.'
+                : `Taken from the ${kindWord}. To change the customer, pick another ${kindWord} above.`}</p>
               <p style={sheetHint}>The billing address and GSTIN are copied from the CRM organisation when the order is confirmed.</p>
             </SheetSection>
             <OrderTermsFields v={terms} set={(p) => setTerms((t) => ({ ...t, ...p }))} agencies={agencies} />
@@ -239,6 +390,14 @@ export default function NewSalesOrderPage() {
                 <p style={sheetHint}>Required before the order can be submitted for approval. You can also add it later on the order&apos;s Documents tab.</p>
               </SheetSection>
             </div>
+            {(source.source_inquiry_id || source.source_tender_id) && (
+              <div data-tour="sales-form-crm-docs">
+                <SheetSection icon="doc" title={`CRM documents to link${source.label ? ` — ${source.label}` : ''}`}>
+                  <CrmDocumentPicker key={`${source.source_inquiry_id ?? ''}-${source.source_tender_id ?? ''}`}
+                    inquiryId={source.source_inquiry_id} tenderId={source.source_tender_id} value={crmDocIds} onChange={setCrmDocIds} />
+                </SheetSection>
+              </div>
+            )}
             <SheetSection icon="rupee" title="Order Summary">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: SHEET.BODY }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Customer</span><b style={{ textAlign: 'right' }}>{customerName || '—'}</b></div>
@@ -270,6 +429,7 @@ export default function NewSalesOrderPage() {
             <BillingPlanEditor rows={billing} onChange={setBilling} grandTotal={grandTotal} currency={terms.currency as string} />
           </SheetSection>
         </div>
+        </>}
       </FormPage>
     </div>
   )

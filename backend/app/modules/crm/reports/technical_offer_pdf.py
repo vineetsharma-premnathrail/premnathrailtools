@@ -159,12 +159,13 @@ def build_technical_offer_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     story.extend(_multiline(ctx.get("product_spec"), "Not specified."))
     story.append(Spacer(1, 14))
 
-    # Requirement Description
-    n += 1
-    story.append(_section_heading(n, "Requirement Description"))
-    story.append(Spacer(1, 6))
-    story.extend(_multiline(ctx.get("requirement_desc"), "Not provided."))
-    story.append(Spacer(1, 14))
+    # Requirement Description - only when there is one (tenders: reason for not participating).
+    if ctx.get("requirement_desc"):
+        n += 1
+        story.append(_section_heading(n, "Requirement Description"))
+        story.append(Spacer(1, 6))
+        story.extend(_multiline(ctx.get("requirement_desc"), "Not provided."))
+        story.append(Spacer(1, 14))
 
     # Project Background
     n += 1

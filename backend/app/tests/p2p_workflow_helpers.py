@@ -77,3 +77,15 @@ def link_items(db, payload: dict) -> dict:
     for line in payload.get("items") or []:
         link_line(db, line)
     return payload
+
+
+def attach_tally_po(db, po_id: int, ref: str | None = None) -> None:
+    """Mark a draft PO as carrying its Tally PO (number + PDF), which
+    submit_po_draft requires — for tests that aren't about the upload itself."""
+    from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
+    po = db.get(P2PPurchaseOrder, po_id)
+    po.external_ref = ref or f"TALLY/{po.po_number}"
+    po.document_filename = f"{po.po_number}.pdf"
+    po.document_content_type = "application/pdf"
+    po.document_sharepoint_path = f"test/{po.po_number}.pdf"
+    db.commit()

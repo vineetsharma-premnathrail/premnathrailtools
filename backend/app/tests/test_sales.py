@@ -367,8 +367,11 @@ def test_duplicate_source_and_po(client, db):
     assert r.status_code == 409 and so["display_number"] in r.json()["detail"]
     assert client.get(f"{BASE}/orders/prefill", params={"inquiry": inq.id}, headers=hdr(maker)).json()["existing_order"]["id"] == so["id"]
     confirm(client, db, so, maker, head, director)
-    # Same customer PO on a second (direct) order → 409 at submit.
-    body.update({"source_type": "direct", "source_inquiry_id": None, "source_quotation_id": None})
+    # Same customer PO on a second order (from another won inquiry of the same customer) → 409 at submit.
+    inq2 = Inquiry(universal_id="INQ-DUP-2", org_id=org.id, product="RRV", quantity=1, current_stage="Order Received")
+    db.add(inq2)
+    db.commit()
+    body.update({"source_inquiry_id": inq2.id, "source_quotation_id": None})
     so2 = client.post(f"{BASE}/orders", json=body, headers=hdr(maker)).json()
     attach_po(db, so2["id"])
     r = client.post(f"{BASE}/orders/{so2['id']}/submit", headers=hdr(maker))
@@ -519,3 +522,76 @@ def test_order_customer_must_match_source_inquiry(client, db):
     assert r.status_code == 422 and "must be the same" in r.json()["detail"]
     r = client.post(f"{BASE}/orders", json={**body, "sales_owner_id": 987654}, headers=hdr(maker))
     assert r.status_code == 422 and "Sales owner" in r.json()["detail"]
+
+
+def test_new_order_needs_crm_source_and_category(client, db):
+    maker, *_ = setup_people(db)
+    org, inq, _ = setup_customer(db, qty=1, price=1000000)
+    body = payload_from_prefill(client, hdr(maker), inq)
+    # A New Project order without a CRM inquiry / tender → refused with the fix.
+    direct = {**body, "source_type": "direct", "source_inquiry_id": None, "source_quotation_id": None}
+    r = client.post(f"{BASE}/orders", json=direct, headers=hdr(maker))
+    assert r.status_code == 422 and "CRM inquiry or tender" in r.json()["detail"]
+    # A Rental order is raised for the organisation directly.
+    rent = client.post(f"{BASE}/orders", json={**direct, "order_category": "rental", "customer_po_number": "RENT-1"}, headers=hdr(maker))
+    assert rent.status_code == 200 and rent.json()["source_type"] == "direct" and rent.json()["customer_id"] == org.id, rent.text
+    r = client.post(f"{BASE}/orders", json={**body, "order_category": "lease"}, headers=hdr(maker))
+    assert r.status_code == 422 and "New Project, Service, Rental" in r.json()["detail"]
+    # The inquiry is offered as a source until an order is raised from it.
+    src = client.get(f"{BASE}/orders/sources", params={"kind": "inquiry"}, headers=hdr(maker)).json()
+    row = next(s for s in src if s["id"] == inq.id)
+    assert row["customer_id"] == org.id and row["existing_order"] is None
+    so = client.post(f"{BASE}/orders", json={**body, "order_category": "rental"}, headers=hdr(maker)).json()
+    assert so["order_category"] == "rental"
+    src = client.get(f"{BASE}/orders/sources", params={"kind": "inquiry"}, headers=hdr(maker)).json()
+    assert next(s for s in src if s["id"] == inq.id)["existing_order"] == so["display_number"]
+
+
+def test_only_new_project_orders_get_a_project(client, db):
+    from app.modules.projects.so_projects import needs_project
+    maker, head, director, _ = setup_people(db)
+    _, inq, _ = setup_customer(db, qty=1, price=1000000)
+    so = confirm(client, db, create_order(client, db, maker, inq, order_category="rental"), maker, head, director)
+    order = db.get(SalesOrder, so["id"])
+    assert not needs_project(order)
+    order.order_category = "new_project"
+    assert needs_project(order)
+
+
+def test_service_order_is_for_a_machine_and_its_srs(client, db):
+    from app.modules.erp.models.project import Project as Machine
+    from app.modules.erp.models.service_request import ServiceRequest
+    maker, *_ = setup_people(db)
+    org, inq, _ = setup_customer(db, qty=1, price=1000000)
+    m = Machine(serial_number="PEW-78", model_name="RRV-10T", client_name=org.name, customer_id=org.id)
+    other = Machine(serial_number="PEW-79", model_name="RRV-10T", customer_id=org.id)
+    db.add_all([m, other])
+    db.commit()
+    sr1 = ServiceRequest(request_number="SR-1", project_id=m.id, issue_title="Engine overhaul", status="open", priority="standard")
+    sr_other = ServiceRequest(request_number="SR-9", project_id=other.id, issue_title="x", status="open", priority="standard")
+    db.add_all([sr1, sr_other])
+    db.commit()
+    body = {**payload_from_prefill(client, hdr(maker), inq), "order_category": "service", "source_type": "direct",
+            "source_inquiry_id": None, "source_quotation_id": None, "customer_po_number": "SRV-1"}
+    machines = client.get(f"{BASE}/orders/service-machines", headers=hdr(maker)).json()
+    assert {x["serial_number"] for x in machines} >= {"PEW-78", "PEW-79"}
+    srs = client.get(f"{BASE}/orders/service-requests", params={"machine_id": m.id}, headers=hdr(maker)).json()
+    assert [x["request_number"] for x in srs] == ["SR-1"]
+    # No machine / no SR / an SR of another machine → refused with the fix.
+    r = client.post(f"{BASE}/orders", json=body, headers=hdr(maker))
+    assert r.status_code == 422 and "project / machine" in r.json()["detail"]
+    r = client.post(f"{BASE}/orders", json={**body, "service_machine_id": m.id}, headers=hdr(maker))
+    assert r.status_code == 422 and "at least one service request" in r.json()["detail"]
+    r = client.post(f"{BASE}/orders", json={**body, "service_machine_id": m.id, "service_request_ids": [sr_other.id]}, headers=hdr(maker))
+    assert r.status_code == 422 and "another machine" in r.json()["detail"]
+    so = client.post(f"{BASE}/orders", json={**body, "service_machine_id": m.id, "service_request_ids": [sr1.id]}, headers=hdr(maker))
+    assert so.status_code == 200, so.text
+    out = so.json()
+    assert out["order_category"] == "service" and out["service_machine_label"].startswith("PEW-78")
+    assert [x["request_number"] for x in out["service_requests"]] == ["SR-1"]
+    # The SR is now on that order: flagged in the picker, refused on a second order.
+    assert client.get(f"{BASE}/orders/service-requests", params={"machine_id": m.id}, headers=hdr(maker)).json()[0]["existing_order"] == out["display_number"]
+    r = client.post(f"{BASE}/orders", json={**body, "customer_po_number": "SRV-2", "service_machine_id": m.id, "service_request_ids": [sr1.id]},
+                    headers=hdr(maker))
+    assert r.status_code == 409 and out["display_number"] in r.json()["detail"]
+

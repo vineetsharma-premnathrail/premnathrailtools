@@ -1,166 +1,18 @@
-"""Product master merge — the Product Mapping screen (rows not yet linked to
-the product master) and the product-wise order book / quotation history.
+"""Product-wise order book / quotation history (product detail page).
 
-Mapping is exact-or-manual (products/linking.py): the screen lists every
-distinct text / legacy catalogue row nothing matched, and a person picks the
-product; the pick is applied to every row with that same text."""
+The Product Mapping screen was removed on 2026-10-28: quotation lines now pick
+the product (and its application) directly, and products/linking.py still
+links typed text by exact match on save."""
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.permission_registry import can_access_module, can_feature, can_view_tab
-from app.core.permissions import require_app_access, require_feature_action, require_tab_access, require_tab_action
+from app.core.permissions import require_app_access, require_feature_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
-from app.modules.products import linking
 from app.modules.products.models.product import FinishedProduct
 
 router = APIRouter(prefix="/products", tags=["Products - Mapping"], dependencies=[Depends(require_app_access("products"))])
-
-_VIEW = require_tab_access("sales", "product_mapping")
-_EDIT = require_tab_action("sales", "product_mapping", "edit")
-
-SOURCES = {
-    "crm_products": "CRM product catalogue (legacy)",
-    "inquiries": "Inquiries — product",
-    "inquiry_lines": "Inquiries — extra product lines",
-    "quotation_lines": "Quotation lines",
-    "so_lines": "Sales order lines",
-}
-
-
-class ProductMappingAssignPayload(BaseModel):
-    source: str
-    product_id: int
-    crm_product_id: int | None = None
-    text: str | None = None
-    model: str | None = None
-
-
-def _models():
-    from app.modules.crm.models.inquiry import Inquiry, InquiryLineItem, QuotationLineItem
-    from app.modules.crm.models.product import Product as CrmProduct
-    from app.modules.sales.models.order import SalesOrderLine
-    return Inquiry, InquiryLineItem, QuotationLineItem, CrmProduct, SalesOrderLine
-
-
-def _norm(col):
-    return func.lower(func.trim(func.coalesce(col, "")))
-
-
-def _groups(rows) -> list[dict]:
-    out: dict[tuple, dict] = {}
-    for text, model, rid in rows:
-        key = ((text or "").strip().lower(), (model or "").strip().lower())
-        if not key[0] and not key[1]:
-            continue
-        g = out.setdefault(key, {"text": (text or "").strip() or None, "model": (model or "").strip() or None, "count": 0, "ids": []})
-        g["count"] += 1
-        if len(g["ids"]) < 20:
-            g["ids"].append(rid)
-    return sorted(out.values(), key=lambda g: (-g["count"], (g["text"] or g["model"] or "").lower()))
-
-
-@router.get("/mapping/unmapped")
-async def unmapped(db: Session = Depends(get_db), _user: User = Depends(_VIEW)):
-    Inquiry, InquiryLineItem, QuotationLineItem, CrmProduct, SalesOrderLine = _models()
-    crm = db.query(CrmProduct).filter(CrmProduct.product_id.is_(None), CrmProduct.is_deleted == False).order_by(CrmProduct.name).all()  # noqa: E712
-    inq = db.query(Inquiry.product, Inquiry.product_category, Inquiry.id).filter(
-        Inquiry.product_id.is_(None), Inquiry.is_deleted == False, func.coalesce(Inquiry.product, "") != "").all()  # noqa: E712
-    inql = db.query(InquiryLineItem.product, InquiryLineItem.product_category, InquiryLineItem.id).filter(
-        InquiryLineItem.product_id.is_(None), func.coalesce(InquiryLineItem.product, "") != "").all()
-    ql = db.query(QuotationLineItem.description, QuotationLineItem.model_number, QuotationLineItem.id).filter(
-        QuotationLineItem.product_id.is_(None)).all()
-    sol = db.query(SalesOrderLine.description, SalesOrderLine.rrv_model, SalesOrderLine.id).filter(
-        SalesOrderLine.product_id.is_(None), SalesOrderLine.line_type.in_(("rrv", "other"))).all()
-    return {
-        "sources": SOURCES,
-        "crm_products": [{"crm_product_id": p.id, "text": p.name, "model": p.model_number, "category": p.category, "count": 1} for p in crm],
-        # Inquiry rows group by product text only (category is shown, not matched).
-        "inquiries": _groups([(t, None, i) for t, _c, i in inq]),
-        "inquiry_lines": _groups([(t, None, i) for t, _c, i in inql]),
-        "quotation_lines": _groups(ql),
-        "so_lines": _groups(sol),
-    }
-
-
-def _apply(db: Session, source: str, product_id: int, *, crm_product_id=None, text=None, model=None) -> int:
-    Inquiry, InquiryLineItem, QuotationLineItem, CrmProduct, SalesOrderLine = _models()
-    t, m = (text or "").strip().lower(), (model or "").strip().lower()
-    if source == "crm_products":
-        row = db.get(CrmProduct, crm_product_id) if crm_product_id else None
-        if row is None:
-            raise HTTPException(status_code=422, detail="Pick the CRM catalogue row to map (it may have been deleted — reload).")
-        row.product_id = product_id
-        n = 1 + db.query(SalesOrderLine).filter(SalesOrderLine.crm_product_id == row.id, SalesOrderLine.product_id.is_(None)).update(
-            {SalesOrderLine.product_id: product_id}, synchronize_session=False)
-        return n
-    if not t and not m:
-        raise HTTPException(status_code=422, detail="Nothing to map — the row has no product text.")
-    if source == "inquiries":
-        q = db.query(Inquiry).filter(Inquiry.product_id.is_(None), _norm(Inquiry.product) == t)
-        return q.update({Inquiry.product_id: product_id}, synchronize_session=False)
-    if source == "inquiry_lines":
-        q = db.query(InquiryLineItem).filter(InquiryLineItem.product_id.is_(None), _norm(InquiryLineItem.product) == t)
-        return q.update({InquiryLineItem.product_id: product_id}, synchronize_session=False)
-    if source == "quotation_lines":
-        q = db.query(QuotationLineItem).filter(QuotationLineItem.product_id.is_(None), _norm(QuotationLineItem.description) == t,
-                                               _norm(QuotationLineItem.model_number) == m)
-        return q.update({QuotationLineItem.product_id: product_id}, synchronize_session=False)
-    if source == "so_lines":
-        q = db.query(SalesOrderLine).filter(SalesOrderLine.product_id.is_(None), _norm(SalesOrderLine.description) == t,
-                                            _norm(SalesOrderLine.rrv_model) == m)
-        return q.update({SalesOrderLine.product_id: product_id}, synchronize_session=False)
-    raise HTTPException(status_code=422, detail=f"Unknown source '{source}' — one of: {', '.join(SOURCES)}.")
-
-
-@router.post("/mapping/assign")
-async def assign(payload: ProductMappingAssignPayload, db: Session = Depends(get_db), user: User = Depends(_EDIT)):
-    product = db.get(FinishedProduct, payload.product_id)
-    if product is None:
-        raise HTTPException(status_code=422, detail=f"Product #{payload.product_id} not found — pick the product again.")
-    if product.status == "discontinued":
-        raise HTTPException(status_code=409, detail=f"{product.code} is discontinued — map to the product that replaced it, "
-                                                    "or set this product back to Phased out first if history really belongs to it.")
-    n = _apply(db, payload.source, product.id, crm_product_id=payload.crm_product_id, text=payload.text, model=payload.model)
-    from app.modules.main.models.audit_log import AuditLog
-    db.add(AuditLog(entity_type="product", entity_id=product.id, action="mapping_assigned", performed_by_id=user.id,
-                    summary=f"{n} {SOURCES.get(payload.source, payload.source).lower()} row(s) "
-                            f"'{payload.text or payload.crm_product_id}' mapped to {product.code} by {user.name or user.email}."))
-    db.commit()
-    return {"updated": n, "product_id": product.id}
-
-
-@router.post("/mapping/auto-link")
-async def auto_link(db: Session = Depends(get_db), _user: User = Depends(_EDIT)):
-    """Re-runs the exact match over every unlinked row — useful after new
-    products were added to the master."""
-    Inquiry, InquiryLineItem, QuotationLineItem, CrmProduct, SalesOrderLine = _models()
-    m = linking.Matcher.load(db)
-    n = 0
-    for p in db.query(CrmProduct).filter(CrmProduct.product_id.is_(None)).all():
-        if (pid := m.match(p.name, p.model_number)):
-            p.product_id, n = pid, n + 1
-    db.flush()
-    crm_map = dict(db.query(CrmProduct.id, CrmProduct.product_id).filter(CrmProduct.product_id.isnot(None)).all())
-    for r in db.query(Inquiry).filter(Inquiry.product_id.is_(None)).all():
-        if (pid := m.match(r.product)):
-            r.product_id, n = pid, n + 1
-    for r in db.query(InquiryLineItem).filter(InquiryLineItem.product_id.is_(None)).all():
-        if (pid := m.match(r.product)):
-            r.product_id, n = pid, n + 1
-    for r in db.query(QuotationLineItem).filter(QuotationLineItem.product_id.is_(None)).all():
-        if (pid := m.match(r.description, r.model_number)):
-            r.product_id, n = pid, n + 1
-    for r in db.query(SalesOrderLine).filter(SalesOrderLine.product_id.is_(None)).all():
-        pid = crm_map.get(r.crm_product_id) if r.crm_product_id else None
-        pid = pid or m.match(r.description, r.rrv_model)
-        if pid:
-            r.product_id, n = pid, n + 1
-    db.commit()
-    return {"linked": n}
-
 
 # ── Product-wise order book / quotation history ─────────────────────────
 

@@ -942,6 +942,46 @@ async def edit_p2p_request(
 _PO_STAGE_STATUSES = ("po_raised", "po_approved", "partially_received", "received", "closed", "rejected")
 
 
+@router.get("/stock-availability")
+async def stock_availability(
+    item_ids: str = Query(..., description="Comma-separated Item Master ids"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("p2p")),
+):
+    """Free stock of the PR form's items, per plant and store (owner,
+    2026-10-27): the requester sees before raising the PR whether the store
+    already has the item and where. Quantities only (no values); every plant
+    is shown so stock at another unit can be transferred instead of bought.
+    Free = on hand minus reserved (quality / blocked / with-vendor excluded)."""
+    _ensure_pr_action(user, "create")
+    try:
+        ids = sorted({int(x) for x in item_ids.split(",") if x.strip()})
+    except ValueError:
+        raise HTTPException(status_code=422, detail="item_ids must be Item Master ids separated by commas, e.g. 12,40.")
+    if len(ids) > 200:
+        raise HTTPException(status_code=422, detail="Ask for at most 200 items at a time.")
+    from app.modules.organization.models.branch import Branch
+    out: dict[int, dict] = {i: {"store_item_id": i, "available_qty": 0.0, "locations": []} for i in ids}
+    if not ids:
+        return []
+    rows = (db.query(StoreStockBalance, StoreLocation, Branch)
+            .join(StoreLocation, StoreLocation.id == StoreStockBalance.location_id)
+            .outerjoin(Branch, Branch.id == StoreLocation.branch_id)
+            .filter(StoreStockBalance.item_id.in_(ids), StoreLocation.is_active.is_(True))
+            .all())
+    for bal, loc, branch in rows:
+        free = (bal.on_hand_qty or 0) - (bal.reserved_qty or 0)
+        if free <= 1e-9:
+            continue
+        entry = out[bal.item_id]
+        entry["available_qty"] += free
+        entry["locations"].append({"plant": branch.name if branch else None, "store": loc.name, "available_qty": round(free, 4)})
+    for entry in out.values():
+        entry["available_qty"] = round(entry["available_qty"], 4)
+        entry["locations"].sort(key=lambda r: (r["plant"] or "", r["store"]))
+    return list(out.values())
+
+
 @router.get("", response_model=list[P2PRequestResponse])
 async def list_p2p_requests(
     queue: str | None = Query(None, pattern="^(pr-approval|po-approval)$"),

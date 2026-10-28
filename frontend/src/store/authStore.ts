@@ -4,13 +4,19 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { User } from '@/types'
 import { authApi } from '@/lib/api'
+import { clearAllFormDrafts } from '@/lib/formDraft'
+import { clearPendingKeys } from '@/lib/idempotency'
+
+/** localStorage key set by logout(); read and cleared by the login page. */
+export const SIGNED_OUT_FLAG = 'pr-signed-out'
 
 interface AuthStore {
   user: User | null
-  /** Bearer token for API clients/tooling only. Browser sessions authenticate
-   * via the httponly `session_token` cookie set by /auth/callback — that
-   * cookie is invisible to JS by design, so `user` (not `token`) is the
-   * authoritative "am I logged in" signal for the UI. */
+  /** Bearer token. Browser sessions authenticate via the httponly
+   * `session_token` cookie set by /auth/callback; inside Microsoft Teams,
+   * where that cookie is often dropped, the tab holds the access token here
+   * (lib/teamsAuth.ts). `user` (not `token`) is the authoritative "am I
+   * logged in" signal for the UI. */
   token: string | null
   isLoading: boolean
   error: string | null
@@ -71,12 +77,21 @@ export const useAuthStore = create<AuthStore>()(
         } finally {
           set({ user: null, token: null, isLoading: false, hasChecked: true })
           localStorage.removeItem('auth-storage')
+          // A deliberate sign-out: the login page must not sign this browser
+          // straight back in with Microsoft / Teams (app/login/page.tsx) —
+          // in any tab, so the next person on a shared PC gets the button.
+          try { localStorage.setItem(SIGNED_OUT_FLAG, '1') } catch { /* storage blocked */ }
+          // Unsaved form drafts and pending save keys are this person's — not the next one's (lib/formDraft.ts).
+          clearAllFormDrafts()
+          clearPendingKeys()
         }
       },
 
       clearSession: () => {
         set({ user: null, token: null, isLoading: false, hasChecked: true })
         localStorage.removeItem('auth-storage')
+        clearAllFormDrafts()
+        clearPendingKeys()
       },
     }),
     {

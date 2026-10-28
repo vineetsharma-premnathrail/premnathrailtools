@@ -47,10 +47,7 @@ type FormState = {
   product_spec: string
   quantity: string
   required_delivery_date: string
-  delivery_location: string
   project_details: string
-  inspection_req: string
-  warranty_req: string
   priority: string
 }
 
@@ -75,17 +72,14 @@ function toFormState(initial?: Inquiry, defaultOrgId?: number): FormState {
     expected_value: initial?.expected_value != null ? String(initial.expected_value) : '',
     probability: initial?.probability != null ? String(initial.probability) : '',
     expected_order_date: initial?.expected_order_date || '',
-    status: initial?.status || 'Requirement Received',
+    status: initial?.status || 'Lead',
     current_status_note: initial?.current_status_note || '',
     product: initial?.product || '',
     product_category: initial?.product_category || '',
     product_spec: initial?.product_spec || '',
     quantity: initial?.quantity != null ? String(initial.quantity) : '',
     required_delivery_date: initial?.required_delivery_date || '',
-    delivery_location: initial?.delivery_location || '',
     project_details: initial?.project_details || '',
-    inspection_req: initial?.inspection_req || '',
-    warranty_req: initial?.warranty_req || '',
     priority: initial?.priority || 'Medium',
   }
 }
@@ -120,7 +114,6 @@ export default function InquiryForm({
   const clientChosen = !!form.org_id && !!form.org_contact_id && form.org_contact_id !== '__new__'
   const gatedStyle: React.CSSProperties = clientChosen ? {} : { opacity: 0.45, pointerEvents: 'none', userSelect: 'none' }
   // Secondary requirement fields stay folded unless the record already has one filled.
-  const [showMore, setShowMore] = useState(() => !!(initial?.delivery_location || initial?.inspection_req || initial?.warranty_req))
   const [railwayZoneCustom] = useState(
     initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? initial.railway_zone : ''
   )
@@ -534,11 +527,6 @@ export default function InquiryForm({
       <SheetSection
         icon="box"
         title="Product Requirement"
-        extra={<span style={{ marginLeft: 'auto' }}>
-          <button type="button" data-tour="inq-more-details" onClick={() => setShowMore((v) => !v)} style={{ background: 'none', border: `1px dashed ${SHEET.LINE}`, borderRadius: 8, color: SHEET.BODY, fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: '6px 12px' }}>
-            {showMore ? 'Hide more details ▴' : <>+ More details <span style={{ fontWeight: 400, color: '#a8a29e' }}>(delivery location, inspection, warranty)</span></>}
-          </button>
-        </span>}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
@@ -550,19 +538,13 @@ export default function InquiryForm({
                 onPick={(o) => { const p = products.find((pr) => String(pr.id) === o.key); if (p) { set('product', p.name); if (p.category) set('product_category', p.category) } }}
                 onCreateNew={createProduct}
                 createLabel="New Product"
-                options={products.map((p) => ({ key: String(p.id), label: p.name, sublabel: p.category || undefined }))}
+                options={products.map((p) => ({ key: String(p.id), label: p.name }))}
                 placeholder="RRV System"
               />
               {isDuplicateProductRow(form.product_category, form.product) && (
-                <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>⚠ This product/category is already added below.</p>
+                <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>⚠ This product is already added below.</p>
               )}
             </F>
-          </div>
-          <div style={{ flex: '0 1 90px', minWidth: 80 }}>
-            <F label="Quantity" tourId="inq-quantity"><input type="number" value={form.quantity} onChange={(e) => set('quantity', e.target.value)} placeholder="e.g. 2" style={inputStyle} /></F>
-          </div>
-          <div style={{ flex: '0 1 175px', minWidth: 175 }}>
-            <F label="Required Delivery Date" tourId="inq-delivery-date"><DateField value={form.required_delivery_date} onChange={(v) => set('required_delivery_date', v)} /></F>
           </div>
         </div>
         <F label="Product Specification" tourId="inq-product-spec"><textarea value={form.product_spec} onChange={(e) => set('product_spec', e.target.value)} rows={2} placeholder="e.g. High Speed Self Propelled, 1676mm BG, hydraulic braking, anti-climber arrangement..." style={{ ...inputStyle, resize: 'vertical' }} /></F>
@@ -582,37 +564,21 @@ export default function InquiryForm({
                           onPick={(o) => { const p = products.find((pr) => String(pr.id) === o.key); if (p) { setExtraProduct(i, 'product', p.name); if (p.category) setExtraProduct(i, 'product_category', p.category) } }}
                           onCreateNew={createProduct}
                           createLabel="New Product"
-                          options={products.map((p) => ({ key: String(p.id), label: p.name, sublabel: p.category || undefined }))}
+                          options={products.map((p) => ({ key: String(p.id), label: p.name }))}
                           placeholder="RRV System"
                         />
                       </F>
                     </div>
-                    <div style={{ flex: '0 1 90px', minWidth: 80 }}>
-                      <F label="Quantity"><input type="number" value={row.quantity} onChange={(e) => setExtraProduct(i, 'quantity', e.target.value)} placeholder="e.g. 2" style={inputStyle} /></F>
-                    </div>
                     <button type="button" onClick={() => removeExtraProduct(i)} style={{ ...sheetBtn('ghost', '#DC2626'), marginTop: 22 }}><XIcon /></button>
                   </div>
                   <F label="Product Specification"><textarea value={row.product_spec} onChange={(e) => setExtraProduct(i, 'product_spec', e.target.value)} rows={2} placeholder="Optional spec for this product" style={{ ...inputStyle, resize: 'vertical' }} /></F>
-                  {isDup && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: 0 }}>⚠ This product/category is already added elsewhere in this inquiry.</p>}
+                  {isDup && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: 0 }}>⚠ This product is already added elsewhere in this inquiry.</p>}
                 </div>
               )
             })}
           </div>
         )}
 
-        {showMore && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, padding: 12, borderRadius: 10, background: 'rgba(0,0,0,0.02)', border: '1px solid rgba(0,0,0,0.06)' }}>
-            <div style={{ flex: '1 1 170px', minWidth: 150 }}>
-              <F label="Delivery Location" tourId="inq-delivery-location"><input value={form.delivery_location} onChange={(e) => set('delivery_location', e.target.value)} placeholder="e.g. Allahabad, UP" style={inputStyle} /></F>
-            </div>
-            <div style={{ flex: '1 1 220px', minWidth: 200 }}>
-              <F label="Inspection Requirement" tourId="inq-inspection"><input value={form.inspection_req} onChange={(e) => set('inspection_req', e.target.value)} placeholder="e.g. RDSO inspection, third party QA" style={inputStyle} /></F>
-            </div>
-            <div style={{ flex: '1 1 220px', minWidth: 200 }}>
-              <F label="Warranty Requirement" tourId="inq-warranty"><input value={form.warranty_req} onChange={(e) => set('warranty_req', e.target.value)} placeholder="e.g. 12 months from commissioning" style={inputStyle} /></F>
-            </div>
-          </div>
-        )}
         <F label="Project Details" tourId="inq-project-details"><textarea value={form.project_details} onChange={(e) => set('project_details', e.target.value)} rows={3} placeholder="Project background, scope, timeline..." style={{ ...inputStyle, resize: 'vertical' }} /></F>
         </div>
       </SheetSection>

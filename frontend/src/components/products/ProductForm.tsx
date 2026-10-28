@@ -2,19 +2,20 @@
 
 import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { productsApi } from '@/lib/api'
-import { FinishedProduct, ProductApplication, ProductMeta, ProductStoreItemOption } from '@/types'
+import { FinishedProduct, ProductMeta, ProductStoreItemOption } from '@/types'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { ErrorBanner } from '@/components/products/ProductBits'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
+import { pricingApi } from '@/lib/sdServiceApi'
+import { CURRENCY_OPTIONS } from '@/components/sales/labels'
+import PriceConditionsPanel from '@/components/products/PriceConditionsPanel'
+import CurrencyConversions from '@/components/products/CurrencyConversions'
 
-type SpecRow = { parameter: string; value: string; unit: string }
 
-const chipStyle = (on: boolean): React.CSSProperties => ({
-  fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 9999, cursor: 'pointer', userSelect: 'none',
-  border: `1px solid ${on ? SHEET.BLUE : SHEET.LINE}`, background: on ? '#eff6ff' : '#fff',
-  color: on ? SHEET.BLUE : SHEET.BODY,
-})
 const hintStyle = sheetHint
 const L = ({ children }: { children: React.ReactNode }) => <label style={sheetLabel}>{children}</label>
 
@@ -27,7 +28,6 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
   nav?: React.ReactNode
 }) {
   const [meta, setMeta] = useState<ProductMeta | null>(null)
-  const [applications, setApplications] = useState<ProductApplication[]>([])
   const [form, setForm] = useState({
     code: initial?.code || '',
     name: initial?.name || '',
@@ -40,11 +40,14 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
     uom: initial?.uom || 'Nos',
     warranty_months: initial?.warranty_months != null ? String(initial.warranty_months) : '',
   })
-  const [appIds, setAppIds] = useState<number[]>(initial?.applications.map((a) => a.id) || [])
-  const [specs, setSpecs] = useState<SpecRow[]>(
-    initial?.specifications.length
-      ? initial.specifications.map((s) => ({ parameter: s.parameter, value: s.value, unit: s.unit || '' }))
-      : [{ parameter: '', value: '', unit: '' }],
+  // Free text, one specification per line. A product saved before 2026-10-28 shows its old rows as lines.
+  const { can } = useCan()
+  // New product: its list price is saved with it (more prices — customer, country — on the product afterwards).
+  const [listPrice, setListPrice] = useState('')
+  const [priceCurrency, setPriceCurrency] = useState('INR')
+  const [techSpec, setTechSpec] = useState<string>(
+    initial?.technical_specification
+      || (initial?.specifications || []).map((r) => `${r.parameter}: ${r.value}${r.unit ? ` ${r.unit}` : ''}`).join('\n'),
   )
   const [storeItem, setStoreItem] = useState<{ id: number; label: string } | null>(
     initial?.store_item_id ? { id: initial.store_item_id, label: `${initial.store_item_code} — ${initial.store_item_name}` } : null,
@@ -53,10 +56,12 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
   const [itemResults, setItemResults] = useState<ProductStoreItemOption[]>([])
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
+  // A new product's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft(initial ? null : 'products-product-new', { form, techSpec, storeItem },
+    (d) => { setForm(d.form); setTechSpec(typeof d.techSpec === 'string' ? d.techSpec : ''); setStoreItem(d.storeItem || null) })
 
   useEffect(() => {
     productsApi.meta().then(setMeta).catch((e) => setError(extractErrorMessages(e, 'Failed to load product types.')))
-    productsApi.listApplications({ include_inactive: true }).then(setApplications).catch((e) => setError(extractErrorMessages(e, 'Failed to load applications.')))
   }, [])
 
   useEffect(() => {
@@ -69,11 +74,7 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
   }, [itemSearch])
 
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
-  const toggleApp = (id: number) => setAppIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]))
-  const setSpec = (i: number, k: keyof SpecRow, v: string) => setSpecs((rows) => rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)))
-
-  // Retired applications stay visible only when this product already uses them.
-  const shownApps = applications.filter((a) => a.is_active || appIds.includes(a.id))
+  const isApp = form.product_type === 'application'
 
   const save = async () => {
     setError('')
@@ -88,12 +89,23 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
       ...(initial ? {} : { code }),
       warranty_months: form.warranty_months.trim() === '' ? null : Number(form.warranty_months),
       store_item_id: storeItem?.id ?? null,
-      application_ids: appIds,
-      specifications: specs.filter((s) => s.parameter.trim() || s.value.trim()),
+      technical_specification: techSpec.trim() || null,
     }
     setSaving(true)
     try {
       const saved = initial ? await productsApi.update(initial.id, payload) : await productsApi.create(payload)
+      draft.clear()
+      if (!initial && listPrice.trim() !== '') {
+        try {
+          await pricingApi.create({ condition_type: 'price', item_kind: 'product', product_id: saved.id, amount: Number(listPrice),
+            currency: priceCurrency, valid_from: new Date().toLocaleDateString('en-CA') })
+        } catch (err) {
+          const why = extractErrorMessages(err, 'the price could not be saved')
+          setError([`${saved.code} was saved, but its list price wasn't: ${Array.isArray(why) ? why.join(' ') : why}`,
+            'Open the product from the list and add the price in its Pricing section.'])
+          return
+        }
+      }
       onSaved(saved)
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save the product.'))
@@ -103,8 +115,10 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
   }
 
   return (
-    <FormPage nav={nav} icon={initial ? 'edit' : 'box'} title={initial ? `Edit ${initial.code}` : 'New Product'}
-      subtitle={initial ? `${initial.name} — the code is fixed once created.` : 'A finished product the company sells — the master Sales, Design, Production and Service refer to.'}
+    <FormPage nav={nav} icon={initial ? 'edit' : 'box'} title={initial ? `Edit ${initial.code}` : isApp ? 'New Application' : 'New Product'}
+      subtitle={initial ? `${initial.name} — the code is fixed once created.` : isApp
+        ? 'An add-on sold with a product only when the customer asks for it.'
+        : 'A finished product the company sells — the master Sales, Design, Production and Service refer to.'}
       onBack={onCancel} backTour="product-form-back"
       footer={<>
         <button type="button" style={sheetBtn('secondary', SHEET.INK, saving)} onClick={onCancel} disabled={saving}>Cancel</button>
@@ -115,7 +129,19 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
       <SheetColumns
         left={<>
           <ErrorBanner error={error} />
-          <SheetSection icon="box" title="Product">
+          <DraftBanner draft={draft} />
+          <SheetSection icon="box" title={isApp ? 'Application' : 'Product'}>
+            {/* One master: first say whether this is a product or an application (add-on). */}
+            <div role="radiogroup" aria-label="Product or application" style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+              {([['product', 'Product'], ['application', 'Application']] as const).map(([k, label]) => {
+                const on = k === 'application' ? isApp : !isApp
+                return (
+                  <button key={k} type="button" role="radio" aria-checked={on} disabled={!!initial && !on}
+                    onClick={() => set('product_type', k === 'application' ? 'application' : (initial?.product_type !== 'application' && initial?.product_type) || 'vehicle')}
+                    style={sheetBtn(on ? 'primary' : 'secondary', SHEET.BLUE, !!initial && !on)}>{label}</button>
+                )
+              })}
+            </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '0 1 140px', minWidth: 120 }}>
                 <L>Code <Req /></L>
@@ -124,15 +150,17 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
               <div style={{ flex: '1 1 240px', maxWidth: 360 }}>
                 <L>Name <Req /></L><input style={sheetInput} value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="RRB Sanding Vehicle" />
               </div>
-              <div style={{ flex: '0 1 200px', minWidth: 170 }}>
-                <L>Type</L>
-                <Select style={sheetInput} value={form.product_type} onChange={(e) => set('product_type', e.target.value)}>
-                  {(meta?.types || []).map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </Select>
-              </div>
-              <div style={{ flex: '1 1 160px', maxWidth: 220 }}>
-                <L>Model number</L><input style={sheetInput} value={form.model_number} onChange={(e) => set('model_number', e.target.value)} placeholder="PRT-SV-01" />
-              </div>
+              {!isApp && <>
+                <div style={{ flex: '0 1 200px', minWidth: 170 }}>
+                  <L>Type</L>
+                  <Select style={sheetInput} value={form.product_type} onChange={(e) => set('product_type', e.target.value)}>
+                    {(meta?.types || []).filter((t) => t.value !== 'application').map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </Select>
+                </div>
+                <div style={{ flex: '1 1 160px', maxWidth: 220 }}>
+                  <L>Model number</L><input style={sheetInput} value={form.model_number} onChange={(e) => set('model_number', e.target.value)} placeholder="PRT-SV-01" />
+                </div>
+              </>}
               <div style={{ flex: '0 1 160px', minWidth: 150 }}>
                 <L>Status</L>
                 <Select style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)}>
@@ -157,38 +185,40 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
           </SheetSection>
 
           <SheetSection icon="list" title="Technical specifications" extra={<Optional />}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {specs.map((s, i) => (
-                <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <input style={{ ...sheetInput, flex: '1 1 200px', width: 'auto', maxWidth: 300 }} value={s.parameter} onChange={(e) => setSpec(i, 'parameter', e.target.value)} placeholder="Parameter (e.g. Max speed on rail)" />
-                  <input style={{ ...sheetInput, flex: '1 1 140px', width: 'auto', maxWidth: 220 }} value={s.value} onChange={(e) => setSpec(i, 'value', e.target.value)} placeholder="Value (e.g. 40)" />
-                  <input style={{ ...sheetInput, flex: '0 1 100px', width: 100 }} value={s.unit} onChange={(e) => setSpec(i, 'unit', e.target.value)} placeholder="Unit" />
-                  <button type="button" aria-label="Remove row" title="Remove row" style={sheetBtn('ghost', '#DC2626')}
-                    onClick={() => setSpecs((rows) => (rows.length === 1 ? [{ parameter: '', value: '', unit: '' }] : rows.filter((_, j) => j !== i)))}><SheetIcon name="trash" size={16} /></button>
-                </div>
-              ))}
-              <div>
-                <button type="button" style={sheetBtn('secondary', SHEET.INK)} onClick={() => setSpecs((rows) => [...rows, { parameter: '', value: '', unit: '' }])}><SheetIcon name="plus" size={15} />Add row</button>
-              </div>
-            </div>
-          </SheetSection>
-        </>}
-        right={<>
-          <SheetSection icon="tag" title="Applications" extra={<Optional />}>
-            <p style={{ ...hintStyle, margin: '0 0 10px' }}>Where this product is used.</p>
-            {shownApps.length === 0 ? (
-              <p style={{ ...hintStyle, marginTop: 0 }}>No applications yet — add them under the Applications tab (e.g. OHE inspection, Track sanding), then tick them here.</p>
-            ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {shownApps.map((a) => (
-                  <span key={a.id} style={chipStyle(appIds.includes(a.id))} onClick={() => toggleApp(a.id)} title={a.description || a.name}>
-                    {appIds.includes(a.id) ? '✓ ' : ''}{a.name}{a.is_active ? '' : ' (retired)'}
-                  </span>
-                ))}
-              </div>
-            )}
+            <textarea aria-label="Technical specifications" style={{ ...sheetInput, minHeight: 140, resize: 'vertical', lineHeight: 1.5 }}
+              value={techSpec} onChange={(e) => setTechSpec(e.target.value)}
+              placeholder={'One specification per line, e.g.\nMax speed on rail: 40 km/h\nEngine: 4-cylinder diesel, 110 HP\nTrack gauge: 1676 mm'} />
+            <p style={hintStyle}>Write each specification on its own line — it prints the same way on quotations and the product page.</p>
           </SheetSection>
 
+          {can('sales', 'pricing', 'view') && (
+            <SheetSection icon="rupee" title="Pricing" extra={initial ? undefined : <Optional />}>
+              {initial ? (
+                <PriceConditionsPanel productId={initial.id} emptyText="No price yet — add the list price, then customer or country prices if they differ" />
+              ) : can('sales', 'pricing', 'create') ? (
+                <>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                    <div style={{ flex: '0 1 180px', minWidth: 150 }}>
+                      <L>List price ({priceCurrency})</L>
+                      <input type="number" min={0} style={sheetInput} value={listPrice} onChange={(e) => setListPrice(e.target.value)} placeholder="5000000" />
+                    </div>
+                    <div style={{ flex: '0 1 220px', minWidth: 180 }}>
+                      <L>Currency</L>
+                      <Select style={sheetInput} value={priceCurrency} onChange={(e) => setPriceCurrency(e.target.value)}>
+                        {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </Select>
+                    </div>
+                  </div>
+                  <CurrencyConversions amount={listPrice.trim() === '' ? null : Number(listPrice)} currency={priceCurrency} />
+                  <p style={hintStyle}>The price for all customers from today. After saving, open the product to add customer or country prices (e.g. a different price for Bangladesh in USD).</p>
+                </>
+              ) : (
+                <p style={{ ...hintStyle, marginTop: 0 }}>Adding prices needs &apos;Create&apos; on Sales › Pricing — ask an admin to add it to your role.</p>
+              )}
+            </SheetSection>
+          )}
+        </>}
+        right={<>
           <SheetSection icon="gear" title="Sales & service defaults">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '0 1 90px', minWidth: 80 }}>

@@ -19,6 +19,8 @@ import {
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { useCan } from '@/lib/permissions'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { useDesignFeature } from '@/components/design/useDesignFeature'
 
 // Creator of a library entry — the company delete rule only lets its creator (or an admin) delete it.
@@ -183,6 +185,13 @@ export default function DesignLibraryPage() {
   const docOptions = useMemo(() => toOptions(documents.map((d) => ({ id: d.id, label: d.code ? `${d.code} — ${d.label}` : d.label })), 'No drawing'), [documents])
   const stdOptions = useMemo(() => toOptions(standardOpts, 'No standard'), [standardOpts])
 
+  // Add forms only (an id means an edit). A kept draft is filled back in when the Add button is pressed again.
+  const stdDraft = useFormDraft(stdForm && !stdForm.id ? 'design-standard-new' : null, stdForm, (d) => setStdForm({ ...emptyStd, ...d }))
+  const partDraft = useFormDraft(partForm && !partForm.id ? 'design-standard-part-new' : null, partForm, (d) => setPartForm({ ...emptyPart, ...d }))
+  const makeDraft = useFormDraft(makeForm && !makeForm.id ? 'design-approved-make-new' : null, makeForm, (d) => setMakeForm({ ...emptyMake, ...d }))
+  const clDraft = useFormDraft(clForm && !clForm.id ? 'design-checklist-new' : null, clForm,
+    (d) => setClForm({ ...emptyChecklist, ...d, items: d?.items?.length ? d.items : [{ text: '' }] }))
+
   if (isLoading || !isAuthorized) return null
 
   const act = async (fn: () => Promise<unknown>, fallback: string, done: string, after?: () => void) => {
@@ -238,7 +247,7 @@ export default function DesignLibraryPage() {
     }
     await saveForm(
       () => (stdForm.id ? designApi.updateStandard(stdForm.id, payload) : designApi.createStandard(payload)),
-      'Saving the standard failed.', `${payload.code} saved.`, () => { setStdForm(null); setLookupsLoaded(false) },
+      'Saving the standard failed.', `${payload.code} saved.`, () => { stdDraft.clear(); setStdForm(null); setLookupsLoaded(false) },
     )
   }
   const pickStandardFile = (id: number) => {
@@ -273,7 +282,7 @@ export default function DesignLibraryPage() {
     }
     await saveForm(
       () => (partForm.id ? designApi.updateStandardPart(partForm.id, common) : designApi.createStandardPart({ ...common, store_item_id: Number(partForm.store_item_id) })),
-      'Saving the standard part failed.', 'Standard part saved.', () => setPartForm(null),
+      'Saving the standard part failed.', 'Standard part saved.', () => { partDraft.clear(); setPartForm(null) },
     )
   }
 
@@ -285,7 +294,7 @@ export default function DesignLibraryPage() {
     const common = { make: makeForm.make.trim(), part_number: makeForm.part_number.trim() || null, status: makeForm.status, remarks: makeForm.remarks.trim() || null }
     await saveForm(
       () => (makeForm.id ? designApi.updateApprovedMake(makeForm.id, common) : designApi.createApprovedMake({ ...common, store_item_id: Number(makeForm.store_item_id) })),
-      'Saving the approved make failed.', `${common.make} saved.`, () => setMakeForm(null),
+      'Saving the approved make failed.', `${common.make} saved.`, () => { makeDraft.clear(); setMakeForm(null) },
     )
   }
 
@@ -336,7 +345,7 @@ export default function DesignLibraryPage() {
       () => (clForm.id
         ? designApi.updateChecklist(clForm.id, { name: clForm.name.trim(), discipline, is_active: clForm.is_active, items })
         : designApi.createChecklist({ name: clForm.name.trim(), document_type: clForm.document_type, discipline, is_active: clForm.is_active, items })),
-      'Saving the checklist failed.', `${clForm.name.trim()} saved.`, () => setClForm(null),
+      'Saving the checklist failed.', `${clForm.name.trim()} saved.`, () => { clDraft.clear(); setClForm(null) },
     )
   }
 
@@ -672,6 +681,7 @@ export default function DesignLibraryPage() {
             <button type="button" data-tour="design-lib-std-save-btn" disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)} onClick={saveStandard}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Save Standard'}</button>
           </>}>
           <div style={{ padding: '20px 24px' }}>
+            <DraftBanner draft={stdDraft} />
             <SheetError error={formError} />
             <SheetSection icon="doc" title="Standard">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
@@ -711,6 +721,7 @@ export default function DesignLibraryPage() {
             <button type="button" data-tour="design-lib-part-save-btn" disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)} onClick={savePart}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Save Standard Part'}</button>
           </>}>
           <div style={{ padding: '20px 24px' }}>
+            <DraftBanner draft={partDraft} />
             <SheetError error={formError} />
             <SheetSection icon="box" title="Item">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
@@ -754,6 +765,7 @@ export default function DesignLibraryPage() {
             <button type="button" data-tour="design-lib-make-save-btn" disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)} onClick={saveMake}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Save Make'}</button>
           </>}>
           <div style={{ padding: '20px 24px' }}>
+            <DraftBanner draft={makeDraft} />
             <SheetError error={formError} />
             <SheetSection icon="box" title="Item">
               <Field label="Item (Item Master)" basis={300} grow req={!makeForm.id}>
@@ -829,6 +841,7 @@ export default function DesignLibraryPage() {
             <button type="button" data-tour="design-lib-cl-save-btn" disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)} onClick={saveChecklist}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Save Checklist'}</button>
           </>}>
           <div style={{ padding: '20px 24px' }}>
+            <DraftBanner draft={clDraft} />
             <SheetError error={formError} />
             <SheetSection icon="doc" title="Checklist">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>

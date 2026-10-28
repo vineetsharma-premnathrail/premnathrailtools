@@ -11,6 +11,8 @@ import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
 import { PM_FREQUENCY_UNIT_LABELS, WO_TYPE_LABELS } from '@/components/maintenance/labels'
 import Select from '@/components/shared/Select'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 const PM_WO_TYPES = ['preventive', 'calibration', 'inspection']
 
@@ -79,6 +81,16 @@ export default function PmPlanForm({
       uom: s.uom || '', qty: String(s.qty), remarks: s.remarks || '',
     })),
   )
+  // Lead-days default arrives from Settings; the draft starts watching only after it is in.
+  const [defaultsReady, setDefaultsReady] = useState(!!initial)
+  const draft = useFormDraft(initial || !defaultsReady ? null : `maintenance-pm-plan-new-${presetAssetId ?? 0}`,
+    { f, requiresShutdown, tasks, spares },
+    (d) => {
+      if (d.f) setF((prev) => ({ ...prev, ...d.f }))
+      setRequiresShutdown(!!d.requiresShutdown)
+      setTasks(Array.isArray(d.tasks) ? d.tasks.map((t: TaskRow) => ({ ...t, key: nextKey() })) : [])
+      setSpares(Array.isArray(d.spares) ? d.spares.map((s: SpareRow) => ({ ...s, key: nextKey() })) : [])
+    })
   const set = (key: string) => (value: string) => setF((prev) => ({ ...prev, [key]: value }))
 
   const [lookups, setLookups] = useState<MaintenanceLookups | null>(null)
@@ -104,6 +116,7 @@ export default function PmPlanForm({
         if (!ignore && typeof v === 'number') setF((prev) => (prev.lead_days === '3' ? { ...prev, lead_days: String(v) } : prev))
       })
       .catch(() => { /* keep the built-in default of 3 */ })
+      .finally(() => { if (!ignore) setDefaultsReady(true) })
     return () => { ignore = true }
   }, [initial])
 
@@ -178,6 +191,7 @@ export default function PmPlanForm({
     setSaving(true)
     try {
       await onSubmit(payload)
+      draft.clear()
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save the PM plan.'))
     } finally {
@@ -196,6 +210,7 @@ export default function PmPlanForm({
         </>}>
       <div style={{ padding: '20px 24px' }}>
       {notice}
+      <DraftBanner draft={draft} />
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
           {Array.isArray(error) ? error.join(' ') : error}

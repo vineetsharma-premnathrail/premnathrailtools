@@ -11,6 +11,8 @@ import { extractErrorMessages } from '@/lib/validation'
 import {
   COMPONENT_CATEGORY_LABELS, MEDIA_TYPE_LABELS, CATEGORY_FIELDS, DEFAULT_CATEGORY_FIELDS, useHydCosts,
 } from '@/components/hydraulic/labels'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 // Rating fields: key → [label, unit, text?]
 export const RATING_FIELDS: Record<string, [string, string, boolean?]> = {
@@ -72,6 +74,17 @@ export default function ComponentForm({
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
 
+  const draft = useFormDraft(initial ? null : 'hyd-component-new',
+    { name, category, systemType, status, manufacturer, modelNumber, partNumber, storeItemId, ratings, media, tempMin, tempMax, weight, unitCost, datasheetUrl, description, specs },
+    (d) => {
+      setName(d.name ?? ''); setCategory(d.category || 'pump'); setSystemType(d.systemType || 'hydraulic'); setStatus(d.status || 'active')
+      setManufacturer(d.manufacturer ?? ''); setModelNumber(d.modelNumber ?? ''); setPartNumber(d.partNumber ?? ''); setStoreItemId(d.storeItemId ?? '')
+      setRatings((prev) => ({ ...prev, ...(d.ratings || {}) })); setMedia(d.media ?? '')
+      setTempMin(d.tempMin ?? ''); setTempMax(d.tempMax ?? ''); setWeight(d.weight ?? ''); setUnitCost(d.unitCost ?? '0')
+      setDatasheetUrl(d.datasheetUrl ?? ''); setDescription(d.description ?? '')
+      setSpecs((d.specs || []).map((s) => ({ ...s, key: nextKey() })))
+    })
+
   useEffect(() => {
     hydraulicApi.lookupStoreItems().then(setStoreItems).catch((err) => setError(extractErrorMessages(err, 'Failed to load Store items.')))
   }, [])
@@ -122,6 +135,7 @@ export default function ComponentForm({
         description: description.trim() || null,
         specifications: specs.filter((s) => s.label.trim()).map((s) => ({ label: s.label.trim(), value: s.value.trim() })),
       })
+      draft.clear()
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save component.'))
     } finally {
@@ -138,6 +152,7 @@ export default function ComponentForm({
       <SheetColumns
         left={<>
           <SheetError error={error} />
+          <DraftBanner draft={draft} />
           <SheetSection icon="tag" title="Identity">
             <div style={{ ...fieldRow, marginBottom: 0 }}>
               <Cell tour="hyd-comp-category" basis={200}>

@@ -10,6 +10,8 @@ import { useCan } from '@/lib/permissions'
 import Link from 'next/link'
 import { accountsApi, crmApi, costCentersApi, salesApi, purchaseOrdersApi } from '@/lib/api'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
+import DraftBanner from '@/components/shared/DraftBanner'
+import { useFormDraft } from '@/lib/formDraft'
 import {
   BankAccount, CostCenter, GLAccount, OpenCredit, OpenDocument, Organization, PaymentTransaction, PaymentType, Vendor,
 } from '@/types'
@@ -161,6 +163,23 @@ function PaymentsPage() {
   const [advanceReason, setAdvanceReason] = useState('')
   const [orderOptions, setOrderOptions] = useState<{ value: string; label: string }[]>([])
   const [orderNote, setOrderNote] = useState('')
+  // A new voucher's typed data survives a refresh / network failure (lib/formDraft.ts).
+  // Off when the form was opened with a preset party from Outstanding.
+  const draft = useFormDraft(showForm && !presetRef ? 'finance-voucher-new' : null,
+    { ptype, partyId, settle, amount, lines, bankId, counterBankId, mode, payDate, chequeNo, chequeDate, referenceNo, narration, deductions, isAdvance, orderId, advanceReason,
+      cur: { currency: docCur.currency, rate: docCur.rate, amountFc: docCur.amountFc } },
+    (d) => {
+      const t: PaymentType = d.ptype || 'vendor'
+      setPtype(t); setPartyId(d.partyId || ''); setSettle(d.settle || {}); setAmount(d.amount || ''); setLines(d.lines?.length ? d.lines : [newSplitLine()])
+      setBankId(d.bankId || ''); setCounterBankId(d.counterBankId || ''); setMode(d.mode || 'neft'); setPayDate(d.payDate || todayIso())
+      setChequeNo(d.chequeNo || ''); setChequeDate(d.chequeDate || ''); setReferenceNo(d.referenceNo || ''); setNarration(d.narration || '')
+      setDeductions(d.deductions || []); setIsAdvance(!!d.isAdvance); setOrderId(d.orderId || ''); setAdvanceReason(d.advanceReason || ''); docCur.restore(d.cur)
+      setOpenDocs([]); setOpenCredits([])
+      if (d.partyId && (t === 'vendor' || t === 'customer')) {
+        setOpenLoading(true); fetchOpenItems(t, d.partyId)
+        if (d.isAdvance) loadOrders(t, d.partyId)
+      }
+    })
 
   const listKey = `${tab}|${fromDate}|${toDate}|${statusFilter}`
   const loading = loadedKey !== listKey
@@ -411,6 +430,7 @@ function PaymentsPage() {
       } else {
         setMessage({ title: 'Voucher posted', message: `${TYPE_LABELS[created.payment_type]} ${created.payment_number} for ${inr(created.amount)} has been posted.${adv}` })
       }
+      draft.clear()
       resetForm()
       setShowForm(false)
       loadPayments()
@@ -475,6 +495,7 @@ function PaymentsPage() {
             </button>
           </>}>
           <div style={{ padding: '20px 24px 0' }}>
+            <DraftBanner draft={draft} />
             <ErrorBanner error={formError} />
             <InfoBanner>
               Payment vouchers settle bills bill-wise: tick the invoices this money clears. Anything not allocated stays as an advance on the

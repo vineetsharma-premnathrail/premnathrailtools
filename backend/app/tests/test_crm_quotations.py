@@ -5,6 +5,7 @@ from app.auth.jwt_handler import create_access_token
 from app.modules.crm.models.inquiry import Inquiry
 from app.modules.crm.models.organization import Organization
 from app.modules.main.models.user import User
+from app.tests.quote_lines import LINE_REF, quote_product  # noqa: F401 — autouse fixture
 
 
 def _user(db, email, role="user"):
@@ -29,7 +30,8 @@ def _inquiry(db, owner, uid="PRT-INQ-2026-0101"):
     return inquiry
 
 
-ITEM = {"description": "RRV", "quantity": 1, "unit_price": 1000, "gst_percent": 18}
+ITEM = {"description": "RRV", "quantity": 1, "unit_price": 1000, "gst_percent": 18, **LINE_REF}
+
 
 
 def _mark_sent(db, quot_id):
@@ -155,7 +157,7 @@ def test_customer_response_by_inquiry_owner(client, db):
 def test_lump_sum_quotation_prices_the_whole_offer(client, db):
     owner = _user(db, "q_owner_ls@premnathrail.com")
     inq = _inquiry(db, owner, uid="PRT-INQ-2026-0120")
-    items = [{"description": "Ashok Leyland 1920 4700 WB or similar"}, {"description": "Rail-road attachment", "model_number": "2F2R2GB", "unit_price": 50}]
+    items = [{"description": "Ashok Leyland 1920 4700 WB or similar", **LINE_REF}, {"description": "Rail-road attachment", "model_number": "2F2R2GB", "unit_price": 50, **LINE_REF}]
     resp = client.post(f"/api/v1/crm/inquiries/{inq.id}/quotations", json={
         "pricing_mode": "lumpsum", "price": 9540851, "lump_sum_gst_percent": 18, "items": items,
     }, headers=_auth(owner))
@@ -216,7 +218,7 @@ def test_past_quotations_picker_lists_scoped_and_searches(client, db):
     inq2 = _inquiry(db, owner, uid="PRT-INQ-2026-0182")
     _create(client, inq1.id, owner)
     client.post(f"/api/v1/crm/inquiries/{inq2.id}/quotations",
-                json={"items": [{"description": "Tamping Unit", "model_number": "TU-9", "quantity": 2, "unit_price": 500}]}, headers=_auth(owner))
+                json={"items": [{"description": "Tamping Unit", "model_number": "TU-9", "quantity": 2, "unit_price": 500, **LINE_REF}]}, headers=_auth(owner))
     rows = client.get("/api/v1/crm/past-quotations", headers=_auth(owner)).json()
     assert [r["inquiry_id"] for r in rows[:2]] == [inq2.id, inq1.id]
     assert rows[0]["items"][0]["unit_price"] == 500
@@ -227,3 +229,92 @@ def test_past_quotations_picker_lists_scoped_and_searches(client, db):
     db.commit()
     rows = client.get("/api/v1/crm/past-quotations", headers=_auth(owner)).json()
     assert inq2.id not in [r["inquiry_id"] for r in rows]
+
+
+# ── Product + Application are required on every line (Product master) ─────
+
+def _post_lines(client, inq, owner, lines):
+    return client.post(f"/api/v1/crm/inquiries/{inq.id}/quotations", json={"items": lines}, headers=_auth(owner))
+
+
+def test_line_without_product_is_rejected(client, db):
+    owner = _user(db, "q_prod1@premnathrail.com")
+    inq = _inquiry(db, owner, uid="PRT-INQ-2026-0301")
+    r = _post_lines(client, inq, owner, [{"description": "Free text", "quantity": 1, "unit_price": 10}])
+    assert r.status_code == 422 and "Line 1: pick the product" in r.json()["detail"]
+
+
+def test_application_is_optional_but_must_exist(client, db):
+    owner = _user(db, "q_prod2@premnathrail.com")
+    inq = _inquiry(db, owner, uid="PRT-INQ-2026-0302")
+    r = _post_lines(client, inq, owner, [{"product_id": 1, "quantity": 1, "unit_price": 10}])
+    assert r.status_code == 201, r.text
+    assert r.json()["items"][0]["application_id"] is None
+    r = _post_lines(client, inq, owner, [{"product_id": 1, "application_id": 999, "quantity": 1, "unit_price": 10}])
+    assert r.status_code == 422 and "Line 1" in r.json()["detail"] and "not an application" in r.json()["detail"]
+    # A normal product is not an application either.
+    r = _post_lines(client, inq, owner, [{"product_id": 1, "application_id": 1, "quantity": 1, "unit_price": 10}])
+    assert r.status_code == 422 and "not an application" in r.json()["detail"]
+    # ...and an application cannot be the line's product.
+    r = _post_lines(client, inq, owner, [{"product_id": 2, "quantity": 1, "unit_price": 10}])
+    assert r.status_code == 422 and "is an application / attachment, not a product" in r.json()["detail"]
+
+
+def test_application_need_not_belong_to_the_product(client, db):
+    from app.modules.products.models.product import FinishedProduct
+    owner = _user(db, "q_prod3@premnathrail.com")
+    inq = _inquiry(db, owner, uid="PRT-INQ-2026-0303")
+    other = FinishedProduct(code="APP-OTHER", name="Track sanding", product_type="application")
+    db.add(other)
+    db.commit()
+    r = _post_lines(client, inq, owner, [{"product_id": 1, "application_id": other.id, "quantity": 1, "unit_price": 10}])
+    assert r.status_code == 201 and r.json()["items"][0]["application_name"] == "Track sanding"
+
+
+def test_discontinued_product_cannot_be_quoted(client, db):
+    from app.modules.products.models.product import FinishedProduct
+    owner = _user(db, "q_prod4@premnathrail.com")
+    inq = _inquiry(db, owner, uid="PRT-INQ-2026-0304")
+    db.get(FinishedProduct, 1).status = "discontinued"
+    db.commit()
+    r = _post_lines(client, inq, owner, [{"product_id": 1, "application_id": 2, "quantity": 1, "unit_price": 10}])
+    assert r.status_code == 422 and "can't be quoted" in r.json()["detail"]
+
+
+def test_product_line_stores_application_and_fills_description_and_model(client, db):
+    owner = _user(db, "q_prod5@premnathrail.com")
+    inq = _inquiry(db, owner, uid="PRT-INQ-2026-0305")
+    r = _post_lines(client, inq, owner, [{"product_id": 1, "application_id": 2, "quantity": 2, "unit_price": 100}])
+    assert r.status_code == 201, r.text
+    line = r.json()["items"][0]
+    assert (line["product_id"], line["application_id"]) == (1, 2)
+    assert (line["description"], line["model_number"]) == ("RRV Mobile Crane", "RRV-MC")
+    assert (line["product_code"], line["product_name"], line["application_name"]) == ("P-QT-1", "RRV Mobile Crane", "Heavy lifting")
+
+
+def test_quotation_products_lookup_lists_products_and_applications_separately(client, db):
+    from app.modules.products.models.product import FinishedProduct
+    owner = _user(db, "q_prod6@premnathrail.com")
+    db.add(FinishedProduct(code="P-OLD", name="Old", product_type="machine", status="discontinued"))
+    db.add(FinishedProduct(code="P-SVC", name="Overhaul", product_type="service", status="development"))
+    db.commit()
+    data = client.get("/api/v1/crm/quotation-products", headers=_auth(owner)).json()
+    assert [r["code"] for r in data["products"]] == ["P-QT-1", "P-SVC"] and data["products"][1]["product_type"] == "service"
+    assert all(r["product_type"] != "application" for r in data["products"])
+    assert [(a["id"], a["name"]) for a in data["applications"]] == [(2, "Heavy lifting")]
+
+
+def test_quotation_products_lookup_needs_crm_quotation_permission(client, db):
+    nobody = User(email="q_nocrm@premnathrail.com", name="nocrm", role="user", is_active=True, assigned_apps=["store"])
+    db.add(nobody)
+    db.commit()
+    assert client.get("/api/v1/crm/quotation-products", headers=_auth(nobody)).status_code == 403
+
+
+def test_quotation_product_price_lookup_is_scoped_and_checks_the_product(client, db):
+    owner = _user(db, "q_prod7@premnathrail.com")
+    inq = _inquiry(db, owner, uid="PRT-INQ-2026-0306")
+    ok = client.get(f"/api/v1/crm/inquiries/{inq.id}/quotation-products/1/price", headers=_auth(owner))
+    assert ok.status_code == 200 and "price" in ok.json()
+    assert client.get(f"/api/v1/crm/inquiries/{inq.id}/quotation-products/999/price", headers=_auth(owner)).status_code in (404, 200)
+    assert client.get("/api/v1/crm/inquiries/9999/quotation-products/1/price", headers=_auth(owner)).status_code == 404

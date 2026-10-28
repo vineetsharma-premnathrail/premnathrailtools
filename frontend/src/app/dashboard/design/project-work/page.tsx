@@ -17,6 +17,8 @@ import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET,
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 
 // Requests tab: work brought to Design (BD / project / R&D / internal),
@@ -161,6 +163,9 @@ export default function DesignRequestsPage() {
   const allowLead = useAssigneeFilter('design:project_work.request_progress')
   const userOptions = useMemo(() => toOptions(users.filter((u) => allowLead(u.id)).map((u) => ({ id: u.id, label: u.code ? `${u.label} — ${u.code}` : u.label })), 'Not assigned yet'), [users, allowLead])
 
+  // The popup's data survives a refresh; it is filled back in when "+ New Request" is opened again.
+  const draft = useFormDraft(formOpen ? 'design-request-new' : null, form, (d) => setForm({ ...EMPTY_FORM, ...d }))
+
   if (isLoading || !isAuthorized) return null
 
   const set = (patch: Partial<typeof EMPTY_FORM>) => setForm((f) => ({ ...f, ...patch }))
@@ -194,6 +199,7 @@ export default function DesignRequestsPage() {
         order_project_id: form.order_project?.projectId ?? null,
         order_project_element_id: form.order_project?.elementId ?? null,
       })
+      draft.clear()
       router.push(recordPath('/dashboard/design/requests', created))
     } catch (err) {
       setFormError(extractErrorMessages(err, 'Creating the design request failed.'))
@@ -246,6 +252,7 @@ export default function DesignRequestsPage() {
           </>}>
           <SheetColumns
             left={<>
+              <DraftBanner draft={draft} />
               <SheetError error={formError} />
               <SheetSection icon="doc" title="Request">
                 <div data-tour="design-reqnew-title" style={{ marginBottom: 14 }}>

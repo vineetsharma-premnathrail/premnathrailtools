@@ -10,6 +10,8 @@ import { SheetSection, sheetInput, sheetLabel, Req, SheetError } from '@/compone
 import HydFormShell, { HydShellProps, SheetBody } from '@/components/hydraulic/HydFormShell'
 import { extractErrorMessages } from '@/lib/validation'
 import { SPARE_CATEGORY_LABELS, MEDIA_TYPE_LABELS, CRITICALITY_LABELS } from '@/components/hydraulic/labels'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 const inputStyle: React.CSSProperties = sheetInput
 const labelStyle: React.CSSProperties = sheetLabel
@@ -52,6 +54,15 @@ export default function SparePartForm({
   const [storeItems, setStoreItems] = useState<HydLookupOption[]>([])
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
+
+  const draft = useFormDraft(initial ? null : 'hyd-spare-new',
+    { name, category, systemType, criticality, status, componentId, storeItemId, manufacturer, partNumber, uom, unitCost, minStock, reorderQty, leadTime, shelfLife, interchangeable, storageNotes, remarks },
+    (d) => {
+      setName(d.name ?? ''); setCategory(d.category || 'seal_kit'); setSystemType(d.systemType || 'hydraulic'); setCriticality(d.criticality || 'essential')
+      setStatus(d.status || 'active'); setComponentId(d.componentId ?? ''); setStoreItemId(d.storeItemId ?? ''); setManufacturer(d.manufacturer ?? '')
+      setPartNumber(d.partNumber ?? ''); setUom(d.uom || 'NOS'); setUnitCost(d.unitCost ?? '0'); setMinStock(d.minStock ?? '0'); setReorderQty(d.reorderQty ?? '0')
+      setLeadTime(d.leadTime ?? ''); setShelfLife(d.shelfLife ?? ''); setInterchangeable(d.interchangeable ?? ''); setStorageNotes(d.storageNotes ?? ''); setRemarks(d.remarks ?? '')
+    })
 
   useEffect(() => {
     hydraulicApi.lookupComponents().then(setComponents).catch((err) => setError(extractErrorMessages(err, 'Failed to load the component list.')))
@@ -119,6 +130,7 @@ export default function SparePartForm({
         storage_notes: storageNotes.trim() || null,
         remarks: remarks.trim() || null,
       })
+      draft.clear()
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save spare part.'))
     } finally {
@@ -134,6 +146,7 @@ export default function SparePartForm({
     >
       <SheetBody>
         <SheetError error={error} />
+        <DraftBanner draft={draft} />
 
         <SheetSection icon="tag" title="Identity">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>

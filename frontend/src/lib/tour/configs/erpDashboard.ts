@@ -32,7 +32,7 @@ const config: TourConfig = {
     {
       target: 'erp-dash-stats',
       title: 'Headline numbers',
-      purpose: 'Total service requests ever raised, SRs raised this calendar month, Active Tickets (not yet Closed or Cancelled), In progress, Past target date (active tickets whose expected completion date has gone by) and Closed.',
+      purpose: 'Total service requests ever raised, Active Tickets (not yet Closed or Cancelled), In progress and Closed.',
       why: 'Active Tickets is the service team\'s current workload; if it keeps growing month on month, jobs are being opened faster than they are being closed.',
     },
     {
@@ -43,7 +43,7 @@ const config: TourConfig = {
     {
       target: 'erp-dash-recent-srs',
       title: 'Recent Service Tickets',
-      purpose: 'The 8 newest service requests with issue, service type, priority, status, assigned person, target date and age (days since it was opened). Click any row to open that ticket.',
+      purpose: 'The newest service requests (up to 50, scroll inside the table) with issue, service type, priority, status, assigned person, target date and age (days since it was opened). Click any row to open that ticket.',
       why: 'Age shows how long the customer has been waiting — a high age on an Urgent ticket needs attention first.',
     },
     {

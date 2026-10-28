@@ -13,6 +13,8 @@ import { useDesignMe } from '@/components/design/useDesignMe'
 import { toOptions } from '@/components/design/designMeta'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { chipBtnStyle, pillStyle } from '@/components/shared/ui'
 
 export default function NewCustomerSubmissionPage() {
@@ -40,6 +42,13 @@ export default function NewCustomerSubmissionPage() {
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+
+  const draft = useFormDraft('design-submission-new',
+    { customerId, customerName, contactName, contactEmail, pmProjectId, erpProjectId, coverNote, selectedIds },
+    (d) => {
+      setCustomerId(d.customerId ?? ''); setCustomerName(d.customerName ?? ''); setContactName(d.contactName ?? ''); setContactEmail(d.contactEmail ?? '')
+      setPmProjectId(d.pmProjectId ?? ''); setErpProjectId(d.erpProjectId ?? ''); setCoverNote(d.coverNote ?? ''); setSelectedIds(d.selectedIds ?? [])
+    })
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -87,6 +96,7 @@ export default function NewCustomerSubmissionPage() {
         cover_note: coverNote.trim() || null,
         lines: selectedIds.map((id) => ({ revision_id: id })),
       })
+      draft.clear()
       router.push(recordPath('/dashboard/design/reviews/submissions', sub))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to create the submission.'))
@@ -118,6 +128,7 @@ export default function NewCustomerSubmissionPage() {
     >
       <SheetColumns
         left={<>
+          <DraftBanner draft={draft} />
           <SheetError error={error} />
           {me && !me.is_team && (
             <SheetError error="Only members of the Design team can prepare customer submissions. Ask the Design head to add you to the team in Design › Settings if you need to." />

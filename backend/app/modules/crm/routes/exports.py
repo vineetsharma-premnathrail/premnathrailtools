@@ -156,13 +156,13 @@ def export_inquiries_tenders(
     def money(v):
         return _v(v) if show_money else ""
 
-    inq_headers = ["Inquiry ID", "Customer Organization", "Product", "Category", "Quantity", "Required Delivery", "Delivery Location",
-                   "Specification", "Requirement Summary", "Status", "Stage", "Priority", "Lead Source", "BD Owner",
+    inq_headers = ["Inquiry ID", "Customer Organization", "Product",
+                   "Specification", "Status", "Priority", "Lead Source", "BD Owner",
                    "Sales Engineer", "Expected Value", "Probability %", "Expected Order Date", "Next Follow-up",
                    "Technical Offer No.", "Sent to R&D On", "Created On", "Created By"]
-    inq_rows = [[i.universal_id, orgs.get(i.org_id, ""), _v(i.product), _v(i.product_category), _v(i.quantity),
-                 _v(i.required_delivery_date), _v(i.delivery_location), _v(i.product_spec), _v(i.requirement_desc),
-                 _v(i.status), _v(i.current_stage), _v(i.priority), _v(i.lead_source), _v(i.bd_owner), _v(i.sales_engineer),
+    inq_rows = [[i.universal_id, orgs.get(i.org_id, ""), _v(i.product),
+                 _v(i.product_spec),
+                 _v(i.status), _v(i.priority), _v(i.lead_source), _v(i.bd_owner), _v(i.sales_engineer),
                  money(i.expected_value), _v(i.probability), _v(i.expected_order_date), _v(i.next_followup_date),
                  _v(i.technical_offer_number), _v(ist_date(i.technical_offer_sent_at)), _v(ist_date(i.created_at)),
                  names.get(i.created_by_id, "")] for i in inquiries]

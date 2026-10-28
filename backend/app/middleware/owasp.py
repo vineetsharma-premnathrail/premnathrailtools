@@ -203,6 +203,10 @@ SSO_PATHS = {
     "/api/v1/auth/refresh",
     "/api/v1/auth/teams-token",
     "/api/v1/auth/teams-exchange",
+    # The login page's "am I signed in?" check. If an office-IP ban blocked
+    # it, a signed-out user would see "Too many violations" instead of
+    # being signed straight back in with Microsoft / Teams.
+    "/api/v1/auth/me",
 }
 
 
@@ -349,7 +353,11 @@ class OWASPMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 status_code=429,
                 headers={"Retry-After": str(BAN_DURATION_SECONDS)},
-                content={"detail": "Too many violations. Try again later."},
+                content={"detail": (
+                    f"Requests from your network are paused for up to {BAN_DURATION_SECONDS // 60} minutes after "
+                    "repeated blocked requests. Signing in again with Microsoft works right away and lifts this "
+                    "for you; if it keeps happening, ask the portal admin to check the security log."
+                )},
             )
 
         # ── A01: Account paused for record-ID guessing (see OBJECT_DENIAL_*) ─
@@ -501,12 +509,19 @@ class OWASPMiddleware(BaseHTTPMiddleware):
         bucket = _rate_bucket(path, method)
         if not trusted and _is_rate_limited(bucket, ip):
             logger.warning("[A07] Rate limit hit | ip=%s bucket=%s path=%s rid=%s", ip, bucket, path, request_id)
-            _record_violation(ip, trusted=bucket == "sso")
+            # Plain page reads (GET) over the limit are not an attack signal on
+            # their own — the whole office shares one IP, and signed-out tabs
+            # retrying must not get that IP banned for everyone.
+            _record_violation(ip, trusted=bucket in ("sso", "default"))
             cfg = RATE_CONFIG[bucket]
             return JSONResponse(
                 status_code=429,
                 headers={"Retry-After": str(cfg["window"])},
-                content={"detail": f"Too many requests. Retry after {cfg['window']} seconds."},
+                content={"detail": (
+                    f"Too many requests from your network without a sign-in (limit {cfg['limit']} per "
+                    f"{cfg['window']} seconds). Wait {cfg['window']} seconds and try again, or sign in with "
+                    "Microsoft first."
+                )},
             )
 
         # ── Process request ───────────────────────────────────────────────

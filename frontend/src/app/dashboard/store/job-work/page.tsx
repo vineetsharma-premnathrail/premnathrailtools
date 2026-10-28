@@ -1,6 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi, storeJobWorkApi } from '@/lib/api'
@@ -364,6 +366,12 @@ function ReceiveDialog({ challan, onClose, onDone }: {
     Object.fromEntries(open.map((l) => [l.issue_item_id, { consumed: String(+(l.quantity_outstanding - l.quantity_return_pending).toFixed(4)), scrap: '' }])))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  const draft = useFormDraft(`store-job-work-receipt-new-${challan.issue_id}`,
+    { outputItemId, outputQty, receiptDate, vendorDc, poLineId, rate, remarks, use }, (d) => {
+      setOutputItemId(d.outputItemId ?? ''); setOutputQty(d.outputQty ?? ''); setReceiptDate(d.receiptDate || new Date().toLocaleDateString('en-CA'))
+      setVendorDc(d.vendorDc ?? ''); setPoLineId(d.poLineId ?? ''); setRate(d.rate ?? ''); setRemarks(d.remarks ?? '')
+      setUse((u) => ({ ...u, ...(d.use ?? {}) }))
+    })
 
   useEffect(() => {
     storeApi.listItems().then(setItems).catch(() => setItems([]))
@@ -382,6 +390,7 @@ function ReceiveDialog({ challan, onClose, onDone }: {
         job_charge_rate: rate !== '' ? Number(rate) : undefined, remarks: remarks.trim() || undefined,
         components: open.map((l) => ({ issue_item_id: l.issue_item_id, consumed_quantity: Number(use[l.issue_item_id]?.consumed || 0), scrap_quantity: Number(use[l.issue_item_id]?.scrap || 0) })),
       })
+      draft.clear()
       onDone(r)
     } catch (err) {
       setError(extractErrorMessages(err, 'The job work receipt could not be posted.'))
@@ -398,6 +407,7 @@ function ReceiveDialog({ challan, onClose, onDone }: {
       </>}>
       <SheetColumns
         left={<>
+          <DraftBanner draft={draft} />
           <SheetError error={error} />
           <SheetSection icon="box" title="Processed Item">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
@@ -470,6 +480,9 @@ function ReturnAsIsDialog({ challan, onClose, onDone }: {
   const [remarks, setRemarks] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  const draft = useFormDraft(`store-job-work-return-new-${challan.issue_id}`, { qty, condition, reason, remarks }, (d) => {
+    setQty(d.qty ?? {}); setCondition(d.condition ?? {}); setReason(d.reason ?? ''); setRemarks(d.remarks ?? '')
+  })
 
   useEffect(() => {
     storeApi.listDocTypes('return_condition').then((c: { value: string; label: string }[]) => setConditions(c)).catch(() => setConditions([]))
@@ -494,6 +507,7 @@ function ReturnAsIsDialog({ challan, onClose, onDone }: {
         items: lines.map((l) => ({ item_id: l.item_id, quantity: Number(qty[l.issue_item_id]), condition: condition[l.issue_item_id] || conditions[0]?.value || 'good', batch_number: l.batch_number || undefined })),
       })
       const pending = r?.status && r.status !== 'approved' && r.status !== 'completed'
+      draft.clear()
       onDone(`${r?.return_number || 'Return'}: material back from ${challan.vendor_name || 'the vendor'} on challan ${challan.challan_number || challan.issue_number}`
         + (pending ? ' — waiting for approval; stock with the vendor goes down once it is approved.' : '. Stock with the vendor is reduced.'))
     } catch (err) {
@@ -511,6 +525,7 @@ function ReturnAsIsDialog({ challan, onClose, onDone }: {
         <button type="button" onClick={save} disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="undo" size={16} />{busy ? 'Saving…' : 'Record return'}</button>
       </>}>
       <div style={{ padding: '20px 24px' }}>
+        <DraftBanner draft={draft} />
         <SheetError error={error} />
         <SheetSection icon="box" title="Material Back">
           <div style={{ border: `1px solid ${SHEET.LINE}`, borderRadius: 12, overflow: 'auto' }}>

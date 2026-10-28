@@ -11,11 +11,12 @@ from app.modules.main.models.module_setting import ModuleSetting
 from app.modules.organization.models.company import Company
 from app.modules.organization.services import approval_engine as engine
 from app.modules.sales.models.order import SalesOrder
+from app.tests.quote_lines import LINE_REF, quote_product  # noqa: F401 — autouse fixture
 from app.tests.test_accounts_finance import gstin_for
 from app.tests.test_sales import BASE, confirm, create_order, hdr, make_user, setup_customer, setup_people
 
 CRM = "/api/v1/crm"
-ITEM = {"description": "RRV 10T", "model_number": "RRV-10T", "quantity": 1, "unit_price": 1000000, "gst_percent": 18}
+ITEM = {"description": "RRV 10T", "model_number": "RRV-10T", "quantity": 1, "unit_price": 1000000, "gst_percent": 18, **LINE_REF}
 
 
 # ---------------------------------------------------------------- customer master

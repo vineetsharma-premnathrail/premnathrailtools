@@ -21,7 +21,7 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import HTTPException
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.modules.products.models.price_condition import (
@@ -51,8 +51,16 @@ def _item_filter(q, *, product_id=None, store_item_id=None, service_code=None):
 
 def _one(q, customer_id):
     if customer_id is None:
-        return q.filter(ProductPriceCondition.customer_id.is_(None)).order_by(ProductPriceCondition.valid_from.desc()).first()
+        return (q.filter(ProductPriceCondition.customer_id.is_(None), ProductPriceCondition.country.is_(None))
+                .order_by(ProductPriceCondition.valid_from.desc()).first())
     return q.filter(ProductPriceCondition.customer_id == customer_id).order_by(ProductPriceCondition.valid_from.desc()).first()
+
+
+def _country_one(q, country: str | None):
+    if not country:
+        return None
+    return (q.filter(ProductPriceCondition.customer_id.is_(None), func.lower(ProductPriceCondition.country) == country.strip().lower())
+            .order_by(ProductPriceCondition.valid_from.desc()).first())
 
 
 def resolve(db: Session, *, product_id: int | None = None, store_item_id: int | None = None, service_code: str | None = None,
@@ -62,18 +70,27 @@ def resolve(db: Session, *, product_id: int | None = None, store_item_id: int | 
     has_item = any(item.values())
     out = {"on": on, "price": None, "price_source": None, "price_condition_id": None, "list_price": None,
            "customer_price": None, "min_price": None, "uom": None, "discount_percent": 0.0, "discount_condition_id": None,
-           "freight": None}
+           "freight": None, "country_price": None, "country": None, "currency": None}
     if has_item:
         q = _item_filter(_live(db, "price", on), **item)
         lst = _one(q, None)
         cust = _one(q, customer_id) if customer_id else None
-        chosen = cust or lst
+        country = None
+        if customer_id:
+            from app.modules.crm.models.organization import Organization
+            org = db.get(Organization, customer_id)
+            country = org.country if org is not None else None
+        ctry = _country_one(q, country)
+        chosen = cust or ctry or lst
         if lst is not None:
             out["list_price"] = float(lst.amount or 0)
         if cust is not None:
             out["customer_price"] = float(cust.amount or 0)
+        if ctry is not None:
+            out.update(country_price=float(ctry.amount or 0), country=ctry.country)
         if chosen is not None:
-            out.update(price=float(chosen.amount or 0), price_source="customer" if cust is not None else "list",
+            source = "customer" if chosen is cust else "country" if chosen is ctry else "list"
+            out.update(price=float(chosen.amount or 0), price_source=source, currency=chosen.currency,
                        price_condition_id=chosen.id, uom=chosen.uom)
             floor = chosen.min_price if chosen.min_price is not None else (lst.min_price if lst is not None else None)
             out["min_price"] = float(floor) if floor is not None else None
@@ -161,10 +178,27 @@ def validate(db: Session, data: dict, *, exclude_id: int | None = None) -> dict:
                                                     "(For everyone, lower the list price instead.)")
     if data.get("customer_id") and not db.get(Organization, data["customer_id"]):
         raise HTTPException(status_code=422, detail=f"Customer #{data['customer_id']} isn't in CRM any more — pick the customer again.")
+    # Country price: for every customer in that country (a customer price is already specific).
+    data["country"] = (data.get("country") or "").strip() or None
+    if data["country"]:
+        if data.get("customer_id"):
+            raise HTTPException(status_code=422, detail="Pick a customer or a country, not both — a customer price already applies "
+                                                        "to that one customer wherever it is.")
+        if ctype != "price":
+            raise HTTPException(status_code=422, detail="A country can be set on a price only. For a discount, pick the customer.")
+    # Currency: any active currency of Finance's currency master (Finance › Masters › Currencies & FX).
+    cur = (data.get("currency") or "INR").strip().upper()
+    if cur != "INR":
+        from app.modules.accounts.services import fx
+        try:
+            cur = fx.normalise_currency(db, cur)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+    data["currency"] = cur
 
     if ctype == "price":
         if data.get("amount") is None or float(data["amount"]) < 0:
-            raise HTTPException(status_code=422, detail="Enter the rate (₹ per unit, 0 or more).")
+            raise HTTPException(status_code=422, detail=f"Enter the rate ({data['currency']} per unit, 0 or more).")
         data["percent"], data["freight_basis"] = None, None
         if data.get("min_price") is not None:
             if float(data["min_price"]) < 0:
@@ -208,7 +242,7 @@ def check_overlap(db: Session, data: dict, *, exclude_id: int | None = None) -> 
         ProductPriceCondition.item_kind == data["item_kind"],
         ProductPriceCondition.is_active == True,  # noqa: E712
     )
-    for col in ("product_id", "store_item_id", "service_code", "customer_id"):
+    for col in ("product_id", "store_item_id", "service_code", "customer_id", "country"):
         v = data.get(col)
         q = q.filter(getattr(ProductPriceCondition, col).is_(None) if v is None else getattr(ProductPriceCondition, col) == v)
     if exclude_id:
@@ -220,7 +254,7 @@ def check_overlap(db: Session, data: dict, *, exclude_id: int | None = None) -> 
             till = f"{other.valid_to:%d-%m-%Y}" if other.valid_to else "open-ended"
             raise HTTPException(
                 status_code=409,
-                detail=f"This overlaps condition #{other.id} (valid {other.valid_from:%d-%m-%Y} to {till}) for the same item and "
-                       "customer — only one record may apply on a day. End the old record the day before the new one starts "
+                detail=f"This overlaps price record #{other.id} (valid {other.valid_from:%d-%m-%Y} to {till}) for the same item, "
+                       "customer and country — only one record may apply on a day. End the old record the day before the new one starts "
                        "(set its 'valid to'), then save this one.",
             )

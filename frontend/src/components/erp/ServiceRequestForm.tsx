@@ -2,6 +2,8 @@
 
 import Select from '@/components/shared/Select'
 import { useEffect, useRef, useState } from 'react'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { MinusCircle, Warning } from '@phosphor-icons/react'
 import { useAuth } from '@/hooks/useAuth'
 import { erpApi, usersApi } from '@/lib/api'
@@ -138,10 +140,12 @@ export default function ServiceRequestForm({
   ]
   // New SR: the person creating it is the default engineer (their name shows in the field; they can change or clear it).
   const engineerDefaulted = useRef(false)
+  const [engineerReady, setEngineerReady] = useState(false)
   useEffect(() => {
     if (initial || engineerDefaulted.current || !user?.id) return
     engineerDefaulted.current = true
     setEngineerId((cur) => cur || String(user.id))
+    setEngineerReady(true)
   }, [initial, user?.id])
   const [peopleHint, setPeopleHint] = useState('')
   const [machinesError, setMachinesError] = useState('')
@@ -165,6 +169,10 @@ export default function ServiceRequestForm({
   const [warranty, setWarranty] = useState<{ label: string; default_chargeable: boolean; warranty_end: string | null } | null>(null)
   const [overrideCharge, setOverrideCharge] = useState(false)
   const [chargeReason, setChargeReason] = useState('')
+  // A new request's typed data survives a refresh / network failure (lib/formDraft.ts). Id stays null until the default engineer is filled in.
+  const draft = useFormDraft(!initial && engineerReady ? 'erp-service-request-new' : null,
+    { form, engineerId, overrideCharge, chargeReason },
+    (d) => { setForm(d.form); setEngineerId(d.engineerId ?? ''); setOverrideCharge(!!d.overrideCharge); setChargeReason(d.chargeReason || '') })
   useEffect(() => {
     if (initial || !form.project_id) { const t = setTimeout(() => setWarranty(null), 0); return () => clearTimeout(t) }
     let alive = true
@@ -255,6 +263,7 @@ export default function ServiceRequestForm({
         }
       }
       await onSubmit(payload, queuedFiles)
+      draft.clear()
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save service request.'))
       submittingRef.current = false
@@ -276,6 +285,7 @@ export default function ServiceRequestForm({
         </>}>
         <SheetColumns
           left={<>
+            <DraftBanner draft={draft} />
             {errorText && (
               <div ref={errorRef} style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
                 <b>Cannot save the service request:</b> {errorText}

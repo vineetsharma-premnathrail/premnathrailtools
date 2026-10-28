@@ -16,6 +16,8 @@ import {
 } from '@/types'
 import { TEXT, BORDER } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
+import DraftBanner from '@/components/shared/DraftBanner'
+import { useFormDraft } from '@/lib/formDraft'
 import FinanceNav from '@/components/finance/FinanceNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ReasonSheet from '@/components/shared/ReasonSheet'
@@ -261,6 +263,8 @@ function AccountGroupsSection() {
   const [form, setForm] = useState(emptyGroupForm())
   const [saving, setSaving] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<AccountGroup | null>(null)
+  // A new account group's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft(formOpen && !editing ? 'finance-account-group-new' : null, form, (d) => setForm({ ...emptyGroupForm(), ...d }))
 
   const load = () => {
     Promise.all([accountsApi.listAccountGroups(), accountsApi.getSetup()])
@@ -303,6 +307,7 @@ function AccountGroupsSection() {
           sequence: Number(form.sequence || 0),
         })
       }
+      if (!editing) draft.clear()
       close()
       load()
     } catch (err: unknown) {
@@ -338,6 +343,7 @@ function AccountGroupsSection() {
           subtitle="Groups decide where a ledger appears in the Balance Sheet / P&L (Schedule III)."
           onClose={() => { setError([]); close() }} onSubmit={submit} saving={saving} label={editing ? 'Save Changes' : 'Create Sub-group'}>
           <div style={{ padding: '20px 24px' }}>
+            <DraftBanner draft={draft} />
             <InfoBanner>
               A sub-group always inherits its parent&apos;s nature (asset, liability…) — a ledger under Sundry Debtors can only ever be an asset.
               The standard groups are fixed; add sub-groups under them for your own grouping.
@@ -459,6 +465,8 @@ function LedgersSection({ onGoOpening }: { onGoOpening: () => void }) {
   const [deleteTarget, setDeleteTarget] = useState<GLAccount | null>(null)
   const [ledgerCostCenters, setLedgerCostCenters] = useState<CostCenter[]>([])
   useEffect(() => { costCentersApi.listCostCenters().then(setLedgerCostCenters).catch(() => setLedgerCostCenters([])) }, [])
+  // A new ledger's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft(formOpen && !editingId ? 'finance-ledger-new' : null, form, (d) => setForm({ ...emptyLedgerForm(), ...d }))
 
   const load = () => {
     Promise.all([accountsApi.listGLAccounts(), accountsApi.listAccountGroups()])
@@ -527,6 +535,7 @@ function LedgersSection({ onGoOpening }: { onGoOpening: () => void }) {
       }
       if (editingId) await accountsApi.updateGLAccount(editingId, payload)
       else await accountsApi.createGLAccount(payload)
+      if (!editingId) draft.clear()
       close()
       load()
     } catch (err: unknown) {
@@ -563,6 +572,7 @@ function LedgersSection({ onGoOpening }: { onGoOpening: () => void }) {
           onClose={() => { setError([]); close() }} onSubmit={submit} saving={saving} label={editingId ? 'Save Changes' : 'Create Ledger'}>
           <SheetColumns
             left={<>
+              <DraftBanner draft={draft} />
               <SheetSection icon="list" title="Ledger">
                 <div style={sheetRow}>
                   <SF label="Group" req style={growW(260, 420)} tour="fin-ledgers-group">
@@ -934,6 +944,8 @@ function BankCashSection({ onGoOpening }: { onGoOpening: () => void }) {
   const [form, setForm] = useState(emptyBankForm())
   const [saving, setSaving] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<BankAccount | null>(null)
+  // A new bank / cash account's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft(formOpen && !editingId ? 'finance-bank-account-new' : null, form, (d) => setForm({ ...emptyBankForm(), ...d }))
 
   const load = () => {
     Promise.all([accountsApi.listBankAccounts(), accountsApi.listGLAccounts()])
@@ -976,6 +988,7 @@ function BankCashSection({ onGoOpening }: { onGoOpening: () => void }) {
       }
       if (editingId) await accountsApi.updateBankAccount(editingId, payload)
       else await accountsApi.createBankAccount(payload)
+      if (!editingId) draft.clear()
       close()
       load()
     } catch (err: unknown) {
@@ -1010,6 +1023,7 @@ function BankCashSection({ onGoOpening }: { onGoOpening: () => void }) {
           onClose={() => { setError([]); close() }} onSubmit={submit} saving={saving} label={editingId ? 'Save Changes' : 'Create Account'}>
           <SheetColumns
             left={<>
+              <DraftBanner draft={draft} />
               <SheetSection icon="building" title="Account">
                 <div style={sheetRow}>
                   <SF label="Kind" style={fixedW(120)} tour="fin-bank-kind">
@@ -1392,6 +1406,8 @@ function InternalOrdersSection() {
   // Status moves (KO02): open → in progress → completed → closed; completed → in progress; closed → reopen (Partner approval).
   const [statusTarget, setStatusTarget] = useState<{ order: InternalOrder; to: string } | null>(null)
   const [notice, setNotice] = useState('')
+  // A new internal order's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft(formOpen && !editingId ? 'finance-internal-order-new' : null, form, (d) => setForm({ ...emptyInternalOrder(), ...d }))
 
   const load = () => {
     Promise.all([accountsApi.listInternalOrders(), costCentersApi.listCostCenters()])
@@ -1430,6 +1446,7 @@ function InternalOrdersSection() {
       }
       if (editingId) await accountsApi.updateInternalOrder(editingId, payload)
       else await accountsApi.createInternalOrder(payload)
+      if (!editingId) draft.clear()
       close()
       load()
     } catch (err: unknown) {
@@ -1489,6 +1506,7 @@ function InternalOrdersSection() {
           onClose={() => { setError([]); close() }} onSubmit={submit} saving={saving} label={editingId ? 'Save Changes' : 'Create Internal Order'}>
           <SheetColumns
             left={<>
+              <DraftBanner draft={draft} />
               <SheetSection icon="flag" title="Order">
                 <div style={sheetRow}>
                   <SF label="Code" req style={fixedW(130)} tour="fin-io-code"><input style={sheetInput} value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} /></SF>

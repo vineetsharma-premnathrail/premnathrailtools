@@ -64,20 +64,11 @@ export default function ErpDashboardPage() {
   }, [isAuthorized])
 
   const stats = useMemo(() => {
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-    const open = srs.filter((s) => !CLOSED_STATUSES.includes(s.status))
     return {
       totalSrs: srs.length,
-      activeTickets: open.length,
+      activeTickets: srs.filter((s) => !CLOSED_STATUSES.includes(s.status)).length,
       inProgress: srs.filter((s) => s.status === 'in_progress').length,
-      overdue: open.filter((s) => s.expected_completion_date && new Date(s.expected_completion_date).getTime() < today).length,
       closed: srs.filter((s) => s.status === 'closed').length,
-      thisMonthSrs: srs.filter((s) => {
-        if (!s.created_at) return false
-        const d = new Date(s.created_at)
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
-      }).length,
     }
   }, [srs])
 
@@ -97,8 +88,9 @@ export default function ErpDashboardPage() {
     return Object.entries(counts)
   }, [srs])
 
+  // Enough rows to fill the page; the layout fits the table to the window bottom and it scrolls inside.
   const recentSrs = useMemo(
-    () => [...srs].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).slice(0, 8),
+    () => [...srs].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).slice(0, 50),
     [srs]
   )
 
@@ -119,10 +111,8 @@ export default function ErpDashboardPage() {
       </p>
       <div data-tour="erp-dash-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0 18px' }}>
         <StatChip label="Service requests" value={stats.totalSrs} color="#ea580c" />
-        <StatChip label="This month" value={stats.thisMonthSrs} color="#10b981" />
         <StatChip label="Active tickets" value={stats.activeTickets} color="#ca8a04" />
         <StatChip label="In progress" value={stats.inProgress} color="#2563eb" />
-        <StatChip label="Past target date" value={stats.overdue} color="#dc2626" />
         <StatChip label="Closed" value={stats.closed} color="#78716c" />
       </div>
 
@@ -144,13 +134,13 @@ export default function ErpDashboardPage() {
         </Section>
       </div>
 
-      <div data-tour="erp-dash-recent-srs" style={{ marginBottom: 20 }}>
+      <div data-tour="erp-dash-recent-srs">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1f1108', margin: 0 }}>Recent Service Tickets</h2>
           <Link href="/dashboard/erp/service-requests" data-tour="erp-dash-srs-viewall" style={{ fontSize: 12, color: '#ea580c', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
         </div>
         <div style={glassCard}>
-        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
+        <div style={{ overflow: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 0 }}>
             <thead>
               <tr style={{ background: 'rgba(244,113,59,0.06)' }}>

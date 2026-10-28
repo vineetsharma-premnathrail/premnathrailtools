@@ -45,7 +45,7 @@ const config: TourConfig = {
     {
       target: 'org-railway-zone',
       title: 'Railway Zone',
-      purpose: 'Only shown when Customer Organization Type is Railway or a Government Department. Identifies which of the 17-odd Indian Railway zones this belongs to.',
+      purpose: 'Only shown for a Domestic organization whose type is Railway or a Government Department (never for International). Identifies which of the 17-odd Indian Railway zones this belongs to.',
       required: false,
       validExample: 'Northern Railway',
       why: 'Used to route/report inquiries and tenders by zone.',

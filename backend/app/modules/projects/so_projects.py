@@ -115,7 +115,10 @@ def _rrv_lines(so: SalesOrder) -> list[SalesOrderLine]:
 
 
 def needs_project(so: SalesOrder) -> bool:
-    """Only orders that build RRVs get a project; spares-from-stock / service orders don't."""
+    """Only New Project orders that build RRVs get a project; Service / Rental orders
+    and spares-from-stock lines don't."""
+    if (so.order_category or "new_project") != "new_project":
+        return False
     return any(ln.line_type == "rrv" for ln in so.lines)
 
 

@@ -8,9 +8,9 @@ import { useCan } from '@/lib/permissions'
 import { crmApi } from '@/lib/api'
 import { recordVisit } from '@/lib/crmShortcuts'
 import { formatDate, formatDateTime } from '@/lib/format'
-import { Inquiry, Organization, OrgContact, QuotationItem, QuotationLineItem, CrmActivity, CrmDocument, CrmStageLogEntry, RndRequestAssignment, CrmTechnicalOfferOption } from '@/types'
+import { Inquiry, Organization, OrgContact, QuotationItem, QuotationLineItem, CrmActivity, CrmDocument, CrmStageLogEntry, RndRequestAssignment, CrmTechnicalOfferOption, CrmQuotationProduct, CrmQuotationApplication, CrmQuotationLookup } from '@/types'
+import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import ReasonSheet from '@/components/shared/ReasonSheet'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import CrmDocumentFolder, { DocumentSearch } from '@/components/crm/CrmDocumentFolder'
 import DateField from '@/components/erp/DateField'
@@ -24,9 +24,9 @@ import RequirementDiscussionTab from '@/components/crm/RequirementDiscussionTab'
 import SalesOrderHandoff from '@/components/crm/SalesOrderHandoff'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import QuotationStatusBar from '@/components/crm/QuotationStatusBar'
-import LostReasonDialog, { LOST_STAGE, LOST_STATUS } from '@/components/crm/LostReasonDialog'
-import { INQ_STAGES, inquiryStatusOptions, inquiryStatusColor, priorityOptions, priorityLabel, QUOTE_CONDITIONS, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
-import { inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos, RevisionSelector, SpecDetailRow, SpecRevision, ComboBox, handleEnterAsTab, StageProgress, smallDangerBtnStyle, smallSecondaryBtnStyle, AnchoredMenu } from '@/components/crm/ui'
+import LostReasonDialog, { LOST_STATUS } from '@/components/crm/LostReasonDialog'
+import { inquiryStatusOptions, inquiryStatusColor, priorityOptions, priorityLabel, QUOTE_CONDITIONS, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
+import { inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos, RevisionSelector, SpecDetailRow, SpecRevision, ComboBox, handleEnterAsTab, smallDangerBtnStyle, smallSecondaryBtnStyle, AnchoredMenu } from '@/components/crm/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { refOf } from '@/lib/recordRef'
@@ -54,7 +54,6 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
     || (t === 'Follow Ups' && canFeature('crm', 'inquiries_tenders', 'followups', 'view'))
     || (t === 'Timeline' && canFeature('crm', 'inquiries_tenders', 'timeline', 'view'))
   const canSendTor = canFeature('crm', 'inquiries_tenders', 'send_tor', 'create')
-  const canMoveStage = canFeature('crm', 'inquiries_tenders', 'stage', 'edit')
   const router = useRouter()
   const searchParams = useSearchParams()
   const backParam = searchParams.get('back')
@@ -67,7 +66,6 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
   const [error, setError] = useState<string | string[]>('')
   const [tab, setTab] = useState<typeof TABS[number]>(tabFromUrl)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [pendingStage, setPendingStage] = useState<string | null>(null)
   const [lostStatusPending, setLostStatusPending] = useState(false)
   const [editing, setEditing] = useState(false)
   const [revisions, setRevisions] = useState<SpecRevision[]>([])
@@ -120,7 +118,6 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
   const canEditRecord = canModify && !lockedBySales
   const canDeleteRecord = !!inquiry && !lockedBySales && canDelete('crm', 'inquiries_tenders', inquiry.created_by_id ?? null)
   const isAdmin = user?.role === 'admin'
-  const movingBack = !!pendingStage && !!inquiry && INQ_STAGES.indexOf(pendingStage) < INQ_STAGES.indexOf(inquiry.current_stage)
 
   const patch = async (payload: Record<string, unknown>) => {
     if (!inquiry) return
@@ -169,12 +166,12 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
   // sending an effectively-empty document to R&D rather than emailing a blank one.
   const missingRequirementDetails = !!inquiry && (
     !inquiry.product ||
-    !(inquiry.product_spec || inquiry.requirement_desc)
+    !inquiry.product_spec
   )
 
   const openTorPicker = () => {
     if (missingRequirementDetails) {
-      setTorError('Please fill Product and at least one of Specification/Requirement Description (click Edit) before sending the Technical Requirement to R&D — otherwise R&D gets a document with no requirement details.')
+      setTorError('Please fill Product and Specification (click Edit) before sending the Technical Requirement to R&D — otherwise R&D gets a document with no requirement details.')
       return
     }
     setTorError('')
@@ -229,8 +226,8 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
                   !torActive
                     ? `Already sent as ${inquiry.technical_offer_number} — edit the inquiry to send again.`
                     : missingRequirementDetails
-                    ? 'Fill Product and a Specification/Requirement Description before sending — the PDF would otherwise be empty.'
-                    : 'Emails R&D the Customer Organization, Project, and Product Requirement details as a PDF.'
+                    ? 'Fill Product and Specification before sending — the document would otherwise be empty.'
+                    : 'Sends R&D a Word document with the customer and its type and region, every product with its specification, and the project background.'
                 }
                 style={{ ...secondaryBtnStyle, opacity: !torActive || sendingTOR ? 0.5 : 1, cursor: !torActive || sendingTOR ? 'not-allowed' : 'pointer' }}
               >
@@ -263,9 +260,6 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
 
       <MessageDialog open={!!torError} variant="error" title="Send Technical Requirement Failed" message={torError} onClose={() => setTorError('')} />
       <MessageDialog open={!!error} variant="error" title="Inquiry Action Failed" message={error} onClose={() => setError('')} />
-
-      <StageProgress stage={inquiry.current_stage} stages={INQ_STAGES} canModify={canEditRecord && canMoveStage} allowBackward={isAdmin} onRequestChange={setPendingStage} tourId="inq-stage-progress" />
-
 
       <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, overflowX: 'auto', overflowY: 'visible' }}>
         {TABS.filter((t) => (t !== 'Discussion' || !!inquiry.technical_offer_sent_at) && seeTab(t)).map((t) => (
@@ -327,39 +321,10 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
         onCancel={() => setShowDeleteConfirm(false)}
       />
 
-      {/* Stages only move forward; going back is an admin correction and needs a reason. */}
       <LostReasonDialog
         open={lostStatusPending}
         onConfirm={(d) => { setLostStatusPending(false); patchLeadInfo({ status: LOST_STATUS, ...d }) }}
         onCancel={() => setLostStatusPending(false)}
-      />
-      <LostReasonDialog
-        open={pendingStage === LOST_STAGE && !movingBack}
-        initial={{ lost_reason_code: inquiry.lost_reason_code || '', lost_to_competitor: inquiry.lost_to_competitor, lost_remarks: inquiry.lost_remarks }}
-        onConfirm={(d) => { setPendingStage(null); patch({ current_stage: LOST_STAGE, ...d }) }}
-        onCancel={() => setPendingStage(null)}
-      />
-      <ConfirmDialog
-        open={!!pendingStage && !movingBack && pendingStage !== LOST_STAGE}
-        title="Update Stage"
-        danger={false}
-        confirmLabel="Update Stage"
-        message={pendingStage ? `Move this inquiry from "${inquiry.current_stage}" to "${pendingStage}"? Stages only move forward — once moved, it cannot be undone except by an admin.` : ''}
-        onConfirm={() => { const s = pendingStage; setPendingStage(null); if (s) patch({ current_stage: s }) }}
-        onCancel={() => setPendingStage(null)}
-      />
-      <ReasonSheet
-        open={!!pendingStage && movingBack}
-        title="Move Stage Back"
-        message={pendingStage ? `Move this inquiry back from "${inquiry.current_stage}" to "${pendingStage}"? This reverses the pipeline — the reason is kept on the timeline.` : ''}
-        placeholder="e.g. Customer re-opened the requirement after the PO was withdrawn"
-        label="Reason for moving the stage back"
-        hint="Admin correction — the reason is kept on the inquiry's timeline."
-        confirmLabel="Move Back"
-        requireValue
-        requiredMessage="Enter the reason for moving the stage back — it is required and is kept on the record."
-        onConfirm={(reason) => { const s = pendingStage; setPendingStage(null); if (s) patch({ current_stage: s, stage_reason: reason.trim() }) }}
-        onCancel={() => setPendingStage(null)}
       />
     </div>
   )
@@ -378,7 +343,6 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
   const seeCustomer = canFeature('crm', 'inquiries_tenders', 'customer_contact', 'view')
   const seePrices = canFeature('crm', 'inquiries_tenders', 'prices', 'view')
 
-  const qty = inquiry.quantity != null ? ` × ${inquiry.quantity}` : ''
   const lostReason = inquiry.lost_reason_code
     ? `${LOST_REASON_LABELS[inquiry.lost_reason_code] || inquiry.lost_reason_code}${inquiry.lost_to_competitor ? ` — ${inquiry.lost_to_competitor}` : ''}${inquiry.lost_remarks ? ` (${inquiry.lost_remarks})` : ''}`
     : null
@@ -406,7 +370,7 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
       )}
       <DetailCard>
         <DetailSummary
-          title={inquiry.product ? `${inquiry.product}${qty}` : 'Product not filled in yet'}
+          title={inquiry.product || 'Product not filled in yet'}
           text={<span data-tour="inq-info-current-status">{inquiry.current_status_note || <span style={{ color: '#64748b' }}>No current status written yet — use Edit to add where this inquiry stands.</span>}</span>}
           meta={<>
             <span>Inquiry of {inquiry.created_at ? formatDate(inquiry.created_at) : '—'}</span>
@@ -455,22 +419,13 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
 
         <DetailGroup title="Product Requirement" last>
           <SpecDetailRow label="Product" value={inquiry.product} change={changeFor('product')} />
-          {(inquiry.product_category || changeFor('product_category')) && <SpecDetailRow label="Category" value={inquiry.product_category} change={changeFor('product_category')} />}
-          <SpecDetailRow label="Quantity" value={inquiry.quantity != null ? String(inquiry.quantity) : null} change={changeFor('quantity')} />
-          <SpecDetailRow label="Required delivery" value={inquiry.required_delivery_date ? formatDate(inquiry.required_delivery_date) : null} change={changeFor('required_delivery_date')} />
           <SpecDetailRow label="Specification" value={inquiry.product_spec} change={changeFor('product_spec')} />
-          <SpecDetailRow label="Requirement description" value={inquiry.requirement_desc} change={changeFor('requirement_desc')} />
           {(inquiry.additional_items || []).map((it, i) => (
             <DetailRow key={it.id} label={`Additional product ${i + 1}`}>
               <strong style={{ fontWeight: 600 }}>{it.product || '—'}</strong>
-              {it.quantity != null && ` × ${it.quantity}`}
-              {it.product_category && <span style={{ color: '#64748b' }}> · {it.product_category}</span>}
               {it.product_spec && <span style={{ display: 'block', color: '#334155' }}>{it.product_spec}</span>}
             </DetailRow>
           ))}
-          <SpecDetailRow label="Delivery location" value={inquiry.delivery_location} change={changeFor('delivery_location')} />
-          <SpecDetailRow label="Inspection requirement" value={inquiry.inspection_req} change={changeFor('inspection_req')} />
-          <SpecDetailRow label="Warranty requirement" value={inquiry.warranty_req} change={changeFor('warranty_req')} />
           <SpecDetailRow label="Project details" value={inquiry.project_details} change={changeFor('project_details')} />
         </DetailGroup>
       </DetailCard>
@@ -478,14 +433,14 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
   )
 }
 
-const emptyLineItem = { description: '', model_number: '', details: '', quantity: '', unit_price: '', gst_percent: '', subtotal: '', total: '' }
+const emptyLineItem = { product_id: '', application_id: '', description: '', model_number: '', details: '', quantity: '', unit_price: '', gst_percent: '', subtotal: '', total: '' }
 
 // A valid Delivery Time must carry a unit, not just a bare number — "7" is ambiguous,
 // "7 days" isn't. Accepts day/week/month/hour in singular or plural, any case, with
 // any words in between the number and the unit (e.g. "120 working days").
 const DELIVERY_TIME_PATTERN = /\d+.*\b(day|days|week|weeks|month|months|hour|hours|hrs?)\b/i
 
-type QuotationItemErrors = { description?: string; quantity?: string; unit_price?: string; gst_percent?: string }
+type QuotationItemErrors = { product?: string; application?: string; description?: string; quantity?: string; unit_price?: string; gst_percent?: string }
 type QuotationFormErrors = {
   client_name?: string
   quotation_type?: string
@@ -567,10 +522,10 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
   const [formError, setFormError] = useState<string | string[]>('')
   const [fieldErrors, setFieldErrors] = useState<QuotationFormErrors>({})
   const [attemptedSave, setAttemptedSave] = useState(false)
-  const [productError, setProductError] = useState('')
   const [productNotice, setProductNotice] = useState('')
-  const [dupItemError, setDupItemError] = useState('')
-  const [products, setProducts] = useState<{ id: number; name: string; category?: string | null; model_number?: string | null; unit_price?: number | null; default_price?: number | null }[]>([])
+  // Product master (active + in development): products, and applications / attachments (type 'application'): every quotation line is chosen from it.
+  const [quotationProducts, setQuotationProducts] = useState<CrmQuotationProduct[]>([])
+  const [quotationApplications, setQuotationApplications] = useState<CrmQuotationApplication[]>([])
   const [paymentTerms, setPaymentTerms] = useState<{ id: number; label: string; description?: string | null }[]>([])
   const [quotRevisions, setQuotRevisions] = useState<Record<number, SpecRevision[]>>({})
   const [selectedQuotRev, setSelectedQuotRev] = useState<Record<number, number | null>>({})
@@ -590,7 +545,8 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
   // not by a free-text customer-response select.
   useEffect(() => { load() }, [inquiryId]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    crmApi.listProducts().then(setProducts).catch(() => {})
+    crmApi.listQuotationProducts().then((d: CrmQuotationLookup) => { setQuotationProducts(d.products); setQuotationApplications(d.applications) })
+      .catch((err) => setTabError({ title: 'Cannot Load Products', message: extractErrorMessages(err, 'Could not load the product list for quotation lines. Refresh the page; if it persists, ask an admin to check your CRM Quotations permission.') }))
     crmApi.listPaymentTerms().then(setPaymentTerms).catch(() => {})
   }, [])
   useEffect(() => {
@@ -609,49 +565,25 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
     }
   }
 
-  const applyProductToRow = (idx: number, product: { name: string; model_number?: string | null; default_price?: number | null }) => {
-    setDupItemError('')
-    const nameKey = product.name.trim().toLowerCase()
-    const modelKey = (product.model_number || '').trim().toLowerCase()
-    const dupExists = items.some((row, i) =>
-      i !== idx && row.description.trim().toLowerCase() === nameKey && (row.model_number || '').trim().toLowerCase() === modelKey
-    )
-    if (dupExists) {
-      setDupItemError('This item with the same model number is already added — change the model number or edit the existing line instead.')
-      return
-    }
+  // Picking a Product fills the description and model and prefills the price
+  // the Product master's pricing conditions give this customer.
+  const withPrice = (row: typeof emptyLineItem, price: number) => {
+    const subtotal = (Number(row.quantity) || 0) * price
+    const gst = form.quotation_type === 'Export' ? 0 : Number(row.gst_percent) || 0
+    return { ...row, unit_price: String(price), subtotal: subtotal ? String(Number(subtotal.toFixed(2))) : '', total: subtotal ? String(Number((subtotal * (1 + gst / 100)).toFixed(2))) : '' }
+  }
+  const pickProductForRow = (idx: number, product: CrmQuotationProduct) => {
     setItems((rows) => rows.map((row, i) => i === idx ? {
       ...row,
+      product_id: String(product.id),
       description: product.name,
       model_number: product.model_number || '',
-      unit_price: product.default_price != null ? String(product.default_price) : row.unit_price,
     } : row))
-  }
-
-  // Saves whatever the user already typed into that row's Description/Model No. fields as a
-  // new Product — no separate popup, since the row's own inputs already hold the values.
-  // Model No. is optional; when left blank the product just won't have one until edited later.
-  const createProductFromRow = async (idx: number, typedName: string) => {
-    const row = items[idx]
-    const name = typedName.trim()
-    if (!name) return
-    setProductError('')
-    let created
-    try {
-      created = await crmApi.createProduct({
-        name,
-        model_number: row.model_number.trim() || undefined,
-        default_price: row.unit_price ? Number(row.unit_price) : undefined,
-      })
-    } catch (err) {
-      setProductError(extractErrorMessages(err, `Product "${name}" was not added to the product list. Check the name/model number and try again.`).join(' '))
-      return
-    }
-    setProducts((p) => [...p, created])
-    updateItemRow(idx, 'description', created.name)
-    setProductNotice(created.model_number
-      ? `New product "${created.name}" (Model No. ${created.model_number}) added to the product list.`
-      : `New product "${created.name}" added to the product list.`)
+    if (form.pricing_mode === 'lumpsum' || !seeQuotePrices) return
+    crmApi.quotationProductPrice(inquiryId, product.id).then((r) => {
+      if (r.price == null) return
+      setItems((rows) => rows.map((row, i) => (i === idx && row.product_id === String(product.id) && !row.unit_price) ? withPrice(row, r.price as number) : row))
+    }).catch(() => {})
   }
 
   // Saves whatever the user already typed into the Payment Terms field as a new Payment Term —
@@ -702,8 +634,6 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
   }
 
   const cancelForm = () => {
-    setProductError('')
-    setDupItemError('')
     setProductNotice('')
     setForm(emptyForm)
     setItems([{ ...emptyLineItem }])
@@ -732,6 +662,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
   const itemsOf = (q: QuotationItem) => {
     const str = (v?: number | null) => (v != null ? String(v) : '')
     return q.items.length ? q.items.map((it) => ({
+      product_id: it.product_id ? String(it.product_id) : '', application_id: it.application_id ? String(it.application_id) : '',
       description: it.description || '', model_number: it.model_number || '', details: it.details || '',
       quantity: str(it.quantity), unit_price: str(it.unit_price), gst_percent: str(it.gst_percent), subtotal: str(it.subtotal), total: str(it.total),
     })) : [{ ...emptyLineItem }]
@@ -828,7 +759,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
   // Only rows the user actually touched are validated/sent — a blank extra row from
   // "+ Add Line Item" that was never filled in is silently dropped, not an error.
   const isItemRowEmpty = (it: typeof emptyLineItem) =>
-    !it.description.trim() && !it.model_number.trim() && !it.details.trim() && !it.quantity && !it.unit_price && !it.gst_percent
+    !it.product_id && !it.application_id && !it.description.trim() && !it.model_number.trim() && !it.details.trim() && !it.quantity && !it.unit_price && !it.gst_percent
 
   const validate = (): QuotationFormErrors => {
     const errs: QuotationFormErrors = {}
@@ -842,6 +773,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
       if (isItemRowEmpty(it)) return
       anyFilledItem = true
       const rowErrs: QuotationItemErrors = {}
+      if (!it.product_id) rowErrs.product = 'Pick the Product — every line is chosen from the Product master.'
       if (!it.description.trim()) rowErrs.description = 'Item Name is required.'
       if (it.quantity && Number(it.quantity) <= 0) rowErrs.quantity = 'Quantity must be more than 0 — enter a positive number or leave it blank.'
       if (!isLumpSum && it.unit_price && Number(it.unit_price) < 0) rowErrs.unit_price = 'Price/Unit cannot be negative — enter 0 or more, or leave it blank.'
@@ -909,6 +841,8 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
       quote_conditions: form.quote_conditions === 'Other/Custom' ? (quote_conditions_custom || undefined) : (form.quote_conditions || undefined),
       items: validItems
         .map((it) => ({
+          product_id: it.product_id ? Number(it.product_id) : undefined,
+          application_id: it.application_id ? Number(it.application_id) : undefined,
           description: it.description || undefined,
           model_number: it.model_number || undefined,
           details: it.details.trim() || undefined,
@@ -971,8 +905,6 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
               </>}>
             <form id="quotation-form" onSubmit={save} onKeyDown={handleEnterAsTab} style={{ padding: '20px 24px' }}>
               <SheetError error={formError} />
-              <SheetError error={productError} />
-              <SheetError error={dupItemError} />
               {productNotice && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', color: '#15803d', fontSize: 13 }}>
                   <span style={{ flex: 1 }}>{productNotice}</span>
@@ -1045,6 +977,9 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                         Technical Offer Date: <strong>{formatDate(picked.offer_date)}</strong>
                         {picked.status === 'superseded' && <span style={{ color: '#b45309' }}> · a newer revision exists</span>}
                         {' · '}<a href="#" onClick={(e) => { e.preventDefault(); openTechnicalOfferPdf(picked) }} style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 600 }}>Open PDF</a>
+                        <span style={{ display: 'block', marginTop: 6, padding: '6px 10px', borderRadius: 8, background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#1E40AF' }}>
+                          The quotation document will have Technical Offer {picked.offer_number} first, then the commercial quotation on the next page, in one Word file (editable in Word).
+                        </span>
                       </p>
                     )
                   })()}
@@ -1071,19 +1006,26 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                     const rowErr = fieldErrors.itemErrors?.[idx]
                     return (
                     <div key={idx}>
-                      <div style={{ display: 'grid', gridTemplateColumns: isLumpSum ? '2fr 1.2fr 0.7fr auto' : isExport ? '2fr 1.2fr 0.7fr 0.9fr 0.9fr auto' : '2fr 1.2fr 0.7fr 0.9fr 0.7fr 0.9fr auto', gap: 6, alignItems: 'center' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: isLumpSum ? '1.6fr 1.3fr 0.7fr auto' : isExport ? '1.6fr 1.3fr 0.7fr 0.9fr 0.9fr auto' : '1.6fr 1.3fr 0.7fr 0.9fr 0.7fr 0.9fr auto', gap: 6, alignItems: 'center' }}>
                         <div {...(idx === 0 ? { 'data-tour': 'quot-item-name' } : {})}>
-                          <ComboBox
-                            value={row.description}
-                            onChange={(v) => updateItemRow(idx, 'description', v)}
-                            onPick={(o) => { const p = products.find((pr) => String(pr.id) === o.key); if (p) applyProductToRow(idx, p) }}
-                            onCreateNew={(query) => createProductFromRow(idx, query)}
-                            createLabel="New Product"
-                            options={products.map((p) => ({ key: String(p.id), label: p.name, sublabel: p.model_number || undefined }))}
-                            placeholder="Item Name — type or pick a product"
+                          <SearchableSelect
+                            value={row.product_id}
+                            onChange={(v) => { const p = quotationProducts.find((pr) => String(pr.id) === v); if (p) pickProductForRow(idx, p) }}
+                            options={quotationProducts.map((p) => ({ value: String(p.id), label: `${p.name}${p.model_number ? ` · ${p.model_number}` : ''}`, group: p.product_type === 'service' ? 'Paid services' : 'Products' }))}
+                            placeholder="Product — pick from the Product master"
+                            triggerStyle={errInputStyle(!!rowErr?.product)}
                           />
                         </div>
-                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-model' } : {})} value={row.model_number} onChange={(e) => updateItemRow(idx, 'model_number', e.target.value)} placeholder="Model No. (if applicable)" style={sheetInput} />
+                        <div {...(idx === 0 ? { 'data-tour': 'quot-item-application' } : {})}>
+                          <SearchableSelect
+                            value={row.application_id}
+                            onChange={(v) => updateItemRow(idx, 'application_id', v)}
+                            options={[{ value: '', label: 'None' }, ...quotationApplications.map((a) => ({ value: String(a.id), label: `${a.name}${a.model_number ? ` · ${a.model_number}` : ''}` }))]}
+                            placeholder="Application / attachment (optional) — only if the customer asked for it"
+                            title="Only if the customer asked for it."
+                            ariaLabel="Application / attachment (optional)"
+                          />
+                        </div>
                         <input {...(idx === 0 ? { 'data-tour': 'quot-item-qty' } : {})} type="number" value={row.quantity} onChange={(e) => updateItemRow(idx, 'quantity', e.target.value)} placeholder="Qty" style={{ ...sheetInput, ...errInputStyle(!!rowErr?.quantity) }} />
                         {!isLumpSum && <>
                         <input {...(idx === 0 ? { 'data-tour': 'quot-item-price' } : {})} type="number" value={row.unit_price} onChange={(e) => updateItemRow(idx, 'unit_price', e.target.value)} placeholder={`Price/unit (${currencySymbol})`} style={{ ...sheetInput, ...errInputStyle(!!rowErr?.unit_price) }} />
@@ -1091,6 +1033,10 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                         <input {...(idx === 0 ? { 'data-tour': 'quot-item-subtotal' } : {})} type="number" value={row.subtotal} readOnly placeholder="Subtotal" style={{ ...sheetInput, background: 'rgba(0,0,0,0.04)', color: '#57534e' }} />
                         </>}
                         <button type="button" onClick={() => removeItemRow(idx)} aria-label="Remove line item" style={sheetBtn('ghost', '#DC2626')}><SheetIcon name="trash" size={16} /></button>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 6, marginTop: 4 }}>
+                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-description' } : {})} value={row.description} onChange={(e) => updateItemRow(idx, 'description', e.target.value)} placeholder="Item name on the quotation (filled from the product, editable)" style={{ ...sheetInput, ...errInputStyle(!!rowErr?.description) }} />
+                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-model' } : {})} value={row.model_number} onChange={(e) => updateItemRow(idx, 'model_number', e.target.value)} placeholder="Model No. (from the product)" style={sheetInput} />
                       </div>
                       <textarea
                         {...(idx === 0 ? { 'data-tour': 'quot-item-details' } : {})}
@@ -1102,7 +1048,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                       />
                       {rowErr && (
                         <p style={fieldErrorTextStyle}>
-                          {[rowErr.description, rowErr.quantity, rowErr.unit_price, rowErr.gst_percent].filter(Boolean).join(' ')}
+                          {[rowErr.product, rowErr.application, rowErr.description, rowErr.quantity, rowErr.unit_price, rowErr.gst_percent].filter(Boolean).join(' ')}
                         </p>
                       )}
                     </div>

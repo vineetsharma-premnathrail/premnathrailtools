@@ -13,6 +13,8 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import PersonFields, { EMPTY_PERSON, PersonForm, personToPayload } from '@/components/hr/safety/PersonFields'
 import { SafetyMeta } from '@/components/hr/safety/types'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 
 function todayIso() {
   const d = new Date()
@@ -32,6 +34,16 @@ export default function NewSafetyIncidentPage() {
   const [persons, setPersons] = useState<PersonForm[]>([])
   const [witnesses, setWitnesses] = useState<{ name: string; statement: string }[]>([])
   const [files, setFiles] = useState<File[]>([])
+
+  const draft = useFormDraft(
+    isAuthorized && (!user?.branch_id || f.branch_id) ? 'hr-safety-incident-new' : null,
+    { f, persons, witnesses },
+    (d: { f?: typeof f; persons?: PersonForm[]; witnesses?: { name: string; statement: string }[] }) => {
+      if (d.f) setF((x) => ({ ...x, ...d.f }))
+      setPersons(d.persons || [])
+      setWitnesses(d.witnesses || [])
+    },
+  )
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -65,6 +77,7 @@ export default function NewSafetyIncidentPage() {
         witnesses: witnesses.filter((w) => w.name.trim()).map((w) => ({ name: w.name.trim(), statement: w.statement.trim() || null })),
         persons: persons.map(personToPayload),
       })
+      draft.clear()
       for (const file of files) {
         try { await hrSafetyApi.uploadAttachment(inc.id, file) } catch { /* upload failure shouldn't block the report */ }
       }
@@ -89,6 +102,7 @@ export default function NewSafetyIncidentPage() {
           <button type="button" style={sheetBtn('secondary', SHEET.INK, saving)} disabled={saving} onClick={back}>Cancel</button>
           <button type="button" disabled={saving || !meta} style={sheetBtn('primary', '#DC2626', saving || !meta)} onClick={submit}><SheetIcon name="send" size={16} />{saving ? 'Reporting…' : 'Report incident'}</button>
         </>}>
+        <div style={{ padding: '16px 24px 0' }}><DraftBanner draft={draft} /></div>
         {error.length > 0 && (
           <div style={{ padding: '16px 24px 0' }}>
             <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>

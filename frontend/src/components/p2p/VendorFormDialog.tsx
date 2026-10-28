@@ -5,6 +5,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { vendorsApi } from '@/lib/api'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { ProcurementVendor } from '@/types'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { extractErrorMessages, isValidEmail, isValidPinCode, VALIDATION_MESSAGES } from '@/lib/validation'
@@ -58,6 +60,11 @@ export default function VendorFormDialog({ vendor, onClose, onSaved }: {
   const [referral, setReferral] = useState(() => referralFromVendor(vendor))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // A new vendor's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft(vendor ? null : 'p2p-vendor-new', { form, referral }, (d) => {
+    if (d.form) setForm((s) => ({ ...s, ...d.form }))
+    if (d.referral) setReferral(d.referral)
+  })
   const close = () => { if (!saving) onClose() }
   useEscapeKey(true, close)
   const set = (k: string, v: string) => setForm((s) => ({ ...s, [k]: v }))
@@ -86,7 +93,9 @@ export default function VendorFormDialog({ vendor, onClose, onSaved }: {
       payload.status = form.status
       payload.payment_days = form.payment_days.trim() === '' ? null : Number(form.payment_days)
       Object.assign(payload, referralPayload(referral))
-      onSaved(vendor ? await vendorsApi.update(vendor.id, payload) : await vendorsApi.create(payload))
+      const saved = vendor ? await vendorsApi.update(vendor.id, payload) : await vendorsApi.create(payload)
+      draft.clear()
+      onSaved(saved)
     } catch (err) {
       setError(extractErrorMessages(err, 'Could not save the vendor — try again.').join(' '))
     } finally {
@@ -104,6 +113,7 @@ export default function VendorFormDialog({ vendor, onClose, onSaved }: {
       <SheetColumns
         left={<>
           <ErrorBox error={error} />
+          <DraftBanner draft={draft} />
           <SheetSection icon="building" title="Company">
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'start' }}>
               <div style={{ minWidth: 0 }}>

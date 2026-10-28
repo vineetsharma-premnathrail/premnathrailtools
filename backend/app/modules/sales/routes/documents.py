@@ -4,6 +4,7 @@ letters …) in SharePoint under Sales-Orders. The Word documents of record
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -13,6 +14,9 @@ from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.sales.models.attachment import SalesAttachment, SALES_ATTACHMENT_ENTITIES, SALES_ATTACHMENT_DOC_TYPES
 from app.modules.sales.models.order import SalesOrder
+from app.modules.sales.models.crm_document_link import SalesOrderCrmDocument
+from app.modules.sales import crm_documents as crm_docs
+from app.modules.crm.models.document import CrmDocument
 from app.modules.sales.access import ensure_amendment, ensure_order
 from app.modules.sales.models.amendment import SalesOrderAmendment
 from app.modules.sales.models.extension import SalesDeliveryExtension
@@ -136,6 +140,71 @@ async def upload_attachments(
     for r in rows:
         db.refresh(r)
     return rows
+
+
+# ── CRM documents linked to an order (link only; the files stay in CRM) ─────────
+
+class CrmLinksPayload(BaseModel):
+    crm_document_ids: list[int] = Field(default_factory=list)
+
+
+def _order(db: Session, so_id: int, user: User) -> SalesOrder:
+    so = db.query(SalesOrder).filter(SalesOrder.id == so_id, SalesOrder.is_deleted == False).first()  # noqa: E712
+    if not so:
+        raise HTTPException(status_code=404, detail=f"Sales order #{so_id} not found.")
+    ensure_order(db, user, so)
+    return so
+
+
+@router.get("/crm-candidates")
+async def crm_candidates(inquiry_id: int | None = None, tender_id: int | None = None, db: Session = Depends(get_db),
+                         user: User = Depends(require_app_access("sales"))):
+    """CRM documents of the inquiry / tender an order is being raised from — the
+    user ticks which ones the order should link (New Sales Order, order Documents tab)."""
+    _require_view(user, "sales_order")
+    _feature_gate(user, "sales_order", "view")
+    if not (inquiry_id or tender_id):
+        raise HTTPException(status_code=422, detail="Pass inquiry_id or tender_id — CRM documents are listed for the order's source record.")
+    return [crm_docs.document_row(d) for d in crm_docs.source_documents(db, inquiry_id, tender_id)]
+
+
+@router.get("/crm-links")
+async def list_crm_links(sales_order_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("sales"))):
+    _require_view(user, "sales_order")
+    _feature_gate(user, "sales_order", "view")
+    return crm_docs.linked_documents(db, _order(db, sales_order_id, user))
+
+
+@router.put("/crm-links")
+async def set_crm_links(sales_order_id: int, payload: CrmLinksPayload, db: Session = Depends(get_db),
+                        user: User = Depends(require_app_access("sales"))):
+    _require_edit(user, "sales_order", "link")
+    _feature_gate(user, "sales_order", "create")
+    so = _order(db, sales_order_id, user)
+    crm_docs.set_links(db, so, payload.crm_document_ids, user)
+    db.commit()
+    return crm_docs.linked_documents(db, so)
+
+
+@router.get("/crm-links/{document_id}/content")
+async def crm_link_content(document_id: int, sales_order_id: int, db: Session = Depends(get_db),
+                           user: User = Depends(require_app_access("sales"))):
+    """Opens a CRM document through the order it is linked to — a Sales user needs
+    no CRM access, but only documents actually linked to an order in their scope open."""
+    _require_view(user, "sales_order")
+    _feature_gate(user, "sales_order", "view")
+    so = _order(db, sales_order_id, user)
+    doc = (db.query(CrmDocument).join(SalesOrderCrmDocument, SalesOrderCrmDocument.crm_document_id == CrmDocument.id)
+           .filter(SalesOrderCrmDocument.sales_order_id == so.id, CrmDocument.id == document_id,
+                   CrmDocument.is_deleted == False).first())  # noqa: E712
+    if not doc:
+        raise HTTPException(status_code=404, detail=(
+            f"This CRM document isn't linked to {so.display_number} (or it was deleted in CRM). Reload the Documents tab."))
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail=_STORAGE_NOT_CONFIGURED)
+    content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path or "")
+    return Response(content=content, media_type=doc.mime_type or content_type,
+                    headers={"Content-Disposition": f'inline; filename="{doc.file_name}"'})
 
 
 def _get(db: Session, attachment_id: int) -> SalesAttachment:

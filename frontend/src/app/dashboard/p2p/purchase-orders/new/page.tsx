@@ -26,7 +26,7 @@ import POAmendmentPanel from '@/components/p2p/POAmendmentPanel'
 import { TEXT } from '@/lib/theme'
 import { secondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { formatDate } from '@/lib/format'
-import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, FileDropZone } from '@/components/shared/FormSheet'
 import P2PNav from '@/components/p2p/P2PNav'
 import DateField from '@/components/erp/DateField'
 import CreatePODialog from '@/components/p2p/CreatePODialog'
@@ -94,6 +94,9 @@ export default function CreatePurchaseOrderPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [showCreate, setShowCreate] = useState(false)
+  // The Tally PO (owner, 2026-10-27): its Tally number + PDF, required before Send for approval.
+  const [tallyNo, setTallyNo] = useState('')
+  const [tallyFiles, setTallyFiles] = useState<File[]>([])
 
   const load = useCallback(async () => {
     if (!rfqId && rfqRef) return // the RFQ link is still resolving (or was invalid — shown below)
@@ -116,6 +119,8 @@ export default function CreatePurchaseOrderPage() {
         setExpected(draft.expected_delivery || '')
         setDeliveryTerms(draft.delivery_terms || '')
         setCostCenterId(draft.cost_center_id ? String(draft.cost_center_id) : '')
+        setTallyNo(draft.external_ref || '')
+        setTallyFiles([])
         if (req.purpose === 'department' || draft.cost_center_id) {
           setCostCenters((await accountAssignmentApi.options('cost_center')).options)
         }
@@ -203,7 +208,15 @@ export default function CreatePurchaseOrderPage() {
     a.click()
     URL.revokeObjectURL(url)
   }, 'Could not download the PO — make sure the draft saves, then try again.')
+  const hasTallyPo = !!po?.external_ref && !!po?.document_filename
+  const uploadTally = () => run(async () => {
+    if (!rfq || !po) return
+    if (!tallyNo.trim()) throw new LocalProblem('Enter the Tally PO number — the voucher number of this PO in Tally.')
+    if (!tallyFiles.length) throw new LocalProblem('Attach the Tally PO print as a PDF (print it from Tally to PDF).')
+    await rfqApi.uploadTallyPo(rfq.id, po.id, tallyNo.trim(), tallyFiles[0])
+  }, 'Could not upload the Tally PO — check the number and that the file is a PDF, then try again.')
   const askSend = () => {
+    if (!hasTallyPo) { setError('Upload the Tally PO before sending for approval — enter its Tally PO number and attach the Tally PO PDF in section 4 (Tally PO), then press Upload Tally PO.'); return }
     if (unpriced.length) { setError(`Enter a unit price for every line before sending for approval — missing: ${unpriced.map((i) => i.item_name).join(', ')}. You can use Save to keep the draft meanwhile.`); return }
     const problem = qtyProblem()
     if (problem) { setError(problem); return }
@@ -435,13 +448,47 @@ export default function CreatePurchaseOrderPage() {
                 <ManagedDocumentPanel entityType="p2p_purchase_order" entityId={po.id} revision={po.revision ?? 0} canModify={editable && canFeature('p2p', 'purchase_orders', 'po_document', 'create')}
                   recordLabel="purchase order" downloadName={`PO-${po.po_number}`.replace(/[^A-Za-z0-9._-]+/g, '-')}
                   beforeEdit={async () => { if (rfq) await rfqApi.updatePoDraft(rfq.id, po.id, draftPayload()) }} />
-                {/* POs are generated in the app — no attaching. A file attached under the old
-                    manual flow is still listed so it isn't lost. */}
+              </SheetSection>
+            </div>
+          )}
+
+          {po && (
+            <div style={block}>
+              <SheetSection icon="clip" title="4. Tally PO">
+                <p style={{ ...sheetHint, marginTop: 0 }}>
+                  Make this PO in Tally too, then enter its Tally PO number and attach the Tally PO print (PDF). It is required before Send for approval — the approvers see it.
+                  {editable ? ' You can upload again while the PO is a draft (wrong file, or the Tally PO changed).' : ''}
+                </p>
                 {po.document_filename && (
-                  <div style={{ marginTop: 14 }}>
-                    <span style={label}>Earlier attached PO file</span>
-                    <a href="#" onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => rfqApi.getPoDocumentBlob(rfq.id, po.id), po.document_filename!) }} style={{ fontSize: 13, color: '#2563eb' }}>📎 {po.document_filename}</a>
+                  <div style={{ marginBottom: editable ? 14 : 0, fontSize: 13, color: SHEET.BODY }}>
+                    <span style={label}>Uploaded</span>
+                    Tally PO <b>{po.external_ref || '—'}</b> ·{' '}
+                    {canDownload
+                      ? <a href="#" onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => rfqApi.getPoDocumentBlob(rfq.id, po.id), po.document_filename!) }} style={{ color: '#2563eb' }}>📎 {po.document_filename}</a>
+                      : <span>📎 {po.document_filename}</span>}
+                    {po.document_uploaded_at && <span style={{ color: SHEET.MUTED }}> · {formatDate(po.document_uploaded_at)}{po.document_uploaded_by_name ? ` by ${po.document_uploaded_by_name}` : ''}</span>}
                   </div>
+                )}
+                {!po.document_filename && !editable && <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>No Tally PO uploaded.</p>}
+                {editable && canFeature('p2p', 'purchase_orders', 'po_document', 'create') && (
+                  <div data-tour="po-new-tally" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14, alignItems: 'start' }}>
+                    <div>
+                      <label style={label} htmlFor="po-tally-no">Tally PO number <Req /></label>
+                      <input id="po-tally-no" value={tallyNo} onChange={(e) => setTallyNo(e.target.value)} maxLength={100} placeholder="e.g. PO/0042/26-27" style={inputStyle} />
+                    </div>
+                    <div>
+                      <span style={label}>Tally PO (PDF) <Req /></span>
+                      <FileDropZone files={tallyFiles} onChange={setTallyFiles} accept=".pdf,application/pdf" max={1} hint="PDF only · up to 15 MB" />
+                    </div>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <button type="button" disabled={busy} onClick={uploadTally} style={sheetBtn('secondary', SHEET.INK, busy)}>
+                        <SheetIcon name="upload" size={16} />{po.document_filename ? 'Upload again' : 'Upload Tally PO'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {editable && !canFeature('p2p', 'purchase_orders', 'po_document', 'create') && !po.document_filename && (
+                  <p style={{ fontSize: 13, color: '#b45309', margin: 0 }}>You need Create on Purchase Orders › PO document to upload the Tally PO — ask an admin to add it to your role.</p>
                 )}
               </SheetSection>
             </div>

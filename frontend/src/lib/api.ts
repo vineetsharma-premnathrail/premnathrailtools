@@ -1,10 +1,12 @@
 import axios, { AxiosInstance, AxiosError } from 'axios'
-import { useAuthStore } from '@/store/authStore'
+import { useAuthStore, SIGNED_OUT_FLAG } from '@/store/authStore'
 import { beginRequest } from '@/lib/requestActivity'
 import { DIRECT_UPLOAD_THRESHOLD, uploadToSession } from '@/lib/largeUpload'
 import { rememberRefs } from '@/lib/recordRef'
 import { lockHeaderFor, rememberLockVersion } from '@/lib/lockVersion'
+import { IDEMPOTENT_METHODS, keyFor, settle } from '@/lib/idempotency'
 import { isUserActive, notifyLocked } from '@/lib/appLockState'
+import { looksLikeTeams, teamsSilentSignIn } from '@/lib/teamsAuth'
 import type { P2PRequestLineItemInput, RequirementMovement, RndRequirement, RndRequirementDetail, PRCategoryMeta, StoreDocType, StoreDocTypeKind, StoreStockEntry, StoreDocTypePayload, StoreIssueFormStandard, StorePlantAccess, StorePlantAccessPayload, StoreItemMeta, StoreItemVendorSuggestion, RndRequest, RndRequestAssignment, RndAssignee } from '@/types'
 
 // Files above this open through a direct SharePoint link rather than the API.
@@ -86,23 +88,86 @@ apiClient.interceptors.response.use((response) => {
   return response
 })
 
+// Idempotency-Key on every save (lib/idempotency.ts, backend
+// middleware/idempotency.py): a save sent again after a network failure is
+// replayed by the server, never saved twice. While the server is still busy
+// with the first attempt it answers 409 idempotency_in_progress — wait and ask again.
+apiClient.interceptors.request.use((config) => {
+  const method = (config.method || 'get').toLowerCase()
+  const url = config.url || ''
+  if (IDEMPOTENT_METHODS.has(method) && !url.includes('/auth/') && !config.headers['Idempotency-Key']) {
+    const { fp, key } = keyFor(method, url, config.params, config.data)
+    config.headers['Idempotency-Key'] = key
+    config._idemFp = fp
+  }
+  return config
+})
+apiClient.interceptors.response.use(
+  (response) => {
+    settle(response.config?._idemFp)
+    return response
+  },
+  async (error: AxiosError) => {
+    const config = error.config
+    if (!config?._idemFp) return Promise.reject(error)
+    // No reply at all (offline, timeout): keep the key, so pressing Save again can't save twice.
+    if (!error.response) return Promise.reject(error)
+    const status = error.response.status
+    const data = error.response.data as { code?: string; detail?: unknown } | undefined
+    const code = data?.code
+    if (status === 409 && code === 'idempotency_in_progress') {
+      if ((config._idemWaits || 0) < 8) {
+        config._idemWaits = (config._idemWaits || 0) + 1
+        await new Promise((r) => setTimeout(r, 1500))
+        return apiClient.request(config)
+      }
+      return Promise.reject(error) // still running on the server — keep the key, so Save again can't duplicate it
+    }
+    // A gateway / proxy reply (not from the app) may hide a save that went through; 401 is
+    // retried after a token refresh with the same key — keep the key for both.
+    const fromGateway = [408, 502, 503, 504].includes(status) && !(data && typeof data === 'object' && 'detail' in data)
+    if (fromGateway || status === 401) return Promise.reject(error)
+    settle(config._idemFp)
+    return Promise.reject(error)
+  }
+)
+
 // The access token (session_token) is short-lived by design (15 min) — see
 // backend/app/modules/main/routes/auth.py's /auth/refresh docstring for why.
 // A 401 here usually just means that token expired, not that the user's
 // actual (refresh-token-backed) session is over, so try one silent refresh
 // before treating it as a real sign-out. Concurrent 401s share a single
 // in-flight refresh instead of each firing their own.
+// Inside Microsoft Teams the refresh cookie is often dropped (third-party
+// iframe), so there the session is renewed with a silent Teams sign-in
+// instead (lib/teamsAuth.ts) — the person never sees a login screen.
 let refreshInFlight: Promise<boolean> | null = null
+
+// After "Sign out" the Teams tab must stay signed out until the person signs in again.
+function signedOutDeliberately(): boolean {
+  try { return localStorage.getItem(SIGNED_OUT_FLAG) === '1' } catch { return false }
+}
 
 function refreshSession(): Promise<boolean> {
   if (!refreshInFlight) {
-    refreshInFlight = apiClient
-      .post('/auth/refresh')
-      .then(() => true)
-      .catch(() => false)
-      .finally(() => {
-        refreshInFlight = null
-      })
+    refreshInFlight = (async () => {
+      try {
+        await apiClient.post('/auth/refresh')
+        return true
+      } catch {
+        // fall through to Teams
+      }
+      if (!looksLikeTeams() || signedOutDeliberately()) return false
+      try {
+        const token = await teamsSilentSignIn(useAuthStore.getState().token)
+        useAuthStore.getState().setToken(token)
+        return true
+      } catch {
+        return false
+      }
+    })().finally(() => {
+      refreshInFlight = null
+    })
   }
   return refreshInFlight
 }
@@ -124,7 +189,10 @@ apiClient.interceptors.response.use(
       }
     }
 
-    if (error.response?.status === 401 && !url.includes('/auth/logout')) {
+    // A failed /auth/refresh is not itself the sign-out: refreshSession() may
+    // still renew through Teams (it needs the old token for that), and the
+    // original request's own 401 clears the session if nothing worked.
+    if (error.response?.status === 401 && !url.includes('/auth/logout') && !url.includes('/auth/refresh')) {
       useAuthStore.getState().clearSession()
       if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
         window.location.href = '/login'
@@ -147,19 +215,7 @@ export const authApi = {
       console.error('Logout error:', error)
     }
   },
-
-  // Teams silent SSO: exchange a getAuthToken() JWT for a portal session.
-  teamsTokenLogin: async (token: string) => {
-    const { data } = await apiClient.post('/auth/teams-token', { token })
-    return data
-  },
-
-  // Teams popup flow: exchange the one-time code (from /callback via the
-  // isolated auth popup) for real session cookies in the main-frame context.
-  teamsExchange: async (code: string) => {
-    const { data } = await apiClient.post('/auth/teams-exchange', { code })
-    return data
-  },
+  // Teams sign-in lives in lib/teamsAuth.ts (teamsSilentSignIn / teamsPopupSignIn).
 }
 
 export const modulesApi = {
@@ -375,11 +431,6 @@ export const crmApi = {
     const { data } = await apiClient.get(`/crm/organizations/${id}/detail`)
     return data
   },
-  /** Customer engagements (meetings, calls, visits, discussions) on an organization. */
-  listEngagements: async (orgId: number): Promise<import('@/types').CrmEngagement[]> => (await apiClient.get(`/crm/organizations/${orgId}/engagements`)).data,
-  createEngagement: async (orgId: number, payload: Record<string, unknown>): Promise<import('@/types').CrmEngagement> => (await apiClient.post(`/crm/organizations/${orgId}/engagements`, payload)).data,
-  updateEngagement: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').CrmEngagement> => (await apiClient.patch(`/crm/engagements/${id}`, payload)).data,
-  deleteEngagement: async (id: number) => (await apiClient.delete(`/crm/engagements/${id}`)).data,
   updateOrganization: async (id: number, payload: Record<string, unknown>) => {
     const { data } = await apiClient.patch(`/crm/organizations/${id}`, payload)
     return data
@@ -452,7 +503,7 @@ export const crmApi = {
     const { data } = await apiClient.get(`/crm/inquiries/${id}/requirement-movements`)
     return data
   },
-  // requirementOnly: just edits to Specification / Requirement Description / Project Details (Info tab Revision selector).
+  // requirementOnly: just edits to Specification / Project Details (Info tab Revision selector).
   getInquirySpecRevisions: async (id: number, requirementOnly = false) => {
     const { data } = await apiClient.get(`/crm/inquiries/${id}/spec-revisions`, { params: requirementOnly ? { requirement_only: true } : undefined })
     return data
@@ -677,6 +728,10 @@ export const crmApi = {
   },
 
   listProducts: async (search?: string) => (await apiClient.get('/crm/products', { params: search ? { search } : {} })).data,
+  // Product master choices for quotation lines (active + in development, with their applications).
+  listQuotationProducts: async () => (await apiClient.get('/crm/quotation-products')).data,
+  quotationProductPrice: async (inquiryId: number, productId: number) =>
+    (await apiClient.get(`/crm/inquiries/${inquiryId}/quotation-products/${productId}/price`)).data as { price: number | null; price_source?: string | null },
   createProduct: async (payload: Record<string, unknown>) => (await apiClient.post('/crm/products', payload)).data,
   updateProduct: async (id: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/products/${id}`, payload)).data,
   deleteProduct: async (id: number) => (await apiClient.delete(`/crm/products/${id}`)).data,
@@ -1190,6 +1245,12 @@ export const p2pApi = {
 
   createPO: async (id: number, payload: Record<string, unknown>) => {
     const { data } = await apiClient.post(`/p2p/requests/${id}/create-po`, payload)
+    return data
+  },
+
+  /** Free stock of Item Master items per plant / store, for the PR form. */
+  stockAvailability: async (itemIds: number[]): Promise<PrStockAvailability[]> => {
+    const { data } = await apiClient.get('/p2p/requests/stock-availability', { params: { item_ids: itemIds.join(',') } })
     return data
   },
 
@@ -1738,8 +1799,10 @@ export const rfqApi = {
     return data
   },
 
-  uploadPoDocument: async (rfqId: number, poId: number, file: File) => {
+  /** The Tally PO on a draft PO: its Tally number + the Tally print (PDF). Required before Send for approval. */
+  uploadTallyPo: async (rfqId: number, poId: number, tallyPoNo: string, file: File) => {
     const formData = new FormData()
+    formData.append('tally_po_no', tallyPoNo)
     formData.append('file', file)
     const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/po-draft/${poId}/document`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -1781,9 +1844,7 @@ export const itemsApi = {
   },
 }
 
-export interface TallyPoPreviewLine { row: number; store_item_id: number; item_code: string; item_name: string; unit: string | null; quantity: number; unit_price: number; gst_rate: number | null; line_total: number | null }
-export interface TallyPoPreviewPo { tally_po_no: string | null; po_date: string | null; expected_delivery: string | null; vendor_id: number | null; vendor_code: string | null; vendor_name: string | null; lines: TallyPoPreviewLine[]; total_value: number; errors: string[] }
-export interface TallyPoPreview { pos: TallyPoPreviewPo[]; ready: number; with_errors: number; lines: number }
+export interface PrStockAvailability { store_item_id: number; available_qty: number; locations: { plant: string | null; store: string; available_qty: number }[] }
 
 export const purchaseOrdersApi = {
   list: async (params: Record<string, unknown> = {}) => {
@@ -1794,31 +1855,6 @@ export const purchaseOrdersApi = {
   get: async (id: number) => {
     const { data } = await apiClient.get(`/p2p/purchase-orders/${id}`)
     return data
-  },
-
-  // Tally POs (2026-10-27): POs already approved in Tally, uploaded from Excel.
-  // preview checks the file only; commit saves all POs or none.
-  tallyTemplate: async () => {
-    const { data } = await apiClient.get('/p2p/tally-po-import/template', { responseType: 'blob' })
-    return data as Blob
-  },
-  tallyPreview: async (file: File) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    const { data } = await apiClient.post('/p2p/tally-po-import/preview', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 })
-    return data as TallyPoPreview
-  },
-  tallyCommit: async (file: File) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    const { data } = await apiClient.post('/p2p/tally-po-import/commit', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 })
-    return data as { created: { id: number; po_number: string; tally_po_no: string; vendor_name: string; total_value: number; lines: number }[] }
-  },
-  tallyAttachDocument: async (poId: number, file: File) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    const { data } = await apiClient.post(`/p2p/tally-po-import/${poId}/document`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 })
-    return data as { id: number; po_number: string; document_filename: string }
   },
 
   // Portal POs are created only via rfqApi.createPoDraft (RFQ -> draft -> submit);
@@ -4820,6 +4856,9 @@ export const salesApi = {
   listOrders: async (params: Record<string, unknown> = {}): Promise<import('@/types').SalesOrder[]> => { const { data } = await apiClient.get('/sales/orders', { params }); return data },
   getOrder: async (id: number): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.get(`/sales/orders/${id}`); return data },
   prefill: async (params: { inquiry?: number; tender?: number; quotation?: number }) => { const { data } = await apiClient.get('/sales/orders/prefill', { params }); return data },
+  orderSources: async (kind: 'inquiry' | 'tender'): Promise<{ id: number; number: string; title: string | null; customer_id: number; customer_name: string | null; existing_order: string | null }[]> => { const { data } = await apiClient.get('/sales/orders/sources', { params: { kind } }); return data },
+  serviceMachines: async (): Promise<{ id: number; serial_number: string; model_name: string | null; customer_id: number; customer_name: string | null; project_code: string | null; label: string }[]> => { const { data } = await apiClient.get('/sales/orders/service-machines'); return data },
+  serviceRequestsForMachine: async (machineId: number): Promise<{ id: number; request_number: string; issue_title: string; status: string; existing_order: string | null }[]> => { const { data } = await apiClient.get('/sales/orders/service-requests', { params: { machine_id: machineId } }); return data },
   customerQuotations: async (customerId: number): Promise<{ id: number; quot_number: string | null; status: string; status_label: string; quote_date: string | null; net_value: number; inquiry_id: number; inquiry_number: string; inquiry_stage: string; order_received: boolean; existing_order: string | null }[]> => { const { data } = await apiClient.get('/sales/orders/quotations', { params: { customer_id: customerId } }); return data },
   bySource: async (params: { inquiry?: number; tender?: number }): Promise<{ order: { id: number; display_number: string; status: string; status_label: string | null } | null }> => { const { data } = await apiClient.get('/sales/orders/by-source', { params }); return data },
   defaults: async () => { const { data } = await apiClient.get('/sales/orders/defaults'); return data },
@@ -4880,6 +4919,11 @@ export const salesApi = {
   },
   attachmentContent: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/sales/attachments/${id}/content`, { responseType: 'blob', timeout: 60000 }); return data },
   deleteAttachment: async (id: number) => { const { data } = await apiClient.delete(`/sales/attachments/${id}`); return data },
+  // CRM documents of the order's source inquiry / tender — linked, never copied.
+  crmDocumentCandidates: async (params: { inquiry_id?: number; tender_id?: number }): Promise<import('@/types').SalesCrmDocument[]> => { const { data } = await apiClient.get('/sales/attachments/crm-candidates', { params }); return data },
+  listCrmDocumentLinks: async (soId: number): Promise<import('@/types').SalesCrmDocument[]> => { const { data } = await apiClient.get('/sales/attachments/crm-links', { params: { sales_order_id: soId } }); return data },
+  setCrmDocumentLinks: async (soId: number, ids: number[]): Promise<import('@/types').SalesCrmDocument[]> => { const { data } = await apiClient.put('/sales/attachments/crm-links', { crm_document_ids: ids }, { params: { sales_order_id: soId } }); return data },
+  crmDocumentContent: async (soId: number, docId: number): Promise<Blob> => { const { data } = await apiClient.get(`/sales/attachments/crm-links/${docId}/content`, { params: { sales_order_id: soId }, responseType: 'blob', timeout: 60000 }); return data },
 
   getSettings: async (): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.get('/sales/settings'); return data },
   saveSettings: async (values: Record<string, unknown>): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.put('/sales/settings', { values }); return data },

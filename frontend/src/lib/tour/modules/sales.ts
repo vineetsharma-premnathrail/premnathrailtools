@@ -7,5 +7,4 @@ export const ENTRIES: TourEntry[] = [
   { pattern: /^\/dashboard\/sales\/orders$/, load: () => import('../configs/salesOrdersList') },
   { pattern: /^\/dashboard\/sales\/orders\/new$/, load: () => import('../configs/salesOrderForm') },
   { pattern: /^\/dashboard\/sales\/orders\/[A-Za-z0-9_-]{19}$/, load: () => import('../configs/salesOrderDetail') },
-  { pattern: /^\/dashboard\/sales\/delivery$/, load: () => import('../configs/salesDelivery') },
 ]

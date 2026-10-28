@@ -55,5 +55,9 @@ export function useDocCurrency(onDate: string, opts: { withAmount?: boolean } = 
       )}
     </>
   )
-  return { currency, foreign, rate, amountFc, inrAmount, payload, fields }
+  // Put back a kept draft's currency choice (lib/formDraft.ts).
+  const restore = (d: { currency?: string; rate?: string; amountFc?: string } | undefined) => {
+    setCurrency(d?.currency || 'INR'); setRate(d?.rate || ''); setAmountFc(d?.amountFc || '')
+  }
+  return { currency, foreign, rate, amountFc, inrAmount, payload, fields, restore }
 }

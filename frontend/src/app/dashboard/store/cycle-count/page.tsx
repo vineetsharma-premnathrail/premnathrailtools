@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
@@ -39,6 +41,9 @@ export default function PhysicalCountListPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
   const [showStart, setShowStart] = useState(false)
+  const draft = useFormDraft(showStart ? 'store-physical-count-new' : null, { locationId, category, blind, remarks }, (d) => {
+    setLocationId(d.locationId ?? ''); setCategory(d.category ?? ''); setBlind(d.blind ?? true); setRemarks(d.remarks ?? '')
+  })
 
   const openStart = () => { setError(''); setLocationId(''); setCategory(''); setBlind(true); setRemarks(''); setShowStart(true) }
 
@@ -56,6 +61,7 @@ export default function PhysicalCountListPage() {
       const c: StorePhysicalCount = await physicalCountsApi.create({
         location_id: Number(locationId), category: category || undefined, blind, remarks: remarks.trim() || undefined,
       })
+      draft.clear()
       router.push(recordPath('/dashboard/store/cycle-count', c))
     } catch (err) {
       setError(extractErrorMessages(err, 'Could not start the count.'))
@@ -100,6 +106,7 @@ export default function PhysicalCountListPage() {
             <button type="button" disabled={busy} onClick={start} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="check" size={16} />{busy ? 'Starting…' : 'Start count'}</button>
           </>}>
           <div style={{ padding: '20px 24px' }}>
+            <DraftBanner draft={draft} />
             {(Array.isArray(error) ? error.length > 0 : !!error) && (
               <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
                 {(Array.isArray(error) ? error : [error]).map((e, i) => <div key={i}>{e}</div>)}

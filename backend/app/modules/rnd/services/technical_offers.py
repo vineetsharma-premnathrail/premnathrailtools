@@ -224,7 +224,7 @@ async def create_template_document(db: Session, offer: RndTechnicalOffer, user: 
         target = _load(db, offer.id, user, True)
         await managed_documents.generate(
             db, entity_type=ENTITY, entity_id=offer.id, source_revision=target.revision, title=target.title,
-            folder=target.folder, filename=f"{target.filename_stem}.docx", docx_bytes=target.build_docx(), user=user,
+            folder=target.folder, filename=f"{target.filename_stem}.docx", docx_bytes=await managed_documents.build_bytes(target), user=user,
         )
         return None
     except HTTPException as exc:

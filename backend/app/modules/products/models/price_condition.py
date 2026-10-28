@@ -56,6 +56,9 @@ class ProductPriceCondition(Base, TimestampMixin):
     store_item_id: Mapped[int | None] = mapped_column(ForeignKey("store_items.id", ondelete="CASCADE"), nullable=True, index=True)
     service_code: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("crm_organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+    # Country price (2026-10-28): applies to customers whose CRM organisation is in this
+    # country, usually in that country's currency. Customer price > country price > list price.
+    country: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
 
     # price: amount = unit rate; discount: percent; freight: amount (per order) or percent.
     amount: Mapped[float | None] = mapped_column(Rate, nullable=True)

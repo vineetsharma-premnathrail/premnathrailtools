@@ -31,7 +31,7 @@ class InquiryCreate(BaseModel):
     lost_reason_code: str | None = None
     lost_to_competitor: str | None = None
     lost_remarks: str | None = None
-    status: str = "Requirement Received"
+    status: str = "Lead"
     current_stage: str = "Requirement Received"
     current_status_note: str | None = None
     product: str | None = None

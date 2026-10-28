@@ -32,13 +32,10 @@ ACTION = "technical_offer_sent"
 # Requirement fields captured from the TOR PDF context, in display order.
 SNAPSHOT_FIELDS: dict[str, str] = {
     "org_name": "Customer Organization",
-    "contact_name": "Contact Person",
     "product": "Product",
     "product_category": "Category",
     "quantity_display": "Quantity",
-    "inspection_req": "Inspection Req.",
     "product_spec": "Specification",
-    "requirement_desc": "Requirement Summary",
     "project_details": "Project Details",
 }
 

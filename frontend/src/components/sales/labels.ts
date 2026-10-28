@@ -20,6 +20,9 @@ export const ROW_STATUS_HEX: Record<string, string> = {
   open: '#78716c', build_planned: '#2563EB', in_production: '#7c3aed', ready: '#0891b2',
   dispatched: '#0f766e', delivered: '#16A34A', commissioned: '#15803d', cancelled: '#78716c',
 }
+// What kind of business the order is — the first question on a new order. Only New Project
+// orders get a project (and vehicle units) in Project Management.
+export const ORDER_CATEGORY_LABELS: Record<string, string> = { new_project: 'New Project', service: 'Service', rental: 'Rental' }
 // Order types a user can pick on a new order. Both vehicle types are "vehicle orders".
 export const ORDER_TYPE_OPTIONS: Record<string, string> = {
   road_rail_vehicle: 'Road Rail Vehicle', rail_bound_vehicle: 'Rail Bound Vehicle', accessories: 'Accessories', other: 'Others',

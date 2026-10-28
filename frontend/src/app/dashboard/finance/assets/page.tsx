@@ -6,6 +6,8 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { accountsApi, costCentersApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
+import DraftBanner from '@/components/shared/DraftBanner'
+import { useFormDraft } from '@/lib/formDraft'
 import { FixedAsset, GLAccount, CostCenter, DepreciationRun, DepreciationPreviewRow } from '@/types'
 import { TEXT } from '@/lib/theme'
 import FinanceNav from '@/components/finance/FinanceNav'
@@ -98,6 +100,8 @@ function RegisterTab({ canManage }: { canManage: boolean }) {
   const [formError, setFormError] = useState<string[] | null>(null)
   const [editing, setEditing] = useState<FixedAsset | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<FixedAsset | null>(null)
+  // A new asset's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft(showForm ? 'finance-fixed-asset-new' : null, form, (d) => setForm({ ...emptyForm(), ...d }))
   const [disposeTarget, setDisposeTarget] = useState<FixedAsset | null>(null)
 
   // State is set only after the await, so this is safe to call from an effect.
@@ -141,6 +145,7 @@ function RegisterTab({ canManage }: { canManage: boolean }) {
         wdv_rate_pct: form.depreciation_method === 'wdv' && form.wdv_rate_pct ? Number(form.wdv_rate_pct) : null,
         opening_accumulated_depreciation: Number(form.opening_accumulated_depreciation || 0),
       })
+      draft.clear()
       setForm(emptyForm()); setShowForm(false)
       load()
     } catch (err: unknown) {
@@ -180,6 +185,7 @@ function RegisterTab({ canManage }: { canManage: boolean }) {
           footer={<SheetFooter onCancel={closeForm} onSubmit={submit} busy={saving} label="Register asset" icon="plus" cancelTour="fin-fa-cancel" submitTour="fin-fa-save" />}>
           <SheetColumns
             left={<>
+              <DraftBanner draft={draft} />
               <SheetError error={formError} />
               <SheetSection icon="tag" title="Asset">
                 <SRow>

@@ -9,6 +9,8 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useCan } from '@/lib/permissions'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { extractErrorMessages } from '@/lib/validation'
+import DraftBanner from '@/components/shared/DraftBanner'
+import { useFormDraft, FormDraft } from '@/lib/formDraft'
 import { TEXT } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
@@ -53,6 +55,8 @@ export function ProfitCentresTab() {
   const [form, setForm] = useState<PCForm | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // A new profit centre's typed data survives a refresh / network failure (lib/formDraft.ts).
+  const draft = useFormDraft(form && !form.id && meta ? 'finance-profit-centre-new' : null, form, (d) => { if (d) setForm({ ...EMPTY, ...d, id: undefined }) })
   const [deleting, setDeleting] = useState<ProfitCentre | null>(null)
   const [rederiveOpen, setRederiveOpen] = useState(false)
 
@@ -76,6 +80,7 @@ export function ProfitCentresTab() {
     }
     try {
       if (form.id) await profitCentresApi.update(form.id, payload); else await profitCentresApi.create(payload)
+      if (!form.id) draft.clear()
       setNotice(`Profit centre ${form.code.toUpperCase()} saved.`)
       setForm(null)
       await load()
@@ -159,7 +164,7 @@ export function ProfitCentresTab() {
       )}
 
       {form && meta && (
-        <PCFormDialog form={form} setForm={setForm} meta={meta} parents={pcOptions.filter((o) => o.value !== String(form.id ?? ''))} saving={saving} error={formError} onSave={save} onCancel={() => setForm(null)} />
+        <PCFormDialog form={form} setForm={setForm} meta={meta} parents={pcOptions.filter((o) => o.value !== String(form.id ?? ''))} saving={saving} error={formError} draft={draft} onSave={save} onCancel={() => setForm(null)} />
       )}
       <ConfirmDialog open={!!deleting} title={`Delete ${deleting?.code}?`} message="Only a profit centre nothing points at can be deleted. One with postings should be set inactive instead."
         onCancel={() => setDeleting(null)}
@@ -182,9 +187,9 @@ export function ProfitCentresTab() {
   )
 }
 
-function PCFormDialog({ form, setForm, meta, parents, saving, error, onSave, onCancel }: {
+function PCFormDialog({ form, setForm, meta, parents, saving, error, draft, onSave, onCancel }: {
   form: PCForm; setForm: (f: PCForm) => void; meta: ProfitCentreMeta; parents: { value: string; label: string }[]
-  saving: boolean; error: string | null; onSave: () => void; onCancel: () => void
+  saving: boolean; error: string | null; draft: FormDraft; onSave: () => void; onCancel: () => void
 }) {
   useEscapeKey(true, onCancel)
   const set = (k: keyof PCForm, v: string | boolean) => setForm({ ...form, [k]: v })
@@ -194,6 +199,7 @@ function PCFormDialog({ form, setForm, meta, parents, saving, error, onSave, onC
       footer={<SheetFooter onCancel={onCancel} onSubmit={onSave} busy={saving} label="Save" disabled={!form.code.trim() || !form.name.trim()} />}>
       <SheetColumns
         left={<>
+          <DraftBanner draft={draft} />
           <SheetError error={error} />
           <SheetSection icon="tag" title="Profit centre">
             <SRow>

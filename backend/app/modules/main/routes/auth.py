@@ -1,5 +1,4 @@
 import base64
-import hashlib
 import json as _json
 import logging
 import secrets
@@ -48,9 +47,11 @@ _TEAMS_CODE_TTL_SECONDS = 120
 _jwks_cache: Dict[str, dict] = {}  # tenant_id → {"keys": ..., "expires": ...}
 _JWKS_TTL_SECONDS = 3600
 
-# Replay protection for Teams SSO tokens (keyed by jti, or a hash if absent).
-_used_token_ids: Dict[str, float] = {}  # token id → expiry timestamp
-_MAX_USED_TOKENS = 10000
+# No one-time-use check on Teams SSO tokens (owner decision 2026-10-27,
+# Microsoft's Teams SSO pattern): Teams caches the getAuthToken() token for
+# about an hour and returns the SAME token on every call, so rejecting a second
+# use broke every retry, reload and silent renewal with "Token already used".
+# The token is still signature-, audience-, tenant- and expiry-checked.
 
 
 def _purge_expired_states() -> None:
@@ -78,17 +79,38 @@ def _set_cached_jwks(tenant_id: str, jwks: dict) -> None:
     _jwks_cache[tenant_id] = {"keys": jwks, "expires": time.time() + _JWKS_TTL_SECONDS}
 
 
-def _check_replay(token_id: str, expiry: float) -> bool:
-    """Return True if this token id was already used (i.e. a replay)."""
-    now = time.time()
-    expired = [k for k, v in _used_token_ids.items() if v < now]
-    for k in expired:
-        del _used_token_ids[k]
-    if token_id in _used_token_ids:
-        return True
-    if len(_used_token_ids) < _MAX_USED_TOKENS:
-        _used_token_ids[token_id] = expiry
-    return False
+def _require_json(request: Request) -> None:
+    """The Teams sign-in routes take no cookie, so the CSRF middleware skips
+    them; requiring a JSON body means a browser can only send them from our
+    own pages (a cross-site form can't set this type without a CORS preflight)."""
+    if request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
+        raise HTTPException(status_code=415, detail="Send this sign-in request as JSON (Content-Type: application/json).")
+
+
+def _continued_session(db: Session, raw_token: str, user: User) -> UserSession | None:
+    """The still-valid session behind the (usually expired) portal token a
+    Teams tab already holds. Teams blocks our cookies in its iframe on many
+    devices, so the tab re-signs in with a fresh Teams token instead of the
+    refresh cookie; continuing that session keeps its app-lock state, so the
+    person is not asked for the app password again every 15 minutes."""
+    if not raw_token:
+        return None
+    try:
+        payload = jose_jwt.decode(raw_token, settings.SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
+    except JWTError:
+        return None
+    sid = payload.get("sid")
+    if payload.get("purpose") or str(payload.get("sub")) != str(user.id) or not str(sid or "").isdigit():
+        return None
+    session = db.get(UserSession, int(sid))
+    if session is None or session.user_id != user.id or session.revoked_at is not None:
+        return None
+    expires_at = session.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc) or org_security.is_idle(db, session):
+        return None
+    return session
 
 
 def _set_auth_cookies(response, session_token: str, ms_access_token: str = "", refresh_token: str = "") -> None:
@@ -385,6 +407,7 @@ async def oauth_callback(request: Request, code: str, state: str, db: Session = 
 async def teams_token_login(request: Request, db: Session = Depends(get_db)):
     """Validate a Teams getAuthToken() SSO token and start a session directly
     (no popup/redirect needed — used for Teams' silent single-sign-on)."""
+    _require_json(request)
     body = await request.json()
     token = body.get("token", "")
     if not token:
@@ -402,8 +425,6 @@ async def teams_token_login(request: Request, db: Session = Depends(get_db)):
         actual_aud = unverified.get("aud", "")
         actual_iss = unverified.get("iss", "")
         token_tid = unverified.get("tid", "")
-        token_exp = unverified.get("exp", time.time() + 3600)
-        token_jti = unverified.get("jti") or hashlib.sha256(token.encode()).hexdigest()[:32]
     except Exception as e:
         # This is an anonymous, pre-auth endpoint (Teams silent SSO) decoding a
         # caller-supplied token before it's verified — keep the client message
@@ -431,9 +452,6 @@ async def teams_token_login(request: Request, db: Session = Depends(get_db)):
         f"https://login.microsoftonline.com/{tenant_id}/v2.0",
         f"https://sts.windows.net/{tenant_id}/",
     )
-
-    if _check_replay(token_jti, token_exp):
-        raise HTTPException(status_code=401, detail="Token already used")
 
     jwks = _get_cached_jwks(tenant_id)
     if jwks is None:
@@ -510,9 +528,21 @@ async def teams_token_login(request: Request, db: Session = Depends(get_db)):
     except Exception:
         logger.info("Graph on-behalf-of token acquisition failed for Teams login", exc_info=True)
 
-    session_token, refresh_token = _issue_tokens(db, user, request)
-    org_security.log_sign_in(db, request, user=user, ok=True, channel="teams")
-    response = JSONResponse({"ok": True})
+    # A tab that already had a session continues it (rotated, like /refresh);
+    # only a first sign-in opens a new one.
+    previous = _continued_session(db, str(body.get("previous_token") or ""), user)
+    if previous is not None:
+        now = datetime.now(timezone.utc)
+        previous.revoked_at, previous.revoked_reason, previous.last_used_at = now, "rotated", now
+        db.commit()
+    session_token, refresh_token = _issue_tokens(db, user, request, rotated_from=previous)
+    if previous is None:
+        org_security.log_sign_in(db, request, user=user, ok=True, channel="teams")
+    # The access token also goes back in the body: inside the Teams iframe the
+    # browser often drops our cookies (third-party), so the tab sends it as a
+    # Bearer header instead. It lives 15 minutes; the tab renews it silently
+    # with a new Teams token. The refresh token stays cookie-only.
+    response = JSONResponse({"ok": True, "access_token": session_token})
     _set_auth_cookies(response, session_token, ms_access_token, refresh_token)
     return response
 
@@ -521,6 +551,7 @@ async def teams_token_login(request: Request, db: Session = Depends(get_db)):
 async def teams_exchange(request: Request):
     """Exchange a one-time Teams auth code (issued by /callback for the popup
     flow) for the actual session cookies, in the main-frame context."""
+    _require_json(request)
     body = await request.json()
     code = body.get("code", "")
     _purge_expired_teams_codes()
@@ -528,7 +559,8 @@ async def teams_exchange(request: Request):
     if not code_data or code_data["expiry"] < time.time():
         raise HTTPException(status_code=400, detail="Invalid or expired Teams auth code")
 
-    response = JSONResponse({"ok": True})
+    # Access token in the body too — see teams_token_login.
+    response = JSONResponse({"ok": True, "access_token": code_data["session_token"]})
     _set_auth_cookies(response, code_data["session_token"], code_data["ms_access_token"], code_data.get("refresh_token", ""))
     return response
 
@@ -666,6 +698,23 @@ async def logout(request: Request, db: Session = Depends(get_db)):
             session.revoked_reason = "logout"
             db.commit()
             org_security.log_sign_out(db, request, session.user_id)
+    else:
+        # Inside Teams the refresh cookie is often dropped; the tab signs out
+        # with its Bearer token instead, so end the session that token names.
+        auth_header = request.headers.get("Authorization", "")
+        bearer = auth_header[7:] if auth_header.startswith("Bearer ") else ""
+        try:
+            payload = jose_jwt.decode(bearer, settings.SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False}) if bearer else {}
+        except JWTError:
+            payload = {}
+        sid, sub = payload.get("sid"), str(payload.get("sub") or "")
+        if not payload.get("purpose") and str(sid or "").isdigit() and sub.isdigit():
+            session = db.get(UserSession, int(sid))
+            if session and session.user_id == int(sub) and session.revoked_at is None:
+                session.revoked_at = datetime.now(timezone.utc)
+                session.revoked_reason = "logout"
+                db.commit()
+                org_security.log_sign_out(db, request, session.user_id)
 
     response = JSONResponse({"message": "Logged out successfully", "status": "ok"})
     # Delete with the same attributes the cookies were set with — browsers
