@@ -1,9 +1,9 @@
 'use client'
 
 // Price conditions panel (list + create/edit popup). Used on the Product detail
-// page (locked to one product) and in Sales Settings (spares, service rates,
-// freight and general discounts). Validity-dated prices, customer-specific
-// prices and discounts; documents (sales order lines, quotation lines, service
+// page (locked to one product: list and country prices only, never per customer,
+// owner 2026-10-29) and in Sales Settings (spares, service rates, freight and
+// general discounts). Documents (sales order lines, quotation lines, service
 // invoices) default their price from these records.
 
 import Select from '@/components/shared/Select'
@@ -19,6 +19,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { sectionStyle, inputStyle, labelStyle, thStyle, tdStyle, Pill, ErrorBanner } from '@/components/sales/SalesUi'
 import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
 import { formatMoney, CURRENCY_OPTIONS } from '@/components/sales/labels'
+import { COUNTRIES } from '@/components/crm/constants'
 import CurrencyConversions from '@/components/products/CurrencyConversions'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetSection, SheetIcon, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
@@ -49,6 +50,23 @@ interface FormState {
 }
 
 // Local calendar date (YYYY-MM-DD) — toISOString() is UTC, i.e. yesterday before 05:30 IST.
+const COUNTRY_OPTIONS = COUNTRIES.filter((c) => c !== 'Other').map((c) => ({ value: c, label: c }))
+
+// Picking a country picks its currency: its own when it is in the currency list,
+// otherwise USD (the usual export currency); no country / India = INR. Still changeable.
+const EURO_COUNTRIES = ['Austria', 'Belgium', 'Croatia', 'Cyprus', 'Estonia', 'Finland', 'France', 'Germany', 'Greece', 'Ireland',
+  'Italy', 'Latvia', 'Lithuania', 'Luxembourg', 'Malta', 'Netherlands', 'Portugal', 'Slovakia', 'Slovenia', 'Spain']
+const COUNTRY_CURRENCY: Record<string, string> = {
+  India: 'INR', 'United States': 'USD', 'United Kingdom': 'GBP', 'United Arab Emirates': 'AED', Singapore: 'SGD',
+  Australia: 'AUD', Canada: 'CAD', Japan: 'JPY', China: 'CNY', 'Saudi Arabia': 'SAR', Qatar: 'QAR', Kuwait: 'KWD',
+  Oman: 'OMR', Bangladesh: 'BDT', 'Sri Lanka': 'LKR', Nepal: 'NPR', 'South Africa': 'ZAR',
+  ...Object.fromEntries(EURO_COUNTRIES.map((c) => [c, 'EUR'])),
+}
+const currencyForCountry = (country: string) => {
+  const code = country ? COUNTRY_CURRENCY[country] || 'USD' : 'INR'
+  return CURRENCY_OPTIONS.some((o) => o.value === code) ? code : 'USD'
+}
+
 const today = () => new Date().toLocaleDateString('en-CA')
 const num = (v: string) => (v.trim() === '' ? null : Number(v))
 
@@ -66,7 +84,10 @@ export default function PriceConditionsPanel({ productId, itemKinds, emptyText }
   emptyText?: string
 }) {
   const { can } = useCan()
-  const allowedKinds: PriceItemKind[] | null = productId ? ['product'] : (itemKinds && itemKinds.length ? itemKinds : null)
+  // Memoised on the kinds' values: a new array every render made load() re-run in a loop
+  // (endless "Loading…" and a flood of requests to the server).
+  const kindsKey = productId ? 'product' : (itemKinds || []).join(',')
+  const allowedKinds = useMemo<PriceItemKind[] | null>(() => (kindsKey ? kindsKey.split(',') as PriceItemKind[] : null), [kindsKey])
   const kindOk = useCallback((k: string) => !allowedKinds || (allowedKinds as string[]).includes(k), [allowedKinds])
   // Which item kinds a condition type can be set on (price: never "any"; freight: only "any").
   const kindsFor = useCallback((type: string, all: Option[]) => {
@@ -89,6 +110,7 @@ export default function PriceConditionsPanel({ productId, itemKinds, emptyText }
   const [metaError, setMetaError] = useState<string | string[]>('')
   const [typeFilter, setTypeFilter] = useState('')
   const [customerFilter, setCustomerFilter] = useState('')
+  const [countryFilter, setCountryFilter] = useState('')
   const [currentOnly, setCurrentOnly] = useState(true)
   const [form, setForm] = useState<FormState | null>(null)
   const [formError, setFormError] = useState<string | string[]>('')
@@ -102,17 +124,21 @@ export default function PriceConditionsPanel({ productId, itemKinds, emptyText }
     if (customerFilter) params.customer_id = Number(customerFilter)
     if (productId) params.product_id = productId
     setLoading(true)
-    pricingApi.list(params).then((d) => { setRows(productId ? d : d.filter((c) => kindOk(c.item_kind))); setError('') })
+    pricingApi.list(params).then((d) => {
+      setRows(productId ? d.filter((c) => !countryFilter || (countryFilter === '__list__' ? !c.country : c.country === countryFilter)) : d.filter((c) => kindOk(c.item_kind)))
+      setError('')
+    })
       .catch((e) => setError(extractErrorMessages(e, 'Could not load the prices.')))
       .finally(() => setLoading(false))
-  }, [typeFilter, customerFilter, currentOnly, productId, kindOk])
+  }, [typeFilter, customerFilter, countryFilter, currentOnly, productId, kindOk])
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
     pricingApi.meta().then(setMeta).catch((e) => { setMeta(null); setMetaError(extractErrorMessages(e, 'Could not load the price types and service rates, so new prices cannot be added — reload the page.')) })
+    if (productId) return  // products are priced by country, no customer picker
     salesApi.lookupCustomers().then((cs: { id: number; name: string; gst_number: string | null }[]) =>
       setCustomers(cs.map((c) => ({ value: String(c.id), label: c.gst_number ? `${c.name} (${c.gst_number})` : c.name })))).catch(() => setCustomers([]))
-  }, [])
+  }, [productId])
   useEffect(() => {
     // Only spares pick from a list here; a locked product needs no picker.
     if (!form || productId || (form.item_kind !== 'product' && form.item_kind !== 'spare')) return
@@ -169,7 +195,8 @@ export default function PriceConditionsPanel({ productId, itemKinds, emptyText }
 
   const kinds = useMemo(() => (meta && form ? kindsFor(form.condition_type, meta.item_kinds) : []), [meta, form, kindsFor])
   // Types that can be created in this panel at all.
-  const types = useMemo(() => (meta ? meta.condition_types.filter((t) => kindsFor(t.value, meta.item_kinds).length > 0) : []), [meta, kindsFor])
+  // A product takes prices only (the server refuses product discounts / customer prices).
+  const types = useMemo(() => (meta ? meta.condition_types.filter((t) => (!productId || t.value === 'price') && kindsFor(t.value, meta.item_kinds).length > 0) : []), [meta, kindsFor, productId])
 
   const canCreate = can('sales', 'pricing', 'create')
   const canEdit = can('sales', 'pricing', 'edit')
@@ -189,17 +216,24 @@ export default function PriceConditionsPanel({ productId, itemKinds, emptyText }
       <ErrorBanner error={metaError} />
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14, alignItems: 'flex-end' }}>
-        <div style={{ flex: '0 1 160px', minWidth: 140 }}>
-          <label style={labelStyle}>Type</label>
-          <Select style={inputStyle} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
-            <option value="">All</option>
-            {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </Select>
-        </div>
-        <div style={{ flex: '1 1 260px', maxWidth: 340 }}>
-          <label style={labelStyle}>Customer</label>
-          <SearchableSelect value={customerFilter} onChange={setCustomerFilter} options={[{ value: '', label: 'All customers' }, ...customers]} placeholder="All customers" />
-        </div>
+        {productId ? (
+          <div style={{ flex: '1 1 260px', maxWidth: 340 }}>
+            <label style={labelStyle}>Country</label>
+            <SearchableSelect value={countryFilter} onChange={setCountryFilter} options={[{ value: '', label: 'All countries' }, { value: '__list__', label: 'List price (no country)' }, ...COUNTRY_OPTIONS]} placeholder="All countries" />
+          </div>
+        ) : (<>
+          <div style={{ flex: '0 1 160px', minWidth: 140 }}>
+            <label style={labelStyle}>Type</label>
+            <Select style={inputStyle} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+              <option value="">All</option>
+              {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </Select>
+          </div>
+          <div style={{ flex: '1 1 260px', maxWidth: 340 }}>
+            <label style={labelStyle}>Customer</label>
+            <SearchableSelect value={customerFilter} onChange={setCustomerFilter} options={[{ value: '', label: 'All customers' }, ...customers]} placeholder="All customers" />
+          </div>
+        </>)}
         <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, paddingBottom: 10 }}>
           <input type="checkbox" checked={currentOnly} onChange={(e) => setCurrentOnly(e.target.checked)} /> Valid today only
         </label>
@@ -212,16 +246,16 @@ export default function PriceConditionsPanel({ productId, itemKinds, emptyText }
 
       <div style={{ ...sectionStyle, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: showForCol ? 1000 : 860 }}>
-          <thead><tr>{['Type', ...(showForCol ? ['For'] : []), 'Customer', 'Country', 'Value', 'Min. price', 'Valid from', 'Valid to', 'Remarks', ''].map((h, hi) => <th key={h || 'actions'} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
+          <thead><tr>{[...(productId ? [] : ['Type']), ...(showForCol ? ['For'] : []), ...(productId ? [] : ['Customer']), 'Country', 'Value', 'Min. price', 'Valid from', 'Valid to', 'Remarks', ''].map((h, hi) => <th key={h || 'actions'} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
             {loading && <tr><td colSpan={10} style={{ ...tdStyle, color: '#a8a29e' }}>Loading…</td></tr>}
             {!loading && rows.length === 0 && <tr><td colSpan={10} style={{ ...tdStyle, color: '#a8a29e' }}>{emptyText || 'No prices'}{currentOnly ? ' valid today' : ''}.</td></tr>}
             {rows.map((c) => (
               <tr key={c.id}>
-                <td style={tdStyle}><Pill label={TYPE_LABELS[c.condition_type] || c.condition_type} hex={TYPE_HEX[c.condition_type] || '#78716c'} /></td>
+                {!productId && <td style={tdStyle}><Pill label={TYPE_LABELS[c.condition_type] || c.condition_type} hex={TYPE_HEX[c.condition_type] || '#78716c'} /></td>}
                 {showForCol && <td style={tdStyle}>{c.item_label}</td>}
-                <td style={tdStyle}>{c.customer_name || <span style={{ color: '#a8a29e' }}>{c.country ? 'All in country' : 'All (list)'}</span>}</td>
-                <td style={tdStyle}>{c.country || <span style={{ color: '#a8a29e' }}>—</span>}</td>
+                {!productId && <td style={tdStyle}>{c.customer_name || <span style={{ color: '#a8a29e' }}>{c.country ? 'All in country' : 'All (list)'}</span>}</td>}
+                <td style={tdStyle}>{c.country || <span style={{ color: '#a8a29e' }}>{productId ? 'All countries (list price)' : '—'}</span>}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 600 }}>{valueText(c)}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{c.min_price == null ? '—' : formatMoney(c.min_price, c.currency)}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(c.valid_from)}</td>
@@ -285,20 +319,22 @@ export default function PriceConditionsPanel({ productId, itemKinds, emptyText }
                   </Select>
                 </div>
               )}
-              <div style={{ marginTop: 14, maxWidth: 420 }}>
+              {!productId && <div style={{ marginTop: 14, maxWidth: 420 }}>
                 <label style={sheetLabel}>Customer {form.condition_type === 'discount' ? '' : <Optional />}</label>
                 {form.id ? <div style={{ fontSize: 13, paddingTop: 4, color: SHEET.INK }}>{rows.find((r) => r.id === form.id)?.customer_name || 'All (list)'}</div> : (
                   <SearchableSelect value={form.customer_id} onChange={(v) => set({ customer_id: v })} options={[{ value: '', label: 'All customers (list)' }, ...customers]} placeholder="All customers (list)" />
                 )}
                 {form.condition_type !== 'discount' && !form.id && <p style={sheetHint}>Blank = the list price for all customers (or for one country, below).</p>}
-              </div>
+              </div>}
               {form.condition_type === 'price' && !form.customer_id && (
                 <div style={{ marginTop: 14, maxWidth: 420 }}>
                   <label style={sheetLabel}>Country <Optional /></label>
                   {form.id ? <div style={{ fontSize: 13, paddingTop: 4, color: SHEET.INK }}>{form.country || 'All countries'}</div> : (
-                    <input style={sheetInput} value={form.country} onChange={(e) => set({ country: e.target.value })} placeholder="e.g. Bangladesh — blank = all countries" maxLength={50} />
+                    <SearchableSelect value={form.country} onChange={(v) => set({ country: v, currency: currencyForCountry(v) })} options={[{ value: '', label: 'All countries (list price)' }, ...COUNTRY_OPTIONS]} placeholder="All countries (list price)" />
                   )}
-                  <p style={sheetHint}>A country price applies to every customer whose CRM organisation is in that country. Customer price wins over country price, country price over the list price.</p>
+                  <p style={sheetHint}>{productId
+                    ? 'Blank = the list price for every country. A country price applies to every customer whose CRM organisation is in that country and wins over the list price.'
+                    : 'A country price applies to every customer whose CRM organisation is in that country. Customer price wins over country price, country price over the list price.'}</p>
                 </div>
               )}
             </SheetSection>

@@ -173,6 +173,10 @@ def validate(db: Session, data: dict, *, exclude_id: int | None = None) -> dict:
         raise HTTPException(status_code=422, detail="A price is always for one item — pick the product, spare or service rate.")
     if ctype == "freight" and kind != "any":
         raise HTTPException(status_code=422, detail="Freight is charged per order, not per item — set 'For' to All items.")
+    # Finished products are priced by country, never per customer (owner, 2026-10-29).
+    if kind == "product" and (ctype != "price" or data.get("customer_id")):
+        raise HTTPException(status_code=422, detail="A product is priced by country, not by customer — add a list price "
+                                                    "(blank country) or a price for one country.")
     if ctype == "discount" and not data.get("customer_id"):
         raise HTTPException(status_code=422, detail="A discount is agreed with a customer — pick the customer. "
                                                     "(For everyone, lower the list price instead.)")

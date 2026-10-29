@@ -351,10 +351,10 @@ function InfoTab({ tender, org, contact, revisions, selectedRevId, canModify, on
               </div>
             ) : <Pill label={tender.status} hex={hex} />}
           </DetailRow>
+          <SpecDetailRow label="Tender details" value={tender.tender_details} change={changeFor('tender_details')} />
           <SpecDetailRow label="Tender authority" value={tender.tender_authority} change={changeFor('tender_authority')} />
           <SpecDetailRow label="Tender portal" value={tender.tender_portal} change={changeFor('tender_portal')} />
           <SpecDetailRow label="Tender type" value={tender.tender_type} change={changeFor('tender_type')} />
-          <SpecDetailRow label="Category" value={tender.tender_category} change={changeFor('tender_category')} />
           {seePrices && <SpecDetailRow label="Tender value" value={tender.tender_value != null ? `${tender.currency} ${tender.tender_value.toLocaleString('en-IN')}` : null} change={changeFor('tender_value') || changeFor('currency')} />}
           <DetailRow label="Lead source">{tender.lead_source}</DetailRow>
           {changeFor('tender_number') && <SpecDetailRow label="Tender number" value={tender.tender_number} change={changeFor('tender_number')} />}
@@ -376,15 +376,13 @@ function InfoTab({ tender, org, contact, revisions, selectedRevId, canModify, on
 }
 
 function DatesTab({ tender }: { tender: Tender }) {
-  const rows: [string, string | undefined][] = [
-    ['Publish Date', tender.publish_date],
-    ['Document Download', tender.doc_download_date],
-    ['Pre-Bid Meeting', tender.pre_bid_meeting_date],
-    ['Query Submission', tender.query_submission_date],
-    ['Submission Date', tender.submission_date],
-    ['Technical Opening', tender.opening_date],
-    ['Financial Opening', tender.financial_opening_date],
-    ['Expected Award', tender.expected_award_date],
+  const day = (v?: string | null) => (v ? formatDate(v) : '—')
+  const rows: [string, string][] = [
+    ['Publish Date', day(tender.publish_date)],
+    ['Document Download', day(tender.doc_download_date)],
+    ['Submission Date', day(tender.submission_date)],
+    // Wall-clock date and time as printed on the tender.
+    ['Tender Closing', tender.closing_at ? `${formatDate(tender.closing_at.slice(0, 10))} ${tender.closing_at.slice(11, 16)}` : '—'],
   ]
   return (
     <div data-tour="tender-dates-table" style={{ borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }}>
@@ -399,7 +397,7 @@ function DatesTab({ tender }: { tender: Tender }) {
           {rows.map(([label, value]) => (
             <tr key={label} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
               <td style={{ padding: '10px 16px', color: '#57534e' }}>{label}</td>
-              <td style={{ padding: '10px 16px', fontWeight: 600, color: '#1f1108', whiteSpace: 'nowrap' }}>{value ? formatDate(value) : '—'}</td>
+              <td style={{ padding: '10px 16px', fontWeight: 600, color: '#1f1108', whiteSpace: 'nowrap' }}>{value}</td>
             </tr>
           ))}
         </tbody>
@@ -647,7 +645,7 @@ function auditActionKind(action: string): TenderTimelineEntry['kind'] {
 const TENDER_AUDIT_FIELD_LABELS: Record<string, string> = {
   tender_number: 'Tender No.', tender_name: 'Tender Name', tender_authority: 'Tender Authority',
   tender_portal: 'Portal', tender_type: 'Type', tender_category: 'Category', tender_value: 'Value',
-  currency: 'Currency', status: 'Status', current_stage: 'Stage', current_status_note: 'Current Status', railway_zone: 'Railway Zone',
+  currency: 'Currency', status: 'Status', current_stage: 'Stage', current_status_note: 'Current Status', tender_details: 'Tender Details', railway_zone: 'Railway Zone',
   division: 'Division', workshop: 'Workshop', org_id: 'Customer Organization', org_contact_id: 'Contact',
 }
 

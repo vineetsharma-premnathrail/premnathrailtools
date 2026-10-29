@@ -194,7 +194,7 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
           {can('sales', 'pricing', 'view') && (
             <SheetSection icon="rupee" title="Pricing" extra={initial ? undefined : <Optional />}>
               {initial ? (
-                <PriceConditionsPanel productId={initial.id} emptyText="No price yet — add the list price, then customer or country prices if they differ" />
+                <PriceConditionsPanel productId={initial.id} emptyText="No price yet — add the list price, then country prices if they differ" />
               ) : can('sales', 'pricing', 'create') ? (
                 <>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>

@@ -167,13 +167,14 @@ def export_inquiries_tenders(
                  _v(i.technical_offer_number), _v(ist_date(i.technical_offer_sent_at)), _v(ist_date(i.created_at)),
                  names.get(i.created_by_id, "")] for i in inquiries]
     tnd_headers = ["Tender ID", "Customer Organization", "Tender Name", "Tender No.", "Authority", "Portal", "Type", "Category",
-                   "Tender Value", "Currency", "Status", "Stage", "Priority", "BD Owner", "Railway Zone", "Division",
-                   "Publish Date", "Pre-bid Meeting", "Submission Date", "Opening Date", "Participate", "Awarded To",
+                   "Tender Value", "Currency", "Status", "Stage", "Tender Details", "Priority", "BD Owner", "Railway Zone", "Division",
+                   "Publish Date", "Pre-bid Meeting", "Submission Date", "Closing Date & Time", "Opening Date", "Participate", "Awarded To",
                    "Contract Value", "Technical Offer No.", "Created On", "Created By"]
     tnd_rows = [[t.universal_id, orgs.get(t.org_id, ""), _v(t.tender_name), _v(t.tender_number), _v(t.tender_authority),
                  _v(t.tender_portal), _v(t.tender_type), _v(t.tender_category), money(t.tender_value), _v(t.currency),
-                 _v(t.status), _v(t.current_stage), _v(t.priority), _v(t.bd_owner), _v(t.railway_zone), _v(t.division),
-                 _v(t.publish_date), _v(t.pre_bid_meeting_date), _v(t.submission_date), _v(t.opening_date),
+                 _v(t.status), _v(t.current_stage), _v(t.tender_details), _v(t.priority), _v(t.bd_owner), _v(t.railway_zone), _v(t.division),
+                 _v(t.publish_date), _v(t.pre_bid_meeting_date), _v(t.submission_date),
+                 t.closing_at.strftime("%d-%m-%Y %H:%M") if t.closing_at else "", _v(t.opening_date),
                  "" if t.participate is None else ("Yes" if t.participate else "No"), _v(t.awarded_to), money(t.contract_value),
                  _v(t.technical_offer_number), _v(ist_date(t.created_at)), names.get(t.created_by_id, "")] for t in tenders]
 

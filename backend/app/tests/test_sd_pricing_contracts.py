@@ -76,17 +76,21 @@ def test_price_conditions_resolve_customer_beats_list_and_overlap_refused(client
     # Same key, overlapping validity → 409 with the fix.
     r = _cond(client, admin, condition_type="price", item_kind="product", product_id=p.id, amount=1100)
     assert r.status_code == 409 and "valid to" in r.json()["detail"]
-    assert _cond(client, admin, condition_type="price", item_kind="product", product_id=p.id, customer_id=org.id, amount=950).status_code == 201
+    # A product is priced by country, never per customer (owner, 2026-10-29).
+    r = _cond(client, admin, condition_type="price", item_kind="product", product_id=p.id, customer_id=org.id, amount=950)
+    assert r.status_code == 422 and "priced by country" in r.json()["detail"]
+    r = _cond(client, admin, condition_type="discount", item_kind="product", product_id=p.id, customer_id=org.id, percent=3)
+    assert r.status_code == 422 and "priced by country" in r.json()["detail"]
     assert _cond(client, admin, condition_type="discount", item_kind="any", customer_id=org.id, percent=5).status_code == 201
     assert _cond(client, admin, condition_type="freight", item_kind="any", freight_basis="percent", percent=2).status_code == 201
     # Validation messages.
     assert _cond(client, admin, condition_type="discount", item_kind="any", percent=5).status_code == 422  # no customer
     assert _cond(client, admin, condition_type="price", item_kind="any", amount=5).status_code == 422
-    assert _cond(client, admin, condition_type="price", item_kind="product", product_id=p.id, customer_id=org.id, amount=10,
+    assert _cond(client, admin, condition_type="price", item_kind="product", product_id=p.id, amount=10,
                  min_price=20, valid_from=str(TODAY + timedelta(days=400))).status_code == 422
 
     r = client.get(f"{PC}/resolve", params={"product_id": p.id, "customer_id": org.id}, headers=hdr(admin)).json()
-    assert r["price"] == 950 and r["price_source"] == "customer" and r["list_price"] == 1000 and r["min_price"] == 900
+    assert r["price"] == 1000 and r["price_source"] == "list" and r["list_price"] == 1000 and r["min_price"] == 900
     assert r["discount_percent"] == 5 and r["freight"]["basis"] == "percent"
     other = client.get(f"{PC}/resolve", params={"product_id": p.id}, headers=hdr(admin)).json()
     assert other["price"] == 1000 and other["discount_percent"] == 0
@@ -196,27 +200,6 @@ def test_migration_maps_exact_only_and_mapping_screen_assigns(client, db):
     assert db.get(Inquiry, i1.id).product_id == p1.id
     assert db.get(Inquiry, i2.id).product_id is None
 
-
-
-def test_product_order_book_and_quotation_history(client, db):
-    maker, head, director, _ = setup_people(db)
-    org, inq, q = setup_customer(db, qty=2, price=1000000)
-    p = _product(db)  # code RRV-10T = the quotation line's model number
-    admin = mk_user(db, "ob_admin@premnathrail.com", apps=("products", "sales", "crm"))
-    # Quotation lines now carry the product picked on the line (no Mapping screen since 2026-10-28).
-    from app.modules.crm.models.inquiry import QuotationLineItem
-    db.query(QuotationLineItem).filter(QuotationLineItem.quotation_id == q.id).update({"product_id": p.id})
-    db.commit()
-    body = payload_from_prefill(client, hdr(maker), inq)
-    so = client.post(f"{SALES}/orders", json=body, headers=hdr(maker)).json()
-    assert db.query(SalesOrderLine).filter(SalesOrderLine.so_id == so["id"]).first().product_id == p.id
-    ob = client.get(f"/api/v1/products/{p.id}/order-book", headers=hdr(admin)).json()
-    assert ob["rows"][0]["so_id"] == so["id"] and ob["rows"][0]["quantity"] == 2
-    qh = client.get(f"/api/v1/products/{p.id}/quotation-history", headers=hdr(admin)).json()
-    assert qh["quotations"][0]["quotation_id"] == q.id and qh["quotations"][0]["unit_price"] == 1000000
-    prod_only = mk_user(db, "ob_prod@premnathrail.com", role="user", apps=("products",))
-    r = client.get(f"/api/v1/products/{p.id}/order-book", headers=hdr(prod_only))
-    assert r.status_code == 403 and "Sales" in r.json()["detail"]
 
 
 # ── Service contracts ───────────────────────────────────────────────────────

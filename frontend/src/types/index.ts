@@ -642,6 +642,7 @@ export interface Tender {
   status: string
   current_stage: string
   current_status_note?: string
+  tender_details?: string | null
   tender_date?: string | null
   lead_source?: string
   priority?: string
@@ -657,6 +658,7 @@ export interface Tender {
   opening_date?: string
   financial_opening_date?: string
   expected_award_date?: string
+  closing_at?: string | null
   participate?: boolean
   decision_by?: string
   decision_date?: string

@@ -42,6 +42,7 @@ type FormState = {
   currency: string
   status: string
   current_status_note: string
+  tender_details: string
   tender_date: string
   lead_source: string
   priority: string
@@ -56,6 +57,8 @@ type FormState = {
   opening_date: string
   financial_opening_date: string
   expected_award_date: string
+  closing_date: string
+  closing_time: string
   participate: string
   decision_by: string
   decision_date: string
@@ -72,6 +75,11 @@ function todayISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// Still awaited / cancelled = nothing more to fill; any other status means the tender is
+// published, so its number, name, publish date and closing date & time are required
+// (owner, 2026-10-29; the server checks the same).
+const NO_DETAILS_STATUSES = ['Waiting for Future Tender', 'Tender Cancelled']
+
 function toFormState(initial?: Tender, defaultOrgId?: number): FormState {
   return {
     org_id: initial?.org_id ? String(initial.org_id) : defaultOrgId ? String(defaultOrgId) : '',
@@ -84,8 +92,9 @@ function toFormState(initial?: Tender, defaultOrgId?: number): FormState {
     tender_category: initial?.tender_category || '',
     tender_value: initial?.tender_value != null ? String(initial.tender_value) : '',
     currency: initial?.currency || 'INR',
-    status: initial?.status || 'Requirement Received',
+    status: initial?.status || 'Waiting for Future Tender',
     current_status_note: initial?.current_status_note || '',
+    tender_details: initial?.tender_details || '',
     // Document date: when the tender was taken up. Older records fall back to the day they were entered.
     tender_date: initial?.tender_date || (initial?.created_at ? initial.created_at.slice(0, 10) : todayISO()),
     // Not asked on the form any more; an existing value is kept as it is.
@@ -102,6 +111,9 @@ function toFormState(initial?: Tender, defaultOrgId?: number): FormState {
     opening_date: initial?.opening_date || '',
     financial_opening_date: initial?.financial_opening_date || '',
     expected_award_date: initial?.expected_award_date || '',
+    // closing_at is wall-clock "YYYY-MM-DDTHH:MM[:SS]" — split for the date and time pickers.
+    closing_date: initial?.closing_at ? initial.closing_at.slice(0, 10) : '',
+    closing_time: initial?.closing_at ? initial.closing_at.slice(11, 16) : '00:00', // default 12:00 AM
     participate: initial?.participate == null ? '' : initial.participate ? 'yes' : 'no',
     decision_by: initial?.decision_by || '',
     decision_date: initial?.decision_date || '',
@@ -202,24 +214,24 @@ export default function TenderForm({
       setError('Please select a customer organization.')
       return
     }
-    if (!form.tender_number.trim()) {
-      setError('Please enter the tender number.')
-      return
-    }
-    if (!form.tender_name.trim()) {
-      setError('Please enter the tender name.')
-      return
-    }
-    if (!form.submission_date) {
-      setError('Please select the submission date.')
-      return
+    if (!NO_DETAILS_STATUSES.includes(form.status)) {
+      const missing = [
+        !form.tender_number.trim() && 'Tender Number',
+        !form.tender_name.trim() && 'Tender Name',
+        !form.publish_date && 'Publish Date',
+        !form.closing_date && 'Tender Closing Date',
+      ].filter(Boolean)
+      if (missing.length) {
+        setError(`A tender with status "${form.status}" needs ${missing.join(', ')}. Fill these in, or set the status to "Waiting for Future Tender" until the tender is published.`)
+        return
+      }
     }
     if (!form.tender_date) {
-      setError('Please pick the Tender Date — the day this tender was taken up.')
+      setError('Please pick the Created Date — the day this tender was taken up.')
       return
     }
     if (form.tender_date > todayISO()) {
-      setError('Tender Date cannot be in the future. Pick the day the tender was actually taken up (today or earlier).')
+      setError('Created Date cannot be in the future. Pick the day the tender was actually taken up (today or earlier).')
       return
     }
     if (!form.priority) {
@@ -250,8 +262,11 @@ export default function TenderForm({
         }
       }
 
+      const { closing_date, closing_time, ...rest } = form
       const payload: Record<string, unknown> = {
-        ...form,
+        ...rest,
+        // No time given = 12:00 AM of that day.
+        closing_at: closing_date ? `${closing_date}T${closing_time || '00:00'}:00` : (initial?.closing_at ? null : undefined),
         org_id: Number(form.org_id),
         org_contact_id: orgContactId,
         // BD owner = whoever logs the tender, set by the server; never sent from the form.
@@ -274,6 +289,7 @@ export default function TenderForm({
     }
   }
 
+  const needDetails = !NO_DETAILS_STATUSES.includes(form.status)
   const formId = initial ? `tender-form-${initial.id}` : 'tender-form-new'
   const hasError = !!error && (!Array.isArray(error) || error.length > 0)
   return (
@@ -301,10 +317,10 @@ export default function TenderForm({
           <SheetSection icon="doc" title="Tender Information">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '1 1 160px', minWidth: 140, maxWidth: 220 }}>
-                <F label={<>Tender Number <Req /></>} tourId="tnd-number"><input value={form.tender_number} onChange={(e) => set('tender_number', e.target.value)} style={inputStyle} /></F>
+                <F label={<>Tender Number {needDetails && <Req />}</>} tourId="tnd-number"><input value={form.tender_number} onChange={(e) => set('tender_number', e.target.value)} style={inputStyle} /></F>
               </div>
               <div style={{ flex: '1 1 200px', minWidth: 160, maxWidth: 320 }}>
-                <F label={<>Tender Name <Req /></>} tourId="tnd-name"><input value={form.tender_name} onChange={(e) => set('tender_name', e.target.value)} style={inputStyle} /></F>
+                <F label={<>Tender Name {needDetails && <Req />}</>} tourId="tnd-name"><input value={form.tender_name} onChange={(e) => set('tender_name', e.target.value)} style={inputStyle} /></F>
               </div>
               <div style={{ flex: '1 1 160px', minWidth: 140, maxWidth: 240 }}>
                 <F label="Tender Authority" tourId="tnd-authority"><input value={form.tender_authority} onChange={(e) => set('tender_authority', e.target.value)} style={inputStyle} /></F>
@@ -328,9 +344,6 @@ export default function TenderForm({
                   </Select>
                 </F>
               </div>
-              <div style={{ flex: '0 1 140px', minWidth: 110 }}>
-                <F label="Category" tourId="tnd-category"><input value={form.tender_category} onChange={(e) => set('tender_category', e.target.value)} style={inputStyle} /></F>
-              </div>
               {seePrices && <div style={{ flex: '0 1 130px', minWidth: 100 }}>
                 <F label="Tender Value" tourId="tnd-value"><input type="number" value={form.tender_value} onChange={(e) => set('tender_value', e.target.value)} style={inputStyle} /></F>
               </div>}
@@ -350,6 +363,11 @@ export default function TenderForm({
               </div>
             </div>
             <div style={{ marginTop: 14 }}>
+              <F label="Tender Details" tourId="tnd-details">
+                <textarea value={form.tender_details} onChange={(e) => set('tender_details', e.target.value)} rows={3} placeholder="e.g. Supply of 2 rail grinding machines with 2 years AMC; eligibility: 3 similar supplies in last 5 years" style={{ ...inputStyle, resize: 'vertical' }} />
+              </F>
+            </div>
+            <div style={{ marginTop: 14 }}>
               <F label="Current Status" tourId="tnd-current-status-note">
                 <textarea value={form.current_status_note} onChange={(e) => set('current_status_note', e.target.value)} rows={2} placeholder="e.g. Waiting for client confirmation" style={{ ...inputStyle, resize: 'vertical' }} />
               </F>
@@ -359,28 +377,21 @@ export default function TenderForm({
           <SheetSection icon="calendar" title="Key Dates">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '0 1 165px', minWidth: 150 }}>
-                <F label="Publish Date" tourId="tnd-publish-date"><DateField value={form.publish_date} onChange={(v) => set('publish_date', v)} /></F>
+                <F label={<>Publish Date {needDetails && <Req />}</>} tourId="tnd-publish-date"><DateField value={form.publish_date} onChange={(v) => set('publish_date', v)} /></F>
               </div>
               <div style={{ flex: '0 1 190px', minWidth: 170 }}>
                 <F label="Document Download Date" tourId="tnd-doc-download-date"><DateField value={form.doc_download_date} onChange={(v) => set('doc_download_date', v)} /></F>
               </div>
-              <div style={{ flex: '0 1 175px', minWidth: 160 }}>
-                <F label="Pre-Bid Meeting Date" tourId="tnd-prebid-date"><DateField value={form.pre_bid_meeting_date} onChange={(v) => set('pre_bid_meeting_date', v)} /></F>
-              </div>
-              <div style={{ flex: '0 1 185px', minWidth: 170 }}>
-                <F label="Query Submission Date" tourId="tnd-query-date"><DateField value={form.query_submission_date} onChange={(v) => set('query_submission_date', v)} /></F>
-              </div>
               <div style={{ flex: '0 1 170px', minWidth: 150 }}>
-                <F label={<>Submission Date <Req /></>} tourId="tnd-submission-date"><DateField value={form.submission_date} onChange={(v) => set('submission_date', v)} /></F>
+                <F label="Submission Date" tourId="tnd-submission-date"><DateField value={form.submission_date} onChange={(v) => set('submission_date', v)} /></F>
               </div>
-              <div style={{ flex: '0 1 185px', minWidth: 170 }}>
-                <F label="Technical Opening Date" tourId="tnd-tech-opening-date"><DateField value={form.opening_date} onChange={(v) => set('opening_date', v)} /></F>
-              </div>
-              <div style={{ flex: '0 1 185px', minWidth: 170 }}>
-                <F label="Financial Opening Date" tourId="tnd-fin-opening-date"><DateField value={form.financial_opening_date} onChange={(v) => set('financial_opening_date', v)} /></F>
-              </div>
-              <div style={{ flex: '0 1 175px', minWidth: 160 }}>
-                <F label="Expected Award Date" tourId="tnd-award-date"><DateField value={form.expected_award_date} onChange={(v) => set('expected_award_date', v)} /></F>
+              <div style={{ flex: '0 1 300px', minWidth: 290 }}>
+                <F label={<>Tender Closing Date & Time {needDetails && <Req />}</>} tourId="tnd-closing">
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ flex: '1 1 150px' }}><DateField value={form.closing_date} onChange={(v) => set('closing_date', v)} /></div>
+                    <input type="time" aria-label="Tender closing time" value={form.closing_time} onChange={(e) => set('closing_time', e.target.value)} style={{ ...inputStyle, flex: '0 0 130px', width: 130, minWidth: 130 }} />
+                  </div>
+                </F>
               </div>
             </div>
           </SheetSection>
@@ -394,7 +405,7 @@ export default function TenderForm({
                 </F>
               </div>
               <div style={{ flex: '1 1 150px', minWidth: 150 }}>
-                <F label={<>Tender Date <Req /></>} tourId="tnd-date">
+                <F label={<>Created Date <Req /></>} tourId="tnd-date">
                   <DateField value={form.tender_date} onChange={(v) => set('tender_date', v)} />
                 </F>
               </div>

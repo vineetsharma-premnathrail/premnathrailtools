@@ -28,12 +28,14 @@ class Tender(Base, TimestampMixin, SoftDeleteMixin):
     tender_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     currency: Mapped[str] = mapped_column(String(10), default="INR")
 
-    status: Mapped[str] = mapped_column(String(50), default="Requirement Received", nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="Waiting for Future Tender", nullable=False)
     current_stage: Mapped[str] = mapped_column(String(50), default="Tender Published", nullable=False)
     # Free-text running note on where things stand right now — distinct from the
     # fixed `status`/`current_stage` values, edited independently and logged like
     # any other info field (see _write_spec_revision in routes/tenders.py).
     current_status_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # What the tender is for: scope, items/quantities, eligibility, anything worth noting.
+    tender_details: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Document date: the day the tender was taken up (user-editable, defaults to today).
     # created_at stays the system timestamp of when the record was entered.
@@ -54,6 +56,8 @@ class Tender(Base, TimestampMixin, SoftDeleteMixin):
     opening_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     financial_opening_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     expected_award_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Tender closing date and time as printed on the tender (India wall-clock, no zone).
+    closing_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     participate: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     decision_by: Mapped[str | None] = mapped_column(String(150), nullable=True)

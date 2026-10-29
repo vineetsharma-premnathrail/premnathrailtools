@@ -169,13 +169,10 @@ export const TND_STAGES = [
 ]
 
 export const TENDER_STATUSES = [
-  'Requirement Received',
+  'Waiting for Future Tender',
   'Tender Published',
   'Tender Participation',
   'Tender Submitted',
-  'Technical Evaluation',
-  'Commercial Evaluation',
-  'Negotiation',
   'LOA / Order Received',
   'Closed – Ordered',
   'Closed – Not Ordered',
@@ -183,13 +180,10 @@ export const TENDER_STATUSES = [
 ]
 
 export const TENDER_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  'Requirement Received': { bg: 'rgba(37,99,235,0.1)', text: '#1d4ed8' },
+  'Waiting for Future Tender': { bg: 'rgba(37,99,235,0.1)', text: '#1d4ed8' },
   'Tender Published': { bg: 'rgba(37,99,235,0.1)', text: '#1d4ed8' },
   'Tender Participation': { bg: 'rgba(234,179,8,0.14)', text: '#a16207' },
   'Tender Submitted': { bg: 'rgba(139,92,246,0.12)', text: '#7c3aed' },
-  'Technical Evaluation': { bg: 'rgba(139,92,246,0.12)', text: '#7c3aed' },
-  'Commercial Evaluation': { bg: 'rgba(139,92,246,0.12)', text: '#7c3aed' },
-  Negotiation: { bg: 'rgba(245,158,11,0.14)', text: '#b45309' },
   'LOA / Order Received': { bg: 'rgba(34,197,94,0.12)', text: '#16a34a' },
   'Closed – Ordered': { bg: 'rgba(34,197,94,0.12)', text: '#16a34a' },
   'Closed – Not Ordered': { bg: 'rgba(220,38,38,0.1)', text: '#b91c1c' },

@@ -422,7 +422,6 @@ from app.modules.design.routes import insights as design_insights_routes
 from app.modules.products.routes import applications as products_applications_routes
 from app.modules.products.routes import products as products_products_routes
 from app.modules.products.routes import price_conditions as products_price_conditions_routes
-from app.modules.products.routes import product_mapping as products_mapping_routes  # product order book / quotation history
 from app.modules.products import linking as _products_linking  # noqa: F401 — before_flush auto-link to the product master
 from app.modules.projects.routes import units as project_units_routes
 from app.modules.projects.routes import project as pm_project_routes
@@ -739,7 +738,6 @@ app.include_router(design_insights_routes.router, prefix="/api/v1")
 # applications before products: /products/{product_id} would swallow /products/applications.
 app.include_router(products_applications_routes.router, prefix="/api/v1")
 app.include_router(products_price_conditions_routes.router, prefix="/api/v1")  # before /products/{product_id}
-app.include_router(products_mapping_routes.router, prefix="/api/v1")
 app.include_router(products_products_routes.router, prefix="/api/v1")
 app.include_router(project_units_routes.router, prefix="/api/v1")  # before /projects/{id}
 app.include_router(pm_project_routes.router, prefix="/api/v1")

@@ -132,11 +132,6 @@ export const pricingApi = {
   },
 }
 
-export const productMappingApi = {
-  orderBook: async (productId: number) => { const { data } = await apiClient.get(`/products/${productId}/order-book`); return data },
-  quotationHistory: async (productId: number) => { const { data } = await apiClient.get(`/products/${productId}/quotation-history`); return data },
-}
-
 export const serviceContractsApi = {
   meta: async () => { const { data } = await apiClient.get('/erp/service-contracts/meta'); return data },
   list: async (params: Record<string, unknown> = {}): Promise<ServiceContract[]> => {

@@ -31,9 +31,9 @@ def test_country_price_sits_between_customer_and_list(client, db):
     r = client.post(PC, json={**base, "amount": 62000, "currency": "USD", "country": "Bangladesh"}, headers=hdr(admin))
     assert r.status_code == 201, r.text
     assert r.json()["country"] == "Bangladesh" and r.json()["currency"] == "USD"
-    # A customer and a country together → refused with the reason.
-    r = client.post(PC, json={**base, "amount": 1, "customer_id": bd.id, "country": "Bangladesh"}, headers=hdr(admin))
-    assert r.status_code == 422 and "customer or a country" in r.json()["detail"]
+    # A product price for one customer → refused: products are priced by country (owner, 2026-10-29).
+    r = client.post(PC, json={**base, "amount": 1, "customer_id": bd.id}, headers=hdr(admin))
+    assert r.status_code == 422 and "priced by country" in r.json()["detail"]
     # A currency missing from Finance's currency master → refused with where to add it.
     r = client.post(PC, json={**base, "amount": 1, "currency": "JPY", "country": "Japan"}, headers=hdr(admin))
     assert r.status_code == 422 and "Currencies & FX" in r.json()["detail"]
@@ -42,8 +42,6 @@ def test_country_price_sits_between_customer_and_list(client, db):
     assert pricing.resolve(db, product_id=p.id, customer_id=india.id, on=on)["price_source"] == "list"
     bd_price = pricing.resolve(db, product_id=p.id, customer_id=bd.id, on=on)
     assert bd_price["price_source"] == "country" and bd_price["price"] == 62000 and bd_price["currency"] == "USD"
-    assert client.post(PC, json={**base, "amount": 60000, "currency": "USD", "customer_id": bd.id}, headers=hdr(admin)).status_code == 201
-    assert pricing.resolve(db, product_id=p.id, customer_id=bd.id, on=on)["price_source"] == "customer"
 
 
 def test_price_converts_into_every_active_currency(client, db):

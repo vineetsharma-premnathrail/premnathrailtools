@@ -262,11 +262,15 @@ def make_tender(client, user, org_id, **extra):
     return resp.json()
 
 
+PUBLISHED = {"tender_number": "PUB-1", "tender_name": "Published tender", "publish_date": "2026-10-01",
+             "closing_at": "2026-11-15T00:00"}
+
+
 def test_tender_ids_defaults_and_submission_activity(client, ctx):
     sub = (date.today() + timedelta(days=10)).isoformat()
     t = make_tender(client, ctx["owner"], ctx["org"]["id"], tender_number="NR-1", submission_date=sub)
     assert t["universal_id"] == f"TND-{date.today().strftime('%Y%m%d')}-0001"
-    assert t["current_stage"] == "Tender Published" and t["status"] == "Requirement Received" and t["currency"] == "INR"
+    assert t["current_stage"] == "Tender Published" and t["status"] == "Waiting for Future Tender" and t["currency"] == "INR"
     acts = client.get(f"{API}/activities?related_module=tender&related_id={t['id']}", headers=auth(ctx["owner"])).json()
     assert len(acts) == 1 and acts[0]["activity_type"] == "Submission" and acts[0]["next_followup"] == sub
 
@@ -322,7 +326,7 @@ def test_tender_owner_rules_and_soft_delete(client, ctx):
 
 def test_tender_search_and_status_filter(client, ctx):
     h = auth(ctx["owner"])
-    a = make_tender(client, ctx["owner"], ctx["org"]["id"], tender_name="Rail flaw detector", status="Tender Published")
+    a = make_tender(client, ctx["owner"], ctx["org"]["id"], status="Tender Published", **{**PUBLISHED, "tender_name": "Rail flaw detector"})
     b = make_tender(client, ctx["owner"], ctx["org"]["id"], tender_name="Track trolley", status="Tender Cancelled")
     assert [x["id"] for x in client.get(f"{API}/tenders?search=flaw", headers=h).json()] == [a["id"]]
     assert [x["id"] for x in client.get(f"{API}/tenders?status=Tender Cancelled", headers=h).json()] == [b["id"]]
@@ -592,8 +596,21 @@ def test_tender_patch_rejects_unknown_status_and_stage(client, ctx):
     foreign = make_contact(client, ctx["owner"], other_org["id"])
     resp = client.patch(f"{API}/tenders/{t['id']}", json={"org_contact_id": foreign["id"]}, headers=h)
     assert resp.status_code == 422
-    ok = client.patch(f"{API}/tenders/{t['id']}", json={"status": "Tender Submitted"}, headers=h)
+    ok = client.patch(f"{API}/tenders/{t['id']}", json={"status": "Tender Submitted", **PUBLISHED}, headers=h)
     assert ok.status_code == 200 and ok.json()["status"] == "Tender Submitted"
+
+
+def test_published_tender_needs_number_name_publish_and_closing(client, ctx):
+    h = auth(ctx["owner"])
+    # Waiting for Future Tender: nothing else required.
+    t = make_tender(client, ctx["owner"], ctx["org"]["id"])
+    assert t["status"] == "Waiting for Future Tender" and t["tender_number"] is None
+    bad = client.post(f"{API}/tenders", json={"org_id": ctx["org"]["id"], "status": "Tender Published", "tender_name": "X"}, headers=h)
+    assert bad.status_code == 422 and "Tender Number" in bad.json()["detail"] and "Tender Name" not in bad.json()["detail"]
+    bad = client.patch(f"{API}/tenders/{t['id']}", json={"status": "Tender Published"}, headers=h)
+    assert bad.status_code == 422 and "Tender Closing Date & Time" in bad.json()["detail"]
+    ok = client.patch(f"{API}/tenders/{t['id']}", json={"status": "Tender Published", **PUBLISHED}, headers=h)
+    assert ok.status_code == 200 and ok.json()["closing_at"].startswith(PUBLISHED["closing_at"])
 
 
 # ---------------------------------------------------------------------------

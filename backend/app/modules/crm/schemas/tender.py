@@ -13,9 +13,10 @@ class TenderCreate(BaseModel):
     tender_category: str | None = None
     tender_value: float | None = None
     currency: str = "INR"
-    status: str = "Requirement Received"
+    status: str = "Waiting for Future Tender"
     current_stage: str = "Tender Published"
     current_status_note: str | None = None
+    tender_details: str | None = None
     tender_date: date | None = None
     lead_source: str | None = None
     priority: str = "Medium"
@@ -31,6 +32,7 @@ class TenderCreate(BaseModel):
     opening_date: date | None = None
     financial_opening_date: date | None = None
     expected_award_date: date | None = None
+    closing_at: datetime | None = None
     participate: bool | None = None
     decision_by: str | None = None
     decision_date: date | None = None
@@ -57,6 +59,7 @@ class TenderUpdate(BaseModel):
     status: str | None = None
     current_stage: str | None = None
     current_status_note: str | None = None
+    tender_details: str | None = None
     tender_date: date | None = None
     lead_source: str | None = None
     priority: str | None = None
@@ -72,6 +75,7 @@ class TenderUpdate(BaseModel):
     opening_date: date | None = None
     financial_opening_date: date | None = None
     expected_award_date: date | None = None
+    closing_at: datetime | None = None
     participate: bool | None = None
     decision_by: str | None = None
     decision_date: date | None = None
@@ -100,6 +104,7 @@ class TenderResponse(BaseModel):
     status: str
     current_stage: str
     current_status_note: str | None = None
+    tender_details: str | None = None
     tender_date: date | None = None
     lead_source: str | None = None
     priority: str
@@ -115,6 +120,7 @@ class TenderResponse(BaseModel):
     opening_date: date | None = None
     financial_opening_date: date | None = None
     expected_award_date: date | None = None
+    closing_at: datetime | None = None
     participate: bool | None = None
     decision_by: str | None = None
     decision_date: date | None = None

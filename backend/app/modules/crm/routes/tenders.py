@@ -53,8 +53,8 @@ TND_STAGES = [
 
 # Mirrors TENDER_STATUSES in frontend/src/components/crm/constants.ts.
 TND_STATUSES = [
-    "Requirement Received", "Tender Published", "Tender Participation", "Tender Submitted",
-    "Technical Evaluation", "Commercial Evaluation", "Negotiation", "LOA / Order Received",
+    "Waiting for Future Tender", "Tender Published", "Tender Participation", "Tender Submitted",
+    "LOA / Order Received",
     "Closed – Ordered", "Closed – Not Ordered", "Tender Cancelled",
 ]
 
@@ -89,6 +89,27 @@ def _check_doc_date(value: date | None) -> None:
 def _generate_universal_id(db: Session) -> str:
     today = date.today().strftime("%Y%m%d")
     return next_sequential_id(db, prefix=f"TND-{today}-", column=Tender.universal_id)
+
+
+# A tender that is still awaited (or was cancelled) needs nothing more; once it is published
+# (Tender Published or any later status) its number, name, publish date and closing date and
+# time must be on it (owner, 2026-10-29).
+TND_STATUSES_NO_DETAILS = {"Waiting for Future Tender", "Tender Cancelled"}
+TND_PUBLISHED_FIELDS = [
+    ("tender_number", "Tender Number"), ("tender_name", "Tender Name"),
+    ("publish_date", "Publish Date"), ("closing_at", "Tender Closing Date & Time"),
+]
+
+
+def _check_published_details(status: str, values: dict):
+    if status in TND_STATUSES_NO_DETAILS:
+        return
+    missing = [label for field, label in TND_PUBLISHED_FIELDS
+               if values.get(field) is None or (isinstance(values.get(field), str) and not values[field].strip())]
+    if missing:
+        raise HTTPException(status_code=422, detail=(
+            f"A tender with status '{status}' needs {', '.join(missing)}. Fill these in, "
+            f"or keep the status at 'Waiting for Future Tender' until the tender is published."))
 
 
 def _log_stage(db: Session, tender_id: int, universal_id: str, stage: str, user: User, notes: str | None = None):
@@ -156,6 +177,7 @@ async def create_tender(
             raise HTTPException(status_code=422, detail="org_contact_id does not belong to the specified customer organization")
     _check_choice({"current_stage": payload.current_stage}, None, "current_stage", TND_STAGES, "tender stage")
     _check_choice({"status": payload.status}, None, "status", TND_STATUSES, "tender status")
+    _check_published_details(payload.status, payload.model_dump())
 
     if payload.tender_number:
         clash = db.query(Tender).filter(
@@ -178,15 +200,17 @@ async def create_tender(
     db.flush()
 
     _log_stage(db, tender.id, universal_id, "Tender created", user)
-    if tender.submission_date:
+    # Submission date is optional now; the tender closing date is the deadline when it is not given.
+    due_date = tender.submission_date or (tender.closing_at.date() if tender.closing_at else None)
+    if due_date:
         db.add(Activity(
             activity_type="Submission", org_id=tender.org_id, related_module="tender", related_id=tender.id,
-            universal_id=universal_id, next_followup=tender.submission_date, created_by_id=user.id,
+            universal_id=universal_id, next_followup=due_date, created_by_id=user.id,
         ))
 
     _write_audit(db, tender.id, "created", user, summary=f"Tender {universal_id} created by {user.name or user.email}.")
     # Role event (Organization › Roles › Notifications); whoever it reached is left out of the broadcast / rule.
-    due = tender.submission_date.strftime("%d-%m-%Y") if tender.submission_date else None
+    due = due_date.strftime("%d-%m-%Y") if due_date else None
     reached = notify_event(
         db, background_tasks, "crm", "tender_received",
         title=f"New tender {universal_id} — {org.name}",
@@ -257,6 +281,13 @@ async def update_tender(
     updates.pop("bd_owner", None)
     _check_choice(updates, tender, "current_stage", TND_STAGES, "tender stage")
     _check_choice(updates, tender, "status", TND_STATUSES, "tender status")
+    # Checked when the status moves or one of the required details is cleared, so an older
+    # tender with gaps can still be edited for other fields.
+    if ("status" in updates and updates["status"] != tender.status) or any(
+        f in updates and updates[f] in (None, "") for f, _ in TND_PUBLISHED_FIELDS
+    ):
+        _check_published_details(updates.get("status") or tender.status,
+                                 {f: updates.get(f, getattr(tender, f)) for f, _ in TND_PUBLISHED_FIELDS})
     drop_money_updates(user, updates, TENDER_MONEY_FIELDS)
     if "current_stage" in updates and updates["current_stage"] != tender.current_stage:
         ensure_feature_action(user, "crm", "inquiries_tenders", "stage", "edit")
