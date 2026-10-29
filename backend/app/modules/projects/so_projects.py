@@ -1,10 +1,19 @@
-"""Sales-order projects — a confirmed Sales Order creates its project in
+"""Sales-order projects — a confirmed New Project Sales Order gets its project in
 Project Management > All Projects (a PmProject); its vehicles / lots are the
 project's Units (PmProjectElement, table pm_project_elements).
 
+The project is NOT created automatically (owner, 2026-10-28): confirming the
+order notifies the Project Managers (notify_project_needed) and the order shows
+"Pending project creation" until a Project Manager creates it from Project
+Management › All Projects › From Sales Order (routes/units.py), which picks the
+project manager and takes the next PEW number. Once it exists, every approved
+amendment re-syncs its units here.
+
 The API other modules call (import as `from app.modules.projects import so_projects as op_core`):
 
-    ensure_project_for_order(db, so, actor) -> PmProject | None
+    ensure_project_for_order(db, so, actor, *, create=False, project_manager_id=None, name=None) -> PmProject | None
+    notify_project_needed(db, so, actor) -> None
+    awaiting_project(db, so) -> bool
     project_for_order(db, so_id) -> PmProject | None
     elements_for_order(db, so_id, *, include_cancelled=False) -> list[PmProjectElement]
     element_for_schedule(db, schedule_id) -> PmProjectElement | None
@@ -48,7 +57,7 @@ EPS = 1e-6
 DEPARTMENTS = ("design", "purchase", "store", "production", "quality", "dispatch", "delivery")
 # Projects other modules may pick (the lookup) / link new work to.
 PICKABLE_PROJECT_STATUSES = ("planning", "active", "on_hold", "technically_complete")
-# Sales order statuses a project exists for (backfill).
+# Sales order statuses a project can be created for (From Sales Order list).
 PROJECT_SO_STATUSES = ("confirmed", "in_execution", "partially_delivered", "delivered", "on_hold", "short_closed")
 
 ELEMENT_STATUS_LABEL = {
@@ -159,22 +168,28 @@ def project_label(project: PmProject) -> str:
 
 # ---------------------------------------------------------------- create / sync
 
-def ensure_project_for_order(db: Session, so: SalesOrder, actor: User | None) -> PmProject | None:
-    """Idempotent: creates the project for a confirmed order that has an RRV line,
-    then syncs its elements with the order's lines / delivery rows (new vehicles
-    added, removed ones cancelled — never deleted). Returns None when the order
-    needs no project (no RRV line). Safe to call after every confirmation /
-    approved amendment."""
+def ensure_project_for_order(db: Session, so: SalesOrder, actor: User | None, *, create: bool = False,
+                             project_manager_id: int | None = None, name: str | None = None) -> PmProject | None:
+    """Syncs the order's existing project: its elements follow the order's lines /
+    delivery rows (new vehicles added, removed ones cancelled — never deleted).
+    Safe to call after every confirmation / approved amendment.
+
+    With no project yet it returns None — a project is never created implicitly
+    (owner, 2026-10-28). Only the Project Manager's "From Sales Order" action
+    passes create=True (with the chosen project_manager_id and optional name),
+    which creates it with the next PEW number and then syncs the units. Returns
+    None as well when the order needs no project (no RRV line / not New Project)."""
     db.flush()  # delivery rows appended in this transaction need their ids
     project = project_for_order(db, so.id)
     if project is None:
-        if not needs_project(so) or not so.so_number:
+        if not create or not needs_project(so) or not so.so_number:
             return None
         start, end = _so_dates(so)
-        manager_id = so.sales_owner_id or (actor.id if actor else None) or so.confirmed_by_id
+        manager_id = project_manager_id or (actor.id if actor else None) or so.sales_owner_id or so.confirmed_by_id
         project = PmProject(
             project_code=generate_op_number(db, start), sales_order_id=so.id, customer_id=so.customer_id,
-            client_name=so.customer_name or "Customer", name=_title(so), status="active", lifecycle_stage="planned",
+            client_name=so.customer_name or "Customer", name=((name or "").strip() or _title(so))[:400],
+            status="active", lifecycle_stage="planned",
             start_date=start, target_handover_date=end or start, branch_id=so.branch_id,
             customer_po_ref=(so.customer_po_number or "-")[:100], sales_order_ref=(so.so_number or "-")[:100],
             project_manager_id=manager_id, created_by_id=actor.id if actor else so.confirmed_by_id,
@@ -186,7 +201,8 @@ def ensure_project_for_order(db: Session, so: SalesOrder, actor: User | None) ->
         if by is not None:
             from app.modules.projects import workflow as wf
             wf.audit(db, project.id, by, "created",
-                     f"Project {project.project_code} created automatically when sales order {so.display_number} was confirmed.",
+                     f"Project {project.project_code} created by {wf.user_label(by)} from sales order {so.display_number}"
+                     f" (project manager: {wf.name_of(db, manager_id) or '-'}).",
                      subtab_key="overview")
     else:
         _, end = _so_dates(so)
@@ -441,21 +457,35 @@ def resolve_element(db: Session, element_id: int, *, project_id: int | None = No
     return project, el
 
 
-# ---------------------------------------------------------------- backfill
+# ---------------------------------------------------------------- awaiting / notify
 
-def backfill(db: Session, actor: User | None) -> list[PmProject]:
-    """Projects for already-confirmed orders (not cancelled / closed) that have an
-    RRV line and no project yet. Returns the projects created."""
-    have = {sid for (sid,) in db.query(PmProject.sales_order_id).all()}
-    orders = (db.query(SalesOrder)
-              .filter(SalesOrder.is_deleted == False, SalesOrder.status.in_(PROJECT_SO_STATUSES),  # noqa: E712
-                      SalesOrder.so_number.isnot(None))
-              .order_by(SalesOrder.confirmed_at.asc().nullsfirst(), SalesOrder.id.asc()).all())
-    created = []
-    for so in orders:
-        if so.id in have or not needs_project(so):
+def awaiting_project(db: Session, so: SalesOrder) -> bool:
+    """A confirmed-or-later New Project order with an RRV line and no project yet —
+    shown as "Pending project creation" and listed under All Projects › From Sales Order."""
+    return (not so.is_deleted and bool(so.so_number) and so.status in PROJECT_SO_STATUSES
+            and needs_project(so) and project_for_order(db, so.id) is None)
+
+
+def project_managers(db: Session) -> list[int]:
+    """Active users flagged Project manager who can open Project Management."""
+    return [u.id for u in db.query(User).filter(User.is_active == True, User.is_project_manager == True).all()  # noqa: E712
+            if "projects" in u.get_apps()]
+
+
+def notify_project_needed(db: Session, so: SalesOrder, actor: User | None) -> None:
+    """Bell (no Teams — owner rule: Teams only for approvals / reminders) to the
+    Project Managers that a confirmed New Project order is waiting for its project."""
+    if not needs_project(so) or not so.so_number:
+        return
+    vehicles = sum(1 for r in so.schedules if r.status != "cancelled"
+                   and any(ln.id == r.so_line_id and ln.line_type == "rrv" for ln in so.lines))
+    msg = (f"{so.customer_name or 'Customer'}: PO {so.customer_po_number or '-'}, {vehicles} vehicle(s). "
+           f"Create its project in Project Management › All Projects › From Sales Order — "
+           f"you pick the project manager and it gets the next PEW number.")
+    from app.utils.notifications import notify_user
+    for uid in project_managers(db):
+        if actor is not None and uid == actor.id:
             continue
-        p = ensure_project_for_order(db, so, actor)
-        if p is not None:
-            created.append(p)
-    return created
+        notify_user(db, uid, f"Create project for {so.so_number}", msg, "sales_order_project_needed",
+                    entity_type="sales_order", entity_id=so.id, teams=False)
+

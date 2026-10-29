@@ -7,7 +7,8 @@ from app.modules.sales.models.order import (
 )
 from app.modules.projects.models.project import PmProject
 from app.modules.sales.reports.order_ack import oa_spec
-from app.tests.test_sales import BASE, confirm, create_order, hdr, make_user, setup_customer, setup_people
+from app.tests._so_project_helpers import confirm_with_project
+from app.tests.test_sales import BASE, create_order, hdr, make_user, setup_customer, setup_people
 
 
 def test_constants():
@@ -66,7 +67,7 @@ def test_currency_is_a_label_and_validated(client, db):
 def test_both_vehicle_types_create_project_accessories_do_not(client, db):
     maker, head, director, _ = setup_people(db)
     _o, inq, _ = setup_customer(db, qty=1)
-    so = confirm(client, db, create_order(client, db, maker, inq, order_type="rail_bound_vehicle"), maker, head, director)
+    so = confirm_with_project(client, db, create_order(client, db, maker, inq, order_type="rail_bound_vehicle"), maker, head, director)
     db.expire_all()
     assert db.query(PmProject).filter(PmProject.sales_order_id == so["id"]).first() is not None
 

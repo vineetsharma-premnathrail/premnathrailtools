@@ -49,6 +49,9 @@ interface DispatchRow {
 // binId / serials: WM pick bin and the serial numbers of a serialised item.
 interface Line { itemId: string; quantity: string; batchNumber: string; remarks: string; binId?: string; serials?: string[] }
 const emptyLine = (): Line => ({ itemId: '', quantity: '', batchNumber: '', remarks: '', binId: '', serials: [] })
+// Job work: an item expected back from the vendor (may differ from what is sent).
+interface BackLine { itemId: string; quantity: string }
+const emptyBack = (): BackLine => ({ itemId: '', quantity: '' })
 
 // Stock shown on each line is the store's free stock less reservations — the
 // same "available" the backend checks when the issue posts. It refreshes when
@@ -102,6 +105,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
   const [remarks, setRemarks] = useState('')
   const [projects, setProjects] = useState<{ id: number; label: string; third_party_inspection_required: boolean; inspection_agency?: string | null }[]>([])
   const [lines, setLines] = useState<Line[]>([emptyLine()])
+  const [backLines, setBackLines] = useState<BackLine[]>([emptyBack()])
 
   const [balances, setBalances] = useState<Map<number, Avail>>(new Map())
   const [stockLoadedAt, setStockLoadedAt] = useState<Date | null>(null)
@@ -159,10 +163,10 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
   const [scheduleId, setScheduleId] = useState('')
   // One draft for the issue form and one for the job-work challan.
   const draft = useFormDraft(isChallan ? 'store-job-work-challan-new' : 'store-material-issue-new',
-    { issueType, locationId, vals, remarks, lines, orderProject, overrideReason, scheduleId },
+    { issueType, locationId, vals, remarks, lines, backLines, orderProject, overrideReason, scheduleId },
     (d) => {
       setIssueType(d.issueType || (isChallan ? JOB_WORK : '')); setLocationId(d.locationId ?? ''); setVals(d.vals ?? {}); setRemarks(d.remarks ?? '')
-      setLines(d.lines?.length ? d.lines : [emptyLine()]); setOrderProject(d.orderProject ?? null); setOverrideReason(d.overrideReason ?? ''); setScheduleId(d.scheduleId ?? '')
+      setLines(d.lines?.length ? d.lines : [emptyLine()]); setBackLines(d.backLines?.length ? d.backLines : [emptyBack()]); setOrderProject(d.orderProject ?? null); setOverrideReason(d.overrideReason ?? ''); setScheduleId(d.scheduleId ?? '')
     })
   const pickedRow = soRows.find((r) => String(r.schedule_id) === scheduleId)
   useEffect(() => {
@@ -186,6 +190,8 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [issueType, spec])
 
+  const updateBack = (idx: number, patch: Partial<BackLine>) => setBackLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)))
+  const removeBack = (idx: number) => setBackLines((prev) => (prev.length === 1 ? [emptyBack()] : prev.filter((_, i) => i !== idx)))
   const updateLine = (idx: number, patch: Partial<Line>) => setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)))
   const addLine = () => setLines((prev) => [...prev, emptyLine()])
   const removeLine = (idx: number) => setLines((prev) => (prev.length === 1 ? [emptyLine()] : prev.filter((_, i) => i !== idx)))
@@ -280,6 +286,10 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
     for (const l of validLines) {
       if (Number(l.quantity) <= 0) problems.push(`${itemById.get(Number(l.itemId))?.item_name || 'An item'}: quantity must be greater than zero.`)
     }
+    const validBack = isChallan ? backLines.filter((l) => l.itemId) : []
+    for (const l of validBack) {
+      if (l.quantity && Number(l.quantity) <= 0) problems.push(`Items to receive back — ${itemById.get(Number(l.itemId))?.item_name || 'an item'}: quantity must be greater than zero, or leave it blank.`)
+    }
     if (problemLines.length) {
       problems.push(`${problemLines.length} line(s) don't have enough stock in this store — remove them or use "Issue only what's available" (the red lines below).`)
     }
@@ -294,13 +304,14 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
         location_id: Number(locationId),
         issue_type: issueType,
         // Only the picked type's fields are sent (the server clears the rest).
-        ...Object.fromEntries(shownFields.filter((f) => vals[f.key] !== null && vals[f.key] !== undefined && vals[f.key] !== '').map((f) => [
+        ...Object.fromEntries(shownFields.filter((f) => filled(f.key)).map((f) => [
           f.key,
           typeof vals[f.key] === 'boolean' ? vals[f.key]
             : (LOOKUP_OF[f.kind] || f.kind === 'erp_project' || f.kind === 'item') ? Number(vals[f.key])
             : String(vals[f.key]).trim(),
         ])),
         remarks: remarks.trim() || undefined,
+        ...(validBack.length ? { output_items: validBack.map((l) => ({ item_id: Number(l.itemId), quantity: l.quantity ? Number(l.quantity) : undefined })) } : {}),
         ...(spec?.order_project && orderProject ? { order_project_id: orderProject.projectId, order_project_element_id: orderProject.elementId ?? undefined } : {}),
         ...(overrideReason.trim() ? { project_stock_override_reason: overrideReason.trim() } : {}),
         ...(isDispatch && pickedRow ? { sales_order_id: pickedRow.so_id } : {}),
@@ -388,10 +399,6 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
               } else if (f.kind === 'erp_project') {
                 input = <SearchableSelect value={(v as string) || ''} onChange={(x) => setVal(f.key, x)} placeholder="Search serial, model, customer, PO…"
                   options={projects.map((p) => ({ value: String(p.id), label: `${p.label}${isDispatch && p.third_party_inspection_required ? ' · inspection required' : ''}` }))} />
-              } else if (f.kind === 'item') {
-                // Job work: what comes back. Blank = the same item that is sent (plating, heat treatment…).
-                input = <SearchableSelect value={(v as string) || ''} onChange={(x) => setVal(f.key, x || null)} placeholder="— same item as sent —"
-                  options={[{ value: '', label: '— same item as sent —' }, ...items.map((it) => ({ value: String(it.id), label: `${it.item_code} — ${it.item_name}` }))]} />
               } else if (LOOKUP_OF[f.kind]) {
                 input = <SearchableSelect value={(v as string) || ''} onChange={(x) => setVal(f.key, x)} placeholder={`Search ${f.label.toLowerCase()}…`}
                   options={(lookups[LOOKUP_OF[f.kind]] || []).map((o) => ({ value: String(o.id), label: o.label }))} />
@@ -469,7 +476,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
       />
 
       <div style={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
-      <SheetSection icon="box" title="Items">
+      <SheetSection icon="box" title={isChallan ? 'Items to send' : 'Items'}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
           <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>
             {!locationId ? 'Pick the store to see live available stock on each line.'
@@ -570,6 +577,50 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
         <button type="button" data-tour="issue-add-item-btn" onClick={addLine} style={{ ...sheetBtn('ghost', SHEET.BLUE), marginTop: 10 }}><SheetIcon name="plus" size={15} />Add Item</button>
       </SheetSection>
       </div>
+
+      {isChallan && (
+        <div data-tour="issue-receive-back" style={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
+          <SheetSection icon="box" title="Items to receive back" extra={<Optional />}>
+            <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 12px' }}>
+              What the vendor sends back — it can be different items (plate sent, flange + ring back). Leave empty if the same items come back (plating, heat treatment).
+            </p>
+            <div style={{ overflowX: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 12 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+                <thead>
+                  <tr>
+                    {['#', 'Item', 'Expected quantity', ''].map((h, hi) => (
+                      <th key={h} style={{ textAlign: 'left', padding: '8px 6px', fontSize: 11, fontWeight: 700, color: SHEET.MUTED, background: SHEET.SOFT, textTransform: 'uppercase', letterSpacing: '.04em' }}>{h}{hi === 0 && <RowCount count={backLines.length} />}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {backLines.map((line, idx) => {
+                    const item = itemById.get(Number(line.itemId))
+                    return (
+                      <tr key={idx} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+                        <td style={{ padding: '6px', fontSize: 12, color: TEXT.muted, width: 28 }}>{idx + 1}</td>
+                        <td style={{ padding: '6px', minWidth: 260 }}>
+                          <SearchableSelect value={line.itemId} onChange={(v) => updateBack(idx, { itemId: v })} placeholder="Search item code or name…"
+                            options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
+                        </td>
+                        <td style={{ padding: '6px', width: 160 }}>
+                          <input type="number" min="0" style={inputStyle} value={line.quantity} placeholder={item?.uom || ''}
+                            onChange={(e) => updateBack(idx, { quantity: e.target.value })} />
+                        </td>
+                        <td style={{ padding: '6px', width: 44 }}>
+                          <button type="button" title="Remove this line" aria-label="Remove line" onClick={() => removeBack(idx)}
+                            style={{ ...sheetBtn('secondary', SHEET.INK), padding: 0, width: CONTROL.height, height: CONTROL.height, justifyContent: 'center' }}><SheetIcon name="trash" size={15} /></button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <button type="button" onClick={() => setBackLines((prev) => [...prev, emptyBack()])} style={{ ...sheetBtn('ghost', SHEET.BLUE), marginTop: 10 }}><SheetIcon name="plus" size={15} />Add Item</button>
+          </SheetSection>
+        </div>
+      )}
     </FormPage>
   )
 }

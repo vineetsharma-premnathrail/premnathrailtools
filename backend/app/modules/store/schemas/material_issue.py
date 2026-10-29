@@ -35,6 +35,12 @@ class StoreMaterialIssueItemResponse(BaseModel):
     element_display: str | None = None
 
 
+class StoreReceiveBackItem(BaseModel):
+    """Job work: an item expected back from the vendor (quantity optional)."""
+    item_id: int
+    quantity: float | None = None
+
+
 class StoreMaterialIssueCreate(BaseModel):
     location_id: int
     requested_by_id: int | None = None
@@ -62,6 +68,7 @@ class StoreMaterialIssueCreate(BaseModel):
     customer_id: int | None = None
     process: str | None = None
     output_item_id: int | None = None
+    output_items: list[StoreReceiveBackItem] | None = None
     purpose: str | None = None
     returnable: bool | None = None
     destructive: bool | None = None
@@ -107,6 +114,7 @@ class StoreMaterialIssueResponse(BaseModel):
     customer_id: int | None = None
     process: str | None = None
     output_item_id: int | None = None
+    output_items: list[StoreReceiveBackItem] | None = None
     purpose: str | None = None
     returnable: bool | None = None
     destructive: bool | None = None

@@ -69,6 +69,8 @@ def warranty_dates(so: SalesOrder, row: SalesOrderSchedule) -> tuple[date | None
     the delivery-based and the commissioning-based end; while commissioning
     is pending the delivery-based end stands (provisional)."""
     rule = so.warranty_rule or "from_delivery"
+    if rule == "not_applicable":
+        return None, None
     md, mc = so.warranty_months_from_delivery, so.warranty_months_from_commissioning
     end_d = add_months(row.delivered_on, md) if row.delivered_on and md else None
     end_c = add_months(row.commissioned_on, mc) if row.commissioned_on and mc else None

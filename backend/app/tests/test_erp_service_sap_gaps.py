@@ -31,6 +31,9 @@ PROJ = "/api/v1/erp/projects"
 import pytest as _pytest
 from app.modules.erp import billing as _sr_billing
 
+# Closing / sending for closure needs both actual execution dates.
+CLOSE_READY = {"actual_date_attended": "2026-10-01", "actual_completion_date": "2026-10-02"}
+
 
 @_pytest.fixture(autouse=True)
 def _service_billing_live(request, monkeypatch):
@@ -202,7 +205,7 @@ def test_closing_commissioning_sr_sets_machine_commissioning_and_warranty(client
     m = mk_machine(db, "C-1", product_id=prod.id, delivery_date=date(2026, 9, 1))
     sr = mk_sr(client, admin, m, service_type="installation_commissioning").json()
     assert sr["is_chargeable"] is False
-    r = client.patch(f"{SR}/{sr['id']}", json={"status": "closed", "resolution_description": "Commissioned at site",
+    r = client.patch(f"{SR}/{sr['id']}", json={**CLOSE_READY, "status": "closed", "resolution_description": "Commissioned at site",
                                               "actual_completion_date": "2026-10-05"}, headers=hdr(admin))
     assert r.status_code == 200, r.text
     db.expire_all()

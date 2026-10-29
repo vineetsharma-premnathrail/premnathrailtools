@@ -1,7 +1,7 @@
 'use client'
 
 import { primaryBtnStyle, secondaryBtnStyle, segmentBtnStyle, numThStyle, numTdStyle, RowCount } from '@/components/shared/ui'
-import Select from '@/components/shared/Select'
+import FilterMenu from '@/components/shared/FilterMenu'
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -12,7 +12,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import SalesNav from '@/components/sales/SalesNav'
 import { inputStyle, thStyle, tdStyle, Pill, ErrorBanner, PageHeader } from '@/components/sales/SalesUi'
-import { SO_STATUS_LABELS, SO_STATUS_HEX, LEVEL_LABELS, formatINR } from '@/components/sales/labels'
+import { SO_STATUS_LABELS, SO_STATUS_HEX, LEVEL_LABELS, ORDER_CATEGORY_LABELS, formatINR } from '@/components/sales/labels'
 import { recordPath } from '@/lib/recordRef'
 import { useCan } from '@/lib/permissions'
 
@@ -26,6 +26,7 @@ export default function SalesOrdersPage() {
   const [error, setError] = useState<string | string[]>('')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState(searchParams.get('status') || '')
+  const [category, setCategory] = useState('')
   const [mine, setMine] = useState(searchParams.get('mine') === '1')
   const [atRisk, setAtRisk] = useState(false)
   const [month, setMonth] = useState('')
@@ -34,6 +35,7 @@ export default function SalesOrdersPage() {
     if (!isAuthorized) return
     const params: Record<string, unknown> = {}
     if (status) params.status = status
+    if (category) params.order_category = category
     if (mine) params.pending_my_approval = true
     if (atRisk) params.at_risk = true
     if (/^\d{4}-\d{2}$/.test(month)) params.month = month
@@ -46,7 +48,7 @@ export default function SalesOrdersPage() {
         .finally(() => { if (!ignore) setLoading(false) })
     }, 250)
     return () => { ignore = true; clearTimeout(t) }
-  }, [isAuthorized, status, mine, atRisk, month, search])
+  }, [isAuthorized, status, category, mine, atRisk, month, search])
 
   if (isLoading || !isAuthorized) return null
 
@@ -65,14 +67,20 @@ export default function SalesOrdersPage() {
 
       <div data-tour="sales-orders-filters" style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200, maxWidth: 380 }} placeholder="Search SO no., customer, PO / LOA no.…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <Select style={{ ...inputStyle, width: 190 }} value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">All statuses</option>
-          {Object.entries(SO_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </Select>
+        <FilterMenu
+          fields={[
+            { key: 'category', label: 'Order type', value: category, allLabel: 'All order types',
+              options: Object.entries(ORDER_CATEGORY_LABELS).map(([value, label]) => ({ value, label })) },
+            { key: 'status', label: 'Status', value: status, allLabel: 'All statuses',
+              options: Object.entries(SO_STATUS_LABELS).map(([value, label]) => ({ value, label })) },
+          ]}
+          onChange={(k, v) => (k === 'category' ? setCategory(v) : setStatus(v))}
+          onClear={() => { setCategory(''); setStatus('') }}
+        />
         <input type="month" aria-label="Due month" title="Show orders with a delivery due in this month" style={{ ...inputStyle, width: 170 }} value={month} onChange={(e) => setMonth(e.target.value)} />
         <button type="button" aria-pressed={mine} onClick={() => setMine((v) => !v)} style={segmentBtnStyle(mine)}>Waiting for my approval</button>
         <button type="button" aria-pressed={atRisk} onClick={() => setAtRisk((v) => !v)} style={segmentBtnStyle(atRisk)}>At risk / overdue</button>
-        <button type="button" onClick={() => { setSearch(''); setStatus(''); setMonth(''); setMine(false); setAtRisk(false) }} style={secondaryBtnStyle}>Clear</button>
+        <button type="button" onClick={() => { setSearch(''); setStatus(''); setCategory(''); setMonth(''); setMine(false); setAtRisk(false) }} style={secondaryBtnStyle}>Clear</button>
       </div>
 
       <div data-tour="sales-orders-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
@@ -85,7 +93,7 @@ export default function SalesOrdersPage() {
               <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: '#57534e' }}>Loading…</td></tr>
             ) : orders.length === 0 ? (
               <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
-                {search || status || mine || atRisk || month ? 'No orders match these filters.' : 'No sales orders yet. Create one from a won inquiry or tender, or directly from a customer PO.'}
+                {search || status || category || mine || atRisk || month ? 'No orders match these filters.' : 'No sales orders yet. Create one from a won inquiry or tender, or directly from a customer PO.'}
               </td></tr>
             ) : orders.map((o) => (
               <tr key={o.id} onClick={() => router.push(recordPath('/dashboard/sales/orders', o))} style={{ cursor: 'pointer' }}>
@@ -99,7 +107,7 @@ export default function SalesOrdersPage() {
                   {o.units_overdue ? <Pill label={`${o.units_overdue} overdue`} hex="#DC2626" /> : o.units_at_risk ? <Pill label={`${o.units_at_risk} at risk`} hex="#F59E0B" /> : <span style={{ color: TEXT.muted }}>—</span>}
                 </td>
                 <td style={tdStyle}>
-                  <Pill label={SO_STATUS_LABELS[o.status] || o.status} hex={SO_STATUS_HEX[o.status] || '#78716c'} />
+                  {(() => { const st = (o as { display_status?: string | null }).display_status || o.status; return <Pill label={SO_STATUS_LABELS[st] || st} hex={SO_STATUS_HEX[st] || '#78716c'} /> })()}
                   {(o.approval_stage || o.next_approval_level) && <div style={{ fontSize: 12, color: '#57534e', marginTop: 3 }}>with {o.approval_stage || LEVEL_LABELS[o.next_approval_level || '']}</div>}
                 </td>
               </tr>

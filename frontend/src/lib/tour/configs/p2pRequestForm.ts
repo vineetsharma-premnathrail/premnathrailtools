@@ -7,18 +7,18 @@ const config: TourConfig = {
     {
       target: 'pr-new-purpose',
       title: 'Purpose',
-      purpose: 'What this purchase is for. It decides what the cost is charged to, so every rupee lands on a real order, department or job.',
+      purpose: 'What this purchase is for. It decides which item types the lines can buy and whether a project must be picked.',
       required: true,
       options: [
-        { value: 'Project', meaning: 'Charged to its project (Project Management › All Projects).' },
-        { value: 'Service', meaning: 'Service work on a project already delivered to the customer: spares, repair, warranty, commissioning support. Pick the delivered project; every line is for it. Charged To is optional.' },
-        { value: 'New development', meaning: 'R&D / new product work. Charged to the R&D project (R&D › Prototype / Research) it belongs to. Finance is linked automatically; you never pick a Finance order.' },
-        { value: 'Department running cost', meaning: 'Cleaning material, stationery, small tools, office repairs, AMC, housekeeping. Purchase charges it to your department’s cost centre on the PO; you don’t pick one here.' },
-        { value: 'Asset / capital purchase', meaning: 'Things used for years: machine, laptop, AC, welding set. Charged to the asset’s internal order.' },
-        { value: 'Store stock refill', meaning: 'Common items Store keeps in stock. Nothing is charged now; the cost goes to whoever Store issues it to.' },
+        { value: 'Project', meaning: 'For a project in Project Management › All Projects; pick the project.' },
+        { value: 'Service', meaning: 'Service work on a project already delivered to the customer: spares, repair, warranty, commissioning support. Pick the delivered project; every line is for it.' },
+        { value: 'New development', meaning: 'R&D / new product work.' },
+        { value: 'Department running cost', meaning: 'Cleaning material, stationery, small tools, office repairs, AMC, housekeeping.' },
+        { value: 'Asset / capital purchase', meaning: 'Things used for years: machine, laptop, AC, welding set.' },
+        { value: 'Store stock refill', meaning: 'Common items Store keeps in stock.' },
       ],
       why: 'Office and overhead costs are never tagged to a customer project. Finance spreads them over projects later; tagging them by hand makes project costs wrong.',
-      after: 'The purpose also narrows the item types the lines can buy. A field with only one possible answer is filled in and shown as a read-only "Fixed · Set by purpose" value. Until a purpose is chosen, Charged To is disabled ("Choose a purpose first"). What each purpose offers is set by an admin in Procurement › Settings › Purpose rules. There is no requisition-level category: the Item Type and Category of each line say what is bought.',
+      after: 'The purpose also narrows the item types the lines can buy. A field with only one possible answer is filled in and shown as a read-only "Fixed · Set by purpose" value. What each purpose offers is set by an admin in Procurement › Settings › Purpose rules. There is no requisition-level category: the Item Type and Category of each line say what is bought.',
     },
     {
       target: 'pr-new-project',
@@ -26,12 +26,6 @@ const config: TourConfig = {
       purpose: 'Shown only for a Service purpose: the delivered project this purchase is for.',
       required: true,
       whatToEnter: 'Search by project number or name and pick it.',
-    },
-    {
-      target: 'pr-new-charged-to',
-      title: 'Charged To',
-      purpose: 'The record the cost is booked against: project, sales order, work order, internal order, cost centre or, for New development, the R&D project. Only the options that fit the purpose are offered. When the purpose has just one possible answer (e.g. Project → Project) it is shown as a fixed value marked "Fixed" instead of a dropdown, and you only pick the record next to it.',
-      after: 'For New development you pick an open R&D project; the system links Finance for you the first time something is charged to it. The charge also goes onto the PO, so the budget shows the commitment in Finance › Controlling.',
     },
     {
       target: 'pr-new-required-date',
@@ -132,7 +126,7 @@ const config: TourConfig = {
     {
       target: 'pr-new-submit',
       title: 'Submit Purchase Requisition',
-      purpose: 'Checks the purpose rules (item types), the charge and the item list, then submits this requisition into the approval chain.',
+      purpose: 'Checks the purpose rules (item types), the project and the item list, then submits this requisition into the approval chain.',
       after: 'On success you land on this requisition\'s own detail page, showing its Submitted status and approval progress.',
     },
     {

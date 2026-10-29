@@ -55,6 +55,10 @@ class StoreMaterialIssue(Base, TimestampMixin):
     # Job work: the processed item expected back (SAP: the subcontract order's
     # finished material) — the Job Work Receipt starts from it.
     output_item_id: Mapped[int | None] = mapped_column(ForeignKey("store_items.id"), nullable=True)
+    # Job work "Items to receive back": [{item_id, quantity}] — material sent
+    # can come back as several different items (plate → flange + ring).
+    # output_item_id is the first of them.
+    output_items: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     purpose: Mapped[str | None] = mapped_column(String(20), nullable=True)       # customer sample: sample / trial
     returnable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)      # sample / site material comes back?
     destructive: Mapped[bool | None] = mapped_column(Boolean, nullable=True)     # testing: material used up?

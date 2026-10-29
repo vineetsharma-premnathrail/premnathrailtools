@@ -14,16 +14,24 @@ import DateField from '@/components/erp/DateField'
 import Select from '@/components/shared/Select'
 import { CONTROL } from '@/lib/theme'
 import { useFormDraft } from '@/lib/formDraft'
+import { useAuthStore } from '@/store/authStore'
 import DraftBanner from '@/components/shared/DraftBanner'
 import { FormSheet, SheetSection, SheetIcon, SheetError, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
-type Line = { itemId: string; quantity: string; remarks: string }
-const emptyLine = (): Line => ({ itemId: '', quantity: '', remarks: '' })
+type Line = { type: string; category: string; itemId: string; quantity: string; remarks: string }
+const emptyLine = (): Line => ({ type: '', category: '', itemId: '', quantity: '', remarks: '' })
+// Item types a Before PO receipt may carry: the "stock" purpose's types (backend
+// p2p/purpose.py PURPOSE_ITEM_TYPES); types Store added beyond the standard five stay offered.
+const STANDARD_ITEM_TYPES = ['material', 'service', 'asset', 'consumable', 'tool_equipment']
+const STOCK_TYPES = ['material', 'consumable', 'tool_equipment']
+const typeFits = (t: string | null | undefined) => !STANDARD_ITEM_TYPES.includes(t || '') || STOCK_TYPES.includes(t || '')
+const typeLabel = (t: string) => { const s = t.replace(/_/g, ' '); return s.charAt(0).toUpperCase() + s.slice(1) }
 
 export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () => void; onSaved: (r: PrePoReceipt, note?: string) => void }) {
   const [vendors, setVendors] = useState<ProcurementVendor[]>([])
   const [items, setItems] = useState<StoreItem[]>([])
   const [locations, setLocations] = useState<StoreLocation[]>([])
+  const user = useAuthStore((st) => st.user)
   const [vendorId, setVendorId] = useState('')
   const [receivedDate, setReceivedDate] = useState(new Date().toLocaleDateString('en-CA')) // local date, not UTC
   const [locationId, setLocationId] = useState('')
@@ -45,8 +53,26 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
     const fail = (what: string) => (err: unknown) => setError(extractErrorMessages(err, `Could not load ${what} — close this form and open it again.`))
     vendorsApi.list({ status: 'active' }).then((v) => setVendors([...v].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })))).catch(fail('the vendor list'))
     storeApi.listItems({ status: 'active' }).then((i: StoreItem[]) => setItems([...i].sort((a, b) => a.item_code.localeCompare(b.item_code, undefined, { numeric: true })))).catch(fail('the Item Master'))
-    storeApi.listLocations().then(setLocations).catch(fail('the store locations'))
+    storeApi.listLocations().then((ls: StoreLocation[]) => setLocations(ls.filter((l) => l.is_active))).catch(fail('the store locations'))
   }, [])
+
+  // A store person books into their own store only (owner, 2026-10-28; the server
+  // enforces the same in store/routes/pre_po_receipts.py _own_store_id): the stores
+  // they manage, else the stores of their plant. Admins may pick any store.
+  const isAdmin = user?.role === 'admin' || !!(user as { is_azure_admin?: boolean } | null)?.is_azure_admin
+  const managed = locations.filter((l) => !!user && l.manager_user_id === user.id)
+  const ownStores = isAdmin ? locations : managed.length ? managed : locations
+  const lockedStore = !isAdmin && ownStores.length === 1 ? ownStores[0] : null
+  useEffect(() => {
+    if (lockedStore && locationId !== String(lockedStore.id)) setLocationId(String(lockedStore.id))
+  }, [lockedStore, locationId])
+
+  const itemTypeOptions = (() => {
+    const present = Array.from(new Set(items.map((i) => i.item_type || '').filter(Boolean)))
+    return [...STOCK_TYPES.filter((t) => !present.length || present.includes(t)), ...present.filter((t) => !STANDARD_ITEM_TYPES.includes(t)).sort()]
+  })()
+  const categoriesForType = (type: string) =>
+    Array.from(new Set(items.filter((i) => (!type ? typeFits(i.item_type) : i.item_type === type)).map((i) => i.category || '').filter(Boolean))).sort()
 
   const setLine = (idx: number, patch: Partial<Line>) => setLines((ls) => ls.map((l, i) => (i === idx ? { ...l, ...patch } : l)))
   const usedIds = new Set(lines.map((l) => l.itemId).filter(Boolean))
@@ -56,6 +82,11 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
     setError('')
     if (!vendorId) { setError('Pick the vendor the goods came from — Procurement makes the PO to this vendor.'); return }
     if (!receivedDate) { setError('Enter the date the goods were received.'); return }
+    if (!isAdmin && !lockedStore && !locationId) {
+      setError(ownStores.length ? 'Pick the store the goods are held in.'
+        : 'No store is linked to you, so goods cannot be booked. Ask an admin to make you the manager of your store in Store › Settings › Stores.')
+      return
+    }
     const filled = lines.filter((l) => l.itemId || l.quantity)
     if (!filled.length) { setError('Add at least one item with its quantity.'); return }
     for (const l of filled) {
@@ -115,11 +146,15 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
               <DateField value={receivedDate} onChange={setReceivedDate} />
             </div>
             <div data-tour="store-bpo-location" style={{ flex: '0 1 220px', minWidth: 190 }}>
-              <label style={sheetLabel}>Store location <Optional /></label>
-              <Select style={sheetInput} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
-                <option value="">— where the goods are held —</option>
-                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </Select>
+              <label style={sheetLabel}>Store {isAdmin ? <Optional /> : <Req />}</label>
+              {lockedStore ? (
+                <div title="Goods are booked into your own store" style={{ ...sheetInput, display: 'flex', alignItems: 'center', background: 'rgba(15,23,42,0.04)', color: SHEET.INK }}>{lockedStore.name}</div>
+              ) : (
+                <Select style={sheetInput} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+                  <option value="">— where the goods are held —</option>
+                  {ownStores.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </Select>
+              )}
             </div>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 14 }}>
@@ -158,19 +193,41 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
               {lines.map((line, idx) => {
                 const it = itemOf(line.itemId)
                 const last = idx === lines.length - 1
+                // Pick the type, then the category, then the item (same as the PR form). A line
+                // that already holds an item shows that item's type / category.
+                const lineType = line.type || (it?.item_type && itemTypeOptions.includes(it.item_type) ? it.item_type : '')
+                const lineCategory = line.category || (it && it.item_type === lineType ? it.category || '' : '')
+                const lineCats = categoriesForType(lineType)
+                const itemReady = !!line.itemId || (!!lineType && (!!lineCategory || lineCats.length === 0))
+                const shown = items.filter((i) => String(i.id) === line.itemId
+                  || ((lineType ? i.item_type === lineType : typeFits(i.item_type)) && (!lineCategory || i.category === lineCategory)))
                 return (
                   <div key={idx} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 10, flexWrap: 'wrap' }}>
-                    <div style={{ flex: '1 1 300px', minWidth: 220 }}>
-                      {idx === 0 && <label style={sheetLabel}>Item (Item Master) <Req /></label>}
-                      <SearchableSelect value={line.itemId} onChange={(v) => setLine(idx, { itemId: v })} placeholder="Search an item by code or name…"
-                        options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, disabled: usedIds.has(String(i.id)) && String(i.id) !== line.itemId }))} />
+                    <div style={{ flex: '0 0 140px' }}>
+                      {idx === 0 && <label style={sheetLabel}>Type <Req /></label>}
+                      <SearchableSelect ariaLabel={`Item type, line ${idx + 1}`} value={lineType} placeholder="1. Type"
+                        onChange={(type) => setLine(idx, { type, category: categoriesForType(type).includes(line.category) ? line.category : '', itemId: it && it.item_type !== type ? '' : line.itemId })}
+                        options={itemTypeOptions.map((t) => ({ value: t, label: typeLabel(t) }))} />
                     </div>
-                    <div style={{ flex: '0 0 130px' }}>
+                    <div style={{ flex: '0 0 150px' }}>
+                      {idx === 0 && <label style={sheetLabel}>Category</label>}
+                      <SearchableSelect ariaLabel={`Category, line ${idx + 1}`} value={lineCategory} disabled={!lineType}
+                        placeholder={lineType ? (lineCats.length ? '2. Category' : 'No categories') : 'Pick the type first'}
+                        onChange={(category) => setLine(idx, { type: lineType, category, itemId: it && it.category !== category ? '' : line.itemId })}
+                        options={lineCats.map((c) => ({ value: c, label: c }))} />
+                    </div>
+                    <div style={{ flex: '1 1 260px', minWidth: 200 }}>
+                      {idx === 0 && <label style={sheetLabel}>Item (Item Master) <Req /></label>}
+                      <SearchableSelect ariaLabel={`Item, line ${idx + 1}`} value={line.itemId} onChange={(v) => setLine(idx, { itemId: v })} disabled={!itemReady}
+                        placeholder={!itemReady ? (lineType ? 'Pick the category first' : 'Pick the type first') : `3. Search ${shown.length} item${shown.length === 1 ? '' : 's'}…`}
+                        options={shown.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, disabled: usedIds.has(String(i.id)) && String(i.id) !== line.itemId }))} />
+                    </div>
+                    <div style={{ flex: '0 0 100px' }}>
                       {idx === 0 && <label style={sheetLabel}>Quantity <Req /></label>}
                       <input type="number" min={0} step="any" style={sheetInput} value={line.quantity} onChange={(e) => setLine(idx, { quantity: e.target.value })} aria-label="Quantity received" />
                     </div>
-                    <div style={{ flex: '0 0 70px', paddingBottom: 8, fontSize: 13, color: SHEET.MUTED }}>{it?.uom || ''}</div>
-                    <div style={{ flex: '1 1 180px', minWidth: 150 }}>
+                    <div style={{ flex: '0 0 44px', paddingBottom: 8, fontSize: 13, color: SHEET.MUTED }}>{it?.uom || ''}</div>
+                    <div style={{ flex: '1 1 140px', minWidth: 120 }}>
                       {idx === 0 && <label style={sheetLabel}>Remarks <Optional /></label>}
                       <input style={sheetInput} value={line.remarks} onChange={(e) => setLine(idx, { remarks: e.target.value })} aria-label="Line remarks" />
                     </div>
@@ -184,7 +241,7 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
                 )
               })}
             </div>
-            <p style={sheetHint}>Pick items from the Item Master so Procurement&apos;s PO carries the same item. An item can be on one line only.</p>
+            <p style={sheetHint}>Pick the type, then the category, then the Item Master item, so Procurement&apos;s PO carries the same item. An item can be on one line only.</p>
           </SheetSection>
         </div>
       </div>

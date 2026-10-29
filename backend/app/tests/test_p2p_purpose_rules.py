@@ -126,7 +126,9 @@ def test_server_enforces_overridden_category_requirement_type_and_item_types(cli
     assert r.status_code == 400 and "always Hardware & Consumables" in r.json()["detail"], r.text
 
 
-def test_charged_to_override_changes_what_the_server_accepts(client, db):
+def test_charged_to_override_changes_what_the_server_accepts(client, db, monkeypatch):
+    # Charged To is hidden on the form for now; these rules apply once it is back.
+    monkeypatch.setattr("app.modules.p2p.purpose.CHARGE_ON_PR", True)
     admin = _admin(db)
     req = _requester(db, "rules.req4@premnathrail.com")
     item = master_item(db, "Floor cleaner", code="HK-FC-78", item_type="consumable")

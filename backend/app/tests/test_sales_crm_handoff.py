@@ -20,7 +20,7 @@ def test_by_source_lookup(client, db):
     # Nothing yet → order is null.
     r = client.get(f"{BASE}/orders/by-source", params={"inquiry": inq.id}, headers=hdr(crm_user))
     assert r.status_code == 200, r.text
-    assert r.json() == {"order": None}
+    assert r.json() == {"order": None, "can_raise": True}
 
     so = create_order(client, db, maker, inq)
     for user in (crm_user, maker):
@@ -38,7 +38,7 @@ def test_by_source_lookup(client, db):
     r = client.post(f"{BASE}/orders/{so['id']}/cancel", json={"reason": "Raised by mistake"}, headers=hdr(maker))
     assert r.status_code == 200, r.text
     r = client.get(f"{BASE}/orders/by-source", params={"inquiry": inq.id}, headers=hdr(crm_user))
-    assert r.json() == {"order": None}
+    assert r.json()["order"] is None
 
 
 def test_confirm_marks_inquiry_won(client, db):
@@ -67,14 +67,26 @@ def test_confirm_marks_inquiry_won(client, db):
 
 def test_order_only_once_order_received(client, db):
     maker, _, _, _ = setup_people(db)
-    org, inq, _ = setup_customer(db)
-    for stage, status in (("Negotiation", "Quotation Sent"), ("Closed – Not Ordered", "Closed - Not Ordered"),
-                          ("Order Received", "Closed - Not Ordered")):
+    org, inq, quot = setup_customer(db)
+    # A quotation the customer accepted is enough, whatever the inquiry status (owner, 2026-10-28).
+    inq.current_stage, inq.status = "Quotation Sent", "Quotation Sent"
+    db.commit()
+    assert client.get(f"{BASE}/orders/prefill", params={"inquiry": inq.id}, headers=hdr(maker)).status_code == 200
+    r = client.get(f"{BASE}/orders/by-source", params={"inquiry": inq.id}, headers=hdr(maker))
+    assert r.json()["can_raise"] is True
+    assert any(s["id"] == inq.id and s["accepted_quotation"] == quot.quot_number
+               for s in client.get(f"{BASE}/orders/sources", params={"kind": "inquiry"}, headers=hdr(maker)).json())
+    # No accepted quotation (still with the customer), or closed as not ordered → refused.
+    quot.status = "sent"
+    db.commit()
+    for stage, status in (("Quotation Sent", "Quotation Sent"), ("Order Received", "Closed - Not Ordered")):
         inq.current_stage, inq.status = stage, status
         db.commit()
         r = client.get(f"{BASE}/orders/prefill", params={"inquiry": inq.id}, headers=hdr(maker))
         assert r.status_code == 422, r.text
-        assert "Order Received" in r.json()["detail"]
+        assert "accept" in r.json()["detail"]
+    assert client.get(f"{BASE}/orders/by-source", params={"inquiry": inq.id}, headers=hdr(maker)).json()["can_raise"] is False
+    assert all(s["id"] != inq.id for s in client.get(f"{BASE}/orders/sources", params={"kind": "inquiry"}, headers=hdr(maker)).json())
 
     t = Tender(universal_id="TND-SO-01", org_id=org.id, status="Negotiation")
     db.add(t)

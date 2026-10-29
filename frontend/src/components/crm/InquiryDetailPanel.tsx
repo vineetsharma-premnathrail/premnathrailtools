@@ -171,7 +171,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
 
   const openTorPicker = () => {
     if (missingRequirementDetails) {
-      setTorError('Please fill Product and Specification (click Edit) before sending the Technical Requirement to R&D — otherwise R&D gets a document with no requirement details.')
+      setTorError('Please fill Product and Customer Requirement (click Edit) before sending the Technical Requirement to R&D — otherwise R&D gets a document with no requirement details.')
       return
     }
     setTorError('')
@@ -226,7 +226,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
                   !torActive
                     ? `Already sent as ${inquiry.technical_offer_number} — edit the inquiry to send again.`
                     : missingRequirementDetails
-                    ? 'Fill Product and Specification before sending — the document would otherwise be empty.'
+                    ? 'Fill Product and Customer Requirement before sending — the document would otherwise be empty.'
                     : 'Sends R&D a Word document with the customer and its type and region, every product with its specification, and the project background.'
                 }
                 style={{ ...secondaryBtnStyle, opacity: !torActive || sendingTOR ? 0.5 : 1, cursor: !torActive || sendingTOR ? 'not-allowed' : 'pointer' }}
@@ -396,7 +396,7 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
             {canModify ? (
               <div style={{ maxWidth: 320 }}>
                 <Select data-tour="inq-info-status" value={inquiry.status} onChange={(e) => onChangeLeadInfo({ status: e.target.value })} style={{ ...inputStyle, width: '100%' }}>
-                  {inquiryStatusOptions(inquiry.status).map((s) => <option key={s} value={s}>{s}</option>)}
+                  {inquiryStatusOptions(inquiry.status, inquiry.status).map((s) => <option key={s} value={s}>{s}</option>)}
                 </Select>
               </div>
             ) : <Pill label={inquiry.status} hex={inquiryStatusColor(inquiry.status).text} />}
@@ -419,7 +419,7 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
 
         <DetailGroup title="Product Requirement" last>
           <SpecDetailRow label="Product" value={inquiry.product} change={changeFor('product')} />
-          <SpecDetailRow label="Specification" value={inquiry.product_spec} change={changeFor('product_spec')} />
+          <SpecDetailRow label="Customer requirement" value={inquiry.product_spec} change={changeFor('product_spec')} />
           {(inquiry.additional_items || []).map((it, i) => (
             <DetailRow key={it.id} label={`Additional product ${i + 1}`}>
               <strong style={{ fontWeight: 600 }}>{it.product || '—'}</strong>
@@ -573,15 +573,20 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
     return { ...row, unit_price: String(price), subtotal: subtotal ? String(Number(subtotal.toFixed(2))) : '', total: subtotal ? String(Number((subtotal * (1 + gst / 100)).toFixed(2))) : '' }
   }
   const pickProductForRow = (idx: number, product: CrmQuotationProduct) => {
+    // A different product drops the old product's price, so the new one's price fills in.
     setItems((rows) => rows.map((row, i) => i === idx ? {
       ...row,
       product_id: String(product.id),
       description: product.name,
       model_number: product.model_number || '',
+      ...(row.product_id !== String(product.id) ? { unit_price: '', subtotal: '', total: '' } : {}),
     } : row))
     if (form.pricing_mode === 'lumpsum' || !seeQuotePrices) return
     crmApi.quotationProductPrice(inquiryId, product.id).then((r) => {
-      if (r.price == null) return
+      if (r.price == null) {
+        setProductNotice(`${product.name} has no price for this customer in the Product master — type the Price/unit, or add a price under Sales › Products › ${product.name} › Pricing.`)
+        return
+      }
       setItems((rows) => rows.map((row, i) => (i === idx && row.product_id === String(product.id) && !row.unit_price) ? withPrice(row, r.price as number) : row))
     }).catch(() => {})
   }
@@ -774,7 +779,6 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
       anyFilledItem = true
       const rowErrs: QuotationItemErrors = {}
       if (!it.product_id) rowErrs.product = 'Pick the Product — every line is chosen from the Product master.'
-      if (!it.description.trim()) rowErrs.description = 'Item Name is required.'
       if (it.quantity && Number(it.quantity) <= 0) rowErrs.quantity = 'Quantity must be more than 0 — enter a positive number or leave it blank.'
       if (!isLumpSum && it.unit_price && Number(it.unit_price) < 0) rowErrs.unit_price = 'Price/Unit cannot be negative — enter 0 or more, or leave it blank.'
       if (!isLumpSum && !isExport && it.gst_percent && (Number(it.gst_percent) < 0 || Number(it.gst_percent) > 100)) rowErrs.gst_percent = 'GST % must be between 0 and 100 — fix it or leave it blank.'
@@ -1006,26 +1010,18 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                     const rowErr = fieldErrors.itemErrors?.[idx]
                     return (
                     <div key={idx}>
-                      <div style={{ display: 'grid', gridTemplateColumns: isLumpSum ? '1.6fr 1.3fr 0.7fr auto' : isExport ? '1.6fr 1.3fr 0.7fr 0.9fr 0.9fr auto' : '1.6fr 1.3fr 0.7fr 0.9fr 0.7fr 0.9fr auto', gap: 6, alignItems: 'center' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: isLumpSum ? '1.8fr 0.9fr 0.7fr auto' : isExport ? '1.8fr 0.9fr 0.7fr 0.9fr 0.9fr auto' : '1.8fr 0.9fr 0.7fr 0.9fr 0.7fr 0.9fr auto', gap: 6, alignItems: 'center' }}>
                         <div {...(idx === 0 ? { 'data-tour': 'quot-item-name' } : {})}>
+                          {/* Applications / attachments are quoted as their own line (owner, 2026-10-28). */}
                           <SearchableSelect
                             value={row.product_id}
-                            onChange={(v) => { const p = quotationProducts.find((pr) => String(pr.id) === v); if (p) pickProductForRow(idx, p) }}
-                            options={quotationProducts.map((p) => ({ value: String(p.id), label: `${p.name}${p.model_number ? ` · ${p.model_number}` : ''}`, group: p.product_type === 'service' ? 'Paid services' : 'Products' }))}
+                            onChange={(v) => { const p = [...quotationProducts, ...quotationApplications].find((pr) => String(pr.id) === v); if (p) pickProductForRow(idx, p) }}
+                            options={[...quotationProducts, ...quotationApplications].map((p) => ({ value: String(p.id), label: `${p.name}${p.model_number ? ` · ${p.model_number}` : ''}`, group: p.product_type === 'service' ? 'Paid services' : p.product_type === 'application' ? 'Applications / attachments' : 'Products' }))}
                             placeholder="Product — pick from the Product master"
                             triggerStyle={errInputStyle(!!rowErr?.product)}
                           />
                         </div>
-                        <div {...(idx === 0 ? { 'data-tour': 'quot-item-application' } : {})}>
-                          <SearchableSelect
-                            value={row.application_id}
-                            onChange={(v) => updateItemRow(idx, 'application_id', v)}
-                            options={[{ value: '', label: 'None' }, ...quotationApplications.map((a) => ({ value: String(a.id), label: `${a.name}${a.model_number ? ` · ${a.model_number}` : ''}` }))]}
-                            placeholder="Application / attachment (optional) — only if the customer asked for it"
-                            title="Only if the customer asked for it."
-                            ariaLabel="Application / attachment (optional)"
-                          />
-                        </div>
+                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-model' } : {})} value={row.model_number} onChange={(e) => updateItemRow(idx, 'model_number', e.target.value)} placeholder="Model No." title="Model No. (from the product)" style={sheetInput} />
                         <input {...(idx === 0 ? { 'data-tour': 'quot-item-qty' } : {})} type="number" value={row.quantity} onChange={(e) => updateItemRow(idx, 'quantity', e.target.value)} placeholder="Qty" style={{ ...sheetInput, ...errInputStyle(!!rowErr?.quantity) }} />
                         {!isLumpSum && <>
                         <input {...(idx === 0 ? { 'data-tour': 'quot-item-price' } : {})} type="number" value={row.unit_price} onChange={(e) => updateItemRow(idx, 'unit_price', e.target.value)} placeholder={`Price/unit (${currencySymbol})`} style={{ ...sheetInput, ...errInputStyle(!!rowErr?.unit_price) }} />
@@ -1033,10 +1029,6 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                         <input {...(idx === 0 ? { 'data-tour': 'quot-item-subtotal' } : {})} type="number" value={row.subtotal} readOnly placeholder="Subtotal" style={{ ...sheetInput, background: 'rgba(0,0,0,0.04)', color: '#57534e' }} />
                         </>}
                         <button type="button" onClick={() => removeItemRow(idx)} aria-label="Remove line item" style={sheetBtn('ghost', '#DC2626')}><SheetIcon name="trash" size={16} /></button>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 6, marginTop: 4 }}>
-                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-description' } : {})} value={row.description} onChange={(e) => updateItemRow(idx, 'description', e.target.value)} placeholder="Item name on the quotation (filled from the product, editable)" style={{ ...sheetInput, ...errInputStyle(!!rowErr?.description) }} />
-                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-model' } : {})} value={row.model_number} onChange={(e) => updateItemRow(idx, 'model_number', e.target.value)} placeholder="Model No. (from the product)" style={sheetInput} />
                       </div>
                       <textarea
                         {...(idx === 0 ? { 'data-tour': 'quot-item-details' } : {})}
@@ -1607,7 +1599,7 @@ function specRevisionDetailHtml(changes: { field: string; old: unknown; new: unk
 const AUDIT_FIELD_LABELS: Record<string, string> = {
   product_category: 'Category', product: 'Product', quantity: 'Quantity',
   required_delivery_date: 'Required Delivery Date', delivery_location: 'Delivery Location',
-  inspection_req: 'Inspection Requirement', warranty_req: 'Warranty Requirement', product_spec: 'Specification',
+  inspection_req: 'Inspection Requirement', warranty_req: 'Warranty Requirement', product_spec: 'Customer Requirement',
   requirement_desc: 'Requirement Summary', project_details: 'Project Details',
   railway_zone: 'Railway Zone', division: 'Division', lead_source: 'Lead Source', bd_owner: 'BD Owner',
   sales_engineer: 'Sales Engineer', status: 'Status', current_stage: 'Stage', current_status_note: 'Current Status', budget: 'Budget',

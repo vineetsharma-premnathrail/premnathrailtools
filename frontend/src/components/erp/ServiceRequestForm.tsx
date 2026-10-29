@@ -6,8 +6,7 @@ import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
 import { MinusCircle, Warning } from '@phosphor-icons/react'
 import { useAuth } from '@/hooks/useAuth'
-import { erpApi, usersApi } from '@/lib/api'
-import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
+import { erpApi } from '@/lib/api'
 import { Project, ServiceRequest } from '@/types'
 import DateField from './DateField'
 import SearchableSelect from './SearchableSelect'
@@ -128,64 +127,18 @@ export default function ServiceRequestForm({
   // Bring a new error banner into view — the submit button sits in the sticky footer.
   useEffect(() => { if (error) errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, [error])
 
-  // Engineer picker: the user directory narrowed by the role's "Assign to" rule
-  // (Role & Permissions › Service Requests › Service visits) — the server refuses others on save.
-  // Your own name and the SR's current engineer always stay listed.
-  const [engineerId, setEngineerId] = useState<string>(initial?.assigned_service_person_id ? String(initial.assigned_service_person_id) : '')
-  const [people, setPeople] = useState<{ value: string; label: string }[]>([])
-  const allowEngineer = useAssigneeFilter('erp:service_requests.visits')
-  const engineerOpts = [
-    { value: '', label: '— Not assigned yet —' },
-    ...people.filter((o) => allowEngineer(Number(o.value)) || o.value === String(user?.id ?? '') || o.value === engineerId),
-  ]
-  // New SR: the person creating it is the default engineer (their name shows in the field; they can change or clear it).
-  const engineerDefaulted = useRef(false)
-  const [engineerReady, setEngineerReady] = useState(false)
-  useEffect(() => {
-    if (initial || engineerDefaulted.current || !user?.id) return
-    engineerDefaulted.current = true
-    setEngineerId((cur) => cur || String(user.id))
-    setEngineerReady(true)
-  }, [initial, user?.id])
-  const [peopleHint, setPeopleHint] = useState('')
+  // The person who raises the SR is its engineer; it is not reassigned in this version.
+  const engineerName = initial ? (initial.assigned_to_name || '—') : (user?.name || user?.email || '—')
   const [machinesError, setMachinesError] = useState('')
-  const [warrantyHint, setWarrantyHint] = useState('')
   const [focusedPriority, setFocusedPriority] = useState('')
-  useEffect(() => {
-    usersApi.directory().then((list) => setPeople(list.map((u) => ({ value: String(u.id), label: u.name || u.email }))))
-      .catch((e) => {
-        setPeople([])
-        setPeopleHint(`Could not load engineers: ${extractErrorMessages(e, 'check your connection').join(' ')}. Save without one and assign later.`)
-      })
-  }, [])
-
   useEffect(() => {
     erpApi.listProjects({ limit: 5000 }).then(setProjects)
       .catch((e) => setMachinesError(`Machines could not be loaded: ${extractErrorMessages(e, 'check your connection').join(' ')}. Reload the page to try again.`))
   }, [])
 
-  // Warranty check (create only): the machine's cover today decides whether
-  // the job is chargeable by default; choosing otherwise needs a reason.
-  const [warranty, setWarranty] = useState<{ label: string; default_chargeable: boolean; warranty_end: string | null } | null>(null)
-  const [overrideCharge, setOverrideCharge] = useState(false)
-  const [chargeReason, setChargeReason] = useState('')
-  // A new request's typed data survives a refresh / network failure (lib/formDraft.ts). Id stays null until the default engineer is filled in.
-  const draft = useFormDraft(!initial && engineerReady ? 'erp-service-request-new' : null,
-    { form, engineerId, overrideCharge, chargeReason },
-    (d) => { setForm(d.form); setEngineerId(d.engineerId ?? ''); setOverrideCharge(!!d.overrideCharge); setChargeReason(d.chargeReason || '') })
-  useEffect(() => {
-    if (initial || !form.project_id) { const t = setTimeout(() => setWarranty(null), 0); return () => clearTimeout(t) }
-    let alive = true
-    setWarrantyHint('')
-    erpApi.srWarrantyCheck(Number(form.project_id), form.service_type || undefined)
-      .then((w) => { if (alive) setWarranty(w) })
-      .catch((e) => {
-        if (!alive) return
-        setWarranty(null)
-        setWarrantyHint(`Warranty cover could not be checked (${extractErrorMessages(e, 'check your connection').join(' ')}). Chargeability will be decided when you save.`)
-      })
-    return () => { alive = false }
-  }, [initial, form.project_id, form.service_type])
+  // A new request's typed data survives a refresh / network failure (lib/formDraft.ts).
+  // Chargeability is decided by the server from the machine's warranty cover.
+  const draft = useFormDraft(!initial ? 'erp-service-request-new' : null, { form }, (d) => setForm(d.form))
 
   const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
 
@@ -196,16 +149,17 @@ export default function ServiceRequestForm({
       setError('Please select a machine/asset.')
       return
     }
+    // Edit mode: the location already sits in the description text, so it is only asked on create.
+    if (!initial && !form.site_location.trim()) {
+      setError('Site / Location is required — enter where the machine is right now (e.g. Itarsi yard, Line 4).')
+      return
+    }
     if (!form.service_type) {
       setError('Please select a Service Type (e.g. Warranty, AMC, Paid Service).')
       return
     }
     if (!form.issue_title.trim()) {
       setError('Issue title is required.')
-      return
-    }
-    if (!form.issue_description.trim()) {
-      setError('Detailed description is required.')
       return
     }
     if (!form.priority) {
@@ -227,23 +181,12 @@ export default function ServiceRequestForm({
       // The backend has no dedicated location column — legacy folds Site/Location
       // into the description text, and we do the same for parity.
       const { site_location, ...rest } = form
-      const issue_description = site_location.trim() ? `${rest.issue_description}\n\nLocation: ${site_location.trim()}` : rest.issue_description
+      const issue_description = [rest.issue_description.trim(), site_location.trim() && `Location: ${site_location.trim()}`].filter(Boolean).join('\n\n')
 
       const payload: Record<string, unknown> = {
         ...rest,
         issue_description,
         project_id: Number(form.project_id),
-        // The server derives the engineer's name from the user record.
-        assigned_service_person_id: engineerId ? Number(engineerId) : null,
-      }
-      if (!initial && overrideCharge && warranty) {
-        if (!chargeReason.trim()) {
-          setError('Enter the reason for changing the chargeability — it is kept in the audit trail.')
-          submittingRef.current = false
-          return
-        }
-        payload.is_chargeable = !warranty.default_chargeable
-        payload.chargeable_reason = chargeReason.trim()
       }
       // On create, drop untouched-empty optional fields entirely. On edit, keep them —
       // an intentionally-cleared field must reach the backend as "" so PATCH's
@@ -323,7 +266,7 @@ export default function ServiceRequestForm({
                   </div>
                 </div>
               </div>
-              <label style={{ ...sheetLabel, marginTop: 14 }}>Site / Location <Optional /></label>
+              <label style={{ ...sheetLabel, marginTop: 14 }}>Site / Location {initial ? <Optional /> : <Req />}</label>
               <input value={form.site_location} onChange={(e) => set('site_location', e.target.value)} placeholder="Current location of asset" style={sheetInput} data-tour="erp-srf-location" />
             </SheetSection>
 
@@ -361,38 +304,9 @@ export default function ServiceRequestForm({
                   </div>
                 </div>
               </div>
-              {form.service_type && (
-                <p style={sheetHint}>{SERVICE_TYPES.find((t) => t.value === form.service_type)?.hint}</p>
-              )}
-              {!initial && warrantyHint && <p role="status" style={sheetHint}>{warrantyHint}</p>}
-              {!initial && warranty && form.service_type && (
-                <div style={{ margin: '10px 0 0', padding: '10px 12px', borderRadius: 10, background: SHEET.SOFT, border: `1px solid ${SHEET.LINE}`, fontSize: 12.5, color: SHEET.BODY }}>
-                  <div>
-                    Machine: <b>{warranty.label}</b>{warranty.warranty_end ? ` (warranty to ${warranty.warranty_end.split('-').reverse().join('-')})` : ''} —
-                    this job is <b>{(overrideCharge ? !warranty.default_chargeable : warranty.default_chargeable) ? 'chargeable' : 'free of charge'}</b>
-                    {overrideCharge ? ' (override)' : ' by default'}.
-                  </div>
-                  {form.service_type !== 'warranty' && (
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={overrideCharge} onChange={(e) => setOverrideCharge(e.target.checked)} />
-                      Make it {warranty.default_chargeable ? 'free of charge' : 'chargeable'} instead
-                    </label>
-                  )}
-                  {form.service_type === 'warranty' && warranty.default_chargeable && (
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={overrideCharge} onChange={(e) => setOverrideCharge(e.target.checked)} />
-                      The machine is not covered — treat as warranty anyway (goodwill)
-                    </label>
-                  )}
-                  {overrideCharge && (
-                    <textarea value={chargeReason} onChange={(e) => setChargeReason(e.target.value)} rows={2} placeholder="Reason (required, kept in the audit trail)"
-                      style={{ ...sheetInput, marginTop: 6, resize: 'vertical' }} />
-                  )}
-                </div>
-              )}
               <label style={{ ...sheetLabel, marginTop: 14 }}>Issue Title <Req /></label>
               <input value={form.issue_title} onChange={(e) => set('issue_title', e.target.value)} placeholder="Brief summary of the fault..." style={sheetInput} data-tour="erp-srf-title" />
-              <label style={{ ...sheetLabel, marginTop: 14 }}>Detailed Description <Req /></label>
+              <label style={{ ...sheetLabel, marginTop: 14 }}>Detailed Description <Optional /></label>
               <textarea value={form.issue_description} onChange={(e) => set('issue_description', e.target.value)} rows={4} placeholder="Describe symptoms, context, and impact..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-srf-description" />
             </SheetSection>
 
@@ -418,10 +332,11 @@ export default function ServiceRequestForm({
             <SheetSection icon="calendar" title="Assignment & Schedule">
               <label style={sheetLabel}>Assign To Engineer</label>
               <div data-tour="erp-srf-assignee">
-                <SearchableSelect value={engineerId} onChange={setEngineerId} options={engineerOpts} placeholder="Pick an engineer" />
+                <div aria-readonly="true" style={{ ...sheetInput, display: 'flex', alignItems: 'center', background: SHEET.SOFT, color: SHEET.BODY }}>
+                  {engineerName}
+                </div>
               </div>
-              {peopleHint && <p role="status" style={{ ...sheetHint, color: '#b45309' }}>{peopleHint}</p>}
-              <p style={sheetHint}>The engineer is told about the job and can then plan visits, record the root cause, spares and files on it.</p>
+              <p style={sheetHint}>The person raising the SR is its engineer and the one who works on it.</p>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
                 <div data-tour="erp-srf-attend-date" style={{ flex: '1 1 140px' }}>
                   <label style={sheetLabel}>Expected Attend Date</label>

@@ -150,14 +150,12 @@ function OverviewTab({ org }: { org: OrganizationDetail }) {
   // Keep the rows for legacy records that carry a value under a non-railway type.
   const showRailwayFields = orgTypeHasRailwayFields(org.org_type) || !!org.railway_zone || !!org.division_workshop
   const place = [org.city, org.state].filter(Boolean).join(', ')
-  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
   const dot = <span style={{ color: '#cbd5e1' }}>·</span>
   // One card, same order as the organization form: details, address, contact & registration.
   return (
     <DetailCard tour="orgdetail-overview">
       <DetailSummary
         title={org.name}
-        text={`${org.org_type || 'Customer'} organization${place ? ` in ${place}` : ''} — ${plural(org.contacts.length, 'contact')}, ${org.inquiry_count} ${org.inquiry_count === 1 ? 'inquiry' : 'inquiries'}, ${plural(org.tender_count, 'tender')}.`}
         meta={<>
           <span>Code: <strong style={{ color: '#0f172a' }}>{org.org_code || '—'}</strong></span>
           {org.created_at && <>{dot}<span>Added {formatDate(org.created_at)}{org.created_by_name ? ` by ${org.created_by_name}` : ''}</span></>}

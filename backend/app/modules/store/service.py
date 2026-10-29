@@ -1,6 +1,7 @@
 """Plain-function helpers for the Store module — document number
 generation, kept separate from routes so it's easy to unit test. Mirrors
 app.modules.p2p.service's locking strategy."""
+import re
 from datetime import date
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
@@ -100,6 +101,42 @@ def generate_material_return_number(db: Session) -> str:
         last_num = int(last.rsplit("-", 1)[-1])
         return f"{prefix}{last_num + 1:04d}"
     return f"{prefix}0001"
+
+
+# Item codes are always <TYPE 2>-<CATEGORY 3>-<NNNN> (owner, 2026-10-28), so type
+# prefixes are exactly 2 characters and category codes exactly 3.
+ITEM_TYPE_PREFIX_LEN = 2
+CATEGORY_CODE_LEN = 3
+
+
+def fixed_length_code(name: str, length: int, taken) -> str:
+    """A code of exactly `length` letters/digits made from `name`, not in use
+    (`taken(code)` → bool): initials first, then the first letters, then the
+    first letter with later letters (ELE, ELC, ELT…), then letter + digits."""
+    from itertools import combinations, product
+    words = re.findall(r"[A-Z0-9]+", (name or "").upper()) or ["X"]
+    joined = "".join(words)
+    initials = "".join(w[0] for w in words)
+    tried: set[str] = set()
+
+    def candidates():
+        if len(words) > 1:
+            yield (initials + joined[1:])[:length] if len(initials) < length else initials[:length]
+        yield joined[:length]
+        for rest in combinations(joined[1:], length - 1):
+            yield joined[0] + "".join(rest)
+        for digits in product("0123456789", repeat=length - 1):
+            yield joined[0] + "".join(digits)
+        for chars in product("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", repeat=length):
+            yield "".join(chars)
+
+    for code in candidates():
+        code = code.ljust(length, "X")
+        if code not in tried:
+            tried.add(code)
+            if not taken(code):
+                return code
+    raise ValueError(f"No free {length}-character code left for '{name}'.")
 
 
 def generate_item_code(db: Session, item_type: str | None, category_name: str | None) -> str:

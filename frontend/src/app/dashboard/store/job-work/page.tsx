@@ -1,13 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi, storeJobWorkApi } from '@/lib/api'
 import { StoreItem } from '@/types'
-import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
+import { TEXT, BRAND, GLASS, SHADOWS, CONTROL } from '@/lib/theme'
 import { Field, primaryBtnStyle, secondaryBtnStyle, chipBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import { formatDate } from '@/lib/format'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
@@ -39,8 +39,10 @@ interface Challan {
   issue_id: number; issue_number: string; challan_number?: string | null; challan_date: string; expected_return_date?: string | null
   vendor_id?: number | null; vendor_name?: string | null; process?: string | null; location_name?: string | null
   lines: ChallanLine[]; outstanding_value: number; days_out: number; return_deadline: string; status: string
-  /** The processed item expected back (set on the challan). */
+  /** The processed item expected back (set on the challan) — the first of output_item_ids. */
   output_item_id?: number | null
+  /** Every item expected back, with the expected quantity (material sent can come back as several items). */
+  output_items?: { item_id: number; quantity?: number | null }[]
 }
 interface VendorStock { vendor_name?: string | null; item_code?: string | null; item_name?: string | null; uom?: string | null; quantity: number; value: number; challans: string[]; oldest_challan_date: string; overdue: boolean }
 interface Receipt {
@@ -48,6 +50,8 @@ interface Receipt {
   output_item_code?: string | null; output_item_name?: string | null; output_quantity: number; uom?: string | null; output_batch_number?: string | null
   component_value?: number | null; job_charge_rate?: number | null; output_unit_cost?: number | null; inspection_lot_number?: string | null
   vendor_challan_number?: string | null
+  /** Every processed item received (one receipt can bring back several). */
+  outputs?: { item_id: number; item_name?: string | null; uom?: string | null; quantity: number; batch_number?: string | null; job_charge_rate?: number | null; unit_cost?: number | null; inspection_lot_number?: string | null }[]
 }
 
 const STATUS_LABELS: Record<string, string> = { open: 'At vendor', due_back: 'Past expected return', overdue: 'Rule 45 limit passed', closed: 'Closed' }
@@ -65,6 +69,12 @@ const fmtDate = (d?: string | null) => (d ? formatDate(d) : '—')
 const fmtQty = (n?: number | null) => (n == null ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 4 }))
 const humanize = (v?: string | null) => (v ? v.charAt(0).toUpperCase() + v.slice(1).replace(/_/g, ' ') : '')
 const money = (v?: number | null) => (v == null ? '—' : `₹${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`)
+
+// Receipts saved before several items per receipt read their single header item.
+const outsOf = (r: Receipt) => (r.outputs?.length ? r.outputs : [{
+  item_id: 0, item_name: r.output_item_name, uom: r.uom, quantity: r.output_quantity, batch_number: r.output_batch_number,
+  job_charge_rate: r.job_charge_rate, unit_cost: r.output_unit_cost, inspection_lot_number: r.inspection_lot_number,
+}])
 
 function Badge({ status }: { status: string }) {
   return <Pill label={STATUS_LABELS[status] || humanize(status)} hex={STATUS_HEX[status] || '#64748b'} />
@@ -193,7 +203,7 @@ export default function JobWorkPage() {
                   <td style={td}><Badge status={c.status} /></td>
                   <td style={td} onClick={(e) => e.stopPropagation()}>
                     {c.status !== 'closed' && canReceive && (
-                      <span onClick={() => setReceiving(c)} style={{ color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>Receive processed item</span>
+                      <span onClick={() => setReceiving(c)} style={{ color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>Receive processed items</span>
                     )}
                     {c.status !== 'closed' && can('store', 'returns', 'create') && (
                       <div><span onClick={() => setReturning(c)} style={{ color: '#2563eb', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>Return as-is</span></div>
@@ -231,7 +241,7 @@ export default function JobWorkPage() {
       {tab === 'receipts' && seeReceipts && (
         <div style={card}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-            <thead><tr>{['Receipt', 'Date', 'Challan', 'Vendor', 'Processed item', 'Batch', ...(seeValues ? ['Component value'] : []), 'Job charge', ...(seeValues ? ['Unit cost'] : []), 'Inspection'].map((h, hi) => <th key={h} style={thFor(h)}>{h}{hi === 0 && <RowCount count={receipts.length} />}</th>)}</tr></thead>
+            <thead><tr>{['Receipt', 'Date', 'Challan', 'Vendor', 'Processed items', 'Batch', ...(seeValues ? ['Component value'] : []), 'Job charge', ...(seeValues ? ['Unit cost'] : []), 'Inspection'].map((h, hi) => <th key={h} style={thFor(h)}>{h}{hi === 0 && <RowCount count={receipts.length} />}</th>)}</tr></thead>
             <tbody>
               {loading && <tr><td colSpan={10} style={{ ...td, textAlign: 'center' }}>Loading…</td></tr>}
               {!loading && receipts.length === 0 && <tr><td colSpan={10} style={{ ...td, textAlign: 'center' }}>No job work receipts yet — use “Receive processed item” on an open challan.</td></tr>}
@@ -241,12 +251,12 @@ export default function JobWorkPage() {
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtDate(r.receipt_date)}</td>
                   <td style={td}>{r.challan_number || r.issue_number || '—'}</td>
                   <td style={td}>{r.vendor_name || '—'}</td>
-                  <td style={td}>{fmtQty(r.output_quantity)} {r.uom || ''} {r.output_item_name || ''}</td>
-                  <td style={td}>{r.output_batch_number || '—'}</td>
+                  <td style={td}>{outsOf(r).map((o, i) => <div key={i}>{fmtQty(o.quantity)} {o.uom || ''} {o.item_name || ''}</div>)}</td>
+                  <td style={td}>{outsOf(r).map((o, i) => <div key={i}>{o.batch_number || '—'}</div>)}</td>
                   {seeValues && <td style={tdNum}>{money(r.component_value)}</td>}
-                  <td style={tdNum}>{r.job_charge_rate != null ? `${money(r.job_charge_rate)} / ${r.uom || 'unit'}` : '—'}</td>
-                  {seeValues && <td style={tdNum}>{money(r.output_unit_cost)}</td>}
-                  <td style={td}>{r.inspection_lot_number || '—'}</td>
+                  <td style={tdNum}>{outsOf(r).map((o, i) => <div key={i}>{o.job_charge_rate != null ? `${money(o.job_charge_rate)} / ${o.uom || 'unit'}` : '—'}</div>)}</td>
+                  {seeValues && <td style={tdNum}>{outsOf(r).map((o, i) => <div key={i}>{money(o.unit_cost)}</div>)}</td>}
+                  <td style={td}>{outsOf(r).map((o, i) => <div key={i}>{o.inspection_lot_number || '—'}</div>)}</td>
                 </tr>
               ))}
             </tbody>
@@ -262,7 +272,7 @@ export default function JobWorkPage() {
       )}
       {receiving && (
         <ReceiveDialog challan={receiving} onClose={() => setReceiving(null)}
-          onDone={(r) => { setReceiving(null); setDone(`${r.receipt_number}: ${r.output_quantity} ${r.uom || ''} ${r.output_item_name} received${r.inspection_lot_number ? ` into Quality stock under lot ${r.inspection_lot_number}` : ''}${r.output_unit_cost != null ? ` at ${money(r.output_unit_cost)} each` : ''}.`); load() }} />
+          onDone={(r) => { setReceiving(null); setDone(`${r.receipt_number}: ` + outsOf(r).map((o) => `${fmtQty(o.quantity)} ${o.uom || ''} ${o.item_name || ''} received${o.inspection_lot_number ? ` into Quality stock under lot ${o.inspection_lot_number}` : ''}${o.unit_cost != null ? ` at ${money(o.unit_cost)} each` : ''}`).join('; ') + '.'); load() }} />
       )}
     </div>
   )
@@ -347,6 +357,10 @@ function Itc04({ canExport, onError }: { canExport: boolean; onError: (e: string
   )
 }
 
+interface OutputLine { itemId: string; qty: string; poLineId: string; rate: string; share: string }
+const emptyOutput = (): OutputLine => ({ itemId: '', qty: '', poLineId: '', rate: '', share: '' })
+const smallBtn: React.CSSProperties = { ...sheetBtn('secondary', SHEET.INK), padding: '6px 12px', minHeight: 30, fontSize: 12 }
+
 function ReceiveDialog({ challan, onClose, onDone }: {
   challan: Challan; onClose: () => void; onDone: (r: Receipt) => void
 }) {
@@ -354,22 +368,29 @@ function ReceiveDialog({ challan, onClose, onDone }: {
   const [poLines, setPoLines] = useState<{ id: number; label: string; unit_price?: number | null }[]>([])
   const open = challan.lines.filter((l) => l.quantity_outstanding - l.quantity_return_pending > 0)
   // The challan says what comes back; with one material sent, the same quantity is the usual start.
-  const [outputItemId, setOutputItemId] = useState(challan.output_item_id ? String(challan.output_item_id) : '')
-  const [outputQty, setOutputQty] = useState(challan.output_item_id && open.length === 1
-    ? String(+(open[0].quantity_outstanding - open[0].quantity_return_pending).toFixed(4)) : '')
+  // Material sent can come back as several different items (plate → flange + ring): one line each.
+  // One line per item the challan expects back, with its expected quantity (or, for one item back
+  // from one material with no quantity given, what is still at the vendor).
+  const expected = challan.output_items?.length ? challan.output_items : (challan.output_item_id ? [{ item_id: challan.output_item_id, quantity: null }] : [])
+  const [outputs, setOutputs] = useState<OutputLine[]>(expected.length ? expected.map((e) => ({
+    ...emptyOutput(), itemId: String(e.item_id),
+    qty: e.quantity != null ? String(e.quantity)
+      : expected.length === 1 && open.length === 1 ? String(+(open[0].quantity_outstanding - open[0].quantity_return_pending).toFixed(4)) : '',
+  })) : [emptyOutput()])
   const [receiptDate, setReceiptDate] = useState(new Date().toLocaleDateString('en-CA')) // local date, not UTC
   const [vendorDc, setVendorDc] = useState('')
-  const [poLineId, setPoLineId] = useState('')
-  const [rate, setRate] = useState('')
   const [remarks, setRemarks] = useState('')
   const [use, setUse] = useState<Record<number, { consumed: string; scrap: string }>>(
     Object.fromEntries(open.map((l) => [l.issue_item_id, { consumed: String(+(l.quantity_outstanding - l.quantity_return_pending).toFixed(4)), scrap: '' }])))
   const [busy, setBusy] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | string[]>('')
   const draft = useFormDraft(`store-job-work-receipt-new-${challan.issue_id}`,
-    { outputItemId, outputQty, receiptDate, vendorDc, poLineId, rate, remarks, use }, (d) => {
-      setOutputItemId(d.outputItemId ?? ''); setOutputQty(d.outputQty ?? ''); setReceiptDate(d.receiptDate || new Date().toLocaleDateString('en-CA'))
-      setVendorDc(d.vendorDc ?? ''); setPoLineId(d.poLineId ?? ''); setRate(d.rate ?? ''); setRemarks(d.remarks ?? '')
+    { outputs, receiptDate, vendorDc, remarks, use }, (d) => {
+      if (Array.isArray(d.outputs) && d.outputs.length) setOutputs(d.outputs)
+      setReceiptDate(d.receiptDate || new Date().toLocaleDateString('en-CA'))
+      setVendorDc(d.vendorDc ?? ''); setRemarks(d.remarks ?? '')
       setUse((u) => ({ ...u, ...(d.use ?? {}) }))
     })
 
@@ -378,16 +399,71 @@ function ReceiveDialog({ challan, onClose, onDone }: {
     if (challan.vendor_id) storeJobWorkApi.poLines(challan.vendor_id).then(setPoLines).catch(() => setPoLines([]))
   }, [challan.vendor_id])
 
+  const setOut = (idx: number, patch: Partial<OutputLine>) => setOutputs((prev) => prev.map((o, i) => (i === idx ? { ...o, ...patch } : o)))
+  const removeOut = (idx: number) => setOutputs((prev) => (prev.length === 1 ? [emptyOutput()] : prev.filter((_, i) => i !== idx)))
+  const filled = outputs.filter((o) => o.itemId || o.qty)
+  const shareTotal = filled.reduce((a, o) => a + (o.share !== '' ? Number(o.share) : 0), 0)
+
+  const importFile = async (file: File | undefined) => {
+    if (!file) return
+    setImporting(true)
+    try {
+      const res = await storeJobWorkApi.importReceiptOutputs(file)
+      const imported: OutputLine[] = res.lines.map((l) => ({
+        itemId: String(l.item_id), qty: String(l.quantity), poLineId: '',
+        rate: l.job_charge_rate != null ? String(l.job_charge_rate) : '', share: l.cost_share_pct != null ? String(l.cost_share_pct) : '',
+      }))
+      setOutputs((prev) => {
+        const all = [...prev.filter((o) => o.itemId || o.qty), ...imported]
+        return all.length ? all : [emptyOutput()]
+      })
+      if (res.errors.length) {
+        setError([
+          `${res.lines.length} item(s) were added. ${res.errors.length} row(s) were skipped — fix them in the file and import again, or add them by hand:`,
+          ...res.errors.map((e) => `Row ${e.row}${e.item_code ? ` (${e.item_code})` : ''}: ${e.reason}`),
+        ])
+      }
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not read the file — use the template (.xlsx or .csv) and keep its header row.'))
+    } finally {
+      setImporting(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  const downloadTemplate = async () => {
+    try {
+      const url = URL.createObjectURL(await storeJobWorkApi.receiptOutputsTemplate())
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'job_work_receipt_items_template.xlsx'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) { setError(extractErrorMessages(err, 'Could not download the template.')) }
+  }
+
   const save = async () => {
-    if (!outputItemId) { setError('Pick the processed item that came back (Item Master).'); return }
-    if (!(Number(outputQty) > 0)) { setError('Enter how many processed items came back.'); return }
+    const problems: string[] = []
+    if (!filled.length) problems.push('Add the processed item(s) that came back (Item Master).')
+    filled.forEach((o, i) => {
+      const name = items.find((it) => String(it.id) === o.itemId)?.item_name || `Line ${i + 1}`
+      if (!o.itemId) problems.push(`Line ${i + 1}: pick the processed item.`)
+      if (!(Number(o.qty) > 0)) problems.push(`${name}: enter how many came back.`)
+    })
+    const withShare = filled.filter((o) => o.share !== '').length
+    if (filled.length > 1 && withShare && withShare !== filled.length) problems.push('Cost share % is filled on some items and blank on others — fill every line (total 100) or leave all blank.')
+    if (filled.length > 1 && withShare === filled.length && Math.abs(shareTotal - 100) > 0.01) problems.push(`Cost shares add up to ${+shareTotal.toFixed(2)}% — they must total 100%.`)
+    if (problems.length) { setError(problems); return }
     setBusy(true)
     setError('')
     try {
       const r = await storeJobWorkApi.createReceipt({
-        issue_id: challan.issue_id, output_item_id: Number(outputItemId), output_quantity: Number(outputQty), receipt_date: receiptDate,
-        vendor_challan_number: vendorDc.trim() || undefined, purchase_order_item_id: poLineId ? Number(poLineId) : undefined,
-        job_charge_rate: rate !== '' ? Number(rate) : undefined, remarks: remarks.trim() || undefined,
+        issue_id: challan.issue_id, receipt_date: receiptDate,
+        vendor_challan_number: vendorDc.trim() || undefined, remarks: remarks.trim() || undefined,
+        outputs: filled.map((o) => ({
+          item_id: Number(o.itemId), quantity: Number(o.qty), purchase_order_item_id: o.poLineId ? Number(o.poLineId) : undefined,
+          job_charge_rate: o.rate !== '' ? Number(o.rate) : undefined, cost_share_pct: filled.length > 1 && o.share !== '' ? Number(o.share) : undefined,
+        })),
         components: open.map((l) => ({ issue_item_id: l.issue_item_id, consumed_quantity: Number(use[l.issue_item_id]?.consumed || 0), scrap_quantity: Number(use[l.issue_item_id]?.scrap || 0) })),
       })
       draft.clear()
@@ -397,9 +473,10 @@ function ReceiveDialog({ challan, onClose, onDone }: {
     } finally { setBusy(false) }
   }
 
+  const cellInput: React.CSSProperties = { ...sheetInput, padding: '7px 10px' }
   return (
-    <FormSheet icon="box" title="Receive processed item"
-      subtitle={`Challan ${challan.challan_number || challan.issue_number} · ${challan.vendor_name || '—'} — material used leaves stock with the vendor; the processed item comes in at component value + job charge.`}
+    <FormSheet icon="box" title="Receive processed items"
+      subtitle={`Challan ${challan.challan_number || challan.issue_number} · ${challan.vendor_name || '—'} — material used leaves stock with the vendor; each processed item comes in at its share of the material value + its job charge.`}
       onClose={onClose} busy={busy}
       footer={<>
         <button type="button" onClick={onClose} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
@@ -409,31 +486,73 @@ function ReceiveDialog({ challan, onClose, onDone }: {
         left={<>
           <DraftBanner draft={draft} />
           <SheetError error={error} />
-          <SheetSection icon="box" title="Processed Item">
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-              <div style={{ flex: '1 1 260px' }}>
-                <label style={sheetLabel}>Processed item <Req /></label>
-                <SearchableSelect value={outputItemId} onChange={setOutputItemId} placeholder="Search item code or name…"
-                  options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
-              </div>
-              <div style={{ flex: '0 1 120px', minWidth: 110 }}>
-                <label style={sheetLabel}>Qty received <Req /></label>
-                <input type="number" min={0} step="any" style={sheetInput} value={outputQty} onChange={(e) => setOutputQty(e.target.value)} />
-              </div>
+          <SheetSection icon="box" title="Processed Items" extra={
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <input ref={fileRef} type="file" hidden accept=".xlsx,.xlsm,.csv" onChange={(e) => importFile(e.target.files?.[0])} />
+              <button type="button" onClick={() => fileRef.current?.click()} disabled={importing} style={smallBtn}>
+                <SheetIcon name="upload" size={14} />{importing ? 'Reading…' : 'Import from Excel'}
+              </button>
+              <button type="button" onClick={downloadTemplate} style={smallBtn}><SheetIcon name="doc" size={14} />Download template</button>
+            </div>
+          }>
+            <p style={{ fontSize: 12, color: SHEET.MUTED, margin: '0 0 10px' }}>
+              One line per different item that came back.{outputs.length > 1 && ' Cost share % = part of the sent material’s value each item carries; leave all blank to split by standard cost × quantity.'}
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {outputs.map((o, idx) => (
+                <div key={idx} style={{ border: `1px solid ${SHEET.LINE}`, borderRadius: 10, padding: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                    <div style={{ flex: '1 1 240px' }}>
+                      <label style={sheetLabel}>Processed item <Req /></label>
+                      <SearchableSelect value={o.itemId} onChange={(v) => setOut(idx, { itemId: v })} placeholder="Search item code or name…"
+                        options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
+                    </div>
+                    <div style={{ flex: '0 1 110px', minWidth: 100 }}>
+                      <label style={sheetLabel}>Qty received <Req /></label>
+                      <input type="number" min={0} step="any" style={cellInput} value={o.qty} onChange={(e) => setOut(idx, { qty: e.target.value })} />
+                    </div>
+                    <button type="button" title="Remove this item" aria-label="Remove item" onClick={() => removeOut(idx)}
+                      style={{ ...sheetBtn('secondary', SHEET.INK), padding: 0, width: CONTROL.height, height: CONTROL.height, justifyContent: 'center' }}><SheetIcon name="trash" size={15} /></button>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                    <div style={{ flex: '1 1 220px' }}>
+                      <label style={sheetLabel}>Job charge from PO line <Optional /></label>
+                      <SearchableSelect value={o.poLineId} onChange={(v) => { const pl = poLines.find((p) => String(p.id) === v); setOut(idx, { poLineId: v, ...(pl?.unit_price != null ? { rate: String(pl.unit_price) } : {}) }) }}
+                        placeholder={poLines.length ? 'Pick the job-work PO line…' : 'No issued PO with this vendor'} options={poLines.map((p) => ({ value: String(p.id), label: p.label }))} />
+                    </div>
+                    <div style={{ flex: '0 1 120px', minWidth: 100 }}>
+                      <label style={sheetLabel}>Job charge / unit</label>
+                      <input type="number" min={0} step="any" style={cellInput} value={o.rate} onChange={(e) => setOut(idx, { rate: e.target.value })} placeholder="₹" />
+                    </div>
+                    {outputs.length > 1 && (
+                      <div style={{ flex: '0 1 110px', minWidth: 100 }}>
+                        <label style={sheetLabel}>Cost share %</label>
+                        <input type="number" min={0} max={100} step="any" style={cellInput} value={o.share} onChange={(e) => setOut(idx, { share: e.target.value })} placeholder="Auto" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, gap: 10, flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => setOutputs((prev) => [...prev, emptyOutput()])} style={sheetBtn('ghost', SHEET.BLUE)}><SheetIcon name="plus" size={15} />Add Item</button>
+              {outputs.length > 1 && filled.some((o) => o.share !== '') && (
+                <span style={{ fontSize: 12.5, color: Math.abs(shareTotal - 100) > 0.01 ? '#b91c1c' : '#16a34a' }}>Cost share total: {+shareTotal.toFixed(2)}%</span>
+              )}
             </div>
           </SheetSection>
           <SheetSection icon="list" title="Challan Material Used">
             <div style={{ overflow: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 10 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr>{['Item', 'At vendor', 'Used in item', 'Process scrap'].map((h, hi) => <th key={h} style={{ ...thFor(h), position: 'static' }}>{h}{hi === 0 && <RowCount count={open.length} />}</th>)}</tr></thead>
+                <thead><tr>{['Item', 'At vendor', 'Used in items', 'Process scrap'].map((h, hi) => <th key={h} style={{ ...thFor(h), position: 'static' }}>{h}{hi === 0 && <RowCount count={open.length} />}</th>)}</tr></thead>
                 <tbody>
                   {open.map((l) => (
                     <tr key={l.issue_item_id}>
                       <td style={td}>{l.item_name}{l.batch_number ? ` · ${l.batch_number}` : ''}</td>
                       <td style={tdNum}>{fmtQty(+(l.quantity_outstanding - l.quantity_return_pending).toFixed(4))} {l.uom || ''}</td>
-                      <td style={td}><input type="number" min={0} step="any" style={{ ...sheetInput, width: 100, padding: '7px 10px' }} value={use[l.issue_item_id]?.consumed || ''}
+                      <td style={td}><input type="number" min={0} step="any" style={{ ...cellInput, width: 100 }} value={use[l.issue_item_id]?.consumed || ''}
                         onChange={(e) => setUse((u) => ({ ...u, [l.issue_item_id]: { ...u[l.issue_item_id], consumed: e.target.value } }))} /></td>
-                      <td style={td}><input type="number" min={0} step="any" style={{ ...sheetInput, width: 100, padding: '7px 10px' }} value={use[l.issue_item_id]?.scrap || ''}
+                      <td style={td}><input type="number" min={0} step="any" style={{ ...cellInput, width: 100 }} value={use[l.issue_item_id]?.scrap || ''}
                         onChange={(e) => setUse((u) => ({ ...u, [l.issue_item_id]: { ...u[l.issue_item_id], scrap: e.target.value } }))} /></td>
                     </tr>
                   ))}
@@ -448,13 +567,6 @@ function ReceiveDialog({ challan, onClose, onDone }: {
             <DateField value={receiptDate} onChange={setReceiptDate} />
             <label style={{ ...sheetLabel, marginTop: 14 }}>Vendor&apos;s DC / invoice <Optional /></label>
             <input style={sheetInput} value={vendorDc} onChange={(e) => setVendorDc(e.target.value)} />
-          </SheetSection>
-          <SheetSection icon="rupee" title="Job Charge" extra={<Optional />}>
-            <label style={sheetLabel}>From PO line</label>
-            <SearchableSelect value={poLineId} onChange={(v) => { setPoLineId(v); const pl = poLines.find((p) => String(p.id) === v); if (pl?.unit_price != null) setRate(String(pl.unit_price)) }}
-              placeholder={poLines.length ? 'Pick the job-work PO line…' : 'No issued PO with this vendor'} options={poLines.map((p) => ({ value: String(p.id), label: p.label }))} />
-            <label style={{ ...sheetLabel, marginTop: 14 }}>Job charge / unit</label>
-            <input type="number" min={0} step="any" style={{ ...sheetInput, maxWidth: 160 }} value={rate} onChange={(e) => setRate(e.target.value)} placeholder="₹" />
           </SheetSection>
           <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
             <textarea style={{ ...sheetInput, minHeight: 60, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />

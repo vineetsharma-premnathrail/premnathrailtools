@@ -24,10 +24,9 @@ import { LinesEditor, ScheduleEditor, BillingPlanEditor, syncVehicleRows } from 
 import DeliveryPanel from '@/components/sales/DeliveryPanel'
 import BillingStatusPanel from '@/components/sales/BillingStatusPanel'
 import AmendmentPanel from '@/components/sales/AmendmentPanel'
-import ProformaPanel from '@/components/sales/ProformaPanel'
 import {
-  SO_STATUS_LABELS, SO_STATUS_HEX, LEVEL_LABELS, DEVIATION_LABELS, PRICE_BASIS_LABELS, LD_PERIOD_LABELS, LD_BASIS_LABELS,
-  WARRANTY_RULE_LABELS, MILESTONE_LABELS, LINE_TYPE_LABELS, DOC_TYPE_LABELS, ORDER_TYPE_LABELS, ORDER_CATEGORY_LABELS, formatINR, formatMoney,
+  SO_STATUS_LABELS, SO_STATUS_HEX, LEVEL_LABELS, DEVIATION_LABELS, LD_PERIOD_LABELS, LD_BASIS_LABELS,
+  WARRANTY_RULE_LABELS, MILESTONE_LABELS, LINE_TYPE_LABELS, DOC_TYPE_LABELS, ORDER_TYPE_LABELS, ORDER_CATEGORY_LABELS, HIRE_RATE_BASIS_LABELS, formatINR, formatMoney,
 } from '@/components/sales/labels'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import { ProjectUnitChip } from '@/components/sales/ProjectUnitPicker'
@@ -50,6 +49,7 @@ const TERM_KEYS = [
   'third_party_inspection_required', 'ld_applicable', 'ld_rate_percent', 'ld_rate_period', 'ld_basis', 'ld_max_percent',
   'warranty_months_from_delivery', 'warranty_months_from_commissioning', 'warranty_rule', 'warranty_terms_text',
   'delivery_terms_text', 'special_conditions',
+  'hire_start_date', 'hire_end_date', 'hire_rate_basis', 'hire_site', 'security_deposit',
 ] as const
 
 type Prompt = { action: string; title: string; message: string; confirm: string; danger: boolean; require: boolean; field: 'reason' | 'comment' }
@@ -85,6 +85,7 @@ export default function SalesOrderDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [agencies, setAgencies] = useState<{ value: string; label: string }[]>([])
   const [terms, setTerms] = useState<OrderTerms>({})
+  const [gst, setGst] = useState({ gstin: '', state: '' })
   const [lines, setLines] = useState<SalesOrderLineInput[]>([])
   const [rows, setRows] = useState<SalesOrderScheduleInput[]>([])
   const [billing, setBilling] = useState<SalesBillingLineInput[]>([])
@@ -105,6 +106,7 @@ export default function SalesOrderDetailPage() {
     const t: OrderTerms = {}
     TERM_KEYS.forEach((k) => { t[k] = (o as unknown as Record<string, string | number | boolean | null>)[k] })
     setTerms(t)
+    setGst({ gstin: o.customer_gstin || '', state: o.customer_state || '' })
     setLines(o.lines.map((l) => ({ id: l.id, line_number: l.line_number, line_type: l.line_type, crm_product_id: l.crm_product_id, rrv_model: l.rrv_model, description: l.description,
       specification: l.specification, customer_line_ref: l.customer_line_ref, hsn_sac_code: l.hsn_sac_code, uom: l.uom, quantity: l.quantity,
       unit_price: l.unit_price, discount_percent: l.discount_percent, gst_rate: l.gst_rate,
@@ -138,12 +140,6 @@ export default function SalesOrderDetailPage() {
     } finally { setBusy(false) }
   }
 
-  async function openPdf() {
-    try {
-      const blob = await salesApi.oaPdf(soId)
-      window.open(URL.createObjectURL(blob), '_blank')
-    } catch (err) { setError(extractErrorMessages(err, 'Failed to open the acknowledgement PDF.')) }
-  }
 
   async function openAttachment(a: SalesAttachment) {
     try { window.open(URL.createObjectURL(await salesApi.attachmentContent(a.id)), '_blank') } catch (err) { setError(extractErrorMessages(err, `Failed to open ${a.filename}.`)) }
@@ -167,6 +163,9 @@ export default function SalesOrderDetailPage() {
   const c = so.can
   const isDraft = so.status === 'draft'
   const stepIdx = STEPS.indexOf(so.status === 'on_hold' ? 'confirmed' : so.status)
+  // Derived by the backend: 'pending_project' while a confirmed New Project order has no PEW project yet.
+  const shownStatus = (so as { display_status?: string | null }).display_status || so.status
+  const pendingProject = shownStatus === 'pending_project'
   const ask = (p: Prompt) => setPrompt(p)
   // Attachments: upload / delete need 'edit' on Sales › Sales Orders (backend _require_edit)
   // plus the Documents feature's create / delete.
@@ -183,7 +182,7 @@ export default function SalesOrderDetailPage() {
     <div>
       <SalesNav />
       <PageHeader
-        title={<span>{so.display_number} <span style={{ verticalAlign: 'middle' }}><Pill label={SO_STATUS_LABELS[so.status] || so.status} hex={SO_STATUS_HEX[so.status] || '#78716c'} /></span></span>}
+        title={<span>{so.display_number} <span style={{ verticalAlign: 'middle' }}><Pill label={SO_STATUS_LABELS[shownStatus] || shownStatus} hex={SO_STATUS_HEX[shownStatus] || '#78716c'} /></span></span>}
         subtitle={<>{so.customer_name} · PO {so.customer_po_number || '—'}{seePrices ? ` · ${formatMoney(so.grand_total, so.currency)} incl. GST` : ''}{so.amendment_no ? ` · amendment ${so.amendment_no}` : ''}</>}
         backHref="/dashboard/sales/orders"
       >
@@ -192,7 +191,6 @@ export default function SalesOrderDetailPage() {
           {c.approve && <button style={primaryBtnStyle} disabled={busy} onClick={() => ask({ action: 'approve', title: `Approve as ${LEVEL_LABELS[so.next_approval_level || ''] || 'approver'}`, message: 'Optional comment (required when approving as an admin stand-in).', confirm: 'Approve', danger: false, require: false, field: 'comment' })}>Approve</button>}
           {c.approve && <button style={secondaryBtnStyle} disabled={busy} onClick={() => ask({ action: 'return', title: 'Return for changes', message: 'What must the maker change?', confirm: 'Return', danger: false, require: true, field: 'reason' })}>Return</button>}
           {c.approve && <button style={dangerBtnStyle} disabled={busy} onClick={() => ask({ action: 'reject', title: 'Reject the order', message: 'Rejection is final — the order is cancelled. Say why.', confirm: 'Reject', danger: true, require: true, field: 'reason' })}>Reject</button>}
-          {c.issue_oa && <button style={secondaryBtnStyle} disabled={busy} onClick={() => run(() => salesApi.action(soId, 'issue-oa'), 'Order acknowledgement marked as issued.')}>{so.oa_issued_at ? 'Re-issue OA' : 'Mark OA issued'}</button>}
           {c.hold && <button style={secondaryBtnStyle} disabled={busy} onClick={() => ask({ action: 'hold', title: 'Put the order on hold', message: 'Why is the order on hold?', confirm: 'Hold', danger: false, require: true, field: 'reason' })}>Hold</button>}
           {c.resume && <button style={secondaryBtnStyle} disabled={busy} onClick={() => run(() => salesApi.action(soId, 'resume'), 'Order resumed.')}>Resume</button>}
           {c.short_close && <button style={dangerBtnStyle} disabled={busy} onClick={() => ask({ action: 'short-close', title: 'Short-close the order', message: 'The customer cancels the balance quantity. Open vehicles are cancelled. Quote the customer letter.', confirm: 'Short-close', danger: true, require: true, field: 'reason' })}>Short-close</button>}
@@ -216,13 +214,21 @@ export default function SalesOrderDetailPage() {
           </div>
         )
       })()}
+      {pendingProject && !so.pm_project_id && !so.order_project && (
+        <p data-tour="sales-detail-order-project" style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 12px' }}>
+          No project yet — the Project Manager creates it in Project Management.
+        </p>
+      )}
 
       <div data-tour="sales-detail-stepper" style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
-        {STEPS.map((s, i) => (
-          <span key={s} style={{ ...pillStyle(i <= stepIdx && stepIdx >= 0 ? '#c2410c' : TEXT.muted), fontSize: 11.5, padding: '5px 11px', ...(i <= stepIdx && stepIdx >= 0 ? {} : { background: 'rgba(0,0,0,.04)' }) }}>
-            {i + 1}. {SO_STATUS_LABELS[s]}
-          </span>
-        ))}
+        {STEPS.map((s, i) => {
+          const waiting = pendingProject && s === 'confirmed'  // amber until the Project Manager creates the project
+          return (
+            <span key={s} style={{ ...pillStyle(waiting ? SO_STATUS_HEX.pending_project : i <= stepIdx && stepIdx >= 0 ? '#c2410c' : TEXT.muted), fontSize: 11.5, padding: '5px 11px', ...(i <= stepIdx && stepIdx >= 0 ? {} : { background: 'rgba(0,0,0,.04)' }) }}>
+              {i + 1}. {SO_STATUS_LABELS[waiting ? 'pending_project' : s]}
+            </span>
+          )
+        })}
       </div>
 
       <ErrorBanner error={error} />
@@ -275,7 +281,7 @@ export default function SalesOrderDetailPage() {
               title={so.customer_name || 'Customer not set'}
               text={`${ORDER_CATEGORY_LABELS[so.order_category || 'new_project']} · ${ORDER_TYPE_LABELS[so.order_type] || 'Sales'} order${so.service_machine_label ? ` — machine ${so.service_machine_label}${so.service_requests?.length ? ` (${so.service_requests.map((r) => r.request_number).join(', ')})` : ''}` : so.source_label ? ` — from ${so.source_label}${so.source_quotation_number ? ` ${so.source_quotation_number}` : ''}` : ''}.`}
               meta={<>
-                <Pill label={SO_STATUS_LABELS[so.status] || so.status} hex={SO_STATUS_HEX[so.status] || '#78716c'} />
+                <Pill label={SO_STATUS_LABELS[shownStatus] || shownStatus} hex={SO_STATUS_HEX[shownStatus] || '#78716c'} />
                 {seePrices && <><span style={{ color: '#cbd5e1' }}>·</span><span>Order value <strong style={{ color: '#0f172a' }}>{formatMoney(so.grand_total, so.currency)}</strong> incl. GST</span></>}
                 <span style={{ color: '#cbd5e1' }}>·</span><span>{so.units_delivered} of {so.units_total} units delivered</span>
                 <span style={{ color: '#cbd5e1' }}>·</span><span>Sales owner: <strong style={{ color: '#0f172a' }}>{so.sales_owner_name || '—'}</strong></span>
@@ -289,7 +295,6 @@ export default function SalesOrderDetailPage() {
             <DetailGroup title="Order" last={c.edit}>
               {seePrices && <DetailRow label="Value">{`${formatMoney(so.taxable_total, so.currency)} + GST ${formatMoney(so.gst_total, so.currency)} = ${formatMoney(so.grand_total, so.currency)}`}</DetailRow>}
               <DetailRow label="Confirmed">{so.confirmed_at ? `${formatDate(so.confirmed_at)}${so.confirmed_by_name ? ` by ${so.confirmed_by_name}` : ''}` : null}</DetailRow>
-              <DetailRow label="Order acknowledgement issued">{so.oa_issued_at ? formatDate(so.oa_issued_at) : null}</DetailRow>
               {so.hold_reason && so.status === 'on_hold' && <DetailRow label="Hold reason">{so.hold_reason}</DetailRow>}
               {so.cancel_reason && <DetailRow label="Cancelled because">{so.cancel_reason}</DetailRow>}
               {so.short_close_reason && <DetailRow label="Short-closed because">{so.short_close_reason}</DetailRow>}
@@ -303,20 +308,52 @@ export default function SalesOrderDetailPage() {
                 <DetailRow label="Purchase Person Name">{so.purchaser_name}</DetailRow>
                 <DetailRow label="Currency">{so.currency && so.currency !== 'INR' ? `${so.currency} (label only, amounts not converted)` : 'INR'}</DetailRow>
                 <DetailRow label="Paying authority">{so.paying_authority}</DetailRow>
-                <DetailRow label="Price basis">{PRICE_BASIS_LABELS[so.price_basis]}</DetailRow>
-                <DetailRow label="Freight / insurance">{[so.freight_terms, so.insurance_terms].filter(Boolean).join(' / ') || null}</DetailRow>
+                <DetailRow label="PO received on">{so.customer_po_received_date ? formatDate(so.customer_po_received_date) : null}</DetailRow>
+                {(so.freight_terms || so.insurance_terms) && (
+                  <DetailRow label="Freight / insurance">{[so.freight_terms, so.insurance_terms].filter(Boolean).join(' / ')}</DetailRow>
+                )}
+                {so.order_category === 'rental' ? <>
+                  <DetailRow label="Hire period">{so.hire_start_date ? `${formatDate(so.hire_start_date)} – ${so.hire_end_date ? formatDate(so.hire_end_date) : 'open-ended (until returned)'}` : null}</DetailRow>
+                  <DetailRow label="Rate basis">{so.hire_rate_basis ? HIRE_RATE_BASIS_LABELS[so.hire_rate_basis] : null}</DetailRow>
+                  <DetailRow label="Site">{so.hire_site}</DetailRow>
+                  <DetailRow label="Security deposit">{so.security_deposit != null && seePrices ? formatMoney(so.security_deposit, so.currency) : null}</DetailRow>
+                </> : <>
                 <DetailRow label="Inspection">{so.inspection_agency ? `${so.inspection_agency.toUpperCase()}${so.third_party_inspection_required ? ' (third-party inspection required)' : ''}` : null}</DetailRow>
                 <DetailRow label="Liquidated damages">{so.ld_applicable ? `${so.ld_rate_percent}% ${LD_PERIOD_LABELS[so.ld_rate_period || ''] || ''} of ${LD_BASIS_LABELS[so.ld_basis || ''] || ''}, ${so.ld_max_percent == null ? 'no cap' : `cap ${so.ld_max_percent}%`}` : 'Not applicable'}</DetailRow>
-                <DetailRow label="Warranty">{so.warranty_rule ? `${so.warranty_months_from_delivery ?? '—'} months from delivery / ${so.warranty_months_from_commissioning ?? '—'} months from commissioning — ${WARRANTY_RULE_LABELS[so.warranty_rule]}` : null}</DetailRow>
-                <DetailRow label="Delivery terms">{so.delivery_terms_text}</DetailRow>
-                <DetailRow label="Special conditions">{so.special_conditions}</DetailRow>
+                <DetailRow label="Warranty">{so.warranty_rule === 'not_applicable' ? 'Not applicable'
+                  : so.warranty_rule === 'from_delivery' ? (so.warranty_months_from_delivery ? `${so.warranty_months_from_delivery} months from handover (each vehicle)` : null)
+                  : so.warranty_rule ? `${so.warranty_months_from_delivery ?? '—'} months from delivery / ${so.warranty_months_from_commissioning ?? '—'} months from commissioning — ${WARRANTY_RULE_LABELS[so.warranty_rule]}` : null}</DetailRow>
+                </>}
+                {so.order_category === 'rental' && <DetailRow label="Delivery & return terms">{so.delivery_terms_text}</DetailRow>}
+                <DetailRow label="Terms & conditions">{so.special_conditions ? <span style={{ whiteSpace: 'pre-wrap' }}>{so.special_conditions}</span> : null}</DetailRow>
               </DetailGroup>
             )}
           </DetailCard>
           {c.edit && (
-            <DraftBlock icon="doc" title="Contract terms" subtitle="Draft — PO, commercial, LD, warranty and delivery terms." busy={busy} saveLabel="Save terms"
-              onSave={() => run(() => salesApi.updateOrder(soId, terms), 'Terms saved.')}>
-              <OrderTermsFields v={terms} set={(p) => setTerms((t) => ({ ...t, ...p }))} agencies={agencies} />
+            <DraftBlock icon="rupee" title="Customer GST" busy={busy} saveLabel="Save GST details"
+              subtitle="Needed to invoice the order. If the CRM organisation has no GSTIN / state yet, what you enter here is saved there too."
+              onSave={() => run(() => salesApi.updateOrder(soId, { customer_gstin: gst.gstin.trim().toUpperCase() || null, customer_state: gst.state.trim() || null }),
+                'GST details saved — added to the CRM organisation where it had none.')}>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 220px' }}>
+                  <label style={sheetLabel}>Customer GSTIN</label>
+                  <input style={sheetInput} value={gst.gstin} maxLength={15} placeholder="e.g. 27ABCDE1234F1Z5"
+                    onChange={(e) => setGst((g) => ({ ...g, gstin: e.target.value.toUpperCase() }))} />
+                </div>
+                <div style={{ flex: '1 1 220px' }}>
+                  <label style={sheetLabel}>State</label>
+                  <input style={sheetInput} value={gst.state} placeholder="e.g. Maharashtra"
+                    onChange={(e) => setGst((g) => ({ ...g, state: e.target.value }))} />
+                </div>
+              </div>
+              <p style={{ ...sheetHint, margin: '8px 0 12px' }}>Unregistered customer (no GSTIN)? Enter only the state — it decides CGST+SGST or IGST.</p>
+            </DraftBlock>
+          )}
+          {c.edit && (
+            <DraftBlock icon="doc" title="Contract terms" subtitle={so.order_category === 'rental' ? 'Draft — PO, commercial, hire and delivery terms.' : 'Draft — PO, commercial, LD, warranty and delivery terms.'} busy={busy} saveLabel="Save terms"
+              onSave={() => run(() => salesApi.updateOrder(soId, seePrices ? terms : { ...terms, security_deposit: undefined }), 'Terms saved.')}>
+              <OrderTermsFields v={terms} set={(p) => setTerms((t) => ({ ...t, ...p }))} agencies={agencies} category={so.order_category}
+                inquiryId={so.source_inquiry_id} tenderId={so.source_tender_id} />
             </DraftBlock>
           )}
         </>
@@ -381,22 +418,11 @@ export default function SalesOrderDetailPage() {
           {(so.so_number ? <BillingStatusPanel order={so} /> : <p style={{ fontSize: 12, color: TEXT.muted }}>Milestones start falling due once the order is confirmed. {so.billing_lines.map((b) => `${MILESTONE_LABELS[b.milestone_type] || b.milestone_type}: ${b.status.replace(/_/g, ' ')}`).join(' · ')}</p>)}
         </div>
       )}
-      {shown === 'billing' && so.so_number && seePrices && feat('proforma') && <ProformaPanel order={so} />}
 
       {shown === 'amendments' && <AmendmentPanel order={so} userId={user?.id} onApplied={load} />}
 
       {shown === 'documents' && (
         <>
-          {so.so_number && seePrices && (
-            <div data-tour="sales-detail-oa" style={sectionStyle}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-                <h2 style={{ ...h2Style, margin: 0 }}>Order acknowledgement{so.amendment_no ? ` — amendment ${so.amendment_no}` : ''}</h2>
-                <button style={secondaryBtnStyle} onClick={openPdf}>Download PDF</button>
-              </div>
-              <ManagedDocumentPanel entityType="sales_order_ack" entityId={so.id} revision={so.amendment_no || 0} canModify={!!c.issue_oa}
-                recordLabel="order acknowledgement" downloadName={`OA-${(so.so_number || '').replace(/[^A-Za-z0-9._-]+/g, '-')}`} />
-            </div>
-          )}
           <div data-tour="sales-detail-docs" style={sectionStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
               <h2 style={{ ...h2Style, margin: 0 }}>Attachments</h2>

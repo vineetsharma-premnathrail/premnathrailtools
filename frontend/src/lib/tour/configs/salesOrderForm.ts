@@ -24,7 +24,7 @@ const config: TourConfig = {
     {
       target: 'sales-form-source',
       title: '2. Where the order comes from',
-      purpose: 'New Project: the won CRM inquiry (status "Order Received") or the tender with LOA / order received — customer, contact, lines, prices and terms are filled from it. Service: the machine and the SRs this order bills for — the customer is the machine’s customer. Rental: the organisation the machine is rented to.',
+      purpose: 'New Project: the CRM inquiry whose quotation the customer accepted or the tender with LOA / order received — customer, contact, lines, prices and terms are filled from it. Service: the machine and the SRs this order bills for — the customer is the machine’s customer. Rental: the organisation the machine is rented to.',
       required: true,
       why: 'Nobody types a customer twice, and every order traces back to its inquiry, machine or SR. An SR can sit on only one live order, so it is never billed twice.',
     },
@@ -49,14 +49,10 @@ const config: TourConfig = {
       why: 'Recorded as a label only: billing plan, invoices and Finance reports use the amounts exactly as entered, without any conversion. A note appears when the currency is not INR.',
     },
     {
-      target: 'sales-form-price-basis',
-      title: 'Price basis',
-      purpose: 'Who pays freight and when risk passes.',
-      options: [
-        { value: 'Ex-works', meaning: 'Customer collects; LD is reckoned from the dispatch date.' },
-        { value: 'FOR destination', meaning: 'We deliver to the consignee and bear transit risk; LD is reckoned from the proof-of-delivery date. Normal for railway orders.' },
-        { value: 'FOR dispatch station', meaning: 'Delivered free on rail / road at our end.' },
-      ],
+      target: 'sales-form-terms',
+      title: 'Terms & Conditions',
+      purpose: 'The same terms as on the CRM quotation: Payment Terms, Quote Conditions and Notes. Pick them from the saved lists the quotation uses (new Payment Terms are added in CRM › Settings); delivery dates come from the Delivery Schedule, so there is no Delivery Time here.',
+      why: 'The order must carry exactly what was agreed. A tender has no quotation in CRM, so its terms are typed from the LOA.',
     },
     {
       target: 'sales-form-inspection',
@@ -73,8 +69,15 @@ const config: TourConfig = {
     {
       target: 'sales-form-warranty',
       title: 'Warranty',
-      purpose: 'Months from delivery and/or commissioning and the rule that combines them.',
-      validExample: '30 months from delivery / 24 months from commissioning, whichever is earlier',
+      purpose: 'Tick “Warranty applies” and enter the warranty period in months. It starts automatically on the handover date of each vehicle and ends after these months. Leave it unticked when the contract has no warranty.',
+      validExample: 'Warranty applies · 24 months',
+    },
+    {
+      target: 'sales-form-hire',
+      title: 'Hire terms (Rental orders)',
+      purpose: 'A Rental order is a bare machine on hire, so it has no LD, warranty or inspection. Enter the hire period (leave “Hire to” blank for an open-ended hire), how the rate is counted, the site where the machine works and any refundable security deposit.',
+      validExample: 'Hire from 01-11-2026 to 30-04-2027 · Per month · Ambala Cantt yard · deposit ₹2,00,000',
+      why: 'Hire from, rate basis and site are checked when the order is submitted for approval; a hire extension later is an amendment.',
     },
     {
       target: 'sales-form-lines',
@@ -95,7 +98,7 @@ const config: TourConfig = {
     {
       target: 'sales-form-po-file',
       title: 'PO document',
-      purpose: 'Attach the customer’s PO (or LOA). It is required before the order can be submitted.',
+      purpose: 'Attach the customer’s PO (or LOA). The order can’t be saved without it.',
     },
     {
       // Only shown when the order is raised from an inquiry or tender — the tour skips it otherwise.

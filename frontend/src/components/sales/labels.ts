@@ -6,11 +6,13 @@ export const SO_STATUS_LABELS: Record<string, string> = {
   draft: 'Draft', pending_approval: 'Pending approval', confirmed: 'Confirmed', in_execution: 'In execution',
   partially_delivered: 'Partially delivered', delivered: 'Delivered', closed: 'Closed', on_hold: 'On hold',
   cancelled: 'Cancelled', short_closed: 'Short-closed',
+  // Derived display status (display_status), never stored: confirmed New Project order with no PEW project yet.
+  pending_project: 'Pending project creation',
 }
 export const SO_STATUS_HEX: Record<string, string> = {
   draft: '#78716c', pending_approval: '#F59E0B', confirmed: '#2563EB', in_execution: '#7c3aed',
   partially_delivered: '#0891b2', delivered: '#16A34A', closed: '#0f766e', on_hold: '#9333EA',
-  cancelled: '#78716c', short_closed: '#b45309',
+  cancelled: '#78716c', short_closed: '#b45309', pending_project: '#d97706',
 }
 export const ROW_STATUS_LABELS: Record<string, string> = {
   open: 'Open (no build)', build_planned: 'Build planned', in_production: 'In production', ready: 'Ready',
@@ -23,6 +25,10 @@ export const ROW_STATUS_HEX: Record<string, string> = {
 // What kind of business the order is — the first question on a new order. Only New Project
 // orders get a project (and vehicle units) in Project Management.
 export const ORDER_CATEGORY_LABELS: Record<string, string> = { new_project: 'New Project', service: 'Service', rental: 'Rental' }
+// Rental orders: how the hire charge is counted (backend SALES_HIRE_RATE_BASES).
+export const HIRE_RATE_BASIS_LABELS: Record<string, string> = {
+  per_month: 'Per month', per_day: 'Per day', per_shift: 'Per shift', per_hour: 'Per hour', lump_sum: 'Lump sum for the hire period',
+}
 // Order types a user can pick on a new order. Both vehicle types are "vehicle orders".
 export const ORDER_TYPE_OPTIONS: Record<string, string> = {
   road_rail_vehicle: 'Road Rail Vehicle', rail_bound_vehicle: 'Rail Bound Vehicle', accessories: 'Accessories', other: 'Others',

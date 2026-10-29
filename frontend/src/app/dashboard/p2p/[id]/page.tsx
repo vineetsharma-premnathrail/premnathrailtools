@@ -12,7 +12,6 @@ import { P2PRequest, RFQ, P2PPurchaseOrder, P2PRequestItemStockCheck, StoreItem 
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import Select from '@/components/shared/Select'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
@@ -25,7 +24,7 @@ import PoDeliveryCostsPanel from '@/components/p2p/PoDeliveryCostsPanel'
 import { useRecordId, recordHref, recordPath } from '@/lib/recordRef'
 import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
-import { FormSheet, SheetSection, SheetIcon, SheetIconName, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import { FormSheet, SheetIcon, SheetIconName, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
 const FULFILLMENT_LABELS: Record<string, string> = {
   pending: 'Awaiting Decision', stock_issued: 'Issued from Stock', sent_to_procurement: 'In Procurement',
@@ -137,16 +136,9 @@ export default function MyP2PRequestDetailPage() {
   const [error, setError] = useState<string | string[]>('')
   const [busy, setBusy] = useState(false)
 
-  const [activePanel, setActivePanel] = useState<'' | 'edit'>('')
   const [promptAction, setPromptAction] = useState<'' | PromptKind>('')
   const [promptText, setPromptText] = useState('')
   const [sheetError, setSheetError] = useState('')
-
-  const [editProjectLabel, setEditProjectLabel] = useState('')
-  const [editRequiredDate, setEditRequiredDate] = useState('')
-  const [editRequirementType, setEditRequirementType] = useState('')
-  const [editPriority, setEditPriority] = useState('medium')
-  const [editRemarks, setEditRemarks] = useState('')
 
   const [rfq, setRfq] = useState<RFQ | null>(null)
   const [loadedPo, setPo] = useState<P2PPurchaseOrder | null>(null)
@@ -201,15 +193,6 @@ export default function MyP2PRequestDetailPage() {
     }
   }
 
-  // Edit-panel fields mirror the saved PR; Discard puts them back.
-  const resetEditFields = (data: P2PRequestDetail) => {
-    setEditProjectLabel(data.project_label || '')
-    setEditRequiredDate(data.required_date || '')
-    setEditRequirementType(data.requirement_type || '')
-    setEditPriority(data.priority || 'medium')
-    setEditRemarks(data.remarks || '')
-  }
-
   const load = async () => {
     setLoading(true)
     setError('')
@@ -221,7 +204,6 @@ export default function MyP2PRequestDetailPage() {
       setStockCheckResults({})
       setStockCheckErrors({})
       setPr(data)
-      resetEditFields(data)
 
       const [rfqList, poList] = await Promise.all([
         rfqApi.list({ p2p_request_id: data.id }).catch(() => []),
@@ -252,7 +234,6 @@ export default function MyP2PRequestDetailPage() {
     setError('')
     try {
       await fn()
-      setActivePanel('')
       await load()
     } catch (err) {
       setError(extractErrorMessages(err, 'Action failed.'))
@@ -309,15 +290,6 @@ export default function MyP2PRequestDetailPage() {
       setBusy(false)
     }
   }
-
-  const saveEdit = () => runInSheet(() =>
-    p2pApi.update(prId, {
-      project_label: editProjectLabel || undefined,
-      required_date: editRequiredDate || undefined,
-      requirement_type: editRequirementType || undefined,
-      priority: editPriority,
-      remarks: editRemarks || undefined,
-    }), 'Could not save the changes.', () => setActivePanel(''))
 
   // The stock check runs automatically for every still-undecided line the
   // buyer can act on — availability is visible immediately, with no
@@ -445,13 +417,13 @@ export default function MyP2PRequestDetailPage() {
   const isDraft = pr.status === 'draft'
   const isMyDraft = isDraft && pr.requested_by_id === user?.id
   // Full edit of header + lines (server decides: until an RFQ is raised).
-  const canEditContent = !!pr.can_edit
+  // A submitted requisition is not edited from here (owner 2026-10-28); only the requester's own draft is.
+  const canEditContent = isDraft && !!pr.can_edit
   // Before an RFQ, saying why editing is locked helps; after, the status says it.
-  const editLockNote = !pr.can_edit && pr.edit_block_reason && ['submitted', 'approved', 'returned', 'draft'].includes(pr.status)
+  const editLockNote = !pr.can_edit && pr.edit_block_reason && isDraft
     ? pr.edit_block_reason : null
   const canClose = isPurchaseTeam && canEditPr && prFeature('close', 'edit') && (pr.status === 'received' || isShortClose)
   // Purchase's quick header edit — same lock as the full edit (no changes once an RFQ is raised).
-  const canEdit = isPurchaseTeam && canEditPr && !isDraft && !!pr.can_edit
   // An approver who came from an approval queue usually lacks the p2p app,
   // so Back must return to that queue, not the p2p-gated main list.
   const backHref = fromApproval ? '/dashboard/p2p/approval' : fromPoApproval ? '/dashboard/p2p/po-approval' : '/dashboard/p2p'
@@ -510,14 +482,11 @@ export default function MyP2PRequestDetailPage() {
           )}
           {canEditContent && (
             <button data-tour="pr-detail-edit-content" type="button" disabled={busy} onClick={() => router.push(recordHref('/dashboard/p2p/new', pr, 'id', undefined, 'edit'))} style={secondaryBtnStyle}>
-              {isDraft ? 'Edit Draft' : 'Edit Requisition'}
+              Edit Draft
             </button>
           )}
           {isMyDraft && (
             <button data-tour="pr-detail-discard-draft" type="button" disabled={busy} onClick={() => setConfirmDiscard(true)} style={dangerBtn}>Discard Draft</button>
-          )}
-          {canEdit && activePanel !== 'edit' && (
-            <button data-tour="pr-detail-edit" type="button" disabled={busy} onClick={() => { if (pr) resetEditFields(pr); setSheetError(''); setActivePanel('edit') }} style={secondaryBtnStyle}>Quick Edit</button>
           )}
           {canClose && (
             <button data-tour="pr-detail-close" type="button" disabled={busy} onClick={() => (isShortClose ? openPrompt('short-close') : setConfirmClose(true))} style={primaryBtn}>{isShortClose ? 'Short-close Requisition' : 'Close Requisition'}</button>
@@ -548,43 +517,6 @@ export default function MyP2PRequestDetailPage() {
         <div data-tour="pr-detail-edit-lock" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: '#92400e', fontSize: 13 }}>
           Editing is locked: {editLockNote}
         </div>
-      )}
-
-      {activePanel === 'edit' && (
-        <FormSheet width={580} icon="edit" title={`Quick Edit — ${pr.p2p_number}`} subtitle="Header details only. Lines are changed with Edit Requisition."
-          onClose={() => { if (!busy) setActivePanel('') }} busy={busy}
-          footer={<>
-            <button type="button" disabled={busy} onClick={() => { resetEditFields(pr); setActivePanel('') }} style={sheetBtn('secondary', SHEET.INK, busy)}>Discard</button>
-            <button type="button" disabled={busy} onClick={saveEdit} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Save Changes'}</button>
-          </>}>
-          <div style={{ padding: '20px 24px' }}>
-            {sheetError && <div style={sheetErr}>{sheetError}</div>}
-            <SheetSection icon="list" title="Request Details">
-              <label style={sheetLabel}>Project</label>
-              <input style={sheetInput} value={editProjectLabel} onChange={(e) => setEditProjectLabel(e.target.value)} autoFocus />
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
-                <div style={{ flex: '1 1 200px' }}>
-                  <label style={sheetLabel}>Requirement Type</label>
-                  <input style={sheetInput} value={editRequirementType} onChange={(e) => setEditRequirementType(e.target.value)} />
-                </div>
-                <div style={{ flex: '0 1 130px' }}>
-                  <label style={sheetLabel}>Priority</label>
-                  <Select style={sheetInput} value={editPriority} onChange={(e) => setEditPriority(e.target.value)}>
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </Select>
-                </div>
-              </div>
-            </SheetSection>
-            <SheetSection icon="calendar" title="Schedule & Remarks">
-              <label style={sheetLabel}>Required Date</label>
-              <DateField value={editRequiredDate} onChange={setEditRequiredDate} />
-              <label style={{ ...sheetLabel, marginTop: 14 }}>Remarks</label>
-              <textarea style={{ ...sheetInput, minHeight: 60, resize: 'vertical' }} value={editRemarks} onChange={(e) => setEditRemarks(e.target.value)} />
-            </SheetSection>
-          </div>
-        </FormSheet>
       )}
 
       <DetailCard tour="pr-detail-request-info">

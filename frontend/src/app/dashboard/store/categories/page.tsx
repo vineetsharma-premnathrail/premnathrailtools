@@ -189,7 +189,7 @@ export default function StoreCategoriesPage() {
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
                 <div style={{ flex: '0 1 150px', minWidth: 130 }}>
                   <label style={sheetLabel}>Code {editing ? '' : <Optional />}</label>
-                  <input data-tour="cat-code" style={{ ...sheetInput, ...(editing ? { background: SHEET.SOFT, color: SHEET.MUTED } : {}) }} value={code} onChange={(e) => setCode(e.target.value)} placeholder="RM" disabled={!!editing} />
+                  <input data-tour="cat-code" style={{ ...sheetInput, ...(editing ? { background: SHEET.SOFT, color: SHEET.MUTED } : {}) }} value={code} onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} maxLength={3} placeholder="ELE" disabled={!!editing} />
                 </div>
                 <div style={{ flex: '1 1 220px', minWidth: 200 }}>
                   <label style={sheetLabel}>Parent Category</label>

@@ -127,7 +127,7 @@ def prices_hidden(user: User) -> bool:
 
 
 _LINE_MONEY = ("unit_price", "discount_amount", "taxable_amount", "gst_amount", "line_total", "list_price")
-_ORDER_MONEY = ("subtotal", "discount_total", "taxable_total", "gst_total", "grand_total", "ld_accrued", "ld_forecast")
+_ORDER_MONEY = ("subtotal", "discount_total", "taxable_total", "gst_total", "grand_total", "ld_accrued", "ld_forecast", "security_deposit")
 
 
 def _mask_prices(resp: SalesOrderResponse) -> None:
@@ -205,6 +205,11 @@ def _order_response(db: Session, so: SalesOrder, user: User, *, light: bool = Fa
         resp.next_approval_level = lvl
         if lvl:
             resp.next_approvers = [u.name or u.email for u in svc.level_holders(db, lvl) if u.id != so.submitted_by_id]
+    resp.display_status = so.status
+    if so.status == "confirmed" and (so.order_category or "new_project") == "new_project":
+        from app.modules.projects.so_projects import awaiting_project
+        if awaiting_project(db, so):
+            resp.display_status = "pending_project"  # derived, never stored: every rule keys off 'confirmed'
     if light:
         resp.lines, resp.schedules, resp.billing_lines = [], [], []
         return resp

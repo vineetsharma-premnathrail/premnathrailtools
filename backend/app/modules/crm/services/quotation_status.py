@@ -361,16 +361,11 @@ def mark_lost(db: Session, quot: Quotation, inquiry: Inquiry, user: User, reason
 
 
 def reopen(db: Session, quot: Quotation, inquiry: Inquiry, user: User, reason: str | None) -> None:
-    """Correction of a recorded outcome (accepted / lost → sent). Admin only, with a reason;
-    refused once a sales order was raised from the quotation (caller checks)."""
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only an admin can correct a recorded customer outcome — ask an admin (they must give a reason).")
-    _need(quot, ("accepted", "lost"), "reopened")
-    reason = (reason or "").strip()
-    if not reason:
-        raise HTTPException(status_code=422, detail="Enter why the recorded outcome is being corrected.")
-    quot.decided_at = quot.decided_by_id = None
-    _set_status(db, quot, "sent", user, f"{_name(user)} reopened quotation {quot.quot_number} (was {quot.status}): {reason}", comment=reason)
+    """A recorded outcome (accepted / lost) is final - no undo, admins included
+    (owner, 2026-10-28). A changed offer is a new quotation (revision)."""
+    raise HTTPException(status_code=422, detail=(
+        f"Quotation {quot.quot_number or ''} is {quot.status} and a quotation status can't be undone. "
+        "If the customer came back, create a revision from this quotation (it starts as a new draft)."))
 
 
 def on_revised(db: Session, quot: Quotation, user: User) -> None:
@@ -460,7 +455,7 @@ def status_view(db: Session, quot: Quotation, user: User | None = None) -> dict:
     inq = db.get(Inquiry, quot.inquiry_id)
     can_work = bool(user and (user.role == "admin" or user.id in (quot.created_by_id, inq.created_by_id if inq else None,
                                                                   inq.bd_owner_id if inq else None)))
-    return {"status": quot.status, "can_work": can_work, "can_reopen": bool(user and user.role == "admin"),
+    return {"status": quot.status, "can_work": can_work, "can_reopen": False,
             "status_label": STATUS_LABEL.get(quot.status, quot.status),
             "gross_value": amt["gross"], "discount_percent": amt["discount_percent"], "net_value": amt["net"],
             "approval_rank": rank, "approval_label": RANK_LABEL.get(rank) if rank is not None else None, "approval_reasons": why,

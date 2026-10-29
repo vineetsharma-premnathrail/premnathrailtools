@@ -277,7 +277,6 @@ export default function RndRequirementDetailPage() {
             </div>
           )}
           <RndMilestonePlan
-            looseCreate={data.my_access.view && taskGates.tasks.create}
             canMoveTasks={data.my_access.is_head}
             key={`${data.source}-${data.record_id}`}
             plan={{ key: `${data.source}-${data.record_id}`, heading: 'Requirement Plan & Milestones', subtitle: `${data.offer_number} · ${data.title}` }}

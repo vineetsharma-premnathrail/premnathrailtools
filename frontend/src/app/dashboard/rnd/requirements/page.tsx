@@ -141,7 +141,8 @@ export default function RndRequirementsPage() {
           <thead>
             <tr>
               {['TOR No.', 'Source', 'Customer', 'Product / Tender', 'Qty', 'Priority', 'R&D Response', 'BD Owner', 'Last Sent', 'Sends'].map((h, hi) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                // Header text wraps instead of being cut with "…" by TableFit.
+                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'normal', textOverflow: 'clip', verticalAlign: 'bottom' }}>
                   {h}{hi === 0 && <RowCount count={rows.length} />}
                 </th>
               ))}

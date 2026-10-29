@@ -197,10 +197,6 @@ export default function StoreItemDetailPage() {
                     <UomSelect value={form.uom || ''} onChange={(v) => setForm({ ...form, uom: v })} options={uoms} onOptionsChange={setUoms} manage={false} />
                   </div>
                 </div>
-                <div style={{ flex: '1 1 180px', maxWidth: 300 }}>
-                  <label style={sheetLabel}>Part Code <Optional /></label>
-                  <input data-tour="item-edit-part-code" style={sheetInput} value={form.part_number || ''} onChange={(e) => setForm({ ...form, part_number: e.target.value })} placeholder="Part code" />
-                </div>
                 <div style={{ flex: '0 1 170px', minWidth: 150 }}>
                   <label style={sheetLabel}>Status</label>
                   <Select data-tour="item-edit-status" style={sheetInput} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as StoreItem['status'] })}>
@@ -232,7 +228,8 @@ export default function StoreItemDetailPage() {
 
             <div data-tour="item-edit-erp">
               <ItemErpForm values={form} onChange={(patch) => setForm({ ...form, ...patch })} meta={meta}
-                itemType={form.item_type || ''} uom={form.uom} effective={item} />
+                itemType={form.item_type || ''} uom={form.uom} effective={item}
+                partCode={form.part_number || ''} onPartCode={(v) => setForm({ ...form, part_number: v })} partCodeTour="item-edit-part-code" />
             </div>
           </>}
           right={<>

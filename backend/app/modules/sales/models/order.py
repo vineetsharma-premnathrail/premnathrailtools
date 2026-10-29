@@ -38,6 +38,10 @@ SALES_ORDER_AMENDABLE_STATUSES = ("confirmed", "in_execution", "partially_delive
 SALES_ORDER_CATEGORIES = ("new_project", "service", "rental")
 SALES_ORDER_CATEGORY_LABELS = {"new_project": "New Project", "service": "Service", "rental": "Rental"}
 SALES_DEFAULT_ORDER_CATEGORY = "new_project"
+# Rental order: how the hire charge is counted — differs per order, picked on the form.
+SALES_HIRE_RATE_BASES = ("per_month", "per_day", "per_shift", "per_hour", "lump_sum")
+SALES_HIRE_RATE_BASIS_LABELS = {"per_month": "Per month", "per_day": "Per day", "per_shift": "Per shift",
+                                "per_hour": "Per hour", "lump_sum": "Lump sum for the hire period"}
 
 SALES_ORDER_TYPES = ("road_rail_vehicle", "rail_bound_vehicle", "accessories", "other")
 SALES_DEFAULT_ORDER_TYPE = "road_rail_vehicle"
@@ -65,7 +69,9 @@ SALES_SOURCE_TYPES = ("inquiry", "tender", "direct")
 SALES_PRICE_BASES = ("ex_works", "for_destination", "for_dispatch")
 SALES_LD_PERIODS = ("week", "day")
 SALES_LD_BASES = ("delayed_value", "contract_value")
-SALES_WARRANTY_RULES = ("from_delivery", "from_commissioning", "earlier_of", "later_of")
+# The order form (2026-10-28) only offers "from_delivery" (= starts on each vehicle's
+# handover date) or "not_applicable"; the other rules stay valid for older orders.
+SALES_WARRANTY_RULES = ("from_delivery", "from_commissioning", "earlier_of", "later_of", "not_applicable")
 # Deviation flags computed at submit; any of them escalates to a Partner.
 SALES_DEVIATION_FLAGS = ("ld_uncapped", "ld_cap_above_standard", "warranty_above_standard", "advance_below_standard",
                          "price_below_list")
@@ -165,6 +171,13 @@ class SalesOrder(Base, TimestampMixin, SoftDeleteMixin):
 
     delivery_terms_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     special_conditions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Rental orders only (bare machine on hire): the hire period, how the rate is counted,
+    # where the machine works and the refundable deposit. Null on New Project / Service orders.
+    hire_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    hire_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    hire_rate_basis: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    hire_site: Mapped[str | None] = mapped_column(Text, nullable=True)
+    security_deposit: Mapped[float | None] = mapped_column(Money, nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     sales_owner_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)

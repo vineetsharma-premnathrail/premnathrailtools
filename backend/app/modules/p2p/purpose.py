@@ -341,6 +341,12 @@ def project_type_for(purpose: str | None) -> str | None:
     return "new" if purpose == "development" else "existing"
 
 
+# Owner 2026-10-28: Charged To is hidden on the requisition form for now, so a
+# blank charge is accepted for every purpose. True brings the purpose rules'
+# "Charged To required" back.
+CHARGE_ON_PR = False
+
+
 def header_problems(purpose: str | None, account_assignment: str | None, project_label: str | None, db=None) -> list[str]:
     """What is missing / wrong on a submitted requisition's header, worded as
     the fix. Empty when it is fine."""
@@ -353,6 +359,8 @@ def header_problems(purpose: str | None, account_assignment: str | None, project
     names = {"order_project": "project", "sales_order": "sales order", "work_order": "production work order",
              "internal_order": "internal order", "cost_center": "cost centre", "rnd_project": "R&D project"}
     allowed = _rules(db, purpose)["allowed_charges"]
+    if account_assignment is None and not CHARGE_ON_PR:
+        allowed = (None, *allowed)
     if account_assignment not in allowed:
         if not any(allowed):
             return [f"A {label} requisition isn't charged to anything when it is bought"

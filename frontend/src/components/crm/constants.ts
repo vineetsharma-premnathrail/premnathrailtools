@@ -123,7 +123,7 @@ export const INQUIRY_STATUSES = [
   'Lead',
   'Requirement Received',
   'R&D / Technical Review',
-  'Qualified',
+  'Qualified Inquiry',
   'Quotation Sent',
   'Order Received',
   'Closed - Ordered',
@@ -132,14 +132,20 @@ export const INQUIRY_STATUSES = [
 
 // Older inquiries may still carry a retired status (e.g. 'Negotiation') — keep it
 // selectable so opening such a record doesn't silently show/save a different one.
-export const inquiryStatusOptions = (current?: string | null) =>
-  current && !INQUIRY_STATUSES.includes(current) ? [...INQUIRY_STATUSES, current] : INQUIRY_STATUSES
+// `saved` = the status already saved on the inquiry: status only moves forward from it,
+// and a closed inquiry keeps its status (owner, 2026-10-28; the server checks the same).
+export const inquiryStatusOptions = (current?: string | null, saved?: string | null) => {
+  const all = current && !INQUIRY_STATUSES.includes(current) ? [...INQUIRY_STATUSES, current] : INQUIRY_STATUSES
+  if (!saved || !INQUIRY_STATUSES.includes(saved)) return all
+  if (saved.startsWith('Closed')) return [saved]
+  return INQUIRY_STATUSES.slice(INQUIRY_STATUSES.indexOf(saved))
+}
 
 export const INQUIRY_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   Lead: { bg: 'rgba(100,116,139,0.12)', text: '#475569' },
   'Requirement Received': { bg: 'rgba(37,99,235,0.1)', text: '#1d4ed8' },
   'R&D / Technical Review': { bg: 'rgba(14,165,233,0.12)', text: '#0369a1' },
-  Qualified: { bg: 'rgba(234,179,8,0.14)', text: '#a16207' },
+  'Qualified Inquiry': { bg: 'rgba(234,179,8,0.14)', text: '#a16207' },
   'Quotation Sent': { bg: 'rgba(139,92,246,0.12)', text: '#7c3aed' },
   'Order Received': { bg: 'rgba(16,185,129,0.12)', text: '#047857' },
   'Under Production': { bg: 'rgba(245,158,11,0.14)', text: '#b45309' },

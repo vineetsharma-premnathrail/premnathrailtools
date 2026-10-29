@@ -2,7 +2,7 @@
 
 // "Create PO" view of Purchase Orders: only RFQs that are finished (locked) with
 // vendors chosen — lines awarded on the quote comparison (one PO per awarded
-// vendor, SplitPoDialog) or a vendor selected on an older RFQ (CreatePODialog).
+// vendor, created in one click) or a vendor selected on an older RFQ (CreatePODialog).
 // Requisitions still quoting or evaluating are hidden, and so is one whose draft
 // PO already exists (open that draft from Tracking). Every row says "Create PO".
 
@@ -10,10 +10,11 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { rfqApi } from '@/lib/api'
 import { RFQ } from '@/types'
-import SplitPoDialog from '@/components/p2p/SplitPoDialog'
+import { mmQuotationsApi } from '@/lib/mmPurchasingApi'
 import { TEXT } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordHref } from '@/lib/recordRef'
+import { formatDate } from '@/lib/format'
 import { RowCount, smallSecondaryBtnStyle, Pill, StatChip, inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import Select from '@/components/shared/Select'
 import { sheetInput, sheetLabel } from '@/components/shared/FormSheet'
@@ -30,7 +31,7 @@ export default function POReadyList({ onCreate, lead }: { onCreate?: (rfqId: num
   const [rfqs, setRfqs] = useState<RFQ[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [splitFor, setSplitFor] = useState<RFQ | null>(null)
+  const [creating, setCreating] = useState<number | null>(null)
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState(NO_FILTERS)
   const [draft, setDraft] = useState(NO_FILTERS)
@@ -86,11 +87,11 @@ export default function POReadyList({ onCreate, lead }: { onCreate?: (rfqId: num
       )}
       <div data-tour="po-ready-table" style={{ ...PO_CARD, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr>{['PR No.', 'RFQ No.', 'Vendor', 'Other quotes received', 'Stage', ''].map((h, i) => <th key={h} data-fit-min={60} data-fit-cut={h === 'Vendor' || h === 'Other quotes received' ? '' : undefined} style={th}>{h}{i === 0 && <RowCount count={shown.length} />}</th>)}</tr></thead>
+          <thead><tr>{['PR No.', 'PR Date', 'Needed By', 'RFQ No.', 'Vendor', 'Other quotes received', 'Stage', ''].map((h, i) => <th key={h} data-fit-min={60} data-fit-cut={h === 'Vendor' || h === 'Other quotes received' ? '' : undefined} style={th}>{h}{i === 0 && <RowCount count={shown.length} />}</th>)}</tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: '#a8a29e' }}>Loading…</td></tr>}
-            {!loading && rfqs.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: '#a8a29e' }}>Nothing is waiting for a PO. A purchase request appears here once its quotation request is closed and a vendor is chosen, or its lines are awarded on the quote comparison. Receipts the store took before a PO are under Before PO.</td></tr>}
-            {!loading && rfqs.length > 0 && shown.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: '#a8a29e' }}>No requisition matches the search and filters — change or clear them.</td></tr>}
+            {loading && <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: '#a8a29e' }}>Loading…</td></tr>}
+            {!loading && rfqs.length === 0 && <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: '#a8a29e' }}>Nothing is waiting for a PO. A purchase request appears here once its quotation request is closed and a vendor is chosen, or its lines are awarded on the quote comparison. Receipts the store took before a PO are under Before PO.</td></tr>}
+            {!loading && rfqs.length > 0 && shown.length === 0 && <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: '#a8a29e' }}>No requisition matches the search and filters — change or clear them.</td></tr>}
             {shown.map((r) => {
               // Awarded on the comparison (emailed RFQs, or an old RFQ awarded there) → one PO per awarded vendor.
               const invite = isAwarded(r)
@@ -99,13 +100,21 @@ export default function POReadyList({ onCreate, lead }: { onCreate?: (rfqId: num
               const others = invite ? (r.other_quoted_vendors || [])
                 : [...new Set(r.attachments.filter((a) => a.vendor_tier !== 'L1' && a.vendor_name).map((a) => `${a.vendor_tier} ${a.vendor_name}`))]
               const open = () => {
-                if (invite) setSplitFor(r)
+                if (invite) {
+                  if (creating) return
+                  setCreating(r.id); setError('')
+                  mmQuotationsApi.createPosFromAwards(r.id)
+                    .then((pos) => router.push(recordHref('/dashboard/p2p/purchase-orders/new', r, 'id', { po: pos[0]?.id_ref }, 'rfq')))
+                    .catch((err) => { setError(extractErrorMessages(err, `Could not create the PO for ${r.p2p_number || 'this requisition'}.`).join(' ')); setCreating(null) })
+                }
                 else if (onCreate) onCreate(r.id)
                 else router.push(recordHref('/dashboard/p2p/purchase-orders/new', r, 'id', undefined, 'rfq'))
               }
               return (
                 <tr key={r.id} onClick={open} style={{ cursor: 'pointer' }}>
                   <td style={{ ...td, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{r.p2p_number || `#${r.p2p_request_id}`}</td>
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.p2p_created_at ? formatDate(r.p2p_created_at) : '—'}</td>
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.p2p_required_date ? formatDate(r.p2p_required_date) : '—'}</td>
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.rfq_number}</td>
                   <td style={{ ...td, fontWeight: 600, whiteSpace: 'nowrap' }} title={vendorCell ? `${vendorCell}${invite ? ' (awarded)' : ''}` : undefined}>
                     {clip(vendorCell)}
@@ -120,8 +129,8 @@ export default function POReadyList({ onCreate, lead }: { onCreate?: (rfqId: num
                     </div>
                   </td>
                   <td style={{ ...td, textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
-                    <button type="button" onClick={open} style={{ ...smallSecondaryBtnStyle, whiteSpace: 'nowrap' }}>
-                      Create PO
+                    <button type="button" onClick={open} disabled={creating !== null} style={{ ...smallSecondaryBtnStyle, whiteSpace: 'nowrap' }}>
+                      {creating === r.id ? 'Creating…' : 'Create PO'}
                     </button>
                   </td>
                 </tr>
@@ -130,11 +139,6 @@ export default function POReadyList({ onCreate, lead }: { onCreate?: (rfqId: num
           </tbody>
         </table>
       </div>
-      {splitFor && <SplitPoDialog rfq={splitFor} onClose={() => setSplitFor(null)} onDone={(poRow) => {
-        const r = splitFor
-        setSplitFor(null)
-        router.push(recordHref('/dashboard/p2p/purchase-orders/new', r, 'id', { po: poRow ? (poRow as { id_ref?: string }).id_ref : undefined }, 'rfq'))
-      }} />}
     </div>
   )
 }

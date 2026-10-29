@@ -289,3 +289,54 @@ def test_rule45_reminders_fire_once_per_step(client, db):
     assert n >= 1
     assert _send_jobwork_reminders(db) == 0
     assert db.query(Notification).filter_by(notification_type=JOBWORK_DUE, entity_id=issue["id"]).count() == n
+
+
+def test_job_work_receipt_brings_back_several_different_items(client, db):
+    keeper, loc, bar, shaft, vendor = _jw_env(db, "M")
+    pin = StoreItem(item_code="SF-PIN-M", item_name="Machined pin M", uom="NOS", item_type="material")
+    db.add(pin)
+    db.commit()
+    issue = _challan(client, keeper, loc, bar, vendor, 10, challan="DC-JW-M")
+    line_id = issue["items"][0]["id"]
+    comps = [{"issue_item_id": line_id, "consumed_quantity": 10}]
+
+    # Shares filled on one line only → refused with the reason.
+    r = client.post(f"{JW}/receipts", json={"issue_id": issue["id"], "components": comps, "outputs": [
+        {"item_id": shaft.id, "quantity": 4, "cost_share_pct": 60}, {"item_id": pin.id, "quantity": 8}]}, headers=auth_header(keeper))
+    assert r.status_code == 422 and "some processed items" in r.json()["detail"]
+    r = client.post(f"{JW}/receipts", json={"issue_id": issue["id"], "components": comps, "outputs": [
+        {"item_id": shaft.id, "quantity": 4, "cost_share_pct": 60}, {"item_id": pin.id, "quantity": 8, "cost_share_pct": 30}]},
+        headers=auth_header(keeper))
+    assert r.status_code == 422 and "total 100" in r.json()["detail"]
+
+    # 10 bars (₹1000) → 4 shafts (60%) + 8 pins (40%), each with its own job charge.
+    r = client.post(f"{JW}/receipts", json={"issue_id": issue["id"], "components": comps, "outputs": [
+        {"item_id": shaft.id, "quantity": 4, "job_charge_rate": 50, "cost_share_pct": 60},
+        {"item_id": pin.id, "quantity": 8, "job_charge_rate": 10, "cost_share_pct": 40}]}, headers=auth_header(keeper))
+    assert r.status_code == 200, r.text
+    rec = r.json()
+    assert rec["component_value"] == 1000
+    got = {o["item_id"]: (o["quantity"], o["component_value"], o["unit_cost"]) for o in rec["outputs"]}
+    assert got == {shaft.id: (4, 600, 200), pin.id: (8, 400, 60)}  # (600+200)/4, (400+80)/8
+    assert _bal(db, shaft, loc).on_hand_qty == 4 and _bal(db, pin, loc).on_hand_qty == 8
+    assert _bal(db, bar, loc).vendor_qty == 0
+    assert rec["output_item_id"] == shaft.id  # header keeps the first line
+
+
+def test_job_work_challan_lists_several_items_to_receive_back(client, db):
+    keeper, loc, bar, shaft, vendor = _jw_env(db, "R")
+    pin = StoreItem(item_code="SF-PIN-R", item_name="Machined pin R", uom="NOS", item_type="material")
+    db.add(pin)
+    db.commit()
+    r = client.post(ISSUES, json={"location_id": loc.id, "issue_type": "job_work", "vendor_id": vendor.id, "process": "machining",
+                                  "expected_return_date": LATER, "challan_number": "DC-JW-R",
+                                  "output_items": [{"item_id": shaft.id, "quantity": 4}, {"item_id": pin.id}],
+                                  "items": [{"item_id": bar.id, "quantity": 5}]}, headers=auth_header(keeper))
+    assert r.status_code == 200, r.text
+    want = [{"item_id": shaft.id, "quantity": 4}, {"item_id": pin.id, "quantity": None}]
+    assert r.json()["output_items"] == want and r.json()["output_item_id"] == shaft.id
+    challan = next(c for c in client.get(f"{JW}/challans", headers=auth_header(keeper)).json() if c["issue_id"] == r.json()["id"])
+    assert challan["output_items"] == want
+    # None given = the same items as sent, at the sent quantity.
+    issue = _challan(client, keeper, loc, bar, vendor, 2, challan="DC-JW-R2")
+    assert issue["output_items"] == [{"item_id": bar.id, "quantity": 2}]

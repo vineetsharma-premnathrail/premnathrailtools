@@ -323,13 +323,22 @@ async def create_material_issue(
         from app.modules.accounts.models.vendor import Vendor
         vendor_name = db.get(Vendor, form["vendor_id"]).name
     erp_project_id = form.get("erp_project_id")
-    if issue_type_row and issue_type_row.value == "job_work" and not form.get("output_item_id"):
-        # Blank = the same item comes back (plating, heat treatment…) — only clear with one item sent.
-        sent = {line.item_id for line in payload.items}
-        if len(sent) != 1:
-            raise HTTPException(status_code=422, detail="Pick the Item to receive back — this challan sends several items, so it can't be "
-                                                        "assumed to be one of them (e.g. rod + bush sent, machined shaft back).")
-        form["output_item_id"] = next(iter(sent))
+    if issue_type_row and issue_type_row.value == "job_work":
+        # Items to receive back — several allowed (plate sent, flange + ring back).
+        # None given = the same items come back (plating, heat treatment…).
+        back: dict[int, float | None] = {}
+        for b in payload.output_items or ([] if not payload.output_item_id else [{"item_id": payload.output_item_id}]):
+            b = b if isinstance(b, dict) else b.model_dump()
+            if b.get("quantity") is not None and b["quantity"] <= 0:
+                raise HTTPException(status_code=422, detail="Items to receive back: quantity must be greater than zero, or leave it blank if not known yet.")
+            if db.get(StoreItem, b["item_id"]) is None:
+                raise HTTPException(status_code=422, detail=f"Item to receive back #{b['item_id']} wasn't found — pick it again from the list.")
+            back[b["item_id"]] = (back.get(b["item_id"]) or 0) + b["quantity"] if b.get("quantity") is not None else back.get(b["item_id"])
+        if not back:
+            for line in payload.items:
+                back[line.item_id] = (back.get(line.item_id) or 0) + line.quantity
+        form["output_items"] = [{"item_id": i, "quantity": q} for i, q in back.items()]
+        form["output_item_id"] = next(iter(back))
 
     # Project unit: the vehicle / lot the material goes to — mandatory for an
     # RRV order, filled from the work order / build / delivery row where it can be.

@@ -10,6 +10,7 @@ import ProjectsNav from '@/components/projects/ProjectsNav'
 import ProjectListView from '@/components/projects/ProjectListView'
 import PastProjectsList from '@/components/projects/PastProjectsList'
 import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import FromSalesOrderSheet, { AwaitingSalesOrder } from '@/components/projects/FromSalesOrderSheet'
 
 export default function AllProjectsPage() {
   const { isAuthorized, isLoading } = useRequireApp('projects')
@@ -19,10 +20,16 @@ export default function AllProjectsPage() {
   const canPast = can('projects', 'service_projects', 'view')
   const [segment, setSegment] = useState<'current' | 'past'>('current')
   const [canCreate, setCanCreate] = useState(false)
+  // Confirmed New Project sales orders waiting for the Project Manager to create their project.
+  const [awaiting, setAwaiting] = useState<AwaitingSalesOrder[]>([])
+  const [fromSoOpen, setFromSoOpen] = useState(false)
 
   useEffect(() => {
     if (isAuthorized) projectsApi.meta().then((m) => setCanCreate(m.can_create)).catch(() => setCanCreate(false))
   }, [isAuthorized])
+  useEffect(() => {
+    if (canCreate && canCurrent) projectsApi.salesOrdersAwaitingProject().then(setAwaiting).catch(() => setAwaiting([]))
+  }, [canCreate, canCurrent])
 
   if (isLoading || !isAuthorized) return null
 
@@ -44,6 +51,19 @@ export default function AllProjectsPage() {
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {canCreate && canCurrent && (
           <button
+            data-tour="pm-all-from-so-btn"
+            onClick={() => setFromSoOpen(true)}
+            type="button"
+            aria-label={`From Sales Order — ${awaiting.length} confirmed order${awaiting.length === 1 ? '' : 's'} waiting for a project`}
+            style={{ ...secondaryBtnStyle, borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 8 }}
+          >
+            From Sales Order
+            {/* ui-audit-ignore-next-line custom-pill — count badge on a button, not a status badge */}
+            <span aria-hidden="true" style={{ minWidth: 20, padding: '1px 7px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, lineHeight: '18px', textAlign: 'center', background: awaiting.length ? '#f59e0b' : '#e2e8f0', color: awaiting.length ? '#fff' : '#64748b' }}>{awaiting.length}</span>
+          </button>
+          )}
+          {canCreate && canCurrent && (
+          <button
             data-tour="pm-all-new-btn"
             onClick={() => router.push('/dashboard/projects/new')}
             type="button"
@@ -61,6 +81,7 @@ export default function AllProjectsPage() {
         </div>
       )}
       {view === 'past' ? <PastProjectsList /> : <ProjectListView />}
+      {fromSoOpen && <FromSalesOrderSheet orders={awaiting} onClose={() => setFromSoOpen(false)} />}
     </div>
   )
 }

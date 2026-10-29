@@ -15,7 +15,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.modules.store.models.item import StoreItem
-from app.modules.store.models.job_work import StoreJobWorkReceipt, StoreJobWorkReceiptComponent
+from app.modules.store.models.job_work import StoreJobWorkReceipt, StoreJobWorkReceiptComponent, StoreJobWorkReceiptOutput
 from app.modules.store.models.location import StoreLocation
 from app.modules.store.models.material_issue import StoreMaterialIssue, StoreMaterialIssueItem
 from app.modules.store.models.material_return import StoreMaterialReturn, StoreMaterialReturnItem
@@ -148,6 +148,7 @@ def challan_lines(db: Session, *, issue_ids: list[int] | None = None, vendor_id:
             "challan_date": issue.issue_date, "expected_return_date": issue.expected_return_date,
             "vendor_id": issue.vendor_id, "vendor_name": issue.vendor_name, "process": issue.process,
             "output_item_id": issue.output_item_id,
+            "output_items": issue.output_items or ([{"item_id": issue.output_item_id, "quantity": None}] if issue.output_item_id else []),
             "location_id": issue.location_id, "location_name": locs.get(issue.location_id),
             "item_id": l.item_id, "item_code": item.item_code if item else None, "item_name": item.item_name if item else None,
             "uom": item.uom if item else None, "hsn_code": item.hsn_sac_code if item else None,
@@ -225,13 +226,14 @@ def itc04(db: Session, *, date_from: date, date_to: date, location_ids: set[int]
             StoreJobWorkReceiptComponent, StoreJobWorkReceiptComponent.receipt_id == StoreJobWorkReceipt.id).filter(
             StoreJobWorkReceipt.issue_id.in_(issue_ids), StoreJobWorkReceipt.receipt_date >= date_from,
             StoreJobWorkReceipt.receipt_date <= date_to).all()
-        out_items = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_({r.output_item_id for r, _ in comps} or {-1})).all()}
+        out_ids = {o.item_id for r, _ in comps for o in receipt_outputs(r)}
+        out_items = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_(out_ids or {-1})).all()}
         for rec, c in comps:
             ch = by_line.get(c.issue_item_id)
             if not ch:
                 continue
-            oi = out_items.get(rec.output_item_id)
-            for qty, nature in ((c.consumed_quantity, f"Used in {oi.item_name if oi else 'processed item'}"), (c.scrap_quantity, "Process scrap / loss at job worker")):
+            made = ", ".join(out_items[o.item_id].item_name for o in receipt_outputs(rec) if o.item_id in out_items) or "processed item"
+            for qty, nature in ((c.consumed_quantity, f"Used in {made}"), (c.scrap_quantity, "Process scrap / loss at job worker")):
                 if qty and qty > _EPS:
                     received.append({"challan_number": ch["challan_number"], "challan_date": ch["challan_date"], "vendor_name": ch["vendor_name"],
                                      "document": rec.receipt_number, "document_date": rec.receipt_date, "nature": nature,
@@ -289,13 +291,44 @@ def itc04_workbook(data: dict) -> bytes:
 # Job work receipt (processed item back, components consumed at the vendor)
 # ---------------------------------------------------------------------------
 
+def _outputs_from_payload(payload) -> list:
+    """The processed items on the payload — `outputs`, or the older
+    single-item fields as one line."""
+    if payload.outputs:
+        return list(payload.outputs)
+    if payload.output_item_id is None:
+        return []
+    from app.modules.store.schemas.job_work import StoreJobWorkReceiptOutputPayload
+    return [StoreJobWorkReceiptOutputPayload(item_id=payload.output_item_id, quantity=payload.output_quantity or 0,
+                                             job_charge_rate=payload.job_charge_rate, purchase_order_item_id=payload.purchase_order_item_id)]
+
+
+def cost_shares(outputs: list[tuple[StoreItem, float, float | None]]) -> list[float]:
+    """Share (%) of the component value each processed item carries.
+    All entered (total 100) → used as is; none entered → split by each
+    item's standard cost × quantity (relative value, the usual co-product
+    rule), or by quantity when an item has no cost yet. Some entered and
+    some blank is refused by the caller."""
+    if len(outputs) == 1:
+        return [100.0]
+    if all(p is not None for _, _, p in outputs):
+        return [float(p) for _, _, p in outputs]
+    weights = [qty * float(item.standard_cost or item.moving_average_cost or 0) for item, qty, _ in outputs]
+    if any(w <= _EPS for w in weights):
+        weights = [qty for _, qty, _ in outputs]
+    total = sum(weights)
+    return [round(w * 100 / total, 4) for w in weights]
+
+
 def create_receipt(db: Session, payload, user) -> StoreJobWorkReceipt:
     """Posts: jobwork_consume per component (With vendor → used up, at the
-    average), then the processed item into Free (or Quality, under a job work
-    inspection lot) at (component value + job charge) ÷ quantity."""
+    average), then each processed item into Free (or Quality, under a job work
+    inspection lot) at (its share of the component value + its job charge)
+    ÷ quantity. One receipt can bring back several different items."""
     from app.modules.store.services.stock_ledger import post_stock_transaction
     from app.modules.store.services.valuation import ledger_sort_key, valuation_enabled
     from app.modules.store.services import batches as batch_service
+    from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
 
     issue = db.query(StoreMaterialIssue).filter(StoreMaterialIssue.id == payload.issue_id).with_for_update().first()
     if not issue:
@@ -316,14 +349,51 @@ def create_receipt(db: Session, payload, user) -> StoreJobWorkReceipt:
     loc = db.get(StoreLocation, location_id)
     if not loc:
         raise HTTPException(status_code=404, detail="Store not found — pick the store the processed goods are received into.")
-    out_item = db.get(StoreItem, payload.output_item_id)
-    if not out_item:
-        raise HTTPException(status_code=422, detail="Pick the processed item from the Item Master (create it there first if it's new).")
-    if payload.output_quantity is None or payload.output_quantity <= 0:
-        raise HTTPException(status_code=422, detail=f"Quantity of '{out_item.item_name}' received must be greater than zero.")
+
+    # Processed items received — one line per different item.
+    out_payload = _outputs_from_payload(payload)
+    if not out_payload:
+        raise HTTPException(status_code=422, detail="Add at least one processed item that came back (Item Master item and quantity).")
+    out_items = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_({o.item_id for o in out_payload})).all()}
+    outputs = []  # (item, qty, rate, po_item_id, po_id, entered share)
+    seen: set[int] = set()
+    for n, o in enumerate(out_payload, start=1):
+        item = out_items.get(o.item_id)
+        if not item:
+            raise HTTPException(status_code=422, detail=f"Processed item line {n}: pick the item from the Item Master (create it there first if it's new).")
+        if item.id in seen:
+            raise HTTPException(status_code=422, detail=f"'{item.item_name}' is listed twice — put its total quantity on one line.")
+        seen.add(item.id)
+        if o.quantity is None or o.quantity <= 0:
+            raise HTTPException(status_code=422, detail=f"Quantity of '{item.item_name}' received must be greater than zero.")
+        rate, po_id = o.job_charge_rate, None
+        if o.purchase_order_item_id:
+            po_item = db.get(P2PPurchaseOrderItem, o.purchase_order_item_id)
+            if not po_item:
+                raise HTTPException(status_code=422, detail=f"The job-work PO line for '{item.item_name}' wasn't found — pick it again.")
+            po = db.get(P2PPurchaseOrder, po_item.purchase_order_id)
+            if issue.vendor_id and po.vendor_id and po.vendor_id != issue.vendor_id:
+                raise HTTPException(status_code=422, detail=f"PO {po.po_number} is with {po.vendor_name}, but the challan went to {issue.vendor_name} — pick that vendor's job-work PO.")
+            if po.status in ("draft", "cancelled"):
+                raise HTTPException(status_code=409, detail=f"PO {po.po_number} is {po.status} — the job charge must come from an issued PO.")
+            po_id = po.id
+            rate = po_item.unit_price if rate is None else rate
+        if rate is not None and rate < 0:
+            raise HTTPException(status_code=422, detail=f"Job charge rate for '{item.item_name}' can't be negative.")
+        if o.cost_share_pct is not None and o.cost_share_pct < 0:
+            raise HTTPException(status_code=422, detail=f"Cost share of '{item.item_name}' can't be negative.")
+        outputs.append((item, float(o.quantity), rate, o.purchase_order_item_id, po_id, o.cost_share_pct))
+    if len(outputs) > 1:
+        entered = [x[5] for x in outputs if x[5] is not None]
+        if entered and len(entered) != len(outputs):
+            raise HTTPException(status_code=422, detail="Cost share % is filled on some processed items and blank on others — fill it on every "
+                                                        "line (total 100) or leave all blank to split by standard cost.")
+        if entered and abs(sum(entered) - 100) > 0.01:
+            raise HTTPException(status_code=422, detail=f"Cost shares add up to {sum(entered):g}% — they must total 100%.")
+    shares = cost_shares([(it, q, p) for it, q, _, _, _, p in outputs])
+
     if not payload.components:
         raise HTTPException(status_code=422, detail="Say which challan material the vendor used — at least one component line.")
-
     lines = {l.id: l for l in db.query(StoreMaterialIssueItem).filter(StoreMaterialIssueItem.issue_id == issue.id).all()}
     comps = []
     for c in payload.components:
@@ -344,28 +414,13 @@ def create_receipt(db: Session, payload, user) -> StoreJobWorkReceipt:
     if not comps:
         raise HTTPException(status_code=422, detail="Enter the quantity of challan material used (consumed and/or process scrap).")
 
-    rate = payload.job_charge_rate
-    po_id = None
-    if payload.purchase_order_item_id:
-        from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
-        po_item = db.get(P2PPurchaseOrderItem, payload.purchase_order_item_id)
-        if not po_item:
-            raise HTTPException(status_code=422, detail="The job-work PO line wasn't found — pick it again.")
-        po = db.get(P2PPurchaseOrder, po_item.purchase_order_id)
-        if issue.vendor_id and po.vendor_id and po.vendor_id != issue.vendor_id:
-            raise HTTPException(status_code=422, detail=f"PO {po.po_number} is with {po.vendor_name}, but the challan went to {issue.vendor_name} — pick that vendor's job-work PO.")
-        if po.status in ("draft", "cancelled"):
-            raise HTTPException(status_code=409, detail=f"PO {po.po_number} is {po.status} — the job charge must come from an issued PO.")
-        po_id = po.id
-        rate = po_item.unit_price if rate is None else rate
-    if rate is not None and rate < 0:
-        raise HTTPException(status_code=422, detail="Job charge rate can't be negative.")
-
+    first = outputs[0]
+    out_names = ", ".join(it.item_name for it, *_ in outputs)
     rec = StoreJobWorkReceipt(
         receipt_number=generate_receipt_number(db), issue_id=issue.id, location_id=location_id, vendor_id=issue.vendor_id,
         vendor_name=issue.vendor_name, receipt_date=receipt_date, vendor_challan_number=(payload.vendor_challan_number or "").strip() or None,
-        output_item_id=out_item.id, output_quantity=payload.output_quantity, purchase_order_id=po_id,
-        purchase_order_item_id=payload.purchase_order_item_id, job_charge_rate=rate, remarks=(payload.remarks or "").strip() or None,
+        output_item_id=first[0].id, output_quantity=first[1], purchase_order_id=first[4],
+        purchase_order_item_id=first[3], job_charge_rate=first[2], remarks=(payload.remarks or "").strip() or None,
         created_by_id=user.id,
     )
     db.add(rec)
@@ -382,49 +437,56 @@ def create_receipt(db: Session, payload, user) -> StoreJobWorkReceipt:
                     continue
                 txn = post_stock_transaction(db, item_id=line.item_id, location_id=issue.location_id, transaction_type="jobwork_consume",
                                              quantity=qty, batch_number=line.batch_number,
-                                             remarks=f"Challan {issue.challan_number or issue.issue_number}: {what} {out_item.item_name} ({rec.receipt_number})", **ref)
+                                             remarks=f"Challan {issue.challan_number or issue.issue_number}: {what} {out_names} ({rec.receipt_number})", **ref)
                 value += txn.value or 0
             component_value += value
             rec.components.append(StoreJobWorkReceiptComponent(issue_item_id=line.id, item_id=line.item_id, consumed_quantity=consumed,
                                                                scrap_quantity=scrap, batch_number=line.batch_number,
                                                                value=round(value, 2) if valued else None))
         db.flush()
-        charge = (rate or 0) * payload.output_quantity
-        unit_cost = None
         if valued:
             rec.component_value = round(component_value, 2)
-            unit_cost = round((component_value + charge) / payload.output_quantity, 4)
-            rec.output_unit_cost = unit_cost
-        # Output batch: a batch-tracked processed item gets its own batch,
-        # carrying the components' heat for traceability.
-        if batch_service.is_batch_managed(out_item):
-            from app.modules.store.models.batch import StoreBatch
-            heats = [b.heat_number for b in db.query(StoreBatch).filter(
-                StoreBatch.batch_number.in_([l.batch_number for l, _, _ in comps if l.batch_number] or ["\x00"])).all() if b.heat_number]
-            ob = StoreBatch(item_id=out_item.id, batch_number=batch_service.generate_batch_number(db),
-                            heat_number=", ".join(dict.fromkeys(heats))[:100] or None, vendor_id=issue.vendor_id, vendor_name=issue.vendor_name,
-                            location_id=location_id, received_qty=payload.output_quantity, received_date=receipt_date,
-                            remarks=f"Job work receipt {rec.receipt_number} (challan {issue.challan_number or issue.issue_number})",
-                            status="active", created_by_id=user.id)
-            db.add(ob)
-            db.flush()
-            rec.output_batch_number = ob.batch_number
         from app.modules.quality.services.lots import needs_job_work_inspection, create_lot, LotError
-        if needs_job_work_inspection(db, out_item):
-            try:
-                lot = create_lot(db, inspection_type="job_work", source_type="job_work_receipt", item=out_item,
-                                 quantity=payload.output_quantity, location_id=location_id, user_id=user.id, source_id=rec.id,
-                                 source_reference=f"{rec.receipt_number} (job work {issue.issue_number})", batch_number=rec.output_batch_number,
-                                 vendor_name=issue.vendor_name, receive_into_quality=True, lot_date=receipt_date, unit_cost=unit_cost)
-            except LotError as e:
-                raise ValueError(str(e))
-            rec.inspection_lot_id = lot.id
-        else:
-            post_stock_transaction(db, item_id=out_item.id, location_id=location_id, transaction_type="receipt",
-                                   quantity=payload.output_quantity, batch_number=rec.output_batch_number,
-                                   remarks=f"Processed by {issue.vendor_name or 'job worker'} on challan {issue.challan_number or issue.issue_number}",
-                                   unit_cost=unit_cost, cost_source="job_work" if unit_cost is not None else None,
-                                   **ref)
+        heats = None
+        for (out_item, qty, rate, po_item_id, _po_id, _entered), share in zip(outputs, shares):
+            part = component_value * share / 100
+            unit_cost = round((part + (rate or 0) * qty) / qty, 4) if valued else None
+            out = StoreJobWorkReceiptOutput(item_id=out_item.id, quantity=qty, purchase_order_item_id=po_item_id, job_charge_rate=rate,
+                                            cost_share_pct=share, component_value=round(part, 2) if valued else None, unit_cost=unit_cost)
+            rec.outputs.append(out)
+            # Output batch: a batch-tracked processed item gets its own batch,
+            # carrying the components' heat for traceability.
+            if batch_service.is_batch_managed(out_item):
+                from app.modules.store.models.batch import StoreBatch
+                if heats is None:
+                    heats = [b.heat_number for b in db.query(StoreBatch).filter(
+                        StoreBatch.batch_number.in_([l.batch_number for l, _, _ in comps if l.batch_number] or ["\x00"])).all() if b.heat_number]
+                ob = StoreBatch(item_id=out_item.id, batch_number=batch_service.generate_batch_number(db),
+                                heat_number=", ".join(dict.fromkeys(heats))[:100] or None, vendor_id=issue.vendor_id, vendor_name=issue.vendor_name,
+                                location_id=location_id, received_qty=qty, received_date=receipt_date,
+                                remarks=f"Job work receipt {rec.receipt_number} (challan {issue.challan_number or issue.issue_number})",
+                                status="active", created_by_id=user.id)
+                db.add(ob)
+                db.flush()
+                out.batch_number = ob.batch_number
+            if needs_job_work_inspection(db, out_item):
+                try:
+                    lot = create_lot(db, inspection_type="job_work", source_type="job_work_receipt", item=out_item,
+                                     quantity=qty, location_id=location_id, user_id=user.id, source_id=rec.id,
+                                     source_reference=f"{rec.receipt_number} (job work {issue.issue_number})", batch_number=out.batch_number,
+                                     vendor_name=issue.vendor_name, receive_into_quality=True, lot_date=receipt_date, unit_cost=unit_cost)
+                except LotError as e:
+                    raise ValueError(str(e))
+                out.inspection_lot_id = lot.id
+            else:
+                post_stock_transaction(db, item_id=out_item.id, location_id=location_id, transaction_type="receipt",
+                                       quantity=qty, batch_number=out.batch_number,
+                                       remarks=f"Processed by {issue.vendor_name or 'job worker'} on challan {issue.challan_number or issue.issue_number}",
+                                       unit_cost=unit_cost, cost_source="job_work" if unit_cost is not None else None,
+                                       **ref)
+        db.flush()
+        head = rec.outputs[0]
+        rec.output_batch_number, rec.output_unit_cost, rec.inspection_lot_id = head.batch_number, head.unit_cost, head.inspection_lot_id
     except ValueError as e:
         db.rollback()
         raise HTTPException(status_code=409, detail=f"The job work receipt couldn't be posted: {e}")
@@ -432,14 +494,27 @@ def create_receipt(db: Session, payload, user) -> StoreJobWorkReceipt:
     return rec
 
 
+def receipt_outputs(rec: StoreJobWorkReceipt) -> list:
+    """Output rows; a receipt saved before outputs existed reads its header."""
+    if rec.outputs:
+        return list(rec.outputs)
+    return [StoreJobWorkReceiptOutput(item_id=rec.output_item_id, quantity=rec.output_quantity, batch_number=rec.output_batch_number,
+                                      purchase_order_item_id=rec.purchase_order_item_id, job_charge_rate=rec.job_charge_rate,
+                                      cost_share_pct=100, component_value=rec.component_value, unit_cost=rec.output_unit_cost,
+                                      inspection_lot_id=rec.inspection_lot_id)]
+
+
 def receipt_dict(db: Session, rec: StoreJobWorkReceipt) -> dict:
     issue = db.get(StoreMaterialIssue, rec.issue_id)
-    out_item = db.get(StoreItem, rec.output_item_id)
-    items = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_({c.item_id for c in rec.components} or {-1})).all()}
-    lot_number = None
-    if rec.inspection_lot_id:
+    outs = receipt_outputs(rec)
+    ids = {c.item_id for c in rec.components} | {o.item_id for o in outs}
+    items = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_(ids or {-1})).all()}
+    lots: dict[int, str] = {}
+    lot_ids = {o.inspection_lot_id for o in outs if o.inspection_lot_id}
+    if lot_ids:
         from app.modules.quality.models.inspection_lot import QualityInspectionLot
-        lot_number = db.query(QualityInspectionLot.lot_number).filter(QualityInspectionLot.id == rec.inspection_lot_id).scalar()
+        lots = dict(db.query(QualityInspectionLot.id, QualityInspectionLot.lot_number).filter(QualityInspectionLot.id.in_(lot_ids)).all())
+    out_item = items.get(rec.output_item_id)
     return {
         "id": rec.id, "receipt_number": rec.receipt_number, "issue_id": rec.issue_id,
         "issue_number": issue.issue_number if issue else None, "challan_number": issue.challan_number if issue else None,
@@ -449,8 +524,15 @@ def receipt_dict(db: Session, rec: StoreJobWorkReceipt) -> dict:
         "output_item_code": out_item.item_code if out_item else None, "output_item_name": out_item.item_name if out_item else None,
         "uom": out_item.uom if out_item else None, "output_quantity": rec.output_quantity, "output_batch_number": rec.output_batch_number,
         "purchase_order_id": rec.purchase_order_id, "job_charge_rate": rec.job_charge_rate, "component_value": rec.component_value,
-        "output_unit_cost": rec.output_unit_cost, "inspection_lot_id": rec.inspection_lot_id, "inspection_lot_number": lot_number,
+        "output_unit_cost": rec.output_unit_cost, "inspection_lot_id": rec.inspection_lot_id,
+        "inspection_lot_number": lots.get(rec.inspection_lot_id) if rec.inspection_lot_id else None,
         "remarks": rec.remarks, "created_at": rec.created_at,
+        "outputs": [{"id": o.id, "item_id": o.item_id, "item_code": items[o.item_id].item_code if o.item_id in items else None,
+                     "item_name": items[o.item_id].item_name if o.item_id in items else None,
+                     "uom": items[o.item_id].uom if o.item_id in items else None, "quantity": o.quantity, "batch_number": o.batch_number,
+                     "job_charge_rate": o.job_charge_rate, "cost_share_pct": o.cost_share_pct, "component_value": o.component_value,
+                     "unit_cost": o.unit_cost, "inspection_lot_id": o.inspection_lot_id,
+                     "inspection_lot_number": lots.get(o.inspection_lot_id) if o.inspection_lot_id else None} for o in outs],
         "components": [{"id": c.id, "issue_item_id": c.issue_item_id, "item_id": c.item_id,
                         "item_code": items[c.item_id].item_code if c.item_id in items else None,
                         "item_name": items[c.item_id].item_name if c.item_id in items else None,

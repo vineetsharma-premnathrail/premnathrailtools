@@ -17,7 +17,8 @@ from app.modules.sales import service as svc
 from app.modules.sales.models.order import SalesOrder, SalesOrderSchedule
 from app.modules.projects.models.project import PmProject
 from app.tests.test_production_mrp import MRP, m  # noqa: F401 — fixture
-from app.tests.test_sales import BASE, TODAY, confirm, create_order, hdr, payload_from_prefill, setup_customer, setup_people
+from app.tests._so_project_helpers import confirm_with_project
+from app.tests.test_sales import BASE, TODAY, create_order, hdr, payload_from_prefill, setup_customer, setup_people
 from app.tests.test_cov_production_execution import API, _sqlite_document_numbers  # noqa: F401 — autouse fixture
 from app.tests.test_production_mrp import _sqlite_p2p_numbers  # noqa: F401 — autouse fixture
 
@@ -53,7 +54,7 @@ def _setup(client, db, with_spares=True):
     planner = _planner(db)
     _org, inq, _ = setup_customer(db, qty=2, price=1000000)
     so = _order_with_spares(client, db, maker, inq) if with_spares else create_order(client, db, maker, inq)
-    so = confirm(client, db, so, maker, head, director)
+    so = confirm_with_project(client, db, so, maker, head, director)
     db.expire_all()
     project = db.query(PmProject).filter(PmProject.sales_order_id == so["id"]).one()
     return maker, planner, so, project

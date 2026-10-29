@@ -53,6 +53,30 @@ def _load(db: Session, receipt_id: int, user: User, lock: bool = False) -> Store
     return receipt
 
 
+def _own_store_id(db: Session, user: User, picked: int | None) -> int | None:
+    """A store person books goods into their own store only (owner, 2026-10-28).
+    Admins pick any store (optional). Everyone else: the active stores they
+    manage, else the active stores of their Store data scope; one store is
+    used whatever was sent, several must be picked from, none is refused."""
+    if is_admin_user(user):
+        return picked
+    allowed = visible_location_ids(db, user)
+    q = db.query(StoreLocation).filter(StoreLocation.is_active.is_(True))
+    if allowed is not None:
+        q = q.filter(StoreLocation.id.in_(allowed or {-1}))
+    stores = q.all()
+    own = [s for s in stores if s.manager_user_id == user.id] or stores
+    if not own:
+        raise HTTPException(status_code=403, detail="No store is linked to you, so goods can't be booked. Ask an admin to make you the manager "
+                                                    "of your store in Store > Settings > Stores, or to set your plant in Organization > Branches.")
+    if len(own) == 1:
+        return own[0].id
+    if picked in {s.id for s in own}:
+        return picked
+    names = ", ".join(sorted(s.name for s in own))
+    raise HTTPException(status_code=422, detail=f"Pick the store the goods are held in - one of your stores: {names}.")
+
+
 @router.get("", response_model=list[PrePoReceiptResponse])
 async def list_pre_po_receipts(
     status: str | None = None,
@@ -87,11 +111,12 @@ async def create_pre_po_receipt(
     if vendor.status != "active":
         raise HTTPException(status_code=409, detail=f"Vendor {vendor.name} is {vendor.status} in the vendor master, so goods can't be booked against it. "
                                                     "Ask Procurement or Finance to set it Active in Procurement > Vendors, or pick another vendor.")
-    if payload.store_location_id:
-        location = db.get(StoreLocation, payload.store_location_id)
+    location_id = _own_store_id(db, user, payload.store_location_id)
+    if location_id:
+        location = db.get(StoreLocation, location_id)
         if location is None or not location.is_active:
             raise HTTPException(status_code=400, detail="That store location doesn't exist or is inactive - pick an active store location.")
-        ensure_location_allowed(db, user, payload.store_location_id)
+        ensure_location_allowed(db, user, location_id)
 
     ids = [i.store_item_id for i in payload.items]
     items = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_(ids)).all()}
@@ -113,7 +138,7 @@ async def create_pre_po_receipt(
 
     receipt = StorePrePoReceipt(
         receipt_number=generate_receipt_number(db), vendor_id=vendor.id, vendor_name=vendor.name,
-        received_date=payload.received_date, store_location_id=payload.store_location_id,
+        received_date=payload.received_date, store_location_id=location_id,
         delivery_challan_number=(payload.delivery_challan_number or "").strip() or None,
         vendor_invoice_number=(payload.vendor_invoice_number or "").strip() or None,
         remarks=(payload.remarks or "").strip() or None, status="pending_po", created_by_id=user.id,

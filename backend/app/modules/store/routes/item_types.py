@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.store.access import require_store_lookup
 from app.modules.store.models.item import StoreItemType, STORE_ITEM_TYPES, STORE_ITEM_TYPE_LABELS, STORE_ITEM_TYPE_PREFIXES
+from app.modules.store.service import ITEM_TYPE_PREFIX_LEN, fixed_length_code
 
 router = APIRouter(prefix="/store/item-types", tags=["Store"])
 
@@ -53,15 +54,19 @@ def _clean(db: Session, payload: ItemTypeIn, current: StoreItemType | None = Non
         q = q.filter(StoreItemType.id != current.id)
     if q.first():
         raise HTTPException(status_code=409, detail=f"Item type '{label}' already exists — pick it from the list or edit it instead.")
+    def taken(code: str) -> bool:
+        q = db.query(StoreItemType.id).filter(StoreItemType.prefix == code)
+        return (q.filter(StoreItemType.id != current.id) if current else q).first() is not None
+
+    # Item codes are <TYPE 2>-<CATEGORY 3>-<NNNN>: the prefix is exactly 2 characters.
     prefix = re.sub(r"[^A-Z0-9]", "", payload.prefix.upper())
     if not prefix:
-        words = re.findall(r"[A-Za-z0-9]+", label.upper())
-        prefix = ("".join(w[0] for w in words) if len(words) > 1 else "".join(words))[:2] or "IT"
-    prefix = prefix[:6]
-    q = db.query(StoreItemType).filter(StoreItemType.prefix == prefix)
-    if current:
-        q = q.filter(StoreItemType.id != current.id)
-    if q.first():
+        return label, fixed_length_code(label, ITEM_TYPE_PREFIX_LEN, taken)
+    if len(prefix) != ITEM_TYPE_PREFIX_LEN:
+        raise HTTPException(status_code=400, detail=(
+            f"Code prefix '{prefix}' must be exactly {ITEM_TYPE_PREFIX_LEN} letters or digits (e.g. SP) — it starts every item code "
+            f"of this type (SP-ELE-0001). Leave it blank to make one from the name."))
+    if taken(prefix):
         raise HTTPException(status_code=409, detail=f"Code prefix '{prefix}' is already used by another item type — enter a different prefix.")
     return label, prefix
 

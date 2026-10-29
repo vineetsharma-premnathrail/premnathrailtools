@@ -282,6 +282,25 @@ def _check_location(db: Session, loc_id: int | None, label: str) -> None:
         raise HTTPException(status_code=422, detail=f"{label}: that store / ship-to location doesn't exist — pick it again.")
 
 
+def _receiving_from_pr(db: Session, lines) -> tuple[int | None, int | None]:
+    """Plant + store a PO receives at, taken from the requisition: its lines'
+    Ship To names a plant as "Name (CODE)" (the PR form's plant pick). When all
+    the lines name one plant, that plant and its first active store are used,
+    so Create PO needs no Receiving question. A typed address or mixed plants
+    give (None, None) and the buyer sets them on the draft."""
+    targets = {(ln.ship_to or "").strip() for ln in lines} - {""}
+    if len(targets) != 1:
+        return None, None
+    target = targets.pop()
+    branch = next((b for b in db.query(Branch).all() if f"{b.name} ({b.code})" == target), None)
+    if branch is None:
+        return None, None
+    store = (db.query(StoreLocation)
+             .filter(StoreLocation.branch_id == branch.id, StoreLocation.is_active == True)  # noqa: E712
+             .order_by(StoreLocation.name).first())
+    return branch.id, store.id if store else None
+
+
 @router.post("/{rfq_id}/split-pos", response_model=list[P2PPurchaseOrderResponse])
 def create_split_pos(rfq_id: int, payload: POSplitPayload, db: Session = Depends(get_db),
                      user: User = Depends(_purchase_tab("purchase_orders", "create"))):
@@ -337,11 +356,15 @@ def create_split_pos(rfq_id: int, payload: POSplitPayload, db: Session = Depends
             raise HTTPException(status_code=e.status, detail=str(e))
         info_records.ensure_source_allowed(db, vendor.id, item_ids, po_date, vendor.name)
 
+        # Receiving comes from the requisition's Ship To unless the caller names it.
+        pr_plant, pr_store = _receiving_from_pr(db, [pr_lines[ln.pr_item_id] for ln in g.lines])
+        plant_id = g.plant_branch_id or payload.plant_branch_id or pr_plant
+        store_id = g.ship_to_location_id or payload.ship_to_location_id or (pr_store if plant_id == pr_plant else None)
         po = P2PPurchaseOrder(
             po_number=generate_po_number(db), p2p_request_id=pr.id, vendor_id=vendor.id, vendor_name=vendor.name, status="draft",
             po_date=po_date, expected_delivery=g.expected_delivery, delivery_terms=g.delivery_terms or (vq.payment_terms if vq else None),
-            created_by_id=user.id, plant_branch_id=g.plant_branch_id or payload.plant_branch_id,
-            ship_to_location_id=g.ship_to_location_id or payload.ship_to_location_id, vendor_quotation_id=vq.id if vq else None,
+            created_by_id=user.id, plant_branch_id=plant_id,
+            ship_to_location_id=store_id, vendor_quotation_id=vq.id if vq else None,
         )
         po.terms_conditions = _po_terms(db, rfq, vendor.id)
         # The PR's internal order (for a New development purchase: the one behind its R&D project) carries to the PO,

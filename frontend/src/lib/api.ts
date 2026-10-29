@@ -1147,8 +1147,8 @@ export const erpApi = {
 // department, not out of a Service Request's Materials tab (which now go
 // straight to p2pApi via erpApi.raisePurchaseRequisition).
 export const p2pApi = {
-  listProjects: async (search?: string) => {
-    const { data } = await apiClient.get('/p2p/requests/projects', { params: { search } })
+  listProjects: async (search?: string, includeDelivered = false) => {
+    const { data } = await apiClient.get('/p2p/requests/projects', { params: { search, include_delivered: includeDelivered || undefined } })
     return data
   },
 
@@ -1573,6 +1573,10 @@ export const projectsApi = {
   units: async (id: number): Promise<import('@/types').ProjectUnitsResponse> => { const { data } = await apiClient.get(`/projects/${id}/units`); return data },
   /** Server search behind <ProjectUnitPicker> (other modules link their records to a project / unit). */
   unitsLookup: async (params: { q?: string; kind?: 'vehicle' | 'lot'; include_projects?: boolean; project_id?: number } = {}): Promise<import('@/types').ProjectUnitLookupItem[]> => { const { data } = await apiClient.get('/projects/units/lookup', { params }); return data },
+  /** Confirmed New Project sales orders that have no PM project yet — the Project Manager creates it. */
+  salesOrdersAwaitingProject: async (): Promise<{ id: number; so_number: string; customer_name?: string | null; customer_po_number?: string | null; confirmed_at?: string | null; sales_owner_name?: string | null; vehicles: number; first_delivery_date?: string | null; last_delivery_date?: string | null }[]> => { const { data } = await apiClient.get('/projects/units/awaiting-sales-orders'); return data },
+  /** Creates the PEW project (and its Units) for a confirmed sales order. */
+  createFromSalesOrder: async (payload: { sales_order_id: number; project_manager_id: number; name?: string }) => { const { data } = await apiClient.post('/projects/units/from-sales-order', payload); return data },
   remove: async (id: number) => { const { data } = await apiClient.delete(`/projects/${id}`); return data },
   audit: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/audit`); return data },
   breakdown: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/breakdown`); return data },
@@ -2012,6 +2016,18 @@ export const storeJobWorkApi = {
   receipts: async () => (await apiClient.get('/store/job-work/receipts')).data,
   receipt: async (id: number) => (await apiClient.get(`/store/job-work/receipts/${id}`)).data,
   createReceipt: async (payload: Record<string, unknown>) => (await apiClient.post('/store/job-work/receipts', payload)).data,
+  /** Processed-item lines read from Excel into the Receive form — nothing is posted. */
+  importReceiptOutputs: async (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await apiClient.post('/store/job-work/receipts/import-outputs', form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
+    return data as {
+      lines: { item_id: number; item_code: string; item_name: string; uom?: string | null; quantity: number; job_charge_rate?: number | null; cost_share_pct?: number | null }[]
+      errors: { row: number; item_code: string; reason: string }[]
+    }
+  },
+  receiptOutputsTemplate: async () =>
+    (await apiClient.get('/store/job-work/receipts/import-outputs/template', { responseType: 'blob' })).data as Blob,
 }
 
 export const physicalCountsApi = {
@@ -4856,11 +4872,11 @@ export const salesApi = {
   listOrders: async (params: Record<string, unknown> = {}): Promise<import('@/types').SalesOrder[]> => { const { data } = await apiClient.get('/sales/orders', { params }); return data },
   getOrder: async (id: number): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.get(`/sales/orders/${id}`); return data },
   prefill: async (params: { inquiry?: number; tender?: number; quotation?: number }) => { const { data } = await apiClient.get('/sales/orders/prefill', { params }); return data },
-  orderSources: async (kind: 'inquiry' | 'tender'): Promise<{ id: number; number: string; title: string | null; customer_id: number; customer_name: string | null; existing_order: string | null }[]> => { const { data } = await apiClient.get('/sales/orders/sources', { params: { kind } }); return data },
-  serviceMachines: async (): Promise<{ id: number; serial_number: string; model_name: string | null; customer_id: number; customer_name: string | null; project_code: string | null; label: string }[]> => { const { data } = await apiClient.get('/sales/orders/service-machines'); return data },
+  orderSources: async (kind: 'inquiry' | 'tender'): Promise<{ id: number; number: string; title: string | null; customer_id: number; customer_name: string | null; accepted_quotation?: string | null; existing_order: string | null }[]> => { const { data } = await apiClient.get('/sales/orders/sources', { params: { kind } }); return data },
+  serviceMachines: async (): Promise<{ id: number; serial_number: string; model_name: string | null; customer_id: number; customer_name: string | null; project_code: string | null; label: string; warranty_status: string; warranty_label: string }[]> => { const { data } = await apiClient.get('/sales/orders/service-machines'); return data },
   serviceRequestsForMachine: async (machineId: number): Promise<{ id: number; request_number: string; issue_title: string; status: string; existing_order: string | null }[]> => { const { data } = await apiClient.get('/sales/orders/service-requests', { params: { machine_id: machineId } }); return data },
   customerQuotations: async (customerId: number): Promise<{ id: number; quot_number: string | null; status: string; status_label: string; quote_date: string | null; net_value: number; inquiry_id: number; inquiry_number: string; inquiry_stage: string; order_received: boolean; existing_order: string | null }[]> => { const { data } = await apiClient.get('/sales/orders/quotations', { params: { customer_id: customerId } }); return data },
-  bySource: async (params: { inquiry?: number; tender?: number }): Promise<{ order: { id: number; display_number: string; status: string; status_label: string | null } | null }> => { const { data } = await apiClient.get('/sales/orders/by-source', { params }); return data },
+  bySource: async (params: { inquiry?: number; tender?: number }): Promise<{ order: { id: number; display_number: string; status: string; status_label: string | null } | null; can_raise?: boolean }> => { const { data } = await apiClient.get('/sales/orders/by-source', { params }); return data },
   defaults: async () => { const { data } = await apiClient.get('/sales/orders/defaults'); return data },
   createOrder: async (payload: Record<string, unknown>): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.post('/sales/orders', payload); return data },
   updateOrder: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.patch(`/sales/orders/${id}`, payload); return data },

@@ -3,6 +3,9 @@ from app.modules.main.models.user import User
 from app.modules.erp.models.project import Project
 from app.tests.p2p_workflow_helpers import master_item
 
+# Closing / sending for closure needs both actual execution dates.
+CLOSE_READY = {"actual_date_attended": "2026-10-01", "actual_completion_date": "2026-10-02"}
+
 
 def make_user(db, email, role="user", assigned_apps=("erp",), erp_permissions=None):
     user = User(
@@ -124,7 +127,7 @@ def test_non_creator_cannot_update_sr(client, db):
     assert response.status_code == 403
 
 
-def test_creator_without_sr_edit_permission_cannot_update_own_sr(client, db):
+def test_creator_is_engineer_and_can_update_own_sr_without_sr_edit(client, db):
     creator = make_user(db, "erp4b@premnathrail.com", erp_permissions=["sr_create"])
     project = make_project(db, "SN-SR-004B")
     created = client.post(
@@ -138,7 +141,9 @@ def test_creator_without_sr_edit_permission_cannot_update_own_sr(client, db):
         json={"status": "acknowledged"},
         headers=auth_header(creator),
     )
-    assert response.status_code == 403
+    # The person who raises the SR is its engineer, so they work on it.
+    assert created["assigned_service_person_id"] == creator.id
+    assert response.status_code == 200, response.text
 
 
 def test_admin_can_update_others_sr_and_close_writes_audit(client, db):
@@ -153,7 +158,7 @@ def test_admin_can_update_others_sr_and_close_writes_audit(client, db):
 
     response = client.patch(
         f"/api/v1/erp/service-requests/{created['id']}",
-        json={"status": "closed", "resolution_description": "Replaced pump seal."},
+        json={**CLOSE_READY, "status": "closed", "resolution_description": "Replaced pump seal."},
         headers=auth_header(admin),
     )
     assert response.status_code == 200
@@ -255,7 +260,7 @@ def test_materials_require_creator_or_admin(client, db):
     assert response.status_code == 403
 
 
-def test_add_material_requires_sr_edit_permission(client, db):
+def test_creator_engineer_can_add_material(client, db):
     creator = make_user(db, "erp9b@premnathrail.com", erp_permissions=["sr_create"])
     project = make_project(db, "SN-SR-008B")
     sr = client.post(
@@ -269,7 +274,7 @@ def test_add_material_requires_sr_edit_permission(client, db):
         json={"material_name": "Valve", "quantity": 1},
         headers=auth_header(creator),
     )
-    assert response.status_code == 403
+    assert response.status_code == 201, response.text
 
 
 def test_search_and_status_filter(client, db):
@@ -317,7 +322,7 @@ def test_attachments_require_sharepoint_config(client, db, monkeypatch):
     assert response.status_code == 503
 
 
-def test_upload_attachment_requires_sr_edit_permission(client, db):
+def test_creator_engineer_can_upload_attachment(client, db):
     user = make_user(db, "erp12b@premnathrail.com", erp_permissions=["sr_create"])
     project = make_project(db, "SN-SR-010B")
     sr = client.post(
@@ -331,7 +336,7 @@ def test_upload_attachment_requires_sr_edit_permission(client, db):
         files={"files": ("test.pdf", b"%PDF-1.4 fake content", "application/pdf")},
         headers=auth_header(user),
     )
-    assert response.status_code == 403
+    assert response.status_code in (200, 201), response.text
 
 
 def _make_sr(client, user, project):
@@ -547,20 +552,14 @@ def test_sr_status_must_be_a_known_value(client, db):
     assert r.status_code == 422
 
 
-def test_sr_cannot_close_without_corrective_action(client, db):
+def test_sr_closes_without_corrective_action(client, db):
     user = make_user(db, "close_rule@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
     project = make_project(db, "SN-SR-CLOSE")
     sr = _make_sr(client, user, project)
     url = f"/api/v1/erp/service-requests/{sr['id']}"
-
-    r = client.patch(url, json={"status": "closed"}, headers=auth_header(user))
-    assert r.status_code == 400
-    assert "Corrective Action" in r.json()["detail"]
-
-    r = client.patch(url, json={"resolution_description": "Tightened coupling."}, headers=auth_header(user))
-    assert r.status_code == 200
-    r = client.patch(url, json={"status": "closed"}, headers=auth_header(user))
-    assert r.status_code == 200
+    # Root cause / corrective action are optional; only the execution dates are needed.
+    r = client.patch(url, json={**CLOSE_READY, "status": "closed"}, headers=auth_header(user))
+    assert r.status_code == 200, r.text
     assert r.json()["status"] == "closed"
 
 
@@ -676,3 +675,13 @@ def test_material_request_returns_pr_id_for_attachments(client, db):
     assert r.status_code == 201, r.text
     assert r.json()["pr_id"] and r.json()["pr_number"]
 
+
+
+def test_close_needs_execution_dates(client, db):
+    admin = make_user(db, "erpclose@premnathrail.com", role="admin")
+    sr = _make_sr(client, admin, make_project(db, "SN-SR-CLOSE2"))
+    url = f"/api/v1/erp/service-requests/{sr['id']}"
+    r = client.patch(url, json={"status": "closed", "actual_date_attended": "2026-10-01"}, headers=auth_header(admin))
+    assert r.status_code == 400 and "Actual Completed" in r.json()["detail"]
+    r = client.patch(url, json={**CLOSE_READY, "status": "closed"}, headers=auth_header(admin))
+    assert r.status_code == 200, r.text

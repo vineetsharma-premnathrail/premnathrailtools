@@ -6,7 +6,7 @@ anchors, which were bleeding into the body text at page breaks.
 
 Numbered-section layout: Customer/Organization, Contact Person, Requirement
 Overview, Technical Specification, Requirement Description, Project
-Background, Technical Compliance Statement, Document Control — auto-numbered
+Background, Document Control — auto-numbered
 so removing an empty section never leaves a gap.
 """
 
@@ -172,16 +172,6 @@ def build_technical_offer_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     story.append(_section_heading(n, "Project Background"))
     story.append(Spacer(1, 6))
     story.extend(_multiline(ctx.get("project_details"), "Not provided."))
-    story.append(Spacer(1, 14))
-
-    # Technical Compliance Statement
-    n += 1
-    story.append(_section_heading(n, "Technical Compliance Statement"))
-    story.append(Spacer(1, 6))
-    story.append(_p(
-        "The proposed technical offer shall be evaluated against the above customer requirements. "
-        "All deviations, if any, shall be explicitly identified in the final technical compliance statement."
-    ))
     story.append(Spacer(1, 14))
 
     # Document Control

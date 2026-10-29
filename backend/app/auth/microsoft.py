@@ -1,7 +1,9 @@
 import asyncio
 
 import httpx
+import requests
 from app.core.config import settings
+from fastapi import HTTPException
 from msal import ConfidentialClientApplication
 
 
@@ -78,11 +80,21 @@ async def get_microsoft_manager_profile(access_token: str) -> dict | None:
 
 async def get_app_graph_token() -> str:
     """Get an app-only Graph token via client credentials (no signed-in user needed).
-    Requires the Azure app registration to have admin-consented User.Read.All / Directory.Read.All."""
-    app = get_msal_app()
-    result = app.acquire_token_for_client(
-        scopes=["https://graph.microsoft.com/.default"]
-    )
+    Requires the Azure app registration to have admin-consented User.Read.All / Directory.Read.All.
+    A network failure (no internet / DNS) becomes a 503 with a clear reason
+    instead of a raw 500 from every SharePoint, mail and Teams caller."""
+    try:
+        app = get_msal_app()
+        result = app.acquire_token_for_client(
+            scopes=["https://graph.microsoft.com/.default"]
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="The server could not reach Microsoft sign-in (login.microsoftonline.com), so SharePoint, "
+                   "mail and Teams are unavailable right now. Check the server's internet/DNS connection "
+                   "and try again in a minute.",
+        ) from exc
     token = result.get("access_token")
     if not token:
         raise ValueError(

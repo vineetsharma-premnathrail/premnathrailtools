@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { organizationApi, p2pApi, storeApi, PrStockAvailability } from '@/lib/api'
 import { P2PPurposeMeta, P2PRequest, P2PRequestLineItemInput, StoreItem } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
-import { accountAssignmentApi, ACCOUNT_ASSIGNMENTS } from '@/lib/mmLogisticsApi'
+import { ACCOUNT_ASSIGNMENTS, accountAssignmentApi } from '@/lib/mmLogisticsApi'
 
 import DateField from '@/components/erp/DateField'
 import { FormPage, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
@@ -15,7 +15,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
-import { RowCount, pillStyle } from '@/components/shared/ui'
+import { RowCount } from '@/components/shared/ui'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
 
@@ -33,12 +33,12 @@ const typeLabel = (t: string) => { const s = t.replace(/_/g, ' '); return s.char
 // each line's Item Type + Category say what is bought, and the item type picks
 // the line's buyer (Procurement › Settings › Buyer for each item type).
 const PURPOSE_HINTS: Record<string, string> = {
-  machine_project: 'Service work on a project already delivered to the customer: spares, repair, warranty, commissioning support. Pick the delivered project; every line is for it. Charged To is optional.',
-  development: 'New product development (R&D). Charged to the R&D project it belongs to; Finance is linked automatically.',
+  machine_project: 'Service work on a project already delivered to the customer: spares, repair, warranty, commissioning support. Pick the delivered project; every line is for it.',
+  development: 'New product development (R&D).',
   // The cost centre is picked by Purchase on the PO (your department's by default), not here.
-  department: "Day-to-day running cost of a department: cleaning material, stationery, small tools, office repairs, AMC, housekeeping. Purchase charges it to your department's cost centre on the PO.",
-  capital: "Something the company owns and uses for years (machine, laptop, AC, welding set). Charged to the asset's internal order.",
-  stock: 'Common items Store keeps in stock (fasteners, oil, gloves). Nothing is charged now; the cost goes to whoever Store issues it to.',
+  department: "Day-to-day running cost of a department: cleaning material, stationery, small tools, office repairs, AMC, housekeeping.",
+  capital: "Something the company owns and uses for years (machine, laptop, AC, welding set).",
+  stock: 'Common items Store keeps in stock (fasteners, oil, gloves).',
 }
 
 // A line is an Item Master item (store_item_id). Name, part code, UOM and
@@ -51,21 +51,6 @@ function emptyItem(): P2PRequestLineItemInput {
 
 const inputStyle = sheetInput
 
-// A value the purpose fixes (one option, or locked in Procurement › Settings › Purpose rules): read-only, with a "Fixed" tag.
-function FixedValue({ text, label }: { text: string; label: string }) {
-  return (
-    <>
-      <div role="textbox" aria-readonly="true" aria-label={`${label} (fixed by the purpose)`} tabIndex={0} title="Fixed by the purpose" style={{ ...sheetInput, display: 'flex', alignItems: 'center', gap: 8, background: SHEET.SOFT, fontWeight: 600 }}>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</span>
-        <span style={{ ...pillStyle('#475569'), marginLeft: 'auto', flex: 'none' }}>Fixed · Set by purpose</span>
-      </div>
-    </>
-  )
-}
-// Shown while the Purpose is empty: the field exists (no layout shift) but cannot be used yet.
-function ChoosePurposeFirst({ label }: { label: string }) {
-  return <SearchableSelect value="" onChange={() => {}} ariaLabel={label} disabled placeholder="Choose a purpose first" options={[]} />
-}
 // Compact attach row: one line with the button and the picked files (replaces the 100px drop zones).
 function AttachRow({ label, files, onChange, tour }: { label: string; files: File[]; onChange: (f: File[]) => void; tour: string }) {
   const ref = useRef<HTMLInputElement>(null)
@@ -106,8 +91,6 @@ export default function NewP2PRequestPage() {
 
   const [metaError, setMetaError] = useState('')
   const [metaLoaded, setMetaLoaded] = useState(false)
-  const [acctLoading, setAcctLoading] = useState(false)
-  const [acctError, setAcctError] = useState('')
   // After a failed submit the message opens in a dialog; closing it puts focus on the field to fix.
   const focusIdRef = useRef<string | null>(null)
   const [masterItems, setMasterItems] = useState<StoreItem[]>([])
@@ -157,13 +140,23 @@ export default function NewP2PRequestPage() {
       next[idx] = { ...next[idx], ...patch }
       return next
     })
-  const [projects, setProjects] = useState<{ id: number; label: string }[]>([])
+  const [projects, setProjects] = useState<{ id: number; label: string; serviceable: boolean }[]>([])
+  // Project = a machine still being built; Service = a dispatched / delivered machine.
+  const purposeProjects = projects.filter((p) => (purpose === 'machine_project' ? p.serviceable : !p.serviceable))
 
   const [projectId, setProjectId] = useState('')
-  // Account assignment (SAP ME51N): what the purchase is charged to — a real link.
+  // What the purchase is charged to: hidden on the form for now (2026-10-28); kept so editing an older PR keeps its charge.
   const [acctKind, setAcctKind] = useState('')
   const [acctId, setAcctId] = useState('')
-  const [acctOptions, setAcctOptions] = useState<{ id: number; label: string }[]>([])
+  // New development is charged to an open R&D project (R&D › Prototype / Research); loaded when that purpose is picked.
+  const [rndProjects, setRndProjects] = useState<{ id: number; label: string }[] | null>(null)
+  const [rndError, setRndError] = useState('')
+  useEffect(() => {
+    if (purpose !== 'development' || rndProjects) return
+    accountAssignmentApi.options('rnd_project')
+      .then((r) => setRndProjects(r.options || []))
+      .catch((err) => setRndError(extractErrorMessages(err, 'R&D projects could not be loaded.').join(' ')))
+  }, [purpose, rndProjects])
   const [requiredDate, setRequiredDate] = useState('')
   const [priority, setPriority] = useState('medium')
   const [remarks, setRemarks] = useState('')
@@ -228,21 +221,10 @@ export default function NewP2PRequestPage() {
   }, [])
 
   useEffect(() => {
-    setAcctError('')
-    if (!isAuthorized || !acctKind) { setAcctOptions([]); setAcctLoading(false); return }
-    let live = true
-    setAcctLoading(true); setAcctOptions([])
-    accountAssignmentApi.options(acctKind).then((r) => { if (live) setAcctOptions(r.options) })
-      .catch((err) => { if (live) setAcctError(extractErrorMessages(err, 'Failed to load the account assignment list.').join(' ')) })
-      .finally(() => { if (live) setAcctLoading(false) })
-    return () => { live = false }
-  }, [isAuthorized, acctKind])
-
-  useEffect(() => {
     if (!isAuthorized) return
     ;(async () => {
       try {
-        const [meta, projectList] = await Promise.all([p2pApi.getMeta(), p2pApi.listProjects()])
+        const [meta, projectList] = await Promise.all([p2pApi.getMeta(), p2pApi.listProjects(undefined, true)])
         setPurposes(meta.purposes || [])
         setProjects(projectList)
         setMetaLoaded(true)
@@ -348,8 +330,10 @@ export default function NewP2PRequestPage() {
   const pickPurpose = (value: string) => {
     setPurpose(value)
     const pm = purposes.find((p) => p.code === value)
-    if (value !== 'machine_project' && value !== 'customer_order') setProjectId('')
-    setAcctKind(pm?.charged_required ? pm.charged_to_kinds[0] : '')
+    // Project and Service pick from different machines (in build vs delivered), so a switch clears the pick.
+    if (value !== purpose) setProjectId('')
+    // Charged To is hidden for now (owner 2026-10-28): a new purpose clears any charge.
+    setAcctKind('')
     setAcctId('')
     // Lines carry no project choice: Inhouse purposes mark every line Inhouse, the rest are for the header's project.
     setItems((prev) => prev.map((it) => ({ ...it, project_inhouse: pm?.line_project_mode === 'inhouse' ? 'Inhouse' : 'Project', order_project_id: null, order_project_element_id: null })))
@@ -398,14 +382,7 @@ export default function NewP2PRequestPage() {
     } else {
     if (!rule) { fail('Choose the purpose of this requisition: what is it being bought for?', 'pr-field-purpose'); return }
     if ((purpose === 'machine_project' || purpose === 'customer_order') && !projectId) { fail('Pick the project this requisition is for.', 'pr-field-project'); return }
-    if (acctKind && !acctId) {
-      fail(acctKind === 'rnd_project'
-        ? 'Pick the R&D project this development belongs to.'
-        : acctKind === 'internal_order'
-        ? "Pick the internal order this is charged to. If it isn't in the list, ask Finance to open one in Finance › Masters & Setup › Internal Orders."
-        : `Pick the ${ACCOUNT_ASSIGNMENTS.find((a) => a.value === acctKind)?.label.toLowerCase()} this requisition is charged to.`, 'pr-field-acct-id')
-      return
-    }
+    if (purpose === 'development' && !(acctKind === 'rnd_project' && acctId)) { fail('Pick the R&D project this development is for. If it is not listed, create it in R&D › Prototype / Research first.', 'pr-field-rnd-project'); return }
     for (let i = 0; i < items.length; i++) {
       const m = items[i].store_item_id ? masterById.get(items[i].store_item_id!) : undefined
       if (!m) {
@@ -531,27 +508,7 @@ export default function NewP2PRequestPage() {
                     options={purposes.map((p) => ({ value: p.code, label: p.label }))} />
                 </div>
               </div>
-              <div data-tour="pr-new-charged-to" style={{ minWidth: 0 }}>
-                <label style={labelStyle}>Charged To{rule?.required && <> <Req /></>}</label>
-                {!rule ? (
-                  <ChoosePurposeFirst label="Charged To" />
-                ) : rule.kinds.length === 0 ? (
-                  <FixedValue label="Charged To" text="Nothing charged now" />
-                ) : rule.kinds.length === 1 && rule.required ? (
-                  // One required answer: a fixed value, not a dead dropdown.
-                  <FixedValue label="Charged To" text={ACCOUNT_ASSIGNMENTS.find((a) => a.value === rule.kinds[0])?.label || ''} />
-                ) : (
-                  <SearchableSelect value={acctKind} onChange={(v) => { setAcctKind(v); setAcctId('') }} ariaLabel="Charged To"
-                    options={[...(rule.required ? [] : [{ value: '', label: 'Not charged' }]),
-                      ...ACCOUNT_ASSIGNMENTS.filter((a) => rule.kinds.includes(a.value)).map((a) => ({ value: a.value, label: a.label }))]}
-                    placeholder="Select…" />
-                )}
-              </div>
-            </div>
-            {metaError && <p role="alert" style={{ ...sheetHint, color: '#B91C1C' }}>{metaError} Reload the page to try again.</p>}
-            {rule && <p data-tour="pr-new-purpose-hint" style={sheetHint}>{rule.hint}</p>}
-            {(purpose === 'machine_project' || purpose === 'customer_order' || (rule && rule.kinds.length > 0 && acctKind)) && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+              {/* Charged To is hidden for now (owner 2026-10-28); the Project sits beside the Purpose. */}
               {(purpose === 'machine_project' || purpose === 'customer_order') && (
                 <div data-tour="pr-new-project" style={{ minWidth: 0 }}>
                   <label style={labelStyle}>Project <Req /></label>
@@ -560,35 +517,36 @@ export default function NewP2PRequestPage() {
                       value={projectId}
                       onChange={setProjectId}
                       ariaLabel="Project"
-                      disabled={metaLoaded && projects.length === 0}
-                      options={projects.map((p) => ({ value: String(p.id), label: p.label }))}
-                      placeholder={!metaLoaded ? 'Loading projects…' : projects.length ? 'Search project…' : 'No projects yet'}
+                      disabled={metaLoaded && purposeProjects.length === 0}
+                      options={purposeProjects.map((p) => ({ value: String(p.id), label: p.label }))}
+                      placeholder={!metaLoaded ? 'Loading projects…' : purposeProjects.length ? 'Search project…' : 'No projects yet'}
                     />
                   </div>
-                  {metaLoaded && projects.length === 0 && <p style={sheetHint}>No projects found. Reload the page; if the list stays empty, ask an admin which delivered projects are set up in Project Management.</p>}
+                  {metaLoaded && purposeProjects.length === 0 && <p style={sheetHint}>{purpose === 'machine_project'
+                    ? 'No dispatched or delivered machine found. A machine appears here once its project reaches the Dispatched stage in Project Management.'
+                    : 'No machine is being built right now: every project is already dispatched or delivered. To buy for a delivered machine, choose Purpose "Service"; for a new machine, create its project in Project Management first.'}</p>}
                 </div>
               )}
-              {acctKind && (
+              {purpose === 'development' && (
                 <div style={{ minWidth: 0 }}>
-                  <label style={labelStyle}>{ACCOUNT_ASSIGNMENTS.find((a) => a.value === acctKind)?.label} <Req /></label>
-                  <div id="pr-field-acct-id">
-                    <SearchableSelect value={acctId} onChange={setAcctId} ariaLabel={ACCOUNT_ASSIGNMENTS.find((a) => a.value === acctKind)?.label}
-                      disabled={acctLoading || !!acctError || acctOptions.length === 0}
-                      options={acctOptions.map((o) => ({ value: String(o.id), label: o.label }))}
-                      placeholder={acctLoading ? 'Loading…' : acctError ? 'Could not load the list' : acctOptions.length ? (acctKind === 'rnd_project' ? 'Search an R&D project' : 'Search…') : (acctKind === 'rnd_project' ? 'No open R&D project' : 'Nothing to pick yet')} />
+                  <label style={labelStyle}>R&amp;D project <Req /></label>
+                  <div id="pr-field-rnd-project">
+                    <SearchableSelect
+                      value={acctKind === 'rnd_project' ? acctId : ''}
+                      onChange={(v) => { setAcctKind(v ? 'rnd_project' : ''); setAcctId(v) }}
+                      ariaLabel="R&D project"
+                      disabled={!!rndError || (rndProjects !== null && rndProjects.length === 0)}
+                      options={(rndProjects || []).map((p) => ({ value: String(p.id), label: p.label }))}
+                      placeholder={rndError ? 'R&D projects could not be loaded' : !rndProjects ? 'Loading R&D projects…' : rndProjects.length ? 'Search R&D project…' : 'No open R&D projects'}
+                    />
                   </div>
-                  {acctError && <p role="alert" style={{ ...sheetHint, color: '#B91C1C' }}>{acctError} Pick the charge type again, or reload the page.</p>}
-                  {!acctLoading && !acctError && acctOptions.length === 0 && (
-                    <p style={sheetHint}>{acctKind === 'rnd_project'
-                      ? 'No open R&D project — ask the R&D head to create one in R&D › Prototype / Research.'
-                      : acctKind === 'internal_order'
-                      ? 'No internal orders yet — ask Finance to open one in Finance › Masters & Setup › Internal Orders.'
-                      : `No ${ACCOUNT_ASSIGNMENTS.find((a) => a.value === acctKind)?.label.toLowerCase()} available yet — ask an admin to set one up, then reload the page.`}</p>
-                  )}
+                  {rndError && <p role="alert" style={{ ...sheetHint, color: '#B91C1C' }}>{rndError} Reload the page to try again.</p>}
+                  {rndProjects && rndProjects.length === 0 && <p style={sheetHint}>No open R&amp;D project found. Create the prototype / research project in R&amp;D first; handed-over, closed and cancelled projects are not listed.</p>}
                 </div>
               )}
             </div>
-            )}
+            {metaError && <p role="alert" style={{ ...sheetHint, color: '#B91C1C' }}>{metaError} Reload the page to try again.</p>}
+            {rule && <p data-tour="pr-new-purpose-hint" style={sheetHint}>{rule.hint}</p>}
           </SheetSection>
         </div>
         <div style={{ minWidth: 0, padding: '20px 24px', background: '#fcfcfd' }}>

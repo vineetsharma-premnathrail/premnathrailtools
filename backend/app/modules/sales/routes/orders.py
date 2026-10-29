@@ -93,6 +93,7 @@ async def list_orders(
     at_risk: bool = False,
     month: str | None = None,
     search: str | None = None,
+    order_category: str | None = None,
     db: Session = Depends(get_db),
     _app: User = _SALES,
     user: User = Depends(require_tab_access("sales", "orders")),
@@ -109,6 +110,11 @@ async def list_orders(
         q = q.filter(SalesOrder.status == "pending_approval")
     if customer_id:
         q = q.filter(SalesOrder.customer_id == customer_id)
+    if order_category:
+        if order_category not in SALES_ORDER_CATEGORIES:
+            raise HTTPException(status_code=422, detail=f"'{order_category}' is not an order type — use one of: "
+                                                        f"{', '.join(SALES_ORDER_CATEGORY_LABELS.values())}.")
+        q = q.filter(SalesOrder.order_category == order_category)
     if month:
         try:
             year, mon = (int(p) for p in month.split("-"))
@@ -135,12 +141,23 @@ async def list_orders(
     return out
 
 
-# A sales order is raised only once the customer's order is in: an inquiry at
-# stage "Order Received", a tender with status "LOA / Order Received". The CRM
-# "Create Sales Order" button follows the same rule (SalesOrderHandoff.tsx).
-INQUIRY_ORDER_STAGE = "Order Received"
-INQUIRY_NOT_ORDERED_STATUS = "Closed - Not Ordered"
+# A sales order is raised only once the customer's order is in: an inquiry with a
+# quotation the customer accepted (or at stage "Order Received"), a tender with status
+# "LOA / Order Received". The CRM "Create Sales Order" button asks /by-source (can_raise).
+# An inquiry is orderable when its status is Order Received AND the customer accepted
+# one of its quotations (owner, 2026-10-28) - both, not either.
+INQUIRY_ORDER_STATUS = "Order Received"
 TENDER_ORDER_STATUSES = ("LOA / Order Received", "Closed – Ordered")
+
+
+def _accepted_quotations(db: Session, inquiry_ids) -> dict[int, str]:
+    """inquiry id → number of its quotation the customer accepted (one per inquiry)."""
+    from app.modules.crm.models.inquiry import Quotation
+    ids = list(inquiry_ids)
+    if not ids:
+        return {}
+    return dict(db.query(Quotation.inquiry_id, Quotation.quot_number)
+                .filter(Quotation.inquiry_id.in_(ids), Quotation.status == "accepted").all())
 
 
 def _check_source_ordered(db: Session, inquiry_id: int | None, tender_id: int | None) -> None:
@@ -150,10 +167,15 @@ def _check_source_ordered(db: Session, inquiry_id: int | None, tender_id: int | 
         inq = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
         if not inq:
             raise HTTPException(status_code=404, detail=f"Inquiry #{inquiry_id} not found in CRM.")
-        if inq.current_stage != INQUIRY_ORDER_STAGE or inq.status == INQUIRY_NOT_ORDERED_STATUS:
+        missing = []
+        if inq.status != INQUIRY_ORDER_STATUS:
+            missing.append(f"its status is '{inq.status}' — set it to '{INQUIRY_ORDER_STATUS}' in CRM › Inquiry › Info")
+        if not _accepted_quotations(db, [inq.id]):
+            missing.append("no quotation is marked accepted — record it in CRM › Quotations › Customer accepted")
+        if missing:
             raise HTTPException(status_code=422, detail=(
-                f"Inquiry {inq.universal_id} has status '{inq.status}'. A sales order can only be "
-                f"raised once the customer's order is in — set the inquiry's Status to 'Order Received' in CRM first."))
+                f"A sales order can't be raised from inquiry {inq.universal_id} yet: {'; '.join(missing)}. A sales order "
+                f"needs the status '{INQUIRY_ORDER_STATUS}' and a quotation the customer accepted."))
     elif tender_id:
         t = db.query(Tender).filter(Tender.id == tender_id, Tender.is_deleted == False).first()  # noqa: E712
         if not t:
@@ -166,6 +188,16 @@ def _check_source_ordered(db: Session, inquiry_id: int | None, tender_id: int | 
 
 # Quotations an order can be raised against: approved and with (or accepted by) the customer.
 ORDERABLE_QUOTATION_STATUSES = ("accepted", "sent", "approved")
+
+
+def terms_text(payment_terms: str | None, conditions: str | None, notes: str | None = None) -> str:
+    """The order's Terms & conditions text (special_conditions), laid out like the CRM
+    quotation's terms (quotation_pdf._terms_sections): Payment Terms, Quote Conditions,
+    Notes — each block only when it has text. The order form picks them from the saved
+    lists (owner, 2026-10-28: picked, never copied from a quotation) and splits them back."""
+    parts = [(label, (text or "").strip()) for label, text in
+             (("Payment Terms", payment_terms), ("Quote Conditions", conditions), ("Notes", notes))]
+    return "\n\n".join(f"{label}: {text}" for label, text in parts if text)
 
 
 @router.get("/quotations")
@@ -186,7 +218,7 @@ async def customer_quotations(customer_id: int, db: Session = Depends(get_db), _
         out.append({"id": q.id, "quot_number": q.quot_number, "status": q.status, "status_label": STATUS_LABEL.get(q.status, q.status),
                     "quote_date": q.quote_date.isoformat() if q.quote_date else None, "net_value": quotation_amounts(q)["net"],
                     "inquiry_id": inq.id, "inquiry_number": inq.universal_id, "inquiry_stage": inq.current_stage,
-                    "order_received": inq.current_stage == INQUIRY_ORDER_STAGE and inq.status != INQUIRY_NOT_ORDERED_STATUS,
+                    "order_received": inq.status == INQUIRY_ORDER_STATUS and q.status == "accepted",
                     "existing_order": so.display_number if so else None})
     return out
 
@@ -195,15 +227,21 @@ async def customer_quotations(customer_id: int, db: Session = Depends(get_db), _
 async def service_machines(db: Session = Depends(get_db), _app: User = _SALES,
                            _user: User = Depends(require_tab_action("sales", "orders", "create"))):
     """Machines a Service order can be raised for (New Sales Order › Service › Project / machine):
-    every machine with a customer organisation, with its project number."""
+    every machine with a customer organisation whose service is paid today — no warranty on record, warranty
+    over, or under AMC. Machines in warranty / extended warranty are left out (their service is free)."""
     from app.modules.erp.models.project import Project as Machine
+    from app.modules.erp.warranty import WARRANTY_LABELS
     from app.modules.projects.models.project import PmProject
     rows = (db.query(Machine).filter(Machine.is_deleted == False, Machine.customer_id.isnot(None))  # noqa: E712
             .order_by(Machine.serial_number).all())
+    cover = {m.id: svc.service_cover(db, m) for m in rows}
+    rows = [m for m in rows if cover[m.id] in svc.SERVICE_ORDER_COVER_ALLOWED]
     codes = dict(db.query(PmProject.id, PmProject.project_code)
                  .filter(PmProject.id.in_({m.pm_project_id for m in rows if m.pm_project_id})).all())
     return [{"id": m.id, "serial_number": m.serial_number, "model_name": m.model_name, "customer_id": m.customer_id,
-             "customer_name": m.client_name, "project_code": codes.get(m.pm_project_id), "label": svc.machine_label(m)} for m in rows]
+             "customer_name": m.client_name, "project_code": codes.get(m.pm_project_id), "label": svc.machine_label(m),
+             "warranty_status": cover[m.id], "warranty_label": "No warranty" if cover[m.id] == "unknown" else WARRANTY_LABELS[cover[m.id]]}
+            for m in rows]
 
 
 @router.get("/service-requests")
@@ -227,7 +265,7 @@ async def service_requests_for_machine(machine_id: int, db: Session = Depends(ge
 @router.get("/sources")
 async def order_sources(kind: str = Query("inquiry", pattern="^(inquiry|tender)$"), db: Session = Depends(get_db), _app: User = _SALES,
                         _user: User = Depends(require_tab_action("sales", "orders", "create"))):
-    """CRM inquiries (stage 'Order Received') or tenders (LOA / order received) a new
+    """CRM inquiries (status 'Order Received' and a quotation the customer accepted) or tenders (LOA / order received) a new
     order can be raised from: New Sales Order › Inquiry / Tender. Ones that already
     have a live order are flagged, not hidden, so the user sees why they can't pick them."""
     from app.modules.crm.models.inquiry import Inquiry
@@ -238,13 +276,18 @@ async def order_sources(kind: str = Query("inquiry", pattern="^(inquiry|tender)$
         live[("inquiry", so.source_inquiry_id) if so.source_inquiry_id else ("tender", so.source_tender_id)] = so.display_number
     out = []
     if kind == "inquiry":
-        rows = (db.query(Inquiry).filter(Inquiry.is_deleted == False, Inquiry.current_stage == INQUIRY_ORDER_STAGE,  # noqa: E712
-                                         Inquiry.status != INQUIRY_NOT_ORDERED_STATUS)
+        # Only status 'Order Received' with a quotation the customer accepted (owner, 2026-10-28).
+        from app.modules.crm.models.inquiry import Quotation
+        accepted_ids = db.query(Quotation.inquiry_id).filter(Quotation.status == "accepted")
+        rows = (db.query(Inquiry).filter(Inquiry.is_deleted == False, Inquiry.status == INQUIRY_ORDER_STATUS,  # noqa: E712
+                                         Inquiry.id.in_(accepted_ids))
                 .order_by(Inquiry.universal_id).all())
         names = dict(db.query(Organization.id, Organization.name).filter(Organization.id.in_({r.org_id for r in rows})).all())
+        accepted = _accepted_quotations(db, [r.id for r in rows])
         for inq in rows:
             out.append({"id": inq.id, "number": inq.universal_id, "title": inq.product,
                         "customer_id": inq.org_id, "customer_name": names.get(inq.org_id),
+                        "accepted_quotation": accepted.get(inq.id),
                         "existing_order": live.get(("inquiry", inq.id))})
     else:
         rows = (db.query(Tender).filter(Tender.is_deleted == False, Tender.status.in_(TENDER_ORDER_STATUSES))  # noqa: E712
@@ -338,9 +381,6 @@ async def prefill(inquiry: int | None = None, tender: int | None = None, quotati
             "source_type": "inquiry", "source_inquiry_id": inq.id, "source_label": f"Inquiry {inq.universal_id}",
             "source_quotation_id": accepted.id if accepted else None,
             "source_quotation_number": accepted.quot_number if accepted else None,
-            "payment_terms_label": (accepted.payment_terms or "")[:255] if accepted else None,
-            "delivery_terms_text": accepted.delivery_time if accepted else None,
-            "special_conditions": accepted.quote_conditions if accepted else None,
             "inspection_agency": agency, "third_party_inspection_required": bool(agency),
             "required_delivery_date": inq.required_delivery_date.isoformat() if inq.required_delivery_date else None,
             "lines": lines, "note": note, **defaults,
@@ -408,10 +448,17 @@ async def defaults(db: Session = Depends(get_db), _app: User = _SALES):
 @router.get("/by-source")
 async def by_source(inquiry: int | None = None, tender: int | None = None, db: Session = Depends(get_db),
                     _user: User = Depends(require_any_app_access("sales", "crm"))):
-    """Read-only chip for CRM: the live SO of an inquiry / tender, if any."""
+    """Read-only chip for CRM: the live SO of an inquiry / tender, if any, and whether
+    an order may be raised from it now (same rule as _check_source_ordered)."""
     so = svc.live_order_for_source(db, inquiry, tender)
+    try:
+        _check_source_ordered(db, inquiry, tender)
+        can_raise = bool(inquiry or tender)
+    except HTTPException:
+        can_raise = False
     return {"order": {"id": so.id, "display_number": so.display_number, "status": so.status,
-                      "status_label": svc.STATUS_LABEL.get(so.status)} if so else None}
+                      "status_label": svc.STATUS_LABEL.get(so.status)} if so else None,
+            "can_raise": can_raise}
 
 
 @router.get("/{so_id}", response_model=SalesOrderResponse)
@@ -487,6 +534,11 @@ async def create_order(payload: SalesOrderCreate, db: Session = Depends(get_db),
     data = {k: (v.strip() if isinstance(v, str) else v) for k, v in payload.model_dump(exclude={"lines", "schedule", "billing_plan", "crm_document_ids", "service_request_ids"}).items()}
     with sales_errors(db):
         svc.validate_header(data)
+    received_problem = svc.po_received_problem(data.get("customer_po_received_date"), data.get("customer_po_date") or data.get("loa_date"))
+    if received_problem:
+        raise HTTPException(status_code=422, detail=received_problem)
+    if data.get("warranty_rule") == "not_applicable":
+        data["warranty_months_from_delivery"] = data["warranty_months_from_commissioning"] = None
     if data["source_type"] not in SALES_SOURCE_TYPES:
         raise HTTPException(status_code=422, detail=f"Source '{data['source_type']}' isn't valid — use one of: {', '.join(SALES_SOURCE_TYPES)}.")
     if data["order_category"] not in SALES_ORDER_CATEGORIES:
@@ -499,8 +551,8 @@ async def create_order(payload: SalesOrderCreate, db: Session = Depends(get_db),
         # lines are taken from it), so the CRM funnel and win rate count it.
         if not from_crm:
             raise HTTPException(status_code=422, detail=(
-                "A New Project order must be raised from a CRM inquiry or tender — pick the inquiry (status 'Order Received') "
-                "or the tender (LOA / order received) on the form. If it isn't in CRM yet, create it there and move it to that status first."))
+                "A New Project order must be raised from a CRM inquiry or tender — pick the inquiry (its quotation accepted by the customer) "
+                "or the tender (LOA / order received) on the form. If it isn't in CRM yet, create it there and record the customer's acceptance first."))
         data["service_machine_id"] = None
     elif data["order_category"] == "service":
         # A Service order is for one machine and its SRs; the customer is the machine's customer.
@@ -533,9 +585,16 @@ async def create_order(payload: SalesOrderCreate, db: Session = Depends(get_db),
         data["source_quotation_number"] = q.quot_number
     defaults = _term_defaults(db)
     so = SalesOrder(**{k: v for k, v in data.items() if v is not None or k in ("ld_max_percent",)})
-    for k, v in defaults.items():
-        if getattr(so, k, None) is None and k not in payload.model_fields_set:
-            setattr(so, k, v)
+    if so.order_category == "rental":
+        # A bare machine on hire: no LD, no warranty, no inspection before dispatch.
+        so.ld_applicable, so.third_party_inspection_required, so.inspection_agency = False, False, None
+        so.ld_rate_percent = so.ld_rate_period = so.ld_basis = so.ld_max_percent = None
+        so.warranty_rule = so.warranty_months_from_delivery = so.warranty_months_from_commissioning = None
+    else:
+        so.hire_start_date = so.hire_end_date = so.hire_rate_basis = so.hire_site = so.security_deposit = None
+        for k, v in defaults.items():
+            if getattr(so, k, None) is None and k not in payload.model_fields_set:
+                setattr(so, k, v)
     so.status = "draft"
     so.order_type = so.order_type or SALES_DEFAULT_ORDER_TYPE
     so.price_basis = so.price_basis or "for_destination"
@@ -576,6 +635,15 @@ async def update_order(so_id: int, payload: SalesOrderUpdate, db: Session = Depe
                                                     f"(or leave the field out of the save to keep the current one).")
     with sales_errors(db):
         svc.validate_header(data)
+    if {"customer_po_received_date", "customer_po_date"} & data.keys():
+        # Draft edits may still leave it blank (submit asks for it); a date that is given must be possible.
+        received_problem = svc.po_received_problem(
+            data.get("customer_po_received_date", so.customer_po_received_date),
+            data.get("customer_po_date", so.customer_po_date) or so.loa_date, required=False)
+        if received_problem:
+            raise HTTPException(status_code=422, detail=received_problem)
+    if data.get("warranty_rule") == "not_applicable":
+        data["warranty_months_from_delivery"] = data["warranty_months_from_commissioning"] = None
     if "sales_owner_id" in data:
         _check_owner(db, data["sales_owner_id"])
     if data.get("customer_id") and data["customer_id"] != so.customer_id:
@@ -593,6 +661,8 @@ async def update_order(so_id: int, payload: SalesOrderUpdate, db: Session = Depe
             continue
         setattr(so, k, v)
     with sales_errors(db):
+        if "customer_gstin" in data or "customer_state" in data:
+            svc.save_tax_ids_to_customer(db, so, user.id)
         svc.snapshot_customer(db, so)
         svc.recompute_totals(so)
     return _ok(db, so.id, user)

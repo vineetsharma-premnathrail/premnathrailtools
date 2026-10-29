@@ -7,23 +7,12 @@ const config: TourConfig = {
     {
       target: 'crm-nav-settings',
       title: 'Settings',
-      purpose: 'Everything CRM is configured with: the product / category / payment-term lists the forms pick from, and who gets notified about what. Everyone with CRM can read it; admins or users granted CRM Settings → Edit can change the notification rules.',
+      purpose: 'Everything CRM is configured with: the payment-term and document-category lists the forms pick from, and who gets notified about what. Everyone with CRM can read it; admins or users granted CRM Settings → Edit can change the notification rules.',
     },
     {
       target: 'crm-settings-lists',
       title: 'Lists used in CRM forms',
       purpose: 'The lists inquiries, tenders and quotations pick from. Changes show up in the forms straight away.',
-    },
-    {
-      target: 'crm-settings-products',
-      title: 'Products',
-      purpose: 'Reusable product entries (name, model, category, unit, default price) picked when adding a quotation line, instead of retyping them.',
-      after: 'Use + Add Product to add one; Edit / Delete on a row to change or remove it.',
-    },
-    {
-      target: 'crm-settings-product-categories',
-      title: 'Product Categories',
-      purpose: 'The categories offered on an Inquiry. Keep names consistent so reports group correctly.',
     },
     {
       target: 'crm-settings-payment-terms',

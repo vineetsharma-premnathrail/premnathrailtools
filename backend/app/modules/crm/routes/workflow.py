@@ -85,8 +85,9 @@ def _line_is_blank(it: QuotationLineItemPayload) -> bool:
 
 
 def prepare_quotation_lines(db: Session, items: list[QuotationLineItemPayload]) -> list[QuotationLineItemPayload]:
-    """Every quotation line is chosen from the Product master: a Product is required;
-    an Application / attachment is optional. Description / model number fill from
+    """Every quotation line is chosen from the Product master: a Product is required
+    (an application / attachment is picked as its own line). The legacy per-line
+    application_id is still checked for old quotations. Description / model number fill from
     the product when left blank. Entirely blank rows are dropped. Raises 422 naming
     the line and how to fix it."""
     kept = [it for it in items if not _line_is_blank(it)]
@@ -98,10 +99,7 @@ def prepare_quotation_lines(db: Session, items: list[QuotationLineItemPayload]) 
         product = db.query(FinishedProduct).filter(FinishedProduct.id == it.product_id).first()
         if not product:
             raise HTTPException(status_code=422, detail=f"Line {n}: product #{it.product_id} does not exist — pick the product again from the list.")
-        if product.product_type == "application":
-            raise HTTPException(status_code=422, detail=(
-                f"Line {n}: {product.name} is an application / attachment, not a product. "
-                "Pick the product in the Product field, and put this one in Application / attachment (optional)."))
+        # An application / attachment is quoted as its own line (owner, 2026-10-28).
         if product.status not in QUOTABLE_PRODUCT_STATUSES:
             raise HTTPException(status_code=422, detail=(
                 f"Line {n}: {product.name} is {product.status.replace('_', ' ')} and can't be quoted. "

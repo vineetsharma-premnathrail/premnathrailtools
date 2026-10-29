@@ -19,6 +19,7 @@ import { LinesEditor, ScheduleEditor, BillingPlanEditor, emptyLine, syncVehicleR
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import CrmDocumentPicker from '@/components/sales/CrmDocumentPicker'
+import { Pill } from '@/components/shared/ui'
 
 type Contact = { id: number; name: string; designation: string | null }
 
@@ -28,6 +29,7 @@ const TERM_KEYS = [
   'third_party_inspection_required', 'ld_applicable', 'ld_rate_percent', 'ld_rate_period', 'ld_basis', 'ld_max_percent',
   'warranty_months_from_delivery', 'warranty_months_from_commissioning', 'warranty_rule', 'warranty_terms_text',
   'delivery_terms_text', 'special_conditions',
+  'hire_start_date', 'hire_end_date', 'hire_rate_basis', 'hire_site', 'security_deposit',
 ]
 
 // Step 1 of a new order. Only a New Project order gets a project (and its vehicle units)
@@ -35,8 +37,10 @@ const TERM_KEYS = [
 const CATEGORY_HINTS: Record<string, string> = {
   new_project: 'New machines to design and build. A project with its vehicle units opens in Project Management when the order is approved.',
   service: 'Paid service work on one of our machines: pick the project / machine, then its service requests (SRs). No build project.',
-  rental: 'A machine given on hire: pick the organisation it is rented to. No build project.',
+  rental: 'A bare machine given on hire: pick the organisation, then the hire period, rate basis and site. No LD, warranty or build project.',
 }
+// Not open for use yet: shown as "Upcoming" and can't be picked.
+const UPCOMING_CATEGORIES = new Set(['service', 'rental'])
 type SourceKind = 'inquiry' | 'tender'
 
 export default function NewSalesOrderPage() {
@@ -85,6 +89,17 @@ export default function NewSalesOrderPage() {
   function applyPrefill(p: Record<string, any>, switching = false) {
     const picked: OrderTerms = {}
     TERM_KEYS.forEach((k) => { if (p[k] !== undefined && p[k] !== null) picked[k] = p[k] })
+    // The form asks only "Warranty applies" + months, counted from each vehicle's handover
+    // (from_delivery). A default with another rule becomes that; no rule = not applicable.
+    if ('warranty_rule' in p) {
+      if (picked.warranty_rule && picked.warranty_rule !== 'not_applicable') {
+        picked.warranty_rule = 'from_delivery'
+        picked.warranty_months_from_commissioning = null
+      } else {
+        picked.warranty_rule = 'not_applicable'
+        picked.warranty_months_from_delivery = picked.warranty_months_from_commissioning = null
+      }
+    }
     // Switching inquiry / tender: the previous one's terms must not linger.
     const cleared: OrderTerms = switching ? { payment_terms_label: '', delivery_terms_text: '', special_conditions: '', customer_po_number: '', purchaser_name: '' } : {}
     setTerms((t) => ({ ...t, ...cleared, ...picked }))
@@ -126,7 +141,7 @@ export default function NewSalesOrderPage() {
 
   // Switching the order type starts step 2 again (a New Project's inquiry isn't a Service order's machine).
   function pickCategory(k: string) {
-    if (k === category) return
+    if (k === category || UPCOMING_CATEGORIES.has(k)) return
     setError(''); setMachineId(null); setSrs([]); setSrIds([])
     setCategory(k)
     // Opened from a CRM link: a New Project order keeps what the inquiry / tender filled in.
@@ -191,17 +206,34 @@ export default function NewSalesOrderPage() {
     }
     if (category === 'rental' && !customerId) { setError('Pick the organisation the machine is rented to.'); return }
     if (lines.some((l) => !l.description.trim())) { setError('Every line needs a description — use the wording from the customer\'s PO.'); return }
+    const received = (terms.customer_po_received_date as string) || ''
+    const poDate = (terms.customer_po_date as string) || ''
+    const todayIso = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+    if (!received) { setError('Enter "PO received on" — the date the customer\'s PO / LOA reached us (from the e-mail or inward register).'); return }
+    if (received > todayIso) { setError('"PO received on" is in the future — enter the day the PO / LOA actually reached us (today or earlier).'); return }
+    if (poDate && received < poDate) { setError('"PO received on" is before the PO date — a PO can\'t reach us before it was issued; check both dates against the PO / LOA.'); return }
+    if (category !== 'rental' && terms.warranty_rule === 'from_delivery' && !(Number(terms.warranty_months_from_delivery) > 0)) {
+      setError('Warranty applies, so enter the warranty period in months — or untick "Warranty applies".'); return
+    }
+    if (!poFiles.length) { setError('Attach the customer\'s PO / LOA document (right side, "Customer PO / LOA document") — an order is saved only with the PO it is raised against.'); return }
     setSaving(true)
     try {
       const so = await salesApi.createOrder({
         ...terms, order_category: category, customer_id: customerId, customer_contact_id: contactId,
         ...(category === 'new_project' ? source : { source_type: 'direct' }),
         ...(category === 'service' ? { service_machine_id: machineId, service_request_ids: srIds } : {}),
-        lines, schedule: rows, billing_plan: billing,
+        // Rental: no per-vehicle delivery schedule — the hire period is on the header.
+        lines, schedule: category === 'rental' ? [] : rows, billing_plan: billing,
         crm_document_ids: source.source_inquiry_id || source.source_tender_id ? crmDocIds : [],
       })
       if (poFiles.length) {
-        try { await salesApi.uploadAttachments('sales_order', so.id, poFiles, 'customer_po') } catch { /* upload failure shouldn't block record creation */ }
+        try { await salesApi.uploadAttachments('sales_order', so.id, poFiles, 'customer_po') } catch (err) {
+          // The draft exists — say so, then open it so the PO can be added on its Documents tab.
+          setError([`${so.display_number || 'The draft'} was saved, but the PO / LOA file did not upload: ${extractErrorMessages(err, 'the upload failed.').join(' ')}`,
+            'Opening the order — add the file on its Documents tab (type "Customer PO") before submitting it for approval.'])
+          setTimeout(() => router.push(recordPath('/dashboard/sales/orders', so)), 4000)
+          return
+        }
       }
       router.push(recordPath('/dashboard/sales/orders', so))
     } catch (err) {
@@ -268,12 +300,18 @@ export default function NewSalesOrderPage() {
             <div role="radiogroup" aria-label="Order type" style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               {Object.entries(ORDER_CATEGORY_LABELS).map(([k, label]) => {
                 const on = category === k
+                const upcoming = UPCOMING_CATEGORIES.has(k)
                 return (
                   // ui-audit-ignore-next-line custom-button — a selection card (title + hint), not a pill button
-                  <button key={k} type="button" role="radio" aria-checked={on} onClick={() => pickCategory(k)}
-                    style={{ flex: '1 1 220px', textAlign: 'left', padding: '12px 14px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
-                      border: `${on ? 2 : 1}px solid ${on ? SHEET.BLUE : SHEET.LINE}`, background: on ? '#EFF6FF' : '#fff' }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: on ? SHEET.BLUE : SHEET.INK }}>{label}</div>
+                  <button key={k} type="button" role="radio" aria-checked={on} disabled={upcoming} aria-disabled={upcoming}
+                    title={upcoming ? `${label} orders are not open yet — coming soon.` : undefined} onClick={() => pickCategory(k)}
+                    style={{ flex: '1 1 220px', textAlign: 'left', padding: '12px 14px', borderRadius: 12, cursor: upcoming ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                      opacity: upcoming ? 0.6 : 1,
+                      border: `${on ? 2 : 1}px solid ${on ? SHEET.BLUE : SHEET.LINE}`, background: on ? '#EFF6FF' : upcoming ? '#F8FAFC' : '#fff' }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: on ? SHEET.BLUE : SHEET.INK, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {label}
+                      {upcoming && <Pill label="Upcoming" hex="#B45309" />}
+                    </div>
                     <div style={{ fontSize: 12, color: SHEET.MUTED, marginTop: 4, lineHeight: 1.45 }}>{CATEGORY_HINTS[k]}</div>
                   </button>
                 )
@@ -288,9 +326,9 @@ export default function NewSalesOrderPage() {
               <div style={{ flex: '1 1 420px', maxWidth: 780 }}>
                 <label style={sheetLabel}>Project / machine <Req /></label>
                 <SearchableSelect value={machineId ? String(machineId) : ''} onChange={(v) => pickMachine(v ? Number(v) : null)}
-                  options={machines.map((m) => ({ value: String(m.id), label: [m.label, m.project_code && m.project_code !== m.serial_number ? m.project_code : null].filter(Boolean).join(' · ') }))}
-                  placeholder={machines.length ? 'Pick the machine (serial / project number)…' : 'No machine with a customer organisation in Service'} />
-                <p style={sheetHint}>The customer is taken from the machine. A machine without a customer organisation isn&apos;t listed — set it in Service › Machines.</p>
+                  options={machines.map((m) => ({ value: String(m.id), label: [m.label, m.project_code && m.project_code !== m.serial_number ? m.project_code : null, m.warranty_label].filter(Boolean).join(' · ') }))}
+                  placeholder={machines.length ? 'Pick the machine (serial / project number)…' : 'No machine out of warranty or under AMC (with a customer organisation) in Service'} />
+                <p style={sheetHint}>Only machines with no warranty, warranty over, or under AMC are listed — work in warranty is free, so no order. The customer is taken from the machine; a machine without a customer organisation isn&apos;t listed — set it in Service › Machines.</p>
               </div>
               {machineId && (
                 <div style={{ marginTop: 12 }}>
@@ -344,16 +382,17 @@ export default function NewSalesOrderPage() {
                   <SearchableSelect value={sourceId ? String(sourceId) : ''} onChange={(v) => pickSource(v ? Number(v) : null)}
                     options={sources.map((r) => ({
                       value: String(r.id),
-                      label: [r.number, r.customer_name, r.title, r.existing_order ? `${r.existing_order} already raised` : null].filter(Boolean).join(' · '),
+                      label: [r.number, r.customer_name, r.title, r.accepted_quotation ? `Accepted quotation ${r.accepted_quotation}` : null,
+                        r.existing_order ? `${r.existing_order} already raised` : null].filter(Boolean).join(' · '),
                     }))}
                     placeholder={sourceLoading ? 'Copying…' : sources.length ? `Pick the ${kindWord}…`
-                      : sourceKind === 'tender' ? 'No tender with LOA / order received' : 'No inquiry at status Order Received'} />
+                      : sourceKind === 'tender' ? 'No tender with LOA / order received' : 'No inquiry with status Order Received and an accepted quotation'} />
                 </div>
               </div>
               <p style={sheetHint}>
                 {sourceKind === 'tender'
                   ? 'Only tenders whose LOA / order is received are listed. Picking one fills the customer, PO / LOA number and purchaser.'
-                  : 'Only inquiries at status "Order Received" in CRM are listed. Picking one fills the customer, contact, lines and prices from its accepted quotation.'}
+                  : 'Only inquiries with status Order Received and a quotation the customer accepted (CRM › Quotations › Customer accepted) are listed. Picking one fills the customer, contact, lines and prices from that quotation.'}
               </p>
             </SheetSection>
           </div>
@@ -381,13 +420,16 @@ export default function NewSalesOrderPage() {
                 : `Taken from the ${kindWord}. To change the customer, pick another ${kindWord} above.`}</p>
               <p style={sheetHint}>The billing address and GSTIN are copied from the CRM organisation when the order is confirmed.</p>
             </SheetSection>
-            <OrderTermsFields v={terms} set={(p) => setTerms((t) => ({ ...t, ...p }))} agencies={agencies} />
+            <OrderTermsFields v={terms} set={(p) => setTerms((t) => ({ ...t, ...p }))} agencies={agencies} category={category}
+              inquiryId={category === 'new_project' ? source.source_inquiry_id ?? null : null}
+              tenderId={category === 'new_project' ? source.source_tender_id ?? null : null} requirePoReceived />
           </>}
           right={<>
             <div data-tour="sales-form-po-file">
               <SheetSection icon="clip" title="Customer PO / LOA document">
+                <label style={sheetLabel}>PO / LOA file <Req /></label>
                 <FileDropZone files={poFiles} onChange={setPoFiles} />
-                <p style={sheetHint}>Required before the order can be submitted for approval. You can also add it later on the order&apos;s Documents tab.</p>
+                <p style={sheetHint}>Required to save the order — attach the customer&apos;s PO or LOA (PDF or scan) it is raised against. More files can be added later on the order&apos;s Documents tab.</p>
               </SheetSection>
             </div>
             {(source.source_inquiry_id || source.source_tender_id) && (
@@ -402,7 +444,7 @@ export default function NewSalesOrderPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: SHEET.BODY }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Customer</span><b style={{ textAlign: 'right' }}>{customerName || '—'}</b></div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Lines</span><b>{lines.length}</b></div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Vehicles scheduled</span><b>{vehicles}</b></div>
+                {category !== 'rental' && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Vehicles scheduled</span><b>{vehicles}</b></div>}
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Billing plan</span><b style={{ color: Math.abs(billingSum - 100) < 0.001 ? '#16A34A' : '#DC2626' }}>{billingSum}%</b></div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8, marginTop: 4, borderTop: `1px solid ${SHEET.LINE}`, fontSize: 14 }}>
                   <span>Order value (incl. GST)</span><b style={{ color: SHEET.INK }}>{formatMoney(Math.round(grandTotal * 100) / 100, terms.currency as string)}</b>
@@ -418,11 +460,13 @@ export default function NewSalesOrderPage() {
           </SheetSection>
         </div>
 
-        <div data-tour="sales-form-schedule" style={block}>
-          <SheetSection icon="truck" title="Delivery schedule">
-            <ScheduleEditor lines={lines} rows={rows} onChange={setRows} />
-          </SheetSection>
-        </div>
+        {category !== 'rental' && (
+          <div data-tour="sales-form-schedule" style={block}>
+            <SheetSection icon="truck" title="Delivery schedule">
+              <ScheduleEditor lines={lines} rows={rows} onChange={setRows} />
+            </SheetSection>
+          </div>
+        )}
 
         <div data-tour="sales-form-billing" style={block}>
           <SheetSection icon="rupee" title="Billing plan">

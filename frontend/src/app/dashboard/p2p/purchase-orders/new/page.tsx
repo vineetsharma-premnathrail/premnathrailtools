@@ -13,7 +13,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
-import { p2pApi, purchaseOrdersApi, rfqApi, managedDocumentsApi } from '@/lib/api'
+import { p2pApi, purchaseOrdersApi, rfqApi, managedDocumentsApi, organizationApi, storeApi } from '@/lib/api'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PrePoAttachments from '@/components/store/PrePoAttachments'
 import { prePoProcurementApi, PrePoReceipt } from '@/lib/prePoApi'
@@ -97,6 +97,24 @@ export default function CreatePurchaseOrderPage() {
   // The Tally PO (owner, 2026-10-27): its Tally number + PDF, required before Send for approval.
   const [tallyNo, setTallyNo] = useState('')
   const [tallyFiles, setTallyFiles] = useState<File[]>([])
+  // Ship to: receiving plant + store; the store's address is the PO's delivery address.
+  // Filled from the requisition's Ship To when the PO is made; Purchase sets it here when it isn't.
+  const [plantId, setPlantId] = useState('')
+  const [storeId, setStoreId] = useState('')
+  const [branches, setBranches] = useState<{ id: number; name: string; code: string }[]>([])
+  const [stores, setStores] = useState<{ id: number; name: string; code: string; branch_id?: number | null; address?: string | null }[]>([])
+  useEffect(() => {
+    organizationApi.listBranches().then((bs) => setBranches(bs || [])).catch(() => setBranches([]))
+    storeApi.listLocations(undefined, { allPlants: true }).then((ls) => setStores(ls || [])).catch(() => setStores([]))
+  }, [])
+  const plantStores = stores.filter((l) => !plantId || l.branch_id === Number(plantId))
+  const shipStore = stores.find((l) => String(l.id) === storeId)
+  const pickPlant = (v: string) => {
+    setPlantId(v)
+    if (shipStore && shipStore.branch_id === Number(v)) return
+    const first = stores.find((l) => l.branch_id === Number(v))
+    setStoreId(first ? String(first.id) : '')
+  }
 
   const load = useCallback(async () => {
     if (!rfqId && rfqRef) return // the RFQ link is still resolving (or was invalid — shown below)
@@ -120,6 +138,8 @@ export default function CreatePurchaseOrderPage() {
         setDeliveryTerms(draft.delivery_terms || '')
         setCostCenterId(draft.cost_center_id ? String(draft.cost_center_id) : '')
         setTallyNo(draft.external_ref || '')
+        setPlantId(draft.plant_branch_id ? String(draft.plant_branch_id) : '')
+        setStoreId(draft.ship_to_location_id ? String(draft.ship_to_location_id) : '')
         setTallyFiles([])
         if (req.purpose === 'department' || draft.cost_center_id) {
           setCostCenters((await accountAssignmentApi.options('cost_center')).options)
@@ -173,7 +193,10 @@ export default function CreatePurchaseOrderPage() {
 
   const saveDates = async () => {
     if (!rfq || !po) return
-    await mmQuotationsApi.updateDraftDetails(rfq.id, po.id, { lines: po.items.map((i) => ({ id: i.id, delivery_date: lineDates[i.id] || null })) })
+    await mmQuotationsApi.updateDraftDetails(rfq.id, po.id, {
+      plant_branch_id: plantId ? Number(plantId) : null, ship_to_location_id: storeId ? Number(storeId) : null,
+      lines: po.items.map((i) => ({ id: i.id, delivery_date: lineDates[i.id] || null })),
+    })
   }
   // Quantity can only go up: not below the requisition quantity still to buy (min_quantity from the server).
   const qtyProblem = () => {
@@ -216,6 +239,7 @@ export default function CreatePurchaseOrderPage() {
     await rfqApi.uploadTallyPo(rfq.id, po.id, tallyNo.trim(), tallyFiles[0])
   }, 'Could not upload the Tally PO — check the number and that the file is a PDF, then try again.')
   const askSend = () => {
+    if (!storeId) { setError('Pick where the goods are delivered — the receiving plant and ship-to store in section 1 (Ship to). Its address is printed on the PO as the delivery address.'); return }
     if (!hasTallyPo) { setError('Upload the Tally PO before sending for approval — enter its Tally PO number and attach the Tally PO PDF in section 4 (Tally PO), then press Upload Tally PO.'); return }
     if (unpriced.length) { setError(`Enter a unit price for every line before sending for approval — missing: ${unpriced.map((i) => i.item_name).join(', ')}. You can use Save to keep the draft meanwhile.`); return }
     const problem = qtyProblem()
@@ -319,6 +343,29 @@ export default function CreatePurchaseOrderPage() {
                         {editable && <p style={{ fontSize: 11.5, color: SHEET.MUTED, margin: '4px 0 0' }}>Department running cost of {pr.department || 'the requester'}: the department this purchase is charged to.</p>}
                       </div>
                     )}
+                  </div>
+                )}
+                {po && (
+                  <div data-tour="po-new-ship-to" style={{ marginTop: 14 }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+                      <div style={{ flex: '1 1 200px', maxWidth: 280 }}>
+                        <span style={label}>Receiving plant {editable && <Req />}</span>
+                        {!editable ? <div style={{ fontSize: 14, padding: '8px 0' }}>{branches.find((b) => String(b.id) === plantId)?.name || '—'}</div>
+                          : <SearchableSelect value={plantId} onChange={pickPlant} ariaLabel="Receiving plant" placeholder="Pick the plant…"
+                              options={branches.map((b) => ({ value: String(b.id), label: b.name }))} />}
+                      </div>
+                      <div style={{ flex: '1 1 200px', maxWidth: 280 }}>
+                        <span style={label}>Ship-to store {editable && <Req />}</span>
+                        {!editable ? <div style={{ fontSize: 14, padding: '8px 0' }}>{shipStore ? `${shipStore.name} (${shipStore.code})` : '—'}</div>
+                          : <SearchableSelect value={storeId} onChange={setStoreId} ariaLabel="Ship-to store" placeholder="Pick the store…"
+                              options={plantStores.map((l) => ({ value: String(l.id), label: `${l.name} (${l.code})` }))} />}
+                      </div>
+                    </div>
+                    <p style={sheetHint}>
+                      {shipStore
+                        ? <>Delivery address on the PO: <b>{shipStore.address || 'no address saved for this store'}</b>{!shipStore.address && ' — add it in Store › Warehouses so the vendor knows where to deliver.'}</>
+                        : `Requisition Ship To: ${[...new Set((pr.items || []).map((i) => i.ship_to).filter(Boolean))].join(', ') || 'not given'}. Pick the plant and store the vendor delivers to; the store's address is printed on the PO.`}
+                    </p>
                   </div>
                 )}
                 {!po && can('p2p', 'purchase_orders', 'create') && (
@@ -447,7 +494,7 @@ export default function CreatePurchaseOrderPage() {
                 <span style={label}>Purchase Order document (Word, on the company letterhead)</span>
                 <ManagedDocumentPanel entityType="p2p_purchase_order" entityId={po.id} revision={po.revision ?? 0} canModify={editable && canFeature('p2p', 'purchase_orders', 'po_document', 'create')}
                   recordLabel="purchase order" downloadName={`PO-${po.po_number}`.replace(/[^A-Za-z0-9._-]+/g, '-')}
-                  beforeEdit={async () => { if (rfq) await rfqApi.updatePoDraft(rfq.id, po.id, draftPayload()) }} />
+                  beforeEdit={async () => { if (rfq) await saveDraft() }} />
               </SheetSection>
             </div>
           )}

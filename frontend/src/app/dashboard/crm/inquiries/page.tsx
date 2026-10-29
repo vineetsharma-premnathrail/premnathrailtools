@@ -19,7 +19,7 @@ import { formatDate } from '@/lib/format'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ExportDialog from '@/components/erp/ExportDialog'
 import CrmImportDialog from '@/components/crm/CrmImportDialog'
-import { TENDER_STATUSES } from '@/components/crm/constants'
+import { INQUIRY_STATUSES, TENDER_STATUSES } from '@/components/crm/constants'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { PINNED_INQUIRY_TENDER_KEY } from '@/lib/crmShortcuts'
@@ -258,9 +258,14 @@ export default function InquiriesPage() {
     const rows = allRows.filter((r) => COL_FILTER_KEYS.every((key) => !colFilters[key] || r[key] === colFilters[key]))
     const isClosed = (r: CombinedRow) => r.status.startsWith('Closed')
     return {
-      leads: rows.filter((r) => r.kind === 'inquiry' && r.status === 'Lead').length,
-      // Active inquiries past the lead step; closed (won / lost) ones are not counted.
-      inquiries: rows.filter((r) => r.kind === 'inquiry' && r.status !== 'Lead' && !isClosed(r)).length,
+      // Leads = not yet qualified: Lead, Requirement Received, R&D / Technical Review (owner, 2026-10-28).
+      leads: rows.filter((r) => r.kind === 'inquiry' && !isClosed(r)
+        && INQUIRY_STATUSES.indexOf(r.status) >= 0
+        && INQUIRY_STATUSES.indexOf(r.status) < INQUIRY_STATUSES.indexOf('Qualified Inquiry')).length,
+      // Counted once qualified: 'Qualified Inquiry' or a later open status (owner, 2026-10-28);
+      // closed (won / lost) ones are not counted.
+      inquiries: rows.filter((r) => r.kind === 'inquiry' && !isClosed(r)
+        && INQUIRY_STATUSES.indexOf(r.status) >= INQUIRY_STATUSES.indexOf('Qualified Inquiry')).length,
       // Every tender we logged was published; cancelled ones are left out.
       published: rows.filter((r) => r.kind === 'tender' && r.status !== 'Tender Cancelled').length,
       // Participated = reached 'Tender Participation' or any later status.

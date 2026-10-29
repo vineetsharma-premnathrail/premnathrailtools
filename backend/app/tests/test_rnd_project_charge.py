@@ -64,7 +64,9 @@ def test_ensure_is_idempotent(db):
     assert db.query(InternalOrder).count() == 1
 
 
-def test_kind_only_for_development_and_other_purposes_unchanged(client, db):
+def test_kind_only_for_development_and_other_purposes_unchanged(client, db, monkeypatch):
+    # Charged To is hidden on the form for now; these rules apply once it is back.
+    monkeypatch.setattr("app.modules.p2p.purpose.CHARGE_ON_PR", True)
     proj = _project(db, number="RND-2026-0803")
     item = master_item(db, "Bolt", code="DEV-BT-01")
     req = _requester(db, "rndcharge.req2@premnathrail.com")

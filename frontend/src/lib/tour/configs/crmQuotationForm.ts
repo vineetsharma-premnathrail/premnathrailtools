@@ -23,7 +23,7 @@ const config: TourConfig = {
       title: 'Quotation status',
       purpose: 'Every quotation follows Draft → Awaiting approval → Approved → Sent to customer → Accepted or Lost (Expired if Valid Until passes with no decision). The buttons here move it one step at a time.',
       options: [
-        { value: 'Draft', meaning: 'Being prepared. "Submit for approval" sends it to the Sales Head (and a Director / Partner when the value or discount is above the Sales › Settings › Quotation approval limits).' },
+        { value: 'Draft', meaning: 'Being prepared. While quotation approval is switched off the button reads "Finalise quotation" and it is approved at once. When approval is on, "Submit for approval" sends it to the Sales Head (and a Director / Partner when the value or discount is above the Sales › Settings › Quotation approval limits).' },
         { value: 'Awaiting approval', meaning: 'Approvers see it in My Approvals. Withdraw it to change it; it cannot be revised while waiting.' },
         { value: 'Approved', meaning: 'Released — click "Mark as sent to customer" once you have sent it, or "Customer rejected / lost" (a reason is required) if the customer declines. After Valid Until it expires automatically.' },
         { value: 'Sent to customer', meaning: 'With the customer. Click "Customer accepted" (optional remarks) when they agree — Sales raises the order from the accepted quotation and copies its prices and terms — or "Customer rejected / lost" with the reason (price, delivery, competitor …).' },
@@ -141,26 +141,13 @@ const config: TourConfig = {
     {
       target: 'quot-item-name',
       title: 'Product',
-      purpose: 'Each row is one product or paid service being quoted. It is always chosen from the Product master (Products, including the type "Paid service") — there are no free-text lines any more.',
+      purpose: 'Each row is one product, paid service or application / attachment being quoted. It is always chosen from the Product master — there are no free-text lines. An application / attachment the customer asked for is added as its own line.',
       required: true,
-      whatToEnter: 'Open the list and search by name or model, then pick one. Active and in-development products are listed.',
+      whatToEnter: 'Open the list and search by name or model, then pick one. Products, Paid services and Applications / attachments are listed in their own groups (active and in-development only).',
       validExample: 'RRV Mobile Crane',
       invalidExample: 'A row left completely blank — silently ignored, so an unused extra row from "+ Add Line Item" never blocks saving.',
-      after: 'Picking a product fills the item name and model number, and the price when a price is set for this customer in Products.',
+      after: 'Picking a product puts its name on the quotation, fills the model number, and fills the price when a price is set for this customer in Products.',
       why: 'The product link is what Sales, Service and reports use to follow this item. A product that is missing from the list must be added in Products first. Saving is blocked until every line has a product.',
-    },
-    {
-      target: 'quot-item-application',
-      title: 'Application / attachment (optional)',
-      purpose: 'An add-on attachment or application sold with the product, only if the customer asked for it. It is not tied to the product — every application in the Product master (type Application) is listed.',
-      required: false,
-      whatToEnter: 'Leave it empty unless the customer asked for one; then pick it from the list.',
-    },
-    {
-      target: 'quot-item-description',
-      title: 'Item name on the quotation',
-      required: false,
-      whatToEnter: 'Filled from the product; edit it if the customer document should word it differently.',
     },
     {
       target: 'quot-item-model',

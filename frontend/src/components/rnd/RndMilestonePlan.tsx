@@ -153,7 +153,7 @@ type MsForm = {
   status: string; blocker_reason: string; color: string; icon: string; co_owner_ids: string[]
 }
 
-export default function RndMilestonePlan({ plan, userId, isManager, taskApi, labels, milestoneApi, featureTab, ownerRuleKey, texts, departmentFilter, looseCreate = false, canMoveTasks = false }: {
+export default function RndMilestonePlan({ plan, userId, isManager, taskApi, labels, milestoneApi, featureTab, ownerRuleKey, texts, departmentFilter, canMoveTasks = false }: {
   plan: MilestonePlanInfo
   userId: number
   /** Project lead / R&D head / admin. */
@@ -166,8 +166,6 @@ export default function RndMilestonePlan({ plan, userId, isManager, taskApi, lab
   ownerRuleKey: string
   texts: MilestonePlanTexts
   departmentFilter?: DepartmentFilter
-  /** The caller may give plain (no-milestone) tasks while the plan has no live milestone. */
-  looseCreate?: boolean
   /** Requirement head: the Edit form of a main task offers a Milestone picker (open milestones). */
   canMoveTasks?: boolean
 }) {
@@ -442,15 +440,16 @@ export default function RndMilestonePlan({ plan, userId, isManager, taskApi, lab
         </>
       )}
 
-      {/* Tasks given before the project had milestones. */}
-      {(loose > 0 || (looseCreate && live.length === 0)) && f('tasks', 'view') && (
+      {/* Tasks given before the project had milestones - shown only when there are some, never
+          to add new ones: a task is created inside a milestone (owner, 2026-10-28). */}
+      {loose > 0 && f('tasks', 'view') && (
         <div data-tour="rnd-ms-loose-tasks" style={{ ...card, padding: 18 }}>
           <h3 style={{ fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 4px' }}>Tasks not in a milestone</h3>
           <p style={{ fontSize: 12.5, color: MUTED, margin: '0 0 12px' }}>{texts.looseHint}</p>
           <TasksBoard
             draftKey={`${plan.key}-loose`}
             api={{ ...taskApi, list: async () => (await taskApi.list()).filter((t) => !t.milestone_id) }}
-            userId={userId} canManage={isManager} labels={labels} canCreate={looseCreate && live.length === 0 && rights.create} rights={rights}
+            userId={userId} canManage={isManager} labels={labels} canCreate={false} rights={rights}
             reloadKey={plan.key}
             departmentFilter={departmentFilter}
             milestoneChoices={moveChoices}

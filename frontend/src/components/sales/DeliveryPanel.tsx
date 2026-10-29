@@ -74,8 +74,8 @@ export default function DeliveryPanel({ order, onChange }: { order: SalesOrder; 
           <div style={{ fontSize: 13, color: TEXT.secondary }}>LD accrued <b>{formatINR(order.ld_accrued)}</b> · forecast <b>{formatINR(order.ld_forecast)}</b></div>
         </div>
         <div style={{ overflow: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
-            <thead><tr>{['Vehicle', 'Consignee', 'Contract date', 'Current date', 'Committed', 'Build', 'Stage', 'Status', 'Risk', 'LD accrued', 'LD forecast', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
+            <thead><tr>{['Vehicle', 'Consignee', 'Contract date', 'Current date', 'Committed', 'Build', 'Status', 'Risk', 'LD accrued', 'LD forecast', ''].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
@@ -90,7 +90,6 @@ export default function DeliveryPanel({ order, onChange }: { order: SalesOrder; 
                         <button data-tour="sales-link-build" style={smallBtn} onClick={() => { setSheetError(''); setLinkFor(r.id); setPickBuild('') }}>Link build</button>
                       ) : <span style={{ color: TEXT.muted }}>—</span>}
                   </td>
-                  <td style={tdStyle}>{r.build_stage || '—'}</td>
                   <td style={tdStyle}><Pill label={ROW_STATUS_LABELS[r.status] || r.status} hex={ROW_STATUS_HEX[r.status] || '#78716c'} /></td>
                   <td style={tdStyle}>{r.risk ? <Pill label={r.risk === 'overdue' ? 'Overdue' : 'At risk'} hex={r.risk === 'overdue' ? '#DC2626' : '#F59E0B'} /> : '—'}</td>
                   <td style={tdStyle}>{r.ld_amount ? `${formatINR(r.ld_amount)} (${r.ld_weeks})` : '—'}</td>

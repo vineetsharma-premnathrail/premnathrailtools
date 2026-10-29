@@ -72,7 +72,9 @@ def test_department_po_gets_the_department_cost_centre_and_needs_one(client, db)
     assert r.status_code == 400 and "has no cost centre" in r.json()["detail"] and "Canteen" in r.json()["detail"], r.text
 
 
-def test_capital_needs_internal_order_and_stock_takes_no_charge(client, db):
+def test_capital_needs_internal_order_and_stock_takes_no_charge(client, db, monkeypatch):
+    # Charged To is hidden on the form for now; these rules apply once it is back.
+    monkeypatch.setattr("app.modules.p2p.purpose.CHARGE_ON_PR", True)
     io = InternalOrder(code="CAP-07", name="New CNC lathe", order_type="capital", status="in_progress")
     db.add(io)
     db.commit()

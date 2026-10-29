@@ -160,10 +160,6 @@ export default function NewStoreItemPage() {
                   <UomSelect value={uom} onChange={setUom} options={uoms} onOptionsChange={setUoms} manage={false} />
                 </div>
               </div>
-              <div style={{ flex: '1 1 200px', maxWidth: 320 }}>
-                <label style={sheetLabel}>Part Code <Optional /></label>
-                <input data-tour="item-part-code" style={sheetInput} value={partCode} onChange={(e) => setPartCode(e.target.value)} placeholder="Part code" />
-              </div>
             </div>
             <label style={{ ...sheetLabel, marginTop: 14 }}>Technical Specification <Optional /></label>
             <textarea data-tour="item-description" style={{ ...sheetInput, minHeight: 70, resize: 'vertical' }} value={description} onChange={(e) => setDescription(e.target.value)} />
@@ -185,7 +181,8 @@ export default function NewStoreItemPage() {
             <p style={sheetHint}>Lead time = calendar days from PO to goods in store. Used by MRP and the Engineering long-lead list.</p>
           </SheetSection>
 
-          <ItemErpForm values={erp} onChange={(patch) => setErp({ ...erp, ...patch })} meta={meta} itemType={itemType} uom={uom} />
+          <ItemErpForm values={erp} onChange={(patch) => setErp({ ...erp, ...patch })} meta={meta} itemType={itemType} uom={uom}
+            partCode={partCode} onPartCode={setPartCode} partCodeTour="item-part-code" />
         </>}
         right={<>
           <SheetSection icon="tag" title="Item Code">

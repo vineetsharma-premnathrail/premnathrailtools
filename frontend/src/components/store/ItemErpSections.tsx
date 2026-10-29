@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { Section, RowCount, Pill, TableScroll, thStyle, tdStyle, numTdStyle, numThStyle, DetailGroup, DetailRow } from '@/components/shared/ui'
-import { SheetSection, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import { SheetSection, Optional, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import { storeApi } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { TEXT } from '@/lib/theme'
@@ -79,9 +79,13 @@ function NumberInput({ value, onChange, placeholder, tour, step = 'any' }: {
   )
 }
 
-export function ItemErpForm({ values, onChange, meta, itemType, uom, effective }: {
+export function ItemErpForm({ values, onChange, meta, itemType, uom, effective, partCode, onPartCode, partCodeTour }: {
   values: Partial<ItemErpValues>
   onChange: (patch: Partial<ItemErpValues>) => void
+  /** The item's part code (the vendor / drawing part number) — shown under Purchasing. */
+  partCode: string
+  onPartCode: (v: string) => void
+  partCodeTour?: string
   meta: StoreItemMeta | null
   itemType: string
   uom?: string | null
@@ -111,19 +115,19 @@ export function ItemErpForm({ values, onChange, meta, itemType, uom, effective }
             <span style={hint}>Smallest quantity the vendor sells. Planning rounds orders up to it.</span>
           </SField>
         </SRow>
-        {!isService && (
-          <SRow>
+        <SRow>
+          <SField label={<>Part Code <Optional /></>}>
+            <input data-tour={partCodeTour} style={sheetInput} value={partCode} onChange={(e) => onPartCode(e.target.value)} placeholder="Part code" />
+          </SField>
+          {!isService && <>
             <SField label="Make / Brand">
               <input data-tour="item-make" style={sheetInput} value={values.make || ''} onChange={(e) => onChange({ make: e.target.value })} placeholder="e.g. SKF" />
             </SField>
             <SField label="Manufacturer">
               <input style={sheetInput} value={values.manufacturer || ''} onChange={(e) => onChange({ manufacturer: e.target.value })} />
             </SField>
-            <SField label="Manufacturer part no.">
-              <input style={sheetInput} value={values.manufacturer_part_number || ''} onChange={(e) => onChange({ manufacturer_part_number: e.target.value })} placeholder="OEM catalogue number" />
-            </SField>
-          </SRow>
-        )}
+          </>}
+        </SRow>
       </SheetSection>
 
       <SheetSection icon="rupee" title="Tax & Accounts">
@@ -250,7 +254,6 @@ export function ItemErpInfo({ item }: { item: StoreItem }) {
           <DetailRow label="Preferred vendor">{item.preferred_vendor_name || (item.preferred_supplier ? `${item.preferred_supplier} (not linked to the vendor master — pick it again)` : null)}</DetailRow>
           <DetailRow label="Minimum order qty">{item.min_order_qty == null ? null : num(item.min_order_qty, item.uom)}</DetailRow>
           {!isService && <DetailRow label="Make / Manufacturer">{[item.make, item.manufacturer].filter(Boolean).join(' · ') || null}</DetailRow>}
-          {!isService && <DetailRow label="Manufacturer part no.">{item.manufacturer_part_number}</DetailRow>}
         </DetailGroup>
       </div>
       <div data-tour="item-detail-accounts">

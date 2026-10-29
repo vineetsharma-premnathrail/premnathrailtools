@@ -505,6 +505,7 @@ async def create_service_request(
     sr_number = _generate_sr_number(db)
     values = data.model_dump()
     chargeable, chargeable_reason = values.pop("is_chargeable", None), values.pop("chargeable_reason", None)
+    values["assigned_service_person_id"] = user.id  # the person raising the SR is its engineer; reassign later via edit
     _apply_engineer(db, user, values)  # active + permitted engineer; name comes from the user record
     sr = ServiceRequest(
         request_number=sr_number,
@@ -673,11 +674,9 @@ async def update_service_request(
 
     changes = data.model_dump(exclude_unset=True)
     old_engineer = sr.assigned_service_person_id
-    if "assigned_service_person_id" in changes and (changes["assigned_service_person_id"] or None) == old_engineer:
-        changes.pop("assigned_service_person_id")  # unchanged — no re-check, no noise
-        changes.pop("assigned_to_name", None)
-    else:
-        _apply_engineer(db, user, changes)
+    # The person who raised the SR stays its engineer — no reassignment in this version.
+    changes.pop("assigned_service_person_id", None)
+    changes.pop("assigned_to_name", None)
     # The form sends "" for an untouched text box; treat that as "no change from nothing"
     # so edits don't write "— → ''" audit lines.
     for k in list(changes):
@@ -755,12 +754,14 @@ async def update_service_request(
                        and (sr.status or "").lower() != "review")
     left_review = ((sr.status or "").lower() == "review" and "status" in changes
                    and str(changes["status"]).lower() != "review")
-    if changes.get("status") == "closed" and (sr.status or "").lower() != "closed":
-        resolution_after = changes["resolution_description"] if "resolution_description" in changes else sr.resolution_description
-        if not (resolution_after or "").strip():
+    if closing or sent_for_review:
+        missing = [label for f, label in (("actual_date_attended", "Actual Attended"), ("actual_completion_date", "Actual Completed"))
+                   if not (changes[f] if f in changes else getattr(sr, f))]
+        if missing:
             raise HTTPException(
                 status_code=400,
-                detail="Fill Corrective Action on the Diagnostics & RCA tab before closing this service request.",
+                detail=f"Fill {' and '.join(missing)} date{'s' if len(missing) > 1 else ''} before closing {sr.request_number} — "
+                       "use 'Edit execution dates' in the Execution card on the SR page.",
             )
     from app.modules.erp import sla as sr_sla, visits as sr_visits
     if sr_visits.visits_for(db, sr.id):

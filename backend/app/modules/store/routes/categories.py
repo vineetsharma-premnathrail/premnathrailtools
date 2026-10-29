@@ -10,6 +10,7 @@ from app.modules.store.access import require_store_lookup
 from app.modules.store.models.category import StoreItemCategory
 from app.modules.store.models.item import StoreItem
 from app.modules.store.routes.item_types import check_item_type
+from app.modules.store.service import CATEGORY_CODE_LEN, fixed_length_code
 from app.modules.store.schemas.category import StoreItemCategoryCreate, StoreItemCategoryUpdate, StoreItemCategoryResponse
 from app.modules.store.services.item_accounts import check_item_ledger, ledger_label
 
@@ -26,16 +27,10 @@ def _to_response(category: StoreItemCategory, db: Session) -> StoreItemCategoryR
 
 
 def _auto_code(db: Session, name: str) -> str:
-    """Category code from the name (initials for multi-word names), made unique (ELE, ELE2...)."""
-    words = re.findall(r"[A-Za-z0-9]+", name.upper())
-    base = "".join(w[0] for w in words) if len(words) > 1 else (words[0] if words else "CAT")
-    if len(base) < 3:
-        base = "".join(words) or "CAT"
-    base = base[:6]
-    code, n = base, 2
-    while db.query(StoreItemCategory.id).filter(StoreItemCategory.code == code).first():
-        code, n = f"{base}{n}", n + 1
-    return code
+    """Category code from the name — always exactly 3 characters (item codes are
+    <TYPE 2>-<CATEGORY 3>-<NNNN>), unique: ELE, then ELC, ELT… if taken."""
+    return fixed_length_code(name, CATEGORY_CODE_LEN,
+                             lambda c: db.query(StoreItemCategory.id).filter(StoreItemCategory.code == c).first() is not None)
 
 
 def _same_level(category_parent_id: int | None):
@@ -87,6 +82,10 @@ async def create_category(
         where = f"under '{parent.name}'" if parent else "as a top-level category"
         raise HTTPException(status_code=409, detail=f"'{data['name']}' already exists {where} — pick it from the list or edit it instead.")
     data["code"] = (data.get("code") or "").strip().upper() or _auto_code(db, data["name"])
+    if not re.fullmatch(rf"[A-Z0-9]{{{CATEGORY_CODE_LEN}}}", data["code"]):
+        raise HTTPException(status_code=400, detail=(
+            f"Category code '{data['code']}' must be exactly {CATEGORY_CODE_LEN} letters or digits (e.g. ELE) — it becomes the middle "
+            f"part of every item code (CN-ELE-0001). Leave it blank to make one from the name."))
     if db.query(StoreItemCategory).filter(StoreItemCategory.code == data["code"]).first():
         raise HTTPException(status_code=409, detail=f"Category code '{data['code']}' already exists — use a different code.")
     category = StoreItemCategory(**data)

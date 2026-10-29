@@ -174,7 +174,7 @@ from app.modules.store.models.physical_count import StorePhysicalCount, StorePhy
 from app.modules.store.models.stock_reservation import StoreStockReservation
 from app.modules.store.models.valuation import StoreItemValuation, StoreValuationEvent
 from app.modules.store.models.batch import StoreBatch  # noqa: F401
-from app.modules.store.models.job_work import StoreJobWorkReceipt, StoreJobWorkReceiptComponent  # noqa: F401
+from app.modules.store.models.job_work import StoreJobWorkReceipt, StoreJobWorkReceiptComponent, StoreJobWorkReceiptOutput  # noqa: F401
 from app.modules.store.models.serial_number import StoreSerialNumber, StoreSerialEvent  # noqa: F401
 from app.modules.store.models.bin_move import StoreBinMove  # noqa: F401
 from app.modules.store.models.pre_po_receipt import StorePrePoReceipt, StorePrePoReceiptItem, StorePrePoReceiptAttachment  # noqa: F401

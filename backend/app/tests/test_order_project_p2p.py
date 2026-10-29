@@ -14,13 +14,14 @@ from app.tests.test_p2p_item_master_link import GRN, _inspect_all, _po_for, _sto
 from app.tests.test_p2p_requests import (  # noqa: F401 — _sqlite_number_series is an autouse fixture
     BASE, _approve_and_raise_po, _create_payload, _pr_approvers, _purchaser, _requester, _sqlite_number_series, auth_header,
 )
-from app.tests.test_sales import confirm, create_order, setup_customer, setup_people
+from app.tests._so_project_helpers import confirm_with_project
+from app.tests.test_sales import create_order, setup_customer, setup_people
 
 
 def _order_project(client, db, qty=2):
     maker, head, director, _ = setup_people(db)
     _org, inq, _ = setup_customer(db, qty=qty, price=1000000)
-    so = confirm(client, db, create_order(client, db, maker, inq), maker, head, director)
+    so = confirm_with_project(client, db, create_order(client, db, maker, inq), maker, head, director)
     db.expire_all()
     project = db.query(PmProject).filter(PmProject.sales_order_id == so["id"]).one()
     els = sorted(project.elements, key=lambda e: e.element_no)

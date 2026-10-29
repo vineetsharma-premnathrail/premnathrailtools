@@ -586,6 +586,7 @@ async def get_meta(db: Session = Depends(get_db), _user: User = Depends(_request
 @router.get("/projects")
 async def list_projects_for_picker(
     search: str | None = None,
+    include_delivered: bool = False,
     db: Session = Depends(get_db),
     _user: User = Depends(_requester_or_purchase),
 ):
@@ -594,9 +595,13 @@ async def list_projects_for_picker(
     to search existing Service Module projects, so this deliberately bypasses
     `require_app_access("erp")` and only requires this module's own access.
     Only machines still being built (stage before Dispatched, owner 2026-10-27):
-    a dispatched / delivered machine is Service's, not a project to buy for."""
+    a dispatched / delivered machine is Service's, not a project to buy for.
+    include_delivered=true returns every project with a `serviceable` flag, so
+    the form shows in-build machines for Project and delivered ones for Service."""
     from app.modules.projects.lifecycle import SERVICEABLE_STAGES
-    query = db.query(Project).filter(Project.is_deleted == False, Project.lifecycle_stage.notin_(SERVICEABLE_STAGES))  # noqa: E712
+    query = db.query(Project).filter(Project.is_deleted == False)  # noqa: E712
+    if not include_delivered:
+        query = query.filter(Project.lifecycle_stage.notin_(SERVICEABLE_STAGES))
     if search:
         like = f"%{search}%"
         query = query.filter(
@@ -607,6 +612,7 @@ async def list_projects_for_picker(
         {
             "id": p.id,
             "label": f"{p.serial_number} — {p.model_name}" if p.model_name else p.serial_number,
+            "serviceable": p.lifecycle_stage in SERVICEABLE_STAGES,
         }
         for p in projects
     ]

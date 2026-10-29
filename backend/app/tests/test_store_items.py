@@ -146,9 +146,17 @@ def test_item_types_can_be_added_and_renamed(client, h):
     assert client.post("/api/v1/store/item-types", json={"label": "Other", "prefix": "MT"}, headers=h).status_code == 409
     item = create(client, h, item_type="spare_kit").json()
     assert item["item_code"].startswith("SK-")
-    renamed = client.put("/api/v1/store/item-types/spare_kit", json={"label": "Spare Kits", "prefix": "SPK"}, headers=h)
-    assert {"value": "spare_kit", "label": "Spare Kits", "prefix": "SPK"} in renamed.json()
-    assert create(client, h, item_type="spare_kit").json()["item_code"].startswith("SPK-")
+    # Item codes are <TYPE 2>-<CATEGORY 3>-<NNNN>: a 3-letter prefix is refused with the fix.
+    bad = client.put("/api/v1/store/item-types/spare_kit", json={"label": "Spare Kits", "prefix": "SPK"}, headers=h)
+    assert bad.status_code == 400 and "exactly 2" in bad.json()["detail"]
+    renamed = client.put("/api/v1/store/item-types/spare_kit", json={"label": "Spare Kits", "prefix": "SQ"}, headers=h)
+    assert {"value": "spare_kit", "label": "Spare Kits", "prefix": "SQ"} in renamed.json()
+    assert create(client, h, item_type="spare_kit").json()["item_code"].startswith("SQ-")
+    # A category made without a code gets exactly 3 characters, a typed one must be 3.
+    cat = client.post("/api/v1/store/categories", json={"name": "Electrical Spares"}, headers=h)
+    assert cat.status_code == 200 and len(cat.json()["code"]) == 3, cat.text
+    bad = client.post("/api/v1/store/categories", json={"name": "Electronics", "code": "ELECTR"}, headers=h)
+    assert bad.status_code == 400 and "exactly 3" in bad.json()["detail"]
 
 
 def test_item_photo_upload_replace_and_remove(client, h, monkeypatch):

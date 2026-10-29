@@ -14,6 +14,9 @@ from app.modules.erp.models.service_request import SR_SERVICE_TYPES, ServiceRequ
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.user import User
 
+# Closing / sending for closure needs both actual execution dates.
+CLOSE_READY = {"actual_date_attended": "2026-10-01", "actual_completion_date": "2026-10-02"}
+
 API = "/api/v1/erp/service-requests"
 ALL = ["sr_create", "sr_edit", "sr_delete"]
 
@@ -150,7 +153,7 @@ def test_full_status_lifecycle_and_reopen_clears_closed_date(client, db):
         r = client.patch(url, json={"status": status}, headers=auth(u))
         assert r.status_code == 200 and r.json()["status"] == status
         assert r.json()["closed_at"] is None
-    r = client.patch(url, json={"status": "closed", "resolution_description": "Replaced seal"}, headers=auth(u))
+    r = client.patch(url, json={**CLOSE_READY, "status": "closed", "resolution_description": "Replaced seal"}, headers=auth(u))
     assert r.status_code == 200 and r.json()["closed_at"] is not None
     # Reopening a closed SR needs a reason (kept in the audit trail).
     assert client.patch(url, json={"status": "in_progress"}, headers=auth(u)).status_code == 422
@@ -176,8 +179,8 @@ def test_unchanged_fields_write_no_audit_row(client, db):
 def test_already_closed_sr_can_be_re_saved_without_corrective_action_check(client, db):
     admin = make_user(db, "closed_resave@premnathrail.com", role="admin")
     sr = new_sr(client, admin, make_project(db, "COV-RESAVE"))
-    client.patch(f"{API}/{sr['id']}", json={"status": "closed", "resolution_description": "done"}, headers=auth(admin))
-    r = client.patch(f"{API}/{sr['id']}", json={"status": "closed", "resolution_description": "done"}, headers=auth(admin))
+    client.patch(f"{API}/{sr['id']}", json={**CLOSE_READY, "status": "closed", "resolution_description": "done"}, headers=auth(admin))
+    r = client.patch(f"{API}/{sr['id']}", json={**CLOSE_READY, "status": "closed", "resolution_description": "done"}, headers=auth(admin))
     assert r.status_code == 200
 
 
@@ -185,8 +188,8 @@ def test_closed_sr_freezes_technical_record_but_allows_billing(client, db):
     admin = make_user(db, "closed_frozen@premnathrail.com", role="admin")
     sr = new_sr(client, admin, make_project(db, "COV-FROZEN"))
     url = f"{API}/{sr['id']}"
-    client.patch(url, json={"status": "closed", "resolution_description": "done"}, headers=auth(admin))
-    r = client.patch(url, json={"status": "closed", "service_report_notes": "x"}, headers=auth(admin))
+    client.patch(url, json={**CLOSE_READY, "status": "closed", "resolution_description": "done"}, headers=auth(admin))
+    r = client.patch(url, json={**CLOSE_READY, "status": "closed", "service_report_notes": "x"}, headers=auth(admin))
     assert r.status_code == 409 and "Reopen it first" in r.json()["detail"]
     r = client.patch(url, json={"resolution_description": "something else"}, headers=auth(admin))
     assert r.status_code == 409

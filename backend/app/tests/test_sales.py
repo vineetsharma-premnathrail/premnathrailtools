@@ -49,7 +49,7 @@ def setup_customer(db, qty=3, price=5000000.0):
     org = Organization(name="Central Railway", gst_number="27AAAGC1234F1Z5", state="Maharashtra", city="Mumbai")
     db.add(org)
     db.commit()
-    inq = Inquiry(universal_id=f"INQ-{org.id}-01", org_id=org.id, product="RRV-10T", quantity=qty, current_stage="Order Received")
+    inq = Inquiry(universal_id=f"INQ-{org.id}-01", org_id=org.id, product="RRV-10T", quantity=qty, current_stage="Order Received", status="Order Received")
     db.add(inq)
     db.commit()
     from datetime import datetime, timezone
@@ -63,6 +63,21 @@ def setup_customer(db, qty=3, price=5000000.0):
     return org, inq, q
 
 
+def won_inquiry(db, org, number):
+    """A second won inquiry: status Order Received with an accepted quotation (both are needed for an order)."""
+    from datetime import datetime, timezone
+    inq = Inquiry(universal_id=number, org_id=org.id, product="RRV", quantity=1, current_stage="Order Received", status="Order Received")
+    db.add(inq)
+    db.commit()
+    q = Quotation(inquiry_id=inq.id, quot_number=f"QT-{number}", customer_response="Accepted", status="accepted",
+                  created_at=datetime.now(timezone.utc))
+    db.add(q)
+    db.commit()
+    db.add(QuotationLineItem(quotation_id=q.id, description="RRV", model_number="RRV", quantity=1, unit_price=1000000, gst_percent=18))
+    db.commit()
+    return inq
+
+
 def payload_from_prefill(client, h, inq, due=None):
     r = client.get(f"{BASE}/orders/prefill", params={"inquiry": inq.id}, headers=h)
     assert r.status_code == 200, r.text
@@ -73,7 +88,7 @@ def payload_from_prefill(client, h, inq, due=None):
                               "ld_applicable", "ld_rate_percent", "ld_rate_period", "ld_basis", "ld_max_percent",
                               "warranty_months_from_delivery", "warranty_months_from_commissioning", "warranty_rule")}
     body.update({
-        "customer_po_number": "CR/PO/2026/771", "customer_po_date": str(TODAY), "lines": p["lines"],
+        "customer_po_number": "CR/PO/2026/771", "customer_po_date": str(TODAY), "customer_po_received_date": str(TODAY), "lines": p["lines"],
         "schedule": [{"line_number": 1, "quantity": 1, "contract_delivery_date": str(due + timedelta(days=30 * i))} for i in range(qty)],
         "billing_plan": [{"milestone_type": "advance", "percent": 20}, {"milestone_type": "delivery", "percent": 80}],
     })
@@ -160,8 +175,11 @@ def test_exit_criterion_flow(client, db):
     assert st["status"] == "approved"
     assert [(s["stage_name"], s["decided_by_id"]) for s in st["steps"]] == [("Sales Head", head.id), ("Director", director.id)]
 
-    # Confirmation plans a build per vehicle (production/order_project_links.py),
+    # The Project Manager creates the project (2026-10-28: never on confirmation);
+    # that plans a build per vehicle (production/order_project_links.py),
     # linked through the Sales link — each carries customer id + PO.
+    from app.tests._so_project_helpers import create_project_for
+    create_project_for(db, so["id"])
     rows = sorted(so["schedules"], key=lambda r: r["sequence"])
     db.expire_all()
     builds = [db.query(ProductionRrvBuild).filter(ProductionRrvBuild.sales_schedule_id == row["id"]).one() for row in rows]
@@ -237,9 +255,7 @@ def test_numbering_is_sequential_per_fy(client, db):
     maker, head, director, _ = setup_people(db)
     _org, inq1, _ = setup_customer(db, qty=1, price=1000000)
     so1 = confirm(client, db, create_order(client, db, maker, inq1), maker, head, director)
-    inq2 = Inquiry(universal_id="INQ-X-02", org_id=_org.id, product="RRV", quantity=1, current_stage="Order Received")
-    db.add(inq2)
-    db.commit()
+    inq2 = won_inquiry(db, _org, "INQ-X-02")
     body = payload_from_prefill(client, hdr(maker), inq2)
     body["customer_po_number"] = "CR/PO/2026/999"
     body["lines"] = [{"line_number": 1, "line_type": "rrv", "description": "RRV", "quantity": 1, "unit_price": 1000000, "gst_rate": 18}]
@@ -279,9 +295,7 @@ def test_approval_by_value_and_deviation(client, db):
     r = client.post(f"{BASE}/orders/{so['id']}/approve", json={}, headers=hdr(partner))
     assert r.status_code == 200 and r.json()["status"] == "confirmed"
     # Reject path on another order: rejected is final (cancelled).
-    inq2 = Inquiry(universal_id="INQ-R-01", org_id=_org.id, product="RRV", quantity=1, current_stage="Order Received")
-    db.add(inq2)
-    db.commit()
+    inq2 = won_inquiry(db, _org, "INQ-R-01")
     body = payload_from_prefill(client, hdr(maker), inq2)
     body["customer_po_number"] = "PO-REJ"
     body["lines"] = [{"line_number": 1, "line_type": "rrv", "description": "RRV", "quantity": 1, "unit_price": 100000, "gst_rate": 18}]
@@ -368,9 +382,7 @@ def test_duplicate_source_and_po(client, db):
     assert client.get(f"{BASE}/orders/prefill", params={"inquiry": inq.id}, headers=hdr(maker)).json()["existing_order"]["id"] == so["id"]
     confirm(client, db, so, maker, head, director)
     # Same customer PO on a second order (from another won inquiry of the same customer) → 409 at submit.
-    inq2 = Inquiry(universal_id="INQ-DUP-2", org_id=org.id, product="RRV", quantity=1, current_stage="Order Received")
-    db.add(inq2)
-    db.commit()
+    inq2 = won_inquiry(db, org, "INQ-DUP-2")
     body.update({"source_inquiry_id": inq2.id, "source_quotation_id": None})
     so2 = client.post(f"{BASE}/orders", json=body, headers=hdr(maker)).json()
     attach_po(db, so2["id"])
@@ -547,11 +559,37 @@ def test_new_order_needs_crm_source_and_category(client, db):
     assert next(s for s in src if s["id"] == inq.id)["existing_order"] == so["display_number"]
 
 
+HIRE = {"hire_start_date": "2026-11-01", "hire_end_date": "2027-04-30", "hire_rate_basis": "per_month",
+        "hire_site": "Ambala yard, Haryana", "security_deposit": 200000}
+
+
+def test_rental_order_has_hire_terms_not_ld_or_warranty(client, db):
+    maker, *_ = setup_people(db)
+    _, inq, _ = setup_customer(db, qty=1, price=1000000)
+    # New Project never keeps hire terms; Rental never takes the LD / warranty defaults.
+    np = create_order(client, db, maker, inq, **HIRE)
+    assert np["hire_start_date"] is None and np["hire_site"] is None and np["ld_applicable"]
+    so = create_order(client, db, maker, inq, order_category="rental", source_type="direct", source_inquiry_id=None,
+                      source_quotation_id=None, customer_po_number="RENT-7", ld_applicable=True, warranty_rule="from_delivery")
+    assert not so["ld_applicable"] and so["warranty_rule"] is None and so["hire_start_date"] is None
+    attach_po(db, so["id"])
+    r = client.post(f"{BASE}/orders/{so['id']}/submit", headers=hdr(maker))
+    detail = str(r.json()["detail"])
+    assert r.status_code == 422 and "hire start date" in detail and "hire rate" in detail and "site" in detail
+    assert "warranty" not in detail.lower() and "LD applies" not in detail
+    # Bad hire terms are refused with the fix.
+    r = client.patch(f"{BASE}/orders/{so['id']}", json={**HIRE, "hire_end_date": "2026-10-01"}, headers=hdr(maker))
+    assert r.status_code == 422 and "before the hire start date" in r.json()["detail"]
+    r = client.patch(f"{BASE}/orders/{so['id']}", json={**HIRE, "hire_rate_basis": "per_week"}, headers=hdr(maker))
+    assert r.status_code == 422 and "Per month" in r.json()["detail"]
+    r = client.patch(f"{BASE}/orders/{so['id']}", json=HIRE, headers=hdr(maker))
+    assert r.status_code == 200 and r.json()["hire_rate_basis"] == "per_month" and r.json()["security_deposit"] == 200000
+
 def test_only_new_project_orders_get_a_project(client, db):
     from app.modules.projects.so_projects import needs_project
     maker, head, director, _ = setup_people(db)
     _, inq, _ = setup_customer(db, qty=1, price=1000000)
-    so = confirm(client, db, create_order(client, db, maker, inq, order_category="rental"), maker, head, director)
+    so = confirm(client, db, create_order(client, db, maker, inq, order_category="rental", **HIRE), maker, head, director)
     order = db.get(SalesOrder, so["id"])
     assert not needs_project(order)
     order.order_category = "new_project"
@@ -594,4 +632,34 @@ def test_service_order_is_for_a_machine_and_its_srs(client, db):
     r = client.post(f"{BASE}/orders", json={**body, "customer_po_number": "SRV-2", "service_machine_id": m.id, "service_request_ids": [sr1.id]},
                     headers=hdr(maker))
     assert r.status_code == 409 and out["display_number"] in r.json()["detail"]
+
+
+def test_service_order_only_for_machines_out_of_warranty_or_on_amc(client, db):
+    from datetime import date, timedelta
+
+    from app.modules.erp.models.project import Project as Machine
+    from app.modules.erp.models.service_request import ServiceRequest
+    maker, *_ = setup_people(db)
+    org, inq, _ = setup_customer(db, qty=1, price=1000000)
+    today = date.today()
+    in_wty = Machine(serial_number="PEW-90", model_name="RRV", customer_id=org.id,
+                     warranty_start_date=today - timedelta(days=30), warranty_end_date=today + timedelta(days=300))
+    expired = Machine(serial_number="PEW-91", model_name="RRV", customer_id=org.id,
+                      warranty_start_date=today - timedelta(days=800), warranty_end_date=today - timedelta(days=5))
+    no_wty = Machine(serial_number="PEW-92", model_name="RRV", customer_id=org.id)
+    amc = Machine(serial_number="PEW-93", model_name="RRV", customer_id=org.id, warranty_start_date=today - timedelta(days=800),
+                  warranty_end_date=today - timedelta(days=5), amc_status="active", amc_end_date=today + timedelta(days=100))
+    db.add_all([in_wty, expired, no_wty, amc])
+    db.commit()
+    listed = {x["serial_number"]: x["warranty_status"] for x in client.get(f"{BASE}/orders/service-machines", headers=hdr(maker)).json()}
+    assert "PEW-90" not in listed
+    assert listed["PEW-91"] == "out_of_warranty" and listed["PEW-92"] == "unknown" and listed["PEW-93"] == "amc"
+    sr = ServiceRequest(request_number="SR-90", project_id=in_wty.id, issue_title="x", status="open", priority="standard")
+    db.add(sr)
+    db.commit()
+    body = {**payload_from_prefill(client, hdr(maker), inq), "order_category": "service", "source_type": "direct",
+            "source_inquiry_id": None, "source_quotation_id": None, "customer_po_number": "SRV-90",
+            "service_machine_id": in_wty.id, "service_request_ids": [sr.id]}
+    r = client.post(f"{BASE}/orders", json=body, headers=hdr(maker))
+    assert r.status_code == 422 and "in warranty" in r.json()["detail"]
 

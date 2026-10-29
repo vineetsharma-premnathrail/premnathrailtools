@@ -16,7 +16,10 @@ from app.modules.main.models.user import User
 from app.modules.projects import so_projects as op_core
 from app.modules.projects.models.element import PmProjectElement
 from app.modules.projects.models.project import PmProject
-from app.modules.projects.schemas.units import ProjectUnitLookupItem, ProjectUnitResponse, ProjectUnitsResponse
+from app.modules.projects.schemas.project import PmProjectResponse
+from app.modules.projects.schemas.units import (
+    ProjectFromSalesOrder, ProjectUnitLookupItem, ProjectUnitResponse, ProjectUnitsResponse, SalesOrderAwaitingProject,
+)
 from app.modules.sales.models.order import SalesOrder
 
 router = APIRouter(prefix="/projects", tags=["Project Management"])
@@ -70,6 +73,78 @@ async def lookup_units(
             project_id=p.id, project_code=p.project_code, element_id=el.id, element_no=el.element_no, label=el.label,
             kind=el.kind, client_name=p.client_name, so_number=so_number, display=disp))
     return out
+
+
+# ---------------------------------------------------------------- projects from sales orders
+# The Project Manager creates the project of a confirmed New Project order (owner,
+# 2026-10-28) — same gate as All Projects › Create (routes/project.py create_project).
+
+def _awaiting_info(db: Session, so: SalesOrder) -> SalesOrderAwaitingProject:
+    rrv_ids = {ln.id for ln in so.lines if ln.line_type == "rrv"}
+    rows = [r for r in so.schedules if r.status != "cancelled" and r.so_line_id in rrv_ids]
+    dates = sorted(r.contract_delivery_date for r in so.schedules if r.status != "cancelled" and r.contract_delivery_date)
+    owner = db.get(User, so.sales_owner_id) if so.sales_owner_id else None
+    return SalesOrderAwaitingProject(
+        id=so.id, so_number=so.so_number, customer_name=so.customer_name, customer_po_number=so.customer_po_number,
+        confirmed_at=so.confirmed_at, sales_owner_name=(owner.name or owner.email) if owner else None,
+        vehicles=int(sum(float(r.quantity or 1) for r in rows)),
+        first_delivery_date=dates[0] if dates else None, last_delivery_date=dates[-1] if dates else None)
+
+
+@router.get("/units/awaiting-sales-orders", response_model=list[SalesOrderAwaitingProject])
+async def sales_orders_awaiting_project(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_tab_access("projects", "all_projects")),
+):
+    """Confirmed-or-later New Project sales orders that have no project yet, SO number ascending."""
+    from app.modules.projects import workflow as wf
+    wf.require_management(user, "create projects from sales orders")
+    linked = db.query(PmProject.sales_order_id).filter(PmProject.sales_order_id.isnot(None))
+    orders = (db.query(SalesOrder)
+              .filter(SalesOrder.is_deleted == False, SalesOrder.status.in_(op_core.PROJECT_SO_STATUSES),  # noqa: E712
+                      SalesOrder.so_number.isnot(None), SalesOrder.id.notin_(linked))
+              .order_by(SalesOrder.so_number.asc(), SalesOrder.id.asc()).all())
+    return [_awaiting_info(db, so) for so in orders if op_core.needs_project(so)]
+
+
+@router.post("/units/from-sales-order", response_model=PmProjectResponse)
+async def create_project_from_sales_order(
+    payload: ProjectFromSalesOrder,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_tab_access("projects", "all_projects")),
+):
+    """Creates the PEW project of a confirmed New Project sales order: next PEW
+    number, the chosen project manager, one unit per vehicle / lot."""
+    from app.modules.projects import views, workflow as wf
+    wf.require_management(user, "create projects from sales orders")
+    so = db.get(SalesOrder, payload.sales_order_id)
+    if so is None or so.is_deleted:
+        raise HTTPException(status_code=404, detail=f"Sales order #{payload.sales_order_id} doesn't exist or was deleted — "
+                                                    f"refresh the list and pick the order again.")
+    existing = op_core.project_for_order(db, so.id)
+    if existing is not None:
+        raise HTTPException(status_code=409, detail=f"{so.display_number} already has project {existing.project_code} — "
+                                                    f"open it from All Projects instead of creating another one.")
+    if not so.so_number or so.status not in op_core.PROJECT_SO_STATUSES:
+        label = so.status.replace("_", " ")
+        raise HTTPException(status_code=409, detail=f"{so.display_number} is {label} — a project can be created only for a "
+                                                    f"confirmed sales order. Get the order approved in Sales › Sales Orders first.")
+    if not op_core.needs_project(so):
+        raise HTTPException(status_code=422, detail=f"{so.display_number} is not a New Project order with a vehicle (RRV) line, "
+                                                    f"so it gets no project. Service and Rental orders are run without a PEW project.")
+    pm = db.get(User, payload.project_manager_id)
+    if pm is None or not pm.is_active:
+        raise HTTPException(status_code=422, detail="The selected project manager doesn't exist or is deactivated. Pick an active user.")
+    project = op_core.ensure_project_for_order(db, so, user, create=True, project_manager_id=pm.id, name=payload.name)
+    if project is None:  # pragma: no cover — guarded above
+        raise HTTPException(status_code=409, detail=f"No project could be created for {so.display_number} — check that it is "
+                                                    f"confirmed and has a vehicle (RRV) line.")
+    wf.notify_many(db, [project.project_manager_id], user, "You are project manager",
+                   f"{wf.user_label(user)} made you project manager of {project.project_code} {project.name} "
+                   f"(sales order {so.so_number}).", "pm_project_manager", "pm_project", project.id)
+    db.commit()
+    db.refresh(project)
+    return views.project_response(db, project, user)
 
 
 @router.get("/{project_id}/units", response_model=ProjectUnitsResponse)

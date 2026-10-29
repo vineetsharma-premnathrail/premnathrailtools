@@ -9,8 +9,8 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import PhoneField, { isPhoneValid } from '@/components/erp/PhoneField'
 import { RAILWAY_ZONES, leadSourceOptions, inquiryStatusOptions, priorityOptions, priorityLabel } from './constants'
-import { Row, ComboBox, handleEnterAsTab, InfoRow, XIcon } from './ui'
-import { AddMoreButton, RemoveValueButton, ValueRow, canAddMore } from '@/components/shared/MoreValuesButtons'
+import { Row, handleEnterAsTab, InfoRow, XIcon } from './ui'
+import { AddMoreButton, RemoveValueButton, ValueRow, canAddMore, squareBtn } from '@/components/shared/MoreValuesButtons'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, VALIDATION_MESSAGES, extractErrorMessages } from '@/lib/validation'
@@ -118,7 +118,6 @@ export default function InquiryForm({
     initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? initial.railway_zone : ''
   )
   const [organizations, setOrganizations] = useState<Organization[]>([])
-  const [products, setProducts] = useState<{ id: number; name: string; category?: string | null }[]>([])
   const [contacts, setContacts] = useState<OrgContact[]>([])
   const emptyNewContact = () => ({ name: '', designation: '', mobile: '', email: '', additionalMobiles: [] as string[], additionalEmails: [] as string[] })
   const [newContact, setNewContact] = useState(emptyNewContact())
@@ -140,6 +139,10 @@ export default function InquiryForm({
       quantity: it.quantity != null ? String(it.quantity) : '',
     }))
   )
+  // "+" beside Product adds one more Product + Customer Requirement pair; only when every
+  // product typed so far is filled, so no empty rows pile up (owner, 2026-10-29).
+  const canAddProduct = !!form.product.trim() && extraProducts.every((r) => r.product.trim())
+  const addExtraProduct = () => setExtraProducts((rows) => [...rows, { product_category: '', product: '', product_spec: '', quantity: '' }])
   const removeExtraProduct = (i: number) => setExtraProducts((rows) => rows.filter((_, j) => j !== i))
   const setExtraProduct = (i: number, field: keyof ExtraProductRow, value: string) =>
     setExtraProducts((rows) => rows.map((r, j) => (j === i ? { ...r, [field]: value } : r)))
@@ -224,19 +227,8 @@ export default function InquiryForm({
 
   useEffect(() => {
     crmApi.listOrganizations({ picker: true }).then(setOrganizations)
-    crmApi.listProducts().then(setProducts).catch(() => {})
   }, [])
 
-  // Typing a brand-new product persists it to the shared catalog (crm_products)
-  // so it shows up as a real option for every future inquiry, instead of a
-  // one-off value that only applied to this single inquiry.
-  const createProduct = async (query: string) => {
-    const name = query.trim()
-    if (!name) return
-    const created = await crmApi.createProduct({ name, category: form.product_category || undefined })
-    setProducts((list) => (list.some((p) => p.id === created.id) ? list : [...list, created]))
-    set('product', created.name)
-  }
 
   useEffect(() => {
     if (initial) return
@@ -509,7 +501,7 @@ export default function InquiryForm({
           <div style={{ flex: '1 1 200px', minWidth: 190 }}>
             <F label={<>Status <Req /></>} tourId="inq-status">
               <Select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
-                {inquiryStatusOptions(form.status).map((s) => <option key={s} value={s}>{s}</option>)}
+                {inquiryStatusOptions(form.status, initial?.status).map((s) => <option key={s} value={s}>{s}</option>)}
               </Select>
             </F>
           </div>
@@ -532,22 +524,22 @@ export default function InquiryForm({
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ flex: '1 1 180px', minWidth: 160 }}>
             <F label={<>Product <Req /></>} tourId="inq-product">
-              <ComboBox
-                value={form.product}
-                onChange={(v) => set('product', v)}
-                onPick={(o) => { const p = products.find((pr) => String(pr.id) === o.key); if (p) { set('product', p.name); if (p.category) set('product_category', p.category) } }}
-                onCreateNew={createProduct}
-                createLabel="New Product"
-                options={products.map((p) => ({ key: String(p.id), label: p.name }))}
-                placeholder="RRV System"
-              />
+              {/* Free text: the customer's requirement in their words (2026-10-28). The exact
+                  product is picked from the Product master on the quotation line. */}
+              <ValueRow button={
+                <button type="button" onClick={canAddProduct ? addExtraProduct : undefined} disabled={!canAddProduct} data-tour="inq-add-product"
+                  title={canAddProduct ? 'Add another product' : 'Fill in the product first.'} aria-label={canAddProduct ? 'Add another product' : 'Fill in the product first.'}
+                  style={squareBtn(SHEET.BLUE, !canAddProduct)}><SheetIcon name="plus" size={15} /></button>
+              }>
+                <input style={inputStyle} value={form.product} onChange={(e) => set('product', e.target.value)} placeholder="e.g. RRV for OHE maintenance, 1676 mm BG" />
+              </ValueRow>
               {isDuplicateProductRow(form.product_category, form.product) && (
                 <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>⚠ This product is already added below.</p>
               )}
             </F>
           </div>
         </div>
-        <F label="Product Specification" tourId="inq-product-spec"><textarea value={form.product_spec} onChange={(e) => set('product_spec', e.target.value)} rows={2} placeholder="e.g. High Speed Self Propelled, 1676mm BG, hydraulic braking, anti-climber arrangement..." style={{ ...inputStyle, resize: 'vertical' }} /></F>
+        <F label="Customer Requirement" tourId="inq-product-spec"><textarea value={form.product_spec} onChange={(e) => set('product_spec', e.target.value)} rows={2} placeholder="e.g. High Speed Self Propelled, 1676mm BG, hydraulic braking, anti-climber arrangement..." style={{ ...inputStyle, resize: 'vertical' }} /></F>
 
         {extraProducts.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -557,21 +549,13 @@ export default function InquiryForm({
                 <div key={i} style={{ padding: 12, borderRadius: 10, background: 'rgba(0,0,0,0.02)', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start' }}>
                     <div style={{ flex: '1 1 180px', minWidth: 160 }}>
-                      <F label="Product">
-                        <ComboBox
-                          value={row.product}
-                          onChange={(v) => setExtraProduct(i, 'product', v)}
-                          onPick={(o) => { const p = products.find((pr) => String(pr.id) === o.key); if (p) { setExtraProduct(i, 'product', p.name); if (p.category) setExtraProduct(i, 'product_category', p.category) } }}
-                          onCreateNew={createProduct}
-                          createLabel="New Product"
-                          options={products.map((p) => ({ key: String(p.id), label: p.name }))}
-                          placeholder="RRV System"
-                        />
+                      <F label={`Product ${i + 2}`}>
+                        <input style={inputStyle} value={row.product} onChange={(e) => setExtraProduct(i, 'product', e.target.value)} placeholder="e.g. Rail welding plant transporter" />
                       </F>
                     </div>
                     <button type="button" onClick={() => removeExtraProduct(i)} style={{ ...sheetBtn('ghost', '#DC2626'), marginTop: 22 }}><XIcon /></button>
                   </div>
-                  <F label="Product Specification"><textarea value={row.product_spec} onChange={(e) => setExtraProduct(i, 'product_spec', e.target.value)} rows={2} placeholder="Optional spec for this product" style={{ ...inputStyle, resize: 'vertical' }} /></F>
+                  <F label="Customer Requirement"><textarea value={row.product_spec} onChange={(e) => setExtraProduct(i, 'product_spec', e.target.value)} rows={2} placeholder="What the customer needs for this product" style={{ ...inputStyle, resize: 'vertical' }} /></F>
                   {isDup && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: 0 }}>⚠ This product is already added elsewhere in this inquiry.</p>}
                 </div>
               )
@@ -579,8 +563,10 @@ export default function InquiryForm({
           </div>
         )}
 
-        <F label="Project Details" tourId="inq-project-details"><textarea value={form.project_details} onChange={(e) => set('project_details', e.target.value)} rows={3} placeholder="Project background, scope, timeline..." style={{ ...inputStyle, resize: 'vertical' }} /></F>
         </div>
+      </SheetSection>
+      <SheetSection icon="doc" title="Project Details">
+        <F label="Project Details" tourId="inq-project-details"><textarea value={form.project_details} onChange={(e) => set('project_details', e.target.value)} rows={3} placeholder="Project background, scope, timeline..." style={{ ...inputStyle, resize: 'vertical' }} /></F>
       </SheetSection>
       </div>
         </>}

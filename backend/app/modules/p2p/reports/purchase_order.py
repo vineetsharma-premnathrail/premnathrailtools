@@ -253,7 +253,7 @@ def build_po_docx(ctx: dict[str, Any]) -> io.BytesIO:
     _label_value(head.cell(2, 1), "Dispatched through", ctx["dispatched_through"])
     _label_value(head.cell(2, 2), "Other References", ctx["other_references"])
     dest = head.cell(3, 1).merge(head.cell(3, 2))
-    _label_value(dest, "Destination", ctx["destination"])
+    _label_value(dest, "Destination (Ship To)", ctx["destination"])
     delivery = head.cell(4, 1).merge(head.cell(4, 2))
     _label_value(delivery, "Terms of Delivery", ctx["terms_of_delivery"])
     invoice_to = head.cell(0, 0).merge(head.cell(2, 0))

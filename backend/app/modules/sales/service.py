@@ -19,7 +19,7 @@ from app.modules.sales.models.order import (
     SalesOrder, SalesOrderLine, SalesOrderSchedule, SalesBillingPlanLine,
     SALES_ORDER_LIVE_STATUSES, SALES_APPROVAL_LEVELS, SALES_LINE_TYPES, SALES_MILESTONE_TYPES,
     SALES_ORDER_TYPES, SALES_ORDER_TYPE_LABELS, SALES_CURRENCY_CODES, SALES_PRICE_BASES, SALES_LD_PERIODS, SALES_LD_BASES, SALES_WARRANTY_RULES,
-    SALES_SCHEDULE_UNDELIVERED,
+    SALES_SCHEDULE_UNDELIVERED, SALES_HIRE_RATE_BASES, SALES_HIRE_RATE_BASIS_LABELS,
 )
 from app.modules.sales.models.approval import SalesApproval
 from app.modules.sales.models.attachment import SalesAttachment, SALES_PO_DOC_TYPES
@@ -53,9 +53,11 @@ AMENDABLE_HEADER = (
     "ld_applicable", "ld_rate_percent", "ld_rate_period", "ld_basis", "ld_max_percent",
     "warranty_months_from_delivery", "warranty_months_from_commissioning", "warranty_rule", "warranty_terms_text",
     "pbg_required", "pbg_percent", "pbg_due_days", "delivery_terms_text", "special_conditions",
+    # Rental: a hire extension or a new rate is an amendment.
+    "hire_start_date", "hire_end_date", "hire_rate_basis", "hire_site", "security_deposit",
 )
 _DATE_FIELDS = {"customer_po_date", "loa_date", "customer_po_received_date", "contract_delivery_date", "committed_date",
-                "customer_amendment_date"}
+                "customer_amendment_date", "hire_start_date", "hire_end_date"}
 
 LINE_FIELDS = ("line_type", "crm_product_id", "product_item_id", "rrv_model", "description", "specification",
                "customer_line_ref", "hsn_sac_code", "uom", "quantity", "unit_price", "discount_percent", "gst_rate")
@@ -233,6 +235,13 @@ def validate_header(data: dict) -> None:
         if code not in SALES_CURRENCY_CODES:
             raise SalesError(422, f"Currency '{data['currency']}' is not supported. Choose one of: {', '.join(SALES_CURRENCY_CODES)}.")
         data["currency"] = code
+    if data.get("hire_rate_basis") not in (None, "") and data["hire_rate_basis"] not in SALES_HIRE_RATE_BASES:
+        raise SalesError(422, f"Hire rate basis '{data['hire_rate_basis']}' isn't valid — pick one of: "
+                              f"{', '.join(SALES_HIRE_RATE_BASIS_LABELS[b] for b in SALES_HIRE_RATE_BASES)}.")
+    if data.get("hire_start_date") and data.get("hire_end_date") and data["hire_end_date"] < data["hire_start_date"]:
+        raise SalesError(422, "The hire end date is before the hire start date — correct one of them (leave the end date blank for an open-ended hire).")
+    if data.get("security_deposit") is not None and float(data["security_deposit"]) < 0:
+        raise SalesError(422, "Security deposit can't be negative — enter 0 or leave it blank if there is none.")
 
 
 def validate_line_dict(i: int, ln: dict) -> None:
@@ -530,6 +539,22 @@ def notify_level(db: Session, level: str, maker_id, title: str, message: str, nt
         notify_user(db, u.id, title, message, ntype, entity_type=entity_type, entity_id=entity_id, teams=True)
 
 
+def po_received_problem(received, po_dt, required: bool = True) -> str | None:
+    """The day the customer's PO / LOA reached us: needed, not in the future and
+    not before the PO's own date. None = fine."""
+    received, po_dt = _to_date(received), _to_date(po_dt)
+    if not received:
+        return ("Enter the date the customer's PO / LOA was received (PO received on) — it's the day the PO reached us, "
+                "taken from the e-mail / inward register.") if required else None
+    if received > today_ist():
+        return (f"PO received on {received.strftime('%d-%m-%Y')} is in the future — enter the day the PO / LOA actually "
+                f"reached us (today or earlier).")
+    if po_dt and received < po_dt:
+        return (f"PO received on {received.strftime('%d-%m-%Y')} is before the PO date {po_dt.strftime('%d-%m-%Y')} — "
+                f"a PO can't reach us before it was issued; check both dates against the PO / LOA.")
+    return None
+
+
 def notify_bell(db: Session, user_ids, title: str, message: str, ntype: str, entity_type: str, entity_id: int,
                 exclude_user_id: int | None = None) -> None:
     for uid in {u for u in user_ids if u and u != exclude_user_id}:
@@ -545,10 +570,14 @@ def submit_problems(db: Session, so: SalesOrder) -> list[str]:
     if not org:
         problems.append(f"Customer #{so.customer_id} no longer exists in CRM — pick the customer again.")
     elif not ((so.customer_gstin or org.gst_number) or (so.customer_state or org.state)):
-        problems.append(f"{org.name} has neither a GSTIN nor a state in CRM, so the order couldn't be invoiced later — "
-                        f"add the GSTIN (or the state for an unregistered customer) on the CRM organisation.")
+        problems.append(f"{org.name} has neither a GSTIN nor a state, so the order couldn't be invoiced later — "
+                        f"enter the customer GSTIN (or the state for an unregistered customer) in Customer GST on this order's "
+                        f"Overview; it is saved to the CRM organisation too.")
     if not po_number(so) or not po_date(so):
         problems.append("Enter the customer's PO number and PO date (from the PO / LOA).")
+    received = po_received_problem(so.customer_po_received_date, po_date(so))
+    if received:
+        problems.append(received)
     has_po_file = db.query(SalesAttachment.id).filter(
         SalesAttachment.entity_type == "sales_order", SalesAttachment.entity_id == so.id,
         SalesAttachment.doc_type.in_(SALES_PO_DOC_TYPES), SalesAttachment.is_deleted == False,  # noqa: E712
@@ -562,10 +591,24 @@ def submit_problems(db: Session, so: SalesOrder) -> list[str]:
     bp = billing_percent_problem([billing_dict(b) for b in so.billing_lines if b.status != "cancelled"])
     if bp:
         problems.append(bp)
-    if so.ld_applicable and (so.ld_rate_percent is None or not so.ld_rate_period or not so.ld_basis):
+    if so.order_category == "rental":
+        # A bare machine on hire: no LD or warranty, but the hire terms must be known.
+        if not so.hire_start_date:
+            problems.append("Enter the hire start date (the day the machine goes on hire) — Hire terms.")
+        if not so.hire_rate_basis:
+            problems.append("Pick how the hire rate is counted (per month / day / shift / hour / lump sum) — Hire terms.")
+        if not (so.hire_site or "").strip():
+            problems.append("Enter the site where the machine will work — Hire terms.")
+    elif so.ld_applicable and (so.ld_rate_percent is None or not so.ld_rate_period or not so.ld_basis):
         problems.append("LD applies, so enter the LD rate, the period (per week / per day) and the basis — or untick 'LD applicable'.")
-    if not so.warranty_rule:
-        problems.append("Pick the warranty rule (from delivery / from commissioning / whichever earlier / later).")
+    if so.order_category == "rental" or so.warranty_rule == "not_applicable":
+        pass  # no warranty on this order
+    elif not so.warranty_rule:
+        problems.append("Say whether a warranty applies — Contract terms › Warranty: tick 'Warranty applies' and enter the months, "
+                        "or leave it unticked for no warranty.")
+    elif so.warranty_rule == "from_delivery" and not so.warranty_months_from_delivery:
+        problems.append("Warranty applies, so enter the warranty period in months (it starts on each vehicle's handover date) — "
+                        "or untick 'Warranty applies'.")
     else:
         if so.warranty_rule in ("from_delivery", "earlier_of", "later_of") and not so.warranty_months_from_delivery:
             problems.append("Enter the warranty months from delivery.")
@@ -611,6 +654,36 @@ def snapshot_customer(db: Session, so: SalesOrder) -> None:
     if not so.place_of_supply_state_code and getattr(org, "gst_state_code", None):
         # Customer master GST state (CRM organisation) — the default place of supply.
         so.place_of_supply_state_code = org.gst_state_code
+
+
+def save_tax_ids_to_customer(db: Session, so: SalesOrder, user_id: int | None) -> list[str]:
+    """GSTIN / state entered on the order fill the CRM organisation when it has
+    none yet (owner, 2026-10-28) — an existing GSTIN on the organisation is
+    never overwritten (the order may carry a branch GSTIN). Returns what was
+    saved, for the success message."""
+    from app.modules.crm.models.organization import Organization
+    from app.modules.main.models.audit_log import AuditLog
+    org = db.query(Organization).filter(Organization.id == so.customer_id).first()
+    if not org or org.org_scope == "international":
+        return []
+    saved = []
+    if so.customer_gstin and not org.gst_number:
+        clash = db.query(Organization).filter(Organization.gst_number == so.customer_gstin, Organization.id != org.id).first()
+        if clash:
+            raise SalesError(409, f"GSTIN {so.customer_gstin} already belongs to '{clash.name}'"
+                                  f"{' (in the CRM recycle bin)' if clash.is_deleted else ''} in CRM, but this order's customer is "
+                                  f"'{org.name}' — correct the GSTIN, or change the order's customer.")
+        org.gst_number = so.customer_gstin
+        if so.customer_gstin[:2].isdigit():
+            org.gst_state_code = so.customer_gstin[:2]
+        saved.append(f"GSTIN {so.customer_gstin}")
+    if so.customer_state and not org.state:
+        org.state = so.customer_state
+        saved.append(f"state {so.customer_state}")
+    if saved:
+        db.add(AuditLog(entity_type="crm_organization", entity_id=org.id, action="updated", performed_by_id=user_id,
+                        summary=f"{' and '.join(saved)} added from sales order {so.so_number or f'draft #{so.id}'}."))
+    return saved
 
 
 def credit_position(db: Session, so: SalesOrder) -> dict | None:
@@ -1191,9 +1264,11 @@ def confirm_order(db: Session, so: SalesOrder, user: User) -> None:
     so.status = "confirmed"
     so.confirmed_at, so.confirmed_by_id = now_utc(), user.id
     refresh_order(db, so)
-    # Project (PEW-NN) in Project Management > All Projects for orders that build RRVs (projects/so_projects.py).
-    from app.modules.projects.so_projects import ensure_project_for_order
-    ensure_project_for_order(db, so, user)
+    # The PEW project is created by the Project Manager in Project Management
+    # (owner, 2026-10-28) — never automatically here; they are told it is due.
+    from app.modules.projects.so_projects import ensure_project_for_order, notify_project_needed
+    if ensure_project_for_order(db, so, user) is None:
+        notify_project_needed(db, so, user)
     # CRM → Sales handoff (plan §6.1): close the source inquiry / tender as ordered.
     from app.modules.crm.services.won import mark_won
     mark_won(db, so, user)
@@ -1258,12 +1333,12 @@ def notify_order_rejected(db: Session, so: SalesOrder, actor, comment: str, *, r
 
 def notify_confirmed(db: Session, so: SalesOrder, actor_id: int) -> None:
     msg = (f"{so.customer_name}: PO {so.customer_po_number}, value {inr(so.grand_total)}. "
-           f"Its project and a planned RRV build per vehicle are created automatically — see Project Management › All Projects.")
+           f"Its project is created by the Project Manager in Project Management › All Projects › From Sales Order.")
     from app.modules.sales import events as sales_events
     sales_events.order_event(
         db, None, "order_confirmed", so, title=f"Sales order {so.so_number} confirmed",
         message=f"{so.customer_name}: PO {so.customer_po_number} is confirmed as {so.so_number}. "
-                f"Its project and a planned build per vehicle are created automatically (Project Management › All Projects).",
+                f"Its project is created by the Project Manager in Project Management › All Projects › From Sales Order.",
         skip_user_ids={actor_id, so.created_by_id, so.submitted_by_id, so.sales_owner_id, *production_planners(db)},
     )
     notify_bell(db, [so.created_by_id, so.submitted_by_id, so.sales_owner_id], f"{so.so_number} confirmed", msg,
@@ -1287,6 +1362,17 @@ SERVICE_ORDER_SR_EXCLUDED = ("cancelled",)
 def machine_label(m) -> str:
     """'PEW-78 · RRV-10T · Central Railway' — how the Service order names a machine."""
     return " · ".join(x for x in (m.serial_number, m.model_name, m.client_name) if x)
+
+
+# Machine cover today that a paid Service order may be raised for: no warranty on
+# record, warranty over, or under AMC. In warranty / extended warranty = free work, no order.
+SERVICE_ORDER_COVER_ALLOWED = ("out_of_warranty", "unknown", "amc")
+
+
+def service_cover(db: Session, m) -> str:
+    """The machine's cover today (erp/warranty.py): in_warranty, extended_warranty, amc, out_of_warranty, unknown."""
+    from app.modules.erp.warranty import warranty_status_on
+    return warranty_status_on(db, m, date.today())
 
 
 def service_links(db: Session, so: SalesOrder) -> tuple[str | None, list[dict]]:
@@ -1314,6 +1400,13 @@ def check_service_order(db: Session, machine_id: int | None, sr_ids: list[int], 
         raise SalesError(404, f"Machine #{machine_id} not found in Service — pick the machine again.")
     if not m.customer_id:
         raise SalesError(422, f"Machine {m.serial_number} has no customer organisation — set its customer in Service › Machines first, then raise the order.")
+    kept = exclude_so_id and db.query(SalesOrder.id).filter(SalesOrder.id == exclude_so_id, SalesOrder.service_machine_id == m.id).first()
+    if not kept:
+        cover = service_cover(db, m)
+        if cover not in SERVICE_ORDER_COVER_ALLOWED:
+            from app.modules.erp.warranty import WARRANTY_LABELS
+            raise SalesError(422, f"Machine {m.serial_number} is {WARRANTY_LABELS.get(cover, cover).lower()} — its service is free, so no Service order. "
+                                  "Raise one only for a machine without warranty, out of warranty or under AMC; if the warranty dates are wrong, fix them in Service › Machines.")
     ids = sorted(set(sr_ids or []))
     if not ids:
         raise SalesError(422, f"Pick at least one service request (SR) of machine {m.serial_number} that this order bills for.")

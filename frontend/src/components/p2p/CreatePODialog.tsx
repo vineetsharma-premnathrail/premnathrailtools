@@ -15,7 +15,7 @@ import DateField from '@/components/erp/DateField'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordHref, recordPath } from '@/lib/recordRef'
-import SplitPoDialog from '@/components/p2p/SplitPoDialog'
+import { mmQuotationsApi } from '@/lib/mmPurchasingApi'
 
 const READY = new Set(['vendor_quotations', 'technical_evaluation', 'commercial_evaluation', 'vendor_selected'])
 
@@ -30,7 +30,17 @@ export default function CreatePODialog({ onClose, initialRfqId, onCreated }: { o
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [splitFor, setSplitFor] = useState<RFQ | null>(null)
+  const [creatingPos, setCreatingPos] = useState(false)
+  // Awarded lines become one draft PO per vendor in one click; receiving comes from the PR's Ship To.
+  const createFromAward = (r: RFQ) => {
+    setCreatingPos(true); setError('')
+    mmQuotationsApi.createPosFromAwards(r.id)
+      .then((pos) => {
+        if (onCreated) onCreated()
+        else router.push(recordHref('/dashboard/p2p/purchase-orders/new', r, 'id', { po: pos[0]?.id_ref }, 'rfq'))
+      })
+      .catch((err) => { setError(extractErrorMessages(err, `Could not create the PO for ${r.p2p_number || 'this requisition'}.`).join(' ')); setCreatingPos(false) })
+  }
   const close = () => { if (!busy) onClose() }
   useEscapeKey(true, close)
 
@@ -125,8 +135,8 @@ export default function CreatePODialog({ onClose, initialRfqId, onCreated }: { o
                   Open quote comparison
                 </button>
                 {(rfq.awarded_line_count || 0) > 0 && (
-                  <button type="button" onClick={() => setSplitFor(rfq)} style={sheetBtn('primary', SHEET.BLUE)}>
-                    <SheetIcon name="plus" size={16} />Create PO(s) from the award
+                  <button type="button" disabled={creatingPos} onClick={() => createFromAward(rfq)} style={sheetBtn('primary', SHEET.BLUE, creatingPos)}>
+                    <SheetIcon name="plus" size={16} />{creatingPos ? 'Creating…' : 'Create PO(s) from the award'}
                   </button>
                 )}
               </div>
@@ -189,12 +199,6 @@ export default function CreatePODialog({ onClose, initialRfqId, onCreated }: { o
           )}
         </>}
       />
-      {splitFor && <SplitPoDialog rfq={splitFor} onClose={() => setSplitFor(null)} onDone={(poRow) => {
-        const r = splitFor
-        setSplitFor(null)
-        if (onCreated) onCreated()
-        else router.push(recordHref('/dashboard/p2p/purchase-orders/new', r, 'id', { po: poRow ? (poRow as { id_ref?: string }).id_ref : undefined }, 'rfq'))
-      }} />}
     </FormSheet>
   )
 }

@@ -59,7 +59,7 @@ INQ_STAGES = [
 
 # Mirrors INQUIRY_STATUSES in frontend/src/components/crm/constants.ts.
 INQ_STATUSES = [
-    "Lead", "Requirement Received", "R&D / Technical Review", "Qualified", "Quotation Sent",
+    "Lead", "Requirement Received", "R&D / Technical Review", "Qualified Inquiry", "Quotation Sent",
     "Order Received", "Closed - Ordered", "Closed - Not Ordered",
 ]
 
@@ -67,7 +67,7 @@ INQ_STATUSES = [
 # status, so the Sales handoff (needs stage 'Order Received') and lost/won logic keep working.
 STATUS_STAGE = {
     "Lead": "Requirement Received", "Requirement Received": "Requirement Received",
-    "R&D / Technical Review": "Requirement Received", "Qualified": "Requirement Qualified",
+    "R&D / Technical Review": "Requirement Received", "Qualified Inquiry": "Requirement Qualified",
     "Quotation Sent": "Quotation Sent", "Order Received": "Order Received",
     "Closed - Ordered": "Order Received", "Closed - Not Ordered": "Closed – Not Ordered",
 }
@@ -86,6 +86,22 @@ def _check_choice(updates: dict, record, field: str, allowed: list[str], label: 
         status_code=422,
         detail=f"'{value}' is not a valid {label}. Pick one of: {', '.join(allowed)}.",
     )
+
+
+def _check_status_forward(updates: dict, record) -> None:
+    """Inquiry status only moves forward - no undo, admins included (owner, 2026-10-28).
+    A closed inquiry keeps its status; a legacy status outside the list may move anywhere."""
+    new, old = updates.get("status"), record.status
+    if not new or new == old or old not in INQ_STATUSES:
+        return
+    if old.startswith("Closed"):
+        raise HTTPException(status_code=422, detail=(
+            f"This inquiry is closed as '{old}' and its status can't be changed. "
+            "For a new requirement from this customer, create a new inquiry."))
+    if INQ_STATUSES.index(new) < INQ_STATUSES.index(old):
+        raise HTTPException(status_code=422, detail=(
+            f"Status can't go back from '{old}' to '{new}' - an inquiry status only moves forward. "
+            f"Pick '{old}' or a later status."))
 
 
 def _check_probability(value) -> None:
@@ -321,6 +337,7 @@ async def update_inquiry(
     updates.pop("bd_owner_id", None)
     _check_choice(updates, inquiry, "current_stage", INQ_STAGES, "inquiry stage")
     _check_choice(updates, inquiry, "status", INQ_STATUSES, "inquiry status")
+    _check_status_forward(updates, inquiry)
     drop_money_updates(user, updates, INQUIRY_MONEY_FIELDS)
     if "current_stage" in updates and updates["current_stage"] != inquiry.current_stage:
         ensure_feature_action(user, "crm", "inquiries_tenders", "stage", "edit")

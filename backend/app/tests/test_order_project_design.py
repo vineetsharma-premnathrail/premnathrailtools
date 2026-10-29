@@ -18,8 +18,9 @@ from app.modules.projects import so_projects as ops
 from app.modules.sales.models.order import SalesOrder
 from app.modules.projects.models.project import PmProject
 from app.modules.store.models.item import StoreItem
+from app.tests._so_project_helpers import confirm_with_project
 from app.tests.test_sales import (
-    BASE, TODAY, confirm, hdr, make_user, payload_from_prefill, setup_customer, setup_people,
+    BASE, TODAY, hdr, make_user, payload_from_prefill, setup_customer, setup_people,
 )
 
 DESIGN = "/api/v1/design"
@@ -58,7 +59,7 @@ def _order(client, db, item=None, billing=None):
         body["billing_plan"] = billing
     r = client.post(f"{BASE}/orders", json=body, headers=hdr(maker))
     assert r.status_code == 200, r.text
-    so = confirm(client, db, r.json(), maker, head, director)
+    so = confirm_with_project(client, db, r.json(), maker, head, director)
     db.expire_all()
     project = db.query(PmProject).filter(PmProject.sales_order_id == so["id"]).first()
     return so, project, head

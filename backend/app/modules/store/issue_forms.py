@@ -39,7 +39,6 @@ FIELDS: dict[str, dict] = {
     "destructive": {"label": "Destructive test? (material used up)", "kind": "bool"},
     "vendor_id": {"label": "Vendor", "kind": "vendor"},
     "process": {"label": "Process", "kind": "choice", "options": JOB_WORK_PROCESSES},
-    "output_item_id": {"label": "Item to receive back", "kind": "item"},
     "customer_id": {"label": "Customer", "kind": "customer"},
     "purpose": {"label": "Purpose", "kind": "choice", "options": SAMPLE_PURPOSES},
     "returnable": {"label": "Returnable? (comes back)", "kind": "bool"},
@@ -69,7 +68,7 @@ ISSUE_FORMS: dict[str, dict] = {
         "inspection_lot_id": "one_of:against", "ncr_id": "one_of:against", "destructive": "required",
         "expected_return_date": "if:destructive=false"}},
     "job_work": {"leaves_factory": True, "fields": {
-        "vendor_id": "required", "process": "required", "output_item_id": "optional", "expected_return_date": "required",
+        "vendor_id": "required", "process": "required", "expected_return_date": "required",
         "challan_number": "required", "vehicle_number": "optional"}},
     "scrap": {"manager_only": True, "remarks_label": "Reason for scrapping / disposal", "fields": {
         "scrap_buyer": "optional", "challan_number": "if:scrap_buyer", "vehicle_number": "optional"}},
@@ -180,13 +179,12 @@ def _check_links(db: Session, values: dict) -> None:
     from app.modules.organization.models.department import Department
     from app.modules.quality.models.inspection_lot import QualityInspectionLot
     from app.modules.quality.models.ncr import QualityNcr
-    from app.modules.store.models.item import StoreItem
 
     models = {
         "department_id": Department, "maintenance_work_order_id": MaintenanceWorkOrder, "asset_id": MaintenanceAsset,
         "erp_project_id": Project, "ncr_id": QualityNcr, "inspection_lot_id": QualityInspectionLot,
         "service_request_id": ServiceRequest,
-        "vendor_id": Vendor, "customer_id": Organization, "output_item_id": StoreItem,
+        "vendor_id": Vendor, "customer_id": Organization,
     }
     for key, model in models.items():
         if key in values and db.get(model, values[key]) is None:

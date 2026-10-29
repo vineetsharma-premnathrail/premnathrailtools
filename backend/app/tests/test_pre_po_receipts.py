@@ -8,6 +8,7 @@ from app.modules.accounts.models.vendor import Vendor
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.store.models.pre_po_receipt import StorePrePoReceipt
+from app.modules.store.models.location import StoreLocation
 from app.modules.store.models.stock_balance import StoreStockBalance
 from app.tests.p2p_workflow_helpers import master_item, set_po_workflow
 from app.tests.test_mm_po_split_amend_quotes import _decide_all
@@ -39,6 +40,9 @@ def _store_user(db, email, perms=("store:grn:view", "store:grn:create")):
     u = make_user(db, email, assigned_apps=("store",))
     u.granular_permissions = list(perms)
     db.commit()
+    # Every store person runs a store: receipts are booked into it.
+    db.add(StoreLocation(name=f"Store of {email}", code=f"S-{u.id}", manager_user_id=u.id))
+    db.commit()
     return u
 
 
@@ -65,6 +69,25 @@ def test_store_records_a_receipt_without_posting_stock(client, db):
     assert db.query(StoreStockBalance).filter_by(item_id=item.id).count() == 0  # held, not in stock
     lst = client.get(STORE, headers=auth_header(keeper)).json()
     assert [x["receipt_number"] for x in lst] == [body["receipt_number"]]
+
+
+def test_store_person_books_into_own_store_only(client, db):
+    keeper = _store_user(db, "bpo.own@premnathrail.com")
+    own = db.query(StoreLocation).filter_by(manager_user_id=keeper.id).one()
+    other = StoreLocation(name="Other store BPO", code="BPO-OTH")
+    db.add(other)
+    db.commit()
+    v, item = _vendor(db, "V-BPOO"), master_item(db, "Pin BPO", code="BPO-O", uom="Nos")
+    # Whatever store is sent, the receipt lands in the keeper's own store.
+    r = client.post(STORE, json=_body(v, item, 2, store_location_id=other.id), headers=auth_header(keeper))
+    assert r.status_code == 200, r.text
+    assert r.json()["store_location_id"] == own.id
+    # A user with no store of their own is refused with the fix.
+    db.delete(own)
+    db.delete(other)
+    db.commit()
+    r = client.post(STORE, json=_body(v, item, 2), headers=auth_header(keeper))
+    assert r.status_code == 403 and "No store is linked to you" in r.json()["detail"]
 
 
 def test_create_refuses_blocked_vendor_duplicate_lines_and_empty_items(client, db):

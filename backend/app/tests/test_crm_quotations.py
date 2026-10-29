@@ -143,10 +143,10 @@ def test_customer_response_by_inquiry_owner(client, db):
 
     resp = client.patch(base, json={"customer_response": "Accepted"}, headers=_auth(inquiry_owner))
     assert resp.status_code == 200 and resp.json()["customer_response"] == "Accepted" and resp.json()["status"] == "accepted"
-    # Correcting a recorded outcome is an admin step.
-    assert client.patch(base, json={"customer_response": "— Awaiting —"}, headers=_auth(inquiry_owner)).status_code == 403
-    resp = client.patch(base, json={"customer_response": "— Awaiting —"}, headers=_auth(admin))
-    assert resp.json()["customer_response"] == "— Awaiting —" and resp.json()["status"] == "sent"
+    # A recorded outcome can't be undone - admins included (owner, 2026-10-28).
+    for who in (inquiry_owner, admin):
+        resp = client.patch(base, json={"customer_response": "— Awaiting —"}, headers=_auth(who))
+        assert resp.status_code == 422 and "can't be undone" in resp.json()["detail"]
     # A sent quotation is finalised: no one revises its content (a new offer is + Create Quote).
     resp = client.patch(base, json={"delivery_time": "8 weeks"}, headers=_auth(inquiry_owner))
     assert resp.status_code == 409 and "Create Quote" in resp.json()["detail"]
@@ -255,9 +255,10 @@ def test_application_is_optional_but_must_exist(client, db):
     # A normal product is not an application either.
     r = _post_lines(client, inq, owner, [{"product_id": 1, "application_id": 1, "quantity": 1, "unit_price": 10}])
     assert r.status_code == 422 and "not an application" in r.json()["detail"]
-    # ...and an application cannot be the line's product.
+    # ...but an application can be quoted as its own line (owner, 2026-10-28).
     r = _post_lines(client, inq, owner, [{"product_id": 2, "quantity": 1, "unit_price": 10}])
-    assert r.status_code == 422 and "is an application / attachment, not a product" in r.json()["detail"]
+    assert r.status_code == 201, r.text
+    assert r.json()["items"][0]["product_id"] == 2
 
 
 def test_application_need_not_belong_to_the_product(client, db):

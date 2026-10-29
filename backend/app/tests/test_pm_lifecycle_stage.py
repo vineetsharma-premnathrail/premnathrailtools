@@ -220,3 +220,8 @@ def test_pr_project_picker_lists_only_machines_before_dispatch(client, db):
     assert r.status_code == 200, r.text
     labels = [x["label"] for x in r.json()]
     assert "PEW-901" in labels and "PEW-902" not in labels and "PEW-903" not in labels
+    # The PR form asks for all of them: Project shows machines in build, Service the dispatched / delivered ones.
+    r = client.get(f"{API}/p2p/requests/projects", params={"include_delivered": "true"}, headers=auth(req))
+    assert r.status_code == 200, r.text
+    flags = {x["label"]: x["serviceable"] for x in r.json()}
+    assert flags["PEW-901"] is False and flags["PEW-902"] is True and flags["PEW-903"] is True

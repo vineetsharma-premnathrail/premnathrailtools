@@ -27,10 +27,14 @@ import { SERVICE_TYPES } from '@/components/erp/serviceTypes'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { IssueSpareDialog, ReturnSpareDialog } from '@/components/erp/SrSpareDialogs'
-import ServiceVisitsTab, { SlaBadge } from '@/components/erp/ServiceVisitsTab'
+import ServiceVisitsTab from '@/components/erp/ServiceVisitsTab'
 import ContractChip from '@/components/erp/ContractChip'
 import { SERVICE_BILLING_ENABLED } from '@/lib/features'
 import { FormSheet, SHEET, SheetIcon, SheetSection, Optional, Req, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+
+type MrLine = { type: string; category: string; itemId: string; qty: string }
+const EMPTY_MR_LINE: MrLine = { type: '', category: '', itemId: '', qty: '1' }
+const itemTypeLabel = (t: string) => { const s = t.replace(/_/g, ' '); return s.charAt(0).toUpperCase() + s.slice(1) }
 
 /** Saves a partial SR update. With `onError` the reason is handed to the caller
  * (shown inside its popup) instead of the page-level error dialog. */
@@ -203,11 +207,9 @@ export default function ServiceRequestDetailPage() {
       )}
       <ApprovalPanel title="Closure approval" entityType="service_request" entityId={sr.id} onChanged={() => { load() }} />
 
-      {(sr.sla_response_state || sr.sla_resolution_state || sr.project_id) && (
+      {(sr.sla_resolution_due_at || sr.project_id) && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
           <ContractChip projectId={sr.project_id} />
-          <SlaBadge label="Response SLA" state={sr.sla_response_state} />
-          <SlaBadge label="Resolution SLA" state={sr.sla_resolution_state} />
           {sr.sla_resolution_due_at && !sr.resolution_at && <span style={{ fontSize: 12, color: '#78716c' }}>Resolve by {formatDateTime(sr.sla_resolution_due_at)}</span>}
         </div>
       )}
@@ -282,7 +284,7 @@ export default function ServiceRequestDetailPage() {
         confirmLabel="Update Status"
         message={
           pendingStatus
-            ? `Change the status of ${sr.request_number} from "${[...WORKFLOW_STEPS, CANCELLED_STEP].find((s) => s.key === sr.status)?.label || sr.status}" to "${[...WORKFLOW_STEPS, CANCELLED_STEP].find((s) => s.key === pendingStatus)?.label || pendingStatus}"?${pendingStatus === 'closed' ? ' Closing needs Corrective Action filled on the Diagnostics & RCA tab, and the client is emailed.' : ''}${pendingStatus === 'cancelled' ? ' Cancelling takes it out of the normal workflow.' : ''}`
+            ? `Change the status of ${sr.request_number} from "${[...WORKFLOW_STEPS, CANCELLED_STEP].find((s) => s.key === sr.status)?.label || sr.status}" to "${[...WORKFLOW_STEPS, CANCELLED_STEP].find((s) => s.key === pendingStatus)?.label || pendingStatus}"?${pendingStatus === 'closed' ? ' Closing needs the Actual Attended and Actual Completed dates (Execution card), and the client is emailed.' : ''}${pendingStatus === 'cancelled' ? ' Cancelling takes it out of the normal workflow.' : ''}`
             : ''
         }
         onConfirm={() => { const s = pendingStatus; setPendingStatus(null); if (s) patch({ status: s }) }}
@@ -820,7 +822,6 @@ function RcaTab({ sr, canModify, onPatch }: { sr: ServiceRequest; canModify: boo
               <label style={sheetLabel}>Corrective Action</label>
               <textarea value={correctiveAction} onChange={(e) => setCorrectiveAction(e.target.value)} rows={3} style={area}
                 placeholder="What was done on this machine to fix it" />
-              <p style={sheetHint}>Needed before the service request can be Closed.</p>
               <label style={{ ...sheetLabel, marginTop: 14 }}>Preventive Recommendation</label>
               <textarea value={preventiveActions} onChange={(e) => setPreventiveActions(e.target.value)} rows={3} style={area}
                 placeholder="What should change so it never happens again" />
@@ -863,10 +864,10 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
   const [requiredDate, setRequiredDate] = useState('')
   const [priority, setPriority] = useState('medium')
   const [remarks, setRemarks] = useState('')
-  const [lines, setLines] = useState<{ itemId: string; qty: string }[]>([{ itemId: '', qty: '1' }])
+  // Each line: pick the Item Type, then the Category, then the item (same order as the PR form).
+  const [lines, setLines] = useState<MrLine[]>([{ ...EMPTY_MR_LINE }])
   const [stock, setStock] = useState<Record<string, number>>({})
   // Go on the PR when one is raised; if everything comes from store, onto this SR's Attachments.
-  const [supportingFiles, setSupportingFiles] = useState<File[]>([])
   const [specFiles, setSpecFiles] = useState<File[]>([])
   const [fileInputKey, setFileInputKey] = useState(0)
   const [submitting, setSubmitting] = useState(false)
@@ -887,6 +888,9 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
   const [issuing, setIssuing] = useState<ServiceMaterial | null>(null)
   const [returning, setReturning] = useState<ServiceMaterial | null>(null)
   const masterById = useMemo(() => new Map(masterItems.map((i) => [i.id, i])), [masterItems])
+  const itemTypeOptions = useMemo(() => Array.from(new Set(masterItems.map((i) => i.item_type || '').filter(Boolean))).sort(), [masterItems])
+  const categoriesForType = (type: string) =>
+    Array.from(new Set(masterItems.filter((i) => i.item_type === type).map((i) => i.category || '').filter(Boolean))).sort()
   const loadMasterItems = async () => {
     setLoadingMaster(true)
     try {
@@ -939,7 +943,7 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
     if (l.itemId) usedStock[l.itemId] = (usedStock[l.itemId] || 0) + fromStore
     return { avail, fromStore, buy: q - fromStore }
   })
-  const setLine = (idx: number, patch: Partial<{ itemId: string; qty: string }>) =>
+  const setLine = (idx: number, patch: Partial<MrLine>) =>
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)))
 
   const [pendingRemove, setPendingRemove] = useState<{ id: number; name: string } | null>(null)
@@ -963,7 +967,7 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
       if (!lines[i].itemId) continue
       if (!(Number(lines[i].qty) > 0)) {
         const m = masterById.get(Number(lines[i].itemId))
-        setPrError(`Line ${i + 1} (${m ? `${m.item_code} ${m.item_name}` : 'item'}): quantity must be more than 0.`)
+        setPrError(`Line ${i + 1} (${m ? m.item_name : 'item'}): quantity must be more than 0.`)
         return
       }
     }
@@ -979,7 +983,7 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
       if (r.from_store.length) parts.push(`${r.from_store.length} item(s) booked from store stock — Store issues them to site`)
       if (r.pr_number) parts.push(`purchase requisition ${r.pr_number} raised for what isn't in store — Purchase has been notified`)
       const uploadFailures: string[] = []
-      for (const [files, doc] of [[supportingFiles, 'supporting'], [specFiles, 'specification']] as const) {
+      for (const [files, doc] of [[specFiles, 'specification']] as const) {
         if (!files.length) continue
         try {
           if (r.pr_id) await erpApi.uploadPrAttachments(srId, r.pr_id, files, doc)
@@ -988,10 +992,10 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
           uploadFailures.push(`${doc} documents: ${extractErrorMessages(err, 'upload failed').join(' ')}`)
         }
       }
-      if (!r.pr_id && (supportingFiles.length || specFiles.length) && !uploadFailures.length) parts.push('documents saved in this SR\'s Attachments tab')
+      if (!r.pr_id && specFiles.length && !uploadFailures.length) parts.push('documents saved in this SR\'s Attachments tab')
       setPrMessage(`Material requested: ${parts.join('; ')}.`)
-      setLines([{ itemId: '', qty: '1' }]); setRequiredDate(''); setPriority('medium'); setRemarks('')
-      setSupportingFiles([]); setSpecFiles([]); setFileInputKey((k) => k + 1)
+      setLines([{ ...EMPTY_MR_LINE }]); setRequiredDate(''); setPriority('medium'); setRemarks('')
+      setSpecFiles([]); setFileInputKey((k) => k + 1)
       if (uploadFailures.length) {
         setPrError(`Material was requested, but some files did not upload — ${uploadFailures.join('; ')}. ${r.pr_id ? `Ask Purchase to attach them on ${r.pr_number}.` : 'Upload them in this SR\'s Attachments tab.'}`)
       } else setRequestOpen(false)
@@ -1050,12 +1054,12 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
           </>}>
           <div style={{ padding: '20px 24px' }}>
           <SheetSection icon="box" title="Items"
-            extra={<button type="button" data-tour="erp-srd-pr-add-item-btn" onClick={() => setLines((prev) => [...prev, { itemId: '', qty: '1' }])} style={{ ...sheetBtn('ghost'), marginLeft: 'auto' }}><SheetIcon name="plus" size={14} />Add Item</button>}>
+            extra={<button type="button" data-tour="erp-srd-pr-add-item-btn" onClick={() => setLines((prev) => [...prev, { ...EMPTY_MR_LINE }])} style={{ ...sheetBtn('ghost'), marginLeft: 'auto' }}><SheetIcon name="plus" size={14} />Add Item</button>}>
             <div style={{ overflowX: 'auto' }}>
-              <table data-tour="erp-srd-pr-items" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+              <table data-tour="erp-srd-pr-items" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
                 <thead>
                   <tr>
-                    {['SL', 'Item (from Item Master) *', 'Qty *', 'In store', 'Will be', ''].map((h, hi) => (
+                    {['SL', 'Item Type *', 'Category', 'Item (from Item Master) *', 'Qty *', 'In store', 'Will be', ''].map((h, hi) => (
                       <th key={h} style={{ textAlign: 'left', padding: '0 8px 8px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap' }}>{h}{hi === 0 && <RowCount count={lines.length} />}</th>
                     ))}
                   </tr>
@@ -1065,15 +1069,43 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
                     const m = line.itemId ? masterById.get(Number(line.itemId)) : undefined
                     const plan = linePlan[idx]
                     const uom = m?.uom || ''
+                    // A line that already holds an item shows that item's type / category.
+                    const lineType = line.type || m?.item_type || ''
+                    const lineCats = lineType ? categoriesForType(lineType) : []
+                    const lineCategory = line.category || (m && m.item_type === lineType ? m.category || '' : '')
+                    const itemReady = !!line.itemId || (!!lineType && (!!lineCategory || lineCats.length === 0))
+                    const shown = masterItems.filter((i) => i.id === Number(line.itemId)
+                      || (i.item_type === lineType && (!lineCategory || i.category === lineCategory)))
                     return (
                     <tr key={idx}>
                       <td style={{ padding: '6px 8px', fontSize: 12.5, fontWeight: 600, color: '#a8a29e' }}>{idx + 1}</td>
-                      <td style={{ padding: '6px 8px', minWidth: 300 }}>
+                      <td style={{ padding: '6px 8px', width: 150 }}>
                         <SearchableSelect
+                          ariaLabel={`Item type, line ${idx + 1}`}
+                          value={lineType}
+                          onChange={(type) => setLine(idx, { type, category: '', itemId: '' })}
+                          options={itemTypeOptions.map((t) => ({ value: t, label: itemTypeLabel(t) }))}
+                          placeholder="Item type"
+                        />
+                      </td>
+                      <td style={{ padding: '6px 8px', width: 160 }}>
+                        <SearchableSelect
+                          ariaLabel={`Category, line ${idx + 1}`}
+                          value={lineCategory}
+                          onChange={(category) => setLine(idx, { type: lineType, category, itemId: '' })}
+                          options={lineCats.map((c) => ({ value: c, label: c }))}
+                          disabled={!lineType}
+                          placeholder={lineType ? (lineCats.length ? 'Category' : 'No categories') : 'Pick the type first'}
+                        />
+                      </td>
+                      <td style={{ padding: '6px 8px', minWidth: 260 }}>
+                        <SearchableSelect
+                          ariaLabel={`Item, line ${idx + 1}`}
                           value={line.itemId}
                           onChange={(v) => setLine(idx, { itemId: v })}
-                          options={masterItems.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}${i.part_number ? ` · ${i.part_number}` : ''}` }))}
-                          placeholder={loadingMaster ? 'Loading items…' : 'Search item code, name or part no…'}
+                          disabled={!itemReady}
+                          options={shown.map((i) => ({ value: String(i.id), label: `${i.item_name}${i.part_number ? ` · ${i.part_number}` : ''}` }))}
+                          placeholder={loadingMaster ? 'Loading items…' : !itemReady ? (lineType ? 'Pick the category first' : 'Pick the type first') : 'Search item name or part no…'}
                         />
                       </td>
                       <td style={{ padding: '6px 8px', width: 130 }}>
@@ -1134,10 +1166,6 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
 
           <SheetSection icon="clip" title="Attachments" extra={<Optional />}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
-            <div style={{ flex: '0 1 280px', minWidth: 240 }}>
-              <label style={sheetLabel}>Supporting Documents</label>
-              <input key={`sup-${fileInputKey}`} data-tour="erp-srd-pr-supporting" type="file" multiple onChange={(e) => setSupportingFiles(Array.from(e.target.files || []))} style={sheetInput} />
-            </div>
             <div style={{ flex: '0 1 280px', minWidth: 240 }}>
               <label style={sheetLabel}>Specification / Reference File</label>
               <input key={`spec-${fileInputKey}`} data-tour="erp-srd-pr-spec" type="file" multiple onChange={(e) => setSpecFiles(Array.from(e.target.files || []))} style={sheetInput} />

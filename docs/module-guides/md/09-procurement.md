@@ -234,26 +234,13 @@ Header buttons:
 | Reject | Same conditions as Approve / Approve PO (old path only) | Prompt with optional reason; the requisition becomes Rejected (at PO stage the PO is cancelled too). |
 | Resubmit for Approval | Status Returned, "Submit" permission, viewer is the requester or Purchase | Sends it into approval again. |
 | Submit for Approval | Status Draft and viewer is the requester | Checks the draft is complete (project, project type, at least one line, Project/Inhouse on every line) and submits it. |
-| Edit Draft / Edit Requisition | The server says the viewer may edit it (see Edit rules above) | Opens the full edit form. |
+| Edit Draft | Status Draft and the server says the viewer may edit it | Opens the full edit form. A submitted requisition has no edit button. |
 | Discard Draft | Status Draft and viewer is the requester | Confirm dialog, then deletes the draft permanently and returns to the list. |
-| Quick Edit | Purchase team with "Edit", not a draft, and editing is still allowed | Opens the "Edit Details" panel. |
 | Close Requisition | Purchase team with "Edit" and status Received | Confirm "Close this Requisition?"; status becomes Closed (cannot be reopened). |
 | Short-close Requisition | Purchase team with "Edit" and status Partially Received | Prompt with a required reason; the balance is written off, no more goods can be received; refused while a GRN is still awaiting inspection. |
 | Cancel Requisition | "Cancel" permission AND (requester or Purchase) AND status Submitted, Returned, Approved, RFQ / Quotations, evaluation stages, Vendor Selected or PO Draft; or status PO Approved and viewer is Purchase | Prompt with reason (optional; required when the PO is already approved). Cancels the live approval request and any draft or approved PO. Refused at PO Raised (reject the PO instead), Partially Received (short-close instead), Received (close instead) and while a GRN is awaiting inspection. |
 
 Information notes under the header: a grey "This is a draft — only you can see it ..." note on drafts; an amber "Editing is locked: [reason]" note when a requester or Purchase user cannot edit before the RFQ stage.
-
-Quick Edit panel "Edit Details" (Purchase only):
-
-| Field | Meaning |
-|---|---|
-| Project | Free-text project label. |
-| Required Date | Date picker. |
-| Requirement Type | Free text. |
-| Priority | Low / Medium / High. |
-| Remarks | Multi-line text. |
-
-Buttons **Save Changes** (saves only these fields; status, approvers and project type cannot be changed this way) and **Discard**.
 
 Section "Request Details":
 
@@ -667,14 +654,14 @@ Access combines the user's apps, the Permission Matrix (Organization › Role & 
 | App | Meaning in Procurement |
 |---|---|
 | p2p | Requester access: raise and follow requisitions, open Settings. Required for the PR list, New PR, R.F.Q page shell and M.I.S page shell. |
-| purchase | The Purchase team (buyers): Vendors, R.F.Q, Purchase Orders (Create PO, Tracking), M.I.S, quick edit, stock decisions, close / short-close, cancel any requisition. Required by the RFQ, PO and close APIs. |
+| purchase | The Purchase team (buyers): Vendors, R.F.Q, Purchase Orders (Create PO, Tracking), M.I.S, stock decisions, close / short-close, cancel any requisition. Required by the RFQ, PO and close APIs. |
 | accounts | Can open the Vendors master. |
 
 ### Permission Matrix keys (module p2p)
 
 | Tab key | Actions | What they gate |
 |---|---|---|
-| p2p:purchase_requisitions | view, create, edit, delete, approve, reject, export, print, submit, cancel | view: open requisitions and approve / reject as a named approver; create: New PR, Import, submitting a draft, attachments on own PR; edit: Purchase quick edit, full edit by Purchase, stock decisions, close / short-close; submit: resubmit a returned PR; cancel: Cancel Requisition; export: Export; approve / reject: only for older requisitions with no named approvers. |
+| p2p:purchase_requisitions | view, create, edit, delete, approve, reject, export, print, submit, cancel | view: open requisitions and approve / reject as a named approver; create: New PR, Import, submitting a draft, attachments on own PR; edit: full edit by Purchase, stock decisions, close / short-close; submit: resubmit a returned PR; cancel: Cancel Requisition; export: Export; approve / reject: only for older requisitions with no named approvers. |
 | p2p:vendors | view, create, edit, delete, export, import | Vendor list and page, add, edit (incl. documents and catalog), delete own documents, export, import. |
 | p2p:rfq | view, create, edit, delete, approve, reject, export, print | view: RFQ list / page; create: Start / Raise RFQ; edit: attachments, terms, lock; delete: remove own quotation file on a draft; approve / reject: the (unused) evaluation steps. |
 | p2p:purchase_orders | view, create, edit, delete, approve, reject, export, print, submit, cancel | view: PO list, PO approval queue, approving as a named PO approver; create: Create PO; edit: price the draft, terms, Word document, link PO lines; submit: send the PO for approval. |

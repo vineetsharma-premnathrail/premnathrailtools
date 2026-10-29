@@ -84,7 +84,8 @@ export function serviceRequestFormSteps(mode: 'create' | 'edit'): TourStep[] {
     {
       target: 'erp-srf-location',
       title: 'Site / Location',
-      purpose: 'Where the machine is right now, if different from its registered site.',
+      required: true,
+      purpose: 'Where the machine is right now. Required on a new SR.',
       validExample: 'Itarsi yard, Line 4',
       after: 'Saved at the end of the description as "Location: …".',
     },
@@ -99,7 +100,6 @@ export function serviceRequestFormSteps(mode: 'create' | 'edit'): TourStep[] {
     {
       target: 'erp-srf-description',
       title: 'Detailed Description',
-      required: true,
       whatToEnter: 'What the customer sees, when it started, any error codes, and how badly it affects work.',
       validExample: 'Boom lifts only 30% then stops. Started after rain on 3 Oct. Machine idle since.',
     },
@@ -139,7 +139,7 @@ export function serviceRequestFormSteps(mode: 'create' | 'edit'): TourStep[] {
     {
       target: 'erp-srf-assignee',
       title: 'Assign To Engineer',
-      purpose: 'Filled automatically with the person who raises the SR; it cannot be changed here.',
+      purpose: 'Filled automatically with the person who raises the SR; it cannot be changed, also not on edit.',
     },
     {
       target: 'erp-srf-attend-date',

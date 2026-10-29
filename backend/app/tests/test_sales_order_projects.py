@@ -1,8 +1,8 @@
-"""Projects of Sales Orders (projects/so_projects.py): created at SO confirmation for
+"""Projects of Sales Orders (projects/so_projects.py): created by the Project Manager
+(ensure_project_for_order(create=True), never on confirmation — 2026-10-28) for
 orders that build RRVs — one element per vehicle (delivery row) and one lot per
 spares / other line; idempotent; amendments add / cancel vehicles; delivery
-events drive dispatched / delivered; list / detail / lookup permissions and the
-admin backfill."""
+events drive dispatched / delivered; list / detail / lookup permissions."""
 from datetime import date, timedelta
 
 from app.modules.projects import so_projects as op_core
@@ -11,8 +11,9 @@ from app.modules.sales import delivery as dlv
 from app.modules.sales.models.order import SalesOrder
 from app.modules.projects.models.element import PmProjectElement
 from app.modules.projects.models.project import PmProject
+from app.tests._so_project_helpers import confirm_with_project
 from app.tests.test_sales import (
-    BASE, TODAY, confirm, create_order, hdr, make_user, payload_from_prefill, setup_customer, setup_people,
+    BASE, TODAY, create_order, hdr, make_user, payload_from_prefill, setup_customer, setup_people,
 )
 
 
@@ -35,10 +36,10 @@ def _project(db, so_id):
     return db.query(PmProject).filter(PmProject.sales_order_id == so_id).first()
 
 
-def test_confirm_creates_project_with_vehicle_and_lot_elements(client, db):
+def test_pm_created_project_has_vehicle_and_lot_elements(client, db):
     maker, head, director, _ = setup_people(db)
     _org, inq, _ = setup_customer(db, qty=2, price=1000000)
-    so = confirm(client, db, _rrv_plus_spares(client, db, maker, inq), maker, head, director)
+    so = confirm_with_project(client, db, _rrv_plus_spares(client, db, maker, inq), maker, head, director)
 
     p = _project(db, so["id"])
     assert p is not None
@@ -80,7 +81,7 @@ def test_spares_only_order_gets_no_project(client, db):
     body["order_type"] = "accessories"
     r = client.post(f"{BASE}/orders", json=body, headers=hdr(maker))
     assert r.status_code == 200, r.text
-    so = confirm(client, db, r.json(), maker, head, director)
+    so = confirm_with_project(client, db, r.json(), maker, head, director)
     assert _project(db, so["id"]) is None
     assert client.get(f"{BASE}/orders/{so['id']}", headers=hdr(maker)).json()["order_project"] is None
 
@@ -88,7 +89,7 @@ def test_spares_only_order_gets_no_project(client, db):
 def test_amendment_adds_and_cancels_vehicles(client, db):
     maker, head, director, _ = setup_people(db)
     _org, inq, _ = setup_customer(db, qty=2, price=1000000)
-    so = confirm(client, db, create_order(client, db, maker, inq), maker, head, director)
+    so = confirm_with_project(client, db, create_order(client, db, maker, inq), maker, head, director)
     order = db.get(SalesOrder, so["id"])
 
     proposed = svc.snapshot(order)
@@ -123,7 +124,7 @@ def test_amendment_adds_and_cancels_vehicles(client, db):
 def test_delivery_events_drive_element_and_project_status(client, db):
     maker, head, director, _ = setup_people(db)
     _org, inq, _ = setup_customer(db, qty=1, price=1000000)
-    so = confirm(client, db, create_order(client, db, maker, inq), maker, head, director)
+    so = confirm_with_project(client, db, create_order(client, db, maker, inq), maker, head, director)
     order = db.get(SalesOrder, so["id"])
     row = order.schedules[0]
     dlv.record_event(db, order, row, "dispatch", on=TODAY, reference="DC-1", user=maker)
@@ -150,7 +151,7 @@ def test_delivery_events_drive_element_and_project_status(client, db):
 def test_units_and_lookup_permissions_and_scope(client, db):
     maker, head, director, _ = setup_people(db)
     _org, inq, _ = setup_customer(db, qty=2, price=1000000)
-    so = confirm(client, db, _rrv_plus_spares(client, db, maker, inq), maker, head, director)
+    so = confirm_with_project(client, db, _rrv_plus_spares(client, db, maker, inq), maker, head, director)
     p = _project(db, so["id"])
     assert p.status == "active" and p.lifecycle_stage == "planned" and p.released_at is not None
     assert p.sales_order_ref == so["so_number"]
@@ -188,7 +189,7 @@ def test_resolve_project_refuses_closed_with_real_message(client, db):
     from fastapi import HTTPException
     maker, head, director, _ = setup_people(db)
     _org, inq, _ = setup_customer(db, qty=1, price=1000000)
-    so = confirm(client, db, create_order(client, db, maker, inq), maker, head, director)
+    so = confirm_with_project(client, db, create_order(client, db, maker, inq), maker, head, director)
     p = _project(db, so["id"])
     p.status = "closed"
     db.commit()
@@ -198,18 +199,14 @@ def test_resolve_project_refuses_closed_with_real_message(client, db):
     assert op_core.resolve_project(db, p.id, allow_closed=True).id == p.id
 
 
-def test_backfill_idempotent(client, db):
+def test_sync_without_create_never_makes_a_project(client, db):
+    """Confirmation and amendment syncs only update an existing project (owner, 2026-10-28)."""
+    from app.tests.test_sales import confirm
     maker, head, director, _ = setup_people(db)
     _org, inq, _ = setup_customer(db, qty=2, price=1000000)
     so = confirm(client, db, create_order(client, db, maker, inq), maker, head, director)
-    p = _project(db, so["id"])
-    db.delete(p)
-    db.commit()
     assert _project(db, so["id"]) is None
-    admin = make_user(db, "adm@premnathrail.com", role="admin")
-    created = op_core.backfill(db, admin)
+    order = db.get(SalesOrder, so["id"])
+    assert op_core.ensure_project_for_order(db, order, maker) is None
     db.commit()
-    assert len(created) == 1
-    p = _project(db, so["id"])
-    assert p is not None and sum(1 for e in p.elements if e.kind == "vehicle") == 2
-    assert op_core.backfill(db, admin) == []
+    assert _project(db, so["id"]) is None and op_core.awaiting_project(db, order)

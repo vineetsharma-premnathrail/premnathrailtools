@@ -74,6 +74,6 @@ register_event(
 )
 register_event(
     "crm", "tender_submission_due", "Tender submission date approaching",
-    "a live tender's submission date is 3 days or 1 day away", ("inquiries_tenders", "view"),
+    "a live tender's last date (closing date-time, else submission date) is 7, 3 or 1 day(s) away", ("inquiries_tenders", "view"),
     default_channels=("bell", "teams"), kind="reminder",
 )

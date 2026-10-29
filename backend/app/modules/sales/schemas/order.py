@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.core.validators import validate_gst_format
 
 
 class SalesOrderAttachmentResponse(BaseModel):
@@ -198,6 +200,8 @@ class SalesOrderHeaderFields(BaseModel):
     paying_authority: str | None = None
     billing_address: str | None = None
     customer_gstin: str | None = None
+    # State of an unregistered customer (no GSTIN) — decides intra/inter-state GST.
+    customer_state: str | None = None
     place_of_supply_state_code: str | None = None
     currency: str | None = None
     price_basis: str | None = None
@@ -220,9 +224,17 @@ class SalesOrderHeaderFields(BaseModel):
     pbg_due_days: int | None = None
     delivery_terms_text: str | None = None
     special_conditions: str | None = None
+    # Rental orders only.
+    hire_start_date: date | None = None
+    hire_end_date: date | None = None
+    hire_rate_basis: str | None = None
+    hire_site: str | None = None
+    security_deposit: float | None = None
     remarks: str | None = None
     sales_owner_id: int | None = None
     branch_id: int | None = None
+
+    _validate_gst = field_validator("customer_gstin")(validate_gst_format)
 
 
 class SalesOrderCreate(SalesOrderHeaderFields):
@@ -327,6 +339,12 @@ class SalesOrderResponse(BaseModel):
     pbg_due_days: int | None = None
     delivery_terms_text: str | None = None
     special_conditions: str | None = None
+    # Rental orders only.
+    hire_start_date: date | None = None
+    hire_end_date: date | None = None
+    hire_rate_basis: str | None = None
+    hire_site: str | None = None
+    security_deposit: float | None = None
     remarks: str | None = None
     sales_owner_id: int | None = None
     branch_id: int | None = None
@@ -377,7 +395,10 @@ class SalesOrderResponse(BaseModel):
     approvals: list[SalesApprovalResponse] = Field(default_factory=list)
     credit: dict | None = None
     open_amendment_id: int | None = None
-    # The Project Management project created at confirmation (projects/so_projects.py).
+    # Status to show: "pending_project" (Pending project creation) while a confirmed
+    # New Project order waits for the Project Manager to create its project; else = status.
+    display_status: str | None = None
+    # The Project Management project the Project Manager created from this order (projects/so_projects.py).
     pm_project_id: int | None = None
     pm_project_code: str | None = None
     # Deprecated alias of the two above: {id, op_number, status}; filled from the PM project.

@@ -22,6 +22,7 @@ from app.modules.main.services import managed_documents
 from app.modules.crm.models.inquiry import Inquiry
 from app.modules.crm.models.tender import Tender
 from app.modules.crm.models.organization import Organization, OrgContact
+from app.modules.products.models.product import FinishedProduct
 from app.modules.crm.reports.technical_offer_docx import build_technical_offer_docx
 from app.modules.crm.services.requirement_movement import ACTION as SENT_ACTION
 
@@ -62,10 +63,14 @@ def build_context(db: Session, module: str, record, user: User, now: datetime | 
         "raised_at": now.strftime("%d %b %Y, %I:%M %p"),
     }
     if module == "inquiry":
+        # Owner, 2026-10-28: the TOR names the product by its Product master name (Sales ›
+        # Products), not the longer text typed on the inquiry; unmapped lines keep the typed text.
+        ids = {i for i in [record.product_id, *(it.product_id for it in record.additional_items)] if i}
+        names = dict(db.query(FinishedProduct.id, FinishedProduct.name).filter(FinishedProduct.id.in_(ids)).all()) if ids else {}
         ctx.update({
-            "product": record.product,
+            "product": names.get(record.product_id) or record.product,
             "product_spec": record.product_spec,
-            "additional_items": [{"product": it.product, "product_spec": it.product_spec}
+            "additional_items": [{"product": names.get(it.product_id) or it.product, "product_spec": it.product_spec}
                                  for it in record.additional_items if it.product or it.product_spec],
             "project_details": record.project_details,
         })

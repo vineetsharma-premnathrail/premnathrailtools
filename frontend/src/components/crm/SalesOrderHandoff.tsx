@@ -14,20 +14,16 @@ import { recordHref, recordPath } from '@/lib/recordRef'
 type LinkedOrder = { id: number; display_number: string; status: string; status_label: string | null }
 type SourceRecord = { id: number; current_stage?: string | null; status?: string | null }
 
-// Same rule as _check_source_ordered in backend sales/routes/orders.py: an
-// inquiry must be at stage "Order Received" (and not closed as not ordered), a
-// tender must have its LOA / order received.
-const TENDER_ORDER_STATUSES = ['LOA / Order Received', 'Closed – Ordered']
-const isOrderReceived = (source: 'inquiry' | 'tender', r: SourceRecord) =>
-  source === 'inquiry'
-    ? r.current_stage === 'Order Received' && r.status !== 'Closed - Not Ordered'
-    : TENDER_ORDER_STATUSES.includes(r.status || '')
+// Whether an order may be raised comes from the server (/by-source can_raise, the same
+// rule as _check_source_ordered): an inquiry whose quotation the customer accepted (or at
+// stage "Order Received"), a tender with its LOA / order received.
 
 export default function SalesOrderHandoff({ source, record, tourId }: { source: 'inquiry' | 'tender'; record: SourceRecord; tourId: string }) {
   const id = record.id
   const { user } = useAuth()
   const hasSales = !!user && (user.role === 'admin' || (user.assigned_apps || []).includes('sales'))
   const [order, setOrder] = useState<LinkedOrder | null>(null)
+  const [canRaise, setCanRaise] = useState(false)
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
@@ -35,11 +31,12 @@ export default function SalesOrderHandoff({ source, record, tourId }: { source: 
     let alive = true
     setLoaded(false)
     salesApi.bySource(source === 'inquiry' ? { inquiry: id } : { tender: id })
-      .then((r) => { if (alive) setOrder(r.order) })
-      .catch(() => { if (alive) setOrder(null) })
+      .then((r) => { if (alive) { setOrder(r.order); setCanRaise(!!r.can_raise) } })
+      .catch(() => { if (alive) { setOrder(null); setCanRaise(false) } })
       .finally(() => { if (alive) setLoaded(true) })
     return () => { alive = false }
-  }, [hasSales, source, id])
+    // status / stage in the deps: re-ask after the record moves on.
+  }, [hasSales, source, id, record.status, record.current_stage])
 
   if (!hasSales || !loaded) return null
 
@@ -56,7 +53,7 @@ export default function SalesOrderHandoff({ source, record, tourId }: { source: 
     )
   }
 
-  if (!isOrderReceived(source, record)) return null
+  if (!canRaise) return null
 
   return (
     <Link

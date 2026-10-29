@@ -247,10 +247,16 @@ def build_technical_offer_docx(ctx: Mapping[str, Any]) -> io.BytesIO:
     subtitle = doc.add_paragraph()
     subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
     subtitle.paragraph_format.space_after = Pt(4)
-    subtitle_run = subtitle.add_run(f"Offer No. {ctx.get('offer_number', '-')}  ·  Ref. {ctx.get('universal_id', '-')}")
-    subtitle_run.font.name = FONT_NAME
-    subtitle_run.font.size = Pt(10)
-    subtitle_run.font.color.rgb = MUTED
+    # TOR number and inquiry / tender number stand out (owner, 2026-10-28).
+    ref = str(ctx.get("universal_id") or "-")
+    ref_label = "Inquiry No. " if ref.startswith("INQ-") else "Tender No. " if ref.startswith("TND-") else "Ref. "
+    for text, strong in (("TOR No. ", False), (ctx.get("offer_number") or "-", True),
+                         ("   ·   " + ref_label, False), (ref, True)):
+        run = subtitle.add_run(text)
+        run.font.name = FONT_NAME
+        run.font.size = Pt(12 if strong else 10)
+        run.bold = strong
+        run.font.color.rgb = ACCENT if strong else MUTED
 
     # Owner, 2026-10-27: R&D gets only what bears on the technical answer. GST, postal
     # address, the customer's contact person, commercial terms and the removed
@@ -267,15 +273,13 @@ def build_technical_offer_docx(ctx: Mapping[str, Any]) -> io.BytesIO:
     # 2. Products & Technical Specification - every product of the record with its own spec.
     n += 1
     _heading(doc, n, "Products & Technical Specification")
-    products = [{"product": ctx.get("product"), "product_category": ctx.get("product_category"),
-                 "product_spec": ctx.get("product_spec")}, *(ctx.get("additional_items") or [])]
+    # Product name only - no category row (owner, 2026-10-28).
+    products = [{"product": ctx.get("product"), "product_spec": ctx.get("product_spec")},
+                *(ctx.get("additional_items") or [])]
     for i, item in enumerate(products, start=1):
         name = item.get("product") or "Product not filled in"
         label = f"{i}. {name}" if len(products) > 1 else name
-        rows = [("Product", label)]
-        if item.get("product_category"):
-            rows.append(("Category", item["product_category"]))
-        _spec_table(doc, rows)
+        _spec_table(doc, [("Product", label)])
         _paragraph(doc, item.get("product_spec") or "Specification not provided.")
 
     # Requirement Summary - tenders only (reason for not participating).
@@ -288,15 +292,6 @@ def build_technical_offer_docx(ctx: Mapping[str, Any]) -> io.BytesIO:
     n += 1
     _heading(doc, n, "Project Background")
     _paragraph(doc, ctx.get("project_details") or "Not provided.")
-
-    # Technical Compliance Statement
-    n += 1
-    _heading(doc, n, "Technical Compliance Statement")
-    _paragraph(
-        doc,
-        "The proposed technical offer shall be evaluated against the above customer requirements. "
-        "All deviations, if any, shall be explicitly identified in the final technical compliance statement.",
-    )
 
     # Document Control
     n += 1

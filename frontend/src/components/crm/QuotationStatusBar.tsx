@@ -96,9 +96,10 @@ export default function QuotationStatusBar({ inquiryId, quot, canModify, canSubm
           {STATUS_LABELS[status] || status}
         </span>
         {quot.customer_response === 'Negotiating' && status === 'sent' && <span style={{ fontSize: 11.5, color: '#7C3AED' }}>Customer negotiating</span>}
-        {view && status === 'draft' && view.approval_label && (
+        {/* Only a quotation that really needs approval says so; no "No approval needed" note (owner, 2026-10-28). */}
+        {view && status === 'draft' && view.approval_label && view.approval_rank !== 0 && (
           <span style={{ fontSize: 11.5, color: '#57534e' }}>
-            {view.approval_rank === 0 ? 'No approval needed' : `Needs ${view.approval_label} approval`}
+            Needs {view.approval_label} approval
             {view.approval_reasons.length ? ` (${view.approval_reasons.join('; ')})` : ''}
           </span>
         )}
@@ -121,7 +122,6 @@ export default function QuotationStatusBar({ inquiryId, quot, canModify, canSubm
         {mayWork && status === 'approved' && btn('Mark as sent to customer', () => run('send'), smallPrimaryBtnStyle, 'quot-send-btn')}
         {mayWork && status === 'sent' && btn('Customer accepted', () => openPrompt({ action: 'accept', title: 'Customer accepted this quotation', message: 'Any remarks from the customer (optional).', placeholder: 'e.g. PO to follow by Friday', label: 'Record acceptance', required: false, danger: false, icon: 'check' }), smallPrimaryBtnStyle, 'quot-accept-btn')}
         {mayWork && (status === 'approved' || status === 'sent') && btn('Customer rejected / lost', () => openPrompt({ action: 'lost', title: 'Customer did not take this quotation', message: "Why didn't the customer take it?", placeholder: 'e.g. Price high — competitor quoted less', label: 'Mark as lost', required: true, danger: true }), smallDangerBtnStyle, 'quot-lost-btn')}
-        {view?.can_reopen && canWork && (status === 'accepted' || status === 'lost') && btn('Reopen', () => openPrompt({ action: 'reopen', title: 'Reopen this quotation', message: 'Why is the recorded outcome being corrected? The quotation goes back to Sent.', placeholder: 'Reason', label: 'Reopen', required: true, danger: false }), smallSecondaryBtnStyle, 'quot-reopen-btn')}
       </div>
       {quot.status_comment && ['draft', 'lost', 'accepted'].includes(status) && (
         <div style={{ fontSize: 11.5, color: '#57534e', marginTop: 4 }}>{quot.status_comment}</div>

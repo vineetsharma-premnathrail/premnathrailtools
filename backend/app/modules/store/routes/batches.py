@@ -17,6 +17,7 @@ from app.modules.store.models.batch import STORE_BATCH_STATUSES, StoreBatch
 from app.modules.store.models.item import StoreItem
 from app.modules.store.schemas.job_work import StoreBatchStatusPayload
 from app.modules.store.services import batches as batch_service
+from app.modules.store.services import job_work as jw
 from app.modules.store.services.plant_access import ensure_location_allowed, visible_location_ids
 
 router = APIRouter(prefix="/store/batches", tags=["Store"])
@@ -109,13 +110,13 @@ async def get_batch_trace(batch_id: int, db: Session = Depends(get_db), user: Us
     plus the processed batches it went into through job work."""
     b = _get_or_404(db, batch_id)
     data = _scoped(db, user, batch_service.trace(db, b))
-    from app.modules.store.models.job_work import StoreJobWorkReceipt, StoreJobWorkReceiptComponent
+    from app.modules.store.models.job_work import StoreJobWorkReceipt, StoreJobWorkReceiptComponent, StoreJobWorkReceiptOutput
     # Job work genealogy: processed batches made from this batch, and the
     # component batches this batch was made from.
     made_into = db.query(StoreJobWorkReceipt).join(StoreJobWorkReceiptComponent, StoreJobWorkReceiptComponent.receipt_id == StoreJobWorkReceipt.id).filter(
         StoreJobWorkReceiptComponent.item_id == b.item_id, StoreJobWorkReceiptComponent.batch_number == b.batch_number).all()
-    made_from = db.query(StoreJobWorkReceipt).filter(StoreJobWorkReceipt.output_item_id == b.item_id,
-                                                     StoreJobWorkReceipt.output_batch_number == b.batch_number).all()
+    made_from = db.query(StoreJobWorkReceipt).join(StoreJobWorkReceiptOutput, StoreJobWorkReceiptOutput.receipt_id == StoreJobWorkReceipt.id).filter(
+        StoreJobWorkReceiptOutput.item_id == b.item_id, StoreJobWorkReceiptOutput.batch_number == b.batch_number).all()
 
     def _batch_ref(item_id, number):
         row = db.query(StoreBatch).filter(StoreBatch.item_id == item_id, StoreBatch.batch_number == number).first() if number else None
@@ -124,7 +125,7 @@ async def get_batch_trace(batch_id: int, db: Session = Depends(get_db), user: Us
                 "item_code": item.item_code if item else None, "item_name": item.item_name if item else None}
 
     data["made_into"] = [{"receipt_number": r.receipt_number, "receipt_date": r.receipt_date, "vendor_name": r.vendor_name,
-                          **_batch_ref(r.output_item_id, r.output_batch_number)} for r in made_into]
+                          **_batch_ref(o.item_id, o.batch_number)} for r in made_into for o in jw.receipt_outputs(r)]
     data["made_from"] = [{"receipt_number": r.receipt_number, "receipt_date": r.receipt_date, "vendor_name": r.vendor_name,
                           **_batch_ref(c.item_id, c.batch_number)} for r in made_from for c in r.components]
     return data

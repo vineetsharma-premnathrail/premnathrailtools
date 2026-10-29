@@ -4,6 +4,9 @@ from app.auth.jwt_handler import create_access_token
 from app.modules.main.models.notification import Notification
 from app.modules.main.models.user import User
 
+# Closing / sending for closure needs both actual execution dates.
+CLOSE_READY = {"actual_date_attended": "2026-10-01", "actual_completion_date": "2026-10-02"}
+
 API = "/api/v1/erp"
 
 
@@ -107,16 +110,16 @@ def test_sr_close_approval_flow(client, db):
                                                        "service_type": "repair_breakdown"}, headers=h(eng)).json()
     client.patch(f"{API}/service-requests/{sr['id']}", json={"resolution_description": "Seal replaced"}, headers=h(eng))
 
-    r = client.patch(f"{API}/service-requests/{sr['id']}", json={"status": "closed"}, headers=h(eng))
+    r = client.patch(f"{API}/service-requests/{sr['id']}", json={**CLOSE_READY, "status": "closed"}, headers=h(eng))
     assert r.status_code == 403
     assert "Review" in r.json()["detail"]
-    r = client.patch(f"{API}/service-requests/{sr['id']}", json={"status": "review"}, headers=h(eng))
+    r = client.patch(f"{API}/service-requests/{sr['id']}", json={**CLOSE_READY, "status": "review"}, headers=h(eng))
     assert r.status_code == 200
     assert db.query(Notification).filter(Notification.user_id == approver.id, Notification.entity_id == sr["id"]).count() == 1
 
     r = client.post(f"{API}/service-requests/{sr['id']}/reject-close", json={"remarks": "Photos missing"}, headers=h(approver))
     assert r.json()["status"] == "in_progress"
-    client.patch(f"{API}/service-requests/{sr['id']}", json={"status": "review"}, headers=h(eng))
+    client.patch(f"{API}/service-requests/{sr['id']}", json={**CLOSE_READY, "status": "review"}, headers=h(eng))
     r = client.post(f"{API}/service-requests/{sr['id']}/approve-close", json={}, headers=h(approver))
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "closed"

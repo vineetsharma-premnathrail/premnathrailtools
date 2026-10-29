@@ -114,6 +114,7 @@ export interface SplitProposalLine {
   tax_rate: number | null
   delivery_days: number | null
   delivery_date: string | null
+  ship_to?: string | null
 }
 
 export interface SplitProposal {
@@ -335,6 +336,19 @@ export const mmQuotationsApi = {
   },
   splitProposal: async (rfqId: number): Promise<SplitProposal> => { const { data } = await apiClient.get(`/p2p/rfqs/${rfqId}/split-proposal`); return data },
   createSplitPos: async (rfqId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/split-pos`, payload); return data },
+  /** Create PO in one click: every awarded line becomes a draft PO per vendor, with the
+   *  quote's delivery dates. Plant and store come from the requisition's Ship To (server). */
+  createPosFromAwards: async (rfqId: number): Promise<{ id_ref?: string }[]> => {
+    const { data: p } = await apiClient.get<SplitProposal>(`/p2p/rfqs/${rfqId}/split-proposal`)
+    if (!p.groups.length) throw new Error('No line is awarded to a vendor on the quote comparison yet. Award the lines first, then create the PO.')
+    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/split-pos`, {
+      pos: p.groups.map((g) => ({
+        vendor_id: g.vendor_id, vendor_quotation_id: g.vendor_quotation_id, delivery_terms: g.delivery_terms,
+        lines: g.lines.map((l) => ({ pr_item_id: l.pr_item_id, vendor_quotation_item_id: l.vendor_quotation_item_id, quantity: l.quantity, delivery_date: l.delivery_date || null })),
+      })),
+    })
+    return data
+  },
   updateDraftDetails: async (rfqId: number, poId: number, payload: Record<string, unknown>) => {
     const { data } = await apiClient.patch(`/p2p/rfqs/${rfqId}/po-draft/${poId}/details`, payload); return data
   },

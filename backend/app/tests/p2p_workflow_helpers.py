@@ -88,4 +88,13 @@ def attach_tally_po(db, po_id: int, ref: str | None = None) -> None:
     po.document_filename = f"{po.po_number}.pdf"
     po.document_content_type = "application/pdf"
     po.document_sharepoint_path = f"test/{po.po_number}.pdf"
+    # submit_po_draft also needs where the goods are delivered (ship-to store).
+    if not po.ship_to_location_id:
+        from app.modules.store.models.location import StoreLocation
+        loc = db.query(StoreLocation).filter(StoreLocation.code == "TEST-SHIP").first()
+        if loc is None:
+            loc = StoreLocation(name="Test receiving store", code="TEST-SHIP", address="Test plant gate")
+            db.add(loc)
+            db.flush()
+        po.ship_to_location_id = loc.id
     db.commit()

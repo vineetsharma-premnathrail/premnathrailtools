@@ -318,20 +318,22 @@ def test_contract_sla_hours_win_over_profile(db):
     assert (sr.sla_profile, sr.sla_response_hours, sr.sla_resolution_hours) == ("contract", 2, 12)
 
 
-def test_assign_engineer_on_create_and_engineer_can_edit(client, db):
+def test_raiser_is_engineer_and_not_reassigned(client, db):
     from app.tests.test_erp_service_sap_gaps import hdr as ehdr
     admin = erp_user(db, "ae_admin@premnathrail.com")
     eng = erp_user(db, "ae_eng@premnathrail.com", role="user", apps=("erp",))
     m = mk_machine(db, "ASG-1")
+    # On create the person raising the SR is always its engineer — a sent engineer / typed name is ignored.
     sr = mk_sr(client, admin, m, service_type="paid_service", status="assigned", assigned_service_person_id=eng.id,
                assigned_to_name="typed junk").json()
     got = db.get(ServiceRequest, sr["id"])
-    assert got.assigned_service_person_id == eng.id and got.assigned_to_name == (eng.name or eng.email)
+    assert got.assigned_service_person_id == admin.id and got.assigned_to_name == (admin.name or admin.email)
     assert got.first_response_at is not None  # raised as Assigned = responded
-    assert db.query(Notification).filter(Notification.user_id == eng.id, Notification.entity_id == sr["id"]).count() >= 1
-    # Unknown engineer is refused with a reason.
-    r = mk_sr(client, admin, m, service_type="paid_service", assigned_service_person_id=999999)
-    assert r.status_code == 422 and "engineer" in r.json()["detail"]
-    # The assigned engineer (not the creator) may edit the SR.
-    r = client.patch(f"{SR}/{sr['id']}", json={"service_report_notes": "On the way"}, headers=ehdr(eng))
+    # No reassignment in this version: an engineer sent on edit is ignored.
+    r = client.patch(f"{SR}/{sr['id']}", json={"assigned_service_person_id": eng.id}, headers=ehdr(admin))
     assert r.status_code == 200, r.text
+    db.refresh(got)
+    assert got.assigned_service_person_id == admin.id
+    # Someone else (not the raiser/engineer) can't edit it.
+    r = client.patch(f"{SR}/{sr['id']}", json={"service_report_notes": "On the way"}, headers=ehdr(eng))
+    assert r.status_code in (403, 404), r.text

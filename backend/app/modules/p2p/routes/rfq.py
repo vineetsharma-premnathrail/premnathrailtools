@@ -120,6 +120,8 @@ def _to_response(db: Session, rfq: RFQ) -> RFQResponse:
     if pr:
         resp.p2p_number = pr.p2p_number
         resp.p2p_status = pr.status
+        resp.p2p_created_at = pr.created_at
+        resp.p2p_required_date = pr.required_date
     if rfq.created_by_id:
         creator = db.query(User).filter(User.id == rfq.created_by_id).first()
         if creator:
@@ -1076,6 +1078,11 @@ async def submit_po_draft(
             status_code=400,
             detail=f"Enter a unit price for every line before sending the PO for approval — missing: {', '.join(unpriced)}.",
         )
+    # The PO prints where to deliver (the ship-to store's address); without it the vendor can't ship.
+    if not po.ship_to_location_id:
+        raise HTTPException(status_code=400, detail=(
+            f"Pick where the goods of '{po.po_number}' are delivered before sending it for approval — the receiving "
+            "plant and ship-to store in section 1 (Ship to). The store's address is printed on the PO."))
     # Owner, 2026-10-27: the PO is made in Tally too; approvers sign off on it.
     if not (po.external_ref or "").strip() or not po.document_sharepoint_path:
         raise HTTPException(status_code=400, detail=(

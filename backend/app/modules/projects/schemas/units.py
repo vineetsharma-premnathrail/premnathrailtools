@@ -2,7 +2,7 @@
 (projects/so_projects.py)."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -54,3 +54,22 @@ class ProjectUnitLookupItem(BaseModel):
     client_name: str | None = None
     so_number: str | None = None
     display: str
+
+
+class SalesOrderAwaitingProject(BaseModel):
+    """A confirmed New Project sales order with no project yet (All Projects › From Sales Order)."""
+    id: int
+    so_number: str
+    customer_name: str | None = None
+    customer_po_number: str | None = None
+    confirmed_at: datetime | None = None
+    sales_owner_name: str | None = None
+    vehicles: int = 0
+    first_delivery_date: date | None = None
+    last_delivery_date: date | None = None
+
+
+class ProjectFromSalesOrder(BaseModel):
+    sales_order_id: int
+    project_manager_id: int
+    name: str | None = Field(None, max_length=400)

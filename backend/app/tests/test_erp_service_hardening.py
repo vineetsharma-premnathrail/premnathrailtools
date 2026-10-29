@@ -9,6 +9,9 @@ from app.modules.erp.models.service_material import ServiceMaterial
 from app.modules.erp.models.service_request import ServiceRequest
 from app.modules.production.models.rrv_build import ProductionRrvBuild
 
+# Closing / sending for closure needs both actual execution dates.
+CLOSE_READY = {"actual_date_attended": "2026-10-01", "actual_completion_date": "2026-10-02"}
+
 SR_URL = "/api/v1/erp/service-requests"
 PROJ_URL = "/api/v1/erp/projects"
 
@@ -251,7 +254,7 @@ def test_receive_blocked_on_closed_sr(client, db):
     mat = ServiceMaterial(service_request_id=sr["id"], material_name="Seal", quantity=2, unit="pcs")
     db.add(mat)
     db.commit()
-    client.patch(f"{SR_URL}/{sr['id']}", json={"status": "closed", "resolution_description": "done"}, headers=hdr(admin))
+    client.patch(f"{SR_URL}/{sr['id']}", json={**CLOSE_READY, "status": "closed", "resolution_description": "done"}, headers=hdr(admin))
     r = client.post(f"{SR_URL}/{sr['id']}/materials/{mat.id}/receive", json={"received_quantity": 1}, headers=hdr(admin))
     assert r.status_code == 409 and "reopen" in r.json()["detail"]
 

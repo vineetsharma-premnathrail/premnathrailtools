@@ -188,12 +188,14 @@ def _split_numbered_points(text: str) -> list[str]:
 def _terms_sections(ctx: Mapping[str, Any], lump_sum: bool) -> list[tuple[str | None, str]]:
     """(sub-label, text) blocks under the terms heading. The official Commercial
     Offer (lump sum) prints one plain numbered list — no "Payment Terms" /
-    "Terms & Conditions" sub-labels, and no separate Quote Conditions line, since
+    "Quote Conditions" sub-labels, and no separate Quote Conditions line, since
     its terms text already states the price basis (e.g. "Ex. Factory")."""
     if lump_sum:
         keys = [(None, "payment_terms"), (None, "notes")]
     else:
-        keys = [("Payment Terms", "payment_terms"), ("Terms & Conditions", "quote_conditions"), ("Notes", "notes")]
+        # "Quote Conditions" (the form's name), not "Terms & Conditions" - the heading
+        # above already says TERMS AND CONDITIONS (owner, 2026-10-28).
+        keys = [("Payment Terms", "payment_terms"), ("Quote Conditions", "quote_conditions"), ("Notes", "notes")]
     return [(label, _sentence_case(ctx[key])) for label, key in keys if ctx.get(key)]
 
 

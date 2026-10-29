@@ -118,18 +118,28 @@ def released_estimate(db: Session, item_id: int, on: date, bom_id: int | None = 
 
 
 def _job_work_cost(db: Session, item_id: int, on: date) -> tuple[float, float] | None:
-    from app.modules.store.models.job_work import StoreJobWorkReceipt
-    rec = db.query(StoreJobWorkReceipt).filter(
-        StoreJobWorkReceipt.output_item_id == item_id, StoreJobWorkReceipt.receipt_date <= on,
-        StoreJobWorkReceipt.output_quantity > 0,
+    from app.modules.store.models.job_work import StoreJobWorkReceipt, StoreJobWorkReceiptOutput
+    # One receipt can bring back several items; each output line carries its
+    # own share of the component value and its own job charge.
+    out = db.query(StoreJobWorkReceiptOutput).join(StoreJobWorkReceipt, StoreJobWorkReceiptOutput.receipt_id == StoreJobWorkReceipt.id).filter(
+        StoreJobWorkReceiptOutput.item_id == item_id, StoreJobWorkReceipt.receipt_date <= on,
+        StoreJobWorkReceiptOutput.quantity > 0,
     ).order_by(StoreJobWorkReceipt.receipt_date.desc(), StoreJobWorkReceipt.id.desc()).first()
-    if rec is None:
-        return None
-    material = float(rec.component_value or 0) / float(rec.output_quantity)
-    if rec.job_charge_rate is not None:
-        job = float(rec.job_charge_rate)
+    if out is None:
+        # A receipt saved with only its header (no output rows).
+        rec = db.query(StoreJobWorkReceipt).filter(
+            StoreJobWorkReceipt.output_item_id == item_id, StoreJobWorkReceipt.receipt_date <= on,
+            StoreJobWorkReceipt.output_quantity > 0, ~StoreJobWorkReceipt.outputs.any(),
+        ).order_by(StoreJobWorkReceipt.receipt_date.desc(), StoreJobWorkReceipt.id.desc()).first()
+        if rec is None:
+            return None
+        out = StoreJobWorkReceiptOutput(quantity=rec.output_quantity, component_value=rec.component_value,
+                                        job_charge_rate=rec.job_charge_rate, unit_cost=rec.output_unit_cost)
+    material = float(out.component_value or 0) / float(out.quantity)
+    if out.job_charge_rate is not None:
+        job = float(out.job_charge_rate)
     else:
-        job = max(float(rec.output_unit_cost or 0) - material, 0.0)
+        job = max(float(out.unit_cost or 0) - material, 0.0)
     if material + job <= _EPS:
         return None
     return material, job

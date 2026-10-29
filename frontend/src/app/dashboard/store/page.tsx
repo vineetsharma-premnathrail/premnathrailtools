@@ -181,15 +181,12 @@ export default function StoreItemsPage() {
       </div>
 
       <div ref={tableRef} data-tour="items-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', height: tableHeight }}>
-        <table style={{ width: '100%', minWidth: 960, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-          <colgroup>
-            <col style={{ width: 130 }} /><col style={{ width: 100 }} /><col style={{ width: 130 }} /><col style={{ width: 120 }} />
-            <col /><col style={{ width: 70 }} /><col /><col style={{ width: 96 }} />
-          </colgroup>
+        {/* Columns are sized to their text (TableFit); only Technical Specification is ever cut with "…". */}
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
               {['Code', 'Type', 'Category', 'Subcategory', 'Name', 'UOM', 'Technical Specification', 'Status'].map((h, hi) => (
-                <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', whiteSpace: 'nowrap', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}{hi === 0 && <RowCount count={items.length} />}</th>
+                <th key={h} data-fit-min={60} data-fit-cut={h === 'Technical Specification' ? '' : undefined} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', whiteSpace: 'nowrap', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}{hi === 0 && <RowCount count={items.length} />}</th>
               ))}
             </tr>
           </thead>
@@ -200,11 +197,11 @@ export default function StoreItemsPage() {
             )}
             {items.map((item) => (
               <tr key={item.id} onClick={() => router.push(recordPath('/dashboard/store', item))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
-                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item.item_code}>{item.item_code}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, whiteSpace: 'nowrap' }}>{item.item_code}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{(item.item_type && ITEM_TYPE_LABELS[item.item_type]) || item.item_type || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.category || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.subcategory || '—'}</td>
-                <td title={item.item_name} style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.item_name}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.item_name}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.uom || '—'}</td>
                 <td title={item.description || ''} style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description || '—'}</td>
                 <td style={{ padding: '12px 16px' }}>

@@ -17,7 +17,7 @@ type ItemType = { value: string; label: string; prefix: string }
 
 const FIELDS = [
   { key: 'label', label: 'Name', placeholder: 'Spare Part', maxLength: 100, required: true },
-  { key: 'prefix', label: 'Code prefix', placeholder: 'SP (blank = auto)', maxLength: 6, upper: true },
+  { key: 'prefix', label: 'Code prefix (2 letters)', placeholder: 'SP (blank = auto)', maxLength: 2, upper: true },
 ]
 
 export default function StoreItemTypesPage() {

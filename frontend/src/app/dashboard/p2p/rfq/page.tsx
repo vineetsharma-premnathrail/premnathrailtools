@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import Select from '@/components/shared/Select'
-import { FiltersButton, FiltersSheet, PO_CREATE_BTN, PO_TD, PO_TH, clip } from '@/components/p2p/POTrackingShared'
-import { FormSheet, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import { FiltersButton, FiltersSheet, PO_TD, PO_TH } from '@/components/p2p/POTrackingShared'
+import { sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
@@ -43,9 +43,6 @@ export default function P2PRfqPage() {
   const [filters, setFilters] = useState({ status: 'all', vendors: 'all' })
   const [draft, setDraft] = useState(filters)
   const [showFilters, setShowFilters] = useState(false)
-  const [showNew, setShowNew] = useState(false)
-  const [pickSearch, setPickSearch] = useState('')
-  const [pickCategory, setPickCategory] = useState('all')
 
   const load = async () => {
     setLoading(true)
@@ -81,16 +78,14 @@ export default function P2PRfqPage() {
     && !pr.items.some((it) => it.fulfillment_status === 'pending')
     && pr.items.some((it) => it.fulfillment_status === 'sent_to_procurement')
   )
-  // + New RFQ popup: the requisitions waiting for quotations, narrowed by search and Category.
-  const pq = pickSearch.trim().toLowerCase()
-  const categories = [...new Set(prsAwaitingRfq.map((pr) => pr.category_label || pr.category_code || '').filter(Boolean))].sort((a, b) => a.localeCompare(b))
-  const pickList = prsAwaitingRfq.filter((pr) =>
-    (!pq || [pr.p2p_number, pr.category_label, pr.category_code, pr.project_label].some((x) => (x || '').toLowerCase().includes(pq)))
-    && (pickCategory === 'all' || (pr.category_label || pr.category_code) === pickCategory))
   const startRfq = (pr: P2PRequest) => router.push(recordHref('/dashboard/p2p/rfq/new', pr, 'id', undefined, 'pr_id'))
 
   const q = search.trim().toLowerCase()
   const has = (...v: (string | null | undefined)[]) => v.some((x) => (x || '').toLowerCase().includes(q))
+  // Requisitions waiting for quotations sit in the same table as "RFQ pending"; one click starts the RFQ.
+  const shownPending = prsAwaitingRfq.filter((pr) =>
+    (!q || has(pr.p2p_number, pr.project_label, pr.category_label, pr.category_code))
+    && (filters.status === 'all' || filters.status === 'pending') && filters.vendors === 'all')
   const shownRfqs = rfqs.filter((r) =>
     (!q || has(r.rfq_number, r.p2p_number))
     && (filters.status === 'all' || r.status === filters.status)
@@ -105,6 +100,7 @@ export default function P2PRfqPage() {
       <P2PNav />
       <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Quotation requests (RFQ)</h1>
       <div data-tour="rfq-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10, marginBottom: 14 }}>
+        <StatChip label="RFQ pending" value={shownPending.length} color="#dc2626" />
         <StatChip label="RFQs" value={shownRfqs.length} color="#3b82f6" />
         <StatChip label="Single vendor" value={shownRfqs.filter((r) => r.is_single_quotation).length} color="#ea580c" />
         <StatChip label="Draft" value={shownRfqs.filter((r) => r.status === 'draft').length} color="#ca8a04" />
@@ -114,11 +110,8 @@ export default function P2PRfqPage() {
       <MessageDialog open={!!error} variant="error" title="Cannot Load RFQ Data" message={error} onClose={() => setError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-        {isPurchaseTeam && (
-          <button type="button" data-tour="rfq-new-btn" onClick={() => { setPickSearch(''); setPickCategory('all'); setShowNew(true) }} style={PO_CREATE_BTN}>+ New RFQ</button>
-        )}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="RFQ#, PR#..." aria-label="Search quotation requests" data-tour="rfq-search"
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="RFQ#, PR#, project..." aria-label="Search quotation requests" data-tour="rfq-search"
             style={{ ...inputStyle, width: 280, maxWidth: '100%' }} />
           <FiltersButton count={activeFilterCount} onOpen={openFilters} tour="rfq-filter-btn" />
           {activeFilterCount > 0 && <button type="button" onClick={clearFilters} style={secondaryBtnStyle} data-tour="rfq-clear-btn">Clear</button>}
@@ -131,6 +124,7 @@ export default function P2PRfqPage() {
             <label style={sheetLabel}>RFQ status (requests sent)</label>
             <Select value={draft.status} onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))} style={sheetInput} data-tour="rfq-status-filter">
               <option value="all">All Statuses</option>
+              <option value="pending">RFQ pending</option>
               {Object.entries(RFQ_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </Select>
           </div>
@@ -145,61 +139,36 @@ export default function P2PRfqPage() {
         </FiltersSheet>
       )}
 
-      {showNew && (
-        <FormSheet icon="search" title="New RFQ" width={560} busy={false} onClose={() => setShowNew(false)} tour="rfq-new-sheet"
-          footer={<button type="button" onClick={() => setShowNew(false)} style={sheetBtn('secondary', SHEET.INK)}>Close</button>}>
-          <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <input value={pickSearch} onChange={(e) => setPickSearch(e.target.value)} placeholder="PR#, category, project..." aria-label="Search purchase requests" data-tour="rfq-new-search"
-                style={{ ...sheetInput, flex: '1 1 200px', width: 'auto' }} />
-              <div style={{ flex: '1 1 180px' }}>
-                <Select value={pickCategory} onChange={(e) => setPickCategory(e.target.value)} style={sheetInput} data-tour="rfq-category-filter">
-                  <option value="all">All Categories</option>
-                  {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-                </Select>
-              </div>
-            </div>
-            <div style={sheetLabel}>Purchase requests waiting for quotations — pick one to start its RFQ</div>
-            {loading && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Loading…</p>}
-            {!loading && prsAwaitingRfq.length === 0 && (
-              <div style={{ fontSize: 13, color: '#5b6472' }}>
-                <div style={{ fontWeight: 600, color: TEXT.heading, marginBottom: 4 }}>Nothing to quote right now.</div>
-                <div style={{ marginBottom: 12 }}>Approved requisitions with items to buy appear here, once every line&apos;s stock decision is made and at least one line is sent to procurement.</div>
-                <button type="button" onClick={() => router.push('/dashboard/p2p')} style={smallSecondaryBtnStyle}>View requisitions</button>
-              </div>
-            )}
-            {!loading && prsAwaitingRfq.length > 0 && pickList.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No purchase request matches the search and category — change them.</p>}
-            {pickList.map((pr) => (
-              <button key={pr.id} type="button" onClick={() => startRfq(pr)}
-                style={{ ...secondaryBtnStyle, display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', width: '100%', height: 'auto', padding: '10px 12px', fontWeight: 400 }}>
-                <span style={{ fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{pr.p2p_number}</span>
-                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={[pr.category_label || pr.category_code, pr.project_label].filter(Boolean).join(' · ')}>
-                  {clip([pr.category_label || pr.category_code, pr.project_label].filter(Boolean).join(' · '), 50)}
-                </span>
-                <span style={{ whiteSpace: 'nowrap', fontSize: 12 }}>Required {formatDate(pr.required_date)}</span>
-              </button>
-            ))}
-          </div>
-        </FormSheet>
-      )}
-
       <div style={{ display: 'flex', flexDirection: 'column' }}>
       <div data-tour="rfq-list-table" style={sectionStyle}>
        <div style={sectionScrollStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: `${BRAND.primary}0d` }}>
-              {['RFQ No.', 'PR No.', 'Status', 'Vendors', 'Created On'].map((h, i) => <th key={h} data-fit-min={60} style={thStyle}>{h}{i === 0 && <RowCount count={shownRfqs.length} />}</th>)}
+              {['RFQ No.', 'PR No.', 'Status', 'Vendors', 'Created On', ''].map((h, i) => <th key={h || 'action'} data-fit-min={60} style={thStyle}>{h}{i === 0 && <RowCount count={shownPending.length + shownRfqs.length} />}</th>)}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && rfqs.length === 0 && (
-              <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No quotation requests yet — press + New RFQ to start one from an approved purchase request.</td></tr>
+            {loading && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
+            {!loading && rfqs.length === 0 && prsAwaitingRfq.length === 0 && (
+              <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Nothing to quote yet. An approved requisition appears here as &quot;RFQ pending&quot; once every line&apos;s stock decision is made and at least one line is sent to procurement.</td></tr>
             )}
-            {!loading && rfqs.length > 0 && shownRfqs.length === 0 && (
-              <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No quotation request matches the search and filters — change or clear them.</td></tr>
+            {!loading && (rfqs.length > 0 || prsAwaitingRfq.length > 0) && shownRfqs.length === 0 && shownPending.length === 0 && (
+              <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No quotation request matches the search and filters — change or clear them.</td></tr>
             )}
+            {!loading && shownPending.map((pr) => (
+              <tr key={`pr-${pr.id}`} onClick={isPurchaseTeam ? () => startRfq(pr) : undefined} style={{ borderTop: `1px solid ${BORDER.light}`, cursor: isPurchaseTeam ? 'pointer' : 'default' }}
+                title={isPurchaseTeam ? undefined : 'Only the Purchase team with Create on R.F.Q can start the quotation request.'}>
+                <td style={{ ...tdStyle, color: TEXT.muted }}>—</td>
+                <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{pr.p2p_number}</td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}><Pill label="RFQ pending" hex="#dc2626" /></td>
+                <td style={{ ...tdStyle, color: TEXT.muted }}>—</td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(pr.created_at)}</td>
+                <td style={{ ...tdStyle, textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
+                  {isPurchaseTeam && <button type="button" onClick={() => startRfq(pr)} style={{ ...smallSecondaryBtnStyle, whiteSpace: 'nowrap' }}>Start RFQ</button>}
+                </td>
+              </tr>
+            ))}
             {shownRfqs.map((rfq) => (
               <tr key={rfq.id} onClick={() => router.push(recordPath('/dashboard/p2p/rfq', rfq))} style={{ borderTop: `1px solid ${BORDER.light}`, cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{rfq.rfq_number}</td>
@@ -209,6 +178,7 @@ export default function P2PRfqPage() {
                 </td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{rfq.is_single_quotation ? 'One vendor only' : 'Several vendors'}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(rfq.created_at)}</td>
+                <td style={tdStyle} />
               </tr>
             ))}
           </tbody>

@@ -131,6 +131,8 @@ class RFQResponse(BaseModel):
     # Denormalized display fields, filled in by the route.
     p2p_number: str | None = None
     p2p_status: str | None = None
+    p2p_created_at: datetime | None = None
+    p2p_required_date: date | None = None
     created_by_name: str | None = None
     # Emailed RFQs: vendors invited, and PR lines awarded on the comparison
     # (awarded > 0 = ready for Purchase Orders › Create PO).

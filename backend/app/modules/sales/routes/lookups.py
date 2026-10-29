@@ -34,6 +34,15 @@ async def meta():
     }
 
 
+@router.get("/payment-terms")
+async def payment_terms(db: Session = Depends(get_db)):
+    """The saved Payment Terms (CRM › Settings list, the same the quotation form
+    picks from) — read-only here so Sales users without CRM access can pick one."""
+    from app.modules.crm.models.payment_term import PaymentTerm
+    rows = db.query(PaymentTerm).filter(PaymentTerm.is_deleted == False).order_by(PaymentTerm.label.asc()).all()  # noqa: E712
+    return [{"id": t.id, "label": t.label, "description": t.description} for t in rows]
+
+
 @router.get("/customers")
 async def customers(search: str | None = None, db: Session = Depends(get_db)):
     from app.modules.crm.models.organization import Organization

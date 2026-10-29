@@ -18,7 +18,7 @@ const config: TourConfig = {
     {
       target: 'store-bpo-new-btn',
       title: '+ Before PO receipt',
-      purpose: 'Opens the form: vendor from the vendor master, received date, store location, challan and invoice numbers, and the items (from the Item Master) with quantities.',
+      purpose: 'Opens the form: vendor from the vendor master, received date, your own store (set for you), challan and invoice numbers, and the items with quantities — each line picks the type, then the category, then the Item Master item.',
       after: 'The receipt shows as "PO pending" and appears in Procurement › Purchase Orders › Before PO.',
     },
     {

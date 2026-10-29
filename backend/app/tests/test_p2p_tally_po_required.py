@@ -40,6 +40,14 @@ def test_submit_needs_the_tally_po(client, db, monkeypatch):
     partner = make_user(db, "tally.partner.t1@premnathrail.com", assigned_apps=("purchase",))
     partner.is_partner = True
     db.commit()
+    # No ship-to store yet: the PO has no delivery address, so it can't go for approval.
+    r = client.post(f"{RFQS}/{rfq.id}/po-draft/{po['id']}/submit", headers=auth_header(buyer))
+    assert r.status_code == 400 and "ship-to store" in r.json()["detail"]
+    loc = StoreLocation(name="Unit 1 store", code="T1-SHIP", address="Plot 23/1, Gurukul Industrial Area")
+    db.add(loc)
+    db.commit()
+    db.get(P2PPurchaseOrder, po["id"]).ship_to_location_id = loc.id
+    db.commit()
     r = client.post(f"{RFQS}/{rfq.id}/po-draft/{po['id']}/submit", headers=auth_header(buyer))
     assert r.status_code == 400 and "Tally PO" in r.json()["detail"]
     up = _upload(client, buyer, rfq, po)

@@ -110,15 +110,11 @@ def _send_activity_followup_reminders(db: Session) -> None:
     db.commit()
 
 
-TENDER_DUE_DAYS = (3, 1)
-
-
 def _send_role_reminders(db: Session, today: date) -> None:
     """Role-based reminders (core/events/crm.py), bell / Teams only (no email
     from a job). Each fires on one specific day, so a daily run announces a
     record once per milestone."""
-    from app.modules.crm.access import can_open_activity, can_open_record
-    from app.modules.crm.models.tender import Tender
+    from app.modules.crm.access import can_open_activity
     from app.modules.crm.services import quotation_status
 
     # Follow-ups of inquiries / tenders that became overdue yesterday (the
@@ -138,19 +134,10 @@ def _send_role_reminders(db: Session, today: date) -> None:
             skip_user_ids={target} if target else None,
         )
 
-    # Live tenders whose submission date is 3 days / 1 day away.
-    for days in TENDER_DUE_DAYS:
-        due = today + timedelta(days=days)
-        for t in db.query(Tender).filter(Tender.is_deleted == False, Tender.submission_date == due).all():  # noqa: E712
-            if (t.status or "").startswith(("Closed", "Tender Cancelled", "Tender Submitted")):
-                continue
-            notify_event(
-                db, None, "crm", "tender_submission_due",
-                title=f"Tender {t.universal_id} due in {days} day{'s' if days != 1 else ''}",
-                message=f"Tender {t.tender_name or t.tender_number or t.universal_id} must be submitted by {due.strftime('%d-%m-%Y')} "
-                        f"(status: {t.status}). Finish the bid documents and submit on the portal.",
-                entity_type="tender", entity_id=t.id, can_open=can_open_record(db, t),
-            )
+    # Live tenders whose last date (closing date-time, else submission date) is
+    # 7 / 3 / 1 day(s) away — creator + BD owner by bell, Teams and email.
+    from app.tasks.tender_deadline_reminders import run_tender_deadline_reminders
+    run_tender_deadline_reminders(db, today)
 
     # Quotations whose validity ends in 3 days.
     quotation_status.remind_expiring(db, today)

@@ -12,7 +12,7 @@ from app.core.permission_words import action_word
 from app.modules.main.models.user import User
 from app.modules.main.services import managed_documents
 from app.modules.sales import service as svc
-from app.modules.sales.models.order import SalesOrder
+from app.modules.sales.models.order import SalesOrder, SALES_HIRE_RATE_BASIS_LABELS
 
 OA_ENTITY = "sales_order_ack"
 
@@ -54,7 +54,11 @@ def oa_spec(db: Session, so: SalesOrder) -> dict:
             if so.ld_max_percent is not None else " (no cap)"
         ld = f"{float(so.ld_rate_percent or 0):g}% per {so.ld_rate_period or 'week'}{' or part thereof' if so.ld_rate_period == 'week' else ''}{cap}"
     warranty = "—"
-    if so.warranty_rule:
+    if so.warranty_rule == "not_applicable":
+        warranty = "Not applicable"
+    elif so.warranty_rule == "from_delivery" and so.warranty_months_from_delivery:
+        warranty = f"{so.warranty_months_from_delivery} months from the handover date of each vehicle"
+    elif so.warranty_rule:
         parts = []
         if so.warranty_months_from_delivery and so.warranty_rule != "from_commissioning":
             parts.append(f"{so.warranty_months_from_delivery} months from delivery")
@@ -66,6 +70,14 @@ def oa_spec(db: Session, so: SalesOrder) -> dict:
     cur = so.currency or "INR"
     contact = _contact_name(db, so)
     statement_bits = [f"Liquidated damages: {ld}.", f"Warranty: {warranty}."]
+    if so.order_category == "rental":
+        # A bare machine on hire: the hire terms take the place of LD and warranty.
+        statement_bits = [f"Machine on hire (without operator) from {_d(so.hire_start_date)}"
+                          f"{f' to {_d(so.hire_end_date)}' if so.hire_end_date else ' until returned'}.",
+                          f"Hire rate: {SALES_HIRE_RATE_BASIS_LABELS.get(so.hire_rate_basis or '', '—').lower()}.",
+                          f"Site: {so.hire_site or '—'}."]
+        if so.security_deposit:
+            statement_bits.append(f"Security deposit (refundable): {so.currency or 'INR'} {_num(so.security_deposit)}.")
     if so.inspection_agency:
         statement_bits.append(f"Inspection: {so.inspection_agency.upper()}{' (third-party inspection required)' if so.third_party_inspection_required else ''}.")
     remarks = "\n".join(p for p in (

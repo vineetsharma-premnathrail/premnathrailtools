@@ -1745,6 +1745,9 @@ export interface RFQ {
   p2p_request_id: number
   p2p_number?: string
   p2p_status?: P2PRequestStatus
+  /** The requisition's raise date and needed-by date (Create PO list). */
+  p2p_created_at?: string | null
+  p2p_required_date?: string | null
   status: RFQStatus
 
   is_single_quotation: boolean
@@ -3935,6 +3938,9 @@ export interface StoreBin {
 
 export interface P2PPurchaseOrder {
   id: number
+  /** Receiving plant + ship-to store (the delivery address printed on the PO). */
+  plant_branch_id?: number | null
+  ship_to_location_id?: number | null
   po_number: string
   p2p_request_id?: number
   p2p_request_number?: string
@@ -9919,6 +9925,8 @@ export interface SalesOrder {
   so_number: string | null
   display_number: string
   status: string
+  /** status, or "pending_project" while a confirmed New Project order waits for its PM project (derived, never stored). */
+  display_status?: string | null
   order_type: string
   order_category?: string
   service_machine_id?: number | null
@@ -9944,6 +9952,7 @@ export interface SalesOrder {
   customer_name: string | null
   billing_address: string | null
   customer_gstin: string | null
+  customer_state?: string | null
   place_of_supply_state_code: string | null
   currency: string
   price_basis: string
@@ -9971,6 +9980,12 @@ export interface SalesOrder {
   pbg_due_days: number | null
   delivery_terms_text: string | null
   special_conditions: string | null
+  // Rental orders only (bare machine on hire).
+  hire_start_date?: string | null
+  hire_end_date?: string | null
+  hire_rate_basis?: string | null
+  hire_site?: string | null
+  security_deposit?: number | null
   remarks: string | null
   sales_owner_id: number | null
   sales_owner_name: string | null

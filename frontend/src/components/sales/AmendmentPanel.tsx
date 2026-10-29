@@ -119,7 +119,7 @@ export default function AmendmentPanel({ order, userId, onApplied }: { order: Sa
             <SheetColumns
               left={<>
                 <p style={{ ...sheetHint, margin: '0 0 16px' }}>Edit the order as the customer&apos;s letter asks. To drop units, remove their delivery rows (or set a line&apos;s quantity to 0). Started builds block removal.</p>
-                <OrderTermsFields v={header} set={(p) => setHeader((h) => ({ ...h, ...p }))} agencies={agencies} />
+                <OrderTermsFields v={header} set={(p) => setHeader((h) => ({ ...h, ...p }))} agencies={agencies} category={order.order_category} inquiryId={order.source_inquiry_id} tenderId={order.source_tender_id} />
               </>}
               right={
                 <SheetSection icon="rupee" title="Summary">
