@@ -1,23 +1,20 @@
 'use client'
 
-// Purchase Orders: create the PO (row button on a finished RFQ, or on goods the
-// store received Before PO), approve it, and track its delivery — one tab.
-// The Tally PO (number + PDF) is uploaded on the PO draft and is required
-// before Send for approval; there is no separate Tally upload here (2026-10-27).
+// Purchase Orders: approve POs, track their delivery, and see goods the store
+// received Before PO — one tab. POs are not created here (owner, 2026-10-30):
+// the PO is made in Tally and uploaded on its requisition (Upload PO).
 
 import { useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { TEXT } from '@/lib/theme'
 import P2PNav from '@/components/p2p/P2PNav'
-import POReadyList from '@/components/p2p/POReadyList'
 import POApprovalQueue from '@/components/p2p/POApprovalQueue'
 import POTrackingList from '@/components/p2p/POTrackingList'
-import CreatePODialog from '@/components/p2p/CreatePODialog'
 import { useP2PApproverFlags } from '@/components/p2p/useP2PApproverFlags'
 import BeforePOPendingList from '@/components/p2p/BeforePOPendingList'
 
-type View = 'create' | 'before_po' | 'approvals' | 'tracking'
+type View = 'before_po' | 'approvals' | 'tracking'
 
 export default function PurchaseOrdersPage() {
   const { user, isLoading } = useAuth()
@@ -26,15 +23,14 @@ export default function PurchaseOrdersPage() {
   const canCreatePo = isPurchase && can('p2p', 'purchase_orders', 'create')
   const isApprover = useP2PApproverFlags().is_po_approver
   const views: { key: View; label: string }[] = [
-    ...(canCreatePo ? [{ key: 'create' as const, label: 'Create PO' }, { key: 'before_po' as const, label: 'Before PO' }] : []),
+    ...(canCreatePo ? [{ key: 'before_po' as const, label: 'Before PO' }] : []),
     ...(isApprover ? [{ key: 'approvals' as const, label: 'Approvals' }] : []),
     ...(isPurchase ? [{ key: 'tracking' as const, label: 'Tracking' }] : []),
   ]
-  const [createFor, setCreateFor] = useState<number | null>(null)
   const [picked, setPicked] = useState<View | null>(() => {
     if (typeof window === 'undefined') return null
     const v = new URLSearchParams(window.location.search).get('view')
-    return v === 'create' || v === 'before_po' || v === 'approvals' || v === 'tracking' ? v : null
+    return v === 'before_po' || v === 'approvals' || v === 'tracking' ? v : null
   })
 
   if (isLoading || !user) return null
@@ -64,9 +60,7 @@ export default function PurchaseOrdersPage() {
         ))}
       </div>
 
-      {view === 'create' && <POReadyList onCreate={(rfqId) => setCreateFor(rfqId)} />}
       {view === 'before_po' && <BeforePOPendingList />}
-      {createFor !== null && <CreatePODialog initialRfqId={createFor} onClose={() => setCreateFor(null)} />}
       {view === 'approvals' && <POApprovalQueue />}
       {view === 'tracking' && <POTrackingList />}
     </div>

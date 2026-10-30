@@ -53,7 +53,7 @@ P2P_REQUEST_STATUSES = (
 # saved as a draft or sent for approval afresh (see edit_p2p_request).
 P2P_EDITABLE_STATUSES = ("draft", "returned", "submitted", "approved")
 
-P2P_REQUEST_PRIORITIES = ("low", "medium", "high")
+P2P_REQUEST_PRIORITIES = ("standard", "urgent")
 
 # Category code of a requisition whose lines decide what is bought (see below).
 LINE_CATEGORY = "ITM"
@@ -311,7 +311,7 @@ class P2PRequest(Base, TimestampMixin):
     # its original name for backward compatibility with the auto-assign-by-
     # department flow already wired to it); Project Head and Plant Head are
     # picked explicitly on the New PR form via search-select.
-    priority: Mapped[str] = mapped_column(String(10), default="medium", nullable=False)
+    priority: Mapped[str] = mapped_column(String(10), default="standard", nullable=False)  # standard | urgent
     approver_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     approver_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     department_head_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

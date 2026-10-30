@@ -8,7 +8,7 @@ from app.db.mixins import TimestampMixin, SoftDeleteMixin
 # Where the work came from: BD (an inquiry/tender's technical requirement),
 # a project milestone, R&D handing over a proven result, or internal.
 DESIGN_REQUEST_SOURCES = ("bd", "project", "rnd", "internal")
-DESIGN_REQUEST_PRIORITIES = ("low", "medium", "high", "urgent")
+DESIGN_REQUEST_PRIORITIES = ("standard", "urgent")
 # open → accepted (head assigned a lead designer) → in_progress (first
 # deliverable started) → completed; on_hold / cancelled with a reason.
 DESIGN_REQUEST_STATUSES = ("open", "accepted", "in_progress", "on_hold", "completed", "cancelled")
@@ -48,7 +48,7 @@ class DesignRequest(Base, TimestampMixin, SoftDeleteMixin):
     reviewed_revision: Mapped[int] = mapped_column(Integer, default=-1, nullable=False)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    priority: Mapped[str] = mapped_column(String(20), default="medium", nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), default="standard", nullable=False)  # standard | urgent
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="open", index=True, nullable=False)
     # Who the request is waiting on right now: "design" or "requester"

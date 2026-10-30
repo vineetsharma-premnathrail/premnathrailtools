@@ -7,7 +7,7 @@ const config: TourConfig = {
     {
       target: 'rnd-pd-badges',
       title: 'Project number and priority',
-      purpose: 'The heading is the project number given when it was created; the badge beside it is the priority (High, Medium or Low). The title is in Project Initiation below.',
+      purpose: 'The heading is the project number given when it was created. The priority (Standard or Urgent) is in the summary below.',
     },
     {
       target: 'rnd-pd-back-btn',
@@ -29,7 +29,7 @@ const config: TourConfig = {
     {
       target: 'rnd-pd-tabs',
       title: 'Tabs',
-      purpose: 'Same layout as a Project Management project: Overview (source, initiation, members), Members (project leads and team — add or remove people here), Milestones (the project plan and its tasks), Documents (attachments) and History (everything that changed).',
+      purpose: 'Overview (origin, initiation, members), Members (project leads and team — add or remove people here), Tasks (the project\'s tasks), Documents (attachments) and Timeline (everything that changed).',
     },
     {
       target: 'rnd-pd-details',
@@ -38,10 +38,10 @@ const config: TourConfig = {
     },
     {
       target: 'rnd-pd-tasks',
-      title: 'Milestones & tasks',
-      purpose: 'The project plan: milestones on a timeline, each with a responsible person (someone on the project team) and an expected date. "+ Add Milestone" (project leads) opens the same Create Milestone form as Project Management. Open a milestone to see its progress and its tasks; tasks are given inside a milestone and must be due by its end date. Only people under Team Members can be assigned a task.',
+      title: 'Tasks',
+      purpose: 'The project\'s tasks as a flat list: priority (Standard / Urgent), dates, status and progress. "Add Task" (project leads) gives work to a person on the project team — only people under Team Members can be assigned. You can also create tasks from R&D › R&D Tasks.',
       why: 'Each piece of work has one owner and a date, so nothing is left to "someone will do it".',
-      after: 'A milestone is marked achieved (by its responsible people or a lead) once every task in it is completed or cancelled; a lead can reopen or cancel it with a reason. The assignee posts progress with "Add update" (remarks + any documents), asks for more time if needed, and clicks "Complete task" when finished — the task closes; the person who created it can Reopen it with a reason. While working, "Ask for approval" sends a task-related request (e.g. a drawing or material) to the creator / leads, who Approve or Reject it with remarks; the task stays open. The assignee can also split their task with "+ Sub-task" — the task can be completed only once its sub-tasks are completed or cancelled.',
+      after: 'The assignee posts progress with "Add update" (remarks + any documents), types the progress percentage (or ticks checklist steps, which sets it), asks for more time if needed, and clicks "Complete task" when finished — the task closes at 100%; the person who created it can Reopen it with a reason. While working, "Ask for approval" sends a task-related request (e.g. a drawing or material) to the creator / leads, who Approve or Reject it with remarks; the task stays open. The assignee can also split their task with "+ Sub-task" — the task can be completed only once its sub-tasks are completed or cancelled.',
     },
     {
       target: 'rnd-docpanel',
@@ -51,8 +51,8 @@ const config: TourConfig = {
     },
     {
       target: 'rnd-pd-history',
-      title: 'History',
-      purpose: 'On the History tab: project edits, milestone changes and every task event, newest first, with who did it and when.',
+      title: 'Timeline',
+      purpose: 'On the Timeline tab: project edits and every task event, newest first, with who did it and when.',
     },
   ],
 }

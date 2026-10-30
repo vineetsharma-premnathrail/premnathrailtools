@@ -10,7 +10,7 @@ from app.db.mixins import TimestampMixin, SoftDeleteMixin
 # handed_over; closing needs every stage completed or marked N/A. on_hold
 # freezes stage work; cancelled is terminal.
 ELECTRICAL_JOB_STATUSES = ("draft", "in_progress", "on_hold", "handed_over", "closed", "cancelled")
-ELECTRICAL_JOB_PRIORITIES = ("low", "normal", "high", "urgent")
+ELECTRICAL_JOB_PRIORITIES = ("standard", "urgent")
 # Stage work (start / complete / N/A, and adding BOM, cables, tests …) is
 # allowed while the job is in one of these. As-built records are usually
 # finished after handover, hence handed_over.
@@ -85,7 +85,7 @@ class ElectricalJob(Base, TimestampMixin, SoftDeleteMixin):
     # Branch = "Plant" in the UI.
     branch_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("branches.id"), nullable=True)
     lead_engineer_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=True)
-    priority: Mapped[str] = mapped_column(String(20), default="normal", nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), default="standard", nullable=False)  # standard | urgent
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True, nullable=False)
     planned_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     target_handover_date: Mapped[date | None] = mapped_column(Date, nullable=True)

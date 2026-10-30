@@ -14,10 +14,10 @@
   quotation to draft: the revised offer needs approval again. A pending
   approval is withdrawn first.
 * Approval: transaction type `crm.quotation` on the central engine
-  (Organization › Approval Workflows). The release limits live in Sales ›
+  (Organization › Approval Workflows). The release limits live in CRM ›
   Settings › Quotation approval (value incl. GST and header discount %); they
   decide an `approval_rank` 0-3 and each stage applies from its rank:
-  Sales Head (1) → Director (2) → Partner (3, top approver). Rank 0 = no
+  BD Head (1) → Director (2) → Partner (3, top approver). Rank 0 = no
   approval needed (approved at once). Approvers need 'approve' on CRM ›
   Inquiries & Tenders, and the creator / submitter never approves.
 """
@@ -48,13 +48,14 @@ APPROVAL_KEY = "crm.quotation"
 APPROVAL_ENTITY = "crm_quotation"
 AWAITING = "— Awaiting —"
 RESPONSE_FOR = {"accepted": "Accepted", "lost": "Rejected", "expired": "Expired"}
-RANK_LABEL = {0: "no approval", 1: "Sales Head", 2: "Director", 3: "Partner"}
+RANK_LABEL = {0: "no approval", 1: "BD Head", 2: "Director", 3: "Partner"}
 
 CONTEXT_FIELDS = {
-    "approval_rank": {"label": "Approval level from Sales › Settings › Quotation approval (1 Sales Head, 2 Director, 3 Partner)",
+    "approval_rank": {"label": "Approval level from CRM › Settings › Quotation approval limits (1 BD Head, 2 Director, 3 Partner)",
                       "type": "number"},
     "discount_percent": {"label": "Header discount (%)", "type": "number"},
-    "sales_head_ids": {"label": "Sales Head (Sales › Settings, else the Sales / BD department head)", "type": "user"},
+    # The key stays "sales_head_ids": stored approval workflows refer to it.
+    "sales_head_ids": {"label": "BD Head (CRM › Settings › BD Head, else the Sales / BD department head)", "type": "user"},
     "director_ids": {"label": "Directors with CRM quotation approval rights", "type": "user"},
     "partner_ids": {"label": "Partners with CRM quotation approval rights", "type": "user"},
 }
@@ -62,7 +63,7 @@ CONTEXT_FIELDS = {
 
 def default_stages() -> list[StageDef]:
     return [
-        StageDef("Sales Head", "record_field", {"field": "sales_head_ids"},
+        StageDef("BD Head", "record_field", {"field": "sales_head_ids"},
                  conditions=[{"field": "approval_rank", "op": "gte", "value": 1}]),
         StageDef("Director", "record_field", {"field": "director_ids"},
                  conditions=[{"field": "approval_rank", "op": "gte", "value": 2}]),
@@ -122,7 +123,7 @@ SWITCHED_OFF = "approval is switched off in Organization › Approval Workflows 
 
 
 def approval_rank(db: Session, quot: Quotation) -> tuple[int, list[str]]:
-    from app.modules.sales.settings import get_setting
+    from app.modules.crm.settings import get_setting
     # The workflow's "Approval required" switch overrides the value / discount
     # limits: off = no approver is needed or checked for, approved on submit.
     wf = db.query(ApprovalWorkflow).filter(ApprovalWorkflow.key == APPROVAL_KEY).first()
@@ -152,10 +153,24 @@ def approval_rank(db: Session, quot: Quotation) -> tuple[int, list[str]]:
     return rank, why
 
 
+def quotation_head_ids(db: Session) -> list[int]:
+    """The `quotation_head_id` setting (CRM › Settings), else the head(s) of the Sales / BD department."""
+    from app.modules.crm.settings import get_setting
+    sid = get_setting(db, "quotation_head_id")
+    if sid:
+        return [int(sid)]
+    heads = db.query(User).filter(User.is_active == True, User.is_department_head == True).all()  # noqa: E712
+    out = []
+    for u in heads:
+        dept = (u.department or "").strip().lower()
+        if "sales" in dept or dept in ("bd", "business development", "sales/bd", "sales & bd"):
+            out.append(u.id)
+    return out
+
+
 def _approvers(db: Session, level: str, makers: set[int]) -> list[int]:
-    from app.modules.sales import service as sales_svc
     if level == "sales_head":
-        ids = sales_svc.sales_head_ids(db)
+        ids = quotation_head_ids(db)
         users = db.query(User).filter(User.id.in_(ids), User.is_active == True).all() if ids else []  # noqa: E712
     else:
         flag = User.is_director if level == "director" else User.is_partner
@@ -164,10 +179,10 @@ def _approvers(db: Session, level: str, makers: set[int]) -> list[int]:
 
 
 _HINT = {
-    "sales_head_ids": ("No Sales Head can approve this quotation — set one in Sales › Settings › Sales Head (or mark the Sales / BD "
+    "sales_head_ids": ("No BD Head can approve this quotation — set one in CRM › Settings › Quotation approval limits › BD Head (or mark the Sales / BD "
                        "department head), and give them 'Approve' on CRM › Inquiries & Tenders › Quotations. The creator / submitter can't approve."),
     "director_ids": ("No Director other than the creator / submitter holds 'Approve' on CRM › Inquiries & Tenders › Quotations — grant it in "
-                     "Organization › Role & Permissions, or raise the Director limits in Sales › Settings › Quotation approval."),
+                     "Organization › Role & Permissions, or raise the Director limits in CRM › Settings › Quotation approval limits."),
     "partner_ids": ("No Partner other than the creator / submitter holds 'Approve' on CRM › Inquiries & Tenders › Quotations — mark the Partner in "
                     "Organization › Info › Partners and grant that permission."),
 }
@@ -227,8 +242,8 @@ def _decided(db: Session, req: ApprovalRequest, outcome: str, actor: User) -> No
 register_transaction(TransactionType(
     key=APPROVAL_KEY, module_key="crm", subtab_key="inquiries_tenders", feature_key="quotations", label="CRM quotation",
     entity_type=APPROVAL_ENTITY, url="/dashboard/crm/quotations/{id}",
-    description="Price / discount release of a quotation before it is sent to the customer — Sales Head, then Director / "
-                "Partner by value or discount (limits in Sales › Settings › Quotation approval).",
+    description="Price / discount release of a quotation before it is sent to the customer — BD Head, then Director / "
+                "Partner by value or discount (limits in CRM › Settings › Quotation approval limits).",
     context_fields=CONTEXT_FIELDS, default_stages=default_stages(), on_decided=_decided,
     require_permission=True, distinct_approvers=False, allow_self_approval=False,
 ))
@@ -314,7 +329,7 @@ def withdraw(db: Session, quot: Quotation, inquiry: Inquiry, user: User) -> None
 
 
 def default_valid_until(db: Session, quot: Quotation) -> date:
-    from app.modules.sales.settings import get_setting
+    from app.modules.crm.settings import get_setting
     days = int(get_setting(db, "quotation_default_validity_days") or 30)
     return (quot.quote_date or date.today()) + timedelta(days=days)
 

@@ -42,12 +42,13 @@ from datetime import datetime, timezone
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app.core.priority import PRIORITIES, PRIORITY_LABELS
 from app.modules.main.models.user import User
 from app.modules.organization.models.approval import ApprovalRequest, ApprovalRequestStep, ApprovalWorkflow
 from app.modules.organization.services import approval_engine as engine
 from app.modules.organization.services.approval_engine import StageDef, TransactionType, register_transaction
 from app.modules.p2p.models.p2p_request import (
-    ENGINE_SCHEME, LINE_CATEGORY, P2P_CATEGORIES, P2P_PROJECT_TYPES, P2P_PURPOSES, P2P_REQUEST_PRIORITIES, P2P_REQUIREMENT_TYPES, P2PRequest,
+    ENGINE_SCHEME, LINE_CATEGORY, P2P_CATEGORIES, P2P_PROJECT_TYPES, P2P_PURPOSES, P2P_REQUIREMENT_TYPES, P2PRequest,
 )
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
 
@@ -101,8 +102,8 @@ _PR_CONTEXT_FIELDS = {
                            "missing": "Project {ref} has no project manager — pick one on the project "
                                       "(Project Management › All Projects), then submit again.",
                            "missing_ref": "order_project_ref"},
-    "priority": {"label": "Priority", "type": "choice", "choices": list(P2P_REQUEST_PRIORITIES),
-                 "choice_labels": {"low": "Low", "medium": "Medium", "high": "High"}},
+    "priority": {"label": "Priority", "type": "choice", "choices": list(PRIORITIES),
+                 "choice_labels": dict(PRIORITY_LABELS)},
     "requirement_type": {"label": "Requirement type", "type": "choice", "choices": list(P2P_REQUIREMENT_TYPES),
                          "choice_labels": {t: t for t in P2P_REQUIREMENT_TYPES}},
     "department": {"label": "Requester's department", "type": "text"},

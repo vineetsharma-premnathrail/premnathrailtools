@@ -17,6 +17,11 @@ export const ENTRIES: TourEntry[] = [
     load: () => import('../configs/crmTechnicalOfferViewer'),
   },
   {
+    // Products is a CRM tab (2026-10-30) that keeps the /dashboard/products URL.
+    pattern: /^\/dashboard\/products$/,
+    load: () => import('../configs/crmProducts'),
+  },
+  {
     pattern: /^\/dashboard\/crm\/reports$/,
     load: () => import('../configs/crmReports'),
   },

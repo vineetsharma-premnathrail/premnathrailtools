@@ -29,7 +29,7 @@ class DesignRequestCreate(BaseModel):
     order_project_id: int | None = None
     order_project_element_id: int | None = None
     requirement: str = Field(min_length=5, max_length=20000)
-    priority: str = "medium"
+    priority: str = "standard"
     due_date: date | None = None
     lead_designer_id: int | None = None
 

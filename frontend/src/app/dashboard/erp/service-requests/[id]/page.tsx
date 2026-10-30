@@ -1,6 +1,7 @@
 'use client'
 
 import Select from '@/components/shared/Select'
+import { PRIORITY_OPTIONS } from '@/lib/priority'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Paperclip, UploadSimple } from '@phosphor-icons/react'
 import { useParams, useRouter } from 'next/navigation'
@@ -862,7 +863,7 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
   // Store issues on a challan, the shortfall an approved PR to Purchase
   // (Project line, requirement type Service — nothing for the user to choose).
   const [requiredDate, setRequiredDate] = useState('')
-  const [priority, setPriority] = useState('medium')
+  const [priority, setPriority] = useState('standard')
   const [remarks, setRemarks] = useState('')
   // Each line: pick the Item Type, then the Category, then the item (same order as the PR form).
   const [lines, setLines] = useState<MrLine[]>([{ ...EMPTY_MR_LINE }])
@@ -994,7 +995,7 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
       }
       if (!r.pr_id && specFiles.length && !uploadFailures.length) parts.push('documents saved in this SR\'s Attachments tab')
       setPrMessage(`Material requested: ${parts.join('; ')}.`)
-      setLines([{ ...EMPTY_MR_LINE }]); setRequiredDate(''); setPriority('medium'); setRemarks('')
+      setLines([{ ...EMPTY_MR_LINE }]); setRequiredDate(''); setPriority('standard'); setRemarks('')
       setSpecFiles([]); setFileInputKey((k) => k + 1)
       if (uploadFailures.length) {
         setPrError(`Material was requested, but some files did not upload — ${uploadFailures.join('; ')}. ${r.pr_id ? `Ask Purchase to attach them on ${r.pr_number}.` : 'Upload them in this SR\'s Attachments tab.'}`)
@@ -1154,7 +1155,7 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
             <div style={{ flex: '0 1 160px', minWidth: 140 }}>
               <label style={sheetLabel}>Priority</label>
               <Select style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value)} data-tour="erp-srd-pr-priority">
-                {['low', 'medium', 'high'].map((p) => <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>)}
+                {PRIORITY_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
               </Select>
             </div>
             <div style={{ flex: '1 1 300px' }}>

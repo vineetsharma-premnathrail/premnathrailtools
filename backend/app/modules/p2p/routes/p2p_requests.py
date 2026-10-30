@@ -22,10 +22,10 @@ from app.modules.p2p.models.p2p_request import (
 from app.modules.p2p import purpose as pr_purpose
 from app.modules.p2p.models.p2p_request_approval import P2PRequestApproval
 from app.modules.p2p.models.p2p_request_po_approver import P2PRequestPOApprover
-from app.modules.p2p.item_link import item_category_for, item_snapshot, purchasable_item
+from app.modules.p2p.item_link import item_snapshot, purchasable_item
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment, P2P_ATTACHMENT_DOC_TYPES
-from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
+from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
 from app.modules.p2p.models.rfq import RFQ
 from app.modules.erp.models.service_material import ServiceMaterial
 from app.modules.p2p.schemas.p2p_request import (
@@ -39,13 +39,12 @@ from app.modules.p2p.schemas.p2p_request import (
     P2PRequestAssignBuyerPayload,
     P2PRequestQuotationPayload,
     P2PRequestSelectVendorPayload,
-    P2PRequestCreatePOPayload,
     P2PRequestAttachmentResponse,
     P2PRequestItemStockCheckResponse,
     P2PRequestItemStockLocationInfo,
     P2PRequestIssueFromStockPayload,
 )
-from app.modules.p2p.service import generate_p2p_number, compute_line_total, active_partners
+from app.modules.p2p.service import generate_p2p_number, active_partners
 from app.modules.p2p.models.p2p_request import SETTINGS_SCHEME, ENGINE_SCHEME
 from app.modules.p2p import approvals as p2p_approvals
 # Registers the Order Project hooks (PO/GRN line inheritance, 360 "purchase" column).
@@ -1179,9 +1178,43 @@ async def get_p2p_request_audit(
             "new_status": log.new_value,
             "performed_by": user_map.get(log.performed_by_id, "System") if log.performed_by_id else "System",
             "performed_at": log.performed_at.isoformat() if log.performed_at else None,
+            # An uploaded Tally PO keeps its file on the entry (opened via the route below).
+            "document_name": log.attachment_url.rsplit("/", 1)[-1] if log.attachment_url and log.action == "po_document_uploaded" else None,
         }
         for log in logs
     ]
+
+
+@router.get("/{pr_id}/audit/{log_id}/document")
+async def get_p2p_request_audit_document(
+    pr_id: int,
+    log_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_requester_or_purchase),
+):
+    """The Tally PO PDF exactly as uploaded at that point of the requisition's
+    history — a later re-upload doesn't replace what an older entry shows."""
+    if _can_view_prs(user):
+        ensure_feature_action(user, "p2p", "purchase_requisitions", "history", "view")
+    ensure_feature_action(user, "p2p", "purchase_orders", "po_document", "view")
+    pr = _get_pr_or_404(db, pr_id, user=user)
+    _check_view_access(pr, user)
+    # The Tally PO carries the vendor's prices: only those who may see PO commercials open it.
+    if not _can_see_po_commercials(pr, user):
+        raise HTTPException(status_code=403, detail="The PO document shows the vendor's prices — only Purchase and the PO approvers can open it.")
+    log = db.query(AuditLog).filter(
+        AuditLog.id == log_id, AuditLog.entity_type == "p2p_request", AuditLog.entity_id == pr.id,
+        AuditLog.action == "po_document_uploaded",
+    ).first()
+    if log is None or not log.attachment_url:
+        raise HTTPException(status_code=404, detail="That history entry has no PO document — reload the requisition.")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="Document storage (SharePoint) isn't set up on this server — ask the admin to configure it.")
+    from app.modules.p2p.routes.rfq import _inline_disposition
+    content, _content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, log.attachment_url)
+    return Response(content=content, media_type="application/pdf", headers={
+        "Content-Disposition": _inline_disposition(log.attachment_url.rsplit("/", 1)[-1] or f"{pr.p2p_number}-PO.pdf"),
+        "X-Content-Type-Options": "nosniff"})
 
 
 _PR_LOCKED_FIELDS = {
@@ -2166,147 +2199,6 @@ async def select_vendor(
     db.commit()
     db.refresh(pr)
     return _to_response(db, pr, user=user)
-
-
-@router.post("/{pr_id}/create-po", response_model=P2PRequestResponse)
-async def create_po(
-    pr_id: int,
-    payload: P2PRequestCreatePOPayload,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
-):
-    ensure_tab_action(user, "p2p", "purchase_orders", "create")
-    ensure_tab_action(user, "p2p", "purchase_orders", "submit")  # it goes straight into PO approval
-    # Locks the PR row for the rest of this request so a concurrent/
-    # double-submitted create-PO call can't both pass the status check below
-    # before either commits.
-    pr = _get_pr_or_404(db, pr_id, for_update=True, user=user)
-    if pr.status != "approved":
-        raise HTTPException(status_code=409, detail=f"A PO can only be raised on an approved PR (current status: {pr.status})")
-    if db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.po_number == payload.po_number).first():
-        raise HTTPException(status_code=409, detail=f"PO number '{payload.po_number}' already exists")
-    existing_po = db.query(P2PPurchaseOrder).filter(
-        P2PPurchaseOrder.p2p_request_id == pr.id, P2PPurchaseOrder.status != "cancelled",
-    ).first()
-    if existing_po:
-        raise HTTPException(status_code=409, detail=f"PR '{pr.p2p_number}' already has a PO ('{existing_po.po_number}') — cancel it first to raise a new one")
-    # Items already fulfilled from existing store stock (see
-    # issue_item_from_stock above) aren't purchased — they're excluded from
-    # the PO entirely, and a partially-issued line only orders the shortfall
-    # (same as rfq.create_po_draft).
-    def _to_order(i: P2PRequestItem) -> float:
-        return (i.quantity or 0) - (i.issued_qty or 0)
-
-    procurable_items = [i for i in pr.items if i.fulfillment_status != "stock_issued" and _to_order(i) > 0]
-    if not procurable_items:
-        raise HTTPException(status_code=409, detail=f"Every line on '{pr.p2p_number}' was already issued from store stock — there is nothing left to order.")
-
-    # Per-line pricing (see P2PRequestCreatePOItemPricing) is what derives
-    # the PO's total — payload.po_value is ignored, so this total is grounded
-    # in real quantities/prices rather than an arbitrary typed-in number (see
-    # check_three_way_match in accounts/service.py, which matches against
-    # these line prices for AP's 3-way match).
-    pricing_by_item_id = {p.pr_item_id: p for p in payload.item_pricing}
-    computed_total = 0.0
-    line_pricing: list[tuple[float | None, float | None, float | None]] = []  # (unit_price, tax_rate, line_total) per procurable_items entry
-    for item in procurable_items:
-        pricing = pricing_by_item_id.get(item.id)
-        unit_price = pricing.unit_price if pricing else None
-        tax_rate = pricing.tax_rate if pricing else None
-        line_total = compute_line_total(_to_order(item), unit_price, tax_rate)
-        if line_total is not None:
-            computed_total += line_total
-        line_pricing.append((unit_price, tax_rate, line_total))
-    # Every line must be priced — the approvers sign off on this value, and
-    # AP's 3-way match pays against it, so a typed-in lump sum (or nothing)
-    # isn't acceptable.
-    unpriced = [item.item_name for item, (unit_price, _t, _l) in zip(procurable_items, line_pricing) if unit_price is None or unit_price <= 0]
-    if unpriced:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Enter a unit price for every line before raising the PO — missing: {', '.join(unpriced)}.",
-        )
-    po_value = round(computed_total, 2)
-
-    # Quality: a vendor BLOCKED on the approved vendor list gets no PO for
-    # those items (services/supplier_quality.ensure_po_allowed).
-    from app.modules.quality.services.supplier_quality import ensure_po_allowed, SupplierError
-    try:
-        ensure_po_allowed(db, pr.selected_vendor, [i.store_item_id for i in procurable_items])
-    except SupplierError as e:
-        raise HTTPException(status_code=e.status, detail=str(e))
-
-    old_status = pr.status
-    pr.po_number = payload.po_number
-    pr.po_date = payload.po_date or date.today()
-    pr.po_value = po_value
-    pr.expected_delivery = payload.expected_delivery
-    pr.ordered_quantity = payload.ordered_quantity if payload.ordered_quantity is not None else sum(_to_order(i) for i in procurable_items)
-
-    # The PR's po_* fields above are a denormalized snapshot for quick display;
-    # this linked P2PPurchaseOrder is the real record — see
-    # docs/product/PURCHASE_DEPARTMENT_MODULE_PLAN.md Phase 2.
-    po = P2PPurchaseOrder(
-        po_number=payload.po_number,
-        p2p_request_id=pr.id,
-        vendor_name=pr.selected_vendor,
-        status="issued",
-        po_date=pr.po_date,
-        expected_delivery=pr.expected_delivery,
-        created_by_id=user.id,
-        total_value=po_value,
-        # A requisition charged to an internal order (or an R&D project's) carries it to its PO.
-        internal_order_id=pr.internal_order_id,
-    )
-    db.add(po)
-    db.flush()
-    for item, (unit_price, tax_rate, line_total) in zip(procurable_items, line_pricing):
-        db.add(P2PPurchaseOrderItem(
-            purchase_order_id=po.id,
-            store_item_id=item.store_item_id,
-            item_name=item.item_name,
-            make=item.make,
-            part_code=item.part_code,
-            unit=item.unit,
-            quantity=_to_order(item),
-            unit_price=unit_price,
-            tax_rate=tax_rate,
-            line_total=line_total,
-            item_category=item_category_for(db, item.store_item_id),
-            order_project_id=item.order_project_id,
-            order_project_element_id=item.order_project_element_id,
-        ))
-
-    db.flush()
-    # Into PO approval (the "Purchase order" workflow in Organization ›
-    # Approval Workflows) — PR → po_raised. The engine notifies the approvers.
-    p2p_approvals.submit_po(db, pr, po, user)
-    _write_audit(db, pr.id, "po_raised", user,
-                 summary=f"{user.name or user.email} raised PO '{payload.po_number}' for {pr.p2p_number}.",
-                 old_status=old_status, new_status="po_raised")
-
-    if pr.requested_by_id:
-        notify_user(
-            db, user_id=pr.requested_by_id,
-            title="Purchase Order Raised",
-            message=f"A purchase order ('{payload.po_number}') has been raised for your PR '{pr.p2p_number}'.",
-            notification_type="p2p_request_po_raised", entity_type="p2p_request", entity_id=pr.id,
-        )
-
-    db.commit()
-    db.refresh(pr)
-    background_tasks.add_task(_send_p2p_po_approval_emails_background, pr.id)
-    return _to_response(db, pr, user=user)
-
-
-# Receiving used to be a single flat "update-receipt" call directly on the
-# PR (no line items, no quality inspection). Replaced by the proper
-# per-PO, per-line-item Goods Receipt flow — see
-# app/modules/p2p/routes/goods_receipts.py — which writes back onto this
-# PR's ordered_quantity/received_quantity/receipt_status/grn_number fields
-# once a receipt is quality-inspected, so /close's status gate below still
-# works unchanged.
 
 
 @router.post("/{pr_id}/close", response_model=P2PRequestResponse)

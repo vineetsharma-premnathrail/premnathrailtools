@@ -62,7 +62,7 @@ def test_access_split(client, db):
     r = client.post(f"{BASE}/requests", json={"asset_id": asset["id"], "problem_description": "Spindle noise"}, headers=hdr(prod))
     assert r.status_code == 200, r.text
     req = r.json()
-    assert req["request_number"].startswith("MRQ-") and req["priority"] == "high"  # criticality A, not down
+    assert req["request_number"].startswith("MRQ-") and req["priority"] == "standard"  # criticality A, not down
 
     # Another requester can't see it; the requester can't triage it.
     prod2 = make_user(db, "p2@premnathrail.com", apps=("production",))

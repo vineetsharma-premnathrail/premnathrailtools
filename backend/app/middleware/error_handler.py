@@ -8,11 +8,29 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, OperationalError
 
 from app.core.db_errors import describe_db_error
 
 logger = logging.getLogger(__name__)
+
+
+def _is_db_unreachable(exc: Exception) -> bool:
+    """
+    True when the database itself is down or dropped the connection (server
+    restart, connection refused) rather than rejecting this request's data.
+    SQLSTATE class 08 = connection exception, 57P = server shutdown/restart;
+    a refused connect has no SQLSTATE at all.
+    """
+    if not isinstance(exc, OperationalError):
+        return False
+    if exc.connection_invalidated:
+        return True
+    orig = getattr(exc, "orig", None)
+    if not type(orig).__module__.startswith(("psycopg", "psycopg2")):
+        return False  # e.g. SQLite in tests: "no such table" is a real bug, not an outage
+    state = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+    return state is None or str(state).startswith(("08", "57P"))
 
 
 async def error_handler(request: Request, exc: Exception):
@@ -25,6 +43,22 @@ async def error_handler(request: Request, exc: Exception):
     nothing and sends them to us for something they can correct in a second.
     Anything genuinely unexpected still returns a generic message.
     """
+    if _is_db_unreachable(exc):
+        # Database down/restarting: not a bug in this request, and recording it
+        # would need the same database. One log line, 503, clear message.
+        logger.warning(f"Database unreachable on {request.method} {request.url.path}: {getattr(exc, 'orig', exc)}")
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "detail": (
+                    "The database server is not reachable right now (it is restarting or down), "
+                    "so nothing was saved. Please wait a minute and try again — if it keeps "
+                    "happening, ask the administrator to check that the database server is running."
+                )
+            },
+            headers={"Retry-After": "30"},
+        )
+
     if isinstance(exc, DBAPIError):
         described = describe_db_error(exc)
         if described:

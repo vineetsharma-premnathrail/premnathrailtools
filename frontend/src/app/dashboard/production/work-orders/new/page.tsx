@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { normalizePriority } from '@/lib/priority'
 import { productionEngineeringLookups } from '@/lib/productionEngineeringApi'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -47,7 +48,7 @@ export default function NewWorkOrderPage() {
   const { id: rrvBuildNum, error: rrvLinkError, loading: rrvLinkLoading } = useRecordId(rrvBuildRef)
   const rrvBuildId = rrvBuildNum ? String(rrvBuildNum) : null
   const buildRole = searchParams.get('build_role') === 'main' ? 'main' : 'sub_assembly'
-  const [priority, setPriority] = useState('normal')
+  const [priority, setPriority] = useState('standard')
   const [projectId, setProjectId] = useState('')
   const [branchId, setBranchId] = useState('')
   const [sourceId, setSourceId] = useState('')
@@ -76,7 +77,7 @@ export default function NewWorkOrderPage() {
   const draft = useFormDraft(rrvLinkLoading ? null : `production-work-order-new${rrvBuildRef ? '-rrv' : ''}`,
     { bomId, quantity, priority, projectId, branchId, sourceId, targetId, supervisorId, startDate, endDate, remarks, soLineId, orderProject },
     (d) => {
-      setBomId(d.bomId ?? ''); setQuantity(d.quantity ?? '1'); setPriority(d.priority ?? 'normal'); setProjectId(d.projectId ?? '')
+      setBomId(d.bomId ?? ''); setQuantity(d.quantity ?? '1'); setPriority(normalizePriority(d.priority)); setProjectId(d.projectId ?? '')
       setBranchId(d.branchId ?? ''); setSourceId(d.sourceId ?? ''); setTargetId(d.targetId ?? ''); setSupervisorId(d.supervisorId ?? '')
       setStartDate(d.startDate ?? ''); setEndDate(d.endDate ?? ''); setRemarks(d.remarks ?? ''); setSoLineId(d.soLineId ?? '')
       setOrderProject(d.orderProject ?? null)
@@ -180,9 +181,7 @@ export default function NewWorkOrderPage() {
                 <div data-tour="production-wo-new-priority" style={{ flex: '1 1 140px' }}>
                   <label style={sheetLabel}>Priority</label>
                   <Select style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value)}>
-                    <option value="low">Low</option>
-                    <option value="normal">Normal</option>
-                    <option value="high">High</option>
+                    <option value="standard">Standard</option>
                     <option value="urgent">Urgent</option>
                   </Select>
                 </div>

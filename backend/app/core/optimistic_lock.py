@@ -24,7 +24,6 @@ HEADER = "x-lock-version"
 
 # API path prefix (after /api/v1) -> table whose row the next segment identifies.
 LOCKED_PATHS: dict[str, str] = {
-    "/sales/orders/": "sales_orders",
     "/p2p/purchase-orders/": "p2p_purchase_orders",
     "/production/boms/": "production_boms",
     "/design/boms/": "design_boms",
@@ -43,7 +42,7 @@ class StaleRecordError(Exception):
 
 
 _LABELS = {
-    "sales_orders": "sales order", "p2p_purchase_orders": "purchase order", "production_boms": "BOM",
+    "p2p_purchase_orders": "purchase order", "production_boms": "BOM",
     "design_boms": "BOM", "journal_entries": "journal entry", "vendor_invoices": "vendor invoice",
     "hr_employee_profiles": "employee record",
 }
@@ -129,9 +128,8 @@ def register_locked_models() -> None:
     from app.modules.hr.models.employee_profile import HrEmployeeProfile
     from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
     from app.modules.production.models.bom import ProductionBom
-    from app.modules.sales.models.order import SalesOrder
 
-    for model in (SalesOrder, P2PPurchaseOrder, ProductionBom, DesignBom, JournalEntry, VendorInvoice, HrEmployeeProfile):
+    for model in (P2PPurchaseOrder, ProductionBom, DesignBom, JournalEntry, VendorInvoice, HrEmployeeProfile):
         if model not in _REGISTERED:
             event.listen(model, "before_update", _before_update)
             _REGISTERED.add(model)

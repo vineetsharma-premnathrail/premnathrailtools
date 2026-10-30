@@ -112,6 +112,7 @@ def project_response(db: Session, project: PmProject, user: User | None = None, 
     resp.lifecycle_stage = project.lifecycle_stage or "planned"
     resp.lifecycle_stage_label = lifecycle.stage_label(resp.lifecycle_stage)
     if project.sales_order_id:
+        # Historic sales-order project (Sales Orders were retired 2026-10-30): the order number is display only.
         from app.modules.sales.models.order import SalesOrder
         so = db.get(SalesOrder, project.sales_order_id)
         if so:

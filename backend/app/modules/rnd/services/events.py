@@ -27,16 +27,18 @@ def requirement_event(db: Session, event: str, source: str, record_id: int, *, t
 
 
 def tor_received(db: Session, *, source: str, record, offer_number: str, due_date, actor: User | None,
-                 skip_user_ids: set[int] | None = None, background_tasks: BackgroundTasks | None = None) -> set[int]:
+                 skip_user_ids: set[int] | None = None, background_tasks: BackgroundTasks | None = None,
+                 rd_number: str | None = None) -> set[int]:
     """CRM sent / re-sent a requirement to R&D. Call from CRM's send flow
     (crm/services/requirement_movement.create_rnd_request), passing the R&D
-    head(s) already told directly in skip_user_ids."""
-    ref = offer_number or getattr(record, "universal_id", None) or f"{source} #{record.id}"
+    head(s) already told directly in skip_user_ids. `rd_number` is the revision
+    code (RDR-2026-0001-R1). Bell only — Teams is for the review-pending reminder."""
+    ref = rd_number or offer_number or getattr(record, "universal_id", None) or f"{source} #{record.id}"
     by = (actor.name or actor.email) if actor else "CRM"
     return requirement_event(
         db, "tor_received", source, record.id,
-        title=f"Technical Offer Request {ref} received",
-        message=f"{by} sent {ref} to R&D — response due {due_date.strftime('%d %b %Y')}. Open R&D › Requirements to review it.",
+        title=f"New requirement {ref} received",
+        message=f"{by} sent {offer_number or ref} ({ref}) to R&D — response due {due_date.strftime('%d %b %Y')}. Open R&D › Requirements to review it.",
         actor=actor, skip_user_ids=skip_user_ids, background_tasks=background_tasks,
     )
 

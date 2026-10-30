@@ -82,7 +82,7 @@ class DesignEcnEffectivityPayload(BaseModel):
 class DesignChangeNoticeCreate(BaseModel):
     title: str = Field(min_length=3, max_length=255)
     reason: str = "design_improvement"
-    priority: str = "medium"
+    priority: str = "standard"
     description: str | None = Field(None, max_length=8000)
     impact_assessment: str | None = Field(None, max_length=8000)
     target_date: date | None = None

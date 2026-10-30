@@ -117,7 +117,7 @@ def line(wo, item):
 def test_create_validates_priority_dates_and_refs(client, s):
     h, bom = s["h"], s["bom"]["id"]
     bad_priority = client.post(f"{API}/work-orders", json={"bom_id": bom, "quantity_planned": 1, "priority": "asap"}, headers=h)
-    assert bad_priority.status_code == 400 and "Invalid priority 'asap'" in bad_priority.json()["detail"]
+    assert bad_priority.status_code == 422 and "Standard or Urgent" in str(bad_priority.json()["detail"])
 
     dates = client.post(f"{API}/work-orders", json={
         "bom_id": bom, "quantity_planned": 1, "planned_start_date": "2026-10-10", "planned_end_date": "2026-10-01",
@@ -181,12 +181,12 @@ def test_only_drafts_can_be_deleted(client, s):
 
 def test_list_filters(client, s):
     h = s["h"]
-    draft = new_wo(client, s, release=False, priority="low", planned_end_date=str(date.today() - timedelta(days=3)))
-    released = new_wo(client, s, priority="high")
+    draft = new_wo(client, s, release=False, priority="standard", planned_end_date=str(date.today() - timedelta(days=3)))
+    released = new_wo(client, s, priority="urgent")
     ids = lambda params: {w["id"] for w in client.get(f"{API}/work-orders", params=params, headers=h).json()}  # noqa: E731
     assert ids({"status": "draft"}) == {draft["id"]}
     assert ids({"status": "draft,released"}) == {draft["id"], released["id"]}
-    assert ids({"priority": "high"}) == {released["id"]}
+    assert ids({"priority": "urgent"}) == {released["id"]}
     assert ids({"overdue": True}) == {draft["id"]}
     assert ids({"search": "bogie"}) == {draft["id"], released["id"]}
     bad = client.get(f"{API}/work-orders", params={"status": "draft,finished"}, headers=h)
@@ -510,7 +510,7 @@ def test_operator_can_be_someone_else(client, db, s):
 
 def test_queue_orders_in_progress_first_and_filters(client, s):
     h = s["h"]
-    low = new_wo(client, s, qty=1, priority="low")
+    low = new_wo(client, s, qty=1, priority="standard")
     urgent = new_wo(client, s, qty=1, priority="urgent")
     new_wo(client, s, qty=1, release=False, priority="urgent")  # drafts never reach the floor
     client.post(f"{API}/work-orders/{low['id']}/operations/{low['operations'][0]['id']}/start", headers=h)

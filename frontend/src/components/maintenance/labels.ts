@@ -25,7 +25,7 @@ export const REQUEST_STATUS_LABELS: Record<string, string> = {
   open: 'Open', acknowledged: 'Acknowledged', converted: 'Work Order Raised', rejected: 'Rejected', duplicate: 'Duplicate',
 }
 
-export const PRIORITY_LABELS: Record<string, string> = { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' }
+export const PRIORITY_LABELS: Record<string, string> = { standard: 'Standard', urgent: 'Urgent' }
 
 export const WO_TYPE_LABELS: Record<string, string> = {
   breakdown: 'Breakdown', preventive: 'Preventive', corrective: 'Corrective', calibration: 'Calibration',

@@ -1,9 +1,11 @@
-"""Quality against PM project units (Project Management › All Projects).
+"""Quality against PM projects and their units (Project Management › All Projects).
 
-The inspection requirement of a build comes from its Sales Order — the SO's
-`inspection_agency` + `third_party_inspection_required` are the single source
-of truth. An inspection call / lot linked to an element (vehicle or spares
-lot) takes the agency from that SO; a different agency is refused.
+One project = one machine (2026-10-30): a call / lot of a project WITHOUT units links to the
+project itself (order_project_id set, no element) and there is no sales order, so no agency rule
+applies — the agency is typed on the call. For a historic sales-order project (units) the
+inspection requirement of a build comes from its Sales Order — the SO's `inspection_agency` +
+`third_party_inspection_required` are the single source of truth. An inspection call / lot linked
+to an element (vehicle or spares lot) takes the agency from that SO; a different agency is refused.
 
 Stable helpers other modules may call:
 
@@ -13,6 +15,7 @@ Stable helpers other modules may call:
         For the Store dispatch block: cleared = accepted calls with a
         certificate cover the element's quantity.
     resolve_link(db, project_id, element_id) -> (project, element) | (None, None)
+        project only is allowed (the whole project / order) — no "pick a unit" error
     trigger_inspection_milestone(db, call) — accepted call → SO 'inspection'
         billing milestone due (Finance billing.trigger_event).
 """
@@ -89,7 +92,14 @@ def apply_to_call(db: Session, data: dict, project: PmProject, element: PmProjec
     requirement dict."""
     req = so_requirement(db, element, project)
     if req is None:
-        raise LinkError(f"The Sales Order of {project.project_code} can't be read — reload and pick the project again.", 404)
+        # A project made in Project Management has no sales order: nothing decides the agency, the
+        # call carries the one typed on it. Order reference / customer default from the project.
+        if not (data.get("order_reference") or "").strip():
+            data["order_reference"] = (project.customer_po_ref or "").strip() or project.project_code
+        if not (data.get("customer_name") or "").strip():
+            data["customer_name"] = project.client_name
+        return {"so_id": None, "so_number": None, "required": False, "agency": None, "agency_label": None,
+                "order_reference": data["order_reference"], "customer_name": data["customer_name"]}
     where = f"Sales Order {req['so_number']}"
     if not req["agency"]:
         raise LinkError(f"{where} ({project.project_code}) has no inspecting agency, so no customer / third-party inspection "
@@ -136,12 +146,12 @@ def trigger_inspection_milestone(db: Session, call: QualityInspectionCall) -> No
     the order falls due — through the element's Sales Order when linked, and
     the ERP machine's order(s) for old calls (billing.on_inspection_accepted)."""
     from app.modules.accounts.services.billing import BILLABLE_ORDER_STATUSES, on_inspection_accepted, trigger_event
-    from app.modules.sales.service import today_ist
+    from app.modules.sales.legacy import today_ist
     on = call.result_date or today_ist()
     if call.order_project_id:
         project = db.get(PmProject, call.order_project_id)
         if project is not None and project.sales_order_id:
-            from app.modules.sales.views import get_order
+            from app.modules.sales.legacy import get_order
             try:
                 so = get_order(db, project.sales_order_id)
             except HTTPException:

@@ -8,7 +8,6 @@ of one approved requisition into several POs by vendor.
     GET  /p2p/rfqs/{id}/comparison/export          the same as Excel
     POST /p2p/rfqs/{id}/awards                     line-level vendor choice (reason when not L1)
     GET  /p2p/rfqs/{id}/split-proposal             awarded lines grouped into one PO per vendor
-    POST /p2p/rfqs/{id}/split-pos                  create those draft POs
     PATCH /p2p/rfqs/{id}/po-draft/{po_id}/details  plant / ship-to / per-line delivery dates on a draft
 """
 from datetime import date, datetime, timedelta, timezone
@@ -22,19 +21,17 @@ from app.db.session import get_db
 from app.modules.accounts.models.vendor import Vendor
 from app.modules.main.models.user import User
 from app.modules.organization.models.branch import Branch
-from app.modules.p2p.item_link import item_category_for
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
 from app.modules.p2p.models.rfq import RFQ
 from app.modules.p2p.models.vendor_quotation import VendorQuotation, VendorQuotationItem
-from app.modules.p2p import info_records, po_split, quotation_compare
+from app.modules.p2p import po_split, quotation_compare
 from app.modules.p2p.routes.p2p_requests import _write_audit as _write_pr_audit
-from app.modules.p2p.routes.rfq import _derive_po_total, _ensure_vendor_can_get_po, _get_pr_for_rfq, _get_rfq_or_404, _po_terms
+from app.modules.p2p.routes.rfq import _get_pr_for_rfq, _get_rfq_or_404
 from app.modules.p2p.schemas.mm_purchasing import (
-    LineQuotationCreate, LineQuotationResponse, PODraftDetailsPayload, POSplitPayload, QuotationAwardPayload,
+    LineQuotationCreate, LineQuotationResponse, PODraftDetailsPayload, QuotationAwardPayload,
 )
 from app.modules.p2p.schemas.purchase_order import P2PPurchaseOrderResponse
-from app.modules.p2p.service import compute_line_total, generate_po_number
 from app.modules.store.models.location import StoreLocation
 
 router = APIRouter(prefix="/p2p/rfqs", tags=["P2P - Quotations & PO split"])
@@ -299,153 +296,6 @@ def _receiving_from_pr(db: Session, lines) -> tuple[int | None, int | None]:
              .filter(StoreLocation.branch_id == branch.id, StoreLocation.is_active == True)  # noqa: E712
              .order_by(StoreLocation.name).first())
     return branch.id, store.id if store else None
-
-
-@router.post("/{rfq_id}/split-pos", response_model=list[P2PPurchaseOrderResponse])
-def create_split_pos(rfq_id: int, payload: POSplitPayload, db: Session = Depends(get_db),
-                     user: User = Depends(_purchase_tab("purchase_orders", "create"))):
-    """ME21N: draft one PO per vendor group. Line prices come from the
-    awarded / named quote line, else the vendor + item info record, else are
-    priced later on the draft. Every group's lines together never order more
-    of a PR line than is left to buy."""
-    rfq, pr = _rfq_pr(db, rfq_id, user)
-    if pr.status not in po_split.SPLIT_PO_PR_STATUSES:
-        raise HTTPException(status_code=409, detail=f"POs can't be drafted for {pr.p2p_number} — it is {pr.status.replace('_', ' ')}.")
-    if rfq.status != "locked":
-        raise HTTPException(status_code=409, detail=f"Submit RFQ {rfq.rfq_number} first — POs are made from its quotes.")
-    if payload.plant_branch_id and db.get(Branch, payload.plant_branch_id) is None:
-        raise HTTPException(status_code=422, detail="That plant doesn't exist — pick the receiving plant again.")
-    _check_location(db, payload.ship_to_location_id, "Ship-to")
-    left = po_split.open_qty_by_pr_item(db, pr)
-    pr_lines = {i.id: i for i in pr.items}
-    quote_items = {qi.id: (qi, vq) for vq in rfq.vendor_quotations for qi in vq.items}
-    data = quotation_compare.comparison(db, rfq, pr) if quote_items else {"lines": []}
-    l1_by_line = {r["pr_item_id"]: r["l1_vendor_quotation_item_id"] for r in data["lines"]}
-    vendor_by_vq = {vq.id: vq for vq in rfq.vendor_quotations}
-
-    # Resolve quantities first so the split as a whole is checked against the PR.
-    wanted: dict[int, float] = {}
-    seen_vendor = set()
-    for gi, g in enumerate(payload.pos, start=1):
-        if g.vendor_id in seen_vendor:
-            raise HTTPException(status_code=422, detail="The same vendor appears in two PO groups — put all its lines in one PO.")
-        seen_vendor.add(g.vendor_id)
-        for ln in g.lines:
-            qty = ln.quantity if ln.quantity is not None else left.get(ln.pr_item_id, 0)
-            wanted[ln.pr_item_id] = wanted.get(ln.pr_item_id, 0) + qty
-    po_split.ensure_qty_fits(db, pr, wanted)
-
-    po_date = payload.po_date or date.today()
-    from app.modules.quality.services.supplier_quality import SupplierError, ensure_po_allowed
-
-    created: list[P2PPurchaseOrder] = []
-    for gi, g in enumerate(payload.pos, start=1):
-        _ensure_vendor_can_get_po(db, g.vendor_id)
-        vendor = db.get(Vendor, g.vendor_id)
-        vq = vendor_by_vq.get(g.vendor_quotation_id) if g.vendor_quotation_id else next(
-            (q for q in rfq.vendor_quotations if q.vendor_id == g.vendor_id), None)
-        if g.vendor_quotation_id and (vq is None or vq.vendor_id != g.vendor_id):
-            raise HTTPException(status_code=422, detail=f"PO {gi}: that quotation isn't {vendor.name}'s quote on {rfq.rfq_number}.")
-        if g.plant_branch_id and db.get(Branch, g.plant_branch_id) is None:
-            raise HTTPException(status_code=422, detail=f"PO {gi} ({vendor.name}): that plant doesn't exist — pick it again.")
-        _check_location(db, g.ship_to_location_id, f"PO {gi} ({vendor.name})")
-        item_ids = [pr_lines[ln.pr_item_id].store_item_id for ln in g.lines]
-        try:
-            ensure_po_allowed(db, vendor.name, item_ids)
-        except SupplierError as e:
-            raise HTTPException(status_code=e.status, detail=str(e))
-        info_records.ensure_source_allowed(db, vendor.id, item_ids, po_date, vendor.name)
-
-        # Receiving comes from the requisition's Ship To unless the caller names it.
-        pr_plant, pr_store = _receiving_from_pr(db, [pr_lines[ln.pr_item_id] for ln in g.lines])
-        plant_id = g.plant_branch_id or payload.plant_branch_id or pr_plant
-        store_id = g.ship_to_location_id or payload.ship_to_location_id or (pr_store if plant_id == pr_plant else None)
-        po = P2PPurchaseOrder(
-            po_number=generate_po_number(db), p2p_request_id=pr.id, vendor_id=vendor.id, vendor_name=vendor.name, status="draft",
-            po_date=po_date, expected_delivery=g.expected_delivery, delivery_terms=g.delivery_terms or (vq.payment_terms if vq else None),
-            created_by_id=user.id, plant_branch_id=plant_id,
-            ship_to_location_id=store_id, vendor_quotation_id=vq.id if vq else None,
-        )
-        po.terms_conditions = _po_terms(db, rfq, vendor.id)
-        # The PR's internal order (for a New development purchase: the one behind its R&D project) carries to the PO,
-        # the same as on the single-vendor PO draft in rfq.py.
-        if getattr(pr, "internal_order_id", None) and not po.internal_order_id:
-            po.internal_order_id = pr.internal_order_id
-        db.add(po)
-        db.flush()
-        notes = []
-        for ln in g.lines:
-            line = pr_lines[ln.pr_item_id]
-            qty = ln.quantity if ln.quantity is not None else left.get(line.id, 0)
-            qi = None
-            if ln.vendor_quotation_item_id:
-                hit = quote_items.get(ln.vendor_quotation_item_id)
-                if hit is None or hit[0].pr_item_id != line.id or hit[1].vendor_id != vendor.id:
-                    raise HTTPException(status_code=422, detail=f"'{line.item_name}': that quote line isn't {vendor.name}'s price for this line.")
-                qi = hit[0]
-            elif vq is not None:
-                qi = next((x for x in vq.items if x.pr_item_id == line.id), None)
-            # Non-L1 control: the line must be awarded to this vendor (award
-            # carries the reason) or the group must say why.
-            l1 = l1_by_line.get(line.id)
-            if l1 and (qi is None or qi.id != l1) and not (qi is not None and qi.is_awarded):
-                if len((g.selection_reason or "").strip()) < 5:
-                    l1_vendor = quote_items[l1][1].vendor_name
-                    raise HTTPException(status_code=422, detail=(
-                        f"'{line.item_name}' goes to {vendor.name}, but {l1_vendor} is L1 for it and the line isn't awarded to "
-                        f"{vendor.name} — award it on the comparison, or write the reason for PO {gi}."))
-                notes.append(f"'{line.item_name}' not L1: {g.selection_reason.strip()}")
-            price, tax, source, reason = None, None, None, None
-            if qi is not None:
-                price = round(qi.unit_price * (1 - (qi.discount_pct or 0) / 100), 4)
-                tax, source = qi.gst_rate, "quotation"
-            if ln.unit_price is not None and (price is None or abs(ln.unit_price - price) > 1e-6):
-                if price is not None and len((ln.price_override_reason or "").strip()) < 5:
-                    raise HTTPException(status_code=422, detail=(
-                        f"'{line.item_name}': {ln.unit_price:g} differs from {vendor.name}'s quoted {price:g} — write why the price is overridden."))
-                reason = (ln.price_override_reason or "").strip() or None
-                price, source = ln.unit_price, "manual"
-            if price is None:
-                rec_price = info_records.default_price(db, vendor.id, line.store_item_id, po_date)
-                if rec_price:
-                    price, source = rec_price, "info_record"
-            if ln.tax_rate is not None:
-                tax = ln.tax_rate
-            delivery = ln.delivery_date or (po_date + timedelta(days=qi.delivery_days) if qi is not None and qi.delivery_days is not None else None) \
-                or g.expected_delivery or pr.required_date
-            _check_location(db, ln.ship_to_location_id, f"'{line.item_name}'")
-            db.add(P2PPurchaseOrderItem(
-                purchase_order_id=po.id, store_item_id=line.store_item_id, item_name=line.item_name, make=(qi.make_offered if qi else None) or line.make,
-                part_code=line.part_code, unit=line.unit, quantity=qty, unit_price=price, tax_rate=tax,
-                line_total=compute_line_total(qty, price, tax), item_category=item_category_for(db, line.store_item_id),
-                pr_item_id=line.id, delivery_date=delivery, ship_to_location_id=ln.ship_to_location_id,
-                vendor_quotation_item_id=qi.id if qi is not None else None, price_source=source, price_override_reason=reason,
-            ))
-        db.flush()
-        db.refresh(po)
-        po.total_value = _derive_po_total(po.items)
-        if po.expected_delivery is None:
-            dates = [i.delivery_date for i in po.items if i.delivery_date]
-            po.expected_delivery = max(dates) if dates else None
-        created.append(po)
-        _write_pr_audit(db, pr.id, "po_draft_created", user,
-                        summary=f"{user.name or user.email} drafted PO '{po.po_number}' for {pr.p2p_number} to {vendor.name} "
-                                f"({len(po.items)} line(s)) — split by vendor." + (" " + "; ".join(notes) if notes else ""))
-    if pr.status in _QUOTE_PR_STATUSES:
-        old = pr.status
-        pr.status = "po_drafted"
-        _write_pr_audit(db, pr.id, "po_drafted", user, summary=f"{pr.p2p_number}: {len(created)} PO draft(s) made.",
-                        old_status=old, new_status="po_drafted")
-    db.flush()
-    po_split.rollup_pr_status(db, pr, user.id, force=True)
-    db.commit()
-    out = []
-    for po in created:
-        db.refresh(po)
-        resp = P2PPurchaseOrderResponse.model_validate(po)
-        resp.p2p_request_number = pr.p2p_number
-        out.append(resp)
-    return out
 
 
 @router.patch("/{rfq_id}/po-draft/{po_id}/details", response_model=P2PPurchaseOrderResponse)

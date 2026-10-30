@@ -17,6 +17,7 @@ import { secondaryBtnStyle, dangerBtnStyle, primaryBtnStyle, smallSecondaryBtnSt
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
+import { normalizePriority, priorityLabel } from '@/lib/priority'
 import { RRV_PRIORITY_LABELS, RRV_TEST_TYPES, toOptions } from '@/components/production/rrvMeta'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
@@ -194,7 +195,7 @@ export default function RrvBuildDetailPage() {
       rrv_model: b.rrv_model, customer_name: b.customer_name || '', customer_po_number: b.customer_po_number || '', customer_po_date: b.customer_po_date || '',
       order_reference: b.order_reference || '', erp_project_id: b.erp_project_id ? String(b.erp_project_id) : '', vehicle_serial_number: b.vehicle_serial_number || '',
       chassis_number: b.chassis_number || '', engine_number: b.engine_number || '', year_of_manufacture: b.year_of_manufacture || '',
-      build_manager_id: b.build_manager_id ? String(b.build_manager_id) : '', priority: b.priority, planned_start_date: b.planned_start_date || '',
+      build_manager_id: b.build_manager_id ? String(b.build_manager_id) : '', priority: normalizePriority(b.priority), planned_start_date: b.planned_start_date || '',
       target_completion_date: b.target_completion_date || '', target_handover_date: b.target_handover_date || '', remarks: b.remarks || '',
     })
     setPopupError('')
@@ -420,7 +421,7 @@ export default function RrvBuildDetailPage() {
               meta={<>
                 <Pill label={BUILD_LABELS[b.status] || b.status} hex={BUILD_HEX[b.status] || '#78716c'} />
                 {b.is_overdue && <Pill label="Overdue" hex="#DC2626" />}
-                <span>· <strong style={{ color: TEXT.heading }}>{RRV_PRIORITY_LABELS[b.priority] || b.priority}</strong> priority</span>
+                <span>· <strong style={{ color: TEXT.heading }}>{priorityLabel(b.priority)}</strong> priority</span>
                 <span>· Handover due {formatDate(b.target_handover_date)}</span>
                 <span>· Build manager: <strong style={{ color: TEXT.heading }}>{b.build_manager_name || '—'}</strong></span>
               </>}

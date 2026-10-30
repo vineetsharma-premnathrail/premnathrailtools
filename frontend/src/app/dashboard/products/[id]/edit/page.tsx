@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
-import { useRequireApp } from '@/hooks/useAuth'
+import { useProductsAccess } from '@/components/products/useProductsAccess'
 import { productsApi } from '@/lib/api'
 import { FinishedProduct } from '@/types'
 import ProductsNav from '@/components/products/ProductsNav'
@@ -14,7 +14,7 @@ import { secondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 
 export default function EditProductPage() {
-  const { isAuthorized, isLoading } = useRequireApp('products')
+  const { isAuthorized, isLoading } = useProductsAccess()
   const router = useRouter()
   const ref = useParams().id as string
   const { id: recordId, error: linkError } = useRecordId(ref)

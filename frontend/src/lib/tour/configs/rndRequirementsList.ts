@@ -1,5 +1,13 @@
 import { TourConfig } from '../types'
 
+export const RND_REVIEW_OPTIONS = [
+  { value: 'Awaiting R&D review', meaning: 'BD sent it (or re-sent it); the R&D head has not accepted or returned it yet.' },
+  { value: 'Accepted by R&D', meaning: 'R&D accepted it — tasks, the Technical Offer upload and the response to CRM are open.' },
+  { value: 'Returned to BD', meaning: 'R&D sent it back with a reason; BD fixes it and sends it again as the next revision.' },
+  { value: 'Responded', meaning: 'R&D answered CRM.' },
+  { value: 'Superseded', meaning: 'BD sent a newer revision before this one was answered.' },
+]
+
 export const RND_RESPONSE_OPTIONS = [
   { value: 'Awaiting R&D', meaning: 'Sent to R&D, not answered yet, still within the due date.' },
   { value: 'Overdue', meaning: 'Not answered and the due date has passed — answer it first.' },
@@ -16,19 +24,19 @@ const config: TourConfig = {
     {
       target: 'rnd-nav-requirements',
       title: 'Requirements',
-      purpose: 'Inbox of customer requirements that the sales (BD) team has sent from CRM as Technical Offer Requests (TOR).',
+      purpose: 'Inbox of customer requirements that the sales (BD) team has sent from CRM as Technical Offer Requests (TOR). Each has an R&D ID (RDR-year-number) and a revision per send.',
     },
     {
       target: 'rnd-req-header',
       title: 'Your pending count',
-      purpose: 'Shows how many requests are awaiting your response (and how many are overdue), and how many were edited in CRM after they were sent.',
+      purpose: 'Shows how many requirements wait for your review (accept / return), how many are awaiting your response (and how many are overdue), and how many were edited in CRM after they were sent.',
       why: 'Sales can’t quote the customer until R&D confirms the technical offer — a late R&D answer delays the whole order.',
     },
     {
       target: 'rnd-req-search',
       title: 'Search',
       purpose: 'Find by TOR number, inquiry / tender ID, product or customer name.',
-      validExample: 'TOR-0012 or Indian Railways',
+      validExample: 'RDR-2026-0007, TOR-0012 or Indian Railways',
     },
     {
       target: 'rnd-req-source',
@@ -40,23 +48,19 @@ const config: TourConfig = {
       ],
     },
     {
-      target: 'rnd-my-tasks',
-      title: 'My tasks',
-      purpose: 'Tasks the R&D head gave you, soonest due first. Red = overdue: open it and give the reason and a new completion date.',
-    },
-    {
       target: 'rnd-req-mine',
       title: 'Assigned filter',
       options: [
         { value: 'Everyone’s', meaning: 'All requirements sent to R&D.' },
-        { value: 'Awaiting my response', meaning: 'Requests you may respond to (you are R&D head or hold the Respond right) plus older ones assigned to you by name.' },
+        { value: 'Waiting for my review', meaning: 'Revisions you may accept or return (R&D head or R&D › Requirements › Review) that are still awaiting review.' },
+        { value: 'Awaiting my response', meaning: 'Accepted requirements you may respond to (you are R&D head or hold the Respond right) plus older ones assigned to you by name.' },
       ],
     },
     {
       target: 'rnd-req-table',
       title: 'Requirement list',
-      purpose: 'TOR No. (with an orange "Edited" tag if CRM changed it after sending), source, customer, product, quantity, priority, R&D response status with assignee and due date, BD owner, last sent and number of sends. Click a row to open it.',
-      options: RND_RESPONSE_OPTIONS,
+      purpose: 'R&D ID (with a blue "Review" tag when it waits for you), revision, review status, TOR No. (with an orange "Edited" tag if CRM changed it after sending), source, customer, product, quantity, priority (Standard / Urgent), R&D response with assignee and due date, BD owner and when it was last received. Requirements waiting for your review come first, then R&D ID ascending. Click a row to open it.',
+      options: RND_REVIEW_OPTIONS,
     },
   ],
 }

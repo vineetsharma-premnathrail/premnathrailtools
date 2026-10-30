@@ -20,6 +20,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core import assignee_rules
+from app.core.priority import parse_priority
 from app.core.permission_registry import can_perform, can_view_tab
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -29,7 +30,7 @@ from app.modules.projects.models.document import PmProjectDocument
 from app.modules.projects.models.milestone import PmProjectMilestone
 from app.modules.projects.models.project import PmProject
 from app.modules.projects.models.task import (
-    PmMilestoneMessage, PmProjectTask, PmTaskSubtask, PmTaskTimeLog, PmTaskUpdate, PM_TASK_OPEN_STATUSES, PM_TASK_PRIORITIES,
+    PmMilestoneMessage, PmProjectTask, PmTaskSubtask, PmTaskTimeLog, PmTaskUpdate, PM_TASK_OPEN_STATUSES,
 )
 from app.modules.projects.routes.documents import file_response, soft_delete, store_files
 from app.modules.projects.schemas.document import PmProjectDocumentResponse
@@ -239,9 +240,8 @@ def _check_due(m: PmProjectMilestone, due) -> None:
         raise HTTPException(status_code=422, detail=f"Due date {due:%d-%m-%Y} is after the WBS date {m.target_date:%d-%m-%Y}. A task must finish on or before its WBS.")
 
 
-def _check_priority(priority: str) -> None:
-    if priority not in PM_TASK_PRIORITIES:
-        raise HTTPException(status_code=422, detail=f"Priority '{priority}' is not valid — use one of {', '.join(PM_TASK_PRIORITIES)}.")
+def _check_priority(priority: str) -> str:
+    return parse_priority(priority)
 
 
 # ── Who am I ───────────────────────────────────────────────────────────
@@ -400,7 +400,7 @@ async def create_task(milestone_id: int, payload: PmTaskCreate, db: Session = De
     _require_milestone_open(m, "add tasks")
     if not payload.title.strip():
         raise HTTPException(status_code=422, detail="Task name is required.")
-    _check_priority(payload.priority)
+    payload.priority = _check_priority(payload.priority)
     _check_due(m, payload.due_date)
     if payload.estimated_hours is not None and payload.estimated_hours < 0:
         raise HTTPException(status_code=422, detail="Estimated hours can't be negative.")
@@ -434,7 +434,7 @@ async def create_own_task(milestone_id: int, payload: PmSelfTaskCreate, db: Sess
     _require_milestone_open(m, "add tasks")
     if not payload.title.strip():
         raise HTTPException(status_code=422, detail="Task name is required.")
-    _check_priority(payload.priority)
+    payload.priority = _check_priority(payload.priority)
     _check_due(m, payload.due_date)
     if payload.estimated_hours is not None and payload.estimated_hours < 0:
         raise HTTPException(status_code=422, detail="Estimated hours can't be negative.")
@@ -503,7 +503,7 @@ async def update_task(task_id: int, payload: PmTaskUpdatePayload, db: Session = 
     if "title" in updates and not (updates["title"] or "").strip():
         raise HTTPException(status_code=422, detail="Task name can't be empty.")
     if "priority" in updates:
-        _check_priority(updates["priority"])
+        updates["priority"] = _check_priority(updates["priority"])
     if "due_date" in updates:
         if not updates["due_date"]:
             raise HTTPException(status_code=422, detail="Due date is required.")

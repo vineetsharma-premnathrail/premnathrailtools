@@ -31,7 +31,7 @@ export default function NewRrvBuildPage() {
   const [form, setForm] = useState({
     rrv_model: '', customer_name: '', customer_po_number: '', customer_po_date: '', order_reference: '',
     erp_project_id: '', vehicle_serial_number: '', chassis_number: '', engine_number: '', year_of_manufacture: '',
-    branch_id: '', build_manager_id: '', priority: 'normal', planned_start_date: '', target_completion_date: '',
+    branch_id: '', build_manager_id: '', priority: 'standard', planned_start_date: '', target_completion_date: '',
     target_handover_date: '', warranty_months: '12', remarks: '',
   })
   const [tests, setTests] = useState<string[]>(RRV_DEFAULT_REQUIRED_TESTS)

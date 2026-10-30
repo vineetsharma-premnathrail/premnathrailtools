@@ -155,7 +155,8 @@ def test_central_endpoints(client, db, team):
     assert [s["name"] for s in pv["stages"]] == ["Department head", "Partner"]
 
 
-register_scoped(FinishedProduct, "sales", owner=("created_by_id",), label="product")
+# The product master itself is tab-gated, not owner-scoped (2026-10-30); this test only exercises the framework.
+register_scoped(FinishedProduct, "crm", owner=("created_by_id",), label="product")
 
 
 def test_data_scope(db):
@@ -164,24 +165,24 @@ def test_data_scope(db):
     other = _user(db, "ds.other@premnathrail.com", department="Stores")
     for i, u in enumerate((owner, peer, other)):
         db.add(FinishedProduct(code=f"DS-{i}", name=f"P{i}", product_type="machine", created_by_id=u.id))
-    role = Role(name="Products – own", permissions=["products:*:*"], data_scopes={"sales": "own"})
+    role = Role(name="CRM – own", permissions=["crm:*:*"], data_scopes={"crm": "own"})
     db.add(role)
     db.commit()
     owner.roles = [role]
     db.commit()
 
-    assert user_scope(owner, "sales") == "own"
+    assert user_scope(owner, "crm") == "own"
     seen = apply_scope(db.query(FinishedProduct), owner, FinishedProduct).all()
     assert [p.code for p in seen] == ["DS-0"]
     with pytest.raises(HTTPException) as e:
         ensure_in_scope(db, owner, db.query(FinishedProduct).filter_by(code="DS-2").one())
     assert e.value.status_code == 403 and "Own records" in e.value.detail
 
-    role.data_scopes = {"sales": "department"}
+    role.data_scopes = {"crm": "department"}
     db.commit()
     assert sorted(p.code for p in apply_scope(db.query(FinishedProduct), owner, FinishedProduct).all()) == ["DS-0", "DS-1"]
 
-    owner.data_access_scopes = {"sales": "organization"}  # personal override wins
+    owner.data_access_scopes = {"crm": "organization"}  # personal override wins
     db.commit()
     assert len(apply_scope(db.query(FinishedProduct), owner, FinishedProduct).all()) == 3
 

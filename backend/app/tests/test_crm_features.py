@@ -58,7 +58,7 @@ def test_hidden_money_is_not_wiped_by_a_save(client, db):
     org = make_org(client, owner, "Feature Org Save")
     inq = make_inquiry(client, owner, org["id"])
     # The creator without Prices saves the form with expected_value = null: ignored.
-    r = client.patch(f"{API}/inquiries/{inq['id']}", json={"priority": "High", "expected_value": None}, headers=auth(owner))
+    r = client.patch(f"{API}/inquiries/{inq['id']}", json={"priority": "Urgent", "expected_value": None}, headers=auth(owner))
     assert r.status_code == 200, r.text
     r = client.patch(f"{API}/inquiries/{inq['id']}", json={"expected_value": 99}, headers=auth(owner))
     assert r.status_code == 200

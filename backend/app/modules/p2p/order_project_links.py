@@ -28,9 +28,14 @@ filled automatically when it can be derived:
   * the project in scope has exactly one live element.
 Plain stock / overhead PRs with no order link behave as before.
 
+One project = one machine (2026-10-30): a line of a project WITHOUT units is tied to the PROJECT
+(order_project_id set, order_project_element_id NULL) — that is the normal case, there is no
+vehicle / lot to pick. The PO and GRN lines copy the project from the PR line.
+
 Registered at import (imported by routes/p2p_requests.py, loaded at startup):
-  * mapper events that copy the element PR line -> PO line -> GRN line,
-  * the 'purchase' department provider for the project Units 360 table."""
+  * mapper events that copy the project / element PR line -> PO line -> GRN line,
+  * the 'purchase' department provider for the project Units 360 table, and the
+    project provider for the "Whole project" row of a project without units."""
 from __future__ import annotations
 
 from datetime import date
@@ -174,10 +179,26 @@ def purchase_cells(db: Session, project: PmProject, elements: list[PmProjectElem
     ids = [e.id for e in elements]
     if not ids:
         return {}
+    return _cells(db, ids, None)
+
+
+def project_purchase_cell(db: Session, project: PmProject) -> dict | None:
+    """Purchase cell of a project WITHOUT units: the PR / PO / GRN lines tied to the project itself."""
+    return _cells(db, [None], project.id).get(None)
+
+
+def _cells(db: Session, ids: list, project_id: int | None) -> dict:
+    """Stats per key: an element id, or None = the lines of `project_id` that name no element."""
     today = date.today()
+    if project_id is None:
+        po_scope = P2PPurchaseOrderItem.order_project_element_id.in_(ids)
+        pr_scope = P2PRequestItem.order_project_element_id.in_(ids)
+    else:
+        po_scope = (P2PPurchaseOrderItem.order_project_id == project_id) & P2PPurchaseOrderItem.order_project_element_id.is_(None)
+        pr_scope = (P2PRequestItem.order_project_id == project_id) & P2PRequestItem.order_project_element_id.is_(None)
     po_rows = (db.query(P2PPurchaseOrderItem, P2PPurchaseOrder)
                .join(P2PPurchaseOrder, P2PPurchaseOrder.id == P2PPurchaseOrderItem.purchase_order_id)
-               .filter(P2PPurchaseOrderItem.order_project_element_id.in_(ids), P2PPurchaseOrder.status != "cancelled")
+               .filter(po_scope, P2PPurchaseOrder.status != "cancelled")
                .all())
     received: dict[int, float] = {}
     if po_rows:
@@ -193,7 +214,7 @@ def purchase_cells(db: Session, project: PmProject, elements: list[PmProjectElem
     legacy_po_prs = {po.p2p_request_id for li, po in po_rows if not li.pr_item_id and po.p2p_request_id}
     pr_rows = (db.query(P2PRequestItem, P2PRequest)
                .join(P2PRequest, P2PRequest.id == P2PRequestItem.p2p_request_id)
-               .filter(P2PRequestItem.order_project_element_id.in_(ids), P2PRequest.status.notin_(_DEAD_PR_STATUSES),
+               .filter(pr_scope, P2PRequest.status.notin_(_DEAD_PR_STATUSES),
                        P2PRequestItem.fulfillment_status != "stock_issued")
                .all())
 
@@ -245,3 +266,4 @@ def purchase_cells(db: Session, project: PmProject, elements: list[PmProjectElem
 
 
 op_core.register_department_provider("purchase", purchase_cells)
+op_core.register_project_provider("purchase", project_purchase_cell)

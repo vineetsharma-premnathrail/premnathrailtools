@@ -19,6 +19,7 @@ from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.p2p_request_approval import P2PRequestApproval
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
+from app.tests.p2p_po_helpers import post_upload_po, rfq_for_pr, upload_po_details
 from app.tests.p2p_workflow_helpers import master_item
 from app.tests.p2p_workflow_helpers import set_po_workflow, set_pr_workflow
 
@@ -28,7 +29,8 @@ APPROVER = ["p2p:purchase_requisitions:view", "p2p:purchase_orders:view"]
 REQUESTER = ["p2p:purchase_requisitions:view", "p2p:purchase_requisitions:create", "p2p:purchase_requisitions:submit",
              "p2p:purchase_requisitions:cancel"]
 BUYER = ["purchase:desk:view", "p2p:purchase_requisitions:view", "p2p:purchase_requisitions:edit", "p2p:rfq:view",
-         "p2p:purchase_orders:view", "p2p:purchase_orders:create", "p2p:purchase_orders:submit", "store:grn:view"]
+         "p2p:purchase_orders:view", "p2p:purchase_orders:create", "p2p:purchase_orders:submit", "store:grn:view",
+         "p2p:purchase_orders.po_document:view", "p2p:purchase_orders.po_document:create"]  # Upload PO needs the PO document feature
 
 
 @pytest.fixture(autouse=True)
@@ -51,7 +53,7 @@ def _h(u):
 
 
 def _raise(client, user):
-    r = client.post(BASE, json={"category_code": "RAW", "project_label": "RRV-7", "project_type": "existing", "priority": "medium",
+    r = client.post(BASE, json={"category_code": "RAW", "project_label": "RRV-7", "project_type": "existing", "priority": "standard",
                                 "items": [{"store_item_id": master_item(object_session(user), "Gear box", uom="Nos").id,
                                            "quantity": 2, "project_inhouse": "Project"}]},
                     headers=_h(user))
@@ -77,11 +79,13 @@ def _approved(client, team):
 
 
 def _po(client, team, pr):
-    r = client.post(f"{BASE}/{pr['id']}/create-po", json={
-        "po_number": f"PO-CA-{pr['id']}", "item_pricing": [{"pr_item_id": i["id"], "unit_price": 10} for i in pr["items"]],
-    }, headers=_h(team["buyer"]))
+    """The buyer uploads the Tally PO on the approved requisition (the PO goes into approval)."""
+    db = object_session(team["buyer"])
+    rfq = rfq_for_pr(db, pr["id"], team["buyer"].id)
+    r = post_upload_po(client, team["buyer"], rfq.id, upload_po_details(db, pr["id"], unit_price=10, tax_rate=None),
+                       f"PO-CA-{pr['id']}")
     assert r.status_code == 200, r.text
-    return r.json()
+    return client.get(f"{BASE}/{pr['id']}", headers=_h(team["buyer"])).json()
 
 
 # ── PR: submit → decide → status ────────────────────────────────────────────

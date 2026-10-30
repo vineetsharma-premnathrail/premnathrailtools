@@ -70,9 +70,9 @@ def test_full_flow(client, db):
 
 
 def test_permissions(client, db):
-    viewer = _auth(_user(db, "pm.viewer@premnathrail.com", grants=["products:products:view"]))
+    viewer = _auth(_user(db, "pm.viewer@premnathrail.com", grants=["crm:products:view"]))
     outsider = _auth(_user(db, "pm.out@premnathrail.com"))
     assert client.get(API, headers=viewer).status_code == 200
     assert client.get(API, headers=outsider).status_code == 403
     r = _product(client, viewer)
-    assert r.status_code == 403 and place("sales:products:create").split(" › ")[-1] in r.json()["detail"]
+    assert r.status_code == 403 and place("crm:products:create").split(" › ")[-1] in r.json()["detail"]

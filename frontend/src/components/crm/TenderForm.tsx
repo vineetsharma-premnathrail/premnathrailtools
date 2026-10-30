@@ -11,6 +11,7 @@ import { Tender, Organization, OrgContact } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import PhoneField from '@/components/erp/PhoneField'
+import { normalizePriority } from '@/lib/priority'
 import { RAILWAY_ZONES, TENDER_PORTALS, TENDER_TYPES, CURRENCIES, TENDER_STATUSES, priorityOptions, priorityLabel } from './constants'
 import { handleEnterAsTab } from './ui'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
@@ -99,7 +100,7 @@ function toFormState(initial?: Tender, defaultOrgId?: number): FormState {
     tender_date: initial?.tender_date || (initial?.created_at ? initial.created_at.slice(0, 10) : todayISO()),
     // Not asked on the form any more; an existing value is kept as it is.
     lead_source: initial?.lead_source || '',
-    priority: initial?.priority || 'Medium',
+    priority: normalizePriority(initial?.priority),
     railway_zone: initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? 'Other' : initial?.railway_zone || '',
     division: initial?.division || '',
     workshop: initial?.workshop || '',
@@ -235,7 +236,7 @@ export default function TenderForm({
       return
     }
     if (!form.priority) {
-      setError('Please select a Priority (High, Medium or Low).')
+      setError('Please select a Priority (Standard or Urgent).')
       return
     }
     if (form.org_contact_id === '__new__' && !newContact.name.trim()) {

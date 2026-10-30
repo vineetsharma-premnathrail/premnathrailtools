@@ -13,6 +13,7 @@ from app.auth.jwt_handler import create_access_token
 from app.modules.accounts.models.vendor import Vendor
 from app.modules.main.models.notification import Notification
 from app.modules.main.models.user import User
+from app.tests.p2p_po_helpers import make_ship_to, post_upload_po, upload_po_for_pr
 from app.tests.p2p_workflow_helpers import link_items, master_item
 
 BASE = "/api/v1/p2p/requests"
@@ -83,7 +84,7 @@ def _setup(client, db):
 
 
 def _create(client, requester):
-    body = {"category_code": "RAW", "project_label": "Project Alpha", "project_type": "new", "priority": "medium",
+    body = {"category_code": "RAW", "project_label": "Project Alpha", "project_type": "new", "priority": "standard",
             "approvers": {"design_manager": 999999},  # ignored once Settings has approvers
             "items": [{"item_name": "Hydraulic Cylinder", "quantity": 2, "unit": "pcs", "project_inhouse": "Project"}]}
     r = client.post(BASE, json=link_items(object_session(requester), body), headers=_h(requester))
@@ -111,10 +112,8 @@ def test_po_two_levels_then_any_one_partner(client, db):
     pr = _create(client, req)
     for a in s["pr"]:
         client.post(f"{BASE}/{pr['id']}/approve", json={"comment": "ok"}, headers=_h(a))
-    r = client.post(f"{BASE}/{pr['id']}/create-po", json={"po_number": "PO-T-1",
-                                                           "item_pricing": [{"pr_item_id": i["id"], "unit_price": 100, "tax_rate": 18} for i in pr["items"]]},
-                    headers=_h(buyer))
-    assert r.status_code == 200, r.text
+    po = upload_po_for_pr(client, db, pr["id"], buyer, tally_po_no="PO-T-1")
+    assert po["status"] == "issued"
     p1, p2 = s["partners"]
     # Partner can't jump the queue: the PO approvers' stage comes first.
     r = client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": "go"}, headers=_h(p1))
@@ -187,7 +186,7 @@ def test_pr_import_and_export(client, db):
         ("RM-ANGLE-01", "MS angle", "KG"), ("RM-PLATE-01", "MS plate", "KG")]
 
 
-def test_create_po_vendor_choice_and_word_document(client, db):
+def test_upload_po_vendor_choice_and_word_document(client, db):
     from datetime import date
     from app.modules.p2p.models.p2p_request import P2PRequest
     from app.modules.p2p.models.p2p_request_item import P2PRequestItem
@@ -197,12 +196,13 @@ def test_create_po_vendor_choice_and_word_document(client, db):
     from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
 
     buyer = _user(db, "ps.pobuyer@premnathrail.com", apps=("purchase", "p2p"))
+    _user(db, "ps.pobuyer.partner@premnathrail.com", apps=("p2p",), is_partner=True)  # the PO goes to a Partner for approval
     v1 = Vendor(code="V-9001", name="Cheap Seals", status="active", gst_registration_type="unregistered")
     v2 = Vendor(code="V-9002", name="Fast Seals", status="active", gst_registration_type="unregistered", terms_conditions="Ex-works Pune")
     db.add_all([v1, v2])
     db.flush()
     pr = P2PRequest(p2p_number="P2P-RAW-2026-9001", category_code="RAW", status="vendor_quotations", project_label="RRV-1",
-                    project_type="new", request_date=date.today(), requested_by_id=buyer.id, priority="medium")
+                    project_type="new", request_date=date.today(), requested_by_id=buyer.id, priority="standard")
     db.add(pr)
     db.flush()
     db.add(P2PRequestItem(p2p_request_id=pr.id, item_name="O-ring", quantity=10, unit="Nos", project_inhouse="Project",
@@ -217,25 +217,26 @@ def test_create_po_vendor_choice_and_word_document(client, db):
                              sharepoint_path=f"x/{tier}.pdf", created_by_id=buyer.id))
     db.commit()
 
-    url = f"/api/v1/p2p/rfqs/{rfq.id}/po-draft"
-    r = client.post(url, json={"vendor_tier": "L2"}, headers=_h(buyer))
+    def _details(**over):
+        return {"ship_to_location_id": make_ship_to(db).id,
+                "lines": [{"pr_item_id": it.id, "unit_price": 50, "tax_rate": 18} for it in pr.items], **over}
+
+    # The PO goes to the quote the buyer picks: L1 by default, any other tier needs a reason.
+    r = post_upload_po(client, buyer, rfq.id, _details(vendor_tier="L2"), "TALLY-V-1")
     assert r.status_code == 400 and "instead of L1" in r.json()["detail"]
-    # PO lines always come from the PR's lines — a typed line list is refused (2026-10-11).
-    r = client.post(url, json={"vendor_tier": "L2", "selection_reason": "L1 can't deliver in time",
-                               "items": [{"item_name": "Free-typed seal", "quantity": 1, "unit_price": 5}]}, headers=_h(buyer))
-    assert r.status_code == 422 and "requisition" in r.json()["detail"], r.text
-    r = client.post(url, json={"vendor_tier": "L2", "selection_reason": "L1 can't deliver in time"}, headers=_h(buyer))
+    r = post_upload_po(client, buyer, rfq.id, _details(vendor_tier="L2", selection_reason="L1 can't deliver in time"), "TALLY-V-1")
     assert r.status_code == 200, r.text
     po = r.json()
     assert po["vendor_name"] == "Fast Seals" and po["vendor_id"] == v2.id
     # The vendor's own terms are for the RFQ email only; the PO carries the company terms.
     assert "Ex-works Pune" not in (po["terms_conditions"] or "") and "quote the Purchase Order" in (po["terms_conditions"] or "")
     assert "Late delivery clause:\n0.5% per week of delay, max 10%" in po["terms_conditions"]
+    # PO lines are the PR's own lines, priced from the Tally PO (never free-typed).
+    assert [(i["item_name"], i["unit_price"], i["price_source"]) for i in po["items"]] == [("O-ring", 50, "manual")]
 
-    r = client.patch(f"{url}/{po['id']}", json={"items": [{"id": po["items"][0]["id"], "unit_price": 50, "tax_rate": 18,
-                                                         "specification": "Size: 20 mm\nNBR 70"}]}, headers=_h(buyer))
-    assert r.status_code == 200, r.text
-    assert r.json()["revision"] == 1 and r.json()["items"][0]["specification"] == "Size: 20 mm\nNBR 70"
+    # A line spec (printed under the line on the PO) is kept on the line.
+    db.get(P2PPurchaseOrder, po["id"]).items[0].specification = "Size: 20 mm\nNBR 70"
+    db.commit()
 
     row = db.get(P2PPurchaseOrder, po["id"])
     db.refresh(row)

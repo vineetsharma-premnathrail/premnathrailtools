@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.permissions import ensure_can_delete, ensure_tab_action, require_app_access, require_tab_access
 from app.db.session import get_db
+from app.core.priority import parse_priority
 from app.modules.design.access import check_signatory_role, get_settings, is_head, require_team
 from app.modules.design.approvals import ECN_ENTITY, ECN_KEY, can_decide, pending_request
 from app.modules.design.scope import apply_scope, ensure_in_scope
@@ -20,7 +21,7 @@ from app.modules.design.bom_service import released_bom_revision
 from app.modules.design.models.bom import DesignBom, DesignBomRevision
 from app.modules.design.models.change_notice import (
     DesignChangeNotice, DesignChangeNoticeBom, DesignChangeNoticeDocument, DesignEcnAcknowledgement,
-    DESIGN_ECN_ACK_DEPARTMENTS, DESIGN_ECN_DISPOSITIONS, DESIGN_ECN_EFFECTIVITY, DESIGN_ECN_PRIORITIES,
+    DESIGN_ECN_ACK_DEPARTMENTS, DESIGN_ECN_DISPOSITIONS, DESIGN_ECN_EFFECTIVITY,
     DESIGN_ECN_REASONS,
 )
 from app.modules.design.models.change_request import DesignChangeRequest
@@ -269,8 +270,8 @@ def _validate_fields(values: dict) -> None:
             raise HTTPException(status_code=400, detail=f"'{values[key]}' isn't a valid disposition. Choose one of: {', '.join(DESIGN_ECN_DISPOSITIONS)}.")
     if values.get("reason") is not None and values["reason"] not in DESIGN_ECN_REASONS:
         raise HTTPException(status_code=400, detail=f"'{values['reason']}' isn't a valid reason. Choose one of: {', '.join(DESIGN_ECN_REASONS)}.")
-    if values.get("priority") is not None and values["priority"] not in DESIGN_ECN_PRIORITIES:
-        raise HTTPException(status_code=400, detail=f"'{values['priority']}' isn't a valid priority. Choose one of: {', '.join(DESIGN_ECN_PRIORITIES)}.")
+    if values.get("priority") is not None:
+        values["priority"] = parse_priority(values["priority"])
 
 
 def set_documents(db: Session, ecn: DesignChangeNotice, rows: list[DesignChangeNoticeDocumentPayload]) -> None:
@@ -360,7 +361,7 @@ async def create_change_notice(
         get_workflow_user(db, payload.approver_id, "approver")
         check_signatory_role(db, payload.approver_id, "approver", "ECN approver")
     ecn = DesignChangeNotice(
-        ecn_number=generate_ecn_number(db), title=payload.title.strip(), reason=payload.reason, priority=payload.priority,
+        ecn_number=generate_ecn_number(db), title=payload.title.strip(), reason=payload.reason, priority=parse_priority(payload.priority),
         description=payload.description, impact_assessment=payload.impact_assessment, target_date=payload.target_date,
         pm_project_id=payload.pm_project_id, erp_project_id=payload.erp_project_id, approver_id=payload.approver_id,
         status="draft", created_by_id=user.id, effectivity_type=payload.effectivity_type,

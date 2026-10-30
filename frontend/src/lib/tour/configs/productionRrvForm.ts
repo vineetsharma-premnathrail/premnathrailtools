@@ -1,9 +1,7 @@
 import { TourConfig } from '../types'
 
 const PRIORITY_OPTIONS = [
-  { value: 'Low', meaning: 'No deadline pressure.' },
-  { value: 'Normal', meaning: 'Standard delivery commitment.' },
-  { value: 'High', meaning: 'Tight customer deadline.' },
+  { value: 'Standard', meaning: 'Standard delivery commitment (default).' },
   { value: 'Urgent', meaning: 'Penalty or critical customer need — first call on people and material.' },
 ]
 

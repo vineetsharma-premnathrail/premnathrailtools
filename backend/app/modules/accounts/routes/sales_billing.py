@@ -1,7 +1,9 @@
-"""Finance › Sales Invoices › "Create from Sales Order" (SAP VF01): pick a
-confirmed order and one of its due billing milestones, get a draft sales
+"""Finance › Sales Invoices › "Create from Sales Order": pick a confirmed
+HISTORIC order and one of its due billing milestones, get a draft sales
 invoice copied from the order (accounts/services/billing.py). The draft then
-goes through the normal submit / approve / post of ar_transactions.py."""
+goes through the normal submit / approve / post of ar_transactions.py.
+Sales Orders were retired on 2026-10-30; this route stays only so historic
+orders can still be billed until they are closed (owner decision)."""
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -54,7 +56,7 @@ async def billable_orders(db: Session = Depends(get_db),
 @router.get("/orders/{so_id}")
 async def billable_milestones(so_id: int, db: Session = Depends(get_db),
                               _user: User = Depends(require_feature_action("accounts", "sales_invoices", "bill_from_so", "create"))):
-    from app.modules.sales.views import get_order
+    from app.modules.sales.legacy import get_order
     so = get_order(db, so_id)
     billing.sync_order(db, so)
     db.commit()

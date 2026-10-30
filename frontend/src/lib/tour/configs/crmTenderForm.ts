@@ -127,9 +127,8 @@ const config: TourConfig = {
       title: 'Priority',
       required: true,
       options: [
-        { value: 'High', meaning: 'Important requirement, quick action needed.' },
-        { value: 'Medium', meaning: 'Normal requirement (default).' },
-        { value: 'Low', meaning: 'Can be handled later.' },
+        { value: 'Standard', meaning: 'Normal requirement (default).' },
+        { value: 'Urgent', meaning: 'Important requirement, quick action needed.' },
       ],
     },
 

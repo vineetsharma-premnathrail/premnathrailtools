@@ -99,7 +99,7 @@ class MaintenanceLabourLogResponse(BaseModel):
 class MaintenanceWorkOrderCreate(BaseModel):
     asset_id: int
     wo_type: str = "corrective"
-    priority: str = "normal"
+    priority: str = "standard"
     title: str
     description: str | None = None
     machine_down: bool = False

@@ -17,6 +17,7 @@ from sqlalchemy.orm import object_session
 
 from app.auth.jwt_handler import create_access_token
 from app.modules.main.models.user import User
+from app.tests.p2p_po_helpers import post_upload_po, rfq_for_pr, upload_po_details, upload_po_for_pr
 from app.tests.p2p_workflow_helpers import link_items, set_po_workflow, set_pr_workflow
 
 BASE = "/api/v1/p2p/requests"
@@ -74,7 +75,7 @@ def _fresh_approvers(db):
 
 def _payload(pr_approvers, po_approvers, **over):
     body = {
-        "category_code": "RAW", "project_label": "Project Alpha", "project_type": "new", "priority": "medium",
+        "category_code": "RAW", "project_label": "Project Alpha", "project_type": "new", "priority": "standard",
         "approvers": {r: u.id if isinstance(u, User) else u for r, u in pr_approvers.items()},
         "po_approvers": {r: u.id if isinstance(u, User) else u for r, u in po_approvers.items()},
         "items": [{"item_name": "Hydraulic Cylinder", "quantity": 2, "unit": "pcs", "project_inhouse": "Project"}],
@@ -104,13 +105,10 @@ def _approve_pr(client, pr):
 
 
 def _raise_po(client, pr, buyer, po_number):
+    """Approve the PR, then upload the Tally PO on it (priced 100 + 18% a unit); returns the PR."""
     _approve_pr(client, pr)
-    r = client.post(f"{BASE}/{pr['id']}/create-po", json={
-        "po_number": po_number,
-        "item_pricing": [{"pr_item_id": i["id"], "unit_price": 100, "tax_rate": 18} for i in pr["items"]],
-    }, headers=_h(buyer))
-    assert r.status_code == 200, r.text
-    return r.json()
+    upload_po_for_pr(client, object_session(buyer), pr["id"], buyer, tally_po_no=po_number)
+    return client.get(f"{BASE}/{pr['id']}", headers=_h(buyer)).json()
 
 
 # ── C-02 Approval control: no self-approval of requisitions ─────────────────
@@ -240,18 +238,27 @@ def test_c03_ad_hoc_po_without_pr_cannot_be_created(client, db):
 
 # ── C-04 Financial control: no PO approval without line prices ─────────────
 
-def test_c04_legacy_create_po_refuses_unpriced_lines(client, db):
+def test_c04_upload_po_refuses_unpriced_lines(client, db):
     requester = _user(db, "c04.req1@premnathrail.com")
     pr = _create_pr(client, requester)
     buyer = _user(db, "c04.buyer1@premnathrail.com", apps=("purchase",))
     _approve_pr(client, pr)
-    r = client.post(f"{BASE}/{pr['id']}/create-po", json={"po_number": "PO-C04-1", "po_value": 99999}, headers=_h(buyer))
-    assert r.status_code == 400 and "unit price" in r.json()["detail"]
-    zero = client.post(f"{BASE}/{pr['id']}/create-po", json={
-        "po_number": "PO-C04-1", "item_pricing": [{"pr_item_id": pr["items"][0]["id"], "unit_price": 0}],
-    }, headers=_h(buyer))
-    assert zero.status_code == 400
-    assert client.get(f"{BASE}/{pr['id']}", headers=_h(buyer)).json()["status"] == "approved"
+    rfq = rfq_for_pr(db, pr["id"], buyer.id)
+    line = pr["items"][0]
+    # A line left out of the payload is refused by name, with how to fix it.
+    details = upload_po_details(db, pr["id"])
+    details["lines"] = []
+    r = post_upload_po(client, buyer, rfq.id, details, "PO-C04-1")
+    assert r.status_code == 422
+    # A zero price is not a price.
+    zero = upload_po_details(db, pr["id"], prices={line["id"]: 0})
+    r = post_upload_po(client, buyer, rfq.id, zero, "PO-C04-1")
+    assert r.status_code == 422 and "unit_price" in r.json()["detail"]
+    other = upload_po_details(db, pr["id"])
+    other["lines"] = [{"pr_item_id": line["id"] + 9999, "unit_price": 5}]
+    r = post_upload_po(client, buyer, rfq.id, other, "PO-C04-1")
+    assert r.status_code == 422 and "not open lines" in r.json()["detail"]
+    assert client.get(f"{BASE}/{pr['id']}", headers=_h(buyer)).json()["status"] == "vendor_quotations"
 
 
 def test_c04_po_value_is_derived_from_line_prices_not_typed(client, db):
@@ -259,12 +266,10 @@ def test_c04_po_value_is_derived_from_line_prices_not_typed(client, db):
     pr = _create_pr(client, requester)
     buyer = _user(db, "c04.buyer2@premnathrail.com", apps=("purchase",))
     _approve_pr(client, pr)
-    r = client.post(f"{BASE}/{pr['id']}/create-po", json={
-        "po_number": "PO-C04-2", "po_value": 1,
-        "item_pricing": [{"pr_item_id": pr["items"][0]["id"], "unit_price": 50}],
-    }, headers=_h(buyer))
-    assert r.status_code == 200, r.text
-    assert r.json()["po_value"] == 100.0  # 2 x 50, the typed po_value is ignored
+    # A typed po_value in the details is not part of the contract and is ignored.
+    po = upload_po_for_pr(client, db, pr["id"], buyer, tally_po_no="PO-C04-2", unit_price=50, tax_rate=None, po_value=1)
+    assert po["total_value"] == 100.0  # 2 x 50
+    assert client.get(f"{BASE}/{pr['id']}", headers=_h(buyer)).json()["po_value"] == 100.0
 
 
 def test_c04_rfq_po_draft_cannot_be_submitted_without_prices(client, db):

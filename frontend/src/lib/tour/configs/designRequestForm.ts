@@ -32,9 +32,7 @@ const config: TourConfig = {
       target: 'design-reqnew-priority',
       title: 'Priority',
       options: [
-        { value: 'Low', meaning: 'When there is time.' },
-        { value: 'Medium', meaning: 'Normal (default).' },
-        { value: 'High', meaning: 'Ahead of normal work.' },
+        { value: 'Standard', meaning: 'Normal (default).' },
         { value: 'Urgent', meaning: 'Blocking a tender or delivery.' },
       ],
     },

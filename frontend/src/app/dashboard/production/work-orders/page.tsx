@@ -1,5 +1,6 @@
 'use client'
 
+import { normalizePriority, priorityLabel } from '@/lib/priority'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -16,8 +17,8 @@ import { chipBtnStyle, primaryBtnStyle, RowCount, Pill } from '@/components/shar
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', released: 'Released', in_progress: 'In Progress', completed: 'Completed', closed: 'Closed', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', released: '#2563EB', in_progress: '#F59E0B', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
-const PRIORITY_LABELS: Record<string, string> = { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' }
-const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
+const PRIORITY_LABELS: Record<string, string> = { standard: 'Standard', urgent: 'Urgent' }
+const PRIORITY_HEX: Record<string, string> = { standard: '#475569', urgent: '#DC2626' }
 
 const STATUS_TABS = [
   { key: 'draft,released,in_progress', label: 'Open' },
@@ -150,7 +151,7 @@ export default function ProductionWorkOrdersPage() {
                     <span style={{ fontSize: 11, color: TEXT.muted }}>{o.progress_percent}%</span>
                   </td>
                   <td style={cellStyle}>
-                    <Pill label={PRIORITY_LABELS[o.priority] || o.priority} hex={PRIORITY_HEX[o.priority]} />
+                    <Pill label={priorityLabel(o.priority)} hex={PRIORITY_HEX[normalizePriority(o.priority)]} />
                   </td>
                   <td style={{ ...cellStyle, color: o.is_overdue ? '#DC2626' : TEXT.body, fontWeight: o.is_overdue ? 600 : 400 }}>
                     {o.planned_end_date ? formatDate(o.planned_end_date) : '—'}{o.is_overdue ? ' · overdue' : ''}

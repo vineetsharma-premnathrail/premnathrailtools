@@ -359,19 +359,20 @@ def test_payment_block_endpoint_requires_reason(fi, client):
 # ── SO advance milestone recovered against the later invoice (SD hook) ──
 
 def test_so_advance_is_recovered_on_milestone_invoice(fi):
-    from app.tests.test_sales_delivery_billing import make_so, _b, D0, TODAY
-    from app.modules.sales import delivery as dlv
+    from datetime import timedelta
+    from app.tests._so_project_helpers import TODAY, deliver_row, make_billing_order
     from app.modules.accounts.services import billing
+    D0 = TODAY - timedelta(days=20)
+    _b = lambda so, t: next(b for b in so.billing_lines if b.milestone_type == t)  # noqa: E731
     db, cust = fi["db"], fi["c_local"]
-    so = make_so(db, cust, plan=(("advance", 20), ("delivery", 80)))
+    so = make_billing_order(db, cust, plan=(("advance", 20), ("delivery", 80)))
     _b(so, "delivery").recovers_advance_percent = 20
     db.commit()
     adv = _receipt(fi, cust, 472000, is_advance=True, sales_order_id=so.id, d=D0)
     db.commit()
     assert adv.sales_order_id == so.id and _bal(fi, "2080", TODAY) == -472000
     r1 = so.schedules[0]
-    dlv.mark_delivered(db, so, r1, on=D0, reference="RN-1", user=fi["maker"])
-    db.commit()
+    deliver_row(db, so, r1, D0, reference="RN-1")
     inv = billing.create_invoice_from_so(db, so_id=so.id, billing_plan_line_id=_b(so, "delivery").id, invoice_date=TODAY,
                                          created_by_id=fi["maker"].id)
     service.post_customer_invoice(db, ar_transaction_id=inv.id, created_by_id=fi["checker"].id)

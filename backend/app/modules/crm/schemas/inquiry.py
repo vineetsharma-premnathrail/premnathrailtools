@@ -1,5 +1,7 @@
 from datetime import date, datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from app.core.priority import coerce_priority_field
 
 
 class InquiryLineItemPayload(BaseModel):
@@ -49,11 +51,22 @@ class InquiryCreate(BaseModel):
     expected_value: float | None = None
     probability: int | None = None
     expected_order_date: date | None = None
-    priority: str = "Medium"
+    priority: str = "standard"
     next_followup_date: date | None = None
     followup_priority: str | None = None
     followup_assigned_to: str | None = None
     followup_remarks: str | None = None
+
+    @field_validator("priority")
+    @classmethod
+    def _priority_two_values(cls, v):
+        return coerce_priority_field(v, blank_to="standard")
+
+    @field_validator("followup_priority")
+    @classmethod
+    def _followup_priority_two_values(cls, v):
+        return coerce_priority_field(v)
+
 
 
 class InquiryUpdate(BaseModel):
@@ -97,6 +110,17 @@ class InquiryUpdate(BaseModel):
     followup_priority: str | None = None
     followup_assigned_to: str | None = None
     followup_remarks: str | None = None
+
+    @field_validator("priority")
+    @classmethod
+    def _priority_two_values(cls, v):
+        return coerce_priority_field(v)
+
+    @field_validator("followup_priority")
+    @classmethod
+    def _followup_priority_two_values(cls, v):
+        return coerce_priority_field(v)
+
 
 
 class InquiryResponse(BaseModel):

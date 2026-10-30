@@ -13,8 +13,8 @@ import TourButton from '@/components/tour/TourButton'
 const TABS = [
   { href: '/dashboard/rnd', label: 'Dashboard', icon: 'grid', subtabKey: 'dashboard' },
   { href: '/dashboard/rnd/requirements', label: 'Requirements', icon: 'requirements', subtabKey: 'requirements' },
-  // Every task assigned to me across Ongoing Projects, Prototype / Research and Requirements.
-  { href: '/dashboard/rnd/tasks', label: 'My Tasks', icon: 'tasks', subtabKeys: ['project_work', 'projects', 'requirements'] },
+  // Requirement and Prototype / Research tasks: create, track, analytics (R&D › R&D Tasks).
+  { href: '/dashboard/rnd/tasks', label: 'R&D Tasks', icon: 'tasks', subtabKey: 'tasks' },
   { href: '/dashboard/rnd/projects', label: 'Prototype / Research', icon: 'projects', subtabKey: 'projects' },
   // "all" is the old calculator-landing key — kept so existing Permission
   // Matrix grants for the calculators still cover this tab.

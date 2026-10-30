@@ -41,7 +41,7 @@ class Tender(Base, TimestampMixin, SoftDeleteMixin):
     # created_at stays the system timestamp of when the record was entered.
     tender_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     lead_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    priority: Mapped[str] = mapped_column(String(20), default="Medium", nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), default="standard", nullable=False)  # standard | urgent
     bd_owner: Mapped[str | None] = mapped_column(String(150), nullable=True)
 
     railway_zone: Mapped[str | None] = mapped_column(String(100), nullable=True)

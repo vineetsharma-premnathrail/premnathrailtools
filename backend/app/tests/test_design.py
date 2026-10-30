@@ -380,7 +380,7 @@ def test_ecn_flow_through_implementation(client, db, team):
     raiser, h = team["other"], auth(team["other"])
 
     r = client.post(f"{API}/change-notices", json={
-        "title": "Increase gusset thickness", "reason": "quality_issue", "priority": "high",
+        "title": "Increase gusset thickness", "reason": "quality_issue", "priority": "urgent",
         "documents": [{"document_id": doc["id"], "change_description": "Gusset 10 → 12 mm"}],
     }, headers=h)
     assert r.status_code == 201, r.text

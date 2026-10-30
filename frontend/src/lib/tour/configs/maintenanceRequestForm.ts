@@ -45,9 +45,7 @@ const config: TourConfig = {
       purpose: 'How urgently maintenance should respond.',
       options: [
         { value: 'Auto (from criticality)', meaning: 'Recommended. The system sets it from the asset\'s criticality (A = line stops gets the highest) and whether the machine is down.' },
-        { value: 'Low', meaning: 'Can wait for a convenient time.' },
-        { value: 'Normal', meaning: 'Handle in the normal course of the day.' },
-        { value: 'High', meaning: 'Handle soon — production is affected.' },
+        { value: 'Standard', meaning: 'Handle in the normal course of the day (default).' },
         { value: 'Urgent', meaning: 'Drop everything — line stopped or safety risk.' },
       ],
     },

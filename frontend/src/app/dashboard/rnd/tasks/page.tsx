@@ -1,206 +1,250 @@
 'use client'
 
-// R&D › My Tasks — every task assigned to me, in one list:
-//  * Ongoing Projects   — Project Management milestone tasks (pm-work)
-//  * Prototype / Research — tasks on R&D projects
-//  * Requirements       — tasks on CRM requirements sent to R&D
-// Each source is loaded on its own, so a missing permission on one only
-// hides that category instead of breaking the page.
+// R&D › R&D Tasks (renamed from My Tasks) — every R&D task on one page: Requirement
+// tasks (given on a requirement R&D has accepted) and Prototype tasks (given on a
+// Prototype / Research project). "Create Task" asks for the Type first; the tiles,
+// the table and the grouped views all follow the same filters. PM tasks stay in
+// Project Management › My Tasks. People without the "All R&D tasks & analytics"
+// feature (and who are not heads) see only the tasks assigned to or created by them.
 
-import { useEffect, useState } from 'react'
-import { MagnifyingGlass } from '@phosphor-icons/react'
+import Select from '@/components/shared/Select'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
-import { pmWorkApi, rndApi } from '@/lib/api'
-import { PmProjectTask, RndTask } from '@/types'
-import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { chipBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
-import { formatDate } from '@/lib/format'
+import { rndApi, usersApi } from '@/lib/api'
+import { DirectoryUser } from '@/types'
+import { TEXT } from '@/lib/theme'
+import { primaryBtnStyle, secondaryBtnStyle, inputStyle as sharedInputStyle } from '@/components/shared/ui'
+import { FiltersButton, FiltersSheet } from '@/components/p2p/POTrackingShared'
+import { sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import DateField from '@/components/erp/DateField'
 import RndNav from '@/components/rnd/RndNav'
+import TaskCreateSheet from '@/components/rnd/TaskCreateSheet'
+import RndTaskAnalyticsView, { TaskView } from '@/components/rnd/RndTaskAnalytics'
 import { recordPath } from '@/lib/recordRef'
+import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
+import { PRIORITY_OPTIONS, type Priority } from '@/lib/priority'
+import type { RndTaskAnalytics, RndTaskFilters, RndTaskGroup, RndTaskRow } from '@/types/rndIntake'
 
-type Category = 'ongoing' | 'prototype' | 'requirement'
-type Row = {
-  key: string
-  category: Category
-  title: string
-  ref: string
-  refTitle: string | null
-  due: string | null
-  assignedAt: string | null
-  assignedBy: string | null
-  status: string
-  statusHex: string
-  overdue: boolean
-  done: boolean
-  href: string
-}
-
-const CATEGORY_LABELS: Record<Category, string> = { ongoing: 'Ongoing Project', prototype: 'Prototype / Research', requirement: 'Requirement' }
-const CATEGORY_HEX: Record<Category, string> = { ongoing: '#7C3AED', prototype: '#2563EB', requirement: '#FF6A2A' }
-const PM_STATUS_LABELS: Record<string, string> = { todo: 'To do', in_progress: 'In progress', blocked: 'Blocked', done: 'Done', cancelled: 'Cancelled' }
-const PM_STATUS_HEX: Record<string, string> = { todo: '#78716c', in_progress: '#2563EB', blocked: '#DC2626', done: '#16A34A', cancelled: '#78716c' }
-const RND_STATUS_LABELS: Record<string, string> = { open: 'Open', submitted: 'Completed', closed: 'Completed', cancelled: 'Cancelled' }
-const RND_STATUS_HEX: Record<string, string> = { open: '#2563EB', submitted: '#16A34A', closed: '#16A34A', cancelled: '#78716c' }
-
-const FILTERS: { key: '' | Category; label: string }[] = [
-  { key: '', label: 'All' },
-  { key: 'ongoing', label: 'Ongoing Projects' },
-  { key: 'prototype', label: 'Prototype / Research' },
-  { key: 'requirement', label: 'Requirements' },
+const PAGE_SIZE = 100
+const STATUS_OPTIONS = [
+  { value: 'pending', label: 'Pending (open, not overdue)' },
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled', label: 'Cancelled' },
+]
+const BAND_OPTIONS = [
+  { value: '0', label: '0% — not started' },
+  { value: '1-49', label: '1–49%' },
+  { value: '50-99', label: '50–99%' },
+  { value: '100', label: '100% — done' },
 ]
 
-const tableWrap: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
-}
-const thStyle: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }
-const tdStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
+// Shared 34px control scale; list filters keep their own width.
+const inputStyle: React.CSSProperties = { ...sharedInputStyle, width: 'auto', background: 'rgba(255,255,255,.7)' }
 
-function pill(label: string, hex: string) {
-  return <span style={pillStyle(hex)}>{label}</span>
-}
+type Draft = { parent: string; user: string; department: string; type: string; status: string; priority: string; from: string; to: string; band: string }
+const EMPTY: Draft = { parent: '', user: '', department: '', type: '', status: '', priority: '', from: '', to: '', band: '' }
 
-function fromPm(t: PmProjectTask): Row {
-  const done = t.status === 'done' || t.status === 'cancelled'
-  return {
-    key: `pm-${t.id}`, category: 'ongoing', title: t.title,
-    ref: t.project_code || t.project_name || `Project #${t.project_id}`,
-    refTitle: [t.project_code ? t.project_name : null, t.milestone_title].filter(Boolean).join(' · ') || null,
-    due: t.due_date || null, assignedAt: t.created_at || null, assignedBy: null, status: PM_STATUS_LABELS[t.status] || t.status, statusHex: PM_STATUS_HEX[t.status] || '#78716c',
-    overdue: t.is_overdue, done, href: recordPath('/dashboard/projects/tasks', t),
-  }
-}
-
-function fromRnd(t: RndTask, category: 'prototype' | 'requirement'): Row {
-  const done = t.status !== 'open'
-  // Assigned = when it became mine: the last reassignment, else when it was created.
-  const reassigned = [...t.events].reverse().find((e) => e.action === 'edited' && (e.remarks || '').includes('Assignee:'))
-  return {
-    key: `${category}-${t.id}`, category, title: t.title,
-    ref: t.requirement_ref || `#${t.record_id}`, refTitle: (category === 'requirement' ? [t.requirement_title, t.milestone_title] : [t.requirement_title]).filter(Boolean).join(' · ') || null,
-    due: t.due_date, assignedAt: reassigned?.at || t.created_at, assignedBy: reassigned?.by || t.created_by,
-    status: t.pending_approval ? 'Approval pending' : (RND_STATUS_LABELS[t.status] || t.status),
-    statusHex: t.pending_approval ? '#D97706' : (RND_STATUS_HEX[t.status] || '#78716c'),
-    overdue: t.is_overdue, done,
-    href: category === 'prototype' ? `${recordPath('/dashboard/rnd/projects', t, 'record_id')}#tasks` : `${recordPath(`/dashboard/rnd/requirements/${t.source}`, t, 'record_id')}?tab=milestones`,
-  }
+/** Draft → the API filters. parent = "requirement:<id>" or "project:<id>". */
+function toFilters(d: Draft, q: string): RndTaskFilters {
+  const f: RndTaskFilters = {}
+  const [kind, id] = d.parent.split(':')
+  if (kind === 'requirement' && id) f.requirement_id = Number(id)
+  if (kind === 'project' && id) f.rnd_project_id = Number(id)
+  if (d.user) f.assigned_to_id = Number(d.user)
+  if (d.department) f.department = d.department
+  if (d.type === 'requirement' || d.type === 'prototype') f.type = d.type
+  if (d.status) f.status = d.status
+  if (d.priority === 'standard' || d.priority === 'urgent') f.priority = d.priority as Priority
+  if (d.from) f.due_from = d.from
+  if (d.to) f.due_to = d.to
+  if (d.band) f.progress_band = d.band as RndTaskFilters['progress_band']
+  if (q.trim()) f.q = q.trim()
+  return f
 }
 
-export default function RndMyTasksPage() {
+export default function RndTasksPage() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
+  const { can, canFeature } = useCan()
   const router = useRouter()
-  const [rows, setRows] = useState<Row[] | null>(null)
-  const [unavailable, setUnavailable] = useState<string[]>([])
-  const [filter, setFilter] = useState<'' | Category>('')
-  const [showDone, setShowDone] = useState(false)
-  const [query, setQuery] = useState('')
+
+  const [applied, setApplied] = useState<Draft>(EMPTY)
+  const [draft, setDraft] = useState<Draft>(EMPTY)
+  const [showFilters, setShowFilters] = useState(false)
+  const [search, setSearch] = useState('')
+  const [view, setView] = useState<TaskView>('task')
+  const [page, setPage] = useState(1)
+  const [rows, setRows] = useState<RndTaskRow[] | null>(null)
+  const [total, setTotal] = useState(0)
+  const [analytics, setAnalytics] = useState<RndTaskAnalytics | null>(null)
+  const [error, setError] = useState<string | string[]>('')
+  const [creating, setCreating] = useState(false)
+  const [reload, setReload] = useState(0)
+
+  // Filter pickers: people (with their department), requirements by R&D ID, projects by RND number.
+  const [users, setUsers] = useState<DirectoryUser[]>([])
+  const [reqs, setReqs] = useState<{ value: string; label: string }[]>([])
+  const [projs, setProjs] = useState<{ value: string; label: string }[]>([])
 
   useEffect(() => {
     if (!isAuthorized) return
-    const sources: { label: string; load: () => Promise<Row[]> }[] = [
-      { label: 'Ongoing Projects', load: async () => ((await pmWorkApi.myTasks({ include_closed: showDone })) as PmProjectTask[] || []).map(fromPm) },
-      { label: 'Prototype / Research', load: async () => (await rndApi.myProjectTasks(showDone)).map((t) => fromRnd(t, 'prototype')) },
-      { label: 'Requirements', load: async () => (await rndApi.myTasks(showDone)).map((t) => fromRnd(t, 'requirement')) },
-    ]
-    Promise.allSettled(sources.map((s) => s.load())).then((results) => {
-      const all: Row[] = []
-      const failed: string[] = []
-      results.forEach((r, i) => (r.status === 'fulfilled' ? all.push(...r.value) : failed.push(sources[i].label)))
-      // Open first: overdue, then by due date (no date last); finished at the bottom.
-      all.sort((a, b) => Number(a.done) - Number(b.done) || Number(b.overdue) - Number(a.overdue) || (a.due || '9999').localeCompare(b.due || '9999'))
-      setRows(all)
-      setUnavailable(failed)
-    })
-  }, [isAuthorized, showDone])
+    usersApi.directory().then((d) => setUsers(Array.isArray(d) ? d : [])).catch(() => setUsers([]))
+    rndApi.listRequirements().then((rows) => setReqs(rows.filter((r) => r.rd_number && r.requirement_id != null).sort((a, b) => (a.rd_number || '').localeCompare(b.rd_number || '', undefined, { numeric: true }))
+      .map((r) => ({ value: `requirement:${r.requirement_id}`, label: r.rd_number || r.universal_id })))).catch(() => setReqs([]))
+    rndApi.listProjects().then((rows: { id: number; project_number: string; title: string }[]) => setProjs((Array.isArray(rows) ? rows : [])
+      .sort((a, b) => a.project_number.localeCompare(b.project_number, undefined, { numeric: true })).map((p) => ({ value: `project:${p.id}`, label: `${p.project_number} — ${p.title}` })))).catch(() => setProjs([]))
+  }, [isAuthorized])
+
+  const filters = useMemo(() => toFilters(applied, search), [applied, search])
+  const filtersKey = JSON.stringify(filters)
+
+  // Any change of filters / search goes back to page 1.
+  useEffect(() => { Promise.resolve().then(() => setPage(1)) }, [filtersKey])
+
+  const load = useCallback(() => {
+    setError('')
+    const f = { ...JSON.parse(filtersKey) as RndTaskFilters, page, page_size: PAGE_SIZE }
+    // Tiles, table and grouped views all use the same filtered set.
+    return Promise.all([rndApi.listRndTasks(f), rndApi.rndTaskAnalytics(JSON.parse(filtersKey) as RndTaskFilters)])
+      .then(([list, an]) => { setRows(list.items); setTotal(list.total); setAnalytics(an) })
+      .catch((err) => { setRows([]); setTotal(0); setAnalytics(null); setError(extractErrorMessages(err, 'Could not load the R&D tasks. Refresh the page; if it keeps failing, check you have R&D › R&D Tasks › View.')) })
+  }, [filtersKey, page])
+
+  useEffect(() => {
+    if (!isAuthorized) return
+    const t = setTimeout(() => { void load() }, 250)
+    return () => clearTimeout(t)
+  }, [isAuthorized, load, reload])
 
   if (isLoading || !isAuthorized) return null
 
-  // Any word must appear in the task, project / requirement, giver, status or a date (16/10/2026, 16-10-2026, 2026-10-16).
-  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
-  const matches = (r: Row) => {
-    const dates = [r.due, r.assignedAt?.slice(0, 10)].filter(Boolean).flatMap((d) => [d as string, formatDate(d as string), formatDate(d as string).replace(/\//g, '-')])
-    const text = [r.title, r.ref, r.refTitle, r.assignedBy, r.status, CATEGORY_LABELS[r.category], r.overdue && !r.done ? 'overdue' : '', ...dates].filter(Boolean).join(' ').toLowerCase()
-    return words.every((w) => text.includes(w))
+  const departments = Array.from(new Set(users.map((u) => u.department).filter((d): d is string => !!d))).sort((a, b) => a.localeCompare(b))
+  const sortedUsers = [...users].sort((a, b) => a.name.localeCompare(b.name))
+  const activeCount = Object.values(applied).filter(Boolean).length
+  const seesAll = canFeature('rnd', 'tasks', 'analytics', 'view')
+
+  const openFilters = () => { setDraft(applied); setShowFilters(true) }
+  const apply = () => { setApplied(draft); setShowFilters(false) }
+  const clear = () => { setApplied(EMPTY); setDraft(EMPTY); setSearch(''); setShowFilters(false) }
+  const set = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }))
+
+  // Opens the task's parent through a signed ref — never a raw id; an edited link shows "Invalid link".
+  const openTask = (t: RndTaskRow) => {
+    const p = t.parent
+    try {
+      router.push(p.kind === 'requirement'
+        ? `${recordPath(`/dashboard/rnd/requirements/${p.source || 'inquiry'}`, p, 'record_id')}?tab=tasks`
+        : `${recordPath('/dashboard/rnd/projects', p)}?tab=tasks`)
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not open this task — reload the page and try again.'))
+    }
   }
-  const list = (rows || []).filter((r) => (!filter || r.category === filter) && matches(r))
-  const count = (c: '' | Category) => (rows || []).filter((r) => (!c || r.category === c) && !r.done).length
-  const overdue = (rows || []).filter((r) => r.overdue && !r.done).length
+  const openGroup = (g: RndTaskGroup) => {
+    try {
+      router.push(g.kind === 'requirement' ? recordPath(`/dashboard/rnd/requirements/${g.source || 'inquiry'}`, g, 'record_id') : recordPath('/dashboard/rnd/projects', g))
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not open this record — reload the page and try again.'))
+    }
+  }
 
   return (
     <div>
       <RndNav />
-      <div data-tour="rnd-mytasks-header" style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>My Tasks</h1>
-        <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>
-          Everything assigned to you — ongoing projects, prototypes / research and requirements.
-          {overdue > 0 && <> <strong style={{ color: '#DC2626' }}>{overdue} overdue</strong> — open them to give a reason and a new date.</>}
-        </p>
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-        <div data-tour="rnd-mytasks-filter" className="hide-scrollbar" style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 999, background: 'rgba(0,0,0,0.05)', overflowX: 'auto', maxWidth: '100%' }}>
-          {FILTERS.map((f) => (
-            <button key={f.key || 'all'} type="button" onClick={() => setFilter(f.key)}
-              style={chipBtnStyle(filter === f.key)}>
-              {f.label}{rows ? ` (${count(f.key)})` : ''}
-            </button>
-          ))}
+      <div data-tour="rnd-tasks-header" style={{ marginBottom: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>R&amp;D Tasks</h1>
+          <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>
+            Tasks on requirements and on prototype / research projects — create, track and see progress.
+            {!seesAll && ' You see the tasks assigned to you or created by you; R&D heads and people with “All R&D tasks & analytics” see every task.'}
+          </p>
         </div>
-        <label style={{ fontSize: 12.5, color: TEXT.secondary, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
-          <input type="checkbox" checked={showDone} onChange={(e) => { setRows(null); setShowDone(e.target.checked) }} /> Show completed
-        </label>
       </div>
 
-      <div data-tour="rnd-mytasks-search" style={{ position: 'relative', maxWidth: 460, marginBottom: 14 }}>
-        <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: TEXT.muted, display: 'flex' }}>
-          <MagnifyingGlass size={15} />
-        </span>
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search task, project / requirement, person or date"
-          style={{ width: '100%', padding: '9px 30px 9px 34px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body, boxSizing: 'border-box' }} />
-        {query && (
-          <button type="button" onClick={() => setQuery('')} title="Clear search"
-            style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: TEXT.muted, fontSize: 16, lineHeight: 1 }}>×</button>
-        )}
-      </div>
-
-      {unavailable.length > 0 && (
-        <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 12px' }}>
-          Not shown: {unavailable.join(', ')} — you don&apos;t have access to that part of R&amp;D, or it couldn&apos;t be loaded. Reload to try again.
-        </p>
+      {error && (
+        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+          {Array.isArray(error) ? error.join(' ') : error}
+        </div>
       )}
 
-      <div data-tour="rnd-mytasks-table" style={tableWrap}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 920 }}>
-          <thead>
-            <tr>{['Category', 'Task', 'Project / Requirement', 'Assigned', 'Due', 'Status'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={list.length} />}</th>)}</tr>
-          </thead>
-          <tbody>
-            {rows === null ? (
-              <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
-            ) : list.length === 0 ? (
-              <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>{words.length ? `No task matches “${query.trim()}”.` : showDone ? 'No tasks.' : 'No open tasks — you are all caught up.'}</td></tr>
-            ) : list.map((r) => (
-              <tr key={r.key} onClick={() => router.push(r.href)} style={{ cursor: 'pointer', opacity: r.done ? 0.65 : 1 }}>
-                <td style={tdStyle}>{pill(CATEGORY_LABELS[r.category], CATEGORY_HEX[r.category])}</td>
-                <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>{r.title}</td>
-                <td style={tdStyle}>
-                  <div style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{r.ref}</div>
-                  {r.refTitle && <div style={{ fontSize: 12, color: TEXT.muted }}>{r.refTitle}</div>}
-                </td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                  {r.assignedAt ? formatDate(r.assignedAt) : '—'}
-                  {r.assignedBy && <div style={{ fontSize: 12, color: TEXT.muted }}>by {r.assignedBy}</div>}
-                </td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: r.overdue && !r.done ? '#DC2626' : TEXT.body, fontWeight: r.overdue && !r.done ? 700 : 400 }}>
-                  {r.due ? formatDate(r.due) : '—'}{r.overdue && !r.done ? ' · overdue' : ''}
-                </td>
-                <td style={tdStyle}>{pill(r.status, r.statusHex)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        {can('rnd', 'tasks', 'create') && (
+          <button data-tour="rnd-tasks-create-btn" type="button" onClick={() => setCreating(true)} style={{ ...primaryBtnStyle, whiteSpace: 'nowrap' }}>+ Create Task</button>
+        )}
+        <input data-tour="rnd-tasks-search" aria-label="Search R&D tasks" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }}
+          placeholder="Search task, R&D ID, project or person…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <FiltersButton count={activeCount} onOpen={openFilters} tour="rnd-tasks-filter-btn" />
+        {(activeCount > 0 || search) && <button type="button" onClick={clear} style={secondaryBtnStyle}>Clear</button>}
       </div>
+
+      {showFilters && (
+        <FiltersSheet subtitle="Narrow the tasks, tiles and grouped views together, then press Apply." tour="rnd-tasks-filter-sheet" applyTour="rnd-tasks-apply-btn"
+          onClose={() => setShowFilters(false)} onClear={clear} onApply={apply}>
+          <div>
+            <label style={sheetLabel}>Project / requirement</label>
+            <Select data-tour="rnd-tasks-f-parent" style={sheetInput} value={draft.parent} onChange={(e) => set({ parent: e.target.value })}>
+              <option value="">All projects and requirements</option>
+              {projs.length > 0 && <optgroup label="Prototype / Research">{projs.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>}
+              {reqs.length > 0 && <optgroup label="Requirements (R&D ID)">{reqs.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>}
+            </Select>
+          </div>
+          <div>
+            <label style={sheetLabel}>Assigned user</label>
+            <Select data-tour="rnd-tasks-f-user" style={sheetInput} value={draft.user} onChange={(e) => set({ user: e.target.value })}>
+              <option value="">Everyone</option>
+              {sortedUsers.map((u) => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
+            </Select>
+          </div>
+          <div>
+            <label style={sheetLabel}>Department</label>
+            <Select data-tour="rnd-tasks-f-department" style={sheetInput} value={draft.department} onChange={(e) => set({ department: e.target.value })}>
+              <option value="">All departments</option>
+              {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+            </Select>
+          </div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 160px' }}>
+              <label style={sheetLabel}>Type</label>
+              <Select data-tour="rnd-tasks-f-type" style={sheetInput} value={draft.type} onChange={(e) => set({ type: e.target.value })}>
+                <option value="">Requirement and Prototype</option>
+                <option value="requirement">Requirement</option>
+                <option value="prototype">Prototype</option>
+              </Select>
+            </div>
+            <div style={{ flex: '1 1 160px' }}>
+              <label style={sheetLabel}>Status</label>
+              <Select data-tour="rnd-tasks-f-status" style={sheetInput} value={draft.status} onChange={(e) => set({ status: e.target.value })}>
+                <option value="">All (cancelled hidden)</option>
+                {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
+            </div>
+            <div style={{ flex: '1 1 140px' }}>
+              <label style={sheetLabel}>Priority</label>
+              <Select data-tour="rnd-tasks-f-priority" style={sheetInput} value={draft.priority} onChange={(e) => set({ priority: e.target.value })}>
+                <option value="">All priorities</option>
+                {PRIORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 160px' }}><label style={sheetLabel}>Due from</label><DateField value={draft.from} onChange={(v) => set({ from: v })} placeholder="Any" /></div>
+            <div style={{ flex: '1 1 160px' }}><label style={sheetLabel}>Due to</label><DateField value={draft.to} onChange={(v) => set({ to: v })} placeholder="Any" /></div>
+          </div>
+          <div>
+            <label style={sheetLabel}>Completion progress</label>
+            <Select data-tour="rnd-tasks-f-band" style={sheetInput} value={draft.band} onChange={(e) => set({ band: e.target.value })}>
+              <option value="">Any progress</option>
+              {BAND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
+          </div>
+        </FiltersSheet>
+      )}
+
+      <RndTaskAnalyticsView rows={rows} total={total} analytics={analytics} view={view} onView={setView}
+        onOpenTask={openTask} onOpenGroup={openGroup} page={page} pageSize={PAGE_SIZE} onPage={setPage} />
+
+      {creating && <TaskCreateSheet onClose={() => setCreating(false)} onCreated={() => { setCreating(false); setReload((n) => n + 1) }} />}
     </div>
   )
 }

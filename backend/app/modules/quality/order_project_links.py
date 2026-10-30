@@ -10,6 +10,10 @@ Registered at startup (imported from quality/routes/__init__.py):
     with the internal final inspection lot result in the detail line (or as
     the cell itself when no third-party inspection is due).
 
+    project provider 'quality' — the "Whole project" row of a project WITHOUT units
+    (one project = one machine, no sales order): the inspection calls / final lots
+    linked to the project itself.
+
 No project hook: nothing is created when a vehicle element appears — the
 inspection call is raised when the vehicle is ready; until then the cell shows
 "<Agency> required — not called". No element status hook either: 'ready'
@@ -120,4 +124,41 @@ def quality_cells(db: Session, project, elements) -> dict[int, dict | None]:
     return out
 
 
+def project_quality_cell(db: Session, project) -> dict | None:
+    """Quality cell of a project without units: its calls and final inspection lots (order_project_id =
+    project, no element). None when Quality has done nothing for it yet."""
+    calls = (db.query(QualityInspectionCall)
+             .filter(QualityInspectionCall.order_project_id == project.id, QualityInspectionCall.order_project_element_id.is_(None),
+                     QualityInspectionCall.status != "cancelled").order_by(QualityInspectionCall.id).all())
+    lots = (db.query(QualityInspectionLot)
+            .filter(QualityInspectionLot.order_project_id == project.id, QualityInspectionLot.order_project_element_id.is_(None),
+                    QualityInspectionLot.inspection_type.in_(("final", "first_article")),
+                    QualityInspectionLot.status != "cancelled").order_by(QualityInspectionLot.id).all())
+    lot_txt, lot_tone = _lot_text(lots[-1] if lots else None)
+    if not calls:
+        if not lot_txt:
+            return None
+        label = ("Final: " + lot_txt.split(": ")[-1]) if ": " in lot_txt else "Final in progress"
+        return _cell("final_inspection", label, lot_tone, lot_txt)
+    latest = calls[-1]
+    who = (latest.agency or "Third-party").upper()
+    extra = [lot_txt] if lot_txt else []
+    cleared = [c for c in calls if c.status in ("accepted", "partially_accepted") and c.certificate_number]
+    if latest.status == "accepted" and latest.certificate_number:
+        certs = ", ".join(sorted({c.certificate_number for c in cleared}))
+        return _cell("accepted", "Accepted", "success", " · ".join([f"{who} {certs}".strip(), _d(latest.result_date)] + extra),
+                     latest.result_date)
+    if latest.status in ("requested", "scheduled"):
+        when = latest.call_date or latest.requested_date
+        return _cell("called", f"Called {_d(when)}" if when else "Called", "info",
+                     " · ".join([f"{latest.call_number} ({who})",
+                                 "inspection date fixed" if latest.call_date else "awaiting the agency's date"] + extra), when)
+    if latest.status == "rejected":
+        return _cell("rejected", "Rejected", "danger",
+                     " · ".join([f"{latest.call_number} rejected by {who} on {_d(latest.result_date)}"] + extra), latest.result_date)
+    return _cell("partial", "Partly accepted", "warning", " · ".join([f"{latest.call_number} ({who}) — offer the rest"] + extra),
+                 latest.result_date)
+
+
 op_core.register_department_provider("quality", quality_cells)
+op_core.register_project_provider("quality", project_quality_cell)

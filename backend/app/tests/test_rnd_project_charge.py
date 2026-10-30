@@ -127,7 +127,7 @@ def test_po_inherits_the_internal_order(client, db):
                     account_assignment="rnd_project", rnd_project_id=proj.id,
                     items=[{"item_name": "Steel plate", "quantity": 2, "unit": "pcs", "project_inhouse": "Inhouse"}])
     _raise_po(client, db, pr, buyer, po_number="PO-DEV-1")
-    po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.po_number == "PO-DEV-1").one()
+    po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.p2p_request_id == pr["id"]).one()  # "PO-DEV-1" is the Tally number
     assert po.internal_order_id == pr["internal_order_id"] and po.internal_order_id is not None
 
 

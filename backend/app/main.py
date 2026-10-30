@@ -19,7 +19,6 @@ from app.tasks.store_jobwork_reminders import send_jobwork_reminders
 from app.tasks.maintenance_pm_scheduler import run_maintenance_pm_scheduler
 from app.tasks.erp_sla_reminders import run_erp_sla_reminders
 from app.tasks.maintenance_amc_reminders import send_maintenance_amc_reminders
-from app.tasks.sales_scheduler import run_sales_scheduler
 from app.tasks.bank_guarantee_reminders import send_bank_guarantee_reminders
 from app.tasks.erp_contract_scheduler import run_erp_contract_scheduler
 from app.modules.main.models.user import User
@@ -231,6 +230,7 @@ from app.modules.rnd.models.prototype import RndPrototype, RndPrototypeBomItem
 from app.modules.rnd.models.feasibility import RndFeasibilityStudy
 from app.modules.rnd.models.document import RndDocument
 from app.modules.rnd.models.requirement_work import RndTeamMember, RndRequirementAccess, RndRequirementTask, RndTaskEvent, RndRequirementProjectLink, RndRequirementShare, RndRequirementDocVisibility
+from app.modules.rnd.models.requirement import RndRequirement, RndRequirementRevision
 from app.modules.rnd.models.task_approval import RndTaskApproval
 from app.modules.rnd.models.technical_offer import RndTechnicalOffer
 from app.modules.rnd.models.project_task import RndProjectTask, RndProjectTaskEvent
@@ -360,16 +360,8 @@ from app.modules.maintenance.routes import settings as maintenance_settings_rout
 from app.modules.maintenance.routes import permits as maintenance_permits_routes
 from app.modules.maintenance.routes import readings as maintenance_readings_routes
 from app.modules.maintenance.routes import wo_procurement as maintenance_wo_procurement_routes
-from app.modules.sales.routes import orders as sales_orders_routes
-from app.modules.sales.routes import amendments as sales_amendments_routes
-from app.modules.sales.routes import schedule as sales_schedule_routes
-from app.modules.sales.routes import dashboard as sales_dashboard_routes
-from app.modules.sales.routes import lookups as sales_lookups_routes
-from app.modules.sales.routes import documents as sales_documents_routes
-from app.modules.sales.routes import settings as sales_settings_routes
-from app.modules.sales.routes import delivery as sales_delivery_routes
-from app.modules.sales.routes import proforma as sales_proforma_routes
 from app.modules.accounts.routes import sales_billing as accounts_sales_billing_routes
+from app.modules.sales import retired_routes as sales_retired_routes
 from app.modules.accounts.routes import receivables as accounts_receivables_routes
 from app.modules.production.routes import workstations as production_workstations_routes
 from app.modules.production.routes import boms as production_boms_routes
@@ -467,7 +459,6 @@ from app.modules.crm.routes import document_categories as crm_document_categorie
 from app.modules.crm.routes import product_categories as crm_product_categories_routes
 from app.modules.crm.routes import bulk_import as crm_bulk_import_routes
 from app.modules.crm.routes import rnd_requests as crm_rnd_requests_routes
-from app.modules.crm.routes import requirement_discussion as crm_requirement_discussion_routes
 from app.modules.crm.routes import settings as crm_settings_routes
 from app.modules.crm.routes import exports as crm_exports_routes
 from app.modules.crm.routes import quotation_status as crm_quotation_status_routes
@@ -482,12 +473,13 @@ from app.modules.rnd.routes import documents as rnd_documents_routes
 from app.modules.rnd.routes import requirements as rnd_requirements_routes
 from app.modules.rnd.routes import requirement_work as rnd_requirement_work_routes
 from app.modules.rnd.routes import technical_offers as rnd_technical_offers_routes
-from app.modules.rnd.routes import department_requirements as rnd_department_requirements_routes
 from app.modules.rnd.routes import project_tasks as rnd_project_tasks_routes
 from app.modules.rnd.routes import project_milestones as rnd_project_milestones_routes
 from app.modules.rnd.routes import requirement_milestones as rnd_requirement_milestones_routes
 from app.core.reporting.router import router as reporting_router
 from app.modules.rnd.routes import settings as rnd_settings_routes
+from app.modules.rnd.routes import tasks as rnd_tasks_routes
+from app.modules.rnd.tasks.review_reminders import send_review_reminders
 from app.modules.organization.routes import company as organization_company_routes
 from app.modules.organization.routes import branch as organization_branch_routes
 from app.modules.organization.routes import department as organization_department_routes
@@ -675,16 +667,8 @@ app.include_router(maintenance_settings_routes.router, prefix="/api/v1")
 app.include_router(maintenance_permits_routes.router, prefix="/api/v1")
 app.include_router(maintenance_readings_routes.router, prefix="/api/v1")
 app.include_router(maintenance_wo_procurement_routes.router, prefix="/api/v1")
-app.include_router(sales_orders_routes.router, prefix="/api/v1")
-app.include_router(sales_amendments_routes.router, prefix="/api/v1")
-app.include_router(sales_schedule_routes.router, prefix="/api/v1")
-app.include_router(sales_dashboard_routes.router, prefix="/api/v1")
-app.include_router(sales_lookups_routes.router, prefix="/api/v1")
-app.include_router(sales_documents_routes.router, prefix="/api/v1")
-app.include_router(sales_settings_routes.router, prefix="/api/v1")
-app.include_router(sales_delivery_routes.router, prefix="/api/v1")
-app.include_router(sales_proforma_routes.router, prefix="/api/v1")
 app.include_router(accounts_sales_billing_routes.router, prefix="/api/v1")
+app.include_router(sales_retired_routes.router, prefix="/api/v1")
 app.include_router(accounts_receivables_routes.router, prefix="/api/v1")
 app.include_router(production_workstations_routes.router, prefix="/api/v1")
 app.include_router(production_boms_routes.router, prefix="/api/v1")
@@ -783,7 +767,6 @@ app.include_router(crm_document_categories_routes.router, prefix="/api/v1")
 app.include_router(crm_product_categories_routes.router, prefix="/api/v1")
 app.include_router(crm_bulk_import_routes.router, prefix="/api/v1")
 app.include_router(crm_rnd_requests_routes.router, prefix="/api/v1")
-app.include_router(crm_requirement_discussion_routes.router, prefix="/api/v1")
 app.include_router(crm_settings_routes.router, prefix="/api/v1")
 app.include_router(crm_exports_routes.router, prefix="/api/v1")
 app.include_router(crm_quotation_status_routes.router, prefix="/api/v1")
@@ -834,12 +817,12 @@ app.include_router(rnd_documents_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_requirements_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_requirement_work_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_technical_offers_routes.router, prefix="/api/v1/rnd")
-app.include_router(rnd_department_requirements_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_project_tasks_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_project_milestones_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_requirement_milestones_routes.router, prefix="/api/v1/rnd")
 app.include_router(reporting_router, prefix="/api/v1")
 app.include_router(rnd_settings_routes.router, prefix="/api/v1/rnd")
+app.include_router(rnd_tasks_routes.router, prefix="/api/v1/rnd")
 app.include_router(organization_company_routes.router, prefix="/api/v1")
 app.include_router(organization_branch_routes.router, prefix="/api/v1")
 app.include_router(organization_department_routes.router, prefix="/api/v1")
@@ -912,6 +895,12 @@ async def startup():
         run_escalations,
         CronTrigger(minute=5),
         id="approval_escalations",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        send_review_reminders,  # R&D requirements waiting for Accept / Return
+        CronTrigger(hour=9, minute=40),
+        id="rnd_review_reminders",
         replace_existing=True,
     )
     scheduler.add_job(
@@ -998,12 +987,6 @@ async def startup():
         send_bank_guarantee_reminders,
         CronTrigger(hour=7, minute=0),
         id="accounts_bank_guarantee_reminders",
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        run_sales_scheduler,
-        CronTrigger(hour=6, minute=30),
-        id="sales_scheduler",
         replace_existing=True,
     )
     scheduler.add_job(

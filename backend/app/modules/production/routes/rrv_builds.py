@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core import assignee_rules
 from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.priority import parse_priority
 from app.core.permission_registry import can_feature, can_perform, is_admin_user
 from app.core.permissions import ensure_can_delete, ensure_feature_action, require_app_access, require_feature_action, require_tab_access, require_tab_action
 from app.modules.production.sensitive import mask_consumption, sees_costs
@@ -23,12 +24,14 @@ from app.modules.organization.services import approval_engine as engine
 from app.modules.production.authz import RRV_ENTITY, RRV_KEY, scope_path_record, submit_and_self_approve
 from app.modules.production.models.rrv_build import (
     ProductionRrvBuild, ProductionRrvEvent, ProductionRrvTest, ProductionReworkOrder,
-    PRODUCTION_RRV_DONE_STAGE_STATUSES, PRODUCTION_RRV_OPEN_STATUSES, PRODUCTION_RRV_PRIORITIES,
+    PRODUCTION_RRV_DONE_STAGE_STATUSES, PRODUCTION_RRV_OPEN_STATUSES,
     PRODUCTION_RRV_SIGNOFF_STAGES, PRODUCTION_RRV_STAGE_KEYS, PRODUCTION_RRV_TEST_RESULTS, PRODUCTION_RRV_TEST_TYPES,
     PRODUCTION_RRV_WO_ROLES, PRODUCTION_RRV_DEFAULT_REQUIRED_TESTS, PRODUCTION_REWORK_OPEN_STATUSES,
 )
 from app.modules.production.models.work_order import ProductionWorkOrder
+from app.modules.projects.models.project import PmProject
 from app.modules.production import order_project_links  # registers the project hooks / provider
+from app.modules.projects import so_projects as op_core
 from app.modules.projects.models.element import PmProjectElement
 from app.modules.production.reports.rrv_handover_pdf import build_rrv_handover_pdf
 from app.modules.production.reports.rrv_handover_docx import build_rrv_handover_docx
@@ -50,6 +53,16 @@ from app.modules.quality.models.inspection import QualityInspection
 from app.modules.quality.service import generate_inspection_number
 from app.modules.store.models.item import StoreItem
 from app.utils.notifications import broadcast_notification
+
+class _BuildCreate(ProductionRrvBuildCreate):
+    """+ the project the build is for. One project = one machine: a project made in Project Management has
+    no units, so the build links to the project itself (no vehicle / lot to pick)."""
+    order_project_id: int | None = None
+
+
+class _BuildUpdate(ProductionRrvBuildUpdate):
+    order_project_id: int | None = None
+
 
 router = APIRouter(
     prefix="/production/rrv-builds", tags=["Production"],
@@ -115,8 +128,8 @@ def _get_active_user(db: Session, user_id: int, role: str, app: str = "productio
 
 
 def _validate(db: Session, data: dict, user: User, build: ProductionRrvBuild | None = None) -> None:
-    if data.get("priority") is not None and data["priority"] not in PRODUCTION_RRV_PRIORITIES:
-        raise HTTPException(status_code=400, detail=f"'{data['priority']}' isn't a valid priority. Use one of: {', '.join(PRODUCTION_RRV_PRIORITIES)}.")
+    if data.get("priority") is not None:
+        data["priority"] = parse_priority(data["priority"])
     if data.get("required_tests") is not None:
         bad = [t for t in data["required_tests"] if t not in PRODUCTION_RRV_TEST_TYPES]
         if bad:
@@ -127,10 +140,26 @@ def _validate(db: Session, data: dict, user: User, build: ProductionRrvBuild | N
         manager = _get_active_user(db, data["build_manager_id"], "build manager")
         if build is None or manager.id != build.build_manager_id:
             assignee_rules.ensure_allowed(db, user, MANAGER_RULE, manager)
+    if data.get("order_project_id"):
+        project = op_core.resolve_project(db, data["order_project_id"])
+        if op_core.project_has_units(db, project.id):
+            raise HTTPException(status_code=422, detail=(
+                f"{project.project_code} was created from a sales order and has units (vehicles / lots), so its builds follow "
+                f"those units, not the project as a whole. Open the unit's build from Production › RRV Builds, or pick a project "
+                f"made in Project Management."))
+        if build is not None and (build.order_project_element_id or build.sales_schedule_id):
+            raise HTTPException(status_code=409, detail=(
+                f"{build.build_number} already builds a unit of its sales order — it can't be linked to {project.project_code} "
+                f"as a whole. Leave the project as it is."))
+        order_project_links.ensure_build_link_free(db, project, exclude_build_id=build.id if build else None)
     if data.get("erp_project_id"):
         machine = db.query(Project).filter(Project.id == data["erp_project_id"], Project.is_deleted == False).first()  # noqa: E712
         if not machine:
             raise HTTPException(status_code=400, detail=f"Machine #{data['erp_project_id']} wasn't found in the ERP registry.")
+        if data.get("order_project_id") and machine.pm_project_id and machine.pm_project_id != data["order_project_id"]:
+            raise HTTPException(status_code=422, detail=(
+                f"Machine {machine.serial_number} belongs to another project than the one picked — a project is one machine. "
+                f"Pick the machine's own project, or leave the machine blank."))
         other = db.query(ProductionRrvBuild).filter(
             ProductionRrvBuild.erp_project_id == machine.id, ProductionRrvBuild.is_deleted == False,  # noqa: E712
             ProductionRrvBuild.status != "cancelled", ProductionRrvBuild.id != (build.id if build else 0),
@@ -182,6 +211,7 @@ def _responses(db: Session, builds: list[ProductionRrvBuild], cls=ProductionRrvB
         ).all():
             wo_counts[bid] = wo_counts.get(bid, 0) + 1
     op_links = order_project_links.build_elements(db, builds)
+    proj_links = order_project_links.build_projects(db, builds)
     out = []
     for b in builds:
         resp = cls.model_validate(b)
@@ -205,6 +235,10 @@ def _responses(db: Session, builds: list[ProductionRrvBuild], cls=ProductionRrvB
             proj, el = hit
             resp.order_project_id, resp.order_project_element_id = proj.id, el.id
             resp.order_project_number, resp.order_project_element_no, resp.order_project_element_label = proj.project_code, el.element_no, el.label
+        elif b.id in proj_links:  # linked to a project without units: the project itself
+            proj = proj_links[b.id]
+            resp.order_project_id, resp.order_project_element_id = proj.id, None
+            resp.order_project_number = proj.project_code
         else:
             resp.order_project_id = resp.order_project_element_id = None
         out.append(resp)
@@ -420,7 +454,7 @@ async def list_rework_orders(
 
 @router.post("", response_model=ProductionRrvBuildDetail, status_code=201)
 async def create_build(
-    payload: ProductionRrvBuildCreate,
+    payload: _BuildCreate,
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("production")),
     _perm: User = Depends(_CAN_CREATE),
@@ -457,7 +491,7 @@ _HANDOVER_FIELDS = {
 @router.patch("/{build_id}", response_model=ProductionRrvBuildDetail)
 async def update_build(
     build_id: int,
-    payload: ProductionRrvBuildUpdate,
+    payload: _BuildUpdate,
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("production")),
     _perm: User = Depends(_CAN_EDIT),
@@ -594,9 +628,26 @@ async def link_work_order(build_id: int, wo_id: int, payload: ProductionRrvLinkW
             raise HTTPException(status_code=409, detail=f"{wo.wo_number} works for {other.element_no if other else 'another unit'}, but "
                                                         f"{build.build_number} builds {build_el.element_no} ({build_el.label}). Change the work "
                                                         "order's project unit first, or link it to that unit's build.")
+        if not wo.order_project_element_id and wo.order_project_id and wo.order_project_id != build_el.project_id:
+            other_p = db.get(PmProject, wo.order_project_id)
+            raise HTTPException(status_code=409, detail=f"{wo.wo_number} works for project {other_p.project_code if other_p else '#' + str(wo.order_project_id)}, but "
+                                                        f"{build.build_number} builds {build_el.element_no} of {build_el.project.project_code}. Change the work "
+                                                        "order's project first, or link it to that project's build.")
         wo.order_project_id, wo.order_project_element_id = build_el.project_id, build_el.id
         wo.sales_order_id = wo.sales_order_id or build.sales_order_id
         wo.sales_order_line_id = wo.sales_order_line_id or build.sales_order_line_id
+    elif build.order_project_id and not op_core.project_has_units(db, build.order_project_id):
+        # The build belongs to a project without units: its work orders belong to the project too.
+        if wo.order_project_id and wo.order_project_id != build.order_project_id:
+            other_p = db.get(PmProject, wo.order_project_id)
+            raise HTTPException(status_code=409, detail=f"{wo.wo_number} works for project {other_p.project_code if other_p else '#' + str(wo.order_project_id)}, but "
+                                                        f"{build.build_number} builds {(db.get(PmProject, build.order_project_id)).project_code}. "
+                                                        "Change the work order's project first, or link it to that project's build.")
+        if wo.order_project_element_id:
+            other = db.get(PmProjectElement, wo.order_project_element_id)
+            raise HTTPException(status_code=409, detail=f"{wo.wo_number} works for {other.element_no if other else 'a unit'}, but "
+                                                        f"{build.build_number} is a build of a whole project. Clear the work order's project unit first.")
+        wo.order_project_id = build.order_project_id
     wo.rrv_build_id, wo.build_role = build.id, payload.build_role
     wo.erp_project_id = wo.erp_project_id or build.erp_project_id
     rrv_log(db, build.id, "work_order_linked", user, f"{wo.wo_number} as {payload.build_role.replace('_', '-')}")

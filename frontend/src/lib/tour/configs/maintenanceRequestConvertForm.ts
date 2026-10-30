@@ -32,9 +32,7 @@ const config: TourConfig = {
       title: 'Priority',
       purpose: 'How urgent the job is. Pre-filled from the request.',
       options: [
-        { value: 'Low', meaning: 'When convenient.' },
-        { value: 'Normal', meaning: 'Normal course of the day.' },
-        { value: 'High', meaning: 'Soon — production affected.' },
+        { value: 'Standard', meaning: 'Normal course of the day (default).' },
         { value: 'Urgent', meaning: 'Immediately — line stopped or safety risk.' },
       ],
     },

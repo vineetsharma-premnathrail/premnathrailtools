@@ -110,14 +110,14 @@ def _roles(demo) -> dict[str, list[str]]:
     pr_raise = P("p2p", "purchase_requisitions", actions=["view", "create", "edit", "submit", "cancel"])
     pr_approve = P("p2p", "purchase_requisitions", "purchase_orders", actions=["view", "approve", "reject"])
     item_lookup = ["store:items:view", "store:stock:view"]
-    products_view = P("products", actions=["view"])
+    products_view = P("crm", "products", actions=["view"])  # Products moved into CRM (2026-10-30)
     routine = ("delete", "approve", "reject")
     apps = [m for m in MODULES if m not in NON_APP_MODULES]
     return {
-        "Sales / BD Executive": [no_settings(std("crm", skip=routine), "crm"), no_settings(std("sales", skip=routine), "sales"), products_view],
-        "Sales / BD Head": ["crm:*:*", "sales:*:*", products_view, item_lookup],
+        "Sales / BD Executive": [no_settings(std("crm", skip=routine), "crm"), products_view],
+        "Sales / BD Head": ["crm:*:*", products_view, item_lookup],
         "R&D Engineer": [std("rnd", skip=("delete", "approve")), products_view, pr_raise, item_lookup],
-        "R&D Head": ["rnd:*:*", "products:*:*", P("crm", "organizations", "inquiries_tenders", actions=["view"]), pr_raise, item_lookup],
+        "R&D Head": ["rnd:*:*", "crm:products:*", P("crm", "organizations", "inquiries_tenders", actions=["view"]), pr_raise, item_lookup],
         "Design Engineer": [no_settings(std("design", skip=routine), "design"), products_view, pr_raise, item_lookup],
         "Design Head": ["design:*:*", products_view, pr_raise, pr_approve, item_lookup],
         "Electrical Head": ["electrical:*:*", pr_raise, item_lookup],
@@ -132,7 +132,7 @@ def _roles(demo) -> dict[str, list[str]]:
                                P("quality", "in_process_inspection", "final_inspection", actions=["view"])],
         "Quality Inspector": [QUALITY_ROLE_PERMISSION_SETS["inspector"]["grants"], P("store", "grn", actions=["view"]), item_lookup],
         "Quality Manager": ["quality:*:*", QUALITY_ROLE_PERMISSION_SETS["head"]["grants"], P("store", "grn", actions=["view", "approve", "reject"]), item_lookup],
-        "Project Manager": ["projects:*:*", pr_raise, pr_approve, P("crm", "inquiries_tenders", actions=["view"]), P("sales", "orders", actions=["view"])],
+        "Project Manager": ["projects:*:*", pr_raise, pr_approve, P("crm", "inquiries_tenders", actions=["view"])],
         "Service Engineer": [no_settings(std("erp", skip=("delete",)), "erp"), P("store", "issues", actions=["view", "create"]), item_lookup,
                              P("quality", "complaints", actions=["view", "create"]), pr_raise],
         "Service Head": ["erp:*:*", P("quality", "complaints", actions=["view", "create", "edit"]), item_lookup, pr_raise, pr_approve],

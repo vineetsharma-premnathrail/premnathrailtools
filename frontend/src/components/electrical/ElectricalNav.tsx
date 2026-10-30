@@ -7,11 +7,10 @@ import { useAuth } from '@/hooks/useAuth'
 import { filterTabsByAccess } from '@/lib/tabAccess'
 import NotificationBell from '@/components/erp/NotificationBell'
 import TourButton from '@/components/tour/TourButton'
-import { Blueprint, Gauge, Kanban, Lightning, ShoppingCart, SquaresFour, Tray, Wrench, type Icon } from '@phosphor-icons/react'
+import { Blueprint, Gauge, Kanban, Lightning, ShoppingCart, SquaresFour, Wrench, type Icon } from '@phosphor-icons/react'
 
 const TABS = [
   { href: '/dashboard/electrical', label: 'Dashboard', icon: 'dashboard', subtabKey: 'dashboard' },
-  { href: '/dashboard/electrical/requirements', label: 'Requirements', icon: 'rnd-inbox', subtabKey: 'requirements' },
   { href: '/dashboard/electrical/jobs', label: 'RRV Jobs', icon: 'bolt', subtabKey: 'jobs' },
   { href: '/dashboard/electrical/drawings', label: 'Drawings', icon: 'drawing', subtabKey: 'drawings' },
   { href: '/dashboard/electrical/purchase', label: 'Purchase Req.', icon: 'cart', subtabKey: 'purchase' },
@@ -29,7 +28,6 @@ const TAB_ICONS: Record<string, Icon> = {
   meter: Gauge,
   wrench: Wrench,
   'pm-work': Kanban,
-  'rnd-inbox': Tray,
 }
 
 function TabIcon({ name }: { name: string }) {

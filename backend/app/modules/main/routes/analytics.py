@@ -82,39 +82,6 @@ def _enquiries(db: Session, today: date) -> dict:
             "secondary": f"{new(s, e)} new this month", "current": new(s, e), "previous": new(ps, pe)}
 
 
-def _so_open_statuses():
-    from app.modules.sales.models.order import SALES_ORDER_OPEN_STATUSES
-    return SALES_ORDER_OPEN_STATUSES
-
-
-def _order_intake(db: Session, today: date) -> dict:
-    from app.modules.sales.models.order import SalesOrder
-
-    def intake(a, b):
-        return _f(db.query(func.coalesce(func.sum(SalesOrder.taxable_total), 0)).filter(
-            SalesOrder.is_deleted.is_(False), SalesOrder.confirmed_at.isnot(None),
-            SalesOrder.confirmed_at >= a, SalesOrder.confirmed_at < b,
-            SalesOrder.status.notin_(("cancelled",))).scalar())
-    s, e = _month_bounds(today)
-    ps, pe = _month_bounds(_prev_month(today))
-    trend = []
-    for m in _months_back(today, 12):
-        a, b = _month_bounds(m)
-        trend.append({"month": m.strftime("%Y-%m"), "value": intake(a, b)})
-    cur = intake(s, e)
-    return {"value": cur, "unit": "inr", "current": cur, "previous": intake(ps, pe), "trend": trend,
-            "secondary": "Taxable value of orders confirmed this month"}
-
-
-def _backlog(db: Session, today: date) -> dict:
-    from app.modules.sales.models.order import SalesOrder
-
-    rows = db.query(SalesOrder.taxable_total).filter(SalesOrder.is_deleted.is_(False),
-                                                     SalesOrder.status.in_(_so_open_statuses())).all()
-    return {"value": _f(sum(float(r[0] or 0) for r in rows)), "unit": "inr",
-            "secondary": f"{len(rows)} open order(s) in the order book"}
-
-
 def _production(db: Session, today: date) -> dict:
     from app.modules.production.models.work_order import ProductionWorkOrder as WO
 
@@ -132,21 +99,6 @@ def _quality(db: Session, today: date) -> dict:
     ncrs = db.query(func.count(QualityNcr.id)).filter(QualityNcr.is_deleted.is_(False),
                                                        QualityNcr.status.in_(QUALITY_NCR_OPEN_STATUSES)).scalar() or 0
     return {"value": lots, "unit": "count", "secondary": f"{ncrs} open NCR(s)", "alert": ncrs}
-
-
-def _dispatch(db: Session, today: date) -> dict:
-    from app.modules.sales.models.order import SALES_SCHEDULE_UNDELIVERED, SalesOrderSchedule as S
-
-    ready = db.query(func.count(S.id)).filter(S.status == "ready").scalar() or 0
-    overdue = db.query(func.count(S.id)).filter(S.status.in_(SALES_SCHEDULE_UNDELIVERED), S.status != "dispatched",
-                                                S.current_delivery_date.isnot(None), S.current_delivery_date < today).scalar() or 0
-    s, e = _month_bounds(today)
-    ps, pe = _month_bounds(_prev_month(today))
-
-    def shipped(a, b):
-        return db.query(func.count(S.id)).filter(S.dispatched_on.isnot(None), S.dispatched_on >= a, S.dispatched_on < b).scalar() or 0
-    return {"value": ready, "unit": "count", "secondary": f"{overdue} delivery line(s) overdue · {shipped(s, e)} dispatched this month",
-            "current": shipped(s, e), "previous": shipped(ps, pe), "alert": overdue}
 
 
 def _billing(db: Session, today: date) -> dict:
@@ -213,11 +165,8 @@ def _service(db: Session, today: date) -> dict:
 # key, label, stage, module needed, drill-down page, function
 KPIS = (
     ("enquiries", "Open enquiries & tenders", "Enquiry", "crm", "/dashboard/crm/inquiries", _enquiries),
-    ("order_intake", "Order intake (month)", "Order intake", "sales", "/dashboard/sales/orders", _order_intake),
-    ("backlog", "Order backlog", "Backlog", "sales", "/dashboard/sales/reports", _backlog),
     ("production_wip", "Production WIP (work orders)", "Production", "production", "/dashboard/production/work-orders", _production),
     ("qc_holds", "Lots in QC hold", "Quality", "quality", "/dashboard/quality/lots", _quality),
-    ("dispatch", "Ready to dispatch", "Dispatch", "sales", "/dashboard/sales/delivery", _dispatch),
     ("billing", "Billing (month)", "Billing", "accounts", "/dashboard/finance/sales", _billing),
     ("collections", "Collections (month)", "Collections", "accounts", "/dashboard/finance/outstanding", _collections),
     ("service_sla", "Open service requests", "Service", "erp", "/dashboard/erp/service-requests", _service),

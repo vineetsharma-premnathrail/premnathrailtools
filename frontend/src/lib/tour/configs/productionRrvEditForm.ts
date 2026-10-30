@@ -27,9 +27,7 @@ const config: TourConfig = {
       target: 'production-rrv-edit-priority',
       title: 'Priority',
       options: [
-        { value: 'Low', meaning: 'No deadline pressure.' },
-        { value: 'Normal', meaning: 'Standard commitment.' },
-        { value: 'High', meaning: 'Tight customer deadline.' },
+        { value: 'Standard', meaning: 'Standard commitment (default).' },
         { value: 'Urgent', meaning: 'Penalty or critical need.' },
       ],
     },

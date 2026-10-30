@@ -74,6 +74,26 @@ class P2PPurchaseOrderCreate(BaseModel):
     items: list[P2PPurchaseOrderItemPayload] = Field(default_factory=list)
 
 
+class P2PUploadPOLine(BaseModel):
+    pr_item_id: int
+    unit_price: float = Field(gt=0)
+    tax_rate: float | None = Field(default=None, ge=0, le=100)
+
+
+class P2PUploadPOPayload(BaseModel):
+    """Details sent with Upload PO on the requisition (the Tally PO PDF and
+    number travel as their own form fields)."""
+    vendor_tier: str | None = None
+    selection_reason: str | None = None
+    # Only when the RFQ has no L1/L2 quote files (emailed RFQ): the vendor from the vendor master.
+    vendor_id: int | None = None
+    ship_to_location_id: int
+    expected_delivery: date | None = None
+    delivery_terms: str | None = None
+    cost_center_id: int | None = None
+    lines: list[P2PUploadPOLine] = Field(min_length=1)
+
+
 class P2PPurchaseOrderUpdate(BaseModel):
     """Delivery-detail edits only. Status is deliberately NOT here — a PO's
     status only moves through the RFQ submit / PO approval / GRN flows, never

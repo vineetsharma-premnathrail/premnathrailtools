@@ -21,6 +21,7 @@ import P2PNav from '@/components/p2p/P2PNav'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import ServiceEntriesPanel from '@/components/p2p/ServiceEntriesPanel'
 import PoDeliveryCostsPanel from '@/components/p2p/PoDeliveryCostsPanel'
+import UploadPODialog from '@/components/p2p/UploadPODialog'
 import { useRecordId, recordHref, recordPath } from '@/lib/recordRef'
 import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -65,6 +66,7 @@ type P2PRequestDetail = Omit<P2PRequest, 'po_approval_panel'> & {
   purchase_order?: P2PPurchaseOrder | null
   po_approval_panel?: PoPanelEntry[]
 }
+type AuditEntry = { id: number; action: string; summary?: string | null; performed_by: string; performed_at?: string | null; document_name?: string | null }
 
 const money = (v?: number | null) => (v == null ? '—' : `₹ ${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
 
@@ -157,6 +159,9 @@ export default function MyP2PRequestDetailPage() {
   const [confirmProcurementItemId, setConfirmProcurementItemId] = useState<number | null>(null)
   const [confirmClose, setConfirmClose] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const [showUploadPo, setShowUploadPo] = useState(false)
+  // The requisition's timeline; an uploaded Tally PO keeps its own PDF on its entry.
+  const [history, setHistory] = useState<AuditEntry[]>([])
 
   const isPurchaseTeam = !!user?.apps?.includes('purchase')
   const { can, canFeature } = useCan()
@@ -173,6 +178,8 @@ export default function MyP2PRequestDetailPage() {
   const seePoBlock = prFeature('purchase_order', 'view')
   const seeAttachments = prFeature('attachments', 'view')
   const seeStockCheck = prFeature('fulfilment', 'view')
+  const seeHistory = prFeature('history', 'view')
+  const seePoDocument = canFeature('p2p', 'purchase_orders', 'po_document', 'view')
   // Issuing from store stock is the Store Manager's job (admins too); the
   // Purchase team sees the stock result and decides what to procure.
   const canIssueStock = (user?.role === 'admin' || (pr?.approvals || []).some((a) => a.role === 'store_manager' && a.approver_id === user?.id))
@@ -205,11 +212,13 @@ export default function MyP2PRequestDetailPage() {
       setStockCheckErrors({})
       setPr(data)
 
-      const [rfqList, poList] = await Promise.all([
+      const [rfqList, poList, audit] = await Promise.all([
         rfqApi.list({ p2p_request_id: data.id }).catch(() => []),
         purchaseOrdersApi.list({ p2p_request_id: data.id }).catch(() => []),
+        seeHistory ? p2pApi.getAuditTrail(data.id).catch(() => []) : Promise.resolve([]),
       ])
       setRfq(rfqList[0] || null)
+      setHistory([...(audit as AuditEntry[])].reverse())
       // Approvers without the Purchase app get a 403 on the PO list — fall
       // back to the PO the PR itself carries so they see what they sign.
       const live = (poList as P2PPurchaseOrder[]).filter((x) => x.status !== 'cancelled')
@@ -434,7 +443,11 @@ export default function MyP2PRequestDetailPage() {
     if (!linkChoice) { setSheetError('Pick the Item Master item this PO line is.'); return }
     runInSheet(() => purchaseOrdersApi.linkItem(po.id, lineId, Number(linkChoice)), 'Could not link the line to the Item Master.', () => setLinkingLineId(null))
   }
-  const poLinesTotal = po?.total_value ?? (poLines.length ? poLines.reduce((sum, l) => sum + (l.line_total || 0), 0) : pr.po_value ?? null)
+  // POs are made in Tally (2026-10-30): once the quotations are in, the buyer uploads the Tally PO here.
+  const canUploadPo = !!rfq && isPurchaseTeam && ['vendor_quotations', 'vendor_selected'].includes(pr.status)
+    && can('p2p', 'purchase_orders', 'create') && can('p2p', 'purchase_orders', 'submit')
+    && canFeature('p2p', 'purchase_orders', 'po_document', 'create')
+  const poLinesTotal = po?.total_value ??(poLines.length ? poLines.reduce((sum, l) => sum + (l.line_total || 0), 0) : pr.po_value ?? null)
 
   const promptMeta: Record<PromptKind, { icon: SheetIconName; color: string; title: string; label: string; placeholder: string; hint?: string; submit: string; busy: string; required: boolean }> = {
     approve: { icon: 'check', color: '#16a34a', title: 'Approve this Purchase Requisition?', label: 'Comment', placeholder: 'e.g. Needed for the Q3 build — quantities checked', hint: 'Your comment is recorded on the approval trail.', submit: 'Approve', busy: 'Approving…', required: true },
@@ -473,6 +486,9 @@ export default function MyP2PRequestDetailPage() {
           )}
           {(canRejectStill || canRejectPo) && (
             <button data-tour="pr-detail-reject" disabled={busy} onClick={reject} style={dangerBtn}>Reject</button>
+          )}
+          {canUploadPo && (
+            <button data-tour="pr-detail-upload-po" type="button" disabled={busy} onClick={() => setShowUploadPo(true)} style={primaryBtn}>Upload PO</button>
           )}
           {canResubmit && (
             <button data-tour="pr-detail-resubmit" type="button" disabled={busy} onClick={resubmit} style={primaryBtn}>Resubmit for Approval</button>
@@ -1022,6 +1038,36 @@ export default function MyP2PRequestDetailPage() {
             ))}
           </div>
         </div>
+      )}
+
+      {seeHistory && history.length > 0 && (
+        <div data-tour="pr-detail-history" style={sectionStyle}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>History</h2>
+          <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {history.map((h) => (
+              <li key={h.id} style={{ display: 'flex', gap: 12, fontSize: 13, color: TEXT.secondary, borderLeft: `2px solid ${h.document_name ? '#2563eb' : BORDER.normal}`, paddingLeft: 12 }}>
+                <span style={{ flex: 'none', minWidth: 140, color: TEXT.muted, fontSize: 12 }}>{h.performed_at ? formatDateTime(h.performed_at) : '—'}</span>
+                <span style={{ minWidth: 0 }}>
+                  {h.summary || `${h.performed_by}: ${h.action.replace(/_/g, ' ')}`}
+                  {h.document_name && seePoDocument && (
+                    <>
+                      {' '}
+                      <a href="#" onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => p2pApi.getAuditDocumentBlob(pr.id, h.id), h.document_name!) }}
+                        style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 600 }}>
+                        Open PO PDF
+                      </a>
+                    </>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      {showUploadPo && rfq && (
+        <UploadPODialog rfq={rfq} pr={pr as unknown as P2PRequest} onClose={() => setShowUploadPo(false)}
+          onUploaded={() => { setShowUploadPo(false); load() }} />
       )}
 
       {promptAction && m && (

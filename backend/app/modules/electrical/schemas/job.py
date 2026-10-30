@@ -45,7 +45,7 @@ class ElectricalJobCreate(BaseModel):
     customer_name: str | None = Field(None, max_length=255)
     branch_id: int | None = None
     lead_engineer_id: int | None = None
-    priority: str = "normal"
+    priority: str = "standard"
     planned_start_date: date | None = None
     target_handover_date: date | None = None
     system_voltage: str | None = Field(None, max_length=50)

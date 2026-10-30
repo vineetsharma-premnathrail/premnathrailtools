@@ -1,8 +1,8 @@
-"""Production ↔ Order Projects (production/order_project_links.py): a planned
-build per vehicle at SO confirmation (idempotent, amendments add only the new
-vehicle), element status from the build, the 'production' 360 column, the
-work-order element rule (required for an order with a project, inherited from
-the build), and MRP carrying the element onto planned orders."""
+"""Production ↔ PM projects of historic orders (production/order_project_links.py): the build of
+a vehicle is tied to its unit, element status from the build, the 'production' 360 column, the
+work-order element rule (required for an order with units, inherited from the build), and MRP
+carrying the element onto planned orders. (Builds are no longer planned automatically when a
+project is created — 2026-10-30 — so the tests plan them with _plan_builds below.)"""
 from datetime import timedelta
 
 import pytest
@@ -13,19 +13,16 @@ from app.modules.production import order_project_links as links
 from app.modules.production.models.mrp import ProductionPlannedOrder
 from app.modules.production.models.rrv_build import ProductionRrvBuild
 from app.modules.projects import so_projects as ops
-from app.modules.sales import service as svc
 from app.modules.sales.models.order import SalesOrder, SalesOrderSchedule
 from app.modules.projects.models.project import PmProject
 from app.tests.test_production_mrp import MRP, m  # noqa: F401 — fixture
-from app.tests._so_project_helpers import confirm_with_project
-from app.tests.test_sales import BASE, TODAY, create_order, hdr, payload_from_prefill, setup_customer, setup_people
+from app.tests._so_project_helpers import TODAY, hdr, order_with_project
 from app.tests.test_cov_production_execution import API, _sqlite_document_numbers  # noqa: F401 — autouse fixture
 from app.tests.test_production_mrp import _sqlite_p2p_numbers  # noqa: F401 — autouse fixture
 
 
 def test_registered_at_startup():
     import app.main  # noqa: F401
-    assert links.plan_builds_for_project in ops._project_hooks
     assert links.element_status_hook in ops._status_hooks
     assert ops._department_providers.get("production") is links.production_cells
 
@@ -39,24 +36,37 @@ def _planner(db):
     return u
 
 
-def _order_with_spares(client, db, maker, inq):
-    body = payload_from_prefill(client, hdr(maker), inq)
-    body["lines"] = body["lines"] + [{"line_number": 2, "line_type": "spares", "description": "Spare kit", "uom": "NOS",
-                                      "quantity": 5, "unit_price": 1000, "discount_percent": 0, "gst_rate": 18}]
-    body["schedule"] = body["schedule"] + [{"line_number": 2, "quantity": 5, "contract_delivery_date": str(TODAY + timedelta(days=60))}]
-    r = client.post(f"{BASE}/orders", json=body, headers=hdr(maker))
-    assert r.status_code == 200, r.text
-    return r.json()
+def _plan_builds(db, project):
+    """A planned build per vehicle, tied to its unit and delivery row (what Production does by hand on RRV Builds)."""
+    from app.modules.production.models.rrv_build import PRODUCTION_RRV_DEFAULT_REQUIRED_TESTS
+    from app.modules.production.service import seed_rrv_stages
+    order = db.get(SalesOrder, project.sales_order_id)
+    rows = {r.id: r for r in order.schedules}
+    for el in sorted((e for e in project.elements if e.kind == "vehicle"), key=lambda e: e.element_no):
+        b = ProductionRrvBuild(
+            build_number=el.element_no, rrv_model="RRV-10T", status="planned", priority="normal",
+            target_handover_date=el.contractual_date, required_tests=list(PRODUCTION_RRV_DEFAULT_REQUIRED_TESTS),
+            order_project_id=project.id, order_project_element_id=el.id, sales_order_id=order.id,
+            sales_schedule_id=el.sales_schedule_id, sales_order_line_id=el.sales_order_line_id,
+            customer_po_number=order.customer_po_number, order_reference=order.so_number,
+        )
+        seed_rrv_stages(b)
+        db.add(b)
+        db.flush()
+        rows[el.sales_schedule_id].rrv_build_id = b.id
+        rows[el.sales_schedule_id].status = "build_planned"
+    db.commit()
 
 
 def _setup(client, db, with_spares=True):
-    maker, head, director, _ = setup_people(db)
     planner = _planner(db)
-    _org, inq, _ = setup_customer(db, qty=2, price=1000000)
-    so = _order_with_spares(client, db, maker, inq) if with_spares else create_order(client, db, maker, inq)
-    so = confirm_with_project(client, db, so, maker, head, director)
+    so = order_with_project(db, qty=2, price=1000000, spares_qty=5 if with_spares else 0)
+    maker = db.get(User, db.get(SalesOrder, so["id"]).sales_owner_id)
     db.expire_all()
     project = db.query(PmProject).filter(PmProject.sales_order_id == so["id"]).one()
+    _plan_builds(db, project)
+    db.expire_all()
+    project = db.get(PmProject, project.id)
     return maker, planner, so, project
 
 
@@ -73,7 +83,7 @@ def _builds(db, so_id):
     return db.query(ProductionRrvBuild).filter(ProductionRrvBuild.sales_order_id == so_id).order_by(ProductionRrvBuild.id).all()
 
 
-def test_confirmation_plans_one_build_per_vehicle(client, db):
+def test_vehicle_builds_are_tied_to_their_units_and_show_in_the_360(client, db):
     maker, planner, so, project = _setup(client, db)
     vehicles = sorted((e for e in project.elements if e.kind == "vehicle"), key=lambda e: e.element_no)
     builds = _builds(db, so["id"])
@@ -81,32 +91,16 @@ def test_confirmation_plans_one_build_per_vehicle(client, db):
     for b, el in zip(builds, vehicles):
         assert b.status == "planned" and b.order_project_id == project.id and b.order_project_element_id == el.id
         assert b.sales_schedule_id == el.sales_schedule_id and b.rrv_model == "RRV-10T"
-        # Known by its project vehicle number, never a separate RRV-YYYY-NNNN (2026-10-27).
-        assert b.build_number == el.element_no
-        assert b.target_handover_date == el.contractual_date
-        assert b.customer_po_number == "CR/PO/2026/771" and b.order_reference == so["so_number"]
+        assert b.build_number == el.element_no and b.target_handover_date == el.contractual_date
         assert len(b.stages) == 12 and b.required_tests
         row = db.get(SalesOrderSchedule, el.sales_schedule_id)
-        assert row.rrv_build_id == b.id and row.status == "build_planned"
-    note = db.query(Notification).filter(Notification.user_id == planner.id,
-                                         Notification.title.like("Planned build created%")).one()
-    assert builds[0].build_number in note.message and project.project_code in note.message
+        assert row.rrv_build_id == b.id
 
-    # Idempotent: re-running the project sync plans nothing new.
+    # Re-syncing the project plans nothing new — builds are never created implicitly any more.
     order = db.get(SalesOrder, so["id"])
     ops.ensure_project_for_order(db, order, maker)
     db.commit()
     assert len(_builds(db, so["id"])) == 2
-
-    # Amendment adding a vehicle plans exactly one more build.
-    order = db.get(SalesOrder, so["id"])
-    proposed = svc.snapshot(order)
-    proposed["lines"][0]["quantity"] = 3
-    proposed["schedule"].append({"line_number": 1, "quantity": 1, "contract_delivery_date": str(TODAY + timedelta(days=400))})
-    svc.apply_amendment(db, order, proposed)
-    db.commit()
-    builds = _builds(db, so["id"])
-    assert len(builds) == 3 and builds[2].target_handover_date == TODAY + timedelta(days=400)
 
     # 360 page: production column per vehicle; the lot has no work yet.
     cells = {e.element_no: c["production"] for e, c in ((e, _dept(db, project)[e.id]) for e in project.elements)}
@@ -267,7 +261,7 @@ def test_material_issue_uses_project_stock_of_its_element(client, db, m, monkeyp
     db.commit()
     body = {"lines": [{"item_id": m["bolt"].id, "quantity": 4}]}
     r = client.post(f"{API}/work-orders/{wo_id}/issue-materials", json=body, headers=m["h"])
-    assert r.status_code == 409 and "held for another vehicle" in r.json()["detail"], r.text
+    assert r.status_code == 409 and "held for another project / vehicle" in r.json()["detail"], r.text
     # Held for its own vehicle → the hold is consumed by the issue.
     hold = project_stock.active_holds(db, m["bolt"].id, m["store"].id)[0]
     hold.order_project_element_id = v2.id

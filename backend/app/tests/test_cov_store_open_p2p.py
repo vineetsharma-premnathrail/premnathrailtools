@@ -7,8 +7,8 @@ docs/02-modules/store/overview.md §10 "Known gaps").
   C-43  cancelling a PR after PO approval doesn't leave the PO 'issued'
         (fixed: refused at po_approved; po_drafted / reject-at-po_raised
         cancel the linked PO)
-  —     legacy POST /p2p/requests/{id}/create-po bypasses RFQ / PO-approver
-        picks, leaving a PO nobody can approve
+  —     a PO uploaded on a requisition (Upload PO; the old create-po route is
+        gone) goes through PO approval - never leaves a PO nobody can approve
   C-15  GRN pages are gated on 'store' but the GRN API needs 'purchase'
 
 A control the code does NOT enforce yet keeps its test, marked
@@ -20,10 +20,10 @@ from datetime import date, datetime, timezone
 from itertools import count
 
 import pytest
-from sqlalchemy.orm import object_session
 
 from app.auth.jwt_handler import create_access_token
 from app.modules.main.models.user import User
+from app.tests.p2p_po_helpers import post_upload_po, rfq_for_pr, upload_po_details
 from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
@@ -253,7 +253,7 @@ def _approved_matrix_pr_without_po_picks(client, db):
     approvers = {role: _user(db, f"open.legacy.{role}.{n}@premnathrail.com", **{flag: True}) for role, flag in _PR_ROLE_FLAGS.items()}
     set_pr_workflow(db, [u.id for u in approvers.values()], requester)
     r = client.post(PR_BASE, json=link_items(db, {
-        "category_code": "RAW", "project_label": "Project Alpha", "project_type": "new", "priority": "medium",
+        "category_code": "RAW", "project_label": "Project Alpha", "project_type": "new", "priority": "standard",
         "items": [{"item_name": "Hydraulic Cylinder", "quantity": 2, "unit": "pcs", "project_inhouse": "Project"}],
     }), headers=_h(requester))
     assert r.status_code == 200, r.text
@@ -265,28 +265,27 @@ def _approved_matrix_pr_without_po_picks(client, db):
     return pr
 
 
-def _legacy_create_po(client, db, pr, buyer):
-    return client.post(f"{PR_BASE}/{pr['id']}/create-po", json={
-        "po_number": f"PO-LEGACY-{pr['id']}",
-        "item_pricing": [{"pr_item_id": i["id"], "unit_price": 100, "tax_rate": 18} for i in pr["items"]],
-    }, headers=_h(buyer))
+def _upload_po(client, db, pr, buyer):
+    """Upload the Tally PO on the approved requisition (the way POs are made now)."""
+    rfq = rfq_for_pr(db, pr["id"], buyer.id)
+    return post_upload_po(client, buyer, rfq.id, upload_po_details(db, pr["id"]), f"PO-UPLOAD-{pr['id']}")
 
 
-def test_legacy_create_po_refuses_when_nobody_can_approve_the_po(client, db):
+def test_upload_po_refuses_when_nobody_can_approve_the_po(client, db):
     # Default PO workflow ends with "any one Partner"; with no Partner set the
     # PO is refused at once with the reason, instead of stalling in approval.
     pr = _approved_matrix_pr_without_po_picks(client, db)
     buyer = _user(db, f"open.legacy.buyer.{pr['id']}@premnathrail.com", apps=("purchase", "p2p"))
-    r = _legacy_create_po(client, db, pr, buyer)
+    r = _upload_po(client, db, pr, buyer)
     assert r.status_code == 422, r.text
     assert "Partner" in r.json()["detail"]
 
 
-def test_legacy_created_po_can_reach_po_approved(client, db):
+def test_uploaded_po_can_reach_po_approved(client, db):
     pr = _approved_matrix_pr_without_po_picks(client, db)
     buyer = _user(db, f"open.legacy.buyer2.{pr['id']}@premnathrail.com", apps=("purchase", "p2p"))
     partner = _user(db, f"open.legacy.partner.{pr['id']}@premnathrail.com", is_partner=True)
-    r = _legacy_create_po(client, db, pr, buyer)
+    r = _upload_po(client, db, pr, buyer)
     assert r.status_code == 200, r.text
     a = client.post(f"{PR_BASE}/{pr['id']}/approve-po", json={"comment": "Commercials OK"}, headers=_h(partner))
     assert a.status_code == 200, a.text

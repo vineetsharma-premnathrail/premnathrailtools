@@ -22,10 +22,8 @@ export const HEALTH_OPTIONS = [
 export const HEALTH_NOTE = 'Health is calculated automatically for Active and On-hold projects only — nobody sets it by hand, so it cannot be "managed" to look green.'
 
 export const PRIORITY_OPTIONS = [
-  { value: 'Low', meaning: 'Can wait if more urgent work comes up.' },
-  { value: 'Medium', meaning: 'Normal priority — the default.' },
-  { value: 'High', meaning: 'Important customer or tight date; do before medium/low work.' },
-  { value: 'Critical', meaning: 'Drop other work — a delay here directly delays a customer handover or a penalty clause.' },
+  { value: 'Standard', meaning: 'Normal priority — the default.' },
+  { value: 'Urgent', meaning: 'Drop other work — a delay here directly delays a customer handover or a penalty clause.' },
 ]
 
 export const MILESTONE_STATUS_OPTIONS = [
@@ -79,7 +77,7 @@ export const PROJECT_FORM_STEPS: TourStep[] = [
     target: 'pm-form-code',
     title: 'Project number',
     purpose: 'The short order number every department already knows the job by.',
-    whatToEnter: 'Under "More details". Leave blank on a new project to get the next number (PEW-78, PEW-79 ...) — it continues the past project series and is shared with the projects made from Sales Orders, so a number is never used twice. Or type your own, such as PEW-64A for a repeat of PEW-64; a number already used is refused. Letters are turned to capitals automatically.',
+    whatToEnter: 'Under "More details". Leave blank on a new project to get the next number (PEW-78, PEW-79 ...) — it continues the past project series, so a number is never used twice. Or type your own, such as PEW-64A for a repeat of PEW-64; a number already used is refused. Letters are turned to capitals automatically.',
     validExample: 'PEW-39',
     invalidExample: 'new project for ircon (a description, not a code)',
     why: 'Store issues, purchase requests, drawings and inspection reports all quote this code, so it must be short, unique and stable.',

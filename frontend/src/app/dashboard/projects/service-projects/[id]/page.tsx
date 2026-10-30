@@ -303,7 +303,7 @@ function OverviewTab({ project, showContacts, showWarranty }: { project: Project
       />
 
       <DetailGroup title="Machine identity">
-        <DetailRow label="Product">{project.product_name || <span style={{ color: '#64748b' }}>Not linked to a product (Sales › Products)</span>}</DetailRow>
+        <DetailRow label="Product">{project.product_name || <span style={{ color: '#64748b' }}>Not linked to a product (CRM › Products)</span>}</DetailRow>
         <DetailRow label="Model">{project.model_name}</DetailRow>
         <DetailRow label="Machine type">{project.machine_type}</DetailRow>
         <DetailRow label="Application type">{project.application_type}</DetailRow>

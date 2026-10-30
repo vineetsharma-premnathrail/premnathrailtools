@@ -7,7 +7,7 @@ const config: TourConfig = {
     {
       target: 'store-sub-before-po',
       title: 'Inward › Before PO',
-      purpose: 'Where the store records material that arrived before its purchase order was made. Procurement then sees it and creates the PO for the same vendor and items.',
+      purpose: 'Where the store records material that arrived before its purchase order was made. Procurement then sees it, makes a requisition for the same vendor and items and uploads the Tally PO on it.',
       why: 'The goods are real and must be on record, but they enter stock only through the GRN against an approved PO, so value and the invoice match stay correct.',
     },
     {

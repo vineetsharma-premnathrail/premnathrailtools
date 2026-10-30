@@ -51,24 +51,13 @@ def test_rules_notify_selected_people_only(client, db):
     assert db.query(Notification).filter(Notification.user_id == bd.id, Notification.notification_type.like("crm_rule_%")).count() == 0
 
 
-def test_discussion_rule_skips_people_already_tagged(client, db):
+def test_discussion_notification_rule_is_gone(client, db):
+    """Discussion was removed (2026-10-30): its notification rule can no longer be set."""
     admin = make_user(db, "crmset_admin2@premnathrail.com", role="admin")
-    bd = make_user(db, "crmset_bd2@premnathrail.com")
-    a = make_user(db, "crmset_a@premnathrail.com", apps=("crm", "rnd"))
-    a.department = "R&D"  # only R&D / Business Development people can be tagged
-    db.commit()
-    b = make_user(db, "crmset_b@premnathrail.com", apps=("rnd",))
-    rule(client, admin, "discussion_message", [a, b])
-    org = Organization(name="Disc Rule Org")
-    db.add(org)
-    db.flush()
-    inq = Inquiry(universal_id="INQ-RULE-1", org_id=org.id, created_by_id=bd.id, lead_source="Direct", technical_offer_sent_at=datetime.now(timezone.utc))
-    db.add(inq)
-    db.commit()
-    r = client.post(f"/api/v1/requirement-discussion/inquiry/{inq.id}", data={"side": "crm", "body": "@crmset_a hi", "mention_ids": str(a.id)}, headers=auth(bd))
-    assert r.status_code == 200, r.text
-    assert db.query(Notification).filter(Notification.user_id == a.id).count() == 1  # the tag, not a second rule notice
-    assert db.query(Notification).filter(Notification.user_id == b.id, Notification.notification_type == "crm_rule_discussion_message").count() == 1
+    r = client.put("/api/v1/crm/settings", json={"values": {"notify_discussion_message_enabled": True}}, headers=auth(admin))
+    assert r.status_code == 422, r.text
+    from app.modules.crm.settings import NOTIFY_EVENTS
+    assert "discussion_message" not in NOTIFY_EVENTS
 
 
 def test_exports(client, db):

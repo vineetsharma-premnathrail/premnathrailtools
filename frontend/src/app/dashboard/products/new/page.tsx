@@ -2,12 +2,12 @@
 
 import { useRouter } from 'next/navigation'
 import { recordPath } from '@/lib/recordRef'
-import { useRequireApp } from '@/hooks/useAuth'
+import { useProductsAccess } from '@/components/products/useProductsAccess'
 import ProductsNav from '@/components/products/ProductsNav'
 import ProductForm from '@/components/products/ProductForm'
 
 export default function NewProductPage() {
-  const { isAuthorized, isLoading } = useRequireApp('products')
+  const { isAuthorized, isLoading } = useProductsAccess()
   const router = useRouter()
 
   if (isLoading || !isAuthorized) return null

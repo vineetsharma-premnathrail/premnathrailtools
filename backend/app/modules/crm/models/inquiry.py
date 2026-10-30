@@ -67,7 +67,7 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     expected_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     probability: Mapped[int | None] = mapped_column(Integer, nullable=True)
     expected_order_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    priority: Mapped[str] = mapped_column(String(20), default="Medium", nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), default="standard", nullable=False)  # standard | urgent
     # Win / loss (CRM opportunity) — required when the inquiry closes as not ordered.
     # Codes: crm/services/opportunity.py LOST_REASONS.
     lost_reason_code: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)

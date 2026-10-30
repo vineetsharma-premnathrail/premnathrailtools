@@ -229,6 +229,7 @@ from app.modules.rnd.models.prototype import RndPrototype, RndPrototypeBomItem
 from app.modules.rnd.models.feasibility import RndFeasibilityStudy
 from app.modules.rnd.models.document import RndDocument
 from app.modules.rnd.models.requirement_work import RndTeamMember, RndRequirementAccess, RndRequirementTask, RndTaskEvent, RndRequirementProjectLink, RndRequirementShare, RndRequirementDocVisibility
+from app.modules.rnd.models.requirement import RndRequirement, RndRequirementRevision
 from app.modules.rnd.models.task_approval import RndTaskApproval
 from app.modules.rnd.models.technical_offer import RndTechnicalOffer
 from app.modules.rnd.models.project_task import RndProjectTask, RndProjectTaskEvent

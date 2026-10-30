@@ -7,6 +7,7 @@
 // plus each milestone's evidence and team chat. Read-only: it answers "who
 // did what, when, and why".
 
+import { normalizePriority } from '@/lib/priority'
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { pmWorkApi, projectsApi } from '@/lib/api'
@@ -82,7 +83,7 @@ function TaskBlock({ t, onOpenFile }: { t: PmBreakdownTask; onOpenFile: (f: PmPr
         <span onClick={() => router.push(recordPath('/dashboard/projects/tasks', t))} style={{ fontSize: 13, fontWeight: 600, color: '#2563eb', cursor: 'pointer', flex: '1 1 220px' }}>{t.title}</span>
         <span style={{ fontSize: 12, color: TEXT.secondary, minWidth: 120 }}>{t.assignee_name || '—'}</span>
         <Pill value={t.status} labels={TASK_LABELS} hex={TASK_HEX} />
-        <Pill value={t.priority} labels={PRIORITY_LABELS} hex={PRIORITY_HEX} />
+        <Pill value={normalizePriority(t.priority)} labels={PRIORITY_LABELS} hex={PRIORITY_HEX} />
         {t.is_overdue && <FlagPill text="Overdue" color="#dc2626" />}
         <span style={{ fontSize: 12, color: t.is_overdue ? '#dc2626' : TEXT.muted, minWidth: 90 }}>due {formatDate(t.due_date)}</span>
         <span style={{ fontSize: 11.5, color: TEXT.muted, minWidth: 140 }}>

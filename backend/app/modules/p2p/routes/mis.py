@@ -19,6 +19,7 @@ from openpyxl.formatting.rule import DataBarRule
 
 from app.core.config import settings
 from app.core.permissions import ensure_tab_action
+from app.core.priority import priority_label
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.routes.auth import get_current_user
@@ -290,7 +291,7 @@ _STATUS_COLORS = {
     "partially_received": "F59E0B", "received": "16A34A", "closed": "64748B",
     "rejected": "DC2626", "cancelled": "64748B",
 }
-_PRIORITY_COLORS = {"High": "DC2626", "Medium": "F59E0B", "Low": "16A34A"}
+_PRIORITY_COLORS = {"Urgent": "DC2626", "Standard": "64748B"}
 # Same categorical palette used by the frontend's Chart.js reports pages —
 # kept in lockstep so a chart looks the same whether viewed in-app or in Excel.
 # Bare 6-digit hex is correct here — chart series fills are a different color
@@ -546,7 +547,7 @@ async def export_mis_report(
             {"existing": "Existing project", "new": "New project"}.get(pr.project_type or "", "—"),
             pr.project_label or "—", P2P_CATEGORIES.get(pr.category_code, pr.category_code), pr.department or "—",
             people.get(pr.requested_by_id, "—"), people.get(pr.assigned_buyer_id, "Not assigned"),
-            (pr.priority or "medium").title(), status_label.get(pr.status, pr.status),
+            priority_label(pr.priority), status_label.get(pr.status, pr.status),
             _items_text(pr), _pr_approvers(pr), _po_approvers(pr),
             pr.po_number or "", pr.selected_vendor or "", pr.po_value if pr.po_value is not None else "",
             "\n".join(a.filename for a in pr.attachments) or "—", "Open PR",

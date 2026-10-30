@@ -65,7 +65,7 @@ def test_view_only_user_can_read_but_not_write(client, db):
 
     r = client.post(f"{API}/inquiries", json={"org_id": org["id"], "lead_source": "Direct"}, headers=h)
     assert r.status_code == 403, r.text
-    r = client.patch(f"{API}/inquiries/{inq['id']}", json={"priority": "High"}, headers=h)
+    r = client.patch(f"{API}/inquiries/{inq['id']}", json={"priority": "Urgent"}, headers=h)
     assert r.status_code == 403, r.text
     assert client.delete(f"{API}/inquiries/{inq['id']}", headers=h).status_code == 403
     assert client.post(f"{API}/products", json={"name": "Widget"}, headers=h).status_code == 403

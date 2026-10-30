@@ -1,6 +1,7 @@
 'use client'
 
 import Select from '@/components/shared/Select'
+import { normalizePriority } from '@/lib/priority'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Calendar, CaretDown, CaretLeft, CaretRight, CaretUp, ChatCircle, Check, Clock, ClockCounterClockwise, Flag, Gear, LinkSimple, ListChecks, MagnifyingGlass, Package, Paperclip, PencilSimple, Plus, Star, Tag, Target, Trash, Truck, User, WarningCircle, X } from '@phosphor-icons/react'
 import type { Icon as PhosphorIcon } from '@phosphor-icons/react'
@@ -53,10 +54,8 @@ const tint = (c: string) => ({ c, soft: `${c}0f`, mid: `${c}29` })
 const colOf = (m: { color?: string | null } | null | undefined, i: number) => (m?.color ? tint(m.color) : colorOf(i))
 const msIcon = (m: { icon?: string | null } | null | undefined): IconName => ((m?.icon && (MS_ICONS as readonly string[]).includes(m.icon)) ? m.icon as IconName : 'flag')
 const PRIORITY: Record<string, { text: string; c: string; bg: string }> = {
-  low: { text: 'Low', c: '#475569', bg: '#f1f5f9' },
-  medium: { text: 'Medium', c: '#1d4ed8', bg: '#dbeafe' },
-  high: { text: 'High', c: '#c2410c', bg: '#ffedd5' },
-  critical: { text: 'Critical', c: '#be123c', bg: '#ffe4e6' },
+  standard: { text: 'Standard', c: '#475569', bg: '#f1f5f9' },
+  urgent: { text: 'Urgent', c: '#be123c', bg: '#ffe4e6' },
 }
 const SUB_STATUS = [['todo', 'To Do'], ['in_progress', 'In Progress'], ['on_hold', 'On Hold'], ['done', 'Done']] as const
 
@@ -348,7 +347,7 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
     setTaskForm({
       msId: m.id, id: t?.id, parentId: opts.parent?.id ?? t?.parent_id ?? null, title: t?.title || '', description: t?.description || '',
       assignee_id: t?.assignee_id ? String(t.assignee_id) : '', collaborator_ids: (t?.collaborator_ids || []).map(String),
-      start_date: t?.start_date || '', due_date: t?.due_date || '', priority: t?.priority || 'medium', status: t?.status || 'todo',
+      start_date: t?.start_date || '', due_date: t?.due_date || '', priority: normalizePriority(t?.priority), status: t?.status || 'todo',
       labels: t?.labels || [], checklist: [''], files: [],
     })
     needPeople()
@@ -1050,7 +1049,7 @@ function MilestonePanel(props: {
                         )}
                       </td>
                       <td style={td}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Avatar name={s.assignee_name} size={26} />{s.mine ? <b style={{ color: BLUE }}>You</b> : (s.assignee_name || '—')}</span></td>
-                      <td style={td}><Chip text={(PRIORITY[s.priority || 'medium'] || PRIORITY.medium).text} c={(PRIORITY[s.priority || 'medium'] || PRIORITY.medium).c} bg={(PRIORITY[s.priority || 'medium'] || PRIORITY.medium).bg} /></td>
+                      <td style={td}><Chip text={PRIORITY[normalizePriority(s.priority)].text} c={PRIORITY[normalizePriority(s.priority)].c} bg={PRIORITY[normalizePriority(s.priority)].bg} /></td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmt(s.created_at)}</td>
                       <td style={{ ...td, whiteSpace: 'nowrap', color: s.is_overdue ? '#be123c' : BODY, fontWeight: s.is_overdue ? 600 : 400 }}>{fmt(s.due_date)}</td>
                       <td style={td}><Chip text={state.text} c={state.c} bg={state.bg} /></td>
@@ -1082,7 +1081,7 @@ function TaskSplit(props: Parameters<typeof MilestonePanel>[0] & { list: PmDeptS
   const ts = tasksOf(m)
   const kids = kidsOf(m, task.id)
   const state = STATE[taskState(m, task)]
-  const pr = PRIORITY[task.priority || 'medium'] || PRIORITY.medium
+  const pr = PRIORITY[normalizePriority(task.priority)]
   const p = taskPercent(m, task)
   const idx = ts.indexOf(task)
   const go = (d: number) => { const nx = ts[idx + d]; if (nx) { setTab('overview'); setTaskId(nx.id) } }

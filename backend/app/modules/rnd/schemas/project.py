@@ -30,7 +30,7 @@ class RndProjectPrototypeSummary(BaseModel):
 class RndProjectCreate(BaseModel):
     title: str
     project_type: str = "new_product"
-    priority: str = "medium"
+    priority: str = "standard"
     objective: str
     scope: str | None = None
     lead_id: int | None = None

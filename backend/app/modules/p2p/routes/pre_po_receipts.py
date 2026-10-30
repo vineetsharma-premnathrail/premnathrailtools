@@ -1,8 +1,10 @@
 """Procurement side of Before-PO receipts: see what Store holds without a PO and
-make the PO for it.
+make the requisition its PO is uploaded on.
 
-The PO is created straight for the receipt's vendor and items (no RFQ round).
-Behind it sit a requisition and a closed single-quotation RFQ, so the normal PO
+POs are made in Tally, never in the portal (owner, 2026-10-30): "Create
+requisition" raises a requisition for the receipt's vendor and items with a
+closed single-quotation RFQ, and the buyer then uploads the Tally PO on that
+requisition (rfq.upload_po), which links the receipt to the PO. The normal PO
 approval engine (approvers + a Partner) and the GRN gating apply unchanged.
 Requisition approval is skipped on purpose: the goods are already in, and the PO
 approval is the money control. Gate: Procurement tab `purchase_orders`."""
@@ -29,8 +31,7 @@ from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
 from app.modules.p2p.pre_po import attachment_content_response, receipt_to_response, save_attachment
 from app.modules.p2p.pricing import mask_for
 from app.modules.p2p.routes.p2p_requests import BUYER_RULE_KEY, _write_audit as _write_pr_audit
-from app.modules.p2p.routes.rfq import _ensure_vendor_can_get_po, _purchase_tab, _to_response as _rfq_response, build_po_draft
-from app.modules.p2p.schemas.purchase_order import P2PPurchaseOrderCreate, P2PPurchaseOrderResponse
+from app.modules.p2p.routes.rfq import _ensure_vendor_can_get_po, _purchase_tab, _to_response as _rfq_response
 from app.modules.p2p.schemas.rfq import RFQResponse
 from app.modules.p2p.service import generate_p2p_number, generate_rfq_number
 from app.modules.store.models.item import StoreItem
@@ -45,9 +46,8 @@ _PURPOSE = "stock"
 _CATEGORY = LINE_CATEGORY
 
 
-class PrePoCreatePoResponse(BaseModel):
+class PrePoRequisitionResponse(BaseModel):
     rfq: RFQResponse
-    po: P2PPurchaseOrderResponse
 
 
 @router.get("/pending", response_model=list[PrePoReceiptResponse])
@@ -65,19 +65,22 @@ async def list_pending_pre_po_receipts(
     return [receipt_to_response(db, r) for r in receipts]
 
 
-@router.post("/{receipt_id}/create-po", response_model=PrePoCreatePoResponse)
-async def create_po_for_pre_po_receipt(
+@router.post("/{receipt_id}/create-requisition", response_model=PrePoRequisitionResponse)
+async def create_requisition_for_pre_po_receipt(
     receipt_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(_purchase_tab("purchase_orders", "create")),
 ):
-    # Making the PO makes the caller the buyer of its requisition, so the same assign-buyer rule applies
+    # Making the requisition makes the caller its buyer of its requisition, so the same assign-buyer rule applies
     # (Role & Permissions > Procurement > Purchase Requisitions > Assign buyer).
     assignee_rules.ensure_allowed(db, user, BUYER_RULE_KEY, user)
     receipt = (db.query(StorePrePoReceipt).options(selectinload(StorePrePoReceipt.items))
                .filter(StorePrePoReceipt.id == receipt_id).with_for_update().first())
     if receipt is None:
         raise HTTPException(status_code=404, detail="Before-PO receipt not found - it may have been removed. Reload the Before PO list.")
+    if receipt.status == "pending_po" and receipt.p2p_request_id:
+        pr_no = db.query(P2PRequest.p2p_number).filter(P2PRequest.id == receipt.p2p_request_id).scalar()
+        raise HTTPException(status_code=409, detail=f"Receipt {receipt.receipt_number} already has requisition {pr_no} — open it and upload the Tally PO there.")
     if receipt.status != "pending_po":
         reason = {"po_created": "a PO has already been made for it", "closed": "its PO was received in full",
                   "cancelled": "Store cancelled it"}.get(receipt.status, f"its status is '{receipt.status}'")
@@ -129,18 +132,11 @@ async def create_po_for_pre_po_receipt(
     _write_pr_audit(db, pr.id, "created_from_pre_po_receipt", user, summary=f"{user.name or user.email}: {note}.",
                     new_status="vendor_selected")
 
-    # Same code path as RFQ -> PO draft: vendor block, approved-supplier check, price proposal, terms.
-    po = build_po_draft(db, rfq, pr, user, P2PPurchaseOrderCreate())
-
-    receipt.status = "po_created"
+    # Waits for its PO: the buyer uploads the Tally PO on this requisition, which links it (rfq.upload_po).
     receipt.p2p_request_id = pr.id
-    receipt.purchase_order_id = po.id
     db.commit()
-    db.refresh(po)
     db.refresh(rfq)
-    po_resp = P2PPurchaseOrderResponse.model_validate(po)
-    po_resp.p2p_request_number = pr.p2p_number
-    return {"rfq": mask_for(user, "rfq", _rfq_response(db, rfq)), "po": mask_for(user, "purchase_orders", po_resp)}
+    return {"rfq": mask_for(user, "rfq", _rfq_response(db, rfq))}
 
 
 def _receipt_or_404(db: Session, receipt_id: int) -> StorePrePoReceipt:

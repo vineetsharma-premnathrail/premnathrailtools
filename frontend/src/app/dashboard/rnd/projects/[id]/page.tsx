@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi, usersApi } from '@/lib/api'
-import { DirectoryUser, RndDocument, RndProjectDetail, RndProjectPriority } from '@/types'
+import { DirectoryUser, RndDocument, RndProjectDetail } from '@/types'
+import { PRIORITY_OPTIONS, normalizePriority, priorityLabel, type Priority } from '@/lib/priority'
 import { TEXT } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
 import { secondaryBtnStyle, smallSecondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
@@ -15,8 +16,7 @@ import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import TeamMemberPicker from '@/components/rnd/TeamMemberPicker'
 import RndDocumentsPanel from '@/components/rnd/RndDocumentsPanel'
-import { TaskApi, TaskLabels } from '@/components/rnd/TasksBoard'
-import RndMilestonePlan, { MilestoneApi, MilestonePlanTexts } from '@/components/rnd/RndMilestonePlan'
+import TasksBoard, { TaskApi, TaskLabels } from '@/components/rnd/TasksBoard'
 import RndProjectHistory from '@/components/rnd/RndProjectHistory'
 import RndProjectMembers from '@/components/rnd/RndProjectMembers'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -26,41 +26,21 @@ import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import RndBudgetFields, { EMPTY_RND_BUDGET, RndBudgetDraft, rndBudgetError, rndBudgetFromProject, rndBudgetPayload } from '@/components/rnd/RndBudgetFields'
 import { ProjectBudgetCard } from '@/components/finance/ProjectBudget'
-import ProjectOriginFields, { EMPTY_ORIGIN, KIND_LABELS, OriginDraft, originError, originFromProject, originPayload } from '@/components/rnd/ProjectOriginFields'
+import ProjectOriginFields, { EMPTY_ORIGIN, KIND_LABELS, ORIGIN_LABELS, OriginDraft, normalizeOrigin, originError, originFromProject, originPayload } from '@/components/rnd/ProjectOriginFields'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, FileDropZone, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
 const inputStyle = sheetInput
 const labelStyle = sheetLabel
-const PRIORITY_LABELS: Record<string, string> = {
-  high: 'High — Important requirement',
-  medium: 'Medium — Normal requirement',
-  low: 'Low — Can be handled later',
-  critical: 'Critical',
-}
-
 const TASK_LABELS: TaskLabels = {
   manager: 'project lead',
   dueDate: 'Due Date',
   assignPlaceholder: 'Select team member…',
-  emptyManager: 'No tasks yet — use “+ New task” to hand work to a team member. Only people under Team Members can be assigned.',
+  emptyManager: 'No tasks yet — use “Add Task” to hand work to a team member. Only people under Team Members can be assigned.',
   emptyOther: 'You have no tasks on this project.',
 }
 
-// Milestone plan wording for a project (the plan component is shared with requirements).
-const MILESTONE_TEXTS: MilestonePlanTexts = {
-  teamHint: 'Only people on the project team (Project Leads / Team Members) are listed. Everyone here is notified, can add the milestone\'s tasks and mark it achieved once its tasks are done.',
-  emptyManager: 'Lay out the project as milestones — each with a responsible person and an expected date — then add tasks inside each one.',
-  emptyOther: 'A project lead lays out the plan as milestones; their tasks then show here.',
-  noTaskRights: 'Your role can\'t see project tasks (R&D › Prototype / Research › Project tasks).',
-  looseHint: 'Given before this project had milestones. New tasks are added inside a milestone.',
-  formSubtitle: '',
-  peopleLoading: 'Loading the project team…',
-  peopleError: 'Could not load the project team.',
-  targetEndPrefix: 'The project\'s target end is',
-}
-
-// Same layout as a Project Management project: Overview · Members · Milestones · Documents · History.
-const TABS = ['Overview', 'Members', 'Milestones', 'Documents', 'History'] as const
+// Overview · Members · Tasks · Documents · Timeline (Timeline was History). No milestones.
+const TABS = ['Overview', 'Members', 'Tasks', 'Documents', 'Timeline'] as const
 type Tab = typeof TABS[number]
 function tabBtnStyle(active: boolean): React.CSSProperties {
   return {
@@ -151,7 +131,7 @@ export default function RndProjectDetailPage() {
   const [error, setError] = useState<string | string[]>('')
 
   const [title, setTitle] = useState('')
-  const [priority, setPriority] = useState<RndProjectPriority>('medium')
+  const [priority, setPriority] = useState<Priority>('standard')
   const [objective, setObjective] = useState('')
   const [scope, setScope] = useState('')
   const [leadIds, setLeadIds] = useState<number[]>([])
@@ -175,13 +155,14 @@ export default function RndProjectDetailPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   // Project lead / admin — hands out tasks and is the only one who may delete files.
   const [isManager, setIsManager] = useState(false)
-  // ?tab=milestones (or the old #tasks link from My Tasks) opens that tab.
+  // ?tab=tasks (R&D Tasks rows; also the old ?tab=milestones and #tasks links) opens the Tasks tab; ?tab=timeline / history the Timeline.
   const search = useSearchParams()
   const [chosenTab, setTab] = useState<Tab>(() => {
     const asked = (search.get('tab') || '').toLowerCase()
-    const hit = TABS.find((t) => t.toLowerCase() === asked)
+    const alias: Record<string, Tab> = { milestones: 'Tasks', history: 'Timeline' }
+    const hit = alias[asked] || TABS.find((t) => t.toLowerCase() === asked)
     if (hit) return hit
-    return typeof window !== 'undefined' && window.location.hash === '#tasks' ? 'Milestones' : 'Overview'
+    return typeof window !== 'undefined' && window.location.hash === '#tasks' ? 'Tasks' : 'Overview'
   })
   useEscapeKey(editing && !saving, () => { setError(''); setEditing(false) })
 
@@ -203,19 +184,10 @@ export default function RndProjectDetailPage() {
     openDoc: async (d) => { window.open(URL.createObjectURL(await rndApi.getDocumentContent(d.id)), '_blank') },
   }), [projectId])
 
-  const milestoneApi = useMemo<MilestoneApi>(() => ({
-    list: () => rndApi.listMilestones(projectId),
-    people: () => rndApi.milestonePeople(projectId),
-    create: (p) => rndApi.createMilestone(projectId, p),
-    edit: (mid, p) => rndApi.editMilestone(projectId, mid, p),
-    status: (mid, action, reason) => rndApi.milestoneStatus(projectId, mid, action, reason),
-    remove: (mid) => rndApi.deleteMilestone(projectId, mid),
-  }), [projectId])
-
   const applyProject = (p: RndProjectDetail) => {
     setProject(p)
     setTitle(p.title)
-    setPriority(p.priority)
+    setPriority(normalizePriority(p.priority))
     setObjective(p.objective)
     setScope(p.scope || '')
     setLeadIds(p.lead_ids?.length ? p.lead_ids : p.lead_id ? [p.lead_id] : [])
@@ -262,7 +234,7 @@ export default function RndProjectDetailPage() {
   }
 
   const canEdit = can('rnd', 'projects', 'edit')
-  const visibleTabs = TABS.filter((t) => t !== 'Milestones' || canFeature('rnd', 'projects', 'milestones', 'view'))
+  const visibleTabs = TABS.filter((t) => t !== 'Tasks' || canFeature('rnd', 'projects', 'tasks', 'view'))
   const tab: Tab = visibleTabs.includes(chosenTab) ? chosenTab : 'Overview'
   const canDeleteProject = canDelete('rnd', 'projects', project.created_by_id ?? null)
 
@@ -389,12 +361,8 @@ export default function RndProjectDetailPage() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                   <div style={{ flex: '1 1 240px', minWidth: 220, maxWidth: 300 }}>
                     <label style={labelStyle}>Priority</label>
-                    <Select style={inputStyle} value={priority} onChange={(e) => setPriority(e.target.value as RndProjectPriority)}>
-                      <option value="high">High — Important requirement</option>
-                      <option value="medium">Medium — Normal requirement</option>
-                      <option value="low">Low — Can be handled later</option>
-                      {/* Older projects may still carry "critical" — keep it visible so a save doesn't silently change it. */}
-                      {project.priority === 'critical' && <option value="critical">Critical (old value)</option>}
+                    <Select style={inputStyle} value={priority} onChange={(e) => setPriority(e.target.value as Priority)}>
+                      {PRIORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </Select>
                   </div>
                   <div style={{ flex: '0 1 160px', minWidth: 150 }}>
@@ -480,7 +448,7 @@ export default function RndProjectDetailPage() {
               <h2 style={{ fontSize: 20, fontWeight: 700, color: SHEET.INK, margin: '0 0 6px' }}>{project.title}</h2>
               <p style={{ fontSize: 14, lineHeight: '21px', color: SHEET.BODY, margin: '0 0 12px', whiteSpace: 'pre-wrap' }}>{project.objective || '—'}</p>
               <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>
-                <strong style={{ color: SHEET.INK }}>{PRIORITY_LABELS[project.priority] || project.priority}</strong>
+                <strong style={{ color: SHEET.INK }}>{priorityLabel(project.priority)}</strong>
                 {' · '}{schedule}
                 {' · '}Lead: <strong style={{ color: SHEET.INK }}>{leads || '—'}</strong>
               </p>
@@ -489,7 +457,7 @@ export default function RndProjectDetailPage() {
             <div data-tour="rnd-pd-source" style={{ padding: '6px 0', borderBottom: `1px solid ${SHEET.LINE}` }}>
               {project.origin ? (
                 <>
-                  <DetailRow label="Why it exists">{project.origin_label || project.origin}</DetailRow>
+                  <DetailRow label="Why it exists">{ORIGIN_LABELS[normalizeOrigin(project.origin)] || project.origin_label || project.origin}</DetailRow>
                   {project.source_kind && (
                     <DetailRow label={KIND_LABELS[project.source_kind]}>
                       {project.source_path && project.source_exists ? (
@@ -502,8 +470,8 @@ export default function RndProjectDetailPage() {
                       )}
                     </DetailRow>
                   )}
-                  {project.machine_label && <DetailRow label="Project being improved">{project.machine_label}</DetailRow>}
-                  {project.product_name && <DetailRow label={project.origin === 'product_improvement' ? 'Product being improved' : 'Product'}>{project.product_name}</DetailRow>}
+                  {project.machine_label && <DetailRow label="Existing project being improved">{project.machine_label}</DetailRow>}
+                  {project.product_name && <DetailRow label="Product">{project.product_name}</DetailRow>}
                   {project.improvement_reason_label && <DetailRow label="Reason">{project.improvement_reason_label}</DetailRow>}
                   {project.origin_note && <DetailRow label="Who proposed it and why">{project.origin_note}</DetailRow>}
                 </>
@@ -545,13 +513,13 @@ export default function RndProjectDetailPage() {
         <RndProjectMembers key={`${project.id}-${project.updated_at || ''}`} project={project} users={users} pickable={pickable} canEdit={canEdit} onSaved={applyProject} />
       )}
 
-      {tab === 'Milestones' && user && (
+      {tab === 'Tasks' && user && (
         <div id="tasks" data-tour="rnd-pd-tasks" style={{ scrollMarginTop: 16 }}>
-          <RndMilestonePlan
+          <TasksBoard
             key={`${project.id}-${project.updated_at || ''}`}
-            plan={{ key: project.id, heading: 'Project Plan & Milestones', subtitle: `${project.project_number} · ${project.title}`, startDate: project.start_date, targetEndDate: project.target_end_date }}
-            userId={user.id} isManager={isManager} taskApi={taskApi} labels={TASK_LABELS}
-            milestoneApi={milestoneApi} featureTab="projects" ownerRuleKey="rnd:projects.milestones" texts={{ ...MILESTONE_TEXTS, formSubtitle: `Add a new milestone to ${project.project_number}'s plan.` }}
+            api={taskApi} userId={user.id} canManage={isManager} labels={TASK_LABELS} draftKey={`project-${project.id}`} reloadKey={project.id}
+            canCreate={isManager && canFeature('rnd', 'projects', 'tasks', 'create')}
+            rights={{ create: canFeature('rnd', 'projects', 'tasks', 'create'), edit: canFeature('rnd', 'projects', 'tasks', 'edit'), approve: canFeature('rnd', 'projects', 'tasks', 'approve'), cancel: canFeature('rnd', 'projects', 'tasks', 'cancel') }}
           />
         </div>
       )}
@@ -567,7 +535,7 @@ export default function RndProjectDetailPage() {
         />
       )}
 
-      {tab === 'History' && <RndProjectHistory projectId={project.id} />}
+      {tab === 'Timeline' && <RndProjectHistory projectId={project.id} />}
 
       <ConfirmDialog
         open={confirmOpen}

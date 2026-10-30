@@ -1,5 +1,6 @@
-"""R&D requirement work: R&D head (Organization › Department), per-requirement access set
-by the head, and tasks (create → extend when late → assignee completes; approval requests while open; reopen)."""
+"""R&D requirement work: R&D head (Organization › Department), settings, and tasks (create →
+extend when late → assignee completes; approval requests while open; reopen; progress). Intake
+(accept / return / visibility / documents) is in test_rnd_intake.py."""
 from datetime import date, timedelta
 
 from app.modules.crm.models.document import CrmDocument
@@ -28,6 +29,8 @@ def _setup(client, db):
     make_rnd_head(db, head)
     inq = make_inquiry(db, bd)
     assert send_tor(client, inq.id, bd).status_code == 200
+    # Tasks start once R&D accepted the requirement.
+    assert client.post(f"{RND}/requirements/inquiry/{inq.id}/accept", json={}, headers=auth(head)).status_code == 200
     return bd, head, eng, other, inq
 
 
@@ -57,49 +60,14 @@ def test_new_requirement_goes_to_head_only(client, db, tor_env):
     bd, head, eng, other, inq = _setup(client, db)
     notified = {n.user_id for n in db.query(Notification).filter(Notification.notification_type == "rnd_request_assigned").all()}
     assert notified == {head.id}
+    # R&D-side users (R&D app + View on Requirements) see every requirement; BD has none.
     assert [r["record_id"] for r in client.get(f"{RND}/requirements", headers=auth(head)).json()] == [inq.id]
-    assert client.get(f"{RND}/requirements", headers=auth(eng)).json() == []
-    resp = client.get(f"{RND}/requirements/inquiry/{inq.id}", headers=auth(eng))
-    assert resp.status_code == 403 and "Access tab" in resp.json()["detail"]
-    resp = client.get(f"/api/v1/requirement-discussion/inquiry/{inq.id}", params={"side": "rnd"}, headers=auth(eng))
-    assert resp.status_code == 403
-
-
-def test_head_grants_access_rights_separately(client, db, tor_env, monkeypatch):
-    bd, head, eng, other, inq = _setup(client, db)
-    url = f"{WORK}/inquiry/{inq.id}/access"
-    assert client.put(url, json={"rows": [{"user_id": eng.id, "can_view": True}]}, headers=auth(eng)).status_code == 403
-    resp = client.put(url, json={"rows": [{"user_id": eng.id, "can_view": False, "can_download": True}]}, headers=auth(head))
-    assert resp.status_code == 400 and "tick View too" in resp.json()["detail"]
-    resp = client.put(url, json={"rows": [{"user_id": eng.id, "can_view": True}]}, headers=auth(head))
-    assert resp.status_code == 200, resp.text
-
-    detail = client.get(f"{RND}/requirements/inquiry/{inq.id}", headers=auth(eng))
-    assert detail.status_code == 200
-    assert detail.json()["my_access"] == {"view": True, "download": False, "upload": False, "respond": False, "is_head": False, "create_technical_offer": False, "departments": ["rnd"]}
-
-    # View only: the sent TOR PDF can't be opened, upload and respond are refused.
-    async def fake_download(site, path):
-        return b"%PDF", "application/pdf"
-    monkeypatch.setattr(work_routes, "download_file_content", fake_download)
-    tor = db.query(CrmDocument).filter(CrmDocument.related_id == inq.id, CrmDocument.shared_via_tor == True).first()  # noqa: E712
-    assert client.get(f"{WORK}/documents/{tor.id}/content", headers=auth(eng)).status_code == 403
-    assert client.get(f"{WORK}/documents/{tor.id}/content", headers=auth(head)).status_code == 200
-    req_id = detail.json()["movements"][-1]["rnd_request"]["id"]
-    resp = client.post(f"{RND}/requirements/requests/{req_id}/respond", data={"remarks": "ok"}, headers=auth(eng))
-    assert resp.status_code == 403 and "respond to CRM" in resp.json()["detail"]
-
-    client.put(url, json={"rows": [{"user_id": eng.id, "can_view": True, "can_download": True, "can_respond": True}]}, headers=auth(head))
-    assert client.get(f"{WORK}/documents/{tor.id}/content", headers=auth(eng)).status_code == 200
-    assert client.post(f"{RND}/requirements/requests/{req_id}/respond", data={"remarks": "ok"}, headers=auth(eng)).status_code == 200
-    # Removing the row takes the access away again.
-    client.put(url, json={"rows": []}, headers=auth(head))
-    assert client.get(f"{RND}/requirements/inquiry/{inq.id}", headers=auth(eng)).status_code == 403
+    assert [r["record_id"] for r in client.get(f"{RND}/requirements", headers=auth(eng)).json()] == [inq.id]
+    assert client.get(f"{RND}/requirements", headers=auth(bd)).status_code == 403
 
 
 def test_task_flow_create_complete_reopen(client, db, tor_env):
     bd, head, eng, other, inq = _setup(client, db)
-    assert _new_task(client, inq, eng, other).status_code == 403  # only the head creates tasks
     resp = _new_task(client, inq, head, eng, due=date.today() - timedelta(days=1))
     assert resp.status_code == 422 and "in the past" in resp.json()["detail"]
     resp = _new_task(client, inq, head, eng, remarks="Check axle load")
@@ -107,8 +75,7 @@ def test_task_flow_create_complete_reopen(client, db, tor_env):
     task = resp.json()
     assert task["status"] == "open" and task["assigned_to"] == "w.eng"
 
-    # The assignee can now open the requirement and sees only their own task.
-    assert client.get(f"{RND}/requirements/inquiry/{inq.id}", headers=auth(eng)).status_code == 200
+    assert task["progress_percent"] == 0 and task["priority"] == "standard" and task["department"] == "R&D"
     assert [t["id"] for t in client.get(f"{WORK}/inquiry/{inq.id}/tasks", headers=auth(eng)).json()] == [task["id"]]
     assert [t["id"] for t in client.get(f"{WORK}/tasks/mine", headers=auth(eng)).json()] == [task["id"]]
 
@@ -191,17 +158,6 @@ def test_overdue_task_needs_reason_and_new_date(client, db, tor_env):
     assert db.query(Notification).filter(Notification.notification_type == "rnd_task_extended", Notification.user_id == head.id).count() == 1
 
 
-def test_cancelled_task_removes_auto_view(client, db, tor_env):
-    bd, head, eng, other, inq = _setup(client, db)
-    task_id = _new_task(client, inq, head, eng).json()["id"]
-    resp = client.post(f"{WORK}/tasks/{task_id}/cancel", json={"remarks": "Not needed"}, headers=auth(head))
-    assert resp.status_code == 200 and resp.json()["status"] == "cancelled"
-    # The access row the task added (view + download) stays until the head removes it.
-    assert client.get(f"{RND}/requirements/inquiry/{inq.id}", headers=auth(eng)).status_code == 200
-    client.put(f"{WORK}/inquiry/{inq.id}/access", json={"rows": []}, headers=auth(head))
-    assert client.get(f"{RND}/requirements/inquiry/{inq.id}", headers=auth(eng)).status_code == 403
-
-
 def test_head_links_existing_project(client, db, tor_env):
     from app.modules.rnd.models.project import RndProject
     bd, head, eng, other, inq = _setup(client, db)
@@ -257,3 +213,45 @@ def test_subtask_cannot_reopen_under_closed_main_task(client, db, tor_env):
     assert resp.status_code == 409 and "reopen the main task first" in resp.json()["detail"]
     assert client.post(f"{WORK}/tasks/{task_id}/reopen", json={"remarks": "More work"}, headers=auth(head)).status_code == 200
     assert client.post(f"{WORK}/tasks/{sub_id}/reopen", json={"remarks": "Redo"}, headers=auth(eng)).status_code == 200
+
+
+def test_progress_rules(client, db, tor_env):
+    bd, head, eng, other, inq = _setup(client, db)
+    task_id = _new_task(client, inq, head, eng).json()["id"]
+    url = f"{WORK}/tasks/{task_id}/progress"
+    resp = client.post(url, json={"progress_percent": 40}, headers=auth(eng))
+    assert resp.status_code == 200 and resp.json()["progress_percent"] == 40 and resp.json()["progress_from_checklist"] is False
+    for bad in (101, -1):
+        resp = client.post(url, json={"progress_percent": bad}, headers=auth(eng))
+        assert resp.status_code == 422 and resp.json()["detail"] == "Progress must be a whole number from 0 to 100."
+    assert client.post(url, json={"progress_percent": 55}, headers=auth(other)).status_code == 403
+    # Completing sets 100; reopening caps at 99.
+    done = client.post(f"{WORK}/tasks/{task_id}/complete", data={"remarks": "done"}, headers=auth(eng)).json()
+    assert done["progress_percent"] == 100
+    reopened = client.post(f"{WORK}/tasks/{task_id}/reopen", json={"remarks": "More work"}, headers=auth(head)).json()
+    assert reopened["status"] == "open" and reopened["progress_percent"] == 99
+
+
+def test_checklist_task_progress_follows_ticked_steps(client, db, tor_env):
+    import json
+    bd, head, eng, other, inq = _setup(client, db)
+    task = _new_task(client, inq, head, eng, checklist=json.dumps(["Draw", "Check", "Sign", "File"])).json()
+    assert task["progress_from_checklist"] is True and task["progress_percent"] == 0
+    url = f"{WORK}/tasks/{task['id']}/progress"
+    resp = client.post(url, json={"progress_percent": 30}, headers=auth(eng))
+    assert resp.status_code == 422 and "checklist" in resp.json()["detail"]
+    first = task["checklist"][0]["id"]
+    assert client.post(url, json={"item_id": first, "done": True}, headers=auth(eng)).json()["progress_percent"] == 25
+    second = task["checklist"][1]["id"]
+    assert client.post(url, json={"item_id": second, "done": True}, headers=auth(eng)).json()["progress_percent"] == 50
+
+
+def test_task_priority_is_standard_or_urgent_only(client, db, tor_env):
+    bd, head, eng, other, inq = _setup(client, db)
+    resp = _new_task(client, inq, head, eng, priority="high")
+    assert resp.status_code == 422 and resp.json()["detail"] == "Priority must be Standard or Urgent."
+    assert _new_task(client, inq, head, eng, priority="Urgent").json()["priority"] == "urgent"
+    task_id = _new_task(client, inq, head, eng).json()["id"]
+    assert client.patch(f"{WORK}/tasks/{task_id}", json={"priority": "critical"}, headers=auth(head)).status_code == 422
+    start_after_due = _new_task(client, inq, head, eng, start_date=(date.today() + timedelta(days=9)).isoformat())
+    assert start_after_due.status_code == 422 and "after the due date" in start_after_due.json()["detail"]

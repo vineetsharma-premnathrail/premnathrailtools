@@ -9,13 +9,12 @@ import RndNav from '@/components/rnd/RndNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
-import { RndRequirement, RndTask } from '@/types'
+import { RndTask } from '@/types'
+import { REVISION_STATUS_HEX, REVISION_STATUS_LABEL, type RndRequirementRow } from '@/types/rndIntake'
 import { Pill, StatChip } from '@/components/shared/ui'
 
 const STAGE_HEX: Record<string, string> = { initiation: '#78716c', research: '#2563EB', development: '#7C3AED', feasibility: '#F59E0B', handover: '#0891B2', closed: '#16A34A' }
 const STAGE_LABELS: Record<string, string> = { initiation: 'Initiation', research: 'Research', development: 'Development', feasibility: 'Feasibility', handover: 'Handover', closed: 'Closed' }
-const REQ_STATUS_LABELS: Record<string, string> = { open: 'Awaiting R&D', responded: 'Responded', superseded: 'Superseded' }
-const REQ_STATUS_HEX: Record<string, string> = { open: '#F59E0B', responded: '#16A34A', superseded: '#78716c' }
 
 const cardStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -52,7 +51,7 @@ export default function RndDashboardPage() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
   const [data, setData] = useState<RndDashboardData | null>(null)
   // null = not loaded, or no access to R&D › Requirements (the requirement tile/card are then hidden).
-  const [requirements, setRequirements] = useState<RndRequirement[] | null>(null)
+  const [requirements, setRequirements] = useState<RndRequirementRow[] | null>(null)
   const [tasks, setTasks] = useState<RndTask[] | null>(null)
   const [error, setError] = useState<string | string[]>('')
 
@@ -69,7 +68,8 @@ export default function RndDashboardPage() {
 
   if (isLoading || !isAuthorized) return null
 
-  const awaiting = (requirements || []).filter((r) => r.rnd_request?.status === 'open').length
+  // Waiting for R&D's accept / return.
+  const awaiting = (requirements || []).filter((r) => r.status === 'submitted').length
   // Local date (toISOString is UTC — yesterday before 05:30 IST).
   const now = new Date()
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
@@ -97,7 +97,7 @@ export default function RndDashboardPage() {
       <div data-tour="rnd-dash-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0 18px' }}>
         {requirements && (<>
           <Link href="/dashboard/rnd/requirements" style={chipLink}><StatChip label="Requirements" value={requirements.length} color="#3b82f6" /></Link>
-          <Link href="/dashboard/rnd/requirements" style={chipLink}><StatChip label="Awaiting R&D" value={awaiting} color="#ea580c" /></Link>
+          <Link href="/dashboard/rnd/requirements" style={chipLink}><StatChip label="Awaiting review" value={awaiting} color="#ea580c" /></Link>
         </>)}
         {data && (<>
           <Link href="/dashboard/rnd/projects" style={chipLink}><StatChip label="Ongoing projects" value={data.projects.ongoing} color="#10b981" /></Link>
@@ -114,17 +114,17 @@ export default function RndDashboardPage() {
           <div data-tour="rnd-dash-requirements" style={{ ...cardStyle, flex: '1 1 420px' }}>
             <CardHeader title="Recently Received Requirements" href="/dashboard/rnd/requirements" />
             {requirements.length === 0 ? (
-              <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No requirements yet — they arrive when the business team sends a Technical Offer Request.</p>
+              <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No requirements yet — they arrive, with an R&amp;D ID, when the business team sends a Technical Offer Request.</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {requirements.slice(0, 6).map((r) => {
-                  const st = r.rnd_request?.status
+                  const st = r.status
                   return (
                     <Link key={`${r.source}-${r.record_id}`} href={recordPath(`/dashboard/rnd/requirements/${r.source}`, r, 'record_id')} style={rowStyle}>
-                      <span style={{ flex: '0 0 auto', fontSize: 12, fontWeight: 500, color: TEXT.muted }}>{r.universal_id}</span>
+                      <span style={{ flex: '0 0 auto', fontSize: 12, fontWeight: 600, color: TEXT.muted }}>{r.rd_number || r.universal_id}</span>
                       <span style={{ ...ellipsis, fontWeight: 600, color: TEXT.heading }}>{[r.org_name, r.product].filter(Boolean).join(' · ') || '—'}</span>
                       <span style={slot(78)}>{r.last_sent_at ? formatDate(r.last_sent_at) : '—'}</span>
-                      <span style={slot(104)}>{st ? <Pill label={REQ_STATUS_LABELS[st] || st} hex={REQ_STATUS_HEX[st] || '#78716c'} /> : <Pill label="Not sent to R&D" hex="#78716c" />}</span>
+                      <span style={slot(150)}>{st ? <Pill label={REVISION_STATUS_LABEL[st]} hex={REVISION_STATUS_HEX[st]} /> : <Pill label="Not sent to R&D" hex="#78716c" />}</span>
                     </Link>
                   )
                 })}

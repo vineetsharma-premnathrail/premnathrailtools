@@ -1,8 +1,9 @@
-"""Units (vehicles / lots) of a Project Management project created from a Sales Order
-(projects/so_projects.py)."""
+"""Units (vehicles / lots) of a historic Project Management project created from a Sales Order
+(projects/so_projects.py), and the "Whole project" row of every other project (one project = one
+machine, no units)."""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 
 from pydantic import BaseModel, Field
 
@@ -30,7 +31,21 @@ class ProjectUnitResponse(BaseModel):
     departments: dict = Field(default_factory=dict)
 
 
+class ProjectWholeRow(BaseModel):
+    """The single 360 row of a project with no units: what every department has linked to the project itself."""
+    label: str
+    machine_id: int | None = None
+    machine_serial: str | None = None
+    lifecycle_stage: str | None = None
+    lifecycle_stage_label: str | None = None
+    departments: dict = Field(default_factory=dict)
+
+
 class ProjectUnitsResponse(BaseModel):
+    # False for a project made in Project Management (one project = one machine): see whole_project.
+    has_units: bool = True
+    whole_project: ProjectWholeRow | None = None
+    # Historic sales-order header (None for a project without a sales order).
     sales_order_id: int | None = None
     so_number: str | None = None
     so_status: str | None = None
@@ -53,23 +68,8 @@ class ProjectUnitLookupItem(BaseModel):
     kind: str | None = None
     client_name: str | None = None
     so_number: str | None = None
+    # True: a project row with no units — pick it and the work links to the project itself.
+    project_level: bool = False
+    machine_id: int | None = None
+    machine_serial: str | None = None
     display: str
-
-
-class SalesOrderAwaitingProject(BaseModel):
-    """A confirmed New Project sales order with no project yet (All Projects › From Sales Order)."""
-    id: int
-    so_number: str
-    customer_name: str | None = None
-    customer_po_number: str | None = None
-    confirmed_at: datetime | None = None
-    sales_owner_name: str | None = None
-    vehicles: int = 0
-    first_delivery_date: date | None = None
-    last_delivery_date: date | None = None
-
-
-class ProjectFromSalesOrder(BaseModel):
-    sales_order_id: int
-    project_manager_id: int
-    name: str | None = Field(None, max_length=400)

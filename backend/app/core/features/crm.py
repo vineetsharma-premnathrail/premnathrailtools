@@ -35,9 +35,10 @@ register_features(
     _feature("documents", "Documents", "subtab", {
         "view": "view", "create": "edit", "delete": "delete",
     }, "The Documents sub-tab of an inquiry / tender: open the Client and Internal documents, upload files, delete your own uploads."),
-    _feature("discussion", "Discussion with R&D", "subtab", {
-        "view": "view", "create": "edit",
-    }, "The Discussion sub-tab (opens once the Technical Requirement is sent to R&D): read the BD ↔ R&D thread, and post messages."),
+    _feature("technical_offer", "Technical Offers (BD upload)", "action", {
+        "view": "view", "create": "edit", "delete": "edit",
+    }, "BD's own Technical Offer on an inquiry / tender: upload a Word / PDF file (create) and delete one no quotation uses yet. "
+       "It is quotable at once, marked 'Uploaded by BD, not reviewed by R&D'."),
     _feature("followups", "Follow-ups", "subtab", {
         "view": "view", "create": "edit", "edit": "edit", "delete": "delete", "print": "print",
     }, "The Follow Ups sub-tab of an inquiry / tender: see, log, edit and delete follow-ups, and export Meeting MoMs."),
@@ -49,7 +50,7 @@ register_features(
     }, "The Dates sub-tab of a tender: publish, pre-bid, submission, opening and award dates."),
     _feature("send_tor", "Send Technical Requirement (TOR) to R&D", "action", {
         "view": "view", "create": "edit",
-    }, "The \"Send Technical Requirement to R&D\" button on an inquiry / tender — emails R&D the requirement and opens the R&D discussion."),
+    }, "The \"Send Technical Requirement to R&D\" button on an inquiry / tender — emails R&D the requirement; R&D then accepts it or returns it to BD with a reason."),
     _feature("stage", "Move pipeline stage", "action", {
         "view": "view", "edit": "edit",
     }, "Move an inquiry / tender to its next pipeline stage (stages only move forward; moving back stays an admin correction)."),

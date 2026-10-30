@@ -39,9 +39,7 @@ const config: TourConfig = {
       target: 'production-wo-priority-filter',
       title: 'Priority filter',
       options: [
-        { value: 'Low', meaning: 'Stock build, no deadline pressure.' },
-        { value: 'Normal', meaning: 'Standard order.' },
-        { value: 'High', meaning: 'Customer is waiting — schedule ahead of normal work.' },
+        { value: 'Standard', meaning: 'Standard order (default).' },
         { value: 'Urgent', meaning: 'Breakdown or penalty risk — do first.' },
       ],
     },

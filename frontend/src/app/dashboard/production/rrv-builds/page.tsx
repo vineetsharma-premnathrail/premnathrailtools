@@ -1,5 +1,6 @@
 'use client'
 
+import { isUrgent, normalizePriority } from '@/lib/priority'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -15,7 +16,7 @@ import { useCan } from '@/lib/permissions'
 
 const STATUS_LABELS: Record<string, string> = { planned: 'Planned', in_progress: 'In Progress', on_hold: 'On Hold', completed: 'Completed', handed_over: 'Handed Over', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { planned: '#78716c', in_progress: '#2563EB', on_hold: '#F59E0B', completed: '#7C3AED', handed_over: '#16A34A', cancelled: '#78716c' }
-const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
+const PRIORITY_HEX: Record<string, string> = { standard: '#475569', urgent: '#DC2626' }
 
 const STATUS_TABS = [
   { key: 'planned,in_progress,on_hold,completed', label: 'Open' },
@@ -133,7 +134,7 @@ export default function RrvBuildsPage() {
                   <tr key={b.id} onClick={() => router.push(recordPath('/dashboard/production/rrv-builds', b))} style={{ cursor: 'pointer' }}>
                     <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>
                       {b.build_number}
-                      {b.priority !== 'normal' && <div><span style={{ fontSize: 10.5, fontWeight: 700, color: PRIORITY_HEX[b.priority] }}>{b.priority.toUpperCase()}</span></div>}
+                      {isUrgent(b.priority) && <div><span style={{ fontSize: 10.5, fontWeight: 700, color: PRIORITY_HEX[normalizePriority(b.priority)] }}>URGENT</span></div>}
                     </td>
                     <td style={{ ...cellStyle, maxWidth: 260 }}>
                       <div style={{ fontWeight: 600 }}>{b.rrv_model}</div>

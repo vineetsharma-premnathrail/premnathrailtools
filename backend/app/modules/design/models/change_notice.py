@@ -9,7 +9,7 @@ DESIGN_ECN_REASONS = (
     "design_improvement", "customer_request", "manufacturing_issue", "quality_issue",
     "cost_reduction", "safety", "regulatory", "other",
 )
-DESIGN_ECN_PRIORITIES = ("low", "medium", "high", "urgent")
+DESIGN_ECN_PRIORITIES = ("standard", "urgent")
 # ECNs raised from an approved ECR start at `approved` (the change board
 # already decided) — shown as "Open": new revisions are raised under it.
 # `implemented` (shown "Released") = every affected drawing/BOM has a
@@ -37,7 +37,7 @@ class DesignChangeNotice(Base, TimestampMixin, SoftDeleteMixin):
     ecn_number: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     reason: Mapped[str] = mapped_column(String(30), default="design_improvement", nullable=False)
-    priority: Mapped[str] = mapped_column(String(20), default="medium", nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), default="standard", nullable=False)  # standard | urgent
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     impact_assessment: Mapped[str | None] = mapped_column(Text, nullable=True)
     target_date: Mapped[date | None] = mapped_column(Date, nullable=True)

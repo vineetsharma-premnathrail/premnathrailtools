@@ -1,4 +1,5 @@
-"""Owner, 2026-10-27: a PO is created in the portal, its Tally PO (number +
+"""Owner, 2026-10-27 (draft path, still used for a PO returned for changes; a new PO is made by
+Upload PO on the requisition since 2026-10-30, see test_p2p_upload_po.py): its Tally PO (number +
 PDF) is uploaded on the draft and is mandatory before Send for approval; the
 separate bulk 'Upload Tally POs' option is gone. Also the PR form's per-plant
 stock lookup."""
@@ -52,7 +53,7 @@ def test_submit_needs_the_tally_po(client, db, monkeypatch):
     assert r.status_code == 400 and "Tally PO" in r.json()["detail"]
     up = _upload(client, buyer, rfq, po)
     assert up.status_code == 200, up.text
-    assert up.json()["external_ref"] == "PO/0042/26-27" and up.json()["document_filename"] == "tally.pdf"
+    assert up.json()["external_ref"] == "PO/0042/26-27" and up.json()["document_filename"].endswith("-tally.pdf")  # stored under a time-prefixed name
     # A wrong file can be replaced while the PO is still a draft.
     assert _upload(client, buyer, rfq, po, ref="PO/0043/26-27", name="fixed.pdf").status_code == 200
     r = client.post(f"{RFQS}/{rfq.id}/po-draft/{po['id']}/submit", headers=auth_header(buyer))

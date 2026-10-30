@@ -1,5 +1,6 @@
 'use client'
 
+import { normalizePriority, priorityLabel } from '@/lib/priority'
 import { useEffect, useState } from 'react'
 import axios from 'axios'
 import { useRouter } from 'next/navigation'
@@ -26,7 +27,7 @@ const CATEGORICAL = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100']
 const chartFont = { size: 10.5, family: 'system-ui, -apple-system, "Segoe UI", sans-serif' }
 const INK_MUTED = '#78716c'
 const GRID = '#e1e0d9'
-const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
+const PRIORITY_HEX: Record<string, string> = { standard: '#475569', urgent: '#DC2626' }
 
 const cardStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -356,7 +357,7 @@ export default function MaintenanceReportsPage() {
                   <thead>
                     <tr>
                       <th style={thStyle}>Age (days) <RowCount count={data.backlog.matrix.length} /></th>
-                      {data.backlog.priorities.map((p) => <th key={p} style={{ ...thStyle, textAlign: 'right', color: PRIORITY_HEX[p] }}>{PRIORITY_LABELS[p] || p}</th>)}
+                      {data.backlog.priorities.map((p) => <th key={p} style={{ ...thStyle, textAlign: 'right', color: PRIORITY_HEX[normalizePriority(p)] }}>{priorityLabel(p)}</th>)}
                       <th style={{ ...thStyle, textAlign: 'right' }}>Total</th>
                     </tr>
                   </thead>
@@ -365,7 +366,7 @@ export default function MaintenanceReportsPage() {
                       <tr key={r.age_bucket}>
                         <td style={tdStyle}>{r.age_bucket}</td>
                         {data.backlog.priorities.map((p) => (
-                          <td key={p} style={{ ...numStyle, fontWeight: Number(r[p]) ? 700 : 400, color: Number(r[p]) ? PRIORITY_HEX[p] : TEXT.muted }}>{Number(r[p]) || '·'}</td>
+                          <td key={p} style={{ ...numStyle, fontWeight: Number(r[p]) ? 700 : 400, color: Number(r[p]) ? PRIORITY_HEX[normalizePriority(p)] : TEXT.muted }}>{Number(r[p]) || '·'}</td>
                         ))}
                         <td style={{ ...numStyle, fontWeight: 700 }}>{r.total}</td>
                       </tr>

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -30,7 +30,10 @@ TECHNICAL_OFFER_STATUSES = ("draft", "submitted", "released", "superseded")
 
 class RndTechnicalOffer(Base, TimestampMixin):
     __tablename__ = "rnd_technical_offers"
-    __table_args__ = (UniqueConstraint("offer_number", name="uq_rnd_technical_offer_number"),)
+    __table_args__ = (
+        UniqueConstraint("offer_number", name="uq_rnd_technical_offer_number"),
+        Index("ix_rnd_technical_offers_source_record", "source", "record_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     source: Mapped[str] = mapped_column(String(20), nullable=False)  # "inquiry" | "tender"
@@ -55,3 +58,11 @@ class RndTechnicalOffer(Base, TimestampMixin):
     revision_request_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     revision_requested_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     revision_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Since 2026-10-30 an offer is an uploaded file (Word / PDF), not authored here.
+    # origin: "rnd" (uploaded by R&D, needs head release) | "bd" (uploaded by BD, quotable at once).
+    # scope / technical_details / deviations / exclusions above are legacy authoring columns, kept but unused.
+    origin: Mapped[str] = mapped_column(String(10), nullable=False, default="rnd", server_default="rnd")
+    document_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("crm_documents.id", ondelete="SET NULL"), nullable=True)
+    # The requirement revision (rnd_requirement_revisions.revision_no) current at upload; NULL for BD offers.
+    requirement_revision_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -1,50 +1,39 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
-import { RndRequirementDetail } from '@/types'
 import { TEXT } from '@/lib/theme'
 import RndNav from '@/components/rnd/RndNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRecordId } from '@/lib/recordRef'
 import RndRequestBlock from '@/components/crm/RndRequestBlock'
-import RequirementDiscussionTab from '@/components/crm/RequirementDiscussionTab'
-import { REQUIREMENT_TASK_LABELS, requirementTaskApi } from '@/components/rnd/RequirementTasksTab'
-import RequirementDepartmentsTab from '@/components/rnd/RequirementDepartmentsTab'
-import RndMilestonePlan, { MilestoneApi, MilestonePlanTexts } from '@/components/rnd/RndMilestonePlan'
+import RequirementTasksTab from '@/components/rnd/RequirementTasksTab'
 import RndProjectHistory from '@/components/rnd/RndProjectHistory'
 import RequirementDocumentsTab from '@/components/rnd/RequirementDocumentsTab'
 import RequirementTechnicalOffersTab from '@/components/rnd/RequirementTechnicalOffersTab'
-import RequirementAccessTab from '@/components/rnd/RequirementAccessTab'
-import { secondaryBtnStyle, primaryBtnStyle, pillStyle, DetailCard, DetailGroup, DetailRow } from '@/components/shared/ui'
+import RequirementReviewBar from '@/components/rnd/RequirementReviewBar'
+import { secondaryBtnStyle, primaryBtnStyle, pillStyle, Pill, DetailCard, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { SheetIcon } from '@/components/shared/FormSheet'
 import { rndRequestBadge } from '@/components/crm/RndRequestBlock'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import { priorityLabel } from '@/lib/priority'
+import { REVISION_STATUS_HEX, REVISION_STATUS_LABEL, type RndRequirementDetailV2 } from '@/types/rndIntake'
 
-// Milestones hold the tasks of the plan and the departments the requirement is shared with.
-const TABS = ['Requirement', 'Milestones', 'Technical Offers', 'Documents', 'Discussion', 'History', 'Access'] as const
+// Requirement · Tasks · Technical Offers · Documents · Timeline (Timeline was History; its role grant key is still "history").
+const TABS = ['Requirement', 'Tasks', 'Technical Offers', 'Documents', 'Timeline'] as const
+type Tab = typeof TABS[number]
 
-// Milestone plan wording for a requirement (the plan component is shared with R&D projects).
-const MILESTONE_TEXTS: MilestonePlanTexts = {
-  teamHint: 'People from R&D and from the departments this requirement is shared with are listed. Everyone here is notified, can add the milestone\'s tasks and mark it achieved once its tasks are done.',
-  emptyManager: 'Lay out the requirement as milestones — each with a responsible person and an expected date — then add tasks inside each one.',
-  emptyOther: 'The R&D head lays out the plan as milestones; their tasks then show here.',
-  noTaskRights: 'Your role can\'t see requirement tasks (R&D › Requirements › Tasks).',
-  looseHint: 'Given before this requirement had milestones, or by a department. New tasks are added inside a milestone.',
-  formSubtitle: 'Add a new milestone to this requirement\'s plan.',
-  peopleLoading: 'Loading the people of R&D and the shared departments…',
-  peopleError: 'Could not load the people for this requirement. Refresh the page; if it keeps failing, check you can still open this requirement.',
-  targetEndPrefix: 'The response is due to CRM on',
-}
 // Sub-tab → its R&D › Requirements feature (Organization › Role & Permissions).
-const TAB_FEATURE: Partial<Record<typeof TABS[number], string>> = {
-  Milestones: 'milestones', History: 'history', 'Technical Offers': 'technical_offers', Documents: 'documents', Discussion: 'discussion', Access: 'access',
+const TAB_FEATURE: Partial<Record<Tab, string>> = { Tasks: 'tasks', Timeline: 'history', 'Technical Offers': 'technical_offers', Documents: 'documents' }
+// ?tab= deep links (notifications, R&D Tasks rows). Old links (milestones, discussion, access, departments) land on the nearest tab.
+const TAB_PARAMS: Record<string, Tab> = {
+  tasks: 'Tasks', milestones: 'Tasks', departments: 'Requirement', discussion: 'Requirement', access: 'Requirement',
+  documents: 'Documents', 'technical-offers': 'Technical Offers', history: 'Timeline', timeline: 'Timeline',
 }
-const TAB_PARAMS: Record<string, typeof TABS[number]> = { milestones: 'Milestones', history: 'History', discussion: 'Discussion', tasks: 'Milestones', departments: 'Milestones', documents: 'Documents', 'technical-offers': 'Technical Offers', access: 'Access' }
 
 // An explicit ?tab= deep link (e.g. from a notification) always wins over the auto-jump.
 const hasTabParam = () => typeof window !== 'undefined' && !!TAB_PARAMS[new URLSearchParams(window.location.search).get('tab') || '']
@@ -60,10 +49,10 @@ export default function RndRequirementDetailPage() {
   const { id: resolvedId, error: linkError } = useRecordId(params.id)
   const id = resolvedId ?? 0
 
-  const [data, setData] = useState<RndRequirementDetail | null>(null)
+  const [data, setData] = useState<RndRequirementDetailV2 | null>(null)
   const [error, setError] = useState<string | string[]>('')
-  // ?tab=discussion|tasks|documents|access (e.g. from a notification) opens that tab.
-  const [tab, setTab] = useState<typeof TABS[number]>(() => (typeof window !== 'undefined' && TAB_PARAMS[new URLSearchParams(window.location.search).get('tab') || '']) || 'Requirement')
+  // ?tab=tasks|documents|technical-offers|timeline (e.g. from a notification) opens that tab.
+  const [tab, setTab] = useState<Tab>(() => (typeof window !== 'undefined' && TAB_PARAMS[new URLSearchParams(window.location.search).get('tab') || '']) || 'Requirement')
 
   const load = (openMovementIfMine = false) => {
     rndApi.getRequirement(source, id)
@@ -82,15 +71,6 @@ export default function RndRequirementDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, source, id])
 
-  const milestoneApi = useMemo<MilestoneApi>(() => ({
-    list: () => rndApi.listRequirementMilestones(source, id),
-    people: () => rndApi.requirementMilestonePeople(source, id),
-    create: (p) => rndApi.createRequirementMilestone(source, id, p),
-    edit: (mid, p) => rndApi.editRequirementMilestone(source, id, mid, p),
-    status: (mid, action, reason) => rndApi.requirementMilestoneStatus(source, id, mid, action, reason),
-    remove: (mid) => rndApi.deleteRequirementMilestone(source, id, mid),
-  }), [source, id])
-  const taskApi = useMemo(() => requirementTaskApi(source, id), [source, id])
   if (isLoading || !isAuthorized) return null
   if (linkError) return (<div><RndNav /><InvalidRecordLink message={linkError} listHref="/dashboard/rnd/requirements" listLabel="Back to requirements" /></div>)
 
@@ -109,11 +89,15 @@ export default function RndRequirementDetailPage() {
   }
   if (!data) return <div><RndNav /><p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p></div>
 
+  const intake = data.intake
+  const accepted = !intake || intake.status === 'accepted'
+  // Respond, new tasks and offer uploads wait for R&D to accept the latest revision (server-enforced too).
+  const acceptFirst = intake && !accepted ? `Accept the requirement first (${intake.revision_code} is ${REVISION_STATUS_LABEL[intake.status].toLowerCase()}).` : ''
   const currentReq = data.movements[data.movements.length - 1]?.rnd_request ?? null
   const canRespond = data.my_access.respond && canFeature('rnd', 'requirements', 'crm_request', 'submit')
   // The answer form: the head / Respond-right holders for team requests, the named engineer for older assigned ones.
   const canAnswerCrm = canFeature('rnd', 'requirements', 'crm_request', 'submit') && (data.my_access.respond || (currentReq?.assigned_to_id != null && currentReq.assigned_to_id === user?.id))
-  const visibleTabs = TABS.filter((t) => (t !== 'Access' || data.my_access.is_head) && (t === 'Milestones' ? (see('milestones') || see('tasks') || see('departments')) : (!TAB_FEATURE[t] || see(TAB_FEATURE[t] as string))))
+  const visibleTabs = TABS.filter((t) => !TAB_FEATURE[t] || see(TAB_FEATURE[t] as string))
   const shownTab = visibleTabs.includes(tab) ? tab : 'Requirement'
   const docAccess = {
     ...data.my_access,
@@ -125,8 +109,6 @@ export default function RndRequirementDetailPage() {
       create: canFeature('rnd', 'requirements', 'tasks', 'create'), edit: canFeature('rnd', 'requirements', 'tasks', 'edit'),
       approve: canFeature('rnd', 'requirements', 'tasks', 'approve'), cancel: canFeature('rnd', 'requirements', 'tasks', 'cancel'),
     },
-    departments: see('departments'),
-    share: canFeature('rnd', 'requirements', 'departments', 'create'),
   }
 
   return (
@@ -136,7 +118,8 @@ export default function RndRequirementDetailPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <div data-tour="rnd-reqd-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45' }}>{data.offer_number}</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45' }}>{intake?.rd_number || data.offer_number}</span>
+            {intake && data.offer_number && (<><span style={{ fontSize: 11, color: '#d6d3d1' }}>·</span><span style={{ fontSize: 11, fontWeight: 600, color: TEXT.muted }}>{data.offer_number}</span></>)}
             <span style={{ fontSize: 11, color: '#d6d3d1' }}>·</span>
             <span style={{ fontSize: 11, fontWeight: 600, color: TEXT.muted }}>{data.source === 'inquiry' ? 'Inquiry' : 'Tender'} {data.universal_id}</span>
           </div>
@@ -147,6 +130,10 @@ export default function RndRequirementDetailPage() {
         </div>
         {back}
       </div>
+
+      {intake && (
+        <RequirementReviewBar source={data.source} recordId={data.record_id} intake={intake} revisions={data.revisions} canReview={!!data.my_access.can_review} onChanged={() => load()} />
+      )}
 
       {currentReq && (() => {
         const badge = rndRequestBadge(currentReq)
@@ -159,6 +146,7 @@ export default function RndRequirementDetailPage() {
         const open = currentReq.status === 'open'
         const title = !open
           ? 'Response sent to CRM'
+          : acceptFirst ? 'Waiting for R&D to accept this requirement'
           : mine ? 'CRM is waiting for your response'
           : team ? 'Waiting for the R&D head to respond'
           : `Waiting for ${currentReq.assigned_to || 'the assigned engineer'} to respond`
@@ -188,18 +176,24 @@ export default function RndRequirementDetailPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <span style={pillStyle(badge.hex)}>{badge.label}</span>
               {mine && open && see('crm_request') && (
-                <RndRequestBlock
-                  request={currentReq}
-                  canRespond={canAnswerCrm}
-                  onOpenDoc={() => {}}
-                  onResponded={() => load()}
-                  buttonOnly
-                  renderButton={(openForm) => (
-                    <button data-tour="rnd-reqd-respond-btn" type="button" onClick={openForm} style={primaryBtnStyle}>
-                      <SheetIcon name="send" size={15} />Respond to CRM
-                    </button>
-                  )}
-                />
+                acceptFirst ? (
+                  <button data-tour="rnd-reqd-respond-btn" type="button" disabled title={acceptFirst} style={{ ...primaryBtnStyle, opacity: 0.5, cursor: 'not-allowed' }}>
+                    <SheetIcon name="send" size={15} />Respond to CRM
+                  </button>
+                ) : (
+                  <RndRequestBlock
+                    request={currentReq}
+                    canRespond={canAnswerCrm}
+                    onOpenDoc={() => {}}
+                    onResponded={() => load()}
+                    buttonOnly
+                    renderButton={(openForm) => (
+                      <button data-tour="rnd-reqd-respond-btn" type="button" onClick={openForm} style={primaryBtnStyle}>
+                        <SheetIcon name="send" size={15} />Respond to CRM
+                      </button>
+                    )}
+                  />
+                )
               )}
             </div>
           </div>
@@ -258,45 +252,47 @@ export default function RndRequirementDetailPage() {
             )}
           </div>}
           {see('crm_info') && <div data-tour="rnd-reqd-crm">
-            <DetailGroup title="From CRM" last>
+            <DetailGroup title="From CRM" last={data.revisions.length === 0}>
               <DetailRow label="BD Owner">{data.bd_owner}</DetailRow>
               <DetailRow label="CRM Status">{data.crm_status}</DetailRow>
-              <DetailRow label="Priority">{data.priority}</DetailRow>
+              <DetailRow label="Priority">{data.priority ? priorityLabel(data.priority) : null}</DetailRow>
               <DetailRow label="Last sent to R&D">{data.last_sent_at ? formatDateTime(data.last_sent_at) : null}</DetailRow>
+            </DetailGroup>
+          </div>}
+          {data.revisions.length > 0 && <div data-tour="rnd-reqd-revision-list">
+            <DetailGroup title="Revisions" last>
+              {[...data.revisions].sort((a, b) => a.revision_no - b.revision_no).map((r) => (
+                <DetailRow key={r.revision_no} label={r.revision_code}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <Pill label={REVISION_STATUS_LABEL[r.status]} hex={REVISION_STATUS_HEX[r.status]} />
+                    <span>Sent {r.submitted_at ? formatDateTime(r.submitted_at) : '—'}{r.submitted_by ? ` by ${r.submitted_by}` : ''}</span>
+                  </span>
+                  {r.reviewed_by && <div style={{ color: TEXT.muted, fontSize: 12.5 }}>{r.status === 'returned' ? 'Returned' : 'Reviewed'} by {r.reviewed_by}{r.reviewed_at ? ` · ${formatDateTime(r.reviewed_at)}` : ''}{r.review_remarks ? ` — ${r.review_remarks}` : ''}</div>}
+                  {r.return_reason && <div style={{ color: '#b91c1c', fontSize: 12.5 }}>Reason: {r.return_reason}</div>}
+                  {r.changed_fields && r.changed_fields.length > 0 && <div style={{ color: TEXT.muted, fontSize: 12.5 }}>Changed: {r.changed_fields.join(', ')}</div>}
+                </DetailRow>
+              ))}
             </DetailGroup>
           </div>}
         </DetailCard>
       )}
 
-      {shownTab === 'Milestones' && user && (
-        <div data-tour="rnd-req-milestones">
-          {/* Departments the requirement is shared with: share form, replies, access for their people. */}
-          {taskGates.departments && (
-            <div data-tour="rnd-req-departments">
-              <RequirementDepartmentsTab source={data.source} recordId={data.record_id} isHead={data.my_access.is_head && taskGates.share} />
-            </div>
-          )}
-          <RndMilestonePlan
-            canMoveTasks={data.my_access.is_head}
-            key={`${data.source}-${data.record_id}`}
-            plan={{ key: `${data.source}-${data.record_id}`, heading: 'Requirement Plan & Milestones', subtitle: `${data.offer_number} · ${data.title}` }}
-            userId={user.id} isManager={data.my_access.is_head} taskApi={taskApi} labels={REQUIREMENT_TASK_LABELS}
-            milestoneApi={milestoneApi} featureTab="requirements" ownerRuleKey="rnd:requirements.milestones" texts={MILESTONE_TEXTS}
-          />
+      {shownTab === 'Tasks' && user && (
+        <div data-tour="rnd-req-tasks-tab">
+          <RequirementTasksTab source={data.source} recordId={data.record_id} userId={user.id} access={data.my_access} gates={taskGates} createDisabledHint={acceptFirst || undefined} />
         </div>
       )}
-      {shownTab === 'Technical Offers' && <RequirementTechnicalOffersTab source={data.source} recordId={data.record_id} access={data.my_access} />}
+      {shownTab === 'Technical Offers' && <RequirementTechnicalOffersTab source={data.source} recordId={data.record_id} access={data.my_access} acceptedHint={acceptFirst || undefined} />}
       {shownTab === 'Documents' && <RequirementDocumentsTab source={data.source} recordId={data.record_id} access={docAccess} />}
-      {shownTab === 'Discussion' && <RequirementDiscussionTab source={data.source} recordId={data.record_id} side="rnd" />}
-      {shownTab === 'History' && (
+      {shownTab === 'Timeline' && (
         <RndProjectHistory
+          key={`${data.source}-${data.record_id}-${intake?.status || ''}-${intake?.current_revision ?? 0}`}
           projectId={`${data.source}-${data.record_id}`}
           load={() => rndApi.requirementHistory(data.source, data.record_id)}
           tour="rnd-req-history"
-          errorText="Could not load the requirement history. Refresh the page; if it keeps failing, check you can still open this requirement."
+          errorText="Could not load the timeline. Refresh the page; if it keeps failing, check you can still open this requirement."
         />
       )}
-      {shownTab === 'Access' && data.my_access.is_head && <RequirementAccessTab source={data.source} recordId={data.record_id} canEdit={canFeature('rnd', 'requirements', 'access', 'edit')} />}
 
     </div>
   )

@@ -41,7 +41,7 @@ class MaintenanceWorkOrder(Base, TimestampMixin):
     pm_plan_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("maintenance_pm_plans.id"), index=True, nullable=True)
     pm_due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     wo_type: Mapped[str] = mapped_column(String(20), default="breakdown", nullable=False)
-    priority: Mapped[str] = mapped_column(String(10), default="normal", nullable=False)
+    priority: Mapped[str] = mapped_column(String(10), default="standard", nullable=False)  # standard | urgent
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)

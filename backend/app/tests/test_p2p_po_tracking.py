@@ -2,7 +2,6 @@
 approval is "issued" in its own status but is not an order yet), server-side
 filters / paging with real totals, one row per split PO, and the daily overdue
 reminder that only chases released POs with a balance on an open requisition."""
-from app.tests.p2p_workflow_helpers import attach_tally_po
 from datetime import date, timedelta
 
 import pytest
@@ -14,7 +13,7 @@ from app.modules.p2p.po_tracking import OPEN_STAGES, STAGES, stage_of
 from app.modules.p2p.routes.po_reports import open_items
 from app.tasks import po_overdue_reminders
 from app.tests.test_mm_po_split_amend_quotes import (  # noqa: F401 — fixtures / helpers
-    RFQS, _decide_all, _quoted_and_awarded, _split, setup,
+    _decide_all, _quoted_and_awarded, _upload_po, setup,
 )
 from app.tests.test_p2p_requests import (  # noqa: F401 — _sqlite_number_series is an autouse fixture
     BASE, _approve_and_raise_po, _approve_po_as, _create_pr, _purchaser, _raise_po, _receive, _requester, _sqlite_number_series, auth_header,
@@ -85,7 +84,7 @@ def test_po_in_approval_is_not_overdue_and_not_reminded_until_released(client, d
     pr = _create_pr(client, requester)
     buyer = _purchaser(db, "trk.buyer1@premnathrail.com")
     _raise_po(client, db, pr, buyer)
-    po = _overdue(db, "PO-REC")
+    po = _overdue(db, db.query(P2PPurchaseOrder).filter_by(external_ref="PO-REC").one().po_number)  # "PO-REC" is the Tally number
     assert po.status == "issued"
 
     row = _row(client, buyer, po.po_number)
@@ -157,7 +156,10 @@ def test_filters_sort_and_paging_are_server_side_with_real_totals(client, db):
     buyer = _purchaser(db, "trk.buyer4@premnathrail.com")
     for i in range(3):
         pr = _create_pr(client, _requester(db, f"trk.req4{i}@premnathrail.com"))
-        _raise_po(client, db, pr, buyer, po_number=f"PO-T-{i + 1:03d}")
+        _raise_po(client, db, pr, buyer, po_number=f"TALLY-T-{i + 1:03d}")
+        # The portal numbers its POs itself; give each a readable number the filters below can search.
+        db.query(P2PPurchaseOrder).filter_by(p2p_request_id=pr["id"]).one().po_number = f"PO-T-{i + 1:03d}"
+        db.commit()
         if i < 2:  # the third stays in approval
             for approver in pr["_po_approvers"].values():
                 assert _approve_po_as(client, pr, approver).status_code == 200
@@ -191,32 +193,32 @@ def test_tracking_needs_the_purchase_team(client, db):
     assert client.get(f"{REPORTS}/tracking", headers=auth_header(outsider)).status_code == 403
 
 
-def test_split_pos_are_separate_rows_with_their_own_vendor_stage_and_value(client, db, setup):  # noqa: F811
+def test_uploaded_po_is_a_row_with_its_vendor_stage_and_value_and_only_a_released_po_is_chased(client, db, setup):  # noqa: F811
     s = setup
-    q1, q2 = _quoted_and_awarded(client, s)
-    pos, _loc = _split(client, s, q1, q2)
-    p_a, p_b = pos[s["v2"].id], pos[s["v1"].id]
-    for p in (p_a, p_b):
-        attach_tally_po(db, p['id'])
-        assert client.post(f"{RFQS}/{s['rfq'].id}/po-draft/{p['id']}/submit", headers=auth_header(s["buyer"])).status_code == 200
+    _quoted_and_awarded(client, s)
+    # Upload PO on the requisition: one PO, straight into approval ("issued", stage in_approval).
+    p_a, _loc = _upload_po(client, s, s["v2"])
+    po = db.get(P2PPurchaseOrder, p_a["id"])
+    po.expected_delivery = LONG_AGO
+    db.commit()
+    data = _tracking(client, s["buyer"])
+    assert [r["po_id"] for r in data["rows"]] == [p_a["id"]]
+    row = data["rows"][0]
+    assert (row["vendor_name"], row["stage"]) == ("Beta Steels", "in_approval") and not row["is_overdue"]
+    assert row["total_value"] == pytest.approx((900 + 200) * 1.18)
+    assert _reminders(db) == []  # not an order yet: nobody is chased for it
+
     _decide_all(client, db, "p2p_purchase_order", p_a["id"], s["approvers"])
     db.expire_all()
-    for po in db.query(P2PPurchaseOrder).all():
-        po.expected_delivery = LONG_AGO
+    db.get(P2PPurchaseOrder, p_a["id"]).expected_delivery = LONG_AGO
     db.commit()
-
     data = _tracking(client, s["buyer"])
-    rows = {r["po_id"]: r for r in data["rows"]}
-    assert set(rows) == {p_a["id"], p_b["id"]}
-    a, b = rows[p_a["id"]], rows[p_b["id"]]
-    assert (a["vendor_name"], a["stage"]) == ("Beta Steels", "with_vendor") and a["is_overdue"]
-    assert (b["vendor_name"], b["stage"]) == ("Alpha Hydraulics", "in_approval") and not b["is_overdue"]
-    assert a["p2p_request_id"] == b["p2p_request_id"] and a["total_value"] != b["total_value"]
-    # Each row carries its own signed link (the frontend asks for them with X-Record-Refs).
+    row = data["rows"][0]
+    assert (row["vendor_name"], row["stage"]) == ("Beta Steels", "with_vendor") and row["is_overdue"]
+    # The row carries its own signed link (the frontend asks for them with X-Record-Refs).
     signed = client.get(f"{REPORTS}/tracking", headers={**auth_header(s["buyer"]), "X-Record-Refs": "1"}).json()["rows"]
-    refs = {r["po_id"]: r["po_id_ref"] for r in signed}
-    assert refs[p_a["id"]] != refs[p_b["id"]] and decode_ref(refs[p_a["id"]]) == p_a["id"]
-    assert data["counts"]["with_vendor"] == 1 and data["counts"]["in_approval"] == 1 and data["overdue"] == 1
+    assert decode_ref(signed[0]["po_id_ref"]) == p_a["id"]
+    assert data["counts"]["with_vendor"] == 1 and data["overdue"] == 1
     # Only the released PO is chased.
     assert [n.entity_id for n in _reminders(db)] == [p_a["id"]]
     assert {r["po_id"] for r in open_items(db)} == {p_a["id"]}

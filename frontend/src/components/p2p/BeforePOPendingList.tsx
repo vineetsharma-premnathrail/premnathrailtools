@@ -1,15 +1,15 @@
 'use client'
 
 // "Before PO" view of Purchase Orders: goods the store already received before
-// their PO existed. Procurement makes the PO for the vendor and items on the
-// receipt; it opens as a draft PO.
+// their PO existed. Procurement makes a requisition for the vendor and items on
+// the receipt, then uploads the Tally PO on it (POs aren't made in the portal).
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { prePoProcurementApi, PrePoReceipt } from '@/lib/prePoApi'
 import { TEXT } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
-import { recordHref } from '@/lib/recordRef'
+import { recordPath } from '@/lib/recordRef'
 import { formatDate } from '@/lib/format'
 import { useCan } from '@/lib/permissions'
 import { RowCount, smallSecondaryBtnStyle, StatChip, inputStyle } from '@/components/shared/ui'
@@ -41,18 +41,18 @@ export default function BeforePOPendingList() {
   const q = search.trim().toLowerCase()
   const shown = rows.filter((r) => !q || [r.receipt_number, r.vendor_name, r.delivery_challan_number, r.vendor_invoice_number, ...r.items.map((i) => i.item_name)].some((x) => (x || '').toLowerCase().includes(q)))
 
-  const createPo = async () => {
+  const createRequisition = async () => {
     const r = confirmFor
     if (!r) return
     setBusy(true)
     setError('')
     try {
-      const res = await prePoProcurementApi.createPo(r.id)
+      const res = await prePoProcurementApi.createRequisition(r.id)
       setConfirmFor(null)
-      router.push(recordHref('/dashboard/p2p/purchase-orders/new', res.rfq, 'id', { po: res.po.id_ref }, 'rfq'))
+      router.push(recordPath('/dashboard/p2p', res.rfq, 'p2p_request_id'))
     } catch (err) {
       setConfirmFor(null)
-      setError(extractErrorMessages(err, `Could not create the PO for ${r.receipt_number} — reload the list and try again.`).join(' '))
+      setError(extractErrorMessages(err, `Could not create the requisition for ${r.receipt_number} — reload the list and try again.`).join(' '))
       setBusy(false)
     }
   }
@@ -63,7 +63,7 @@ export default function BeforePOPendingList() {
         <StatChip label="Receipts waiting for a PO" value={rows.length} color="#ea580c" />
       </div>
       <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 12px' }}>
-        The store already holds these goods. Create the PO for the same vendor and items; the goods enter stock only when the GRN is done after the PO is approved.
+        The store already holds these goods. Create the requisition for the same vendor and items, make the PO in Tally and upload it on the requisition; the goods enter stock only when the GRN is done after the PO is approved.
       </p>
       {error && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{error}</div>}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -92,21 +92,29 @@ export default function BeforePOPendingList() {
                   {(r.attachments || []).length > 0 && <div title={(r.attachments || []).map((a) => a.filename).join(', ')} style={{ color: '#2563eb' }}>📎 {(r.attachments || []).length} file{(r.attachments || []).length === 1 ? '' : 's'}</div>}
                 </td>
                 <td style={{ ...PO_TD, textAlign: 'right' }}>
-                  <button type="button" disabled={!canCreate || busy} onClick={() => setConfirmFor(r)} data-tour="po-before-create-btn"
-                    title={canCreate ? undefined : 'You need Create permission on Purchase Orders to make a PO.'}
-                    style={{ ...smallSecondaryBtnStyle, whiteSpace: 'nowrap', opacity: canCreate ? 1 : 0.5 }}>
-                    Create PO
-                  </button>
+                  {r.p2p_request_id ? (
+                    <button type="button" onClick={() => router.push(recordPath('/dashboard/p2p', r, 'p2p_request_id'))} data-tour="po-before-open-pr-btn"
+                      title="The requisition is made — upload the Tally PO on it."
+                      style={{ ...smallSecondaryBtnStyle, whiteSpace: 'nowrap' }}>
+                      Upload PO on {r.p2p_number || 'requisition'}
+                    </button>
+                  ) : (
+                    <button type="button" disabled={!canCreate || busy} onClick={() => setConfirmFor(r)} data-tour="po-before-create-btn"
+                      title={canCreate ? undefined : 'You need Create permission on Purchase Orders to make the requisition.'}
+                      style={{ ...smallSecondaryBtnStyle, whiteSpace: 'nowrap', opacity: canCreate ? 1 : 0.5 }}>
+                      Create requisition
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <ConfirmDialog open={!!confirmFor} danger={false} confirmLabel={busy ? 'Creating…' : 'Create PO'}
-        title={`Create PO for ${confirmFor?.receipt_number || ''}?`}
-        message={confirmFor ? `Create a PO to ${confirmFor.vendor_name} for these ${confirmFor.items.length} item${confirmFor.items.length === 1 ? '' : 's'}? It opens as a draft you can price and send for approval.` : ''}
-        onConfirm={createPo} onCancel={() => { if (!busy) setConfirmFor(null) }} />
+      <ConfirmDialog open={!!confirmFor} danger={false} confirmLabel={busy ? 'Creating…' : 'Create requisition'}
+        title={`Create requisition for ${confirmFor?.receipt_number || ''}?`}
+        message={confirmFor ? `Create a requisition to ${confirmFor.vendor_name} for these ${confirmFor.items.length} item${confirmFor.items.length === 1 ? '' : 's'}? It opens next — make the PO in Tally and upload it there with Upload PO.` : ''}
+        onConfirm={createRequisition} onCancel={() => { if (!busy) setConfirmFor(null) }} />
     </div>
   )
 }

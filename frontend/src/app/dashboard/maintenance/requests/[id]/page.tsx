@@ -1,5 +1,6 @@
 'use client'
 
+import { normalizePriority, priorityLabel } from '@/lib/priority'
 import { useEffect, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useRequireAnyApp } from '@/hooks/useAuth'
@@ -27,7 +28,7 @@ import {
 import Select from '@/components/shared/Select'
 
 const STATUS_HEX: Record<string, string> = { open: '#F59E0B', acknowledged: '#2563EB', converted: '#0f766e', rejected: '#DC2626', duplicate: '#78716c' }
-const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
+const PRIORITY_HEX: Record<string, string> = { standard: '#475569', urgent: '#DC2626' }
 const WO_STATUS_HEX: Record<string, string> = { draft: '#78716c', assigned: '#2563EB', in_progress: '#F59E0B', on_hold: '#9333EA', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
 // Mirrors the backend's REQUEST_WO_TYPE default mapping.
 const DEFAULT_WO_TYPE: Record<string, string> = { breakdown: 'breakdown', abnormality: 'corrective', improvement: 'improvement', safety: 'corrective' }
@@ -76,7 +77,7 @@ export default function MaintenanceRequestDetailPage() {
 
   const [convertOpen, setConvertOpen] = useState(false)
   const [convertError, setConvertError] = useState<string | string[]>('')
-  const [cv, setCv] = useState({ title: '', wo_type: 'breakdown', priority: 'normal', assigned_to_id: '', planned_start: '', description: '' })
+  const [cv, setCv] = useState({ title: '', wo_type: 'breakdown', priority: 'standard', assigned_to_id: '', planned_start: '', description: '' })
 
   useEffect(() => {
     if (!isAuthorized || !id) return
@@ -105,7 +106,7 @@ export default function MaintenanceRequestDetailPage() {
     setCv({
       title: `${REQUEST_TYPE_LABELS[req.request_type]?.split(' (')[0] || 'Repair'}: ${req.problem_description.slice(0, 80)}`,
       wo_type: DEFAULT_WO_TYPE[req.request_type] || 'corrective',
-      priority: req.priority,
+      priority: normalizePriority(req.priority),
       assigned_to_id: '',
       planned_start: '',
       description: req.problem_description,
@@ -216,7 +217,7 @@ export default function MaintenanceRequestDetailPage() {
               title={`${(REQUEST_TYPE_LABELS[req.request_type] || req.request_type).split(' (')[0]} — ${[req.asset_code, req.asset_name].filter(Boolean).join(' ')}`}
               text={req.problem_description}
               meta={<>
-                <Pill label={`${PRIORITY_LABELS[req.priority] || req.priority} priority`} hex={PRIORITY_HEX[req.priority] || '#78716c'} />
+                <Pill label={`${priorityLabel(req.priority)} priority`} hex={PRIORITY_HEX[normalizePriority(req.priority)]} />
                 <span>· Happened {formatDateTime(req.reported_at)}</span>
                 <span>· Raised by <strong style={{ color: TEXT.heading }}>{req.raised_by_name || '—'}</strong></span>
               </>}

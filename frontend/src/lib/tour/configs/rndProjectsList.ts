@@ -13,7 +13,7 @@ const config: TourConfig = {
     {
       target: 'rnd-proj-new-btn',
       title: '+ New R&D Project',
-      purpose: 'Opens the form to start a new R&D project.',
+      purpose: 'Opens the form to start a new Prototype / Research project.',
     },
     {
       target: 'rnd-proj-search',
@@ -29,13 +29,13 @@ const config: TourConfig = {
         { value: 'Stage', meaning: 'All stages, or one of: ' + RND_STAGE_OPTIONS.map((o) => o.value).join(', ') + '.' },
         { value: 'Status', meaning: 'All statuses, or one of: ' + RND_STATUS_OPTIONS.map((o) => o.value).join(', ') + '.' },
         { value: 'Priority', meaning: 'All priorities, or one of: ' + RND_PRIORITY_OPTIONS.map((o) => o.value).join(', ') + '.' },
-        { value: 'Origin', meaning: 'Why the project exists: customer requirement, product improvement, new product, process research.' },
+        { value: 'Origin', meaning: 'Why the project exists: Existing Projects (improve a project / machine we already built) or New Project.' },
       ],
     },
     {
       target: 'rnd-proj-table',
       title: 'Project list',
-      purpose: 'Project No., title, priority and status badges, lead and target end date. Click any row to open the project.',
+      purpose: 'Project No. (ascending), title, origin, priority (Standard / Urgent) and status badges, lead and target end date. Click any row to open the project.',
     },
   ],
 }

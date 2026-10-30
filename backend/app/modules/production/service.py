@@ -810,9 +810,6 @@ def apply_rrv_handover(db: Session, build: ProductionRrvBuild) -> Project:
     machine.warranty_start_date = build.handover_date
     machine.warranty_end_date = _add_months(build.handover_date, build.warranty_months) if build.warranty_months else machine.warranty_end_date
     machine.site_location = machine.site_location or build.handover_location
-    # Sales: the vehicle's delivery row is dispatched + delivered (and commissioned) — SO status, LD, billing.
-    from app.modules.sales.delivery import on_rrv_handover
-    on_rrv_handover(db, build)
     return machine
 
 

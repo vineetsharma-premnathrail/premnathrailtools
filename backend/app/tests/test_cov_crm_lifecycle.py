@@ -88,7 +88,7 @@ def test_inquiry_universal_ids_are_sequential_per_day(client, ctx):
     today = date.today().strftime("%Y%m%d")
     assert a["universal_id"] == f"INQ-{today}-0001"
     assert b["universal_id"] == f"INQ-{today}-0002"
-    assert a["current_stage"] == "Requirement Received" and a["priority"] == "Medium"
+    assert a["current_stage"] == "Requirement Received" and a["priority"] == "standard"
 
 
 def test_inquiry_create_validates_org_and_contact(client, db, ctx):

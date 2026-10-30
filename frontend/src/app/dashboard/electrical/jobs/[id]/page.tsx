@@ -22,9 +22,10 @@ import IssuesTab from '@/components/electrical/IssuesTab'
 import DocumentsTab from '@/components/electrical/DocumentsTab'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
+import { normalizePriority, priorityLabel } from '@/lib/priority'
 import {
   sectionStyle, primaryBtn, dangerBtn, ErrorBanner, useLookupErrors, NoticeBanner, useJobFeatures,
-  JOB_STATUS_LABELS, JOB_STATUS_HEX, PRIORITY_LABELS, PRIORITY_HEX, PHASE_LABELS, PHASE_HEX,
+  JOB_STATUS_LABELS, JOB_STATUS_HEX, PRIORITY_HEX, PHASE_LABELS, PHASE_HEX,
 } from '@/components/electrical/shared'
 import { useCan } from '@/lib/permissions'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -182,7 +183,7 @@ function JobDetailView() {
           <div data-tour="elec-job-header-badges" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 4px', flexWrap: 'wrap' }}>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{job?.job_number || 'Electrical Job'}</h1>
             {job && <Pill label={JOB_STATUS_LABELS[job.status] || job.status} hex={JOB_STATUS_HEX[job.status]} />}
-            {job && <Pill label={`${PRIORITY_LABELS[job.priority] || job.priority} priority`} hex={PRIORITY_HEX[job.priority]} />}
+            {job && <Pill label={`${priorityLabel(job.priority)} priority`} hex={PRIORITY_HEX[normalizePriority(job.priority)]} />}
             {job?.is_overdue && <Pill label="Overdue" hex="#DC2626" />}
           </div>
           {job && (

@@ -42,7 +42,7 @@ export default function WorkOrderPurchaseCard({ woId, woStatus, onChanged }: { w
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [dialogError, setDialogError] = useState<string | string[]>('')
-  const [form, setForm] = useState({ purpose: 'spares', category_code: 'OTH', priority: 'medium', required_date: '', reason: '' })
+  const [form, setForm] = useState({ purpose: 'spares', category_code: 'OTH', priority: 'standard', required_date: '', reason: '' })
   const [lines, setLines] = useState<Line[]>([{ item: null, quantity: '1' }])
   const [search, setSearch] = useState('')
   const [options, setOptions] = useState<MaintenanceStoreItemOption[]>([])
@@ -143,7 +143,7 @@ export default function WorkOrderPurchaseCard({ woId, woStatus, onChanged }: { w
             <div style={{ flex: '0 1 120px' }}>
               <label style={sheetLabel}>Priority</label>
               <Select style={sheetInput} value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
-                <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+                <option value="standard">Standard</option><option value="urgent">Urgent</option>
               </Select>
             </div>
             <div style={{ flex: '0 1 160px' }}>

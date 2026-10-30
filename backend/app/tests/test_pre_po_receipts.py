@@ -1,7 +1,7 @@
 """Before-PO receipts: Store records goods that came before their PO (no stock
-posted); Procurement makes the PO for them; the PO goes through normal approval
-and GRN; the GRN closes the receipt."""
-from app.tests.p2p_workflow_helpers import attach_tally_po
+posted); Procurement raises a requisition for them (Create requisition) and uploads
+the Tally PO on it (Upload PO), which links the receipt; the PO goes through normal
+approval and GRN; the GRN closes the receipt."""
 from datetime import date
 
 from app.modules.accounts.models.vendor import Vendor
@@ -10,6 +10,7 @@ from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.store.models.pre_po_receipt import StorePrePoReceipt
 from app.modules.store.models.location import StoreLocation
 from app.modules.store.models.stock_balance import StoreStockBalance
+from app.tests.p2p_po_helpers import post_upload_po, upload_po_details
 from app.tests.p2p_workflow_helpers import master_item, set_po_workflow
 from app.tests.test_mm_po_split_amend_quotes import _decide_all
 from app.tests.test_p2p_item_master_link import _grn, _inspect_all, _store
@@ -123,7 +124,7 @@ def test_routes_deny_users_without_permission_and_other_peoples_receipts(client,
     assert client.get(STORE, headers=auth_header(other)).json() == []
     # Procurement side is gated by the Procurement Purchase Orders tab.
     assert client.get(f"{PROC}/pending", headers=auth_header(keeper)).status_code == 403
-    assert client.post(f"{PROC}/{rid}/create-po", headers=auth_header(keeper)).status_code == 403
+    assert client.post(f"{PROC}/{rid}/create-requisition", headers=auth_header(keeper)).status_code == 403
 
 
 def test_cancel_needs_a_reason_and_only_while_pending(client, db):
@@ -137,10 +138,18 @@ def test_cancel_needs_a_reason_and_only_while_pending(client, db):
     assert again.status_code == 409 and "already cancelled" in again.json()["detail"]
     buyer = _purchaser(db, "bpo.buyer4@premnathrail.com")
     assert client.get(f"{PROC}/pending", headers=auth_header(buyer)).json() == []
-    assert client.post(f"{PROC}/{rid}/create-po", headers=auth_header(buyer)).status_code == 409
+    assert client.post(f"{PROC}/{rid}/create-requisition", headers=auth_header(buyer)).status_code == 409
 
 
-def test_procurement_creates_the_po_it_is_approved_received_and_the_receipt_closes(client, db):
+def _upload_on(client, db, buyer, rfq_id, pr_id, tally="TALLY-BPO-1", **kw):
+    """Upload the Tally PO on a Before-PO requisition: the vendor is the receipt's (the RFQ's one quote), so
+    the payload names none."""
+    details = upload_po_details(db, pr_id, unit_price=kw.pop("unit_price", 20), tax_rate=kw.pop("tax_rate", None), **kw)
+    details.pop("vendor_id")
+    return post_upload_po(client, buyer, rfq_id, details, tally)
+
+
+def test_procurement_raises_the_requisition_uploads_the_po_it_is_approved_received_and_the_receipt_closes(client, db):
     keeper = _store_user(db, "bpo.keeper5@premnathrail.com")
     v, item = _vendor(db, "V-BPO5"), master_item(db, "Valve BPO", code="BPO-5", uom="Nos")
     rec = client.post(STORE, json=_body(v, item, 7), headers=auth_header(keeper)).json()
@@ -153,33 +162,47 @@ def test_procurement_creates_the_po_it_is_approved_received_and_the_receipt_clos
     pending = client.get(f"{PROC}/pending", headers=auth_header(buyer)).json()
     assert [p["id"] for p in pending] == [rec["id"]]
 
-    r = client.post(f"{PROC}/{rec['id']}/create-po", headers=auth_header(buyer))
+    r = client.post(f"{PROC}/{rec['id']}/create-requisition", headers=auth_header(buyer))
     assert r.status_code == 200, r.text
     out = r.json()
-    po, rfq = out["po"], out["rfq"]
-    assert po["status"] == "draft" and po["vendor_id"] == v.id
-    assert [(i["store_item_id"], i["quantity"]) for i in po["items"]] == [(item.id, 7)]
+    rfq = out["rfq"]
+    assert "po" not in out  # no PO is made here: it is made in Tally and uploaded on the requisition
     assert rfq["status"] == "locked" and rfq["is_single_quotation"] is True
-    pr = db.get(P2PRequest, po["p2p_request_id"])
-    assert pr.status == "po_drafted" and pr.purpose == "stock"
+    db.expire_all()
+    row = db.get(StorePrePoReceipt, rec["id"])
+    assert row.status == "pending_po" and row.purchase_order_id is None and row.p2p_request_id
+    pr = db.get(P2PRequest, row.p2p_request_id)
+    assert pr.status == "vendor_selected" and pr.purpose == "stock"
+    assert [(i.store_item_id, i.quantity) for i in pr.items] == [(item.id, 7)]
     assert db.query(AuditLog).filter_by(entity_type="p2p_request", entity_id=pr.id, action="created_from_pre_po_receipt").count() == 1
+    # Still waiting for its PO, and a second click is refused with where to go.
+    assert [p["id"] for p in client.get(f"{PROC}/pending", headers=auth_header(buyer)).json()] == [rec["id"]]
+    again = client.post(f"{PROC}/{rec['id']}/create-requisition", headers=auth_header(buyer))
+    assert again.status_code == 409 and "already has requisition" in again.json()["detail"] and pr.p2p_number in again.json()["detail"]
 
+    # Upload PO: a line that isn't on the requisition is refused; the receipt stays waiting.
+    stray = upload_po_details(db, pr.id, unit_price=5)
+    stray.pop("vendor_id")
+    stray["lines"] = [{"pr_item_id": pr.items[0].id + 999, "unit_price": 5}]
+    bad = post_upload_po(client, buyer, rfq["id"], stray, "TALLY-BPO-0")
+    assert bad.status_code == 422 and "not open lines" in bad.json()["detail"]
+    db.expire_all()
+    assert db.get(StorePrePoReceipt, rec["id"]).status == "pending_po"
+    # Priced as on the Tally PO, it goes into approval and links the receipt.
+    po_resp = _upload_on(client, db, buyer, rfq["id"], pr.id)
+    assert po_resp.status_code == 200, po_resp.text
+    po = po_resp.json()
+    assert po["status"] == "issued" and po["vendor_id"] == v.id and po["external_ref"] == "TALLY-BPO-1"
+    assert [(i["store_item_id"], i["quantity"], i["unit_price"]) for i in po["items"]] == [(item.id, 7, 20)]
     db.expire_all()
     row = db.get(StorePrePoReceipt, rec["id"])
     assert row.status == "po_created" and row.purchase_order_id == po["id"] and row.p2p_request_id == pr.id
     assert client.get(f"{PROC}/pending", headers=auth_header(buyer)).json() == []
-    second = client.post(f"{PROC}/{rec['id']}/create-po", headers=auth_header(buyer))
+    second = client.post(f"{PROC}/{rec['id']}/create-requisition", headers=auth_header(buyer))
     assert second.status_code == 409 and "not waiting for a PO" in second.json()["detail"]
     assert client.post(f"{STORE}/{rec['id']}/cancel", json={"reason": "x"}, headers=auth_header(keeper)).status_code == 409
 
-    # Normal PO approval: it can't be sent unpriced; once priced it goes to the engine and a Partner.
-    line = po["items"][0]["id"]
-    assert client.post(f"{RFQS}/{rfq['id']}/po-draft/{po['id']}/submit", headers=auth_header(buyer)).status_code == 400
-    assert client.patch(f"{RFQS}/{rfq['id']}/po-draft/{po['id']}", json={"items": [{"id": line, "unit_price": 20}]},
-                        headers=auth_header(buyer)).status_code == 200
-    attach_tally_po(db, po['id'])
-    s = client.post(f"{RFQS}/{rfq['id']}/po-draft/{po['id']}/submit", headers=auth_header(buyer))
-    assert s.status_code == 200, s.text
+    # Normal PO approval: the engine, then a Partner.
     _decide_all(client, db, "p2p_purchase_order", po["id"], [approver, partner])
 
     # GRN for the full quantity closes the receipt.
@@ -215,18 +238,29 @@ def test_create_po_needs_the_buyer_rule(client, db):
     db.commit()
     outsider.roles = [role]
     db.commit()
-    r = client.post(f"{PROC}/{rid}/create-po", headers=auth_header(outsider))
+    r = client.post(f"{PROC}/{rid}/create-requisition", headers=auth_header(outsider))
     assert r.status_code == 403 and "Assign buyer to" in r.json()["detail"]
     db.expire_all()
     assert db.get(StorePrePoReceipt, rid).status == "pending_po"
 
 
-def _make_po(client, db, tag, qty=7):
+def _make_po(client, db, tag, qty=7, workflow=True):
+    """Receipt -> requisition -> Tally PO uploaded on it. `workflow` points PO approval at a fresh
+    approver and Partner (the upload sends the PO straight into approval)."""
+    if workflow:
+        admin = make_user(db, f"bpo.wf.admin.{tag}@premnathrail.com", role="admin")
+        approver = make_user(db, f"bpo.wf.approver.{tag}@premnathrail.com")
+        make_user(db, f"bpo.wf.partner.{tag}@premnathrail.com", is_partner=True)
+        set_po_workflow(db, [approver.id], admin, partner=True)
     keeper = _store_user(db, f"bpo.k.{tag}@premnathrail.com")
     v, item = _vendor(db, f"V-{tag}"), master_item(db, f"Item {tag}", code=f"BP-{tag}", uom="Nos")
     rec = client.post(STORE, json=_body(v, item, qty), headers=auth_header(keeper)).json()
     buyer = _purchaser(db, f"bpo.b.{tag}@premnathrail.com")
-    out = client.post(f"{PROC}/{rec['id']}/create-po", headers=auth_header(buyer)).json()
+    out = client.post(f"{PROC}/{rec['id']}/create-requisition", headers=auth_header(buyer)).json()
+    pr_id = db.get(StorePrePoReceipt, rec["id"]).p2p_request_id
+    up = _upload_on(client, db, buyer, out["rfq"]["id"], pr_id, tally=f"TALLY-{tag}", unit_price=9)
+    assert up.status_code == 200, up.text
+    out["po"] = up.json()  # the PO the Tally upload made, next to the requisition's RFQ
     return keeper, buyer, rec, out
 
 
@@ -237,23 +271,16 @@ def test_receipt_uses_line_category_and_line_buyer(client, db):
     assert pr.category_code == LINE_CATEGORY and pr.items[0].store_item_id
 
 
-def test_rejected_po_sends_the_receipt_back_to_pending_and_a_new_po_can_be_made(client, db):
+def test_rejected_po_sends_the_receipt_back_to_pending_and_a_new_requisition_can_be_made(client, db):
     from app.modules.organization.services import approval_engine as engine
     admin = make_user(db, "bpo.admin2@premnathrail.com", role="admin")
     approver = make_user(db, "bpo.approver2@premnathrail.com")
     make_user(db, "bpo.partner2@premnathrail.com", is_partner=True)
     set_po_workflow(db, [approver.id], admin, partner=True)
-    keeper, buyer, rec, out = _make_po(client, db, "REJ")
-    po, rfq = out["po"], out["rfq"]
-    line = po["items"][0]["id"]
-    # Raise the quantity above the requisition: the approver sees it in the request title.
-    assert client.patch(f"{RFQS}/{rfq['id']}/po-draft/{po['id']}", json={"items": [{"id": line, "unit_price": 9, "quantity": 9}]},
-                        headers=auth_header(buyer)).status_code == 200
-    attach_tally_po(db, po['id'])
-    sub = client.post(f"{RFQS}/{rfq['id']}/po-draft/{po['id']}/submit", headers=auth_header(buyer))
-    assert sub.status_code == 200, sub.text
+    keeper, buyer, rec, out = _make_po(client, db, "REJ", workflow=False)
+    po = out["po"]
+    assert po["status"] == "issued"
     req = engine.latest_request(db, "p2p_purchase_order", po["id"])
-    assert "qty raised above requisition on 1 line" in req.title
     r = client.post(f"/api/v1/approvals/requests/{req.id}/decide", json={"decision": "reject", "comment": "Too dear"},
                     headers=auth_header(approver))
     assert r.status_code == 200, r.text
@@ -261,7 +288,7 @@ def test_rejected_po_sends_the_receipt_back_to_pending_and_a_new_po_can_be_made(
     row = db.get(StorePrePoReceipt, rec["id"])
     assert row.status == "pending_po" and row.purchase_order_id is None and row.p2p_request_id is None
     assert [p["id"] for p in client.get(f"{PROC}/pending", headers=auth_header(buyer)).json()] == [rec["id"]]
-    again = client.post(f"{PROC}/{rec['id']}/create-po", headers=auth_header(buyer))
+    again = client.post(f"{PROC}/{rec['id']}/create-requisition", headers=auth_header(buyer))
     assert again.status_code == 200, again.text
 
 

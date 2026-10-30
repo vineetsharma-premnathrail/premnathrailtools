@@ -28,7 +28,7 @@ _SPECS = [
     SettingSpec("credit_check_at_dispatch", "credit", "Credit check at dispatch", "bool", True,
                 help="A Store dispatch to a customer who is over their credit limit (CRM organisation) or has invoices "
                      "overdue beyond their credit days is blocked until a Finance approver releases it (Finance › "
-                     "Outstanding › Credit). Sales order confirmation follows Sales › Settings › Credit check."),
+                     "Outstanding › Credit)."),
     SettingSpec("credit_overdue_grace_days", "credit", "Overdue grace (days)", "int", 0, min=0, max=365,
                 help="An invoice blocks credit only when it is overdue by MORE than this many days past its due date "
                      "(invoice date + the customer's credit days). Disputed amounts never block."),

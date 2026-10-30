@@ -47,7 +47,6 @@ SEEDERS = [
     "crm",           # organizations, contacts, inquiries, tender, activities, TOR to R&D
     "rnd",           # R&D team, requirement work, technical offer, projects, experiments, prototypes
     "quotation",     # CRM quotation against the technical offer
-    "sales",         # sales orders from quotations
     "design",        # design requests, BOM revisions, ECR/ECN, library
     "electrical",    # electrical jobs, panels, cables, drawings, tests
     "hydraulic",     # hydraulic systems, circuits, BOM, testing

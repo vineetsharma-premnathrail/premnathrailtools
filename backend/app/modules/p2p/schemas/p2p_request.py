@@ -1,5 +1,7 @@
 from datetime import date, datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.core.priority import coerce_priority_field
 
 from app.modules.p2p.schemas.purchase_order import P2PPurchaseOrderResponse
 
@@ -124,7 +126,7 @@ class P2PRequestCreate(BaseModel):
     category_code: str | None = None
     required_date: date | None = None
     requirement_type: str | None = None
-    priority: str = "medium"
+    priority: str = "standard"
     # 'existing' | 'new'. Who approves is the approval engine's business
     # (Organization › Approval Workflows); project_type is available to its
     # stage conditions. Approver names sent by older clients are ignored.
@@ -138,6 +140,11 @@ class P2PRequestCreate(BaseModel):
     items: list[P2PRequestItemPayload] = Field(default_factory=list)
     # True = keep as a private draft (no approval, light validation).
     save_as_draft: bool = False
+
+    @field_validator("priority")
+    @classmethod
+    def _priority_two_values(cls, v):
+        return coerce_priority_field(v, blank_to="standard")
 
 
 class P2PRequestEdit(P2PRequestCreate):
@@ -157,6 +164,11 @@ class P2PRequestUpdate(BaseModel):
     requirement_type: str | None = None
     priority: str | None = None
     remarks: str | None = None
+
+    @field_validator("priority")
+    @classmethod
+    def _priority_two_values(cls, v):
+        return coerce_priority_field(v)
 
 
 class P2PRequestActionPayload(BaseModel):

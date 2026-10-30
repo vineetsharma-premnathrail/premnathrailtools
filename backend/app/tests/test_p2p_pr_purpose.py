@@ -6,6 +6,7 @@ from app.modules.accounts.models.internal_order import InternalOrder
 from app.modules.organization.models.cost_center import CostCenter
 from app.modules.organization.models.department import Department
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
+from app.tests.p2p_po_helpers import post_upload_po, rfq_for_pr, upload_po_details
 from app.tests.p2p_workflow_helpers import master_item, set_po_workflow, set_pr_workflow
 from app.tests.test_p2p_requests import (  # noqa: F401 — _sqlite_number_series is an autouse fixture
     BASE, _approve_pr, _create_payload, _create_pr, _pr_approvers, _purchaser, _raise_po, _requester, _sqlite_number_series,
@@ -55,7 +56,8 @@ def test_department_po_gets_the_department_cost_centre_and_needs_one(client, db)
     pr = _create_pr(client, req, purpose="department", category_code="ADM", project_label=None, project_type=None,
                     items=[{"item_name": "Floor cleaner", "quantity": 2, "unit": "pcs", "project_inhouse": "Inhouse"}])
     _raise_po(client, db, pr, buyer, po_number="PO-ADM-1")
-    po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.po_number == "PO-ADM-1").one()
+    po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.p2p_request_id == pr["id"]).one()
+    assert po.external_ref == "PO-ADM-1"
     assert po.cost_center_id == cc.id
 
     # No cost centre for the department -> the PO can't go for approval, and says why.
@@ -66,9 +68,8 @@ def test_department_po_gets_the_department_cost_centre_and_needs_one(client, db)
                      items=[{"item_name": "Tea cups", "quantity": 20, "unit": "pcs", "project_inhouse": "Inhouse"}])
     _approve_pr(client, pr2)
     set_po_workflow(db, [u.id for u in pr2["_po_approvers"].values()], buyer)
-    r = client.post(f"{BASE}/{pr2['id']}/create-po", json={
-        "po_number": "PO-ADM-2", "item_pricing": [{"pr_item_id": i["id"], "unit_price": 10, "tax_rate": 18} for i in pr2["items"]],
-    }, headers=auth_header(buyer))
+    rfq = rfq_for_pr(db, pr2["id"], buyer.id)
+    r = post_upload_po(client, buyer, rfq.id, upload_po_details(db, pr2["id"], unit_price=10), "PO-ADM-2")
     assert r.status_code == 400 and "has no cost centre" in r.json()["detail"] and "Canteen" in r.json()["detail"], r.text
 
 

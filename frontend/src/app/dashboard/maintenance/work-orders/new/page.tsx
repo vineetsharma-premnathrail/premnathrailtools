@@ -14,6 +14,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import MaintenanceAssetPicker from '@/components/maintenance/MaintenanceAssetPicker'
 import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
+import { normalizePriority } from '@/lib/priority'
 import { PRIORITY_LABELS, WO_TYPE_LABELS, localInputToIso, nowLocalInput } from '@/components/maintenance/labels'
 import Select from '@/components/shared/Select'
 import { useFormDraft } from '@/lib/formDraft'
@@ -33,7 +34,7 @@ export default function NewMaintenanceWorkOrderPage() {
   const [assetId, setAssetId] = useState<number | null>(presetAsset)
   useEffect(() => { if (presetAsset) setAssetId(presetAsset) }, [presetAsset])
   const [woType, setWoType] = useState('corrective')
-  const [priority, setPriority] = useState('normal')
+  const [priority, setPriority] = useState('standard')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [machineDown, setMachineDown] = useState(false)
@@ -50,7 +51,7 @@ export default function NewMaintenanceWorkOrderPage() {
     (d) => {
       if (d.assetId) setAssetId(d.assetId)
       if (d.woType) setWoType(d.woType)
-      if (d.priority) setPriority(d.priority)
+      if (d.priority) setPriority(normalizePriority(d.priority))
       setTitle(d.title || ''); setDescription(d.description || ''); setMachineDown(!!d.machineDown)
       if (d.downtimeStart) setDowntimeStart(d.downtimeStart)
       setAssignedTo(d.assignedTo || ''); setPlannedStart(d.plannedStart || ''); setPlannedEnd(d.plannedEnd || '')

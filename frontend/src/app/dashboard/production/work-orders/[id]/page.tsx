@@ -1,5 +1,6 @@
 'use client'
 
+import { normalizePriority, priorityLabel } from '@/lib/priority'
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -30,7 +31,7 @@ import Select from '@/components/shared/Select'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', released: 'Released', in_progress: 'In Progress', completed: 'Completed', closed: 'Closed', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', released: '#2563EB', in_progress: '#F59E0B', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
-const PRIORITY_LABELS: Record<string, string> = { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' }
+const PRIORITY_LABELS: Record<string, string> = { standard: 'Standard', urgent: 'Urgent' }
 const OP_STATUS_LABELS: Record<string, string> = { pending: 'Pending', in_progress: 'In Progress', completed: 'Completed' }
 const OP_STATUS_HEX: Record<string, string> = { pending: '#78716c', in_progress: '#F59E0B', completed: '#16A34A' }
 const INSP_LABELS: Record<string, string> = { pending: 'Inspection pending', in_progress: 'Inspecting', passed: 'Passed', failed: 'Failed', conditionally_passed: 'Passed (conditional)' }
@@ -273,7 +274,7 @@ export default function WorkOrderDetailPage() {
   const startEdit = () => {
     if (!wo) return
     setEdit({
-      quantity_planned: String(wo.quantity_planned), priority: wo.priority,
+      quantity_planned: String(wo.quantity_planned), priority: normalizePriority(wo.priority),
       erp_project_id: wo.erp_project_id ? String(wo.erp_project_id) : '',
       source_location_id: wo.source_location_id ? String(wo.source_location_id) : '',
       target_location_id: wo.target_location_id ? String(wo.target_location_id) : '',
@@ -411,7 +412,7 @@ export default function WorkOrderDetailPage() {
               meta={<>
                 <Pill label={STATUS_LABELS[wo.status] || wo.status} hex={STATUS_HEX[wo.status] || '#78716c'} />
                 {wo.is_overdue && <Pill label="Overdue" hex="#DC2626" />}
-                <span>· <strong style={{ color: TEXT.heading }}>{PRIORITY_LABELS[wo.priority] || wo.priority}</strong> priority</span>
+                <span>· <strong style={{ color: TEXT.heading }}>{priorityLabel(wo.priority)}</strong> priority</span>
                 <span>· Planned {wo.planned_start_date ? formatDate(wo.planned_start_date) : '—'} → {wo.planned_end_date ? formatDate(wo.planned_end_date) : '—'}</span>
                 <span>· Supervisor: <strong style={{ color: TEXT.heading }}>{wo.supervisor_name || '—'}</strong></span>
               </>}

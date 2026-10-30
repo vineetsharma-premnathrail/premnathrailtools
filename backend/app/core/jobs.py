@@ -33,10 +33,10 @@ JOB_INFO: dict[str, dict] = {
     "quality_reminders": {"label": "Quality reminders", "idempotent": True},
     "maintenance_pm_scheduler": {"label": "Maintenance PM work-order generator", "idempotent": False},
     "maintenance_amc_reminders": {"label": "AMC / warranty reminders", "idempotent": True},
-    "sales_scheduler": {"label": "Sales delivery / LD scheduler", "idempotent": False},
     "azure_user_sync": {"label": "Microsoft Entra user sync", "idempotent": True},
     "access_governance_daily": {"label": "Access expiry + review reminders", "idempotent": True},
     "basis_log_prune": {"label": "Prune job runs, errors, denials > 90 days", "idempotent": True},
+    "rnd_review_reminders": {"label": "R&D requirement review reminders", "idempotent": True},
 }
 
 _FUNCS: dict[str, callable] = {}

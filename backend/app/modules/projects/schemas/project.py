@@ -3,6 +3,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.priority import DEFAULT_PRIORITY
 from app.modules.erp.schemas.project import ProjectCreateOptionalSerial
 
 PO_REQUIRED_MSG = "Customer PO number is required. Enter the customer's purchase order number for this project."
@@ -44,9 +45,13 @@ class PmProjectCreate(_PoSoCheck):
     project_manager_id: int | None = None
     start_date: date
     target_handover_date: date
-    priority: str = "medium"
-    # Optional Finance budget (internal order) the project's spend is tracked against.
+    # standard | urgent (app.core.priority); checked in the route.
+    priority: str = DEFAULT_PRIORITY
+    # Not accepted on create (422 from the route): a Finance budget is linked later from the project's Overview.
     internal_order_id: int | None = None
+    # Optional CRM source ('inquiry' | 'tender' + its id), for traceability. Does not freeze the CRM record.
+    source_kind: str | None = None
+    source_id: int | None = None
 
 
 class PmProjectWithMachineCreate(BaseModel):
@@ -62,8 +67,11 @@ class PmProjectWithMachineCreate(BaseModel):
     project_manager_id: int | None = None
     start_date: date
     target_handover_date: date
-    priority: str = "medium"
+    priority: str = DEFAULT_PRIORITY
+    # Not accepted on create (422 from the route); see PmProjectCreate.
     internal_order_id: int | None = None
+    source_kind: str | None = None
+    source_id: int | None = None
     machine: ProjectCreateOptionalSerial
 
 
@@ -157,6 +165,9 @@ class PmProjectResponse(BaseModel):
     internal_order_id: int | None = None
     internal_order_code: str | None = None
     internal_order_name: str | None = None
+    # Optional CRM source this project was created from ('inquiry' | 'tender').
+    source_kind: str | None = None
+    source_id: int | None = None
     # Order-linked project (made from a confirmed sales order) and where it is in its life.
     sales_order_id: int | None = None
     so_number: str | None = None

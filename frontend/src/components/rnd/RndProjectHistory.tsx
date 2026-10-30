@@ -8,16 +8,24 @@ import { TEXT, GLASS } from '@/lib/theme'
 import { formatDateTime } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 
-const KIND: Record<RndProjectHistoryEntry['kind'], { text: string; hex: string }> = {
+// Entry kinds the Timeline can show (older milestone entries stay readable).
+const KIND: Record<string, { text: string; hex: string }> = {
   milestone: { text: 'Milestone', hex: '#2563EB' },
   task: { text: 'Task', hex: '#7C3AED' },
   project: { text: 'Project', hex: '#78716c' },
   requirement: { text: 'Requirement', hex: '#78716c' },
+  revision: { text: 'Revision', hex: '#2563EB' },
+  review: { text: 'Review', hex: '#16A34A' },
+  response: { text: 'Response', hex: '#0D9488' },
+  offer: { text: 'Technical Offer', hex: '#D97706' },
+  document: { text: 'Document', hex: '#475569' },
 }
+const kindOf = (k: string) => KIND[k] || { text: k.charAt(0).toUpperCase() + k.slice(1), hex: '#78716c' }
 
-/** R&D project › History — project edits, milestone changes and every task event, newest first (same as PM's History tab).
+/** Timeline of an R&D requirement or Prototype / Research project — read only, newest first: revisions, accept /
+ *  return (with the reason), response, task events, offers, documents and project links.
  *  A requirement passes its own `load` and wording; the project passes only `projectId`. */
-export default function RndProjectHistory({ projectId, load, tour = 'rnd-pd-history', errorText = 'Could not load the project history. Refresh the page; if it keeps failing, check you can still open this project.' }: {
+export default function RndProjectHistory({ projectId, load, tour = 'rnd-pd-history', errorText = 'Could not load the timeline. Refresh the page; if it keeps failing, check you can still open this project.' }: {
   projectId: number | string
   load?: () => Promise<RndProjectHistoryEntry[]>
   tour?: string
@@ -41,7 +49,7 @@ export default function RndProjectHistory({ projectId, load, tour = 'rnd-pd-hist
     )
   }
   if (!entries) return <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>
-  if (entries.length === 0) return <p style={{ fontSize: 13, color: TEXT.muted }}>No history yet.</p>
+  if (entries.length === 0) return <p style={{ fontSize: 13, color: TEXT.muted }}>Nothing on the timeline yet.</p>
 
   return (
     <div data-tour={tour} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -53,7 +61,7 @@ export default function RndProjectHistory({ projectId, load, tour = 'rnd-pd-hist
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 4, flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 12.5, fontWeight: 600, color: TEXT.heading }}>{e.performed_by}</span>
-              <span style={pillStyle(KIND[e.kind].hex)}>{KIND[e.kind].text}</span>
+              <span style={pillStyle(kindOf(e.kind).hex)}>{kindOf(e.kind).text}</span>
             </span>
             <span style={{ fontSize: 11.5, color: TEXT.muted, whiteSpace: 'nowrap' }}>{e.performed_at ? formatDateTime(e.performed_at) : ''}</span>
           </div>

@@ -3,6 +3,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import Response
 from sqlalchemy import func
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
@@ -26,8 +27,10 @@ from app.modules.p2p.schemas.rfq import (
     VendorQuotationSelectPayload, VendorQuotationResponse,
 )
 from app.modules.p2p.schemas.purchase_order import (
-    P2PPurchaseOrderCreate, P2PPurchaseOrderDraftUpdatePayload, P2PPurchaseOrderResponse,
+    P2PPurchaseOrderCreate, P2PPurchaseOrderDraftUpdatePayload, P2PPurchaseOrderResponse, P2PUploadPOPayload,
 )
+from app.modules.store.models.location import StoreLocation
+from pydantic import ValidationError
 from app.modules.p2p.service import generate_rfq_number, generate_po_number, compute_line_total
 from app.modules.p2p import approvals as p2p_approvals
 from app.modules.p2p.access import ensure_pr_in_scope
@@ -36,7 +39,7 @@ from app.modules.p2p.settings import get_setting as get_p2p_setting
 from app.modules.accounts.models.vendor import Vendor
 from app.core.notify_rules import fire_rule
 from app.modules.p2p.routes.p2p_requests import _write_audit as _write_pr_audit, _send_p2p_po_approval_emails_background
-from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, download_file_content
+from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, download_file_content, delete_file_from_sharepoint
 
 router = APIRouter(prefix="/p2p/rfqs", tags=["P2P"])
 
@@ -204,11 +207,13 @@ async def list_rfqs(
     db: Session = Depends(get_db),
     user: User = Depends(_purchase_tab("rfq", "view")),
 ):
-    # RFQs behind a PO made from a Before-PO receipt are internal plumbing (RFQ.source), never listed.
-    query = apply_scope(db.query(RFQ).options(selectinload(RFQ.attachments)), user, RFQ).filter(
-        RFQ.source.is_(None) | (RFQ.source != "before_po"))
+    # RFQs behind a Before-PO receipt's requisition are internal plumbing (RFQ.source): not in
+    # the RFQ lists, but the requisition's own page still finds it (Upload PO needs it).
+    query = apply_scope(db.query(RFQ).options(selectinload(RFQ.attachments)), user, RFQ)
     if p2p_request_id:
         query = query.filter(RFQ.p2p_request_id == p2p_request_id)
+    else:
+        query = query.filter(RFQ.source.is_(None) | (RFQ.source != "before_po"))
     if status:
         query = query.filter(RFQ.status == status)
     rfqs = query.order_by(RFQ.created_at.desc()).offset(skip).limit(limit).all()
@@ -744,8 +749,9 @@ def build_po_draft(db: Session, rfq: RFQ, pr: P2PRequest, user: User, payload: P
     if not selected and chosen:
         payload.vendor_name = chosen.vendor_name
         # Linked to the vendor master → the vendor invoice can be matched to this PO in Finance.
-        if chosen.vendor_id:
-            payload.vendor_id = chosen.vendor_id
+        # Always the quote's own vendor record (None when the quote names a vendor outside
+        # the vendor master) — never an id sent alongside it.
+        payload.vendor_id = chosen.vendor_id
     if not selected and not (payload.vendor_name or "").strip():
         raise HTTPException(status_code=400, detail="A vendor name is required to create the PO")
     # Vendor master posting block: a vendor set Blocked / Inactive in
@@ -850,24 +856,117 @@ def build_po_draft(db: Session, rfq: RFQ, pr: P2PRequest, user: User, payload: P
                  summary=f"{user.name or user.email} created draft PO '{po.po_number}' for {pr.p2p_number} to {po.vendor_name} ({tier})."
                          + (f" Reason for not using L1: {reason}" if tier != "L1" else ""),
                  old_status=old_status, new_status="po_drafted")
+    # The session doesn't autoflush: callers query the new lines right after.
+    db.flush()
     return po
 
 
-@router.post("/{rfq_id}/po-draft", response_model=P2PPurchaseOrderResponse)
-async def create_po_draft(
+@router.post("/{rfq_id}/upload-po", response_model=P2PPurchaseOrderResponse)
+async def upload_po(
     rfq_id: int,
-    payload: P2PPurchaseOrderCreate,
+    background_tasks: BackgroundTasks,
+    tally_po_no: str = Form(...),
+    details: str = Form(...),
+    file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: User = Depends(_purchase_tab("purchase_orders", "create")),
 ):
-    """Creates an editable draft PO from the RFQ (see build_po_draft)."""
+    """Upload PO on the requisition (owner, 2026-10-30): the PO is made in Tally,
+    not in the portal. The buyer uploads the Tally PO (number + PDF) on the PR
+    with the vendor (an RFQ quote), the ship-to store and each line's price;
+    the PO record is built from the PR's own lines (so the GRN still receives
+    against Item Master ids at the PO rate) and goes straight into PO approval.
+    The manual "Create PO" draft form is gone; a PO returned for changes is
+    still edited on its draft and sent again (submit_po_draft)."""
+    ensure_tab_action(user, "p2p", "purchase_orders", "submit")  # it goes straight into PO approval
+    ensure_feature_action(user, "p2p", "purchase_orders", "po_document", "create")
+    try:
+        data = P2PUploadPOPayload.model_validate_json(details)
+    except ValidationError as e:
+        problems = "; ".join(f"{'.'.join(str(x) for x in err['loc']) or 'details'}: {err['msg']}" for err in e.errors())
+        raise HTTPException(status_code=422, detail=f"The PO details are incomplete — {problems}. Fill them in and upload again.")
     rfq = _get_rfq_or_404(db, rfq_id, user)
-    pr = _get_pr_for_rfq(db, rfq)
-    po = build_po_draft(db, rfq, pr, user, payload)
-    db.commit()
+    pr = db.get(P2PRequest, rfq.p2p_request_id)
+    if pr is None:
+        raise HTTPException(status_code=404, detail="The requisition of this RFQ was not found — reload the page.")
+    _ensure_po_uploadable(db, pr)
+
+    ref = _clean_tally_ref(db, tally_po_no, None)
+    await _check_tally_pdf(file)
+    ship_to = db.get(StoreLocation, data.ship_to_location_id)
+    if ship_to is None or not ship_to.is_active:
+        raise HTTPException(status_code=422, detail="Pick the store the goods are delivered to — the chosen store doesn't exist or is inactive.")
+    # A vendor-master pick is only for an RFQ without quotes; otherwise the PO
+    # goes to the quoted vendor, so the PO name and its vendor record can't differ.
+    has_quote = any(a.vendor_name for a in rfq.attachments) or any(vq.is_selected for vq in rfq.vendor_quotations)
+    if data.vendor_id and has_quote:
+        raise HTTPException(status_code=422, detail=f"{rfq.rfq_number} has vendor quotes — pick the vendor from its quotes (L1 by default), not from the vendor master.")
+    vendor = _active_vendor_or_400(db, data.vendor_id) if data.vendor_id else None
+
+    # The PDF goes to SharePoint BEFORE the requisition is locked: one event
+    # loop serves every request, so no await may sit between the row lock and
+    # the commit (a request waiting on that lock would freeze the server).
+    stored = await _upload_tally_pdf(user, pr.p2p_number, file)
+    try:
+        try:
+            pr = (db.query(P2PRequest).filter(P2PRequest.id == pr.id)
+                  .populate_existing().with_for_update(nowait=True).first())
+        except OperationalError:
+            raise HTTPException(status_code=409, detail="Another PO upload on this requisition is in progress — wait a moment, reload the page and check before uploading again.")
+        _ensure_po_uploadable(db, pr)
+        po = build_po_draft(db, rfq, pr, user, P2PPurchaseOrderCreate(
+            vendor_tier=data.vendor_tier, selection_reason=data.selection_reason,
+            vendor_id=vendor.id if vendor else None, vendor_name=vendor.name if vendor else None,
+            expected_delivery=data.expected_delivery, delivery_terms=data.delivery_terms or rfq.payment_terms))
+        po.ship_to_location_id = ship_to.id
+        po.plant_branch_id = ship_to.branch_id
+        if data.cost_center_id:
+            from app.modules.p2p.purpose import check_cost_center
+            check_cost_center(db, data.cost_center_id)
+            po.cost_center_id = data.cost_center_id
+
+        # Every PO line is a PR line; the buyer gives each one its Tally price.
+        priced = {ln.pr_item_id: ln for ln in data.lines}
+        lines = db.query(P2PPurchaseOrderItem).filter(P2PPurchaseOrderItem.purchase_order_id == po.id).all()
+        if set(priced) - {i.pr_item_id for i in lines}:
+            raise HTTPException(status_code=422, detail="Some priced lines are not open lines of this requisition — reload the page and enter the prices again.")
+        missing = [i.item_name for i in lines if i.pr_item_id not in priced]
+        if missing:
+            raise HTTPException(status_code=422, detail=f"Enter the unit price (as on the Tally PO) for every line — missing: {', '.join(missing)}.")
+        for item in lines:
+            ln = priced[item.pr_item_id]
+            item.unit_price = ln.unit_price
+            item.tax_rate = ln.tax_rate
+            item.price_source = "manual"
+            item.line_total = compute_line_total(item.quantity, item.unit_price, item.tax_rate)
+        po.total_value = _derive_po_total(lines)
+        db.flush()
+
+        _attach_tally_pdf(db, pr, po, user, ref, stored)
+        _send_po_for_approval(db, background_tasks, pr, po, user)
+
+        # Goods the store took before this PO existed (Before PO): the receipt now has its PO.
+        from app.modules.store.models.pre_po_receipt import StorePrePoReceipt
+        receipt = (db.query(StorePrePoReceipt)
+                   .filter(StorePrePoReceipt.p2p_request_id == pr.id, StorePrePoReceipt.status == "pending_po").first())
+        if receipt is not None:
+            receipt.status = "po_created"
+            receipt.purchase_order_id = po.id
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        # Nothing points at the stored PDF now — remove it (best effort).
+        try:
+            await delete_file_from_sharepoint(settings.SHAREPOINT_SITE_ID, stored["path"])
+        except Exception:
+            pass
+        raise
+    background_tasks.add_task(_send_p2p_po_approval_emails_background, pr.id)
     db.refresh(po)
     resp = P2PPurchaseOrderResponse.model_validate(po)
     resp.p2p_request_number = pr.p2p_number
+    resp.document_uploaded_by_name = user.name or user.email
     return resp
 
 
@@ -943,6 +1042,80 @@ async def update_po_draft(
     return resp
 
 
+def _clean_tally_ref(db: Session, tally_po_no: str | None, po_id: int | None) -> str:
+    """The Tally PO number, checked: present, short, and on no other live PO."""
+    ref = (tally_po_no or "").strip()
+    if not ref:
+        raise HTTPException(status_code=422, detail="Enter the Tally PO number — the voucher number of this PO in Tally.")
+    if len(ref) > 100:
+        raise HTTPException(status_code=422, detail="The Tally PO number is longer than 100 characters — enter only the voucher number.")
+    q = db.query(P2PPurchaseOrder.po_number).filter(
+        P2PPurchaseOrder.status != "cancelled", func.upper(P2PPurchaseOrder.external_ref) == ref.upper())
+    if po_id is not None:
+        q = q.filter(P2PPurchaseOrder.id != po_id)
+    clash = q.first()
+    if clash:
+        raise HTTPException(status_code=409, detail=f"Tally PO {ref} is already on {clash[0]} — check the number in Tally; one Tally PO belongs to one portal PO.")
+    return ref
+
+
+async def _check_tally_pdf(file: UploadFile) -> None:
+    """A real PDF within the size limit, and somewhere to store it."""
+    if (file.content_type or "").lower() != "application/pdf" or not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(status_code=415, detail="Attach the Tally PO as a PDF file (print it from Tally to PDF).")
+    head = await file.read(MAX_TALLY_PDF_BYTES + 1)
+    if len(head) > MAX_TALLY_PDF_BYTES:
+        raise HTTPException(status_code=413, detail=f"The PDF is larger than {MAX_TALLY_PDF_BYTES // (1024 * 1024)} MB — print it again at a lower quality.")
+    if not head.startswith(b"%PDF"):
+        raise HTTPException(status_code=415, detail="That file isn't a real PDF — print the Tally PO to PDF and attach that file.")
+    await file.seek(0)
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="Document storage (SharePoint) isn't set up on this server — ask the admin to configure it, then upload again.")
+
+
+def _ensure_po_uploadable(db: Session, pr: P2PRequest) -> None:
+    """Upload PO is for a requisition at RFQ stage with no PO yet."""
+    if pr.status in ("vendor_quotations", "vendor_selected"):
+        return
+    existing = db.query(P2PPurchaseOrder.po_number).filter(
+        P2PPurchaseOrder.p2p_request_id == pr.id, P2PPurchaseOrder.status != "cancelled").first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"{pr.p2p_number} already has PO {existing[0]} — open it from the requisition. "
+                                                    "If the Tally PO changed, raise a PO amendment on it.")
+    raise HTTPException(status_code=409, detail=f"A PO can be uploaded only after the quotations are in (RFQ stage) — {pr.p2p_number} is at '{pr.status}'.")
+
+
+async def _upload_tally_pdf(user: User, folder_key: str, file: UploadFile) -> dict:
+    """Saves the checked Tally PDF to SharePoint under a name of its own (time
+    prefix), so a later upload never overwrites a file an older history entry opens."""
+    file.filename = f"{datetime.now(timezone.utc):%Y%m%d-%H%M%S%f}-{file.filename or 'tally-po.pdf'}"
+    folder_path = build_sharepoint_folder_path(user.name or user.email or "", "po", folder_key)
+    return await upload_file_to_sharepoint(settings.SHAREPOINT_SITE_ID, folder_path, file)
+
+
+def _attach_tally_pdf(db: Session, pr: P2PRequest, po: P2PPurchaseOrder, user: User, ref: str, result: dict) -> None:
+    """Puts the stored Tally PDF on the PO and records it on the requisition's
+    timeline. The caller commits."""
+    replaced = po.document_filename
+    po.external_ref = ref
+    po.document_filename = result["name"]
+    po.document_content_type = "application/pdf"
+    po.document_size = result["size"]
+    po.document_sharepoint_path = result["path"]
+    po.document_sharepoint_url = result.get("webUrl")
+    po.document_uploaded_by_id = user.id
+    po.document_uploaded_at = datetime.now(timezone.utc)
+
+    # The timeline entry keeps its own copy's path, so every uploaded version
+    # stays openable from the requisition's history (p2p_requests audit document).
+    db.add(AuditLog(
+        entity_type="p2p_request", entity_id=pr.id, action="po_document_uploaded", performed_by_id=user.id,
+        summary=(f"{user.name or user.email} uploaded Tally PO {ref} ({result['name']}) for '{po.po_number}'"
+                 + (f", replacing {replaced}." if replaced else ".")),
+        attachment_url=result["path"],
+    ))
+
+
 @router.post("/{rfq_id}/po-draft/{po_id}/document", response_model=P2PPurchaseOrderResponse)
 async def upload_po_document(
     rfq_id: int,
@@ -968,45 +1141,10 @@ async def upload_po_document(
         raise HTTPException(status_code=404, detail="Draft PO not found — it may have been cancelled; reload the page.")
     if po.status != "draft" or pr.status not in _SPLIT_PO_PR_STATUSES:
         raise HTTPException(status_code=409, detail=f"{po.po_number} is no longer a draft, so its Tally PO can't be changed. Raise a PO amendment if the Tally PO changed.")
-    ref = (tally_po_no or "").strip()
-    if not ref:
-        raise HTTPException(status_code=422, detail="Enter the Tally PO number — the voucher number of this PO in Tally.")
-    if len(ref) > 100:
-        raise HTTPException(status_code=422, detail="The Tally PO number is longer than 100 characters — enter only the voucher number.")
-    clash = db.query(P2PPurchaseOrder.po_number).filter(
-        P2PPurchaseOrder.id != po.id, P2PPurchaseOrder.status != "cancelled",
-        func.upper(P2PPurchaseOrder.external_ref) == ref.upper(),
-    ).first()
-    if clash:
-        raise HTTPException(status_code=409, detail=f"Tally PO {ref} is already on {clash[0]} — check the number in Tally; one Tally PO belongs to one portal PO.")
-    if (file.content_type or "").lower() != "application/pdf" or not (file.filename or "").lower().endswith(".pdf"):
-        raise HTTPException(status_code=415, detail="Attach the Tally PO as a PDF file (print it from Tally to PDF).")
-    head = await file.read(MAX_TALLY_PDF_BYTES + 1)
-    if len(head) > MAX_TALLY_PDF_BYTES:
-        raise HTTPException(status_code=413, detail=f"The PDF is larger than {MAX_TALLY_PDF_BYTES // (1024 * 1024)} MB — print it again at a lower quality.")
-    if not head.startswith(b"%PDF"):
-        raise HTTPException(status_code=415, detail="That file isn't a real PDF — print the Tally PO to PDF and attach that file.")
-    await file.seek(0)
-    if not settings.SHAREPOINT_SITE_ID:
-        raise HTTPException(status_code=503, detail="Document storage (SharePoint) isn't set up on this server — ask the admin to configure it, then upload again.")
-
-    folder_path = build_sharepoint_folder_path(user.name or user.email or "", "po", po.po_number)
-    result = await upload_file_to_sharepoint(settings.SHAREPOINT_SITE_ID, folder_path, file)
-
-    replaced = po.document_filename
-    po.external_ref = ref
-    po.document_filename = result["name"]
-    po.document_content_type = "application/pdf"
-    po.document_size = result["size"]
-    po.document_sharepoint_path = result["path"]
-    po.document_sharepoint_url = result.get("webUrl")
-    po.document_uploaded_by_id = user.id
-    po.document_uploaded_at = datetime.now(timezone.utc)
-
-    _write_pr_audit(db, pr.id, "po_document_uploaded", user,
-                 summary=(f"{user.name or user.email} uploaded Tally PO {ref} ({result['name']}) for '{po.po_number}'"
-                          + (f", replacing {replaced}." if replaced else ".")))
-
+    ref = _clean_tally_ref(db, tally_po_no, po.id)
+    await _check_tally_pdf(file)
+    stored = await _upload_tally_pdf(user, po.po_number, file)
+    _attach_tally_pdf(db, pr, po, user, ref, stored)
     db.commit()
     db.refresh(po)
     resp = P2PPurchaseOrderResponse.model_validate(po)
@@ -1068,6 +1206,18 @@ async def submit_po_draft(
         raise HTTPException(status_code=404, detail="Draft PO not found")
     if po.status != "draft" or pr.status not in _SPLIT_PO_PR_STATUSES:
         raise HTTPException(status_code=409, detail=f"Only a drafted PO on a 'po_drafted' PR can be submitted (current status: {pr.status})")
+    _send_po_for_approval(db, background_tasks, pr, po, user)
+    db.commit()
+    background_tasks.add_task(_send_p2p_po_approval_emails_background, pr.id)
+    db.refresh(po)
+    resp = P2PPurchaseOrderResponse.model_validate(po)
+    resp.p2p_request_number = pr.p2p_number
+    return resp
+
+
+def _send_po_for_approval(db: Session, background_tasks: BackgroundTasks, pr: P2PRequest, po: P2PPurchaseOrder, user: User) -> None:
+    """Checks a PO is complete and sends it into PO approval. Flushes, never
+    commits; the caller commits and then queues the approval e-mails."""
     # Approvers must see — and sign off on — a real value. Without this the
     # chain approved blank POs and AP's 3-way match then accepted any amount.
     if not po.items:
@@ -1114,12 +1264,6 @@ async def submit_po_draft(
               "p2p_request", pr.id, user,
               [("PO", po.po_number), ("Vendor", po.vendor_name or ""), ("Value", f"{po.total_value:,.2f}" if po.total_value else ""),
                ("Requisition", pr.p2p_number), ("By", user.name or user.email)])
-    db.commit()
-    background_tasks.add_task(_send_p2p_po_approval_emails_background, pr.id)
-    db.refresh(po)
-    resp = P2PPurchaseOrderResponse.model_validate(po)
-    resp.p2p_request_number = pr.p2p_number
-    return resp
 
 
 def _po_terms(db: Session, rfq: RFQ, vendor_id: int | None) -> str | None:

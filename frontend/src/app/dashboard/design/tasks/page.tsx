@@ -11,7 +11,8 @@ import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { smallSecondaryBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
-import { PRIORITY_LABELS, toOptions } from '@/components/design/designMeta'
+import { toOptions } from '@/components/design/designMeta'
+import { isUrgent } from '@/lib/priority'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
@@ -222,7 +223,7 @@ export default function DesignTasksPage() {
                         <td style={{ ...tdStyle, maxWidth: 280 }}>
                           <div style={{ fontWeight: 600, color: TEXT.heading }}>{t.title}</div>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-                            {t.priority && t.priority !== 'medium' && smallPill(PRIORITY_LABELS[t.priority] || t.priority, t.priority === 'urgent' || t.priority === 'high' ? '#DC2626' : '#78716c')}
+                            {isUrgent(t.priority) && smallPill('Urgent', '#DC2626')}
                             {t.requirement_changed && smallPill('⚠ Requirement changed', '#b45309')}
                             {t.ready_to_close && smallPill('✓ Ready to close in Project Management', '#16A34A')}
                           </div>

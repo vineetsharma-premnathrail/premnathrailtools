@@ -8,7 +8,8 @@ import { useCan } from '@/lib/permissions'
 import { crmApi } from '@/lib/api'
 import { recordVisit } from '@/lib/crmShortcuts'
 import { formatDate, formatDateTime } from '@/lib/format'
-import { Inquiry, Organization, OrgContact, QuotationItem, QuotationLineItem, CrmActivity, CrmDocument, CrmStageLogEntry, RndRequestAssignment, CrmTechnicalOfferOption, CrmQuotationProduct, CrmQuotationApplication, CrmQuotationLookup } from '@/types'
+import { Inquiry, Organization, OrgContact, QuotationItem, QuotationLineItem, CrmActivity, CrmDocument, CrmStageLogEntry, RndRequestAssignment, CrmQuotationProduct, CrmQuotationApplication, CrmQuotationLookup } from '@/types'
+import type { CrmOfferV2, CrmRndRequirement } from '@/types/rndIntake'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
@@ -20,8 +21,8 @@ import { RichText } from '@/components/RichTextEditor'
 import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
 import MomExportDialog from '@/components/crm/MomExportDialog'
 import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
-import RequirementDiscussionTab from '@/components/crm/RequirementDiscussionTab'
-import SalesOrderHandoff from '@/components/crm/SalesOrderHandoff'
+import RndIntakeCard from '@/components/crm/RndIntakeCard'
+import BdTechnicalOffers from '@/components/crm/BdTechnicalOffers'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import QuotationStatusBar from '@/components/crm/QuotationStatusBar'
 import LostReasonDialog, { LOST_STATUS } from '@/components/crm/LostReasonDialog'
@@ -32,14 +33,14 @@ import { extractErrorMessages } from '@/lib/validation'
 import { refOf } from '@/lib/recordRef'
 import { segmentBtnStyle, RowCount, Pill, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 
-// ?tab=discussion (from a @mention notification) opens the Discussion tab;
-// ?tab=quotations (quotation approval link) opens the Quotations tab.
-const tabFromUrl = (): 'Discussion' | 'Info' | 'Quotations' => {
+// ?tab=quotations (quotation approval link) opens the Quotations tab; ?tab=technical-offers the Technical Offers tab
+// (an older ?tab=discussion link lands on Info — there is no Discussion any more).
+const tabFromUrl = (): 'Info' | 'Quotations' | 'Technical Offers' => {
   const t = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tab') : null
-  return t === 'discussion' ? 'Discussion' : t === 'quotations' ? 'Quotations' : 'Info'
+  return t === 'quotations' ? 'Quotations' : t === 'technical-offers' ? 'Technical Offers' : 'Info'
 }
 
-const TABS = ['Info', 'Discussion', 'Documents', 'Quotations', 'Follow Ups', 'Timeline'] as const
+const TABS = ['Info', 'Documents', 'Technical Offers', 'Quotations', 'Follow Ups', 'Timeline'] as const
 
 export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId: number; onDeleted?: () => void }) {
   const { user } = useAuth()
@@ -49,7 +50,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
   // The other sub-tabs / actions are features too (core/features/crm.py).
   const seeTab = (t: typeof TABS[number]) => t === 'Info'
     || (t === 'Quotations' && seeQuotations)
-    || (t === 'Discussion' && canFeature('crm', 'inquiries_tenders', 'discussion', 'view'))
+    || (t === 'Technical Offers' && canFeature('crm', 'inquiries_tenders', 'technical_offer', 'view'))
     || (t === 'Documents' && canFeature('crm', 'inquiries_tenders', 'documents', 'view'))
     || (t === 'Follow Ups' && canFeature('crm', 'inquiries_tenders', 'followups', 'view'))
     || (t === 'Timeline' && canFeature('crm', 'inquiries_tenders', 'timeline', 'view'))
@@ -73,6 +74,9 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
   const [sendingTOR, setSendingTOR] = useState(false)
   const [torError, setTorError] = useState<string | string[]>('')
   const [showTorPicker, setShowTorPicker] = useState(false)
+  // R&D ID, revision and review state of the requirement sent to R&D (null = never sent / not visible to me).
+  const [rnd, setRnd] = useState<CrmRndRequirement | null>(null)
+  const loadRnd = () => crmApi.getRndRequirement('inquiry', inquiryId).then(setRnd).catch(() => setRnd(null))
 
   const load = async () => {
     setLoading(true)
@@ -93,6 +97,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
         setContact(null)
       }
       crmApi.getInquirySpecRevisions(inquiryId, true).then(setRevisions).catch(() => setRevisions([]))
+      loadRnd()
     } catch (err) {
       setError(extractErrorMessages(err, 'Inquiry not found.'))
     } finally {
@@ -106,17 +111,10 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inquiryId])
 
-  // No discussion until the Technical Requirement has been sent to R&D.
-  useEffect(() => {
-    if (tab === 'Discussion' && inquiry && !inquiry.technical_offer_sent_at) Promise.resolve().then(() => setTab('Info'))
-  }, [tab, inquiry])
-
   // Creator-or-admin (backend rule) AND Inquiries & Tenders › Edit in the Permission Matrix.
   const canModify = !!inquiry && !!user && (user.role === 'admin' || inquiry.created_by_id === user.id) && can('crm', 'inquiries_tenders', 'edit')
-  // Sent to Sales (a live sales order exists): the inquiry is read-only for everyone.
-  const lockedBySales = !!inquiry?.sales_order_number
-  const canEditRecord = canModify && !lockedBySales
-  const canDeleteRecord = !!inquiry && !lockedBySales && canDelete('crm', 'inquiries_tenders', inquiry.created_by_id ?? null)
+  const canEditRecord = canModify
+  const canDeleteRecord = !!inquiry && canDelete('crm', 'inquiries_tenders', inquiry.created_by_id ?? null)
   const isAdmin = user?.role === 'admin'
 
   const patch = async (payload: Record<string, unknown>) => {
@@ -161,6 +159,9 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
     !inquiry.technical_offer_sent_at ||
     (!!inquiry.updated_at && new Date(inquiry.updated_at) > new Date(inquiry.technical_offer_sent_at))
   )
+  // R&D returned it: BD can send again as soon as it has fixed what R&D asked for, even before editing the record.
+  const rndReturned = rnd?.status === 'returned'
+  const canSendAgain = torActive || rndReturned
 
   // The PDF has no requirement details to print until these are filled — block
   // sending an effectively-empty document to R&D rather than emailing a blank one.
@@ -179,13 +180,14 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
   }
 
   const sendTechnicalOfferRequest = async (documentIds: number[], assignment: RndRequestAssignment) => {
-    if (!inquiry || !torActive || missingRequirementDetails) return
+    if (!inquiry || !canSendAgain || missingRequirementDetails) return
     setSendingTOR(true)
     setTorError('')
     try {
       setInquiry(await crmApi.createInquiryTechnicalOfferRequest(inquiry.id, documentIds, assignment))
       setShowTorPicker(false)
       setTab('Info')
+      loadRnd()
     } catch (err) {
       setTorError(extractErrorMessages(err, 'Failed to send Technical Requirement to R&D.'))
     } finally {
@@ -218,30 +220,24 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
                 ← Back
               </button>
               {/* Sending needs Inquiries & Tenders › Send Technical Requirement (TOR) to R&D › Create. */}
-              {canSendTor && !lockedBySales && <button
+              {canSendTor && <button
                 onClick={openTorPicker}
-                disabled={!torActive || sendingTOR}
+                disabled={!canSendAgain || sendingTOR}
                 data-tour="inq-tor-btn"
                 title={
-                  !torActive
+                  !canSendAgain
                     ? `Already sent as ${inquiry.technical_offer_number} — edit the inquiry to send again.`
                     : missingRequirementDetails
                     ? 'Fill Product and Customer Requirement before sending — the document would otherwise be empty.'
                     : 'Sends R&D a Word document with the customer and its type and region, every product with its specification, and the project background.'
                 }
-                style={{ ...secondaryBtnStyle, opacity: !torActive || sendingTOR ? 0.5 : 1, cursor: !torActive || sendingTOR ? 'not-allowed' : 'pointer' }}
+                style={{ ...secondaryBtnStyle, opacity: !canSendAgain || sendingTOR ? 0.5 : 1, cursor: !canSendAgain || sendingTOR ? 'not-allowed' : 'pointer' }}
               >
                 {sendingTOR ? 'Sending…' : 'Send Technical Requirement to R&D'}
               </button>}
-              <SalesOrderHandoff source="inquiry" record={inquiry} tourId="inq-create-so-btn" />
               {canEditRecord && <button onClick={() => { setEditing(true); setTab('Info') }} data-tour="inq-edit-btn" style={secondaryBtnStyle}>Edit</button>}
               {canDeleteRecord && <button onClick={() => setShowDeleteConfirm(true)} data-tour="inq-delete-btn" style={dangerBtnStyle}>Delete</button>}
             </div>
-            {lockedBySales && (
-              <span data-tour="inq-sales-lock" style={{ fontSize: 11.5, fontWeight: 600, color: '#15803d', background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.25)', borderRadius: 8, padding: '4px 10px', maxWidth: 420, textAlign: 'right' }}>
-                🔒 Sent to Sales as {inquiry.sales_order_number} — this inquiry can no longer be edited. Cancel the order in Sales to change it.
-              </span>
-            )}
             {inquiry.technical_offer_number && (
               <span style={{ fontSize: 11, color: '#78716c' }}>
                 {torActive ? 'Previously sent as ' : 'Sent as '}<strong>{inquiry.technical_offer_number}</strong>
@@ -261,8 +257,10 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       <MessageDialog open={!!torError} variant="error" title="Send Technical Requirement Failed" message={torError} onClose={() => setTorError('')} />
       <MessageDialog open={!!error} variant="error" title="Inquiry Action Failed" message={error} onClose={() => setError('')} />
 
+      {!editing && <RndIntakeCard rnd={rnd} tourId="inq-rnd-status" canResend={canSendTor} sending={sendingTOR} onResend={openTorPicker} />}
+
       <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, overflowX: 'auto', overflowY: 'visible' }}>
-        {TABS.filter((t) => (t !== 'Discussion' || !!inquiry.technical_offer_sent_at) && seeTab(t)).map((t) => (
+        {TABS.filter((t) => seeTab(t)).map((t) => (
           <div key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             <button
               onClick={() => setTab(t)}
@@ -299,7 +297,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
           onChangeLeadInfo={(p) => (p.status === LOST_STATUS && !inquiry.lost_reason_code ? setLostStatusPending(true) : patchLeadInfo(p))} />
       )}
       {tab === 'Quotations' && seeQuotations && <QuotationsTab inquiryId={inquiry.id} org={org} contact={contact} inquiry={inquiry} />}
-      {tab === 'Discussion' && seeTab('Discussion') && inquiry.technical_offer_sent_at && <RequirementDiscussionTab source="inquiry" recordId={inquiry.id} side="crm" />}
+      {tab === 'Technical Offers' && seeTab('Technical Offers') && <BdTechnicalOffers kind="inquiry" recordId={inquiry.id} />}
       {tab === 'Documents' && seeTab('Documents') && <DocumentsTab inquiry={inquiry} canModify={canModify && canFeature('crm', 'inquiries_tenders', 'documents', 'create')} isAdmin={isAdmin} />}
       {tab === 'Follow Ups' && seeTab('Follow Ups') && <ActivitiesTab inquiry={inquiry} org={org} />}
       {tab === 'Timeline' && seeTab('Timeline') && <TimelineTab inquiryId={inquiry.id} />}
@@ -504,7 +502,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
   const [revisionSource, setRevisionSource] = useState<QuotationItem | null>(null)
   const todayIso = new Date().toLocaleDateString('en-CA') // local date, not UTC
   // R&D's released Technical Offers for this inquiry — the quotation quotes against one of them.
-  const [technicalOffers, setTechnicalOffers] = useState<CrmTechnicalOfferOption[]>([])
+  const [technicalOffers, setTechnicalOffers] = useState<CrmOfferV2[]>([])
   const currentOffer = technicalOffers.find((o) => o.status === 'released')
   const emptyForm = {
     quotation_type: 'Domestic', gst_type: 'CGST_SGST', quote_date: todayIso, client_name: org?.name || '', client_contact_name: contact?.name || '',
@@ -550,13 +548,13 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
     crmApi.listPaymentTerms().then(setPaymentTerms).catch(() => {})
   }, [])
   useEffect(() => {
-    crmApi.listInquiryTechnicalOffers(inquiryId).then(setTechnicalOffers)
+    crmApi.listTechnicalOffers('inquiry', inquiryId).then(setTechnicalOffers)
       .catch((err) => setTabError({ title: 'Cannot Load Technical Offers', message: extractErrorMessages(err, "Could not load R&D's Technical Offers for this inquiry. Refresh the page; if it persists, check your connection.") }))
   }, [inquiryId])
-  const openTechnicalOfferPdf = async (offer: CrmTechnicalOfferOption) => {
+  const openTechnicalOfferPdf = async (offer: CrmOfferV2) => {
     const tab = window.open('', '_blank')
     try {
-      const url = URL.createObjectURL(await crmApi.technicalOfferPdf(inquiryId, offer.id))
+      const url = URL.createObjectURL(await crmApi.technicalOfferFile('inquiry', inquiryId, offer.id))
       if (tab) tab.location.href = url
       else window.open(url, '_blank')
     } catch (err) {
@@ -584,7 +582,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
     if (form.pricing_mode === 'lumpsum' || !seeQuotePrices) return
     crmApi.quotationProductPrice(inquiryId, product.id).then((r) => {
       if (r.price == null) {
-        setProductNotice(`${product.name} has no price for this customer in the Product master — type the Price/unit, or add a price under Sales › Products › ${product.name} › Pricing.`)
+        setProductNotice(`${product.name} has no price for this customer in the Product master — type the Price/unit, or add a price under CRM › Products › ${product.name} › Pricing.`)
         return
       }
       setItems((rows) => rows.map((row, i) => (i === idx && row.product_id === String(product.id) && !row.unit_price) ? withPrice(row, r.price as number) : row))
@@ -962,14 +960,14 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                   {fieldErrors.quote_date && <p style={fieldErrorTextStyle}>{fieldErrors.quote_date}</p>}
                 </SF>
                 <div style={{ gridColumn: 'span 2' }}>
-                  <SF label="Technical Offer (R&D)" tourId="quot-tor-number">
+                  <SF label="Technical Offer" tourId="quot-tor-number">
                     {technicalOffers.length === 0 ? (
-                      <p style={{ fontSize: 12.5, color: '#78716c', margin: '10px 0 0' }}>No Technical Offer from R&amp;D yet — R&amp;D prepares it in R&amp;D › Requirements › Technical Offers and the R&amp;D head sends it to the BD team.</p>
+                      <p style={{ fontSize: 12.5, color: '#78716c', margin: '10px 0 0' }}>No Technical Offer yet — R&amp;D uploads theirs and the R&amp;D head releases it to the BD team, or upload your own in this inquiry&apos;s Technical Offers tab.</p>
                     ) : (
                       <Select value={form.technical_offer_id} onChange={(e) => setForm((f) => ({ ...f, technical_offer_id: e.target.value }))} style={sheetInput}>
                         <option value="">— No technical offer —</option>
                         {technicalOffers.map((o) => (
-                          <option key={o.id} value={String(o.id)}>{o.offer_number} · {o.title}{o.status === 'superseded' ? ' (superseded)' : ''}</option>
+                          <option key={o.id} value={String(o.id)}>{o.offer_number} · {o.title}{o.origin === 'bd' ? ' — Uploaded by BD, not reviewed by R&D' : ''}{o.status === 'superseded' ? ' (superseded)' : ''}</option>
                         ))}
                       </Select>
                     )}
@@ -980,9 +978,13 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                       <p data-tour="quot-tor-date" style={{ fontSize: 12, color: '#57534e', margin: '6px 0 0' }}>
                         Technical Offer Date: <strong>{formatDate(picked.offer_date)}</strong>
                         {picked.status === 'superseded' && <span style={{ color: '#b45309' }}> · a newer revision exists</span>}
-                        {' · '}<a href="#" onClick={(e) => { e.preventDefault(); openTechnicalOfferPdf(picked) }} style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 600 }}>Open PDF</a>
+                        {picked.based_on_earlier_revision && <span style={{ color: '#b45309' }}> · based on an earlier requirement revision</span>}
+                        {' · '}<a href="#" onClick={(e) => { e.preventDefault(); openTechnicalOfferPdf(picked) }} style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 600 }}>Open file</a>
+                        {picked.origin === 'bd' && <span style={{ display: 'block', marginTop: 4, color: '#7C3AED', fontWeight: 600 }}>{picked.label || 'Uploaded by BD, not reviewed by R&D'}</span>}
                         <span style={{ display: 'block', marginTop: 6, padding: '6px 10px', borderRadius: 8, background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#1E40AF' }}>
-                          The quotation document will have Technical Offer {picked.offer_number} first, then the commercial quotation on the next page, in one Word file (editable in Word).
+                          {/\.pdf$/i.test(picked.file_name || '')
+                            ? `Technical Offer ${picked.offer_number} is a PDF, so it is attached separately — it is not merged into the Word quotation.`
+                            : `The quotation document will have Technical Offer ${picked.offer_number} first, then the commercial quotation on the next page, in one Word file (editable in Word).`}
                         </span>
                       </p>
                     )

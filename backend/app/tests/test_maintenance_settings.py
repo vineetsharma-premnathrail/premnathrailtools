@@ -70,7 +70,7 @@ def test_priority_matrix_drives_new_requests(client, db):
     asset = create_asset(client, hdr(maint), branch, criticality="C")
     raise_ = lambda: client.post(f"{BASE}/requests", json={  # noqa: E731
         "asset_id": asset["id"], "machine_down": True, "problem_description": "Hydraulic leak"}, headers=hdr(maint)).json()
-    assert raise_()["priority"] == "normal"
+    assert raise_()["priority"] == "standard"
     assert _put(client, admin, {"priority_c_down": "urgent"}).status_code == 200
     assert raise_()["priority"] == "urgent"
 

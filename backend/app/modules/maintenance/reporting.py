@@ -45,6 +45,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
 from app.modules.organization.models.branch import Branch
+from app.core.priority import map_legacy_priority
 from app.modules.maintenance.models.asset import MaintenanceAsset
 from app.modules.maintenance.models.work_order import (
     MaintenanceWorkOrder, MaintenanceWorkOrderSpare, MaintenanceLabourLog, MAINTENANCE_WO_OPEN_STATUSES,
@@ -57,7 +58,7 @@ _DEFAULT_WORKING_DAYS = frozenset({0, 1, 2, 3, 4, 5})  # Mon–Sat
 
 BREAKDOWN_TYPES = ("breakdown", "corrective")
 PLANNED_TYPES = ("preventive", "calibration", "inspection")
-PRIORITY_ORDER = ("urgent", "high", "normal", "low")
+PRIORITY_ORDER = ("urgent", "standard")
 AGE_BUCKETS = (("0-2", 0, 2), ("3-7", 3, 7), ("8-30", 8, 30), (">30", 31, None))
 
 DEFINITIONS = {
@@ -469,7 +470,7 @@ def compute_summary(
             continue
         age = (today - (_ist_date(w.created_at) or today)).days
         label = next(lbl for lbl, lo, hi in AGE_BUCKETS if age >= lo and (hi is None or age <= hi))
-        pr = w.priority if w.priority in PRIORITY_ORDER else "normal"
+        pr = map_legacy_priority(w.priority)
         backlog[label][pr] += 1
         backlog_total += 1
 

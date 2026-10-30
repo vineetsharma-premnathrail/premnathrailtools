@@ -1,6 +1,6 @@
 """SD pricing conditions (VK11–VK13), product master merge (COMMPR01) and
 customer AMC / CMC service contracts (VA41–VA43): price defaulting with a
-reasoned override on SO / quotation / service invoice lines, minimum-price
+reasoned override on quotation / service invoice lines, minimum-price
 deviation, exact-only product mapping + mapping screen + product order book,
 contract approval, entitlement on SR creation, periodic AR billing,
 renewal and reminders."""
@@ -20,10 +20,8 @@ from app.modules.main.models.notification import Notification
 from app.modules.organization.services import approval_engine as engine
 from app.modules.products.models.price_condition import ProductPriceCondition
 from app.modules.products.models.product import FinishedProduct
-from app.modules.sales.models.order import SalesOrderLine
 from app.tests.test_accounts_finance import books, gstin_for  # noqa: F401  (fixture)
 from app.tests.test_erp_service_sap_gaps import hdr, mk_machine, mk_sr, mk_user
-from app.tests.test_sales import BASE as SALES, attach_po, payload_from_prefill, setup_customer, setup_people
 
 import pytest
 from app.modules.erp import contracts as _contracts
@@ -67,7 +65,7 @@ def _cond(client, admin, **body):
 # ── Pricing conditions ──────────────────────────────────────────────────────
 
 def test_price_conditions_resolve_customer_beats_list_and_overlap_refused(client, db):
-    admin = mk_user(db, "pc_admin@premnathrail.com", apps=("sales", "products"))
+    admin = mk_user(db, "pc_admin@premnathrail.com", apps=("crm",))
     org = Organization(name="Konkan Railway")
     db.add(org)
     db.commit()
@@ -97,47 +95,20 @@ def test_price_conditions_resolve_customer_beats_list_and_overlap_refused(client
     # Before the validity window there is no price.
     old = client.get(f"{PC}/resolve", params={"product_id": p.id, "on": str(TODAY - timedelta(days=60))}, headers=hdr(admin)).json()
     assert old["price"] is None
-    # Maintaining needs Sales › Pricing; a Products-only user can read but not create.
-    viewer = mk_user(db, "pc_view@premnathrail.com", role="user", apps=("products",))
+    # Maintaining needs CRM › Products › Pricing (create); someone who may only view Products can read but not create.
+    viewer = mk_user(db, "pc_view@premnathrail.com", role="user", apps=())
+    viewer.granular_permissions = ["crm:products:view", "crm:products.pricing:view"]
+    db.commit()
     assert client.get(PC, headers=hdr(viewer)).status_code == 200
     assert _cond(client, viewer, condition_type="price", item_kind="product", product_id=p.id, amount=1,
                  valid_from=str(TODAY + timedelta(days=500))).status_code == 403
-
-
-def test_so_line_defaults_price_override_needs_reason_and_min_price_is_deviation(client, db):
-    maker, head, director, _ = setup_people(db, partner=True)
-    org, inq, _q = setup_customer(db, qty=1, price=3000000)
-    p = _product(db, code="RRV-X", name="RRV X", model="RRV-X")
-    admin = mk_user(db, "pc_admin2@premnathrail.com", apps=("sales",))
-    assert _cond(client, admin, condition_type="price", item_kind="product", product_id=p.id, amount=2500000, min_price=2400000).status_code == 201
-    body = payload_from_prefill(client, hdr(maker), inq)
-    body["lines"] = [{"line_number": 1, "line_type": "rrv", "description": "RRV X", "product_id": p.id, "quantity": 1,
-                      "unit_price": 0, "gst_rate": 18}]
-    r = client.post(f"{SALES}/orders", json=body, headers=hdr(maker))
-    assert r.status_code == 200, r.text
-    so = r.json()
-    ln = so["lines"][0]
-    assert ln["unit_price"] == 2500000 and ln["list_price"] == 2500000 and ln["hsn_sac_code"] == "87099000"
-
-    # Typed price below list without a reason → 422; with reason → saved.
-    line = {**body["lines"][0], "id": ln["id"], "unit_price": 2300000}
-    r = client.put(f"{SALES}/orders/{so['id']}/lines", json=[line], headers=hdr(maker))
-    assert r.status_code == 422 and "reason" in r.json()["detail"]
-    r = client.put(f"{SALES}/orders/{so['id']}/lines", json=[{**line, "price_override_reason": "Matching L1 bid"}], headers=hdr(maker))
-    assert r.status_code == 200, r.text
-    assert r.json()["lines"][0]["price_override_reason"] == "Matching L1 bid"
-    # Net below the minimum price is a deviation at submit.
-    attach_po(db, so["id"])
-    r = client.post(f"{SALES}/orders/{so['id']}/submit", headers=hdr(maker))
-    assert r.status_code == 200, r.text
-    assert "price_below_list" in r.json()["deviation_flags"]
 
 
 def test_freight_and_quotation_line_override(client, db):
     org = Organization(name="Eastern Railway")
     db.add(org)
     db.commit()
-    admin = mk_user(db, "pc_admin3@premnathrail.com", apps=("sales", "crm"))
+    admin = mk_user(db, "pc_admin3@premnathrail.com", apps=("crm",))
     p = _product(db, code="SPL-1", name="Scissor Lift", model="SL-1")
     _cond(client, admin, condition_type="price", item_kind="product", product_id=p.id, amount=500)
     inq = Inquiry(universal_id="INQ-PC-1", org_id=org.id, product="Scissor Lift", quantity=1)
@@ -291,7 +262,7 @@ def test_amc_sr_billing_skips_covered_labour_and_uses_rate_list(client, books):
     cust = books["c_local"]
     admin, m, c = _contract_setup(client, db, cust, visits_included=0)
     _approve(client, db, admin, c)
-    sales_admin = mk_user(db, "rate_admin@premnathrail.com", apps=("sales",))
+    sales_admin = mk_user(db, "rate_admin@premnathrail.com", apps=("crm",))
     assert _cond(client, sales_admin, condition_type="price", item_kind="service", service_code="visit", amount=1500).status_code == 201
     # Spares used on an AMC visit: marked chargeable with a reason → labour lines are left out.
     sr = mk_sr(client, admin, m, is_chargeable=True, chargeable_reason="Spares are not covered by the AMC").json()

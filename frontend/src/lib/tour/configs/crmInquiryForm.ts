@@ -57,9 +57,8 @@ const config: TourConfig = {
       title: 'Customer Requirement Priority',
       required: true,
       options: [
-        { value: 'High', meaning: 'Important requirement, quick action needed.' },
-        { value: 'Medium', meaning: 'Normal requirement (default).' },
-        { value: 'Low', meaning: 'Can be handled later.' },
+        { value: 'Standard', meaning: 'Normal requirement (default).' },
+        { value: 'Urgent', meaning: 'Important requirement, quick action needed.' },
       ],
     },
     {
@@ -77,7 +76,7 @@ const config: TourConfig = {
         { value: 'Closed - Ordered', meaning: 'Customer placed an order — inquiry is won.' },
         { value: 'Closed - Not Ordered', meaning: 'Customer did not proceed — inquiry is lost.' },
       ],
-      why: 'Status drives where this inquiry shows up on the dashboard. Setting it to Order Received lets Sales create the sales order.',
+      why: 'Status drives where this inquiry shows up on the dashboard. Setting it to Order Received records that the customer has ordered; the project is then started in Project Management.',
     },
     {
       target: 'inq-current-status-note',
@@ -91,7 +90,7 @@ const config: TourConfig = {
       title: 'Product',
       required: true,
       purpose: 'What the customer asked for, in their words (free text) — e.g. "RRV for OHE maintenance, 1676 mm BG".',
-      why: 'An inquiry records the requirement as the customer states it. The exact product and price are picked from the Product master (Sales › Products) on the quotation line. The same text cannot be entered twice in one inquiry.',
+      why: 'An inquiry records the requirement as the customer states it. The exact product and price are picked from the Product master (CRM › Products) on the quotation line. The same text cannot be entered twice in one inquiry.',
     },
     {
       target: 'inq-product-spec',

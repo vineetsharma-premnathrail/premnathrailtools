@@ -23,11 +23,11 @@ const config: TourConfig = {
       title: 'Quotation status',
       purpose: 'Every quotation follows Draft → Awaiting approval → Approved → Sent to customer → Accepted or Lost (Expired if Valid Until passes with no decision). The buttons here move it one step at a time.',
       options: [
-        { value: 'Draft', meaning: 'Being prepared. While quotation approval is switched off the button reads "Finalise quotation" and it is approved at once. When approval is on, "Submit for approval" sends it to the Sales Head (and a Director / Partner when the value or discount is above the Sales › Settings › Quotation approval limits).' },
+        { value: 'Draft', meaning: 'Being prepared. While quotation approval is switched off the button reads "Finalise quotation" and it is approved at once. When approval is on, "Submit for approval" sends it to the quotation approver (and a Director / Partner when the value or discount is above the CRM › Settings › Quotation approval limits).' },
         { value: 'Awaiting approval', meaning: 'Approvers see it in My Approvals. Withdraw it to change it; it cannot be revised while waiting.' },
         { value: 'Approved', meaning: 'Released — click "Mark as sent to customer" once you have sent it, or "Customer rejected / lost" (a reason is required) if the customer declines. After Valid Until it expires automatically.' },
-        { value: 'Sent to customer', meaning: 'With the customer. Click "Customer accepted" (optional remarks) when they agree — Sales raises the order from the accepted quotation and copies its prices and terms — or "Customer rejected / lost" with the reason (price, delivery, competitor …).' },
-        { value: 'Accepted / Lost', meaning: 'The recorded customer outcome. Only an admin can correct it with "Reopen" (reason required); it goes back to Sent. Not possible once a sales order was raised from it.' },
+        { value: 'Sent to customer', meaning: 'With the customer. Click "Customer accepted" (optional remarks) when they agree — the project is then started in Project Management — or "Customer rejected / lost" with the reason (price, delivery, competitor …).' },
+        { value: 'Accepted / Lost', meaning: 'The recorded customer outcome. Only an admin can correct it with "Reopen" (reason required); it goes back to Sent. Not possible once the order has been taken forward.' },
       ],
       why: 'Only the quotation creator, the inquiry owner / BD owner or an admin can mark it sent, accepted or lost (and they need Quotations › Edit). Edit works only while a quotation is Draft — withdraw it from approval first. Once approved it is locked for everyone, admins included; a new price or term is a new quotation (Create revision from this quotation).',
     },
@@ -147,7 +147,7 @@ const config: TourConfig = {
       validExample: 'RRV Mobile Crane',
       invalidExample: 'A row left completely blank — silently ignored, so an unused extra row from "+ Add Line Item" never blocks saving.',
       after: 'Picking a product puts its name on the quotation, fills the model number, and fills the price when a price is set for this customer in Products.',
-      why: 'The product link is what Sales, Service and reports use to follow this item. A product that is missing from the list must be added in Products first. Saving is blocked until every line has a product.',
+      why: 'The product link is what Service and reports use to follow this item. A product that is missing from the list must be added in Products first. Saving is blocked until every line has a product.',
     },
     {
       target: 'quot-item-model',

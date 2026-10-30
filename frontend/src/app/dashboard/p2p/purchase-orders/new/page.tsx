@@ -1,10 +1,9 @@
 'use client'
 
-// Create a PO for a requisition whose RFQ is done: the PO goes to the RFQ's
-// L1 vendor (linked to the vendor master, so Finance can match the invoice).
-// Steps: pick the vendor & create the draft (PO number generated) → price
-// each line (pre-filled from the vendor's catalog where it lists the item) →
-// delivery, generated Word PO document. Quantity can be raised (never lowered
+// A requisition's PO: view it, and correct a draft (a PO returned for changes)
+// and send it for approval again. POs are not created here (owner, 2026-10-30):
+// the PO is made in Tally and uploaded on the requisition (Upload PO).
+// On a draft: price each line → delivery, generated Word PO document. Quantity can be raised (never lowered
 // below the requisition) while the PO is a draft. Save keeps the draft, Download PO
 // gives the Word file, Send for approval submits it (Settings PO approvers, then any one Partner). Terms & conditions come from
 // Procurement › Settings + the vendor and aren't edited here.
@@ -19,7 +18,6 @@ import PrePoAttachments from '@/components/store/PrePoAttachments'
 import { prePoProcurementApi, PrePoReceipt } from '@/lib/prePoApi'
 import { P2PPurchaseOrder, P2PRequest, RFQ } from '@/types'
 import { mmQuotationsApi } from '@/lib/mmPurchasingApi'
-import POReadyList from '@/components/p2p/POReadyList'
 import { accountAssignmentApi } from '@/lib/mmLogisticsApi'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import POAmendmentPanel from '@/components/p2p/POAmendmentPanel'
@@ -29,7 +27,6 @@ import { formatDate } from '@/lib/format'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, FileDropZone } from '@/components/shared/FormSheet'
 import P2PNav from '@/components/p2p/P2PNav'
 import DateField from '@/components/erp/DateField'
-import CreatePODialog from '@/components/p2p/CreatePODialog'
 import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { extractErrorMessages } from '@/lib/validation'
@@ -93,7 +90,6 @@ export default function CreatePurchaseOrderPage() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [showCreate, setShowCreate] = useState(false)
   // The Tally PO (owner, 2026-10-27): its Tally number + PDF, required before Send for approval.
   const [tallyNo, setTallyNo] = useState('')
   const [tallyFiles, setTallyFiles] = useState<File[]>([])
@@ -129,8 +125,6 @@ export default function CreatePurchaseOrderPage() {
       const draft: P2PPurchaseOrder | null = (pickedPoId ? live.find((p) => p.id === pickedPoId) : null) || live.find((p) => p.status === 'draft') || live[0] || null
       setPo(draft)
       setReceipt(draft ? await prePoProcurementApi.byPo(draft.id).catch(() => null) : null)
-      // Arrived from the RFQ's "Select Vendor & Create PO": go straight to the vendor pick.
-      if (!draft && new URLSearchParams(window.location.search).get('create') === '1') setShowCreate(true)
       if (draft) {
         setLineDates(Object.fromEntries((draft.items as PoLine[]).map((i) => [i.id, i.delivery_date || ''])))
         setQtys(Object.fromEntries(draft.items.map((i) => [i.id, String(i.quantity)])))
@@ -155,7 +149,7 @@ export default function CreatePurchaseOrderPage() {
     } finally {
       setLoading(false)
     }
-  }, [rfqId, rfqRef, pickedPoId, setShowCreate])
+  }, [rfqId, rfqRef, pickedPoId])
 
   useEffect(() => { if (isPurchase) Promise.resolve().then(load) }, [isPurchase, load])
 
@@ -259,7 +253,7 @@ export default function CreatePurchaseOrderPage() {
   const poValue = po ? (editable ? (unpriced.length ? '—' : rupees(total)) : rupees(po.total_value)) : '—'
 
   return (
-    <FormPage nav={<P2PNav />} icon="cart" title={po ? `Purchase Order ${po.po_number}` : 'Create Purchase Order'}
+    <FormPage nav={<P2PNav />} icon="cart" title={po ? `Purchase Order ${po.po_number}` : 'Purchase Order'}
       subtitle={[pr?.p2p_number, receipt ? `From store — Before-PO receipt ${receipt.receipt_number}` : rfq?.rfq_number, pr?.project_label ? `Project: ${pr.project_label}` : null].filter(Boolean).join(' · ') || 'Purchase order for a requisition whose RFQ is done'}
       onBack={() => router.push('/dashboard/p2p/purchase-orders')} backTour="po-new-back"
       footer={<>
@@ -286,10 +280,12 @@ export default function CreatePurchaseOrderPage() {
         </div>
       )}
 
-      {/* Opened without a requisition (typed / bookmarked link): pick one here. */}
+      {/* Opened without a requisition (typed / bookmarked link). */}
       {!loading && !rfqRef && (
         <div style={{ padding: '20px 24px' }}>
-          <POReadyList />
+          <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>
+            POs are not created here. Make the PO in Tally and upload it on its requisition (Purchase Requisitions › open the requisition › Upload PO).
+          </p>
         </div>
       )}
 
@@ -368,12 +364,12 @@ export default function CreatePurchaseOrderPage() {
                     </p>
                   </div>
                 )}
-                {!po && can('p2p', 'purchase_orders', 'create') && (
+                {!po && (
                   <>
-                    <button type="button" disabled={busy} onClick={() => setShowCreate(true)} style={{ ...sheetBtn('primary', SHEET.BLUE, busy), marginTop: 16 }}>
-                      <SheetIcon name="plus" size={16} />Choose vendor &amp; create PO
+                    <button type="button" onClick={() => router.push(recordPath('/dashboard/p2p', pr))} style={{ ...sheetBtn('primary', SHEET.BLUE), marginTop: 16 }}>
+                      <SheetIcon name="upload" size={16} />Open requisition to upload PO
                     </button>
-                    <p style={sheetHint}>Pick which quoted vendor gets the PO (L1 by default). The PO takes this requisition&apos;s lines still to be bought; you price them next.</p>
+                    <p style={sheetHint}>This requisition has no PO yet. Make the PO in Tally, then upload it on the requisition — it goes for approval from there.</p>
                   </>
                 )}
               </SheetSection>
@@ -554,7 +550,6 @@ export default function CreatePurchaseOrderPage() {
       <ConfirmDialog open={confirmSend} danger={false} confirmLabel="Send for approval" title="Send this PO for approval?"
         message="The draft is saved and goes to the PO approvers, then a Partner. Prices and quantities are locked while it is in approval."
         onConfirm={sendForApproval} onCancel={() => setConfirmSend(false)} />
-      {showCreate && rfq && <CreatePODialog initialRfqId={rfq.id} onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); load() }} />}
     </FormPage>
   )
 }

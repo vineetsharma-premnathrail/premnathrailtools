@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access, require_tab_action
+from app.core.permissions import require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.products.models.application import ProductApplication
@@ -13,10 +13,11 @@ from app.modules.products.schemas.application import (
     ProductApplicationCreate, ProductApplicationUpdate, ProductApplicationResponse,
 )
 
-router = APIRouter(prefix="/products/applications", tags=["Products"], dependencies=[Depends(require_app_access("products"))])
+router = APIRouter(prefix="/products/applications", tags=["Products"], dependencies=[Depends(require_tab_access("crm", "products"))])
 
-_CAN_CREATE = require_tab_action("sales", "applications", "create")
-_CAN_EDIT = require_tab_action("sales", "applications", "edit")
+# Applications are part of the one CRM › Products tab (2026-10-30).
+_CAN_CREATE = require_tab_action("crm", "products", "create")
+_CAN_EDIT = require_tab_action("crm", "products", "edit")
 
 
 def _norm_code(code: str) -> str:

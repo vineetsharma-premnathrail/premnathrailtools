@@ -7,6 +7,7 @@ Who can edit: admin, an explicit `maintenance:settings:edit` grant, or an
 explicit `maintenance:work_orders:approve` grant (the maintenance planner /
 head who already verifies and closes jobs). Explicit grants only — the
 Permission Matrix's opt-in fallthrough does not make everyone an editor."""
+from app.core.priority import map_legacy_priority
 from app.core.settings_framework import (
     ModuleSettingsDef, SettingSpec, can_edit_settings, get_setting as _get, register_module_settings,
 )
@@ -22,7 +23,7 @@ MAINTENANCE_SETTING_GROUPS = {
     "safety": "Work permits (permit-to-work)",
 }
 
-_PRIORITIES = [("low", "Low"), ("normal", "Normal"), ("high", "High"), ("urgent", "Urgent")]
+_PRIORITIES = [("standard", "Standard"), ("urgent", "Urgent")]
 
 
 def _prio(key: str, crit: str, down: bool, default: str) -> SettingSpec:
@@ -43,11 +44,11 @@ _SPECS = [
                 help="How far ahead (including today) the dashboard's 'PM due' card looks for PM jobs and plans "
                      "falling due. 7 = this week."),
     _prio("priority_a_down", "A", True, "urgent"),
-    _prio("priority_b_down", "B", True, "high"),
-    _prio("priority_c_down", "C", True, "normal"),
-    _prio("priority_a_running", "A", False, "high"),
-    _prio("priority_b_running", "B", False, "normal"),
-    _prio("priority_c_running", "C", False, "normal"),
+    _prio("priority_b_down", "B", True, "standard"),
+    _prio("priority_c_down", "C", True, "standard"),
+    _prio("priority_a_running", "A", False, "standard"),
+    _prio("priority_b_running", "B", False, "standard"),
+    _prio("priority_c_running", "C", False, "standard"),
     SettingSpec("require_requester_confirmation", "breakdown", "Requester must confirm before close", "bool", True,
                 help="On: a work order raised from a breakdown request can't be closed until the person who raised "
                      "it confirms the machine is OK (the production side signs off the repair). Off: the planner "
@@ -118,7 +119,8 @@ def priority_for(db, criticality: str | None, machine_down: bool) -> str:
     crit = (criticality or "C").upper()
     if crit not in ("A", "B", "C"):
         crit = "C"
-    return str(get_setting(db, f"priority_{crit.lower()}_{'down' if machine_down else 'running'}"))
+    # A value saved before the two-level scale (high / normal / low) is read as Urgent / Standard.
+    return map_legacy_priority(str(get_setting(db, f"priority_{crit.lower()}_{'down' if machine_down else 'running'}")))
 
 
 def requester_confirmation_required(db) -> bool:

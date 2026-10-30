@@ -20,10 +20,11 @@ from app.modules.erp.importing import (
     check_date_range, check_rows, csv_template, in_range, norm_header, parse_date, parse_export_ids, parse_number, read_rows,
     text, xlsx_response,
 )
+from app.core.priority import map_legacy_priority, priority_label
 from app.modules.main.models.user import User
 from app.modules.store.models.item import StoreItem
 from app.modules.p2p.models.p2p_request import (
-    P2P_CATEGORIES, P2P_PROJECT_TYPES, P2P_REQUEST_PRIORITIES, P2P_REQUIREMENT_TYPES, P2PRequest,
+    P2P_CATEGORIES, P2P_PROJECT_TYPES, P2P_REQUIREMENT_TYPES, P2PRequest,
 )
 from app.modules.p2p.models.p2p_request_approval import P2PRequestApproval
 from app.modules.p2p.access import scope_prs
@@ -84,7 +85,7 @@ def export_requisitions(
     rows = []
     for p in prs:
         base = [p.p2p_number, p.request_date or "", p.status, P2P_CATEGORIES.get(p.category_code, p.category_code), p.project_type or "",
-                p.project_label or "", p.department or "", users.get(p.requested_by_id, ""), p.priority, p.required_date or "",
+                p.project_label or "", p.department or "", users.get(p.requested_by_id, ""), priority_label(p.priority), p.required_date or "",
                 p.requirement_type or ""]
         tail = [p.po_number or "", p.po_value if p.po_value is not None else "", p.remarks or ""]
         for it in p.items or [None]:
@@ -146,9 +147,8 @@ async def import_requisitions(
             ptype = (text(head, "project_type") or "").lower()
             if ptype not in P2P_PROJECT_TYPES:
                 raise ValueError("Project Type must be 'existing' or 'new'.")
-            prio = (text(head, "priority") or "medium").lower()
-            if prio not in P2P_REQUEST_PRIORITIES:
-                raise ValueError(f"Priority must be one of {', '.join(P2P_REQUEST_PRIORITIES)}.")
+            # Standard / Urgent; an older sheet's High or Critical reads as Urgent, anything else as Standard.
+            prio = map_legacy_priority(text(head, "priority"))
             rtype = text(head, "requirement_type")
             if rtype and rtype not in P2P_REQUIREMENT_TYPES:
                 raise ValueError(f"Requirement Type must be one of {', '.join(P2P_REQUIREMENT_TYPES)}.")

@@ -106,13 +106,17 @@ def test_rnd_engineer_reads_tor_shared_doc_without_crm(client, db, docs, sp, suf
 
 @pytest.mark.parametrize("suffix", ["content", "download-url"])
 def test_rnd_user_without_requirement_access_cannot_read_tor_shared_doc(client, db, docs, sp, monkeypatch, suffix):
-    """Having the R&D app isn't enough once R&D heads are set: a member with no
-    access to this requirement can't walk TOR document ids (security fix)."""
-    from app.modules.rnd.services import requirement_access as ra
+    """Having the R&D app isn't enough: R&D-side users (View on R&D › Requirements) open every requirement's
+    files, but an R&D user without that tab and without a task on it can't walk TOR document ids."""
     head = make_user(db, "rnd.head@premnathrail.com", apps=("rnd",))
-    member = make_user(db, "rnd.member@premnathrail.com", apps=("rnd",))
-    monkeypatch.setattr(ra, "team_roles", lambda _db: {head.id: "head"})
-    assert client.get(f"{API}/{docs['shared'].id}/{suffix}", headers=auth(member)).status_code == 403
+    side = make_user(db, "rnd.side@premnathrail.com", apps=("rnd",))
+    dash_only = make_user(db, "rnd.dash@premnathrail.com", apps=())
+    dash_only.granular_permissions = ["rnd:dashboard:view"]
+    db.commit()
+    from app.modules.rnd.services import requirement_access as ra
+    monkeypatch.setattr(ra, "team_roles", lambda _db: {head.id: "head"})   # an R&D head is set, so nobody else acts as head
+    assert client.get(f"{API}/{docs['shared'].id}/{suffix}", headers=auth(dash_only)).status_code == 403
+    assert client.get(f"{API}/{docs['shared'].id}/{suffix}", headers=auth(side)).status_code == 200
     assert client.get(f"{API}/{docs['shared'].id}/{suffix}", headers=auth(head)).status_code == 200
 
 

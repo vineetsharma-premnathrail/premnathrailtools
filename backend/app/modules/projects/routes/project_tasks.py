@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core import assignee_rules
+from app.core.priority import map_legacy_priority, parse_priority
 from app.core.permissions import ensure_feature_action, require_feature_action
 from app.core.permission_registry import can_feature, can_view_tab
 from app.db.session import get_db
@@ -35,7 +36,7 @@ from sqlalchemy import func
 
 from app.modules.projects.models.document import PmProjectDocument
 from app.modules.projects.models.task import (
-    PmProjectTask, PmTaskSubtask, PmTaskTimeLog, PmTaskUpdate, PM_TASK_OPEN_STATUSES, PM_TASK_PRIORITIES,
+    PmProjectTask, PmTaskSubtask, PmTaskTimeLog, PmTaskUpdate, PM_TASK_OPEN_STATUSES,
     PM_SUBTASK_STATUSES, PM_MILESTONE_COLORS, PM_MILESTONE_ICONS,
 )
 from app.modules.design.models.request import DesignTaskDeliverable
@@ -107,7 +108,7 @@ class SubtaskCreate(BaseModel):
     description: str | None = None
     collaborator_ids: list[int] = []
     start_date: date | None = None
-    priority: str = "medium"
+    priority: str = "standard"
     status: str = "todo"
     labels: list[str] = []
 
@@ -142,7 +143,7 @@ class SubtaskOut(BaseModel):
     collab: bool = False                 # the viewer is a collaborator
     start_date: date | None = None
     due_date: date | None = None
-    priority: str = "medium"
+    priority: str = "standard"
     status: str
     progress: int = 0                    # Done = 100, else the share of its checklist ticked
     labels: list[str] = []
@@ -366,7 +367,7 @@ def _task_out(db: Session, t: PmProjectTask, project: PmProject, user: User, cac
             created_by_name=cache.user(s.created_by_id), created_at=s.created_at,
             description=s.description, collaborator_ids=list(s.collaborator_ids or []),
             collaborator_names=[n for n in (cache.user(i) for i in (s.collaborator_ids or [])) if n], collab=collab(s),
-            start_date=s.start_date, due_date=s.due_date, priority=s.priority or "medium",
+            start_date=s.start_date, due_date=s.due_date, priority=map_legacy_priority(s.priority),
             status=s.status, progress=progress(s),
             labels=list(s.labels or []),
             is_overdue=_subtask_overdue(s), completed_at=s.completed_at, mine=s.assignee_id == user.id,
@@ -564,9 +565,7 @@ def _apply_task_fields(db: Session, project: PmProject, t: PmProjectTask, s: PmT
     if "description" in data:
         s.description = (data["description"] or "").strip() or None
     if "priority" in data:
-        if data["priority"] not in PM_TASK_PRIORITIES:
-            raise HTTPException(status_code=422, detail=f"'{data['priority']}' is not a priority. Use one of {', '.join(PM_TASK_PRIORITIES)}.")
-        s.priority = data["priority"]
+        s.priority = parse_priority(data["priority"])
     start = data["start_date"] if "start_date" in data else s.start_date
     if start and s.due_date and start > s.due_date:
         raise HTTPException(status_code=422, detail=f"Start date {start:%d-%m-%Y} is after the due date {s.due_date:%d-%m-%Y}. Fix one of the two dates.")
@@ -686,7 +685,7 @@ async def create_task(project_id: int, payload: DeptTaskCreate, background_tasks
     t = PmProjectTask(project_id=project.id, milestone_id=None, department_id=dept.id if dept else None, assignee_id=person.id, title=title,
                       description=(payload.description or "").strip() or None, due_date=payload.due_date,
                       start_date=payload.start_date, color=payload.color or None, icon=payload.icon or None,
-                      status="todo", priority="medium", created_by_id=user.id)
+                      status="todo", priority="standard", created_by_id=user.id)
     t.co_owner_ids = _co_owners(db, payload.co_owner_ids, person.id) or None
     _ensure_may_pick(db, user, MS_RULE_KEY, [person.id, *(t.co_owner_ids or [])])
     _apply_ms_status(db, t, user, payload.status, (payload.blocker_reason or "").strip() or None)

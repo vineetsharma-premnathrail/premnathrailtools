@@ -1,8 +1,12 @@
-"""Project stock — material held for a project vehicle / lot (2026-10-17).
+"""Project stock — material held for a project (or, for a historic sales-order project, its vehicle / lot).
 
-Kept lightweight, the SAP "special stock via reservation" way: the stock
-balance and valuation have NO project dimension. Material belongs to a
-vehicle while a StoreStockReservation with order_project_element_id holds it:
+One project = one machine (2026-10-30): a project made in Project Management has no units, so its
+holds, issues and dispatches are booked to the PROJECT itself (order_project_id set,
+order_project_element_id NULL). A historic sales-order project (live units) still needs its unit
+(so_projects.resolve_link). Below, "scope" = (project_id, element_id).
+
+Kept lightweight: the stock balance and valuation have NO project dimension.
+Material belongs to a project / vehicle while a StoreStockReservation with order_project_id holds it:
 
   * a hold blocks its quantity from free stock (StoreStockBalance.reserved_qty,
     the same mechanism as every reservation), so no other issue / transfer can
@@ -19,10 +23,10 @@ vehicle while a StoreStockReservation with order_project_element_id holds it:
   * a GRN reversal releases the holds that GRN created, so the reversal can
     take its stock back out.
 
-Mandatory element (resolve_issue_project): an issue for an RRV order — a work
-order / RRV build / sales order that has a project — must say which
-vehicle / lot it is for. It is filled from the build / delivery row where it
-can be, and refused with the reason where it can't.
+Project link of an issue (resolve_issue_project): an issue for a project without units links to
+the project itself; for a historic sales-order project (units) it must say which vehicle / lot it
+is for. It is filled from the build / delivery row where it can be, and refused with the reason
+where it can't. A dispatch also takes its project from the machine it ships (erp_project_id).
 
 Plain functions; rule violations raise HTTPException with the reason and the
 fix. Other modules (Production's work-order issue) can call
@@ -72,10 +76,26 @@ def element_label(db: Session, element_id: int | None) -> str | None:
     return element_display(el.project, el) if el is not None else None
 
 
-def element_info(db: Session, element_id: int | None) -> dict:
-    """Display fields for responses / chips (empty dict when unlinked)."""
+def scope_label(db: Session, project_id: int | None, element_id: int | None) -> str | None:
+    """'PEW-80 / 01 · Vehicle 1' for a unit, 'PEW-82 (whole project)' for project-level stock."""
+    if element_id:
+        return element_label(db, element_id)
+    if not project_id:
+        return None
+    from app.modules.projects.models.project import PmProject
+    p = db.get(PmProject, project_id)
+    return f"{p.project_code} (whole project)" if p is not None else None
+
+
+def element_info(db: Session, element_id: int | None, project_id: int | None = None) -> dict:
+    """Display fields for responses / chips (empty dict when unlinked). A project-level record
+    (no element) passes its project_id and gets the project code only."""
     if not element_id:
-        return {}
+        if not project_id:
+            return {}
+        from app.modules.projects.models.project import PmProject
+        p = db.get(PmProject, project_id)
+        return {"order_project_id": p.id, "op_number": p.project_code} if p is not None else {}
     from app.modules.projects.models.element import PmProjectElement
     el = db.get(PmProjectElement, element_id)
     if el is None:
@@ -123,6 +143,12 @@ def _build_element(db: Session, build):
     el = element_for_schedule_row(db, getattr(build, "sales_schedule_id", None))
     if el is not None:
         return el, el.project
+    pid = getattr(build, "order_project_id", None)
+    if pid:  # a build planned for a project without units
+        from app.modules.projects.models.project import PmProject
+        project = db.get(PmProject, pid)
+        if project is not None:
+            return None, project
     return None, _project_of_order(db, getattr(build, "sales_order_id", None))
 
 
@@ -146,6 +172,11 @@ def work_order_context(db: Session, ref: str | None):
         eid = getattr(wo, "order_project_element_id", None)
         if eid and (el := db.get(PmProjectElement, eid)) is not None:
             return el, el.project, label
+        if getattr(wo, "order_project_id", None):  # a work order for a project without units
+            from app.modules.projects.models.project import PmProject
+            project = db.get(PmProject, wo.order_project_id)
+            if project is not None:
+                return None, project, label
         if wo.rrv_build_id and (build := db.get(ProductionRrvBuild, wo.rrv_build_id)) is not None:
             el, project = _build_element(db, build)
             if el is not None or project is not None:
@@ -160,13 +191,27 @@ def work_order_context(db: Session, ref: str | None):
 
 # ---------------------------------------------------------------- issue: which element
 
+def _machine_project(db: Session, erp_project_id: int | None):
+    """The PM project a machine (ERP project) belongs to, None when unlinked."""
+    if not erp_project_id:
+        return None
+    from app.modules.erp.models.project import Project as Machine
+    from app.modules.projects.models.project import PmProject
+    machine = db.get(Machine, erp_project_id)
+    if machine is None or not machine.pm_project_id:
+        return None
+    return db.get(PmProject, machine.pm_project_id)
+
+
 def resolve_issue_project(db: Session, issue_type: str | None, payload) -> dict:
     """Decide the project link of a new material issue.
 
     Returns {"project_id", "element_id", "line_elements": [element_id | None per
-    payload item]}. Raises 422 when an RRV-order issue has no element or the
-    picked element contradicts the work order / build / delivery row."""
-    from app.modules.projects.so_projects import resolve_element, resolve_project
+    payload item]}. A project without units links to the project itself
+    (element_id None, no "pick a unit" error); a historic sales-order project
+    (live units) needs its unit: 422 when an issue for it has none or the
+    picked unit contradicts the work order / build / delivery row."""
+    from app.modules.projects.so_projects import project_has_units, resolve_element, resolve_link
 
     items = list(payload.items or [])
     if issue_type not in PROJECT_ISSUE_TYPES and issue_type is not None:
@@ -174,34 +219,41 @@ def resolve_issue_project(db: Session, issue_type: str | None, payload) -> dict:
 
     picked_project_id = getattr(payload, "order_project_id", None)
     picked_el = None
+    picked_project = None
     if getattr(payload, "order_project_element_id", None):
         _p, picked_el = resolve_element(db, payload.order_project_element_id, project_id=picked_project_id)
+        picked_project = _p
     elif picked_project_id:
-        p = resolve_project(db, picked_project_id)
-        raise HTTPException(status_code=422, detail=f"Pick the vehicle / lot of {p.project_code} this material goes to — an issue "
-                                                    "is booked to one unit of the project, not to the project as a whole.")
+        picked_project, _none = resolve_link(db, picked_project_id, None, what="material issue")
 
     # What the issue's own references say.
     derived_el, derived_project, source = None, None, None
     if issue_type in ("production", "rework", None):
         derived_el, derived_project, source = work_order_context(db, getattr(payload, "project_or_work_order", None))
-    if issue_type == "dispatch" and getattr(payload, "sales_order_id", None):
-        derived_project = _project_of_order(db, payload.sales_order_id)
-        if derived_project is not None:
-            from app.modules.sales.models.order import SalesOrder
-            so = db.get(SalesOrder, payload.sales_order_id)
-            source = f"sales order {so.display_number if so else payload.sales_order_id}"
+    if issue_type == "dispatch":
+        if getattr(payload, "sales_order_id", None):  # historic order: its project (the id is otherwise ignored)
+            derived_project = _project_of_order(db, payload.sales_order_id)
+            if derived_project is not None:
+                from app.modules.sales.models.order import SalesOrder
+                so = db.get(SalesOrder, payload.sales_order_id)
+                source = f"sales order {so.display_number if so else payload.sales_order_id}"
+        if derived_project is None:  # the machine being shipped names its project
+            derived_project = _machine_project(db, getattr(payload, "erp_project_id", None))
+            if derived_project is not None:
+                source = f"machine {derived_project.project_code}"
 
     if derived_el is not None and picked_el is not None and derived_el.id != picked_el.id:
         raise HTTPException(status_code=422, detail=(
             f"{source[0].upper() + source[1:]} builds {element_label(db, derived_el.id)}, but the issue names "
             f"{element_label(db, picked_el.id)} — pick the element of that {source.split(' ')[0]} "
             "(or correct the work order no.)."))
-    if picked_el is not None and derived_project is not None and picked_el.project_id != derived_project.id:
+    if picked_project is not None and derived_project is not None and picked_project.id != derived_project.id:
         raise HTTPException(status_code=422, detail=(
-            f"{element_label(db, picked_el.id)} belongs to another project than {source} "
-            f"({derived_project.project_code}) — pick an element of {derived_project.project_code}."))
+            f"{picked_project.project_code} isn't the project of {source} ({derived_project.project_code}) — pick "
+            f"{derived_project.project_code}, or correct the {source.split(' ')[0]} / work order no."))
     header_el = picked_el or derived_el
+    project = (header_el.project if header_el is not None else None) or picked_project or derived_project
+    has_units = project is not None and project_has_units(db, project.id)
 
     # Lines: a dispatch line ships a delivery row → that row's element.
     line_elements: list[int | None] = []
@@ -220,20 +272,19 @@ def resolve_issue_project(db: Session, issue_type: str | None, payload) -> dict:
                 "one issue goes to one vehicle / lot (a dispatch may ship several delivery rows)."))
         line_elements.append(el.id if el is not None else None)
 
-    # Mandatory rule: an issue for an RRV order carries the element.
-    if derived_project is not None and header_el is None and not (items and all(line_elements)):
+    # A historic sales-order project (units) needs its unit; a project without units never does.
+    if has_units and header_el is None and not (items and all(line_elements)):
+        what = source or f"project {project.project_code}"
         raise HTTPException(status_code=422, detail=(
-            f"{source[0].upper() + source[1:]} is for an RRV order (project {derived_project.project_code}) — pick the "
-            "vehicle / lot this material goes to in 'Project unit', so the material is booked to that vehicle."))
+            f"{what[0].upper() + what[1:]} is for {project.project_code}, a project created from a sales order that has "
+            "units — pick the vehicle / lot this material goes to in 'Project unit', so the material is booked to that vehicle."))
 
     ids = {e for e in line_elements if e}
-    project_id = None
-    if header_el is not None:
-        project_id = header_el.project_id
-    elif ids:
+    project_id = project.id if project is not None else None
+    if header_el is None and ids:
         from app.modules.projects.models.element import PmProjectElement
         projects = {db.get(PmProjectElement, e).project_id for e in ids}
-        project_id = projects.pop() if len(projects) == 1 else None
+        project_id = projects.pop() if len(projects) == 1 else project_id
     element_id = header_el.id if header_el is not None else (next(iter(ids)) if len(ids) == 1 else None)
     return {"project_id": project_id, "element_id": element_id, "line_elements": line_elements}
 
@@ -264,16 +315,25 @@ def _take(db: Session, res: StoreStockReservation, qty: float, *, emptied_status
     return take
 
 
-def consume_element_holds(db: Session, *, item_id: int, location_id: int, qty: float, element_id: int | None) -> float:
-    """Before issuing `qty` to `element_id`, hand back that element's holds of
-    the item at the store (oldest need first) so the issue's available-stock
-    check counts them. A partly drawn hold keeps the remainder; an emptied one
+def _is_mine(res: StoreStockReservation, project_id: int | None, element_id: int | None) -> bool:
+    """Does the hold belong to this scope: the element's own, or (no element) the project's
+    project-level hold."""
+    if element_id:
+        return res.order_project_element_id == element_id
+    return bool(project_id) and res.order_project_id == project_id and res.order_project_element_id is None
+
+
+def consume_element_holds(db: Session, *, item_id: int, location_id: int, qty: float, element_id: int | None,
+                          project_id: int | None = None) -> float:
+    """Before issuing `qty` to `element_id` (or, with no element, to the whole `project_id`), hand
+    back that scope's holds of the item at the store (oldest need first) so the issue's
+    available-stock check counts them. A partly drawn hold keeps the remainder; an emptied one
     becomes fulfilled. Returns the quantity consumed."""
-    if not element_id or qty <= EPS:
+    if not (element_id or project_id) or qty <= EPS:
         return 0.0
     left = qty
     for res in active_holds(db, item_id, location_id):
-        if res.order_project_element_id != element_id:
+        if not _is_mine(res, project_id, element_id):
             continue
         left -= _take(db, res, left, emptied_status="fulfilled")
         if left <= EPS:
@@ -288,17 +348,18 @@ def _holder_text(db: Session, holds: list[StoreStockReservation]) -> str:
         who = db.get(User, r.reserved_by_id) if r.reserved_by_id else None
         by = f", reserved by {who.name or who.email}" if who else ""
         src = f" from {r.source_reference}" if r.source_reference else ""
-        parts.append(f"{float(r.quantity):g} for {element_label(db, r.order_project_element_id) or 'another project'} "
+        parts.append(f"{float(r.quantity):g} for {scope_label(db, r.order_project_id, r.order_project_element_id) or 'another project'} "
                      f"({r.reservation_number}{src}{by})")
     return "; ".join(parts)
 
 
 def secure_issue_qty(db: Session, *, item_id: int, location_id: int, qty: float, element_id: int | None, user, location=None,
-                     override_reason: str | None = None, document: str = "this issue") -> dict:
-    """Make `qty` issuable for `element_id` (None = a non-project issue):
-    consume the element's own holds, then — if free stock is still short and
-    the rest is held for OTHER elements — refuse with who holds it, or, for a
-    Store Manager with a reason, release just the shortfall from those holds.
+                     override_reason: str | None = None, document: str = "this issue",
+                     project_id: int | None = None) -> dict:
+    """Make `qty` issuable for `element_id` / `project_id` (both None = a non-project issue; a
+    project without units passes project_id only): consume that scope's own holds, then — if free
+    stock is still short and the rest is held for OTHER projects / elements — refuse with who holds
+    it, or, for a Store Manager with a reason, release just the shortfall from those holds.
     Non-project holds (work orders, manual) are never touched here — the
     ledger's own 'not enough stock' message covers them.
 
@@ -306,7 +367,8 @@ def secure_issue_qty(db: Session, *, item_id: int, location_id: int, qty: float,
     from app.modules.store.services import valuation
     if valuation.valuation_enabled(db):
         valuation.lock_valuation(db, item_id)  # ledger lock order: valuation, then balance
-    consumed = consume_element_holds(db, item_id=item_id, location_id=location_id, qty=qty, element_id=element_id)
+    consumed = consume_element_holds(db, item_id=item_id, location_id=location_id, qty=qty, element_id=element_id,
+                                     project_id=project_id)
     balance = get_locked_balance(db, item_id, location_id)
     free = float(balance.on_hand_qty or 0) - float(balance.reserved_qty or 0)
     short = round(qty - free, _QTY)
@@ -314,29 +376,29 @@ def secure_issue_qty(db: Session, *, item_id: int, location_id: int, qty: float,
     if short <= EPS:
         return out
     others = [r for r in active_holds(db, item_id, location_id)
-              if r.order_project_element_id and r.order_project_element_id != element_id]
+              if (r.order_project_id or r.order_project_element_id) and not _is_mine(r, project_id, element_id)]
     if not others:
         return out
     item = db.get(StoreItem, item_id)
     name = f"{item.item_code} — {item.item_name}" if item else f"item #{item_id}"
     held = round(sum(float(r.quantity or 0) for r in others), _QTY)
-    target = f"to {element_label(db, element_id)}" if element_id else "to a non-project issue"
+    target = f"to {scope_label(db, project_id, element_id)}" if (element_id or project_id) else "to a non-project issue"
     if not is_store_manager(user, location):
         raise HTTPException(status_code=409, detail=(
-            f"{short:g} of the {qty:g} {name} needed is project stock held for another vehicle: {_holder_text(db, others)}. "
-            f"It can't be issued {target}. Issue it against the element that holds it, reserve / buy stock for this one, "
+            f"{short:g} of the {qty:g} {name} needed is project stock held for another project / vehicle: {_holder_text(db, others)}. "
+            f"It can't be issued {target}. Issue it against the project that holds it, reserve / buy stock for this one, "
             "or ask a Store Manager to release it (they must give a reason)."))
     reason = (override_reason or "").strip()
     if not reason:
         raise HTTPException(status_code=422, detail=(
-            f"{short:g} of the {qty:g} {name} is project stock held for another vehicle ({_holder_text(db, others)}). As a "
+            f"{short:g} of the {qty:g} {name} is project stock held for another project / vehicle ({_holder_text(db, others)}). As a "
             f"Store Manager you may still issue it {target}, but say why in 'Reason for using project stock' — it is recorded "
             "on the issue and on the reservation."))
     need = min(short, held)
     for res in others:
         if need <= EPS:
             break
-        label = element_label(db, res.order_project_element_id)
+        label = scope_label(db, res.order_project_id, res.order_project_element_id)
         take = _take(db, res, need, emptied_status="cancelled",
                      note=f"{min(float(res.quantity or 0), need):g} released by {user.name or user.email} on {date.today():%d-%m-%Y} "
                           f"for {document} — Store Manager override: {reason}")
@@ -345,15 +407,16 @@ def secure_issue_qty(db: Session, *, item_id: int, location_id: int, qty: float,
     return out
 
 
-def reserve_for_element(db: Session, *, item_id: int, location_id: int, qty: float, element_id: int, user_id: int | None,
+def reserve_for_element(db: Session, *, item_id: int, location_id: int, qty: float, element_id: int | None, user_id: int | None,
                         source_type: str | None = None, source_id: int | None = None, source_reference: str | None = None,
-                        required_date: date | None = None, remarks: str | None = None) -> StoreStockReservation:
-    """Hold `qty` of free stock for an element: tops up the active hold of the
-    same source (a later release of the same GRN line) or opens a new one.
-    Raises ValueError when free stock is short (adjust_reserved_qty)."""
+                        required_date: date | None = None, remarks: str | None = None,
+                        project_id: int | None = None) -> StoreStockReservation:
+    """Hold `qty` of free stock for an element — or, with no element, for the whole `project_id` (a
+    project without units): tops up the active hold of the same source (a later release of the same
+    GRN line) or opens a new one. Raises ValueError when free stock is short (adjust_reserved_qty)."""
     from app.modules.projects.models.element import PmProjectElement
     from app.modules.store.service import generate_stock_reservation_number
-    el = db.get(PmProjectElement, element_id)
+    el = db.get(PmProjectElement, element_id) if element_id else None
     adjust_reserved_qty(db, item_id=item_id, location_id=location_id, delta=qty)
     res = None
     if source_type and source_id:
@@ -369,7 +432,7 @@ def reserve_for_element(db: Session, *, item_id: int, location_id: int, qty: flo
         reservation_number=generate_stock_reservation_number(db), item_id=item_id, location_id=location_id,
         quantity=round(qty, _QTY), original_qty=round(qty, _QTY), reserved_by_id=user_id, status="active",
         required_date=required_date or (el.contractual_date if el is not None else None),
-        order_project_id=el.project_id if el is not None else None, order_project_element_id=element_id,
+        order_project_id=el.project_id if el is not None else project_id, order_project_element_id=element_id,
         source_type=source_type, source_id=source_id, source_reference=source_reference, remarks=remarks,
     )
     db.add(res)
@@ -384,6 +447,20 @@ def _grn_line_element(line) -> int | None:
     if not eid and getattr(line, "po_item", None) is not None:
         eid = getattr(line.po_item, "order_project_element_id", None)
     return eid
+
+
+def _grn_line_project(db: Session, line) -> int | None:
+    """The project of a GRN line bought for a project WITHOUT units (no element): its stock is
+    held for the project itself. Lines of a historic project (units) with no element stay free."""
+    if _grn_line_element(line):
+        return None
+    pid = getattr(line, "order_project_id", None)
+    if not pid and getattr(line, "po_item", None) is not None:
+        pid = getattr(line.po_item, "order_project_id", None)
+    if not pid:
+        return None
+    from app.modules.projects.so_projects import project_has_units
+    return None if project_has_units(db, pid) else pid
 
 
 def _grn_lines_for_txn(db: Session, txn) -> list:
@@ -413,7 +490,7 @@ def on_free_stock_in(db: Session, txn) -> None:
     line's received quantity over all its releases."""
     if txn.transaction_type not in ("quality_release", "receipt") or txn.reference_type not in ("grn", "inspection_lot"):
         return
-    lines = [ln for ln in _grn_lines_for_txn(db, txn) if _grn_line_element(ln)]
+    lines = [ln for ln in _grn_lines_for_txn(db, txn) if _grn_line_element(ln) or _grn_line_project(db, ln)]
     if not lines:
         return
     from app.modules.projects.so_projects import resolve_element
@@ -427,17 +504,25 @@ def on_free_stock_in(db: Session, txn) -> None:
         take = round(min(left, cap - so_far), _QTY)
         if take <= EPS:
             continue
-        try:
-            _p, el = resolve_element(db, _grn_line_element(ln))
-        except HTTPException as e:  # element cancelled by an amendment — the stock stays free
-            logger.info("GRN %s line %s not held for its project: %s", txn.reference_number, ln.id, e.detail)
-            continue
         grn_no = ln.goods_receipt.grn_number if ln.goods_receipt is not None else txn.reference_number
-        reserve_for_element(
-            db, item_id=txn.item_id, location_id=txn.location_id, qty=take, element_id=el.id, user_id=txn.created_by_id,
-            source_type=GRN_SOURCE, source_id=ln.id, source_reference=grn_no,
-            remarks=f"Bought out for {element_label(db, el.id)} — held automatically from GRN {grn_no}",
-        )
+        if _grn_line_element(ln):
+            try:
+                _p, el = resolve_element(db, _grn_line_element(ln))
+            except HTTPException as e:  # element cancelled by an amendment — the stock stays free
+                logger.info("GRN %s line %s not held for its project: %s", txn.reference_number, ln.id, e.detail)
+                continue
+            reserve_for_element(
+                db, item_id=txn.item_id, location_id=txn.location_id, qty=take, element_id=el.id, user_id=txn.created_by_id,
+                source_type=GRN_SOURCE, source_id=ln.id, source_reference=grn_no,
+                remarks=f"Bought out for {element_label(db, el.id)} — held automatically from GRN {grn_no}",
+            )
+        else:  # a project without units: held for the project itself
+            pid = _grn_line_project(db, ln)
+            reserve_for_element(
+                db, item_id=txn.item_id, location_id=txn.location_id, qty=take, element_id=None, project_id=pid,
+                user_id=txn.created_by_id, source_type=GRN_SOURCE, source_id=ln.id, source_reference=grn_no,
+                remarks=f"Bought out for {scope_label(db, pid, None)} — held automatically from GRN {grn_no}",
+            )
         left -= take
 
 
@@ -457,3 +542,35 @@ def before_outbound(db: Session, *, item_id: int, location_id: int, transaction_
         if left <= EPS:
             break
         left -= _take(db, res, left, emptied_status="cancelled", note=f"Released — GRN {reference_number} reversed")
+
+
+# ---------------------------------------------------------------- 360: "Whole project" row (project without units)
+
+def project_level_store_cell(db: Session, project) -> dict | None:
+    """Store cell of a project without units: material held for the project itself and material
+    issued to it (dispatches have their own Dispatch cell). None when Store has done nothing yet."""
+    from app.modules.store.models.material_issue import StoreMaterialIssue, StoreMaterialIssueItem
+    held_items, held_qty = db.query(
+        func.count(func.distinct(StoreStockReservation.item_id)), func.coalesce(func.sum(StoreStockReservation.quantity), 0.0)
+    ).filter(StoreStockReservation.order_project_id == project.id, StoreStockReservation.order_project_element_id.is_(None),
+             StoreStockReservation.status == "active").one()
+    issued_items, last_date = db.query(
+        func.count(func.distinct(StoreMaterialIssueItem.item_id)), func.max(StoreMaterialIssue.issue_date)
+    ).join(StoreMaterialIssue, StoreMaterialIssue.id == StoreMaterialIssueItem.issue_id).filter(
+        StoreMaterialIssue.order_project_id == project.id, StoreMaterialIssue.order_project_element_id.is_(None),
+        func.coalesce(StoreMaterialIssue.issue_type, "") != "dispatch").one()
+    if not held_items and not issued_items:
+        return None
+    detail = f"{held_items} item(s) held ({float(held_qty or 0):g} units) · {issued_items} item(s) issued"
+    date_txt = last_date.isoformat() if last_date else None
+    if held_items:
+        return {"status": "held", "label": f"{held_items} item(s) held", "tone": "info", "detail": detail, "date": date_txt}
+    return {"status": "issued", "label": f"{issued_items} item(s) issued", "tone": "success", "detail": detail, "date": date_txt}
+
+
+def _register_project_providers() -> None:
+    from app.modules.projects.so_projects import register_project_provider
+    register_project_provider("store", project_level_store_cell)
+
+
+_register_project_providers()

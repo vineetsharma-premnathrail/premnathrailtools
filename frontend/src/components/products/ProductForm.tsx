@@ -41,7 +41,7 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
     warranty_months: initial?.warranty_months != null ? String(initial.warranty_months) : '',
   })
   // Free text, one specification per line. A product saved before 2026-10-28 shows its old rows as lines.
-  const { can } = useCan()
+  const { canFeature } = useCan()
   // New product: its list price is saved with it (more prices — customer, country — on the product afterwards).
   const [listPrice, setListPrice] = useState('')
   const [priceCurrency, setPriceCurrency] = useState('INR')
@@ -118,7 +118,7 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
     <FormPage nav={nav} icon={initial ? 'edit' : 'box'} title={initial ? `Edit ${initial.code}` : isApp ? 'New Application' : 'New Product'}
       subtitle={initial ? `${initial.name} — the code is fixed once created.` : isApp
         ? 'An add-on sold with a product only when the customer asks for it.'
-        : 'A finished product the company sells — the master Sales, Design, Production and Service refer to.'}
+        : 'A finished product the company sells — the master CRM, Design, Production and Service refer to.'}
       onBack={onCancel} backTour="product-form-back"
       footer={<>
         <button type="button" style={sheetBtn('secondary', SHEET.INK, saving)} onClick={onCancel} disabled={saving}>Cancel</button>
@@ -191,11 +191,11 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
             <p style={hintStyle}>Write each specification on its own line — it prints the same way on quotations and the product page.</p>
           </SheetSection>
 
-          {can('sales', 'pricing', 'view') && (
+          {canFeature('crm', 'products', 'pricing', 'view') && (
             <SheetSection icon="rupee" title="Pricing" extra={initial ? undefined : <Optional />}>
               {initial ? (
                 <PriceConditionsPanel productId={initial.id} emptyText="No price yet — add the list price, then country prices if they differ" />
-              ) : can('sales', 'pricing', 'create') ? (
+              ) : canFeature('crm', 'products', 'pricing', 'create') ? (
                 <>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                     <div style={{ flex: '0 1 180px', minWidth: 150 }}>
@@ -213,7 +213,7 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
                   <p style={hintStyle}>The price for all customers from today. After saving, open the product to add customer or country prices (e.g. a different price for Bangladesh in USD).</p>
                 </>
               ) : (
-                <p style={{ ...hintStyle, marginTop: 0 }}>Adding prices needs &apos;Create&apos; on Sales › Pricing — ask an admin to add it to your role.</p>
+                <p style={{ ...hintStyle, marginTop: 0 }}>Adding prices needs &apos;Create&apos; on CRM › Products › Pricing — ask an admin to add it to your role.</p>
               )}
             </SheetSection>
           )}
@@ -258,7 +258,7 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
                 </>
               )}
             </div>
-            <p style={hintStyle}>The store item is the stock/BOM code Design, Production and Sales orders use for this product. Link it once the item exists in Store.</p>
+            <p style={hintStyle}>The store item is the stock/BOM code Design, Production and Projects use for this product. Link it once the item exists in Store.</p>
           </SheetSection>
         </>}
       />

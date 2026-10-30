@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
-import { storeApi, salesApi } from '@/lib/api'
+import { storeApi } from '@/lib/api'
 import { StoreItem, StoreLocation, StoreDocType, StoreIssueFormStandard, StoreStockBalance } from '@/types'
 import { CONTROL, TEXT } from '@/lib/theme'
 import { useFormDraft } from '@/lib/formDraft'
@@ -32,18 +32,6 @@ function Field({ label, children }: { label: React.ReactNode; children: React.Re
       {children}
     </div>
   )
-}
-
-interface DispatchRow {
-  schedule_id: number
-  so_id: number
-  so_number: string
-  customer_name?: string | null
-  label: string
-  description?: string | null
-  store_item_id?: number | null
-  open_qty: number
-  uom?: string | null
 }
 
 // binId / serials: WM pick bin and the serial numbers of a serialised item.
@@ -157,26 +145,15 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
   const selectedProject = projects.find((p) => String(p.id) === String(vals.erp_project_id || ''))
   // Fields of the picked type: "if:" fields appear only once their condition holds.
   const shownFields = (spec?.fields || []).filter((f) => !f.rule.startsWith('if:') || condHolds(f.rule.slice(3), vals))
-  // Dispatch against a Sales Order delivery row (spares orders have no machine):
-  // the row replaces the machine as what is being dispatched.
-  const [soRows, setSoRows] = useState<DispatchRow[]>([])
-  const [scheduleId, setScheduleId] = useState('')
   // One draft for the issue form and one for the job-work challan.
   const draft = useFormDraft(isChallan ? 'store-job-work-challan-new' : 'store-material-issue-new',
-    { issueType, locationId, vals, remarks, lines, backLines, orderProject, overrideReason, scheduleId },
+    { issueType, locationId, vals, remarks, lines, backLines, orderProject, overrideReason },
     (d) => {
       setIssueType(d.issueType || (isChallan ? JOB_WORK : '')); setLocationId(d.locationId ?? ''); setVals(d.vals ?? {}); setRemarks(d.remarks ?? '')
-      setLines(d.lines?.length ? d.lines : [emptyLine()]); setBackLines(d.backLines?.length ? d.backLines : [emptyBack()]); setOrderProject(d.orderProject ?? null); setOverrideReason(d.overrideReason ?? ''); setScheduleId(d.scheduleId ?? '')
+      setLines(d.lines?.length ? d.lines : [emptyLine()]); setBackLines(d.backLines?.length ? d.backLines : [emptyBack()]); setOrderProject(d.orderProject ?? null); setOverrideReason(d.overrideReason ?? '')
     })
-  const pickedRow = soRows.find((r) => String(r.schedule_id) === scheduleId)
-  useEffect(() => {
-    if (!isDispatch) return
-    const pid = vals.erp_project_id ? Number(vals.erp_project_id) : undefined
-    salesApi.dispatchableRows(pid ? { erp_project_id: pid } : {})
-      .then((rows: DispatchRow[]) => setSoRows(rows))
-      .catch(() => setSoRows([]))
-  }, [isDispatch, vals.erp_project_id])
-  const isRequired = (rule: string) => rule === 'required' || rule.startsWith('if:') || (rule === 'unless:sales_order' && !pickedRow)
+  // Dispatch picks the machine / project (Sales Order delivery rows were retired 2026-10-30).
+  const isRequired = (rule: string) => rule === 'required' || rule.startsWith('if:') || rule === 'unless:sales_order'
 
   // Load the pick-lists the picked type needs (once each).
   useEffect(() => {
@@ -314,9 +291,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
         ...(validBack.length ? { output_items: validBack.map((l) => ({ item_id: Number(l.itemId), quantity: l.quantity ? Number(l.quantity) : undefined })) } : {}),
         ...(spec?.order_project && orderProject ? { order_project_id: orderProject.projectId, order_project_element_id: orderProject.elementId ?? undefined } : {}),
         ...(overrideReason.trim() ? { project_stock_override_reason: overrideReason.trim() } : {}),
-        ...(isDispatch && pickedRow ? { sales_order_id: pickedRow.so_id } : {}),
         items: validLines.map((l) => ({
-          ...(isDispatch && pickedRow && (!pickedRow.store_item_id || pickedRow.store_item_id === Number(l.itemId)) ? { sales_schedule_id: pickedRow.schedule_id } : {}),
           item_id: Number(l.itemId),
           quantity: Number(l.quantity),
           batch_number: l.batchNumber.trim() || undefined,
@@ -415,26 +390,13 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
             {spec.order_project && (
               <div data-tour="issue-order-project" style={{ flex: '1 1 320px', minWidth: 240, maxWidth: 520 }}>
                 <Field label={<>Project unit {isDispatch
-                  ? <span style={{ fontWeight: 400, color: SHEET.MUTED }}>(taken from the delivery row)</span>
+                  ? <span style={{ fontWeight: 400, color: SHEET.MUTED }}>(the vehicle / lot being dispatched)</span>
                   : <span style={{ fontWeight: 400, color: SHEET.MUTED }}>(required for an RRV order)</span>}</>}>
                   <OrderProjectPicker value={orderProject} onChange={(v) => setOrderProject(v)}
                     placeholder="Vehicle / lot this material goes to" />
                   <div style={sheetHint}>
                     Filled from the RRV build / work order no. when it has one. The vehicle&apos;s project stock is issued first.
                   </div>
-                </Field>
-              </div>
-            )}
-            {isDispatch && (
-              <div data-tour="issue-dispatch-so-row" style={{ flex: '1 1 320px', minWidth: 240, maxWidth: 520 }}>
-                <Field label={<>Sales order delivery row {vals.erp_project_id ? null : <span style={{ fontWeight: 400, color: SHEET.MUTED }}>(or the machine)</span>}</>}>
-                  <SearchableSelect value={scheduleId} onChange={setScheduleId} placeholder="Search SO no., customer, item…"
-                    options={soRows.map((r) => ({ value: String(r.schedule_id), label: `${r.so_number} · ${r.customer_name || ''} · ${r.label}${r.description ? ` · ${r.description}` : ''} — open ${r.open_qty} ${r.uom || ''}` }))} />
-                  {pickedRow && (
-                    <div style={sheetHint}>
-                      Lines of this item are booked against {pickedRow.so_number} ({pickedRow.open_qty} {pickedRow.uom || ''} still to dispatch).
-                    </div>
-                  )}
                 </Field>
               </div>
             )}

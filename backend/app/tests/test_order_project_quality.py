@@ -13,8 +13,7 @@ from app.modules.projects.models.project import PmProject
 from app.tests.test_quality_phase1 import (  # noqa: F401  (fixture)
     Q, make_user as q_user, hdr as q_hdr, setup_item, _sqlite_number_series,
 )
-from app.tests._so_project_helpers import confirm_with_project
-from app.tests.test_sales import BASE, create_order, hdr, setup_customer, setup_people
+from app.tests._so_project_helpers import order_with_project
 
 
 @pytest.fixture(autouse=True)
@@ -28,11 +27,8 @@ PLAN = [{"milestone_type": "advance", "percent": 20}, {"milestone_type": "inspec
 
 
 def _order(client, db, agency="rites", required=True):
-    maker, head, director, _ = setup_people(db)
-    _org, inq, _ = setup_customer(db, qty=2, price=1000000)
-    so = create_order(client, db, maker, inq, inspection_agency=agency, third_party_inspection_required=required,
-                      billing_plan=PLAN)
-    so = confirm_with_project(client, db, so, maker, head, director)
+    so = order_with_project(db, qty=2, price=1000000, inspection_agency=agency, third_party_inspection_required=required,
+                            billing=PLAN)
     db.expire_all()
     project = db.query(PmProject).filter(PmProject.sales_order_id == so["id"]).first()
     els = sorted(project.elements, key=lambda e: e.element_no)
@@ -40,8 +36,8 @@ def _order(client, db, agency="rites", required=True):
 
 
 def _team(db):
-    eng = q_user(db, "eng-op@x.com", apps=("quality", "store", "sales"), quality_role="engineer")
-    head = q_user(db, "head-op@x.com", apps=("quality", "store", "sales"), quality_role="head")
+    eng = q_user(db, "eng-op@x.com", apps=("quality", "store"), quality_role="engineer")
+    head = q_user(db, "head-op@x.com", apps=("quality", "store"), quality_role="head")
     return eng, head
 
 

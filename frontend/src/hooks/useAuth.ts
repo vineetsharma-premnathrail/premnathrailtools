@@ -65,7 +65,7 @@ export function useRequireAdmin() {
 
 /** Guards a page to users whose `apps` list includes `appName` (admins always pass,
  * since they implicitly get every module). Redirects everyone else to /dashboard. */
-export function useRequireApp(appName: 'erp' | 'rnd' | 'crm' | 'purchase' | 'p2p' | 'store' | 'quality' | 'projects' | 'accounts' | 'hr' | 'production' | 'design' | 'electrical' | 'hydraulic' | 'maintenance' | 'sales' | 'products') {
+export function useRequireApp(appName: 'erp' | 'rnd' | 'crm' | 'purchase' | 'p2p' | 'store' | 'quality' | 'projects' | 'accounts' | 'hr' | 'production' | 'design' | 'electrical' | 'hydraulic' | 'maintenance') {
   const router = useRouter()
   const { user, isLoading } = useAuth()
   const hasAccess = !!user?.apps?.includes(appName)

@@ -6,7 +6,7 @@
 // built from those:
 //
 //   router.push(recordHref('/dashboard/crm/organizations', org))        // ?id=<ref>
-//   <Link href={recordPath('/dashboard/sales/orders', order)}>          // /orders/<ref>
+//   <Link href={recordPath('/dashboard/products', product)}>        // /products/<ref>
 //   recordHref('/dashboard/crm/inquiries', a, 'related_id', { type: 'inquiry' })
 //
 // and pages turn the reference back into the id:

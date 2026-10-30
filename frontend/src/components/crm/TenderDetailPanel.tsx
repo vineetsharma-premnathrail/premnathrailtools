@@ -17,21 +17,23 @@ import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
 import ActivityForm from '@/components/crm/ActivityForm'
 import MomExportDialog from '@/components/crm/MomExportDialog'
 import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
-import RequirementDiscussionTab from '@/components/crm/RequirementDiscussionTab'
-import SalesOrderHandoff from '@/components/crm/SalesOrderHandoff'
+import RndIntakeCard from '@/components/crm/RndIntakeCard'
+import BdTechnicalOffers from '@/components/crm/BdTechnicalOffers'
+import type { CrmRndRequirement } from '@/types/rndIntake'
 import { TND_STAGES, TENDER_STATUSES, tenderStatusColor, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
 import { inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RevisionSelector, SpecDetailRow, SpecRevision, StageProgress, smallDangerBtnStyle, smallSecondaryBtnStyle, AnchoredMenu } from '@/components/crm/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { refOf } from '@/lib/recordRef'
 import { formatDate, formatDateTime } from '@/lib/format'
+import { priorityLabel } from '@/lib/priority'
 import { segmentBtnStyle, RowCount, Pill, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 
-// ?tab=discussion (from a @mention notification) opens the Discussion tab.
-const tabFromUrl = (): 'Discussion' | 'Info' =>
-  typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'discussion' ? 'Discussion' : 'Info'
+// ?tab=technical-offers opens the Technical Offers tab (an older ?tab=discussion link lands on Info — there is no Discussion any more).
+const tabFromUrl = (): 'Technical Offers' | 'Info' =>
+  typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'technical-offers' ? 'Technical Offers' : 'Info'
 
-const TABS = ['Info', 'Discussion', 'Documents', 'Dates', 'Follow Ups', 'Timeline'] as const
+const TABS = ['Info', 'Documents', 'Technical Offers', 'Dates', 'Follow Ups', 'Timeline'] as const
 
 export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: number; onDeleted?: () => void }) {
   const { user } = useAuth()
@@ -55,6 +57,9 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
   const [sendingTOR, setSendingTOR] = useState(false)
   const [torError, setTorError] = useState<string | string[]>('')
   const [showTorPicker, setShowTorPicker] = useState(false)
+  // R&D ID, revision and review state of the requirement sent to R&D (null = never sent / not visible to me).
+  const [rnd, setRnd] = useState<CrmRndRequirement | null>(null)
+  const loadRnd = () => crmApi.getRndRequirement('tender', tenderId).then(setRnd).catch(() => setRnd(null))
 
   const load = async () => {
     setLoading(true)
@@ -75,6 +80,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
         setContact(null)
       }
       crmApi.getTenderSpecRevisions(tenderId).then(setRevisions).catch(() => setRevisions([]))
+      loadRnd()
     } catch (err) {
       setError(extractErrorMessages(err, 'Tender not found.'))
     } finally {
@@ -88,18 +94,13 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenderId])
 
-  // No discussion until the Technical Requirement has been sent to R&D.
-  useEffect(() => {
-    if (tab === 'Discussion' && tender && !tender.technical_offer_sent_at) Promise.resolve().then(() => setTab('Info'))
-  }, [tab, tender])
-
   // Creator-or-admin (backend rule) AND Inquiries & Tenders › Edit in the Permission Matrix.
   const canModify = !!tender && !!user && (user.role === 'admin' || tender.created_by_id === user.id) && can('crm', 'inquiries_tenders', 'edit')
   const canDeleteRecord = !!tender && canDelete('crm', 'inquiries_tenders', tender.created_by_id ?? null)
   // Tenders share the Inquiries & Tenders tab, so they share its features (core/features/crm.py).
   const seeTab = (t: typeof TABS[number]) => t === 'Info'
     || (t === 'Dates' && canFeature('crm', 'inquiries_tenders', 'tender_dates', 'view'))
-    || (t === 'Discussion' && canFeature('crm', 'inquiries_tenders', 'discussion', 'view'))
+    || (t === 'Technical Offers' && canFeature('crm', 'inquiries_tenders', 'technical_offer', 'view'))
     || (t === 'Documents' && canFeature('crm', 'inquiries_tenders', 'documents', 'view'))
     || (t === 'Follow Ups' && canFeature('crm', 'inquiries_tenders', 'followups', 'view'))
     || (t === 'Timeline' && canFeature('crm', 'inquiries_tenders', 'timeline', 'view'))
@@ -145,15 +146,19 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
     !tender.technical_offer_sent_at ||
     (!!tender.updated_at && new Date(tender.updated_at) > new Date(tender.technical_offer_sent_at))
   )
+  // R&D returned it: BD can send again as soon as it has fixed what R&D asked for, even before editing the record.
+  const rndReturned = rnd?.status === 'returned'
+  const canSendAgain = torActive || rndReturned
 
   const sendTechnicalOfferRequest = async (documentIds: number[], assignment: RndRequestAssignment) => {
-    if (!tender || !torActive) return
+    if (!tender || !canSendAgain) return
     setSendingTOR(true)
     setTorError('')
     try {
       setTender(await crmApi.createTenderTechnicalOfferRequest(tender.id, documentIds, assignment))
       setShowTorPicker(false)
       setTab('Info')
+      loadRnd()
     } catch (err) {
       setTorError(extractErrorMessages(err, 'Failed to send Technical Requirement to R&D.'))
     } finally {
@@ -207,14 +212,13 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
               </button>
               {canFeature('crm', 'inquiries_tenders', 'send_tor', 'create') && <button
                 onClick={() => setShowTorPicker(true)}
-                disabled={!torActive || sendingTOR}
+                disabled={!canSendAgain || sendingTOR}
                 data-tour="tender-tor-btn"
-                title={!torActive ? `Already sent as ${tender.technical_offer_number} — edit the tender to send again.` : 'Emails R&D the Customer Organization, Project, and Product Requirement details as a PDF.'}
-                style={{ ...secondaryBtnStyle, opacity: !torActive || sendingTOR ? 0.5 : 1, cursor: !torActive || sendingTOR ? 'not-allowed' : 'pointer' }}
+                title={!canSendAgain ? `Already sent as ${tender.technical_offer_number} — edit the tender to send again.` : 'Emails R&D the Customer Organization, Project, and Product Requirement details as a PDF.'}
+                style={{ ...secondaryBtnStyle, opacity: !canSendAgain || sendingTOR ? 0.5 : 1, cursor: !canSendAgain || sendingTOR ? 'not-allowed' : 'pointer' }}
               >
                 {sendingTOR ? 'Sending…' : 'Send Technical Requirement to R&D'}
               </button>}
-              <SalesOrderHandoff source="tender" record={tender} tourId="tender-create-so-btn" />
               {canModify && <button onClick={() => { setEditing(true); setTab('Info') }} data-tour="tender-edit-btn" style={secondaryBtnStyle}>Edit</button>}
               {canDeleteRecord && <button onClick={() => setShowDeleteConfirm(true)} data-tour="tender-delete-btn" style={dangerBtnStyle}>Delete</button>}
             </div>
@@ -228,8 +232,10 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
         </div>
       )}
 
+      {!editing && <RndIntakeCard rnd={rnd} tourId="tender-rnd-status" canResend={canFeature('crm', 'inquiries_tenders', 'send_tor', 'create')} sending={sendingTOR} onResend={() => setShowTorPicker(true)} />}
+
       <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, overflowX: 'auto', overflowY: 'visible' }}>
-        {TABS.filter((t) => (t !== 'Discussion' || !!tender.technical_offer_sent_at) && seeTab(t)).map((t) => (
+        {TABS.filter((t) => seeTab(t)).map((t) => (
           <div key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             <button
               onClick={() => setTab(t)}
@@ -265,7 +271,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
         <InfoTab tender={tender} org={org} contact={contact} revisions={revisions} selectedRevId={selectedRevId} canModify={canModify} onChangeLeadInfo={patchLeadInfo} />
       )}
       {tab === 'Dates' && seeTab('Dates') && <DatesTab tender={tender} />}
-      {tab === 'Discussion' && seeTab('Discussion') && tender.technical_offer_sent_at && <RequirementDiscussionTab source="tender" recordId={tender.id} side="crm" />}
+      {tab === 'Technical Offers' && seeTab('Technical Offers') && <BdTechnicalOffers kind="tender" recordId={tender.id} />}
       {tab === 'Documents' && seeTab('Documents') && <DocumentsTab tender={tender} canModify={canModify && canFeature('crm', 'inquiries_tenders', 'documents', 'create')} isAdmin={isAdmin} />}
       {tab === 'Follow Ups' && seeTab('Follow Ups') && <ActivitiesTab tender={tender} org={org} />}
       {tab === 'Timeline' && seeTab('Timeline') && <TimelineTab tenderId={tender.id} />}
@@ -335,7 +341,7 @@ function InfoTab({ tender, org, contact, revisions, selectedRevId, canModify, on
           text={<span data-tour="tnd-info-current-status">{tender.current_status_note || <span style={{ color: '#64748b' }}>No current status written yet — use Edit to add where this tender stands.</span>}</span>}
           meta={<>
             <span>Submission due: <strong style={{ color: '#0f172a' }}>{tender.submission_date ? formatDate(tender.submission_date) : '—'}</strong></span>
-            {tender.priority && <>{dot}<span>Priority: <strong style={{ color: '#0f172a' }}>{tender.priority}</strong></span></>}
+            {tender.priority && <>{dot}<span>Priority: <strong style={{ color: '#0f172a' }}>{priorityLabel(tender.priority)}</strong></span></>}
             {dot}<span>BD Owner: <strong style={{ color: '#0f172a' }}>{tender.bd_owner || '—'}</strong></span>
             {tender.created_at && <>{dot}<span>Created {formatDate(tender.created_at)}{tender.created_by_name ? ` by ${tender.created_by_name}` : ''}</span></>}
           </>}

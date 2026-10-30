@@ -2,9 +2,8 @@
 
 * Stages only move forward. Going back is a correction, not a normal step:
   only an admin may do it, and only with a written reason (kept on the timeline).
-* Once a live sales order exists for the record, its stage and status are frozen
-  for everyone — moving the record back would re-open "Create Sales Order" and
-  let a second order be raised. Cancel the order in Sales first.
+* Sales Orders were retired on 2026-10-30, so a historic sales order no longer
+  freezes the record (owner decision). It still blocks deleting the record.
 """
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -13,31 +12,37 @@ from app.modules.main.models.user import User
 
 
 def ensure_no_live_order(db: Session, *, inquiry_id: int | None = None, tender_id: int | None = None, label: str, what: str) -> None:
-    from app.modules.sales import service as sales_svc
-    order = sales_svc.live_order_for_source(db, inquiry_id, tender_id)
-    if order:
-        raise HTTPException(status_code=409, detail=(
-            f"The {what} of this {label} is locked: sales order {order.display_number} "
-            f"({sales_svc.STATUS_LABEL.get(order.status, order.status)}) was raised from it. "
-            f"To change it, cancel {order.display_number} in Sales first."))
+    """No-op since the Sales retirement (2026-10-30): a historic sales order no
+    longer locks the stage / status / customer of its inquiry or tender.
+    Signature kept so existing callers need no change."""
+    return None
 
 
 def ensure_not_with_sales(db: Session, *, inquiry_id: int | None = None, tender_id: int | None = None, label: str) -> None:
-    """Once a live sales order is raised from a record it has been handed to
-    Sales: the order is now the reference document, so the record is read-only
-    for everyone (admins too). Changing it means cancelling the order first."""
-    from app.modules.sales import service as sales_svc
-    order = sales_svc.live_order_for_source(db, inquiry_id, tender_id)
-    if order:
-        raise HTTPException(status_code=409, detail=(
-            f"This {label} is locked: it was sent to Sales as sales order {order.display_number} "
-            f"({sales_svc.STATUS_LABEL.get(order.status, order.status)}), so nobody can edit it any more. "
-            f"If it really has to change, cancel {order.display_number} in Sales first."))
+    """No-op since the Sales retirement (2026-10-30): the record is no longer
+    read-only once a historic order was raised from it. Signature kept."""
+    return None
+
+
+def pm_projects_from_source(db: Session, source: str, record_id: int) -> list[str]:
+    """Project numbers (PEW-82) of PM projects whose optional CRM source is this
+    inquiry / tender (pm_projects.source_kind / source_id). Empty until that
+    column exists on the model."""
+    from app.modules.projects.models.project import PmProject
+
+    kind_col, id_col = getattr(PmProject, "source_kind", None), getattr(PmProject, "source_id", None)
+    if kind_col is None or id_col is None:
+        return []
+    q = db.query(PmProject.project_code).filter(kind_col == source, id_col == record_id)
+    if hasattr(PmProject, "is_deleted"):
+        q = q.filter(PmProject.is_deleted == False)  # noqa: E712
+    return sorted({code for (code,) in q.all()})
 
 
 def record_links(db: Session, *, inquiry_id: int | None = None, tender_id: int | None = None) -> list[str]:
-    """What still points at an inquiry / tender in Sales or R&D (owner, 2026-10-27:
-    a linked record is never deleted). Plain words, one entry per kind."""
+    """What still points at an inquiry / tender in a historic sales order, a PM
+    project or R&D (owner, 2026-10-27: a linked record is never deleted). Plain
+    words, one entry per kind."""
     from app.modules.crm.models.rnd_request import CrmRndRequest
     from app.modules.rnd.models.project import RndProject
     from app.modules.rnd.models.requirement_work import RndRequirementProjectLink, RndRequirementTask
@@ -49,6 +54,9 @@ def record_links(db: Session, *, inquiry_id: int | None = None, tender_id: int |
     orders = db.query(SalesOrder).filter(so_col == rid, SalesOrder.is_deleted == False).order_by(SalesOrder.id).limit(4).all()  # noqa: E712
     if orders:
         out.append("sales order " + ", ".join(o.display_number for o in orders[:3]) + (" and more" if len(orders) > 3 else ""))
+    projects_pm = pm_projects_from_source(db, source, rid)
+    if projects_pm:
+        out.append("project " + ", ".join(projects_pm[:3]) + (" and more" if len(projects_pm) > 3 else ""))
     if db.query(CrmRndRequest.id).filter(CrmRndRequest.source == source, CrmRndRequest.record_id == rid).first():
         out.append("an R&D technical offer request")
     if db.query(RndRequirementTask.id).filter(RndRequirementTask.source == source, RndRequirementTask.record_id == rid).first():
@@ -66,13 +74,14 @@ def record_links(db: Session, *, inquiry_id: int | None = None, tender_id: int |
 
 
 def ensure_deletable(db: Session, *, inquiry_id: int | None = None, tender_id: int | None = None, label: str) -> None:
-    """A record that Sales or R&D still refers to (a sales order raised from it, an
-    R&D offer request, requirement tasks or an R&D project) can't be deleted."""
+    """A record that a project, a historic sales order or R&D still refers to (a PM
+    project, a sales order raised from it, an R&D offer request, requirement
+    tasks or an R&D project) can't be deleted."""
     links = record_links(db, inquiry_id=inquiry_id, tender_id=tender_id)
     if links:
         raise HTTPException(status_code=409, detail=(
             f"This {label} can't be deleted: it is linked to {'; '.join(links)}. "
-            f"Only a {label} with no Sales or R&D link can be deleted."))
+            f"Remove or unlink those first; only a {label} with no project, order or R&D link can be deleted."))
 
 
 def check_stage_move(
@@ -82,7 +91,6 @@ def check_stage_move(
     """Validates a stage change. Returns True when it is a (permitted) backward move."""
     if new == old:
         return False
-    ensure_no_live_order(db, inquiry_id=inquiry_id, tender_id=tender_id, label=label, what="stage")
     if old not in stages or new not in stages:
         return False  # legacy stage value — no order to compare against
     if stages.index(new) > stages.index(old):

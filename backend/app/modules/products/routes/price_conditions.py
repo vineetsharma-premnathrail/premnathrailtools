@@ -1,15 +1,16 @@
-"""Pricing conditions (SAP VK11 create / VK12 change / VK13 display) and the
-price lookup documents use to default their line prices.
+"""Pricing conditions (country prices inside a product) and the price lookup
+documents use to default their line prices.
 
-Reading (list + resolve) is open to Sales, Product Management, CRM and
-Service users — each of them prices something. Maintaining the records is
-the Sales › Pricing tab (create / edit / delete in the Permission Matrix)."""
+Reading (list + resolve) is open to CRM and Service users — each of them
+prices something. Maintaining the records is the feature CRM › Products ›
+Pricing (create / edit / delete in the Permission Matrix); it needs no other
+tab than Products (moved from Sales on 2026-10-30)."""
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_any_app_access, require_tab_action
+from app.core.permissions import require_any_app_access, require_feature_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.products import pricing
@@ -23,10 +24,10 @@ from app.modules.products.schemas.price_condition import (
 
 router = APIRouter(prefix="/products/price-conditions", tags=["Products - Pricing"])
 
-_READ = require_any_app_access("sales", "products", "crm", "erp")
-_CAN_CREATE = require_tab_action("sales", "pricing", "create")
-_CAN_EDIT = require_tab_action("sales", "pricing", "edit")
-_CAN_DELETE = require_tab_action("sales", "pricing", "delete")
+_READ = require_any_app_access("crm", "erp")
+_CAN_CREATE = require_feature_action("crm", "products", "pricing", "create")
+_CAN_EDIT = require_feature_action("crm", "products", "pricing", "edit")
+_CAN_DELETE = require_feature_action("crm", "products", "pricing", "delete")
 
 
 def _item_label(c: ProductPriceCondition) -> str:

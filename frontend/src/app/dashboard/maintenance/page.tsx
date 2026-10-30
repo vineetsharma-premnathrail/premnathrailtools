@@ -1,5 +1,6 @@
 'use client'
 
+import { normalizePriority, priorityLabel } from '@/lib/priority'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -16,7 +17,7 @@ import { formatINR, formatMinutes, PRIORITY_LABELS, WO_STATUS_LABELS } from '@/c
 import Select from '@/components/shared/Select'
 
 const WO_STATUS_HEX: Record<string, string> = { draft: '#78716c', assigned: '#2563EB', in_progress: '#F59E0B', on_hold: '#9333EA', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
-const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
+const PRIORITY_HEX: Record<string, string> = { standard: '#475569', urgent: '#DC2626' }
 const CRIT_HEX: Record<string, string> = { A: '#DC2626', B: '#F59E0B', C: '#78716c' }
 
 const cardStyle: React.CSSProperties = {
@@ -163,7 +164,7 @@ export default function MaintenanceDashboardPage() {
                     {r.asset_code} — {r.problem_description}
                   </span>
                   {r.machine_down && <Pill label="Machine down" hex="#DC2626" />}
-                  <Pill label={PRIORITY_LABELS[r.priority] || r.priority} hex={PRIORITY_HEX[r.priority] || '#78716c'} />
+                  <Pill label={priorityLabel(r.priority)} hex={PRIORITY_HEX[normalizePriority(r.priority)]} />
                   <span style={{ fontSize: 12, color: TEXT.muted }}>{formatDateTime(r.reported_at)}</span>
                 </div>
               ))}
@@ -179,7 +180,7 @@ export default function MaintenanceDashboardPage() {
                 <div key={w.id} style={rowStyle} onClick={() => router.push(recordPath('/dashboard/maintenance/work-orders', w))}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, minWidth: 120 }}>{w.wo_number}</span>
                   <span style={{ fontSize: 13, color: TEXT.body, flex: '1 1 160px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.asset_code} — {w.title}</span>
-                  <Pill label={PRIORITY_LABELS[w.priority] || w.priority} hex={PRIORITY_HEX[w.priority] || '#78716c'} />
+                  <Pill label={priorityLabel(w.priority)} hex={PRIORITY_HEX[normalizePriority(w.priority)]} />
                   <Pill label={WO_STATUS_LABELS[w.status] || w.status} hex={WO_STATUS_HEX[w.status] || '#78716c'} />
                   {w.planned_start && <span style={{ fontSize: 12, color: TEXT.muted }}>{formatDate(w.planned_start)}</span>}
                 </div>

@@ -2,27 +2,27 @@
 
 // Every file on a requirement that R&D may see, in one searchable list:
 //  * Business team (CRM) — the Technical Offer Request and client files shared with it
-//  * Tasks — files the head attached to a task and the assignee's work / updates
+//  * Tasks — files attached to a task and the assignee's work / updates
 //    (listed only for the head and that task's people)
-//  * Discussion — attachments from the CRM ↔ R&D discussion
-//  * R&D — R&D's own documents and response files
-//  * Departments — files Design / Electrical / Hydraulic & Pneumatic uploaded
-// Requirement documents never show in CRM. Each department uploads under its
-// own name and decides whether the other departments see the file ("All
-// departments") or only its own people do; it can change that per file later.
-// Opening needs the Download right, uploading needs Upload (R&D: set by the R&D
-// head; a shared department has both).
+//  * R&D — R&D's own documents, Technical Offer files and response files
+// Every uploaded file carries ONE category, picked at upload (required) — Customer
+// Specification, Drawing, Calculation … — and the list filters by it. Upload only:
+// documents are not created in the portal. Requirement documents never show in CRM.
+// Opening needs the Download right, uploading needs Upload (R&D: set by the R&D head).
 
 import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { rndApi } from '@/lib/api'
-import { RndMyAccess, RndWorkDepartment, RndWorkDocument } from '@/types'
+import { RndMyAccess, RndWorkDocument } from '@/types'
 import { TEXT, BORDER, GLASS, SHADOWS } from '@/lib/theme'
-import { chipBtnStyle, smallSecondaryBtnStyle, inputStyle as sharedInputStyle, pillStyle } from '@/components/shared/ui'
+import { chipBtnStyle, inputStyle as sharedInputStyle, pillStyle } from '@/components/shared/ui'
 import { formatDateTime } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
+import { useFormDraft } from '@/lib/formDraft'
+import DraftBanner from '@/components/shared/DraftBanner'
 import { FormSheet, SheetSection, SheetIcon, FileDropZone, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import { RND_DOC_CATEGORIES, RND_DOC_CATEGORY_LABELS } from '@/types/rndIntake'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -31,72 +31,77 @@ const sectionStyle: React.CSSProperties = {
 // Shared 34px control scale; list filters keep their own width.
 const inputStyle: React.CSSProperties = { ...sharedInputStyle, background: 'rgba(255,255,255,.7)' }
 
-type Group = 'all' | 'crm' | 'task' | 'discussion' | 'rnd' | 'dept'
-const GROUP_LABELS: Record<string, string> = { crm: 'Business team (CRM)', task: 'Tasks', discussion: 'Discussion', rnd: 'R&D', dept: 'Departments' }
-const GROUP_HEX: Record<string, string> = { crm: '#2563EB', task: '#7C3AED', discussion: '#0891B2', rnd: '#16A34A', dept: '#D97706' }
-const DEPT_LABELS: Record<RndWorkDepartment, string> = { rnd: 'R&D', design: 'Design', electrical: 'Electrical', hydraulic: 'Hydraulic & Pneumatic' }
+type Group = 'all' | 'crm' | 'task' | 'rnd'
+type Doc = RndWorkDocument & { category_label?: string | null; can_change_category?: boolean }
+const GROUP_LABELS: Record<string, string> = { crm: 'Business team (CRM)', task: 'Tasks', rnd: 'R&D' }
+const GROUP_HEX: Record<string, string> = { crm: '#2563EB', task: '#7C3AED', rnd: '#16A34A' }
 
 const fmtSize = (n?: number | null) => (n == null ? '' : n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
 
 export default function RequirementDocumentsTab({ source, recordId, access }: { source: 'inquiry' | 'tender'; recordId: number; access: RndMyAccess }) {
-  const [docs, setDocs] = useState<RndWorkDocument[] | null>(null)
+  const [docs, setDocs] = useState<Doc[] | null>(null)
   const [error, setError] = useState<string | string[]>('')
   const [uploading, setUploading] = useState(false)
   const [search, setSearch] = useState('')
   const [group, setGroup] = useState<Group>('all')
-  const myDepts = access.departments || []
-  const [uploadDept, setUploadDept] = useState<RndWorkDepartment | ''>(myDepts[0] || '')
-  const [visibility, setVisibility] = useState<'all' | 'own'>('all')
+  const [categoryFilter, setCategoryFilter] = useState('')
   const [changing, setChanging] = useState<number | null>(null)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [files, setFiles] = useState<File[]>([])
+  const [category, setCategory] = useState('')
   const [uploadError, setUploadError] = useState<string | string[]>('')
   useEscapeKey(uploadOpen && !uploading, () => setUploadOpen(false))
+  const draft = useFormDraft(uploadOpen ? `rnd-doc-upload-${source}-${recordId}` : null, { category, files },
+    (d) => { setCategory(d.category || '') })
 
   const load = () => rndApi.listAllRequirementDocuments(source, recordId)
-    .then(setDocs)
+    .then((d) => setDocs(d as Doc[]))
     .catch((err) => { setDocs([]); setError(extractErrorMessages(err, 'Could not load the documents.')) })
   useEffect(() => { load() }, [source, recordId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const upload = async (list: File[]) => {
-    if (!list.length) { setUploadError('Choose at least one file to upload.'); return }
+  const upload = async () => {
+    if (!category) { setUploadError('Pick a category — it decides how the file is filed (e.g. Drawing, Calculation, Customer Specification).'); return }
+    if (!files.length) { setUploadError('Choose at least one file to upload.'); return }
     setUploading(true)
     setUploadError('')
     try {
-      await rndApi.uploadWorkDocuments(source, recordId, list, { department: uploadDept || undefined, visibility })
+      await rndApi.uploadWorkDocuments(source, recordId, files, { category })
+      draft.clear()
       load()
       setFiles([])
+      setCategory('')
       setUploadOpen(false)
     } catch (err) {
-      setUploadError(extractErrorMessages(err, 'Upload failed.'))
+      setUploadError(extractErrorMessages(err, 'Upload failed. Check the files and try again.'))
     } finally {
       setUploading(false)
     }
   }
 
-  const toggleVisibility = async (d: RndWorkDocument) => {
+  const changeCategory = async (d: Doc, next: string) => {
+    if (!next || next === d.category) return
     setChanging(d.id)
     setError('')
     try {
-      await rndApi.setDocumentVisibility(d.id, !d.shared_with_all)
+      await rndApi.setDocumentCategory(d.id, next)
       await load()
     } catch (err) {
-      setError(extractErrorMessages(err, `Could not change who sees "${d.name}".`))
+      setError(extractErrorMessages(err, `Could not change the category of "${d.name}".`))
     } finally {
       setChanging(null)
     }
   }
 
-  const open = async (d: RndWorkDocument) => {
+  const open = async (d: Doc) => {
     try { await rndApi.openWorkDocument(d) } catch (err) { setError(extractErrorMessages(err, `Could not open "${d.name}".`)) }
   }
 
   const all = docs || []
   const q = search.trim().toLowerCase()
-  // Search matches the file name, who uploaded it, and where it came from (task title, "Discussion", …).
   const shown = all.filter((d) =>
     (group === 'all' || d.group === group) &&
-    (!q || [d.name, d.uploaded_by, d.context, d.group ? GROUP_LABELS[d.group] : ''].some((v) => (v || '').toLowerCase().includes(q))),
+    (!categoryFilter || d.category === categoryFilter) &&
+    (!q || [d.name, d.uploaded_by, d.context, d.category ? RND_DOC_CATEGORY_LABELS[d.category] : '', d.group ? GROUP_LABELS[d.group] : ''].some((v) => (v || '').toLowerCase().includes(q))),
   )
   const count = (g: Group) => (g === 'all' ? all.length : all.filter((d) => d.group === g).length)
 
@@ -111,7 +116,7 @@ export default function RequirementDocumentsTab({ source, recordId, access }: { 
         )}
       </div>
       <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 14px' }}>
-        Everything on this requirement in one place — files from the business team, task files, discussion attachments, and the documents R&amp;D and the shared departments uploaded. Each department decides whether the other departments see its files. Nothing here shows in CRM.
+        Everything on this requirement in one place — files from the business team, task files and the documents R&amp;D uploaded. Each uploaded file has one category. Nothing here shows in CRM.
       </p>
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 12, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
@@ -127,20 +132,16 @@ export default function RequirementDocumentsTab({ source, recordId, access }: { 
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search file name, uploaded by, task…"
         />
+        <Select data-tour="rnd-req-doc-category-filter" aria-label="Category" style={{ ...inputStyle, width: 'auto', flex: '0 1 220px' }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+          <option value="">All categories</option>
+          {[...RND_DOC_CATEGORIES, { value: 'technical_offer', label: 'Technical Offer' }].map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </Select>
         <div data-tour="rnd-req-doc-groups" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {(['all', 'crm', 'task', 'discussion', 'rnd', 'dept'] as Group[]).map((g) => {
-            const active = group === g
-            return (
-              <button
-                key={g}
-                type="button"
-                onClick={() => setGroup(g)}
-                style={chipBtnStyle(active)}
-              >
-                {g === 'all' ? 'All' : GROUP_LABELS[g]} ({count(g)})
-              </button>
-            )
-          })}
+          {(['all', 'crm', 'task', 'rnd'] as Group[]).map((g) => (
+            <button key={g} type="button" onClick={() => setGroup(g)} style={chipBtnStyle(group === g)}>
+              {g === 'all' ? 'All' : GROUP_LABELS[g]} ({count(g)})
+            </button>
+          ))}
         </div>
       </div>
 
@@ -153,12 +154,17 @@ export default function RequirementDocumentsTab({ source, recordId, access }: { 
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14, maxHeight: 520, overflowY: 'auto' }}>
           {shown.map((d) => {
-            const hex = GROUP_HEX[d.group || 'rnd']
+            const hex = GROUP_HEX[d.group || 'rnd'] || '#78716c'
+            const catLabel = d.category_label || (d.category ? RND_DOC_CATEGORY_LABELS[d.category] : null)
             return (
               <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,0.55)', flexWrap: 'wrap' }}>
-                <span style={pillStyle(hex)}>
-                  {d.group ? GROUP_LABELS[d.group] : 'R&D'}
-                </span>
+                <span style={pillStyle(hex)}>{d.group ? GROUP_LABELS[d.group] || d.group : 'R&D'}</span>
+                {d.can_change_category ? (
+                  <Select aria-label={`Category of ${d.name}`} disabled={changing === d.id} value={d.category || ''} style={{ ...inputStyle, width: 'auto', flex: '0 0 200px' }} onChange={(e) => changeCategory(d, e.target.value)}>
+                    {!d.category && <option value="">No category</option>}
+                    {RND_DOC_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </Select>
+                ) : catLabel ? <span style={pillStyle('#475569')}>{catLabel}</span> : null}
                 <div style={{ flex: '1 1 260px', minWidth: 0 }}>
                   {access.download ? (
                     <a href="#" onClick={(e) => { e.preventDefault(); open(d) }} style={{ fontSize: 13, fontWeight: 600, color: '#2563eb', textDecoration: 'none', wordBreak: 'break-word' }}>{d.name}</a>
@@ -170,13 +176,6 @@ export default function RequirementDocumentsTab({ source, recordId, access }: { 
                   </p>
                 </div>
                 <span style={{ fontSize: 11.5, color: TEXT.muted, whiteSpace: 'nowrap' }}>{d.uploaded_by || '—'} · {formatDateTime(d.uploaded_at)}</span>
-                {d.can_change_visibility && (
-                  <button type="button" disabled={changing === d.id} onClick={() => toggleVisibility(d)}
-                    title={d.shared_with_all ? `Hide this file from the other departments — only ${d.department_label} will see it` : 'Let every department working on this requirement see this file'}
-                    style={{ ...smallSecondaryBtnStyle, opacity: changing === d.id ? 0.5 : 1 }}>
-                    {d.shared_with_all ? `Keep to ${d.department_label} only` : 'Show to all departments'}
-                  </button>
-                )}
               </div>
             )
           })}
@@ -190,7 +189,7 @@ export default function RequirementDocumentsTab({ source, recordId, access }: { 
           onClose={() => setUploadOpen(false)} busy={uploading}
           footer={<>
             <button type="button" onClick={() => setUploadOpen(false)} disabled={uploading} style={sheetBtn('secondary', SHEET.INK, uploading)}>Cancel</button>
-            <button type="button" onClick={() => upload(files)} disabled={uploading || files.length === 0} style={sheetBtn('primary', SHEET.BLUE, uploading || files.length === 0)}>
+            <button type="button" onClick={upload} disabled={uploading} style={sheetBtn('primary', SHEET.BLUE, uploading)}>
               <SheetIcon name="upload" size={16} />{uploading ? 'Uploading…' : `Upload${files.length > 1 ? ` ${files.length} files` : ''}`}
             </button>
           </>}>
@@ -200,30 +199,18 @@ export default function RequirementDocumentsTab({ source, recordId, access }: { 
                 {Array.isArray(uploadError) ? uploadError.join(' ') : uploadError}
               </div>
             )}
+            <DraftBanner draft={draft} />
+            <SheetSection icon="tag" title="Category">
+              <label style={sheetLabel}>Category <Req /></label>
+              <Select data-tour="rnd-req-doc-category" style={sheetInput} value={category} onChange={(e) => setCategory(e.target.value)}>
+                <option value="">Select category…</option>
+                {RND_DOC_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </Select>
+              <p style={sheetHint}>One category for the files in this upload. Technical Offers are uploaded from the Technical Offers tab.</p>
+            </SheetSection>
             <SheetSection icon="clip" title="Files">
               <label style={sheetLabel}>Files <Req /></label>
               <FileDropZone files={files} onChange={setFiles} />
-            </SheetSection>
-            <SheetSection icon="users" title="Who sees them">
-              {myDepts.length > 1 ? (
-                <div style={{ maxWidth: 280, marginBottom: 12 }}>
-                  <label style={sheetLabel}>Upload for</label>
-                  <Select value={uploadDept} onChange={(e) => setUploadDept(e.target.value as RndWorkDepartment)} style={sheetInput}>
-                    {myDepts.map((d) => <option key={d} value={d}>{DEPT_LABELS[d]}</option>)}
-                  </Select>
-                </div>
-              ) : uploadDept ? (
-                <p style={{ fontSize: 13, color: SHEET.BODY, margin: '0 0 12px' }}>Uploading for <strong>{DEPT_LABELS[uploadDept]}</strong></p>
-              ) : null}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {(['all', 'own'] as const).map((v) => (
-                  <label key={v} style={{ fontSize: 13, color: SHEET.BODY, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                    <input type="radio" name="doc-visibility" checked={visibility === v} onChange={() => setVisibility(v)} />
-                    {v === 'all' ? 'All departments see it' : `Only ${uploadDept ? DEPT_LABELS[uploadDept] : 'my department'}`}
-                  </label>
-                ))}
-              </div>
-              <p style={sheetHint}>You can change who sees each file later from the list.</p>
             </SheetSection>
           </div>
         </FormSheet>

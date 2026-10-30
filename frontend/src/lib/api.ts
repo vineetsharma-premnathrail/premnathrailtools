@@ -399,6 +399,16 @@ export const managedDocumentsApi = {
 }
 
 export const crmApi = {
+  // R&D intake + Technical Offers on an inquiry / tender (BD side)
+  getRndRequirement: async (kind: 'inquiry' | 'tender', id: number): Promise<import('@/types/rndIntake').CrmRndRequirement | null> => (await apiClient.get(`/crm/${kind === 'inquiry' ? 'inquiries' : 'tenders'}/${id}/rnd-requirement`)).data,
+  listTechnicalOffers: async (kind: 'inquiry' | 'tender', id: number): Promise<import('@/types/rndIntake').CrmOfferV2[]> => (await apiClient.get(`/crm/${kind === 'inquiry' ? 'inquiries' : 'tenders'}/${id}/technical-offers`)).data,
+  technicalOfferFile: async (kind: 'inquiry' | 'tender', id: number, offerId: number): Promise<Blob> => (await apiClient.get(`/crm/${kind === 'inquiry' ? 'inquiries' : 'tenders'}/${id}/technical-offers/${offerId}/file`, { responseType: 'blob' })).data,
+  uploadBdTechnicalOffer: async (kind: 'inquiry' | 'tender', id: number, p: { file: File; title: string; offer_date: string; notes?: string }): Promise<import('@/types/rndIntake').CrmOfferV2> => {
+    const form = new FormData(); form.append('file', p.file); form.append('title', p.title); form.append('offer_date', p.offer_date)
+    if (p.notes) form.append('notes', p.notes)
+    const { data } = await apiClient.post(`/crm/${kind === 'inquiry' ? 'inquiries' : 'tenders'}/${id}/technical-offers`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Uploading' }); return data
+  },
+  deleteBdTechnicalOffer: async (offerId: number) => (await apiClient.delete(`/crm/technical-offers/${offerId}`)).data,
   // Dashboard
   getDashboard: async () => {
     const { data } = await apiClient.get('/crm/dashboard')
@@ -1207,6 +1217,11 @@ export const p2pApi = {
     const { data } = await apiClient.get(`/p2p/requests/${id}/audit`)
     return data
   },
+  /** The Tally PO PDF kept on a history entry (each upload keeps its own copy). */
+  getAuditDocumentBlob: async (id: number, logId: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/p2p/requests/${id}/audit/${logId}/document`, { responseType: 'blob' })
+    return data
+  },
 
   approve: async (id: number, comment?: string) => {
     const { data } = await apiClient.post(`/p2p/requests/${id}/approve`, { comment })
@@ -1240,11 +1255,6 @@ export const p2pApi = {
 
   selectVendor: async (id: number, selected_vendor: string) => {
     const { data } = await apiClient.post(`/p2p/requests/${id}/select-vendor`, { selected_vendor })
-    return data
-  },
-
-  createPO: async (id: number, payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post(`/p2p/requests/${id}/create-po`, payload)
     return data
   },
 
@@ -1573,10 +1583,6 @@ export const projectsApi = {
   units: async (id: number): Promise<import('@/types').ProjectUnitsResponse> => { const { data } = await apiClient.get(`/projects/${id}/units`); return data },
   /** Server search behind <ProjectUnitPicker> (other modules link their records to a project / unit). */
   unitsLookup: async (params: { q?: string; kind?: 'vehicle' | 'lot'; include_projects?: boolean; project_id?: number } = {}): Promise<import('@/types').ProjectUnitLookupItem[]> => { const { data } = await apiClient.get('/projects/units/lookup', { params }); return data },
-  /** Confirmed New Project sales orders that have no PM project yet — the Project Manager creates it. */
-  salesOrdersAwaitingProject: async (): Promise<{ id: number; so_number: string; customer_name?: string | null; customer_po_number?: string | null; confirmed_at?: string | null; sales_owner_name?: string | null; vehicles: number; first_delivery_date?: string | null; last_delivery_date?: string | null }[]> => { const { data } = await apiClient.get('/projects/units/awaiting-sales-orders'); return data },
-  /** Creates the PEW project (and its Units) for a confirmed sales order. */
-  createFromSalesOrder: async (payload: { sales_order_id: number; project_manager_id: number; name?: string }) => { const { data } = await apiClient.post('/projects/units/from-sales-order', payload); return data },
   remove: async (id: number) => { const { data } = await apiClient.delete(`/projects/${id}`); return data },
   audit: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/audit`); return data },
   breakdown: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/breakdown`); return data },
@@ -1788,8 +1794,17 @@ export const rfqApi = {
     return data
   },
 
-  createPoDraft: async (rfqId: number, payload: Record<string, unknown> = {}) => {
-    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/po-draft`, payload)
+  /** Upload PO on the requisition (2026-10-30): the Tally PO number + PDF, the vendor quote, ship-to
+   *  store and each line's price. The server builds the PO from the PR lines and sends it for approval. */
+  uploadPo: async (rfqId: number, tallyPoNo: string, details: Record<string, unknown>, file: File) => {
+    const formData = new FormData()
+    formData.append('tally_po_no', tallyPoNo)
+    formData.append('details', JSON.stringify(details))
+    formData.append('file', file)
+    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/upload-po`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    })
     return data
   },
 
@@ -1861,7 +1876,7 @@ export const purchaseOrdersApi = {
     return data
   },
 
-  // Portal POs are created only via rfqApi.createPoDraft (RFQ -> draft -> submit);
+  // Portal POs are created only via rfqApi.uploadPo (Tally PO uploaded on the requisition);
   // status changes only through submit/approval/GRN, never this update.
   update: async (id: number, payload: { expected_delivery?: string; delivery_terms?: string }) => {
     const { data } = await apiClient.patch(`/p2p/purchase-orders/${id}`, payload)
@@ -3246,28 +3261,6 @@ function appendTaskPlanning(form: FormData, p: import('@/types').RndTaskCreateIn
   if (p.checklist?.length) form.append('checklist', JSON.stringify(p.checklist))
 }
 
-// Design / Electrical / Hydraulic & Pneumatic › Requirements — what R&D shared with the department.
-export const deptRequirementsApi = {
-  list: async (department: string): Promise<import('@/types').DeptRequirementRow[]> => { const { data } = await apiClient.get(`/rnd/department-requirements/${department}`); return data },
-  get: async (department: string, shareId: number): Promise<import('@/types').DeptRequirementDetail> => { const { data } = await apiClient.get(`/rnd/department-requirements/${department}/${shareId}`); return data },
-  respond: async (department: string, shareId: number, response: string, remarks: string, files: File[]): Promise<import('@/types').DeptRequirementDetail> => {
-    const form = new FormData()
-    form.append('response', response)
-    if (remarks.trim()) form.append('remarks', remarks.trim())
-    files.forEach((f) => form.append('files', f))
-    const { data } = await apiClient.post(`/rnd/department-requirements/${department}/${shareId}/respond`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Sending' })
-    return data
-  },
-  openDocument: async (department: string, doc: { id: number; file_size?: number | null }) => {
-    if ((doc.file_size || 0) > LARGE_DOWNLOAD_BYTES) {
-      const { data } = await apiClient.get(`/rnd/department-requirements/${department}/documents/${doc.id}/download-url`)
-      window.open(data.url, '_blank', 'noopener')
-      return
-    }
-    const { data } = await apiClient.get(`/rnd/department-requirements/${department}/documents/${doc.id}/content`, { responseType: 'blob' })
-    window.open(URL.createObjectURL(data), '_blank')
-  },
-}
 
 // Shared module reports framework (backend app/core/reporting): one catalogue + run + options + Excel export per module.
 export const reportsApi = {
@@ -3278,9 +3271,33 @@ export const reportsApi = {
 }
 
 export const rndApi = {
-  listRequirements: async (params: { search?: string; source?: string; mine?: boolean } = {}): Promise<RndRequirement[]> => {
+  listRequirements: async (params: { search?: string; source?: string; mine?: boolean; needs_my_review?: boolean; status?: string } = {}): Promise<import('@/types/rndIntake').RndRequirementRow[]> => {
     const { data } = await apiClient.get('/rnd/requirements', { params })
     return data
+  },
+  acceptRequirement: async (source: string, id: number, remarks?: string) => { const { data } = await apiClient.post(`/rnd/requirements/${source}/${id}/accept`, { remarks }); return data },
+  returnRequirement: async (source: string, id: number, reason: string) => { const { data } = await apiClient.post(`/rnd/requirements/${source}/${id}/return`, { reason }); return data },
+  setDocumentCategory: async (documentId: number, category: string) => { const { data } = await apiClient.patch(`/rnd/requirement-work/documents/${documentId}/category`, { category }); return data },
+  uploadTechnicalOffer: async (source: string, id: number, p: { file: File; title: string; offer_date: string; notes?: string; revise_of_id?: number }): Promise<import('@/types/rndIntake').RndOfferV2> => {
+    const form = new FormData(); form.append('file', p.file); form.append('title', p.title); form.append('offer_date', p.offer_date)
+    if (p.notes) form.append('notes', p.notes)
+    if (p.revise_of_id) form.append('revise_of_id', String(p.revise_of_id))
+    const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/technical-offers`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Uploading' }); return data
+  },
+  downloadTechnicalOfferFile: async (offerId: number): Promise<Blob> => (await apiClient.get(`/rnd/requirement-work/technical-offers/${offerId}/file`, { responseType: 'blob' })).data,
+  // R&D Tasks board (all R&D tasks, analytics, Create Task by type)
+  listRndTasks: async (params: import('@/types/rndIntake').RndTaskFilters = {}): Promise<{ items: import('@/types/rndIntake').RndTaskRow[]; total: number }> => { const { data } = await apiClient.get('/rnd/tasks', { params }); return data },
+  rndTaskAnalytics: async (params: import('@/types/rndIntake').RndTaskFilters = {}): Promise<import('@/types/rndIntake').RndTaskAnalytics> => { const { data } = await apiClient.get('/rnd/tasks/analytics', { params }); return data },
+  createRndTask: async (p: import('@/types/rndIntake').RndTaskCreatePayload) => {
+    const form = new FormData(); form.append('type', p.type); form.append('title', p.title); form.append('assigned_to_id', String(p.assigned_to_id)); form.append('due_date', p.due_date); form.append('priority', p.priority)
+    if (p.source) form.append('source', p.source)
+    if (p.record_id) form.append('record_id', String(p.record_id))
+    if (p.rnd_project_id) form.append('rnd_project_id', String(p.rnd_project_id))
+    if (p.remarks) form.append('remarks', p.remarks)
+    if (p.start_date) form.append('start_date', p.start_date)
+    if (p.checklist?.length) form.append('checklist', JSON.stringify(p.checklist))
+    for (const f of p.files) form.append('files', f)
+    const { data } = await apiClient.post('/rnd/tasks', form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Assigning' }); return data
   },
   respondToRequest: async (requestId: number, payload: { remarks?: string; delay_reason?: string; files?: File[] }): Promise<RndRequest> => {
     const form = new FormData()
@@ -3292,7 +3309,7 @@ export const rndApi = {
     })
     return data
   },
-  getRequirement: async (source: string, id: number): Promise<RndRequirementDetail> => {
+  getRequirement: async (source: string, id: number): Promise<import('@/types/rndIntake').RndRequirementDetailV2> => {
     const { data } = await apiClient.get(`/rnd/requirements/${source}/${id}`)
     return data
   },
@@ -3312,11 +3329,10 @@ export const rndApi = {
   // Requirement documents on the R&D side - opened only through the R&D access check
   listWorkDocuments: async (source: string, id: number): Promise<import('@/types').RndWorkDocument[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/documents`); return data },
   /** Upload under one of my departments; 'own' keeps the files to that department, 'all' shows them to every department. */
-  uploadWorkDocuments: async (source: string, id: number, files: File[], opts?: { department?: string; visibility?: 'all' | 'own' }) => {
+  uploadWorkDocuments: async (source: string, id: number, files: File[], opts: { category: string }) => {
     const form = new FormData()
     for (const f of files) form.append('files', f)
-    if (opts?.department) form.append('department', opts.department)
-    if (opts?.visibility) form.append('visibility', opts.visibility)
+    form.append('category', opts.category)
     const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/documents`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Uploading' })
     return data
   },
@@ -3403,7 +3419,7 @@ export const rndApi = {
   },
   editTask: async (taskId: number, p: import('@/types').RndTaskEditInput): Promise<import('@/types').RndTask> => { const { data } = await apiClient.patch(`/rnd/requirement-work/tasks/${taskId}`, p); return data },
   /** Tick a checklist step or change the work status (assignee / reviewer). */
-  taskProgress: async (taskId: number, p: { work_status?: string; item_id?: string; done?: boolean }): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/requirement-work/tasks/${taskId}/progress`, p); return data },
+  taskProgress: async (taskId: number, p: { work_status?: string; item_id?: string; done?: boolean; progress_percent?: number }): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/requirement-work/tasks/${taskId}/progress`, p); return data },
   addTaskUpdate: async (taskId: number, p: { remarks: string; files: File[] }): Promise<import('@/types').RndTask> => {
     const form = new FormData()
     form.append('remarks', p.remarks)
@@ -3414,7 +3430,7 @@ export const rndApi = {
   // Every file R&D may see on a requirement (business team, tasks, discussion, R&D).
   listAllRequirementDocuments: async (source: string, id: number): Promise<import('@/types').RndWorkDocument[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/all-documents`); return data },
   // Technical Offers on a requirement (R&D prepares, the R&D head releases, CRM quotes against it).
-  listTechnicalOffers: async (source: string, id: number): Promise<import('@/types').RndTechnicalOffer[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/technical-offers`); return data },
+  listTechnicalOffers: async (source: string, id: number): Promise<import('@/types/rndIntake').RndOfferV2[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/technical-offers`); return data },
   technicalOfferTorOptions: async (): Promise<import('@/types').RndTorOption[]> => { const { data } = await apiClient.get('/rnd/requirement-work/technical-offers/tor-options'); return data },
   createTechnicalOffer: async (source: string, id: number, p: Partial<import('@/types').RndTechnicalOfferInput> = {}): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/technical-offers`, p); return data },
   updateTechnicalOffer: async (offerId: number, p: Partial<import('@/types').RndTechnicalOfferInput>): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.patch(`/rnd/requirement-work/technical-offers/${offerId}`, p); return data },
@@ -3454,7 +3470,7 @@ export const rndApi = {
     return data
   },
   editProjectTask: async (taskId: number, p: import('@/types').RndTaskEditInput): Promise<import('@/types').RndTask> => { const { data } = await apiClient.patch(`/rnd/project-tasks/${taskId}`, p); return data },
-  projectTaskProgress: async (taskId: number, p: { work_status?: string; item_id?: string; done?: boolean }): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/project-tasks/${taskId}/progress`, p); return data },
+  projectTaskProgress: async (taskId: number, p: { work_status?: string; item_id?: string; done?: boolean; progress_percent?: number }): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/project-tasks/${taskId}/progress`, p); return data },
   extendProjectTask: async (taskId: number, reason: string, newDueDate: string): Promise<import('@/types').RndTask> => {
     const form = new FormData()
     form.append('reason', reason)
@@ -4863,87 +4879,6 @@ export const rrvApi = {
   cancelRework: async (reworkId: number, reason: string): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/rework/${reworkId}/cancel`, { reason }); return data },
 
   getHandoverCertificate: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/production/rrv-builds/${id}/handover-certificate`, { responseType: 'blob', timeout: 60000 }); return data },
-}
-
-// Sales (backend app/modules/sales) — orders, approvals, amendments, delivery
-// schedule, DP extensions, dashboard / reports, settings.
-
-export const salesApi = {
-  listOrders: async (params: Record<string, unknown> = {}): Promise<import('@/types').SalesOrder[]> => { const { data } = await apiClient.get('/sales/orders', { params }); return data },
-  getOrder: async (id: number): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.get(`/sales/orders/${id}`); return data },
-  prefill: async (params: { inquiry?: number; tender?: number; quotation?: number }) => { const { data } = await apiClient.get('/sales/orders/prefill', { params }); return data },
-  orderSources: async (kind: 'inquiry' | 'tender'): Promise<{ id: number; number: string; title: string | null; customer_id: number; customer_name: string | null; accepted_quotation?: string | null; existing_order: string | null }[]> => { const { data } = await apiClient.get('/sales/orders/sources', { params: { kind } }); return data },
-  serviceMachines: async (): Promise<{ id: number; serial_number: string; model_name: string | null; customer_id: number; customer_name: string | null; project_code: string | null; label: string; warranty_status: string; warranty_label: string }[]> => { const { data } = await apiClient.get('/sales/orders/service-machines'); return data },
-  serviceRequestsForMachine: async (machineId: number): Promise<{ id: number; request_number: string; issue_title: string; status: string; existing_order: string | null }[]> => { const { data } = await apiClient.get('/sales/orders/service-requests', { params: { machine_id: machineId } }); return data },
-  customerQuotations: async (customerId: number): Promise<{ id: number; quot_number: string | null; status: string; status_label: string; quote_date: string | null; net_value: number; inquiry_id: number; inquiry_number: string; inquiry_stage: string; order_received: boolean; existing_order: string | null }[]> => { const { data } = await apiClient.get('/sales/orders/quotations', { params: { customer_id: customerId } }); return data },
-  bySource: async (params: { inquiry?: number; tender?: number }): Promise<{ order: { id: number; display_number: string; status: string; status_label: string | null } | null; can_raise?: boolean }> => { const { data } = await apiClient.get('/sales/orders/by-source', { params }); return data },
-  defaults: async () => { const { data } = await apiClient.get('/sales/orders/defaults'); return data },
-  createOrder: async (payload: Record<string, unknown>): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.post('/sales/orders', payload); return data },
-  updateOrder: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.patch(`/sales/orders/${id}`, payload); return data },
-  deleteOrder: async (id: number) => { const { data } = await apiClient.delete(`/sales/orders/${id}`); return data },
-  putLines: async (id: number, lines: unknown[]): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.put(`/sales/orders/${id}/lines`, lines); return data },
-  putSchedule: async (id: number, rows: unknown[]): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.put(`/sales/orders/${id}/schedule`, rows); return data },
-  putBillingPlan: async (id: number, rows: unknown[]): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.put(`/sales/orders/${id}/billing-plan`, rows); return data },
-  action: async (id: number, action: string, payload: Record<string, unknown> = {}): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.post(`/sales/orders/${id}/${action}`, payload); return data },
-  timeline: async (id: number): Promise<import('@/types').SalesTimelineEntry[]> => { const { data } = await apiClient.get(`/sales/orders/${id}/timeline`); return data },
-  oaPdf: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/sales/orders/${id}/oa.pdf`, { responseType: 'blob', timeout: 60000 }); return data },
-
-  listAmendments: async (soId: number): Promise<import('@/types').SalesAmendment[]> => { const { data } = await apiClient.get(`/sales/orders/${soId}/amendments`); return data },
-  getAmendment: async (aid: number): Promise<import('@/types').SalesAmendment> => { const { data } = await apiClient.get(`/sales/amendments/${aid}`); return data },
-  createAmendment: async (soId: number, payload: Record<string, unknown>): Promise<import('@/types').SalesAmendment> => { const { data } = await apiClient.post(`/sales/orders/${soId}/amendments`, payload); return data },
-  updateAmendment: async (aid: number, payload: Record<string, unknown>): Promise<import('@/types').SalesAmendment> => { const { data } = await apiClient.patch(`/sales/amendments/${aid}`, payload); return data },
-  amendmentAction: async (aid: number, action: string, payload: Record<string, unknown> = {}): Promise<import('@/types').SalesAmendment> => { const { data } = await apiClient.post(`/sales/amendments/${aid}/${action}`, payload); return data },
-
-  schedule: async (params: Record<string, unknown> = {}): Promise<import('@/types').SalesOrderSchedule[]> => { const { data } = await apiClient.get('/sales/schedule', { params }); return data },
-  updateScheduleRow: async (sid: number, payload: Record<string, unknown>): Promise<import('@/types').SalesOrderSchedule> => { const { data } = await apiClient.patch(`/sales/schedule/${sid}`, payload); return data },
-  linkBuild: async (sid: number, buildId: number): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.post(`/sales/schedule/${sid}/link-build`, { build_id: buildId }); return data },
-  unlinkBuild: async (sid: number): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.post(`/sales/schedule/${sid}/unlink-build`); return data },
-  // Delivery confirmations (VL01N / POD / commissioning) and billing due list (VF04)
-  confirmDelivery: async (sid: number, payload: { delivered_on: string; reference: string; quantity?: number | null; remarks?: string | null }): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.post(`/sales/schedule/${sid}/confirm-delivery`, payload); return data },
-  confirmCommissioning: async (sid: number, payload: { commissioned_on: string; reference: string; remarks?: string | null }): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.post(`/sales/schedule/${sid}/confirm-commissioning`, payload); return data },
-  deliveryEvents: async (soId: number): Promise<import('@/types').SalesDeliveryEvent[]> => { const { data } = await apiClient.get(`/sales/orders/${soId}/delivery-events`); return data },
-  reverseDeliveryEvent: async (eid: number, reason: string): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.post(`/sales/delivery-events/${eid}/reverse`, { reason }); return data },
-  dispatchableRows: async (params: { erp_project_id?: number; so_id?: number } = {}) => { const { data } = await apiClient.get('/sales/schedule/dispatchable', { params }); return data },
-  billingDue: async (params: Record<string, unknown> = {}): Promise<import('@/types').SalesBillingDue[]> => { const { data } = await apiClient.get('/sales/billing-due', { params }); return data },
-  orderBilling: async (soId: number): Promise<import('@/types').SalesBillingDue[]> => { const { data } = await apiClient.get(`/sales/orders/${soId}/billing`); return data },
-  requestInvoice: async (bid: number): Promise<import('@/types').SalesBillingDue> => { const { data } = await apiClient.post(`/sales/billing/${bid}/request-invoice`); return data },
-  markMilestoneDue: async (bid: number, payload: { on: string; reference?: string | null }): Promise<import('@/types').SalesBillingDue> => { const { data } = await apiClient.post(`/sales/billing/${bid}/mark-due`, payload); return data },
-  listExtensions: async (soId: number): Promise<import('@/types').SalesExtension[]> => { const { data } = await apiClient.get(`/sales/orders/${soId}/extensions`); return data },
-  listAllExtensions: async (params: Record<string, unknown> = {}): Promise<import('@/types').SalesExtension[]> => { const { data } = await apiClient.get('/sales/extensions', { params }); return data },
-  requestExtension: async (soId: number, payload: Record<string, unknown>): Promise<import('@/types').SalesExtension> => { const { data } = await apiClient.post(`/sales/orders/${soId}/extensions`, payload); return data },
-  extensionAction: async (eid: number, action: 'grant' | 'refuse', payload: Record<string, unknown>): Promise<import('@/types').SalesExtension> => { const { data } = await apiClient.post(`/sales/extensions/${eid}/${action}`, payload); return data },
-
-  dashboard: async (): Promise<import('@/types').SalesDashboard> => { const { data } = await apiClient.get('/sales/dashboard'); return data },
-  orderBook: async () => { const { data } = await apiClient.get('/sales/reports/order-book'); return data },
-  backlog: async () => { const { data } = await apiClient.get('/sales/reports/backlog'); return data },
-  ldExposure: async () => { const { data } = await apiClient.get('/sales/reports/ld-exposure'); return data },
-
-  lookupCustomers: async (search = '') => { const { data } = await apiClient.get('/sales/lookups/customers', { params: search ? { search } : {} }); return data },
-  lookupContacts: async (customerId: number) => { const { data } = await apiClient.get(`/sales/lookups/customers/${customerId}/contacts`); return data },
-  lookupBuilds: async (search = '') => { const { data } = await apiClient.get('/sales/lookups/builds', { params: search ? { search } : {} }); return data },
-  lookupAgencies: async () => { const { data } = await apiClient.get('/sales/lookups/inspection-agencies'); return data },
-
-  listAttachments: async (entityType: string, entityId: number): Promise<import('@/types').SalesAttachment[]> => { const { data } = await apiClient.get('/sales/attachments', { params: { entity_type: entityType, entity_id: entityId } }); return data },
-  uploadAttachments: async (entityType: string, entityId: number, files: File[], docType: string): Promise<import('@/types').SalesAttachment[]> => {
-    const form = new FormData()
-    form.append('entity_type', entityType)
-    form.append('entity_id', String(entityId))
-    form.append('doc_type', docType)
-    files.forEach((f) => form.append('files', f))
-    const { data } = await apiClient.post('/sales/attachments', form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
-    return data
-  },
-  attachmentContent: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/sales/attachments/${id}/content`, { responseType: 'blob', timeout: 60000 }); return data },
-  deleteAttachment: async (id: number) => { const { data } = await apiClient.delete(`/sales/attachments/${id}`); return data },
-  // CRM documents of the order's source inquiry / tender — linked, never copied.
-  crmDocumentCandidates: async (params: { inquiry_id?: number; tender_id?: number }): Promise<import('@/types').SalesCrmDocument[]> => { const { data } = await apiClient.get('/sales/attachments/crm-candidates', { params }); return data },
-  listCrmDocumentLinks: async (soId: number): Promise<import('@/types').SalesCrmDocument[]> => { const { data } = await apiClient.get('/sales/attachments/crm-links', { params: { sales_order_id: soId } }); return data },
-  setCrmDocumentLinks: async (soId: number, ids: number[]): Promise<import('@/types').SalesCrmDocument[]> => { const { data } = await apiClient.put('/sales/attachments/crm-links', { crm_document_ids: ids }, { params: { sales_order_id: soId } }); return data },
-  crmDocumentContent: async (soId: number, docId: number): Promise<Blob> => { const { data } = await apiClient.get(`/sales/attachments/crm-links/${docId}/content`, { params: { sales_order_id: soId }, responseType: 'blob', timeout: 60000 }); return data },
-
-  getSettings: async (): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.get('/sales/settings'); return data },
-  saveSettings: async (values: Record<string, unknown>): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.put('/sales/settings', { values }); return data },
-  resetSetting: async (key: string): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.post(`/sales/settings/reset/${key}`); return data },
 }
 
 export const productsApi = {

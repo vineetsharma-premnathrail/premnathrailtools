@@ -1,25 +1,28 @@
 """R&D › Requirements — the R&D side of CRM's "Send Technical Requirement to R&D".
 
-Read-only inbox of every CRM Inquiry/Tender whose requirement has been sent to
-R&D, with the full send history (see crm/services/requirement_movement.py). The
-CRM record stays the single source of truth — nothing is copied into R&D
-tables, so a re-send from CRM shows up here immediately.
+Inbox of every CRM Inquiry/Tender whose requirement has been sent to R&D, with
+its R&D ID (RDR-YYYY-NNNN), revisions (-R0, -R1 …) and the review state. R&D
+accepts a revision or returns it to BD with a reason (rnd/services/requirements.py).
+The CRM record stays the single source of truth for the requirement itself — a
+re-send from CRM shows up here at once as a new revision.
 
-Gated on the R&D app + the "requirements" sub-tab only (not on 'crm'): R&D
-engineers usually have no CRM access, and these are exactly the records CRM
-chose to hand over. The TOR PDF and attached client documents open through
-/crm/documents/{id}/content, which already allows shared_via_tor documents.
+Who sees what: the R&D side (R&D app + View on Requirements) sees every
+requirement; people outside R&D see only the requirements they hold a task on
+(rnd/services/requirement_access.py). The TOR PDF and attached client documents
+open through requirement_work's /documents/{id}/content, which checks that
+access first.
 """
 from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.permission_registry import can_feature
-from app.core.permissions import ensure_feature_action, require_app_access, require_tab_access
+from app.core.permissions import ensure_feature_action
 from app.db.session import get_db
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.user import User
@@ -31,11 +34,27 @@ from app.modules.crm.models.inquiry import Inquiry
 from app.modules.crm.models.tender import Tender
 from app.modules.crm.models.organization import Organization, OrgContact
 from app.modules.crm.services import requirement_movement
+from app.modules.rnd.models.requirement_work import RndRequirementAccess
 from app.modules.rnd.services import requirement_access as ra
+from app.modules.rnd.services import requirements as intake
+
+
+def _require_requirement_user(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
+    """The R&D side (R&D › Requirements › View), or someone who holds a task on
+    a requirement. What each person may open is decided per record (ra.ensure)."""
+    if not ra.has_requirement_side(db, user):
+        raise HTTPException(
+            status_code=403,
+            detail="Requirements need 'View' on R&D › Requirements, or a task on the requirement. "
+                   "Ask an admin to add it to one of your roles (Organization › Role & Permissions), or ask the R&D head "
+                   f"({ra._head_names(db)}) to give you a task on it.",
+        )
+    return user
+
 
 router = APIRouter(
     prefix="/requirements", tags=["RnD Requirements"],
-    dependencies=[Depends(require_app_access("rnd")), Depends(require_tab_access("rnd", "requirements"))],
+    dependencies=[Depends(_require_requirement_user)],
 )
 
 Source = Literal["inquiry", "tender"]
@@ -73,77 +92,95 @@ def _send_stats(db: Session, source: str, ids: list[int]) -> dict[int, tuple[int
     return out
 
 
+def _intake_fields(state: tuple | None, can_review: bool) -> dict:
+    req, rev = state if state else (None, None)
+    return {
+        "requirement_id": req.id if req else None,
+        "rd_number": req.rd_number if req else None,
+        "status": req.status if req else None,
+        "status_label": intake.STATUS_LABELS.get(req.status) if req else None,
+        "current_revision": req.current_revision if req else None,
+        "revision_code": (rev.revision_code if rev else f"{req.rd_number}-R{req.current_revision}") if req else None,
+        "last_received_at": _iso(req.last_received_at) if req else None,
+        "needs_my_review": bool(req and req.status == "submitted" and can_review),
+    }
+
+
 @router.get("")
 async def list_requirements(
     search: str | None = None,
     source: Source | None = None,
     mine: bool = False,
+    needs_my_review: bool = False,
+    status: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Every requirement the user may see — needs-my-review first, then by R&D ID ascending.
+    Filters: search, source, mine (requests I may respond to), needs_my_review, status
+    (submitted / accepted / returned / responded)."""
+    if status and status not in ("submitted", "accepted", "returned", "responded"):
+        raise HTTPException(status_code=422, detail=f"Status '{status}' isn't valid — pick submitted, accepted, returned or responded.")
     rows: list[dict] = []
     term = f"%{search.strip()}%" if search and search.strip() else None
+    visible = ra.visible_keys(db, user)  # None = all
+    can_review = ra.can_accept(db, user)
+
+    def allowed(src: str):
+        if visible is None:
+            return None
+        return [rid for (s, rid) in visible if s == src]
+
+    def build(src: str, model, search_cols, product_of, category_of, quantity_of, required_by_of):
+        ids = allowed(src)
+        if ids is not None and not ids:
+            return
+        q = db.query(model, Organization.name).outerjoin(Organization, Organization.id == model.org_id).filter(
+            model.is_deleted == False, model.technical_offer_sent_at.isnot(None),  # noqa: E712
+        )
+        if ids is not None:
+            q = q.filter(model.id.in_(ids))
+        if term:
+            q = q.filter(or_(*[c.ilike(term) for c in search_cols], Organization.name.ilike(term)))
+        records = q.all()
+        stats = _send_stats(db, src, [r.id for r, _ in records])
+        reqs = requirement_movement.latest_requests(db, src, [r.id for r, _ in records])
+        states = intake.state_map(db, src, [r.id for r, _ in records])
+        for rec, org_name in records:
+            count, sender = stats.get(rec.id, (0, None))
+            rows.append({
+                "source": src, "record_id": rec.id, "universal_id": rec.universal_id,
+                "offer_number": rec.technical_offer_number, "org_name": org_name,
+                "product": product_of(rec), "category": category_of(rec), "quantity": quantity_of(rec),
+                "required_by": required_by_of(rec),
+                "priority": rec.priority, "bd_owner": rec.bd_owner,
+                "last_sent_at": _iso(rec.technical_offer_sent_at), "last_sent_by": sender,
+                "send_count": max(count, 1), "edited_after_send": _edited_after_send(rec),
+                "rnd_request": reqs.get(rec.id),
+                **_intake_fields(states.get(rec.id), can_review),
+            })
 
     if source in (None, "inquiry"):
-        q = db.query(Inquiry, Organization.name).outerjoin(Organization, Organization.id == Inquiry.org_id).filter(
-            Inquiry.is_deleted == False, Inquiry.technical_offer_sent_at.isnot(None),  # noqa: E712
-        )
-        if term:
-            q = q.filter(or_(
-                Inquiry.universal_id.ilike(term), Inquiry.technical_offer_number.ilike(term),
-                Inquiry.product.ilike(term), Inquiry.product_category.ilike(term), Organization.name.ilike(term),
-            ))
-        inquiries = q.all()
-        stats = _send_stats(db, "inquiry", [i.id for i, _ in inquiries])
-        reqs = requirement_movement.latest_requests(db, "inquiry", [i.id for i, _ in inquiries])
-        for inq, org_name in inquiries:
-            count, sender = stats.get(inq.id, (0, None))
-            rows.append({
-                "source": "inquiry", "record_id": inq.id, "universal_id": inq.universal_id,
-                "offer_number": inq.technical_offer_number, "org_name": org_name,
-                "product": inq.product, "category": inq.product_category,
-                "quantity": f"{inq.quantity:g}" if inq.quantity is not None else None,
-                "required_by": inq.required_delivery_date.isoformat() if inq.required_delivery_date else None,
-                "priority": inq.priority, "bd_owner": inq.bd_owner,
-                "last_sent_at": _iso(inq.technical_offer_sent_at), "last_sent_by": sender,
-                "send_count": max(count, 1), "edited_after_send": _edited_after_send(inq),
-                "rnd_request": reqs.get(inq.id),
-            })
-
+        build("inquiry", Inquiry,
+              [Inquiry.universal_id, Inquiry.technical_offer_number, Inquiry.product, Inquiry.product_category],
+              lambda r: r.product, lambda r: r.product_category,
+              lambda r: f"{r.quantity:g}" if r.quantity is not None else None,
+              lambda r: r.required_delivery_date.isoformat() if r.required_delivery_date else None)
     if source in (None, "tender"):
-        q = db.query(Tender, Organization.name).outerjoin(Organization, Organization.id == Tender.org_id).filter(
-            Tender.is_deleted == False, Tender.technical_offer_sent_at.isnot(None),  # noqa: E712
-        )
-        if term:
-            q = q.filter(or_(
-                Tender.universal_id.ilike(term), Tender.technical_offer_number.ilike(term),
-                Tender.tender_name.ilike(term), Tender.tender_number.ilike(term), Organization.name.ilike(term),
-            ))
-        tenders = q.all()
-        stats = _send_stats(db, "tender", [t.id for t, _ in tenders])
-        reqs = requirement_movement.latest_requests(db, "tender", [t.id for t, _ in tenders])
-        for tnd, org_name in tenders:
-            count, sender = stats.get(tnd.id, (0, None))
-            rows.append({
-                "source": "tender", "record_id": tnd.id, "universal_id": tnd.universal_id,
-                "offer_number": tnd.technical_offer_number, "org_name": org_name,
-                "product": tnd.tender_name, "category": tnd.tender_category,
-                "quantity": None,
-                "required_by": tnd.submission_date.isoformat() if tnd.submission_date else None,
-                "priority": tnd.priority, "bd_owner": tnd.bd_owner,
-                "last_sent_at": _iso(tnd.technical_offer_sent_at), "last_sent_by": sender,
-                "send_count": max(count, 1), "edited_after_send": _edited_after_send(tnd),
-                "rnd_request": reqs.get(tnd.id),
-            })
+        build("tender", Tender,
+              [Tender.universal_id, Tender.technical_offer_number, Tender.tender_name, Tender.tender_number],
+              lambda r: r.tender_name, lambda r: r.tender_category, lambda r: None,
+              lambda r: r.submission_date.isoformat() if r.submission_date else None)
 
-    # Heads/admins see every requirement; others only those the head opened to
-    # them (R&D access) or where they have a task.
-    visible = ra.visible_keys(db, user)
-    if visible is not None:
-        rows = [r for r in rows if (r["source"], r["record_id"]) in visible]
     head = ra.is_head(db, user)
+    ticks = {(a.source, a.record_id) for a in db.query(RndRequirementAccess).filter(
+        RndRequirementAccess.user_id == user.id, RndRequirementAccess.can_respond == True).all()}  # noqa: E712
     for r in rows:
-        r["can_respond"] = head or ra.access_for(db, user, r["source"], r["record_id"])["respond"]
+        r["can_respond"] = bool(head or (r["source"], r["record_id"]) in ticks)
+    if needs_my_review:
+        rows = [r for r in rows if r["needs_my_review"]]
+    if status:
+        rows = [r for r in rows if r["status"] == status]
     if mine:
         # Requests to the R&D head(s) are "mine" when I hold the Respond right.
         rows = [r for r in rows if r["rnd_request"] and (
@@ -160,14 +197,14 @@ async def list_requirements(
             r["bd_owner"] = r["priority"] = None
         if not see_product:
             r["product"] = r["category"] = r["quantity"] = r["required_by"] = None
-    rows.sort(key=lambda r: r["last_sent_at"] or "", reverse=True)
+    # Needs-my-review first, then the R&D ID ascending (requirements without one — legacy — last).
+    rows.sort(key=lambda r: (not r["needs_my_review"], r["rd_number"] is None, r["rd_number"] or "", r["universal_id"] or ""))
     return rows
 
 
 def requirement_summary(db: Session, source: str, record) -> dict:
     """The requirement as R&D received it — header, customer, contact and the
-    requirement fields. Also shown read-only to the departments R&D shares it
-    with (routes/department_requirements.py)."""
+    requirement fields."""
     org = db.query(Organization).filter(Organization.id == record.org_id).first()
     contact = db.query(OrgContact).filter(OrgContact.id == record.org_contact_id).first() if record.org_contact_id else None
 
@@ -205,8 +242,7 @@ def requirement_summary(db: Session, source: str, record) -> dict:
     }
 
 
-@router.get("/{source}/{record_id}")
-async def get_requirement(source: Source, record_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def _live_record(db: Session, source: str, record_id: int):
     model = Inquiry if source == "inquiry" else Tender
     record = db.query(model).filter(model.id == record_id, model.is_deleted == False).first()  # noqa: E712
     if not record or not record.technical_offer_sent_at:
@@ -215,13 +251,26 @@ async def get_requirement(source: Source, record_id: int, db: Session = Depends(
             detail=f"This {source} hasn't been sent to R&D (or was deleted in CRM). Only records sent via "
                    "\"Send Technical Requirement to R&D\" appear under R&D › Requirements.",
         )
+    return record
+
+
+@router.get("/{source}/{record_id}")
+async def get_requirement(source: Source, record_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    record = _live_record(db, source, record_id)
     my_access = ra.ensure(db, user, source, record_id, "view")
+    req = intake.get(db, source, record_id)
+    rev = intake.latest_revision(db, req) if req else None
+    movements = requirement_movement.list_movements(db, module=source, record=record)
     out = {
         **requirement_summary(db, source, record),
-        "movements": requirement_movement.list_movements(db, module=source, record=record),
+        "movements": movements,
         "my_access": my_access,
+        "intake": intake.requirement_out(db, req, rev),
+        "can_accept": my_access["view"] and ra.can_accept(db, user),
+        "can_return": my_access["view"] and ra.can_return(db, user),
     }
     _mask_sections(out, user, source)
+    out["revisions"] = intake.revisions_out(db, req, out["movements"], mask=out.pop("_dropped_fields", None))
     return out
 
 
@@ -247,19 +296,80 @@ def _mask_sections(out: dict, user: User, source: str) -> None:
         out["movements"] = []
     # "View requirement as sent" / "Changed since previous send" repeat the
     # same fields — drop the ones from hidden sections there too.
-    dropped = set()
-    if "customer" in hidden:
-        dropped |= _CUSTOMER_SNAPSHOT_FIELDS
-    if "product_requirement" in hidden:
-        dropped |= set(requirement_movement.SNAPSHOT_FIELDS) - _CUSTOMER_SNAPSHOT_FIELDS
+    dropped = dropped_snapshot_fields(hidden)
     if dropped:
         for m in out["movements"]:
             m["snapshot"] = [f for f in m.get("snapshot") or [] if f.get("field") not in dropped]
             m["changes"] = [c for c in m.get("changes") or [] if c.get("field") not in dropped]
     out["hidden_sections"] = hidden
+    out["_dropped_fields"] = dropped
 
 
 _CUSTOMER_SNAPSHOT_FIELDS = {"org_name", "contact_name"}
+
+
+def dropped_snapshot_fields(hidden_sections: list[str]) -> set[str]:
+    """Snapshot fields (revision diffs) that belong to the hidden sections."""
+    dropped: set[str] = set()
+    if "customer" in hidden_sections:
+        dropped |= _CUSTOMER_SNAPSHOT_FIELDS
+    if "product_requirement" in hidden_sections:
+        dropped |= set(requirement_movement.SNAPSHOT_FIELDS) - _CUSTOMER_SNAPSHOT_FIELDS
+    return dropped
+
+
+def hidden_sections_for(user: User) -> list[str]:
+    hidden = []
+    if not can_feature(user, "rnd", "requirements", "customer", "view"):
+        hidden.append("customer")
+    if not can_feature(user, "rnd", "requirements", "product_requirement", "view"):
+        hidden.append("product_requirement")
+    return hidden
+
+
+class AcceptPayload(BaseModel):
+    remarks: str | None = None
+    # The revision the page was showing; a newer send makes this a 409 (AC-13).
+    revision_no: int | None = None
+
+
+class ReturnPayload(BaseModel):
+    reason: str | None = None
+    revision_no: int | None = None
+
+
+def _review_out(db: Session, source: str, record_id: int, user: User) -> dict:
+    req = intake.get(db, source, record_id)
+    rev = intake.latest_revision(db, req) if req else None
+    return {
+        "intake": intake.requirement_out(db, req, rev),
+        "revisions": intake.revisions_out(db, req, None),
+    }
+
+
+@router.post("/{source}/{record_id}/accept")
+async def accept_requirement(source: Source, record_id: int, payload: AcceptPayload | None = None,
+                             db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Accept the latest revision (R&D head, admin, or R&D › Requirements › Review › Approve)."""
+    payload = payload or AcceptPayload()
+    record = _live_record(db, source, record_id)
+    ra.ensure(db, user, source, record_id, "view")
+    intake.accept(db, source=source, record=record, user=user, remarks=payload.remarks, revision_no=payload.revision_no)
+    db.commit()
+    return _review_out(db, source, record_id, user)
+
+
+@router.post("/{source}/{record_id}/return")
+async def return_requirement(source: Source, record_id: int, payload: ReturnPayload | None = None,
+                             db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Return the latest revision to BD with the reason they must fix (from Submitted, or from
+    Accepted until R&D responds). BD sees "Returned by R&D: <reason>" and re-sends."""
+    payload = payload or ReturnPayload()
+    record = _live_record(db, source, record_id)
+    ra.ensure(db, user, source, record_id, "view")
+    intake.return_to_bd(db, source=source, record=record, user=user, reason=payload.reason, revision_no=payload.revision_no)
+    db.commit()
+    return _review_out(db, source, record_id, user)
 
 
 @router.post("/requests/{request_id}/respond")
@@ -272,8 +382,9 @@ async def respond_to_request(
     user: User = Depends(get_current_user),
 ):
     """R&D's answer to a CRM request: remarks and/or documents, plus a delay
-    reason when answered after the due date. Documents are filed with the
-    CRM record (Documents tab) and flagged shared_via_tor so both sides can open them."""
+    reason when answered after the due date. Only an accepted revision can be
+    answered. Documents are filed with the CRM record (Documents tab) and
+    flagged shared_via_tor so both sides can open them."""
     req = db.query(CrmRndRequest).filter(CrmRndRequest.id == request_id).first()
     if not req:
         raise HTTPException(status_code=404, detail="This R&D request no longer exists — refresh the page.")
@@ -283,7 +394,8 @@ async def respond_to_request(
         raise HTTPException(status_code=404, detail=f"The CRM {req.source} behind this request was deleted, so it can't be answered.")
 
     ra.ensure(db, user, req.source, req.record_id, "respond")
-    ensure_feature_action(user, "rnd", "requirements", "crm_request", "submit")
+    if ra.is_rnd_side(user):
+        ensure_feature_action(user, "rnd", "requirements", "crm_request", "submit")
     files = [f for f in (files or []) if f and f.filename]
     requirement_movement.mark_responded(
         db, req=req, user=user, remarks=remarks, delay_reason=delay_reason, has_files=bool(files),

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, CheckConstraint, Date, DateTime, ForeignKey, Integer, SmallInteger, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -19,6 +19,7 @@ class RndProjectTask(Base, TimestampMixin):
     task_id set (task_doc_role "brief" = lead's, "work" = assignee's)."""
 
     __tablename__ = "rnd_project_tasks"
+    __table_args__ = (CheckConstraint("progress_percent BETWEEN 0 AND 100", name="ck_rnd_proj_task_progress"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(Integer, ForeignKey("rnd_projects.id"), index=True, nullable=False)
@@ -39,10 +40,12 @@ class RndProjectTask(Base, TimestampMixin):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Planning fields (services/task_fields.py): priority, start date, the
     # assignee's work status while open, and the checklist (definition of done).
-    priority: Mapped[str] = mapped_column(String(10), nullable=False, default="medium", server_default="medium")
+    priority: Mapped[str] = mapped_column(String(10), nullable=False, default="standard", server_default="standard")  # standard | urgent
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     work_status: Mapped[str] = mapped_column(String(20), nullable=False, default="not_started", server_default="not_started")
     checklist: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # 0-100. Typed by the assignee; read-only (computed from the ticked steps) when a checklist exists.
+    progress_percent: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
 
 
 class RndProjectTaskEvent(Base):

@@ -2,7 +2,7 @@ import { TourConfig } from '../types'
 
 const config: TourConfig = {
   id: 'rnd-project-form',
-  pageTitle: 'New R&D Project',
+  pageTitle: 'New Prototype / Research Project',
   steps: [
     {
       target: 'rnd-pf-form',
@@ -12,7 +12,7 @@ const config: TourConfig = {
     {
       target: 'rnd-pf-back-btn',
       title: '← Back',
-      purpose: 'Returns to the project list without saving.',
+      purpose: 'Returns without saving — to the project list, or to Project Management › All Projects when you came from + Create Project › New Prototype.',
     },
     {
       target: 'rnd-pf-origin-section',
@@ -27,12 +27,10 @@ const config: TourConfig = {
       purpose: 'Pick one card; the fields that origin needs appear below it.',
       required: true,
       options: [
-        { value: 'Customer requirement', meaning: 'Choose Inquiry or Tender, then pick the requirement sent to R&D. The project is also added to that requirement’s Linked projects. Product is optional.' },
-        { value: 'Improvement of existing product', meaning: 'Pick the product and the reason. Complaint / NCR / service report → pick that record. Cost reduction / production difficulty → explain in "Who proposed it and why" and attach the study or report.' },
-        { value: 'New product (internal)', meaning: 'Fill "Who proposed it and why" and attach the proposal or management note.' },
-        { value: 'Process / technology research', meaning: 'Fill "Who proposed it and why" and attach the research proposal or management note.' },
+        { value: 'Existing Projects', meaning: 'Pick the existing project / machine (PEW number) being improved and the reason (complaint, NCR, service report, cost reduction, production difficulty). Add who proposed it if useful.' },
+        { value: 'New Project', meaning: 'Fill "Who proposed it and why" and attach the proposal or management note. Optionally link the customer requirement (inquiry or tender, listed by R&D ID) and the product it is based on.' },
       ],
-      invalidExample: 'Creating a project with no origin, or with "New product" and no attachment — the form blocks it and says what is missing.',
+      invalidExample: 'Existing Projects without the existing project picked, or New Project with no "Who proposed it and why" or no attachment — the form blocks it and says what is missing.',
     },
     {
       target: 'rnd-pf-title',
@@ -47,9 +45,8 @@ const config: TourConfig = {
       target: 'rnd-pf-priority',
       title: 'Priority',
       options: [
-        { value: 'High', meaning: 'Important requirement — schedule ahead of normal work.' },
-        { value: 'Medium', meaning: 'Normal requirement (default).' },
-        { value: 'Low', meaning: 'Can be handled later, when capacity allows.' },
+        { value: 'Standard', meaning: 'Normal requirement (default).' },
+        { value: 'Urgent', meaning: 'Schedule ahead of normal work.' },
       ],
       why: 'R&D engineers are a shared resource; priority decides which project gets their time first.',
     },
@@ -98,7 +95,7 @@ const config: TourConfig = {
     {
       target: 'rnd-pf-attachments',
       title: 'Attachments',
-      purpose: 'Upload any files for the project — specs, drawings, photos, reference papers. Remove one with ×. When the origin needs proof (new product, research, cost reduction, production difficulty) the section shows "Proof required" and at least one file is mandatory.',
+      purpose: 'Upload any files for the project — specs, drawings, photos, reference papers. Remove one with ×. For a New Project the section shows "Proof required" and at least one file is mandatory.',
       after: 'The files upload right after the project is created and appear in its Documents section. If a file fails, a red message names it and the reason; the project is still saved.',
     },
     {
@@ -110,7 +107,7 @@ const config: TourConfig = {
       target: 'rnd-pf-submit-btn',
       title: 'Create Project',
       purpose: 'Saves the project.',
-      after: 'If the origin or its proof is missing, Title or Objective is empty, or the end date is before the start date, a red message explains what to fix. Otherwise the project gets its number, starts in the Initiation stage, and its page opens.',
+      after: 'If the origin or its proof is missing, Title or Objective is empty, or the end date is before the start date, a red message explains what to fix. Otherwise the project gets its number, starts in the Initiation stage, and its page opens on the Tasks tab.',
     },
   ],
 }

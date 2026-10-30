@@ -123,9 +123,9 @@ def test_project_manager_manages_only_own_project(client, db, w):
     mine = create(client, w)
     other_pm = make_user(db, "lc.pm2@x.com", apps=("projects",))
     theirs = create(client, w, project_code="PEW-60", project_manager_id=other_pm.id)
-    r = client.patch(f"{API}/projects/{mine['id']}", headers=auth(w["pm"]), json={"priority": "high"})
-    assert r.status_code == 200 and r.json()["priority"] == "high" and r.json()["can_manage"] is True
-    r = client.patch(f"{API}/projects/{theirs['id']}", headers=auth(w["pm"]), json={"priority": "high"})
+    r = client.patch(f"{API}/projects/{mine['id']}", headers=auth(w["pm"]), json={"priority": "urgent"})
+    assert r.status_code == 200 and r.json()["priority"] == "urgent" and r.json()["can_manage"] is True
+    r = client.patch(f"{API}/projects/{theirs['id']}", headers=auth(w["pm"]), json={"priority": "urgent"})
     assert r.status_code == 403
     assert r.json()["detail"] == "Only management or the project manager of PEW-60 can edit the project."
     # Viewer reads, but can_manage is False and edits are refused.
@@ -141,7 +141,7 @@ def test_create_validation_messages(client, db, w):
     cases = [
         ({"name": " "}, 422, "Project name is required."),
         ({"client_name": ""}, 422, "Customer is required."),
-        ({"priority": "urgent"}, 422, "Priority 'urgent' is not valid"),
+        ({"priority": "asap"}, 422, "Priority must be Standard or Urgent"),
         ({"target_handover_date": str(TODAY - timedelta(days=1))}, 422, "is before the start date"),
         ({"project_manager_id": 999999}, 422, "doesn't exist or is deactivated"),
     ]
@@ -465,27 +465,27 @@ def test_delete_only_empty_planning_projects(client, db, w):
 
 def test_audit_trail_records_create_edit_and_status(client, db, w):
     p = create(client, w)
-    client.patch(f"{API}/projects/{p['id']}", headers=auth(w["pm"]), json={"priority": "critical"})
+    client.patch(f"{API}/projects/{p['id']}", headers=auth(w["pm"]), json={"priority": "urgent"})
     add_milestone(client, w, p["id"])
     transition(client, w["pm"], p["id"], "activate")
     log = client.get(f"{API}/projects/{p['id']}/audit", headers=auth(w["viewer"])).json()
     actions = {e["action"] for e in log}
     assert {"created", "updated", "milestone_created", "status_changed"} <= actions
     upd = next(e for e in log if e["action"] == "updated")
-    assert upd["field_name"] == "priority" and upd["old_value"] == "medium" and upd["new_value"] == "critical"
+    assert upd["field_name"] == "priority" and upd["old_value"] == "standard" and upd["new_value"] == "urgent"
     st = next(e for e in log if e["action"] == "status_changed")
     assert st["old_value"] == "planning" and st["new_value"] == "active" and st["performed_by"] == "lc.pm"
 
 
 def test_list_filters(client, db, w):
-    a = create(client, w, project_code="PEW-A", name="Alpha", client_name="IRCON", priority="high")
+    a = create(client, w, project_code="PEW-A", name="Alpha", client_name="IRCON", priority="urgent")
     create(client, w, project_code="PEW-B", name="Beta", client_name="RVNL")
     add_milestone(client, w, a["id"])
     transition(client, w["pm"], a["id"], "activate")
     h = auth(w["viewer"])
     assert [p["project_code"] for p in client.get(f"{API}/projects?status=active", headers=h).json()] == ["PEW-A"]
     assert [p["project_code"] for p in client.get(f"{API}/projects?search=rvnl", headers=h).json()] == ["PEW-B"]
-    assert [p["project_code"] for p in client.get(f"{API}/projects?priority=high", headers=h).json()] == ["PEW-A"]
+    assert [p["project_code"] for p in client.get(f"{API}/projects?priority=urgent", headers=h).json()] == ["PEW-A"]
     assert [p["project_code"] for p in client.get(f"{API}/projects?health=on_track", headers=h).json()] == ["PEW-A"]
 
 

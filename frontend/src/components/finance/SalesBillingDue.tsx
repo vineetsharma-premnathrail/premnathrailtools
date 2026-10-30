@@ -1,20 +1,19 @@
 'use client'
 
-/** Finance › Sales › Billing Due (SAP VF04): Sales Order billing milestones
+/** Finance › Sales › Billing Due: historic Sales Order billing milestones
  *  that fell due (advance on confirmation, dispatch / delivery /
  *  commissioning of a unit, an accepted inspection, a marked drawing
  *  approval, retention after the warranty) and are not invoiced yet — and
- *  "Create invoice" (VF01): a draft sales invoice copied from the order,
+ *  "Create invoice": a draft sales invoice copied from the order,
  *  capped at what is left of the milestone / the units that reached it. */
 import { useCallback, useEffect, useState } from 'react'
-import { accountsApi, salesApi } from '@/lib/api'
+import { accountsApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
 import { SalesBillingDue } from '@/types'
 import { TEXT } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import DateField from '@/components/erp/DateField'
-import { recordPath } from '@/lib/recordRef'
 import {
   inputStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, ErrorBanner, TableWrap, EmptyRow,
@@ -30,7 +29,7 @@ const STATUS_LABELS: Record<string, string> = {
 const STATUS_HEX: Record<string, string> = {
   not_due: '#94a3b8', due: '#f59e0b', invoice_requested: '#8b5cf6', invoiced: '#0ea5e9', settled: '#22c55e', proforma_issued: '#64748b',
 }
-const SHOW_OPTIONS = [['due', 'Billable now'], ['overdue', 'Overdue'], ['requested', 'Requested by Sales'], ['all', 'All milestones']] as const
+const SHOW_OPTIONS = [['due', 'Billable now'], ['overdue', 'Overdue'], ['all', 'All milestones']] as const
 
 type Raise = { m: SalesBillingDue; date: string; rows: number[]; eway: string; vehicle: string; narration: string; proof: PickedProof[] }
 
@@ -47,7 +46,16 @@ export default function SalesBillingDueTab({ soId }: { soId?: number | null }) {
 
   const load = useCallback(() => {
     setLoading(true)
-    salesApi.billingDue({ show, ...(soId ? { so_id: soId } : {}) })
+    // Sales Orders are historic since 2026-10-30; their milestones come from Finance's own billing routes.
+    ;(async () => {
+      const orders = await accountsApi.salesBillingOrders()
+      const wanted = orders.filter((o) => (soId ? o.so_id === soId : show === 'all' || o.due_amount > 0.5))
+      const detail = await Promise.all(wanted.map((o) => accountsApi.salesBillingOrder(o.so_id)))
+      const all = detail.flatMap((d) => d.milestones)
+      const out = all.filter((v) => show === 'all' || (v.due_amount > 0.5 && (show !== 'overdue' || v.overdue)))
+      out.sort((a, b) => String(a.due_date || a.triggered_on || '').localeCompare(String(b.due_date || b.triggered_on || '')) || (a.so_display || '').localeCompare(b.so_display || '') || a.sequence - b.sequence)
+      return out
+    })()
       .then(setRows).catch((err) => setError(extractErrorMessages(err, 'Could not load the billing due list.')))
       .finally(() => setLoading(false))
   }, [show, soId])
@@ -88,14 +96,14 @@ export default function SalesBillingDueTab({ soId }: { soId?: number | null }) {
       <TableWrap minWidth={1100}>
         <thead>
           <tr>
-            {['Sales order', 'Customer', 'Milestone', 'Status', 'Due since', 'Due date'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}
+            {['Order', 'Customer', 'Milestone', 'Status', 'Due since', 'Due date'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}
             <th style={numTh}>Milestone</th><th style={numTh}>Invoiced</th><th style={numTh}>Billable now</th><th style={thStyle}></th>
           </tr>
         </thead>
         <tbody>
           {loading ? <EmptyRow colSpan={10} text="Loading…" /> : rows.length === 0 ? <EmptyRow colSpan={10} text="Nothing due for invoicing." /> : rows.map((m) => (
             <tr key={m.billing_line_id}>
-              <td style={tdStyle}><a href={recordPath('/dashboard/sales/orders', m, 'so_id')} style={{ color: '#FF6A2A', fontWeight: 600 }}>{m.so_display}</a></td>
+              <td style={{ ...tdStyle, fontWeight: 600 }}>{m.so_display}</td>
               <td style={tdStyle}>{m.customer_name}</td>
               <td style={tdStyle}>{m.percent}% {m.milestone_label.toLowerCase()}
                 {m.recovers_advance_percent ? <div style={{ fontSize: 11.5, color: TEXT.muted }}>recovers {m.recovers_advance_percent}% of the advance</div> : null}
@@ -117,8 +125,9 @@ export default function SalesBillingDueTab({ soId }: { soId?: number | null }) {
         </tbody>
       </TableWrap>
       <p style={{ fontSize: 12, color: TEXT.muted, marginTop: 8 }}>
-        Milestones fall due on their event: advance on order confirmation, dispatch / delivery / commissioning per unit (Store dispatch,
-        RRV handover, Sales POD), an accepted third-party inspection, a drawing approval marked by Sales, retention once every warranty ended.
+        Orders raised before Sales Orders were retired stay billable here until they are closed. Milestones fall due on their event:
+        advance on order confirmation, dispatch / delivery / commissioning per unit, an accepted third-party inspection, a marked drawing approval,
+        retention once every warranty ended.
         A draft invoice reserves its amount until it is posted or cancelled; a credit note against it gives the amount back.
       </p>
 

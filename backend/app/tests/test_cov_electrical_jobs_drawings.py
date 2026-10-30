@@ -93,7 +93,7 @@ def test_job_numbers_are_sequential_and_title_is_trimmed(client, people, job):
 def test_job_create_validation_messages(client, people):
     h = auth(people["engineer"])
     r = client.post(f"{API}/jobs", json={"title": "x", "priority": "asap"}, headers=h)
-    assert r.status_code == 400 and "Invalid priority 'asap'" in r.json()["detail"]
+    assert r.status_code == 422 and "Standard or Urgent" in str(r.json()["detail"])
     r = client.post(f"{API}/jobs", json={"title": "x", "planned_start_date": "2026-12-01", "target_handover_date": "2026-11-01"}, headers=h)
     assert r.status_code == 400 and "can't be before the planned start" in r.json()["detail"]
     r = client.post(f"{API}/jobs", json={"title": "x", "lead_engineer_id": 99999}, headers=h)

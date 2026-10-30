@@ -79,7 +79,7 @@ def test_wo_edit_keeps_build_machine_and_priority(client, db, plant):
     assert r.status_code == 409 and b["build_number"] in r.json()["detail"] and "PR-RRV-2026-101" in r.json()["detail"]
     r = client.patch(f"{API}/work-orders/{wo['id']}", json={"priority": None}, headers=h)
     assert r.status_code == 400 and "Priority" in r.json()["detail"]
-    assert client.patch(f"{API}/work-orders/{wo['id']}", json={"priority": "high"}, headers=h).json()["priority"] == "high"
+    assert client.patch(f"{API}/work-orders/{wo['id']}", json={"priority": "urgent"}, headers=h).json()["priority"] == "urgent"
 
 
 def test_draft_wo_on_closed_build(client, db, plant):

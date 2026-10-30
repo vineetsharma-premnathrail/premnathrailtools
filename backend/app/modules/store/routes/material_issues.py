@@ -55,9 +55,9 @@ def _to_response(db: Session, issue: StoreMaterialIssue) -> StoreMaterialIssueRe
         item_resp.item_name = item.item_name if item else None
         item_resp.uom = item.uom if item else None
         item_resp.element_display = project_stock.element_label(db, line.order_project_element_id)
-    info = project_stock.element_info(db, issue.order_project_element_id)
+    info = project_stock.element_info(db, issue.order_project_element_id, issue.order_project_id)
     if info:
-        resp.op_number, resp.element_no, resp.element_label = info["op_number"], info["element_no"], info["element_label"]
+        resp.op_number, resp.element_no, resp.element_label = info["op_number"], info.get("element_no"), info.get("element_label")   # project-level issues carry the project code only
     elif issue.order_project_id:
         from app.modules.projects.models.project import PmProject
         p = db.get(PmProject, issue.order_project_id)
@@ -432,7 +432,7 @@ async def create_material_issue(
         for (item_id, el_id), qty in sorted(need.items(), key=lambda kv: (kv[0][0], kv[0][1] or 0)):
             got = project_stock.secure_issue_qty(db, item_id=item_id, location_id=location.id, qty=qty, element_id=el_id, user=user,
                                                  location=location, override_reason=override_reason,
-                                                 document=f"issue {issue.issue_number}")
+                                                 document=f"issue {issue.issue_number}", project_id=issue.order_project_id)
             overridden += got["overridden"]
     except HTTPException:
         db.rollback()
@@ -474,15 +474,13 @@ async def create_material_issue(
         db.refresh(issue)
         book_store_issue(db, issue)
 
-    if issue_type_row and issue_type_row.value == "dispatch":
-        # PGI: book the dispatch on the Sales Order delivery rows (SO status, LD, billing milestones).
-        from app.modules.sales.delivery import on_store_dispatch
-        from app.modules.sales.service import SalesError
-        try:
-            on_store_dispatch(db, issue, [p.model_dump() for p in payload.items], sales_order_id=payload.sales_order_id, user=user)
-        except SalesError as e:
-            db.rollback()
-            raise HTTPException(status_code=e.status_code, detail=f"Dispatch not posted — {e.detail}")
+    if issue_type_row and issue_type_row.value == "dispatch" and issue.order_project_id:
+        # A dispatch against a PM project moves the project's lifecycle stage (replaces the old sales-order dispatch posting).
+        from app.modules.projects import so_projects
+        from app.modules.projects.models.project import PmProject
+        proj = db.get(PmProject, issue.order_project_id)
+        if proj:
+            so_projects.refresh_project_lifecycle(db, proj, user)
 
     db.commit()
     db.refresh(issue)

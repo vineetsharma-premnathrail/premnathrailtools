@@ -37,7 +37,7 @@ const steps: TourStep[] = [
     target: 'rfq-detail-record-quotes-btn',
     title: 'Record quotes & compare',
     purpose: 'The next step on an emailed RFQ: record each vendor’s reply line by line (rate, GST, delivery, validity, payment terms, freight) with their PDF attached.',
-    after: 'The comparison ranks L1/L2/L3 automatically; award the lines there and send them to Purchase Orders › Create PO, where one PO per awarded vendor is created.',
+    after: 'The comparison ranks L1/L2/L3 automatically; award the lines there, make the PO in Tally and upload it on the requisition (Upload PO).',
   },
   {
     target: 'rfq-detail-vendor-quotations',
@@ -46,10 +46,10 @@ const steps: TourStep[] = [
   },
   {
     target: 'rfq-detail-po-create-btn',
-    title: 'Select Vendor & Create PO',
-    purpose: 'The next step once the quotations are in: opens Purchase Orders with the vendor picker ready. L1 (lowest) is pre-selected; picking another quoted vendor needs a reason.',
-    why: 'The PO is created in the application — its number is generated and its document is built on the company letterhead, so nothing is typed in or attached by hand.',
-    after: 'The PO opens on the Purchase Orders page to price the lines and edit the Word document; saving it there sends it for approval. Nothing is sent for approval from the RFQ.',
+    title: 'Open requisition to upload PO',
+    purpose: 'The next step once the quotations are in: make the PO in Tally, then open the requisition and press Upload PO.',
+    why: 'POs are made in Tally, not in the portal. Uploading the Tally PO on the requisition builds the PO from its lines, so the store receives it (GRN) at the PO price.',
+    after: 'On the requisition, Upload PO asks for the Tally PO number + PDF, the vendor (L1 by default; another needs a reason), the delivery store and each line’s price, and sends it for approval.',
   },
   {
     target: 'rfq-detail-po-view-approval-btn',

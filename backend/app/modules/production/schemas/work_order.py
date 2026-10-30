@@ -64,7 +64,7 @@ class ProductionWorkOrderCreate(BaseModel):
     quantity_planned: float = Field(gt=0)
     erp_project_id: int | None = None
     branch_id: int | None = None
-    priority: str = "normal"
+    priority: str = "standard"
     source_location_id: int | None = None
     target_location_id: int | None = None
     planned_start_date: date | None = None

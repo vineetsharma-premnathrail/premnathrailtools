@@ -1,7 +1,7 @@
 from __future__ import annotations
 from datetime import date, datetime
 from typing import TYPE_CHECKING
-from sqlalchemy import String, Integer, Text, Date, DateTime, ForeignKey
+from sqlalchemy import String, Integer, Text, Date, DateTime, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 # settlement). Cancelled is the exit from any open state. Status only changes
 # through POST /projects/{id}/transition, never a plain PATCH.
 PM_PROJECT_STATUSES = ("planning", "active", "on_hold", "technically_complete", "closed", "cancelled")
-PM_PROJECT_PRIORITIES = ("low", "medium", "high", "critical")
+PM_PROJECT_PRIORITIES = ("standard", "urgent")
 
 
 class PmProject(Base, TimestampMixin):
@@ -23,6 +23,7 @@ class PmProject(Base, TimestampMixin):
     (table `erp_projects`, the machine registry used by Service)."""
 
     __tablename__ = "pm_projects"
+    __table_args__ = (Index("ix_pm_projects_source", "source_kind", "source_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     # Typed by management — the ID every department knows the order by (PEW-39).
@@ -37,7 +38,7 @@ class PmProject(Base, TimestampMixin):
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     target_handover_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="planning", nullable=False)
-    priority: Mapped[str] = mapped_column(String(20), default="medium", nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), default="standard", nullable=False)  # standard | urgent
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     released_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
@@ -70,6 +71,11 @@ class PmProject(Base, TimestampMixin):
     # Where the machine/order is in its life (projects/lifecycle.py LIFECYCLE_STAGES);
     # separate from `status`, which keeps hold / cancel / close / release.
     lifecycle_stage: Mapped[str] = mapped_column(String(30), default="planned", server_default="planned", nullable=False)
+
+    # Optional CRM source of a New Project ("inquiry" | "tender" + its id): traceability and the CRM
+    # delete guard (the record cannot be deleted while a project points at it). Does not freeze the record.
+    source_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Units (vehicles / lots) of a project made from a sales order.
     elements: Mapped[list["PmProjectElement"]] = relationship(

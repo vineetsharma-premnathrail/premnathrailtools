@@ -1,11 +1,16 @@
 """Planning fields shared by R&D requirement tasks and R&D project tasks:
-priority, start date, work status and a checklist.
+priority (Standard / Urgent), start date, work status, a checklist and the
+progress percentage.
 
 `status` on a task stays the workflow state (open → closed / cancelled).
 `work_status` is where the assignee says how the open work stands (not
 started / in progress / on hold). The checklist is the task's definition of
 done: the giver lists the steps, the assignee ticks them, and the task can't
-be completed while any step is unticked."""
+be completed while any step is unticked.
+
+Progress (0-100): with a checklist it follows the ticked steps (read-only);
+without one the assignee enters it. Completing a task sets 100, reopening caps
+it at 99, cancelling keeps the last value."""
 from __future__ import annotations
 
 import json
@@ -14,17 +19,75 @@ from datetime import date, datetime, timezone
 
 from fastapi import HTTPException
 
-PRIORITIES = {"low": "Low", "medium": "Medium", "high": "High", "urgent": "Urgent"}
+from app.core.priority import PRIORITY_LABELS, map_legacy_priority
+from app.core.priority import parse_priority as _parse_priority
+
+PRIORITIES = dict(PRIORITY_LABELS)
 WORK_STATUSES = {"not_started": "Not started", "in_progress": "In progress", "on_hold": "On hold"}
 MAX_CHECKLIST_ITEMS = 50
 MAX_ITEM_LEN = 300
 
 
 def parse_priority(value: str | None) -> str:
-    v = (value or "medium").strip().lower()
-    if v not in PRIORITIES:
-        raise HTTPException(status_code=422, detail=f"Priority \"{value}\" isn't valid — pick one of {', '.join(PRIORITIES.values())}.")
-    return v
+    """Standard or Urgent (any case); anything else is a 422 — "Priority must be Standard or Urgent."."""
+    return _parse_priority(value)
+
+
+def priority_label(value: str | None) -> str:
+    """Label of a stored value; a legacy value that survived the migration reads as its mapped value."""
+    return PRIORITIES[map_legacy_priority(value)]
+
+
+def parse_progress(value) -> int:
+    """A whole number 0-100 (a string from a form is fine); anything else is a 422."""
+    bad = HTTPException(status_code=422, detail="Progress must be a whole number from 0 to 100.")
+    if isinstance(value, bool) or value is None:
+        raise bad
+    try:
+        number = float(str(value).strip())
+    except ValueError:
+        raise bad from None
+    if number != int(number) or not 0 <= number <= 100:
+        raise bad
+    return int(number)
+
+
+def checklist_progress(task) -> int | None:
+    """Progress implied by the checklist (ticked / total, rounded), None without a checklist."""
+    items = [i for i in (task.checklist or []) if isinstance(i, dict)]
+    if not items:
+        return None
+    return round(100 * sum(1 for i in items if i.get("done")) / len(items))
+
+
+def sync_progress(task) -> None:
+    """A checklist task's progress follows its ticked steps."""
+    derived = checklist_progress(task)
+    if derived is not None:
+        task.progress_percent = derived
+
+
+def set_progress(task, value) -> str | None:
+    """The assignee enters progress on a task without a checklist. Returns the activity-log line."""
+    if task.checklist:
+        raise HTTPException(status_code=422, detail="This task has a checklist — progress follows the ticked steps. Tick the steps instead of typing a percentage.")
+    new = parse_progress(value)
+    old = task.progress_percent or 0
+    if new == old:
+        return None
+    task.progress_percent = new
+    return f"Progress: {old}% → {new}%"
+
+
+def mark_complete(task) -> None:
+    task.progress_percent = 100
+
+
+def on_reopen(task) -> None:
+    """Reopening a completed task: at most 99 (the work is not done any more)."""
+    derived = checklist_progress(task)
+    current = derived if derived is not None else (task.progress_percent or 0)
+    task.progress_percent = min(current, 99)
 
 
 def parse_work_status(value: str | None) -> str:
@@ -97,11 +160,13 @@ def parse_checklist_form(raw: str | None) -> list[dict]:
 def fields_out(task) -> dict:
     checklist = list(task.checklist or [])
     return {
-        "priority": task.priority or "medium",
+        "priority": map_legacy_priority(task.priority),
         "start_date": task.start_date.isoformat() if task.start_date else None,
         "work_status": task.work_status or "not_started",
         "checklist": checklist,
         "checklist_done": sum(1 for i in checklist if i.get("done")),
+        "progress_percent": task.progress_percent or 0,
+        "progress_from_checklist": bool(checklist),
     }
 
 
@@ -110,6 +175,7 @@ def apply_create(task, *, priority: str | None, start_date: str | None, work_sta
     task.start_date = parse_start_date(start_date, task.due_date)
     task.work_status = parse_work_status(work_status)
     task.checklist = parse_checklist_form(checklist)
+    task.progress_percent = checklist_progress(task) or 0
 
 
 def apply_edit(task, data: dict, actor_name: str) -> list[str]:
@@ -117,8 +183,8 @@ def apply_edit(task, data: dict, actor_name: str) -> list[str]:
     changes: list[str] = []
     if "priority" in data and data["priority"] is not None:
         p = parse_priority(data["priority"])
-        if p != (task.priority or "medium"):
-            changes.append(f"Priority: {PRIORITIES.get(task.priority or 'medium')} → {PRIORITIES[p]}")
+        if p != map_legacy_priority(task.priority):
+            changes.append(f"Priority: {priority_label(task.priority)} → {PRIORITIES[p]}")
             task.priority = p
     if "start_date" in data:
         s = parse_start_date(data["start_date"], task.due_date)
@@ -139,12 +205,17 @@ def apply_edit(task, data: dict, actor_name: str) -> list[str]:
         if [i["text"] for i in new] != old_texts or [i["done"] for i in new] != [i.get("done") for i in (task.checklist or [])]:
             changes.append(f"Checklist updated ({len(new)} step{'s' if len(new) != 1 else ''})")
         task.checklist = new
+        sync_progress(task)
     return changes
 
 
-def apply_progress(task, *, work_status: str | None, item_id: str | None, done: bool | None, actor_name: str) -> str | None:
-    """Assignee / reviewer ticks a checklist step or changes the work status.
+def apply_progress(task, *, work_status: str | None, item_id: str | None, done: bool | None, actor_name: str,
+                   progress_percent=None) -> str | None:
+    """Assignee / reviewer ticks a checklist step, changes the work status or
+    enters the progress percentage (tasks without a checklist).
     Returns the activity-log line, or None when nothing changed."""
+    if progress_percent is not None:
+        return set_progress(task, progress_percent)
     if work_status is not None:
         w = parse_work_status(work_status)
         if w == (task.work_status or "not_started"):
@@ -163,11 +234,12 @@ def apply_progress(task, *, work_status: str | None, item_id: str | None, done: 
         hit["done_by"] = actor_name if done else None
         hit["done_at"] = datetime.now(timezone.utc).isoformat() if done else None
         task.checklist = items   # reassign so SQLAlchemy sees the JSON change
+        sync_progress(task)
         # Ticking the first step means the work has started.
         if done and (task.work_status or "not_started") == "not_started":
             task.work_status = "in_progress"
         return f"{'Ticked' if done else 'Unticked'}: {hit['text']}"
-    raise HTTPException(status_code=422, detail="Nothing to change — send a status or a checklist step.")
+    raise HTTPException(status_code=422, detail="Nothing to change — send a status, a progress percentage or a checklist step.")
 
 
 def ensure_checklist_done(task) -> None:

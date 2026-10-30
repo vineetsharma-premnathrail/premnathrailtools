@@ -1,6 +1,6 @@
 'use client'
 
-import { Calculator, Circuitry, Cube, Drop, Gauge, SquaresFour, Stack, Tray } from '@phosphor-icons/react'
+import { Calculator, Circuitry, Cube, Drop, Gauge, SquaresFour, Stack } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
 import Link from 'next/link'
 import { navScrollRef } from '@/components/shared/navScroll'
@@ -12,7 +12,6 @@ import TourButton from '@/components/tour/TourButton'
 
 const TABS = [
   { href: '/dashboard/hydraulic', label: 'Dashboard', icon: 'dashboard', subtabKey: 'dashboard' },
-  { href: '/dashboard/hydraulic/requirements', label: 'Requirements', icon: 'rnd-inbox', subtabKey: 'requirements' },
   { href: '/dashboard/hydraulic/systems', label: 'Systems', icon: 'droplet', subtabKey: 'systems' },
   { href: '/dashboard/hydraulic/components', label: 'Components', icon: 'box', subtabKey: 'components' },
   { href: '/dashboard/hydraulic/circuits', label: 'Circuits', icon: 'circuit', subtabKey: 'circuits' },
@@ -25,7 +24,6 @@ const TABS = [
 
 const TAB_ICONS: Record<string, Icon> = {
   dashboard: SquaresFour,
-  'rnd-inbox': Tray,
   droplet: Drop,
   box: Cube,
   circuit: Circuitry,

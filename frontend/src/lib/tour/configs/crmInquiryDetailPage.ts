@@ -5,7 +5,7 @@ import momExportConfig from './crmMomExport'
 import torDialogConfig from './crmTorDialog'
 import { followUpListSteps } from './crmFollowUpList'
 
-// The Inquiry detail page has six tabs (Info, Discussion, Documents,
+// The Inquiry detail page has six tabs (Info, Documents, Technical Offers,
 // Quotations, Follow Ups, Timeline) all on one route. Each tab step below has `autoActivate:
 // true`, so the tour switches tabs on the page's own behalf as it reaches
 // them — otherwise a tab's content only exists once a user manually clicks
@@ -44,13 +44,43 @@ const steps: TourStep[] = [
     title: 'Customer Requirement Priority (quick edit)',
     purpose: 'Change the inquiry\'s priority directly from here without opening the full Edit form.',
   },
-  ...quotationConfig.steps,
   {
-    target: 'inquiry-tab-Discussion',
-    title: 'Discussion',
-    purpose: 'A chat shared with the R&D team about this requirement — the tab appears only after you click "Send Technical Requirement to R&D". Type @ (or use Tag people) to tag someone — they get a notification; attach files that both teams can open. "Attach files" asks whether to upload a new file or pick a Client / Internal document already uploaded on this record. The Files view lists every file shared, who sent it and when. Your role decides whether you see this tab and whether you can post (Discussion with R&D › Create); without posting you can only read.',
+    target: 'inq-rnd-status',
+    title: 'R&D ID, revision and status',
+    purpose: 'Appears once the requirement has been sent to R&D: its R&D ID (RDR-year-number), the current revision (R0, R1, …) and where R&D\'s review stands — Awaiting R&D review, Accepted, Returned to BD, Responded or Superseded.',
+    why: 'Each send is a new revision with its own ID, so you and R&D always talk about the same version.',
+  },
+  {
+    target: 'crm-rnd-returned',
+    title: 'Returned by R&D',
+    purpose: 'Shown only when R&D sent the revision back: "Returned by R&D: <reason>". It says what you must fix — edit the inquiry or its documents, then send it again.',
+    after: 'There is no Discussion channel any more; the return reason is how R&D asks for corrections.',
+  },
+  {
+    target: 'crm-rnd-resend-btn',
+    title: 'Re-send to R&D',
+    purpose: 'Opens the same send dialog as "Send Technical Requirement to R&D". Your re-send becomes the next revision (R1, R2, …) and goes back to R&D for review. Never opened by the tour — you decide when to send.',
+    why: 'Available as soon as R&D has returned it, even before you edit the record, because the fix may be in a document.',
+  },
+  {
+    target: 'inquiry-tab-Technical Offers',
+    title: 'Technical Offers',
+    purpose: 'The offers you can quote: the ones R&D released, and the ones you upload yourself. Shown only if your role includes Inquiries & Tenders › Technical Offers (BD upload).',
     autoActivate: true,
   },
+  {
+    target: 'crm-bd-offer-upload-btn',
+    title: 'Upload Technical Offer (BD)',
+    purpose: 'Upload your own offer — a Word (.docx) or PDF file with a title and an offer date. It needs no R&D requirement, is quotable at once, and the quotation shows "Uploaded by BD, not reviewed by R&D".',
+    whatToEnter: 'Title, offer date, optional notes, and the file. Only .docx or .pdf.',
+    after: 'You can delete a BD offer only while no quotation uses it ("Used by quotation … — remove it from the quotation first").',
+  },
+  {
+    target: 'crm-bd-offers-table',
+    title: 'Offer list',
+    purpose: 'Offer number, title, who it is from (R&D released or BD upload), date, file, and the quotations that use it. Download opens the file; Delete appears for your own uploads.',
+  },
+  ...quotationConfig.steps,
   {
     target: 'inquiry-tab-Documents',
     title: 'Documents',
@@ -97,19 +127,11 @@ const steps: TourStep[] = [
     // always be the one who decides to open it.
     target: 'inq-tor-btn',
     title: 'Send Technical Requirement to R&D',
-    purpose: 'Sends R&D a Word document with only what bears on the technical answer — customer, its type and region, every product with its specification, and the project background (no GST, address, contact person or prices) — and puts it in the R&D team queue with a Response Due Date and your remarks — any R&D user can answer. Shown only to roles with Send Technical Requirement (TOR) to R&D.',
-    why: 'Blocked until Product and Specification are filled in — otherwise R&D would get an effectively empty document. Disabled once already sent, until the requirement is edited again.',
+    purpose: 'Sends R&D a Word document with only what bears on the technical answer — customer, its type and region, every product with its specification, and the project background (no GST, address, contact person or prices) — and puts it in the R&D team queue with a Response Due Date and your remarks. The first send creates the R&D ID and revision R0; every later send is the next revision. Shown only to roles with Send Technical Requirement (TOR) to R&D.',
+    why: 'Blocked until Product and Specification are filled in — otherwise R&D would get an effectively empty document. Disabled once already sent, until the requirement is edited again (or R&D returns it).',
     after: 'Click it yourself: first create the Technical Offer Word document, then set the due date, remarks and reference documents and send — the tour won\'t open it for you. If you open it now, press Next for a walkthrough of the dialog.',
   },
   ...torDialogConfig.steps,
-  {
-    // Only rendered for Sales-app users on an inquiry at Status Order Received (or one with an SO) — the tour skips it otherwise.
-    target: 'inq-create-so-btn',
-    title: 'Create Sales Order',
-    purpose: 'Hands the won inquiry over to Sales: opens a new Sales Order pre-filled with this customer and the accepted quotation\'s lines, prices and payment terms. Once an order exists, this becomes a green chip showing the SO number and status — click it to open the order.',
-    why: 'One live sales order per inquiry, so the same customer PO can\'t be booked twice. Shown only to people with the Sales app, and only once the inquiry Status is "Order Received" — never before, and never on "Closed – Not Ordered".',
-    after: 'When Sales confirms the order (after its approvals), this inquiry is automatically set to Status "Closed - Ordered" and Stage "Order Received", and the timeline records which SO closed it.',
-  },
   {
     target: 'inq-back-btn',
     title: '← Back',
@@ -118,7 +140,7 @@ const steps: TourStep[] = [
   {
     target: 'inq-delete-btn',
     title: 'Delete',
-    purpose: 'Deletes this inquiry — only its creator or an admin can, and only while no sales order or R&D work (offer request, tasks, R&D project) is linked to it.',
+    purpose: 'Deletes this inquiry — only its creator or an admin can, and only while no R&D work (offer request, tasks, R&D project) or Project Management project is linked to it.',
     why: 'This cannot be undone — a confirmation dialog appears before anything is actually deleted.',
   },
   {
@@ -129,7 +151,7 @@ const steps: TourStep[] = [
     // who never opens the form never sees steps for fields they can't see.
     target: 'inq-edit-btn',
     title: 'Edit',
-    purpose: 'Switches the Info tab into the full Inquiry form, pre-filled with this inquiry\'s current values. Once the inquiry is sent to Sales (a sales order is raised from it) Edit, Delete and Send to R&D disappear for everyone — the order is now the reference; cancel it in Sales to change the inquiry.',
+    purpose: 'Switches the Info tab into the full Inquiry form, pre-filled with this inquiry\'s current values.',
     after: 'Click it yourself, then start the tour again for a field-by-field walkthrough of the edit form.',
   },
 ]

@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core import assignee_rules
 from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.priority import parse_priority
 from app.core.permissions import require_app_access, require_feature_action, require_tab_access, require_tab_action
 from app.modules.maintenance import sensitive as maint_sensitive
 from app.modules.maintenance.role_events import role_event
@@ -15,7 +16,7 @@ from app.modules.store.models.location import StoreLocation
 from app.modules.store.models.stock_balance import StoreStockBalance
 from app.modules.store.services.stock_ledger import post_stock_transaction
 from app.modules.maintenance.models.asset import MaintenanceAsset
-from app.modules.maintenance.models.request import MaintenanceRequest, MAINTENANCE_PRIORITIES
+from app.modules.maintenance.models.request import MaintenanceRequest
 from app.modules.maintenance.models.work_order import (
     MaintenanceWorkOrder, MaintenanceWorkOrderTask, MaintenanceWorkOrderSpare, MaintenanceLabourLog,
     MAINTENANCE_WO_TYPES, MAINTENANCE_WO_OPEN_STATUSES, MAINTENANCE_FAILURE_CATEGORIES,
@@ -179,8 +180,8 @@ def _check_user(db: Session, user_id: int, label: str) -> User:
 def _validate_details(db: Session, data: dict) -> None:
     if data.get("wo_type") and data["wo_type"] not in MAINTENANCE_WO_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid work order type '{data['wo_type']}'. Valid: {', '.join(MAINTENANCE_WO_TYPES)}.")
-    if data.get("priority") and data["priority"] not in MAINTENANCE_PRIORITIES:
-        raise HTTPException(status_code=400, detail=f"Invalid priority '{data['priority']}'. Valid: {', '.join(MAINTENANCE_PRIORITIES)}.")
+    if data.get("priority"):
+        data["priority"] = parse_priority(data["priority"])
     if data.get("failure_category") and data["failure_category"] not in MAINTENANCE_FAILURE_CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Invalid failure category '{data['failure_category']}'.")
     if data.get("planned_start") and data.get("planned_end") and data["planned_end"] < data["planned_start"]:
@@ -266,7 +267,7 @@ async def create_work_order(
         wo_number=generate_work_order_number(db),
         asset_id=asset.id,
         wo_type=payload.wo_type,
-        priority=payload.priority,
+        priority=parse_priority(payload.priority),
         title=payload.title.strip(),
         description=payload.description,
         status="assigned" if payload.assigned_to_id else "draft",
@@ -315,6 +316,8 @@ async def update_work_order(
     wo = _get_or_404(db, wo_id, user)
     _require_editable(wo, "edit it")
     data = payload.model_dump(exclude_unset=True)
+    if data.get("priority"):
+        data["priority"] = parse_priority(data["priority"])
     maint_sensitive.ensure_may_enter(user, data, wo, ("external_cost",), "external cost")
     if "title" in data and not (data["title"] or "").strip():
         raise HTTPException(status_code=400, detail="Work order title can't be empty.")

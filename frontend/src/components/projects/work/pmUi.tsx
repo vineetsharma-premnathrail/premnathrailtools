@@ -59,8 +59,8 @@ export function StagePills({ stage, label, status }: { stage?: string | null; la
     </span>
   )
 }
-export const PRIORITY_LABELS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', critical: 'Critical' }
-export const PRIORITY_HEX: Record<string, string> = { low: '#64748b', medium: '#2563eb', high: '#f59e0b', critical: '#dc2626' }
+export const PRIORITY_LABELS: Record<string, string> = { standard: 'Standard', urgent: 'Urgent' }
+export const PRIORITY_HEX: Record<string, string> = { standard: '#64748b', urgent: '#dc2626' }
 export const HEALTH_LABELS: Record<string, string> = { on_track: 'On track', at_risk: 'At risk', delayed: 'Delayed' }
 export const HEALTH_HEX: Record<string, string> = { on_track: '#16a34a', at_risk: '#f59e0b', delayed: '#dc2626' }
 export const DOC_TYPE_LABELS: Record<string, string> = {

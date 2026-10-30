@@ -16,7 +16,8 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.crm.models.inquiry import Inquiry, InquiryLineItem
 from app.modules.crm.services.cascade import cascade_delete_children
 from app.modules.crm.services import requirement_movement, technical_offer
-from app.modules.crm.services.stage_guard import check_stage_move, ensure_deletable, ensure_no_live_order, ensure_not_with_sales
+from app.modules.crm.services.stage_guard import check_stage_move, ensure_deletable
+from app.core.priority import parse_priority, priority_label
 from app.modules.crm.services import opportunity as opp
 from app.modules.crm.models.activity import Activity
 from app.modules.crm.models.stage_log import CrmStageLog
@@ -41,11 +42,11 @@ router = APIRouter(prefix="/crm/inquiries", tags=["CRM - Inquiries"])
 def _out(inquiry: Inquiry, user: User, db: Session | None = None) -> InquiryResponse:
     """A inquiry as the API returns it — money fields blanked for a user without
     CRM › Inquiries & Tenders › Prices & margins. With `db`, also names the live
-    sales order it was sent to Sales as (the record is then read-only)."""
+    historic sales order raised from it (information only — it no longer locks the record)."""
     resp = InquiryResponse.model_validate(inquiry)
     if db is not None:
-        from app.modules.sales import service as sales_svc
-        order = sales_svc.live_order_for_source(db, inquiry.id, None)
+        from app.modules.sales import legacy as sales_legacy
+        order = sales_legacy.live_order_for_source(db, inquiry.id, None)
         resp.sales_order_number = order.display_number if order else None
     return resp if sees_prices(user) else blank(resp, INQUIRY_MONEY_FIELDS)
 
@@ -231,11 +232,14 @@ async def create_inquiry(
         if not contact:
             raise HTTPException(status_code=422, detail="org_contact_id does not belong to the specified customer organization")
     # Same coded lists as PATCH — a typo'd or made-up stage/status would otherwise be
-    # saved and then break the forward-only stage order and the Sales handoff check.
+    # saved and then break the forward-only stage order.
     _check_choice({"current_stage": payload.current_stage}, None, "current_stage", INQ_STAGES, "inquiry stage")
     _check_choice({"status": payload.status}, None, "status", INQ_STATUSES, "inquiry status")
 
     data = payload.model_dump(exclude={"additional_items"})
+    data["priority"] = parse_priority(data.get("priority"))
+    if data.get("followup_priority"):
+        data["followup_priority"] = parse_priority(data["followup_priority"])
     data["current_stage"] = STATUS_STAGE.get(data.get("status"), data.get("current_stage"))
     data["inquiry_date"] = data.get("inquiry_date") or date.today()
     _check_doc_date(data["inquiry_date"])
@@ -273,7 +277,7 @@ async def create_inquiry(
                 + (f" ({inquiry.product})" if inquiry.product else "") + ". Open it to qualify the requirement.",
         entity_type="inquiry", entity_id=inquiry.id, actor=user, can_open=can_open_record(db, inquiry),
         details=[("Inquiry", universal_id), ("Customer Organization", org.name), ("Product", inquiry.product or ""),
-                 ("Priority", inquiry.priority or "")],
+                 ("Priority", priority_label(inquiry.priority))],
     )
     broadcast_except(
         db, reached, title="New Inquiry Raised", message=f"Inquiry '{universal_id}' was created by {user.name or user.email}.",
@@ -286,7 +290,7 @@ async def create_inquiry(
     fire_rule(db, background_tasks, "crm", "inquiry_create", "New Inquiry Created",
               f"Inquiry '{universal_id}' for {org.name} was created by {user.name or user.email}.", "inquiry", inquiry.id, user,
               [("Inquiry", universal_id), ("Customer Organization", org.name), ("Product", inquiry.product or ""),
-               ("Category", inquiry.product_category or ""), ("Priority", inquiry.priority or ""), ("Created by", user.name or user.email)],
+               ("Category", inquiry.product_category or ""), ("Priority", priority_label(inquiry.priority)), ("Created by", user.name or user.email)],
               skip_user_ids=reached)
     db.commit()
     db.refresh(inquiry)
@@ -319,9 +323,14 @@ async def update_inquiry(
     ensure_in_scope(db, user, inquiry)
     if not _can_modify(inquiry, user):
         raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this inquiry.")
-    ensure_not_with_sales(db, inquiry_id=inquiry.id, label="inquiry")
 
     updates = payload.model_dump(exclude_unset=True, exclude={"additional_items", "stage_reason"})
+    if updates.get("priority") is not None:
+        updates["priority"] = parse_priority(updates["priority"])
+    elif "priority" in updates:
+        updates.pop("priority")  # null = leave as is (the column is never empty)
+    if updates.get("followup_priority"):
+        updates["followup_priority"] = parse_priority(updates["followup_priority"])
     if "inquiry_date" in updates:
         if updates["inquiry_date"] is None:
             updates.pop("inquiry_date")  # the date is always kept; clearing it is ignored
@@ -345,21 +354,17 @@ async def update_inquiry(
     if updates.get("current_stage") is not None:
         moved_back = check_stage_move(db, stages=INQ_STAGES, old=inquiry.current_stage, new=updates["current_stage"], user=user,
                                       reason=payload.stage_reason, label="inquiry", inquiry_id=inquiry.id)
-    if "status" in updates and updates["status"] != inquiry.status:
-        ensure_no_live_order(db, inquiry_id=inquiry.id, label="inquiry", what="status")
     _check_probability(updates.get("probability"))
     opp.check_lost_code(updates.get("lost_reason_code"))
     opp.apply_owners(db, inquiry, updates, user)
     opp.ensure_lost_details({f: updates.get(f, getattr(inquiry, f)) for f in
                              ("current_stage", "status", "lost_reason_code", "lost_to_competitor", "lost_remarks")})
-    if "org_id" in updates and updates["org_id"] != inquiry.org_id:
-        ensure_no_live_order(db, inquiry_id=inquiry.id, label="inquiry", what="customer")
     if ("org_id" in updates and updates["org_id"] != inquiry.org_id) or (
         "org_contact_id" in updates and updates["org_contact_id"] != inquiry.org_contact_id
     ):
         _check_org_and_contact(db, updates.get("org_id") or inquiry.org_id, updates.get("org_contact_id", inquiry.org_contact_id), "inquiry")
-    # The stage follows the status (STATUS_STAGE); a status change already passed
-    # ensure_no_live_order above, so no separate forward-only stage check here.
+    # The stage follows the status (STATUS_STAGE); the forward-only stage check
+    # for a status change is done by check_stage_move / _check_status_forward above.
     if ("status" in updates and "current_stage" not in updates
             and STATUS_STAGE.get(updates["status"], inquiry.current_stage) != inquiry.current_stage):
         updates["current_stage"] = STATUS_STAGE[updates["status"]]
@@ -473,7 +478,6 @@ async def create_technical_offer_request(
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
     ensure_in_scope(db, user, inquiry)
-    ensure_not_with_sales(db, inquiry_id=inquiry.id, label="inquiry")
     missing = [label for label, ok in (
         ("Product", bool(inquiry.product)),
         ("Specification", bool(inquiry.product_spec)),

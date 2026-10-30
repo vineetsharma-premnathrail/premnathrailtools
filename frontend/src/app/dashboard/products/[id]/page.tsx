@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
-import { useRequireApp } from '@/hooks/useAuth'
+import { useProductsAccess } from '@/components/products/useProductsAccess'
 import { useCan } from '@/lib/permissions'
 import { productsApi } from '@/lib/api'
 import { FinishedProduct } from '@/types'
@@ -19,7 +19,7 @@ import {
 import { extractErrorMessages } from '@/lib/validation'
 
 export default function ProductDetailPage() {
-  const { isAuthorized, isLoading } = useRequireApp('products')
+  const { isAuthorized, isLoading } = useProductsAccess()
   const { can, canDelete, canFeature } = useCan()
   const router = useRouter()
   const ref = useParams().id as string
@@ -50,10 +50,10 @@ export default function ProductDetailPage() {
     <div>
       <ProductsNav />
       <PageHeader title={p ? `${p.code} — ${p.name}` : 'Product'}>
-        {p && can('sales', 'products', 'edit') && (
+        {p && can('crm', 'products', 'edit') && (
           <button type="button" style={primaryBtnStyle} onClick={() => router.push(`/dashboard/products/${ref}/edit`)}>Edit</button>
         )}
-        {p && p.status === 'development' && canDelete('sales', 'products', p.created_by_id) && (
+        {p && p.status === 'development' && canDelete('crm', 'products', p.created_by_id) && (
           <button type="button" style={dangerBtnStyle} onClick={() => setConfirmDelete(true)}>Delete</button>
         )}
         <button type="button" style={secondaryBtnStyle} onClick={() => router.push('/dashboard/products')}>← Back</button>
@@ -86,7 +86,7 @@ export default function ProductDetailPage() {
             </DetailGroup>
           </DetailCard>
 
-          {canFeature('sales', 'products', 'specifications', 'view') && <Section title="Technical specifications" style={{ marginBottom: 16 }}>
+          {canFeature('crm', 'products', 'specifications', 'view') && <Section title="Technical specifications" style={{ marginBottom: 16 }}>
             {(() => {
               // Free text, one per line; a product saved before 2026-10-28 falls back to its old rows.
               const text = p.technical_specification || p.specifications.map((r) => `${r.parameter}: ${r.value}${r.unit ? ` ${r.unit}` : ''}`).join('\n')

@@ -75,14 +75,12 @@ def minutes_between(start: datetime | None, end: datetime | None) -> int | None:
 
 
 def default_priority(criticality: str, machine_down: bool, db: Session | None = None) -> str:
-    """Criticality A + machine down is urgent; the rest scale down from there.
+    """Criticality A + machine down is urgent; everything else is standard.
     With `db`, the matrix comes from Maintenance › Settings (same defaults)."""
     if db is not None:
         from app.modules.maintenance.settings import priority_for
         return priority_for(db, criticality, machine_down)
-    if machine_down:
-        return {"A": "urgent", "B": "high"}.get(criticality, "normal")
-    return {"A": "high"}.get(criticality, "normal")
+    return "urgent" if machine_down and criticality == "A" else "standard"
 
 
 def user_names(db: Session, ids) -> dict[int, str]:
@@ -473,7 +471,7 @@ def generate_pm_work_order(db: Session, plan, due_date: date, user_id: int | Non
         pm_due_date=due_date,
         pm_trigger=trigger,
         wo_type=plan.wo_type,
-        priority="high" if asset.criticality == "A" else "normal",
+        priority="standard",
         title=plan.title[:255],
         status="assigned" if assignee else "draft",
         # Planned shutdown: the asset only goes down once the job is started

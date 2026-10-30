@@ -66,6 +66,14 @@ def record_movement(
     return log
 
 
+def diff_snapshots(prev: dict, snap: dict) -> list[dict]:
+    """Fields that differ between two sends' snapshots, in display order."""
+    return [
+        {"field": k, "label": label, "old": prev.get(k), "new": snap.get(k)}
+        for k, label in SNAPSHOT_FIELDS.items() if (prev.get(k) or None) != (snap.get(k) or None)
+    ]
+
+
 def list_movements(db: Session, *, module: str, record) -> list[dict]:
     """Oldest-first list of sends, each with the changes since the previous send."""
     logs = db.query(AuditLog).filter(
@@ -108,12 +116,7 @@ def list_movements(db: Session, *, module: str, record) -> list[dict]:
     for seq, log in enumerate(logs, start=1):
         data = json.loads(log.new_value) if log.new_value else {}
         snap = data.get("snapshot") or {}
-        changes = []
-        if prev is not None:
-            changes = [
-                {"field": k, "label": label, "old": prev.get(k), "new": snap.get(k)}
-                for k, label in SNAPSHOT_FIELDS.items() if (prev.get(k) or None) != (snap.get(k) or None)
-            ]
+        changes = diff_snapshots(prev, snap) if prev is not None else []
         result.append({
             "id": log.id, "sequence": seq, "offer_number": data.get("offer_number"),
             "sent_by": user_map.get(log.performed_by_id, "System") if log.performed_by_id else "System",
@@ -141,7 +144,7 @@ def today_ist() -> date:
 
 def rnd_team(db: Session) -> list[User]:
     """Who a new request goes to: the R&D head(s) from Organization › Department, R&D head.
-    They open it to others (Access tab) and hand out tasks. Before the team is
+    They accept or return it and hand out tasks. Before the team is
     set up, every R&D user (admins only when nobody else has R&D)."""
     from app.modules.rnd.services.requirement_access import heads  # rnd imports crm models
     return heads(db)
@@ -167,7 +170,12 @@ def create_rnd_request(
     db: Session, *, module: str, record, user: User, log: AuditLog, offer_number: str,
     team: list[User], due_date: date, remarks: str | None,
 ) -> CrmRndRequest:
-    """Opens the R&D ask for this send (to the R&D head(s)); any still-open ask on the same record is superseded."""
+    """Opens the R&D ask for this send (to the R&D head(s)); any still-open ask on the same record is superseded.
+
+    Same transaction: R&D's intake record gets its R&D ID (first send) and a new
+    revision (rnd/services/requirements.on_bd_submit). The heads and the roles
+    subscribed to "New requirement received" get a bell notice (no Teams) that
+    names the R&D ID and the due date; the sender is never told."""
     db.query(CrmRndRequest).filter(
         CrmRndRequest.source == module, CrmRndRequest.record_id == record.id, CrmRndRequest.status == "open",
     ).update({CrmRndRequest.status: "superseded"}, synchronize_session=False)
@@ -178,21 +186,26 @@ def create_rnd_request(
     )
     db.add(req)
     db.flush()
+    from app.modules.rnd.services import events as rnd_events
+    from app.modules.rnd.services import requirements as rnd_requirements  # rnd imports crm models
+    revision = rnd_requirements.on_bd_submit(db, source=module, record=record, user=user, crm_request=req, movement_log=log)
+    told: set[int] = set()
     for member in team:
-        if member.id == user.id:
+        if member.id == user.id or member.id in told:
             continue
+        told.add(member.id)
         notify_user(
             db, member.id,
-            title=f"Technical Offer Request {offer_number} for R&D",
-            message=f"{user.name or user.email} needs R&D's response by {due_date.strftime('%d %b %Y')}."
+            title=f"New requirement {revision.revision_code} for R&D",
+            message=f"{user.name or user.email} sent {offer_number} ({revision.revision_code}) — response due {due_date.strftime('%d %b %Y')}. "
+                    "Accept it, or return it to BD with a reason."
                     + (f" Remark: {req.crm_remarks}" if req.crm_remarks else ""),
             notification_type="rnd_request_assigned", entity_type=f"rnd_req_{module}", entity_id=record.id,
         )
     # Role-based notice (Organization › Roles › Notifications) to R&D roles
-    # subscribed to "TOR received" — the heads above are already told.
-    from app.modules.rnd.services import events as rnd_events
+    # subscribed to "New requirement received" — the heads above are already told.
     rnd_events.tor_received(db, source=module, record=record, offer_number=offer_number, due_date=due_date,
-                            actor=user, skip_user_ids={m.id for m in team})
+                            actor=user, skip_user_ids={m.id for m in team}, rd_number=revision.revision_code)
     return req
 
 
@@ -213,8 +226,29 @@ def serialize_requests(db: Session, reqs: list[CrmRndRequest]) -> dict[int, dict
         CrmDocument.is_deleted == False,  # noqa: E712
     ).order_by(CrmDocument.id.asc()).all():
         docs.setdefault(d.related_sub_id, []).append({"id": d.id, "name": d.file_name, "file_size": d.file_size})
+    # R&D intake state of each send (R&D ID, revision, who reviewed / why it was returned).
+    from app.modules.rnd.models.requirement import RndRequirement, RndRequirementRevision
+    revs = {rv.crm_rnd_request_id: rv for rv in db.query(RndRequirementRevision).filter(
+        RndRequirementRevision.crm_rnd_request_id.in_([r.id for r in reqs])).all()}
+    rd_numbers = {rq.id: rq.rd_number for rq in db.query(RndRequirement).filter(
+        RndRequirement.id.in_({rv.requirement_id for rv in revs.values()})).all()} if revs else {}
+    reviewer_ids = {rv.reviewed_by_id for rv in revs.values() if rv.reviewed_by_id}
+    names.update({u.id: (u.name or u.email or f"User #{u.id}") for u in db.query(User).filter(User.id.in_(reviewer_ids)).all()} if reviewer_ids else {})
+
+    def intake(r: CrmRndRequest) -> dict:
+        rv = revs.get(r.id)
+        if rv is None:
+            return {"rd_number": None, "revision_no": None, "revision_code": None, "review_status": None, "review_remarks": None,
+                    "return_reason": None, "reviewed_by": None, "reviewed_at": None}
+        return {
+            "rd_number": rd_numbers.get(rv.requirement_id), "revision_no": rv.revision_no, "revision_code": rv.revision_code,
+            "review_status": rv.status, "review_remarks": rv.review_remarks, "return_reason": rv.return_reason,
+            "reviewed_by": names.get(rv.reviewed_by_id) if rv.reviewed_by_id else None, "reviewed_at": _iso(rv.reviewed_at),
+        }
+
     return {
         r.id: {
+            **intake(r),
             "id": r.id, "status": r.status, "offer_number": r.offer_number,
             "assigned_to_id": r.assigned_to_id, "assigned_to": names.get(r.assigned_to_id),
             "due_date": r.due_date.isoformat() if r.due_date else None,
@@ -248,6 +282,11 @@ def mark_responded(
     db: Session, *, req: CrmRndRequest, user: User, remarks: str | None, delay_reason: str | None, has_files: bool,
 ) -> None:
     """Validates and records R&D's answer. Caller uploads files + commits."""
+    if req.status == "returned":
+        raise HTTPException(
+            status_code=409,
+            detail=f"{req.offer_number or 'This request'} was returned to BD — it can't be answered until BD fixes it and sends it again.",
+        )
     if req.status == "superseded":
         raise HTTPException(
             status_code=409,
@@ -256,6 +295,9 @@ def mark_responded(
         )
     if req.status == "responded":
         raise HTTPException(status_code=409, detail="This request has already been answered. Ask CRM to re-send it if a revised answer is needed.")
+    # R&D answers only what it accepted (rnd/services/requirements.py).
+    from app.modules.rnd.services import requirements as rnd_requirements
+    rnd_requirements.require_accepted_for_request(db, req)
     # Team-queue requests (no assignee) can be answered by anyone in R&D; older
     # requests that named an engineer stay with that engineer.
     if req.assigned_to_id and user.role != "admin" and req.assigned_to_id != user.id:
@@ -277,6 +319,7 @@ def mark_responded(
     req.delay_reason = delay_reason if late else None
     req.responded_by_id = user.id
     req.responded_at = datetime.now(timezone.utc)
+    rnd_requirements.on_responded(db, req, user)
     if req.requested_by_id:
         notify_user(
             db, req.requested_by_id,

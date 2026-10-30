@@ -1,11 +1,13 @@
 'use client'
 
-// Project / unit picker for the departments (Design, Purchase, Store,
-// Production, Quality, Dispatch): links a record to a project (PEW-78) and,
-// usually, one of its units — a vehicle or lot ("PEW-78 / 01 · Vehicle 1 ·
-// Central Railway"). Server search against GET /projects/units/lookup — only
-// live projects and live units are offered. ProjectUnitChip is the read-only
-// display. The OrderProject* names at the bottom are kept so pages that still
+// Project picker for the departments (Design, Purchase, Store, Production,
+// Quality, Dispatch): links a record to a project (PEW-82). One project = one
+// machine, so a project made in Project Management has no units — its row
+// ("PEW-82 · Central Railway · machine MC-1042", project_level) links the work
+// to the project itself. Only an old sales-order project still lists its
+// units — a vehicle or lot ("PEW-78 / 01 · Vehicle 1 · Central Railway").
+// Server search against GET /projects/units/lookup — only live projects and
+// live units are offered. ProjectUnitChip is the read-only display. The OrderProject* names at the bottom are kept so pages that still
 // use them keep compiling; new code uses the ProjectUnit* names.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FolderOpen } from '@phosphor-icons/react'
@@ -32,7 +34,8 @@ export default function ProjectUnitPicker({
   value: ProjectUnitValue | null
   /** Gets the picked value and its lookup row (labels for display / snapshots). */
   onChange: (v: ProjectUnitValue | null, item: ProjectUnitLookupItem | null) => void
-  /** true (default): a vehicle / lot must be picked; false: "whole project" rows are offered too. */
+  /** true (default): a project without units, or a unit of an old sales-order project, must be picked;
+   *  false: "whole project" rows of old sales-order projects are offered too. */
   requireElement?: boolean
   /** Only vehicles or only lots. */
   kind?: 'vehicle' | 'lot'
@@ -94,7 +97,7 @@ export default function ProjectUnitPicker({
         options={options}
         onSearch={onSearch}
         disabled={disabled}
-        placeholder={placeholder || (requireElement ? 'Pick project unit (vehicle / lot)…' : 'Pick project…')}
+        placeholder={placeholder || (requireElement ? 'Pick project (or its vehicle / lot)…' : 'Pick project…')}
       />
       {error && <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 4 }}>{error}</div>}
     </div>

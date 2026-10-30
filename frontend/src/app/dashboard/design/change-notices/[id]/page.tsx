@@ -16,12 +16,13 @@ import ReasonSheet from '@/components/shared/ReasonSheet'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import { secondaryBtnStyle, dangerBtnStyle, primaryBtnStyle, smallSecondaryBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import {
-  ACK_DEPARTMENT_LABELS, DISPOSITION_LABELS, ECN_EFFECTIVITY_LABELS, ECN_PRIORITY_LABELS, ECN_REASON_LABELS, ECN_STATUS_LABELS,
+  ACK_DEPARTMENT_LABELS, DISPOSITION_LABELS, ECN_EFFECTIVITY_LABELS, ECN_REASON_LABELS, ECN_STATUS_LABELS,
 } from '@/components/design/designMeta'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { priorityLabel, priorityTone } from '@/lib/priority'
 
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', submitted: '#F59E0B', approved: '#2563EB', rejected: '#DC2626', implemented: '#16A34A', closed: '#0f766e', cancelled: '#a8a29e' }
 const IMPL_LABELS: Record<string, string> = { pending: 'No revision yet', draft: 'Draft', in_review: 'In Review', in_approval: 'In Approval', approved: 'Awaiting customer', released: 'Released', customer_rejected: 'Customer rejected' }
@@ -256,7 +257,7 @@ export default function ChangeNoticeDetailPage() {
               text={ecn.description || undefined}
               meta={<>
                 {pill(ECN_STATUS_LABELS[ecn.status] || ecn.status, STATUS_HEX[ecn.status] || '#78716c')}
-                <span>· {ECN_PRIORITY_LABELS[ecn.priority] || ecn.priority} priority</span>
+                <span>· {priorityLabel(ecn.priority)} priority</span>
                 <span>· Target {ecn.target_date ? formatDate(ecn.target_date) : 'not set'}</span>
                 <span>· Raised by <strong style={{ color: TEXT.heading }}>{ecn.created_by_name || '—'}</strong> on {formatDate(ecn.created_at)}</span>
               </>}

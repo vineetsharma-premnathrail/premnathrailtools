@@ -90,6 +90,7 @@ MODULES: dict[str, dict] = {
         ("dashboard", "Dashboard", V),
         ("organizations", "Customer Organizations", _with(CRUD, "export", "import")),
         ("inquiries_tenders", "Inquiries & Tenders", WORKFLOW),
+        ("products", "Products", CRUD),
         ("reports", "Reports", REPORT),
         ("settings", "Settings", SETTINGS),
     ),
@@ -111,6 +112,7 @@ MODULES: dict[str, dict] = {
         ("dashboard", "Dashboard", V),
         ("project_work", "Ongoing Projects", VE),
         ("requirements", "Requirements", ["view", "create", "edit"]),  # no delete endpoint
+        ("tasks", "R&D Tasks", ["view", "create"]),  # task board + Create Task (2026-10-30)
         ("projects", "Prototype / Research", _with(CRUD, "approve")),
         ("experiments", "Experiments & Tests", CRUD),
         ("prototypes", "Prototypes", _with(CRUD, "approve")),
@@ -131,7 +133,6 @@ MODULES: dict[str, dict] = {
         "Design",
         ("dashboard", "Dashboard", V),
         ("ongoing_projects", "Ongoing Projects", VE),
-        ("requirements", "Requirements (from R&D)", VE),  # edit = send the feasibility reply
         ("project_work", "Requests", WORKFLOW),
         ("tasks", "My Work", VE),
         ("documents", "Drawings", _with(DOC, "submit", "approve", "cancel")),
@@ -146,7 +147,6 @@ MODULES: dict[str, dict] = {
         "Electrical",
         ("dashboard", "Dashboard", V),
         ("project_work", "Ongoing Projects", VE),
-        ("requirements", "Requirements (from R&D)", VE),  # edit = send the feasibility reply
         ("jobs", "RRV Electrical Jobs", _with(CRUD, "submit", "approve", "cancel", "print")),
         ("drawings", "Drawings", _with(CRUD, "approve")),
         ("purchase", "Purchase Requirements", CRUD),
@@ -157,7 +157,6 @@ MODULES: dict[str, dict] = {
         "Hydraulic & Pneumatic",
         ("dashboard", "Dashboard", V),
         ("project_work", "Ongoing Projects", VE),
-        ("requirements", "Requirements (from R&D)", VE),  # edit = send the feasibility reply
         ("systems", "Systems", CRUD),
         ("components", "Component Master", _with(CRUD, "export", "import")),
         ("circuits", "Circuits & Diagrams", _with(CRUD, "approve")),
@@ -250,21 +249,6 @@ MODULES: dict[str, dict] = {
         ("milestones", "WBS", CRUD, "Project workspace"),
         ("documents", "Documents", CRUD, "Project workspace"),
         ("project_history", "History", V, "Project workspace"),
-    ),
-    "sales": _module(
-        "Sales",
-        ("dashboard", "Dashboard", V),
-        ("orders", "Sales Orders", _with(WORKFLOW, "submit", "cancel")),  # submit/cancel: approval engine (orders + amendments)
-        ("delivery", "Delivery", ["view", "create", "edit", "approve", "print"]),  # no delete endpoint
-        # Product Management (finished-product master) lives inside Sales; its
-        # tabs give the internal "products" app (User.get_apps). The retired
-        # "products" module's grants (products:*) alias to these.
-        ("products", "Products", CRUD, "Products"),
-        # Prices live inside each product (and Sales Settings for freight / spares / service rates)
-        # since 2026-10-28 — no Pricing tab, so the Role editor groups it under Products.
-        ("pricing", "Pricing", CRUD, "Products"),  # price / discount / freight conditions (products/pricing.py)
-        ("reports", "Sales Reports", REPORT),
-        ("settings", "Settings", SETTINGS),
     ),
     "accounts": _module(
         "Finance & Accounting",
@@ -416,10 +400,9 @@ PURCHASE_DESK_GRANT = "p2p:purchase_desk:view"
 # from Service on 2026-10-26) so a Project Management wildcard never hands out the machine register.
 EXPLICIT_ONLY_TABS = {("p2p", "purchase_desk"), ("projects", "service_projects")}
 
-# Sales › Products / Applications / Product Mapping: Product Management sits
-# inside Sales. Viewing one of them gives the internal "products" app; only
-# the other Sales tabs give the "sales" app (User.get_apps).
-PRODUCT_TABS = {"products", "applications", "product_mapping"}
+# Retired Sales tabs that were Product Management; their grants alias to CRM › Products
+# (Sales module retired 2026-10-30, Products moved into CRM).
+LEGACY_PRODUCT_TABS = {"products", "applications", "product_mapping"}
 
 # Grants that, before roles existed, needed an explicit grant even when the
 # opt-in matrix left a user unrestricted (approver / head / settings-editor
@@ -494,24 +477,34 @@ def is_valid_grant(grant: str) -> bool:
     return a in module["actions"].get(tk, [])
 
 
+def _crm_products_alias(grant: str) -> list[str]:
+    parts = grant.split(":")
+    if len(parts) != 3:
+        return []
+    mk, tk, a = parts
+    tab, _, feat = tk.partition(".")
+    acts = MODULES["crm"]["actions"].get("products", [])
+    tab_acts = [x for x in acts if a in ("*", x)]
+    if tab == "pricing":
+        return [f"crm:products.pricing:{x}" for x in tab_acts] + ["crm:products:view"]
+    if tab == "*" or (mk == "products") or tab in LEGACY_PRODUCT_TABS:
+        if feat and tab != "*":
+            return [f"crm:products.{feat}:{a}"]
+        return [f"crm:products:{x}" for x in tab_acts]
+    return []
+
+
 def legacy_grant_aliases(grant: str) -> list[str]:
     """Current ids for a grant of a retired module: Purchase Team (purchase:*)
-    → Procurement › Purchase Desk; Product Management (products:*) → the
-    Sales › Products tabs (a products wildcard covers only those tabs, never
-    the rest of Sales). Any other grant is returned unchanged."""
+    → Procurement › Purchase Desk; Product Management (products:*) and the
+    retired Sales module's product tabs (sales:products / applications /
+    product_mapping / pricing) → CRM › Products. Other Sales grants grant
+    nothing (Sales retired 2026-10-30). Any other grant is returned unchanged."""
     if grant.startswith("purchase:"):
         return [PURCHASE_DESK_GRANT]
-    if grant.startswith("products:"):
-        parts = grant.split(":")
-        if len(parts) != 3:
-            return []
-        _, tk, a = parts
-        if tk != "*":
-            return [f"sales:{tk}:{a}"]
-        acts = MODULES["sales"]["actions"]
-        return [f"sales:{t}:{x}" for t in sorted(PRODUCT_TABS) for x in acts.get(t, []) if a in ("*", x)]
-    # Order Projects were removed (2026-10-27): SO projects live in All Projects; old grants grant nothing.
-    if grant.startswith(("sales:order_projects", "projects:order_projects")):
+    if grant.startswith(("products:", "sales:")):
+        return _crm_products_alias(grant)
+    if grant.startswith("projects:order_projects"):
         return []
     # Service Projects (machines) moved from Service to Project Management (2026-10-26). Migration
     # f7c3a9e1d5b2 rewrote stored grants; this only catches a stray old id.
@@ -695,10 +688,9 @@ def legacy_access(apps, erp_permissions, grants) -> tuple[list[str], list[str]]:
     keep: set[str] = set()
     standard: list[str] = []
     for mk in sorted(set(apps or [])):
-        if mk == "products":
-            # The retired Products module is Sales › Products / Applications /
-            # Product Mapping now (PRODUCT_TABS) — that's what its users keep.
-            keep |= {g for g in standard_module_grants("sales") if g.split(":")[1].split(".", 1)[0] in PRODUCT_TABS}
+        if mk in ("products", "sales"):
+            # The retired Products module (and Sales' product tabs) is CRM › Products now.
+            keep |= {g for g in standard_module_grants("crm") if g.split(":")[1].split(".", 1)[0] == "products"}
             continue
         if mk not in MODULES or mk in NON_APP_MODULES:
             continue

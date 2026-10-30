@@ -52,7 +52,7 @@ def _settings(client, db, approver):
 
 
 def _create(client, user):
-    body = {"category_code": "RAW", "project_label": "Project Alpha", "project_type": "new", "priority": "medium",
+    body = {"category_code": "RAW", "project_label": "Project Alpha", "project_type": "new", "priority": "standard",
             "items": [{"item_name": "Hydraulic Cylinder", "quantity": 2, "unit": "pcs", "project_inhouse": "Project"}]}
     return client.post(BASE, json=link_items(object_session(user), body), headers=_h(user))
 

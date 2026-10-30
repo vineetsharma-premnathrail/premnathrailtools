@@ -18,6 +18,7 @@ import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, s
 import { recordPath, refOf } from '@/lib/recordRef'
 import { formatDateTime, formatDate } from '@/lib/format'
 import { AddMoreButton, RemoveValueButton, ValueRow, canAddMore } from '@/components/shared/MoreValuesButtons'
+import { priorityLabel } from '@/lib/priority'
 import { segmentBtnStyle, RowCount, Pill, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 
 const TABS = ['Overview', 'Contacts', 'Inquiries', 'Tenders', 'Audit Trail'] as const
@@ -528,7 +529,7 @@ function InquiriesTab({ orgId, orgRef, canModify, contacts }: { orgId: number; o
                   <td style={{ padding: '10px 16px', color: '#1f1108', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.product || '—'}</td>
                   <td style={{ padding: '10px 16px', color: '#57534e', whiteSpace: 'nowrap' }}>{contactName(i.org_contact_id) || '—'}</td>
                   <td style={{ padding: '10px 16px' }}><StatusPill value={i.status} hex={inquiryStatusColor(i.status).text} /></td>
-                  <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: '#57534e' }}>{i.priority || '—'}</td>
+                  <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: '#57534e' }}>{i.priority ? priorityLabel(i.priority) : '—'}</td>
                   <td style={{ padding: '10px 16px', color: '#57534e', whiteSpace: 'nowrap' }}>{i.next_followup_date ? formatDate(i.next_followup_date) : '—'}</td>
                 </tr>
               ))}

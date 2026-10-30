@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.data_scope import apply_scope
 from app.core.permissions import require_app_access, require_any_app_access, require_tab_access
+from app.core.priority import PRIORITIES, priority_rank
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.organization.models.branch import Branch
@@ -13,7 +14,7 @@ from app.modules.accounts.models.vendor import Vendor
 from app.modules.maintenance.models.asset import (
     MaintenanceAsset, MAINTENANCE_ASSET_CATEGORIES, MAINTENANCE_ASSET_STATUSES, MAINTENANCE_ASSET_CRITICALITIES,
 )
-from app.modules.maintenance.models.request import MaintenanceRequest, MAINTENANCE_REQUEST_TYPES, MAINTENANCE_PRIORITIES
+from app.modules.maintenance.models.request import MaintenanceRequest, MAINTENANCE_REQUEST_TYPES
 from app.modules.maintenance.models.work_order import (
     MaintenanceWorkOrder, MAINTENANCE_WO_TYPES, MAINTENANCE_WO_STATUSES, MAINTENANCE_WO_OPEN_STATUSES, MAINTENANCE_FAILURE_CATEGORIES,
 )
@@ -104,7 +105,7 @@ async def maintenance_dashboard(
             {
                 "id": w.id, "wo_number": w.wo_number, "title": w.title, "status": w.status, "priority": w.priority,
                 "asset_code": by_id[w.asset_id].asset_code, "planned_start": w.planned_start,
-            } for w in sorted(my_wos, key=lambda w: MAINTENANCE_PRIORITIES.index(w.priority) if w.priority in MAINTENANCE_PRIORITIES else 0, reverse=True)[:10]
+            } for w in sorted(my_wos, key=lambda w: priority_rank(w.priority))[:10]
         ],
         "awaiting_close": [
             {"id": w.id, "wo_number": w.wo_number, "title": w.title, "asset_code": by_id[w.asset_id].asset_code,
@@ -145,7 +146,7 @@ async def maintenance_lookups(
         "asset_statuses": list(MAINTENANCE_ASSET_STATUSES),
         "criticalities": list(MAINTENANCE_ASSET_CRITICALITIES),
         "request_types": list(MAINTENANCE_REQUEST_TYPES),
-        "priorities": list(MAINTENANCE_PRIORITIES),
+        "priorities": list(PRIORITIES),
         "wo_types": list(MAINTENANCE_WO_TYPES),
         "wo_statuses": list(MAINTENANCE_WO_STATUSES),
         "failure_categories": list(MAINTENANCE_FAILURE_CATEGORIES),

@@ -35,7 +35,7 @@ def _setup(db, tag):
 
 
 def _body(items, **over):
-    body = {"purpose": "department", "priority": "medium", "approvers": {},
+    body = {"purpose": "department", "priority": "standard", "approvers": {},
             "items": [{"store_item_id": i.id, "quantity": 2, "project_inhouse": "Inhouse"} for i in items]}
     body.update(over)
     return body

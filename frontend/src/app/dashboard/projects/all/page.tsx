@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { projectsApi } from '@/lib/api'
@@ -10,26 +9,21 @@ import ProjectsNav from '@/components/projects/ProjectsNav'
 import ProjectListView from '@/components/projects/ProjectListView'
 import PastProjectsList from '@/components/projects/PastProjectsList'
 import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
-import FromSalesOrderSheet, { AwaitingSalesOrder } from '@/components/projects/FromSalesOrderSheet'
+import CreateProjectChooser, { useProjectCreateRights } from '@/components/projects/CreateProjectChooser'
 
 export default function AllProjectsPage() {
   const { isAuthorized, isLoading } = useRequireApp('projects')
-  const router = useRouter()
   const { can } = useCan()
   const canCurrent = can('projects', 'all_projects', 'view')
   const canPast = can('projects', 'service_projects', 'view')
   const [segment, setSegment] = useState<'current' | 'past'>('current')
   const [canCreate, setCanCreate] = useState(false)
-  // Confirmed New Project sales orders waiting for the Project Manager to create their project.
-  const [awaiting, setAwaiting] = useState<AwaitingSalesOrder[]>([])
-  const [fromSoOpen, setFromSoOpen] = useState(false)
+  const [chooserOpen, setChooserOpen] = useState(false)
+  const createRights = useProjectCreateRights(canCreate)
 
   useEffect(() => {
     if (isAuthorized) projectsApi.meta().then((m) => setCanCreate(m.can_create)).catch(() => setCanCreate(false))
   }, [isAuthorized])
-  useEffect(() => {
-    if (canCreate && canCurrent) projectsApi.salesOrdersAwaitingProject().then(setAwaiting).catch(() => setAwaiting([]))
-  }, [canCreate, canCurrent])
 
   if (isLoading || !isAuthorized) return null
 
@@ -49,27 +43,14 @@ export default function AllProjectsPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{view === 'past' ? 'Past Projects' : 'All Projects'}</h1>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {canCreate && canCurrent && (
-          <button
-            data-tour="pm-all-from-so-btn"
-            onClick={() => setFromSoOpen(true)}
-            type="button"
-            aria-label={`From Sales Order — ${awaiting.length} confirmed order${awaiting.length === 1 ? '' : 's'} waiting for a project`}
-            style={{ ...secondaryBtnStyle, borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 8 }}
-          >
-            From Sales Order
-            {/* ui-audit-ignore-next-line custom-pill — count badge on a button, not a status badge */}
-            <span aria-hidden="true" style={{ minWidth: 20, padding: '1px 7px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, lineHeight: '18px', textAlign: 'center', background: awaiting.length ? '#f59e0b' : '#e2e8f0', color: awaiting.length ? '#fff' : '#64748b' }}>{awaiting.length}</span>
-          </button>
-          )}
-          {canCreate && canCurrent && (
+          {createRights.any && canCurrent && (
           <button
             data-tour="pm-all-new-btn"
-            onClick={() => router.push('/dashboard/projects/new')}
+            onClick={() => setChooserOpen(true)}
             type="button"
             style={{ ...primaryBtnStyle, background: '#6366f1' }}
           >
-            + New Project
+            + Create Project
           </button>
           )}
         </div>
@@ -81,7 +62,7 @@ export default function AllProjectsPage() {
         </div>
       )}
       {view === 'past' ? <PastProjectsList /> : <ProjectListView />}
-      {fromSoOpen && <FromSalesOrderSheet orders={awaiting} onClose={() => setFromSoOpen(false)} />}
+      {chooserOpen && <CreateProjectChooser canProject={canCreate} onClose={() => setChooserOpen(false)} />}
     </div>
   )
 }

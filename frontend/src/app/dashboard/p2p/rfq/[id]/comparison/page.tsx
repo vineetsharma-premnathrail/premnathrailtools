@@ -4,7 +4,7 @@
 // 1. Record each vendor's quote line by line (price, discount, GST, delivery days, make) plus freight / packing.
 // 2. Comparison grid — landed unit cost per line (excl. GST), L1 per line and overall.
 // 3. Award each line to a vendor (reason when not L1).
-// 4. Send the awarded lines to Purchase Orders › Create PO — one draft PO per awarded vendor is created there.
+// 4. The PO is made in Tally and uploaded on the requisition (Upload PO) — POs aren't created in the portal.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
@@ -304,19 +304,19 @@ export default function QuotationComparisonPage() {
           </div>
 
           <div style={card}>
-            <h2 style={h2}>3. Send to Purchase Orders</h2>
+            <h2 style={h2}>3. Upload the PO</h2>
             {awardedLines === 0 ? (
-              <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Award the lines (L1 is pre-selected) and save — then send them to Purchase Orders.</p>
+              <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Award the lines (L1 is pre-selected) and save — then make the PO in Tally and upload it on the requisition.</p>
             ) : (
               <>
                 <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 10px' }}>
-                  <b style={{ color: TEXT.heading }}>{awardedLines} line(s) awarded.</b> Awarded lines go to Purchase Orders › Create PO, where the PO for each vendor is created, priced and sent for approval.
+                  <b style={{ color: TEXT.heading }}>{awardedLines} line(s) awarded.</b> Make the PO in Tally for the awarded vendor, then upload it on the requisition (Upload PO) — it goes for approval from there.
                 </p>
-                {awardsUnsaved && <p style={{ fontSize: 12.5, color: '#b45309', margin: '0 0 10px' }}>You have changed the award picks — click Save awards first, so the saved awards are what goes to Purchase Orders.</p>}
-                {canCreatePo
+                {awardsUnsaved && <p style={{ fontSize: 12.5, color: '#b45309', margin: '0 0 10px' }}>You have changed the award picks — click Save awards first, so the saved awards are what the PO follows.</p>}
+                {canCreatePo && pr
                   ? <button type="button" data-tour="rfq-cmp-send-to-po" disabled={awardsUnsaved || busy} style={{ ...primaryBtnStyle, opacity: awardsUnsaved || busy ? 0.6 : 1 }}
-                      onClick={() => router.push('/dashboard/p2p/purchase-orders?view=create')}>Send to Purchase Orders →</button>
-                  : <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>The purchase team creates the PO(s) in Purchase Orders › Create PO — opening it needs Create access on Procurement › Purchase Orders.</p>}
+                      onClick={() => router.push(recordPath('/dashboard/p2p', pr))}>Open requisition to upload PO →</button>
+                  : <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>The purchase team uploads the Tally PO on the requisition — that needs Create access on Procurement › Purchase Orders.</p>}
               </>
             )}
           </div>

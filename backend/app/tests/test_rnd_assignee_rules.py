@@ -30,7 +30,7 @@ def _h(u):
 
 
 def _project(client, u):
-    r = client.post(f"{BASE}/projects", headers=_h(u), json={"title": "Bogie", "objective": "Lighter", "origin": "new_development", "origin_note": "Proposed by R&D head", "attachment_count": 1})
+    r = client.post(f"{BASE}/projects", headers=_h(u), json={"title": "Bogie", "objective": "Lighter", "origin": "new_project", "origin_note": "Proposed by R&D head", "attachment_count": 1})
     assert r.status_code == 200, r.text
     return r.json()["id"]
 
@@ -41,12 +41,12 @@ def test_project_team_rule_blocks_outsiders_on_create_and_update(client, db):
     lead = _user(db, "lead@premnathrail.com", {"rnd:projects.team": {"mode": "custom", "users": [mate.id]}})
 
     r = client.post(f"{BASE}/projects", headers=_h(lead),
-                    json={"title": "Bogie", "objective": "Lighter", "team_member_ids": [outsider.id], "origin": "new_development", "origin_note": "Proposed by R&D head", "attachment_count": 1})
+                    json={"title": "Bogie", "objective": "Lighter", "team_member_ids": [outsider.id], "origin": "new_project", "origin_note": "Proposed by R&D head", "attachment_count": 1})
     assert r.status_code == 403 and "Pick project lead & team" in r.json()["detail"]
 
     # Yourself as lead + an allowed member is fine.
     r = client.post(f"{BASE}/projects", headers=_h(lead),
-                    json={"title": "Bogie", "objective": "Lighter", "lead_ids": [lead.id], "team_member_ids": [mate.id], "origin": "new_development", "origin_note": "Proposed by R&D head", "attachment_count": 1})
+                    json={"title": "Bogie", "objective": "Lighter", "lead_ids": [lead.id], "team_member_ids": [mate.id], "origin": "new_project", "origin_note": "Proposed by R&D head", "attachment_count": 1})
     assert r.status_code == 200, r.text
     pid = r.json()["id"]
 

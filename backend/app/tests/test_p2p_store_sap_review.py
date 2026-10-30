@@ -84,19 +84,19 @@ def test_no_issue_from_stock_against_a_draft_requisition(client, db):
     assert db.query(StoreStockBalance).filter(StoreStockBalance.location_id == loc.id).one().on_hand_qty == 50
 
 
-def test_no_po_draft_to_a_blocked_vendor(client, db):
+def test_no_po_upload_to_a_blocked_vendor(client, db):
     from app.modules.p2p.models.p2p_request import P2PRequest
     from app.modules.p2p.models.p2p_request_item import P2PRequestItem
     from app.modules.p2p.models.rfq import RFQ
     from app.modules.p2p.models.rfq_attachment import RFQAttachment
-    from app.tests.test_p2p_settings_vendors import _h, _user
+    from app.tests.test_p2p_settings_vendors import _user
 
     buyer = _user(db, "sap5.buyer@premnathrail.com", apps=("purchase", "p2p"))
     v = Vendor(code="V-9501", name="Blocked Seals", status="blocked", gst_registration_type="unregistered")
     db.add(v)
     db.flush()
     pr = P2PRequest(p2p_number="P2P-RAW-2026-9501", category_code="RAW", status="vendor_quotations", project_label="RRV-1",
-                    project_type="new", request_date=date.today(), requested_by_id=buyer.id, priority="medium")
+                    project_type="new", request_date=date.today(), requested_by_id=buyer.id, priority="standard")
     db.add(pr)
     db.flush()
     db.add(P2PRequestItem(p2p_request_id=pr.id, item_name="O-ring", quantity=10, unit="Nos", project_inhouse="Project",
@@ -107,7 +107,10 @@ def test_no_po_draft_to_a_blocked_vendor(client, db):
     db.add(RFQAttachment(rfq_id=rfq.id, vendor_tier="L1", vendor_name=v.name, vendor_id=v.id, filename="L1.pdf",
                          sharepoint_path="x/L1.pdf", created_by_id=buyer.id))
     db.commit()
-    r = client.post(f"/api/v1/p2p/rfqs/{rfq.id}/po-draft", json={"vendor_tier": "L1"}, headers=_h(buyer))
+    from app.tests.p2p_po_helpers import make_ship_to, post_upload_po
+    details = {"vendor_tier": "L1", "ship_to_location_id": make_ship_to(db).id,
+               "lines": [{"pr_item_id": it.id, "unit_price": 5} for it in pr.items]}
+    r = post_upload_po(client, buyer, rfq.id, details, "TALLY-BLK-1")
     assert r.status_code == 409, r.text
     assert "blocked" in r.json()["detail"]
 

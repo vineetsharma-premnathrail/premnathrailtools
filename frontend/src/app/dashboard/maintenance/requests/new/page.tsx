@@ -11,6 +11,7 @@ import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import MaintenanceAssetPicker from '@/components/maintenance/MaintenanceAssetPicker'
 import { extractErrorMessages } from '@/lib/validation'
+import { normalizePriority } from '@/lib/priority'
 import { ASSET_STATUS_LABELS, PRIORITY_LABELS, REQUEST_TYPE_LABELS, localInputToIso, nowLocalInput } from '@/components/maintenance/labels'
 import Select from '@/components/shared/Select'
 import { useFormDraft } from '@/lib/formDraft'
@@ -41,7 +42,7 @@ export default function NewMaintenanceRequestPage() {
       if (d.requestType) setRequestType(d.requestType)
       setMachineDown(d.machineDown !== false)
       if (d.reportedAt) setReportedAt(d.reportedAt)
-      setProblem(d.problem || ''); setPriority(d.priority || '')
+      setProblem(d.problem || ''); setPriority(d.priority ? normalizePriority(d.priority) : '')
     })
   const takeRef = useRef<HTMLInputElement>(null)
   const chooseRef = useRef<HTMLInputElement>(null)

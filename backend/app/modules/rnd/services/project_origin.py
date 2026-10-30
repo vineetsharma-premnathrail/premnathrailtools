@@ -1,17 +1,16 @@
 """R&D project origin + source — WHY a Prototype / Research project exists and
 the record that proves it.
 
-Origins (RND_PROJECT_ORIGINS):
-* customer_requirement — a CRM Inquiry / Tender sent to R&D. The record is
-  linked (source_kind/source_id) and also added to the requirement's
+Origins (RND_PROJECT_ORIGINS) — two since 2026-10-30:
+* existing_projects — an existing project / machine (machine_id, PEW serial;
+  product_id kept on older projects) is improved for a reason: customer
+  complaint / NCR / service report / cost reduction / production difficulty.
+  The existing project and the reason are required; the note is optional.
+* new_project — new work: who proposed it and why (origin_note) plus an
+  attached proposal / management note are required. Optionally the customer
+  requirement it answers (a CRM Inquiry / Tender sent to R&D, listed by its R&D
+  ID) is linked (source_kind/source_id) and added to the requirement's
   "Linked projects" (rnd_requirement_project_links).
-* product_improvement — an existing project / machine (machine_id, PEW serial; was a
-  finished product until 2026-10-27, product_id kept on older projects) improved
-  for a reason: customer complaint / NCR / service report (the matching
-  record must be linked) or cost reduction / production difficulty (a note
-  and an attached proof document).
-* new_development / process_research — internal idea: who proposed it and
-  why (origin_note) plus an attached proposal / management note.
 
 Every linked record must exist and be visible to the user: inquiries and
 tenders through R&D's requirement access, complaints / NCRs / service
@@ -28,8 +27,8 @@ from sqlalchemy.orm import Session
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.modules.main.models.user import User
 from app.modules.rnd.models.project import (
-    RND_IMPROVEMENT_REASON_LABELS, RND_IMPROVEMENT_REASONS, RND_ORIGIN_LABELS, RND_ORIGIN_PROJECT_TYPE,
-    RND_PROJECT_ORIGINS, RND_SOURCE_KINDS, RndProject,
+    RND_IMPROVEMENT_REASON_LABELS, RND_IMPROVEMENT_REASONS, RND_ORIGIN_LABELS,
+    RND_ORIGIN_PROJECT_TYPE, RND_PROJECT_ORIGINS, RND_SOURCE_KINDS, RndProject,
 )
 from app.modules.rnd.services import requirement_access as ra
 
@@ -78,13 +77,22 @@ def _short(text: str | None, n: int = 70) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
-def _option(kind: str, rec, orgs: dict[int, str]) -> dict:
+def _rd_numbers(db: Session, kind: str, ids) -> dict[int, str]:
+    """record id -> R&D ID (RDR-…) of the requirements among `ids`."""
+    from app.modules.rnd.models.requirement import RndRequirement
+    ids = [i for i in ids if i]
+    if kind not in ("inquiry", "tender") or not ids:
+        return {}
+    return {r.record_id: r.rd_number for r in db.query(RndRequirement).filter(RndRequirement.source == kind, RndRequirement.record_id.in_(ids)).all()}
+
+
+def _option(kind: str, rec, orgs: dict[int, str], rd: dict[int, str] | None = None) -> dict:
     """{id, label, sub} — label is also the snapshot stored as source_ref."""
     if kind in ("inquiry", "tender"):
-        number = rec.technical_offer_number or rec.universal_id or f"{kind} #{rec.id}"
+        number = (rd or {}).get(rec.id) or rec.technical_offer_number or rec.universal_id or f"{kind} #{rec.id}"
         what = rec.product if kind == "inquiry" else rec.tender_name
         parts = [number, orgs.get(rec.org_id), _short(what, 60) or None]
-        sub = f"{'Inquiry' if kind == 'inquiry' else 'Tender'} {rec.universal_id}" if rec.technical_offer_number else None
+        sub = f"{'Inquiry' if kind == 'inquiry' else 'Tender'} {rec.universal_id}" if (rd or {}).get(rec.id) or rec.technical_offer_number else None
     elif kind == "quality_complaint":
         parts = [rec.complaint_number, rec.customer_name, _short(rec.item_name or rec.description, 60)]
         sub = f"Status: {rec.status.replace('_', ' ')} · {rec.complaint_date.strftime('%d-%m-%Y') if rec.complaint_date else ''}".rstrip(" ·")
@@ -104,8 +112,8 @@ def _requirement_visible(db: Session, user: User, kind: str, rec) -> None:
                    f"Ask Sales/BD to use 'Send Technical Offer Request to R&D' on the {kind} first.")
     if not ra.access_for(db, user, kind, rec.id)["view"]:
         raise HTTPException(status_code=403, detail=(
-            f"You can't see requirement {rec.technical_offer_number or rec.universal_id}. Ask the R&D head to grant you "
-            "access to it (requirement's Access tab), or pick a requirement you can open."))
+            f"You can't see requirement {rec.technical_offer_number or rec.universal_id}. Ask the R&D head "
+            f"({ra._head_names(db)}) to give you a task on it, or pick a requirement you can open."))
 
 
 def load_source(db: Session, user: User, kind: str, source_id: int) -> tuple[object, dict]:
@@ -121,7 +129,7 @@ def load_source(db: Session, user: User, kind: str, source_id: int) -> tuple[obj
     else:
         ensure_in_scope(db, user, rec)
     orgs = _org_names(db, [rec.org_id]) if kind in ("inquiry", "tender") else {}
-    return rec, _option(kind, rec, orgs)
+    return rec, _option(kind, rec, orgs, _rd_numbers(db, kind, [rec.id]))
 
 
 def _product(db: Session, product_id: int):
@@ -129,7 +137,7 @@ def _product(db: Session, product_id: int):
     p = db.query(FinishedProduct).filter(FinishedProduct.id == product_id).first()
     if not p:
         raise HTTPException(status_code=404, detail=(
-            f"Product #{product_id} no longer exists in Sales › Products — pick the product being improved again."))
+            f"Product #{product_id} no longer exists in the product master — pick the product again."))
     return p
 
 
@@ -151,8 +159,7 @@ def resolve(db: Session, user: User, data: dict, *, creating: bool, attachment_c
     source_ref. Fields that don't apply to the origin are cleared."""
     origin = data.get("origin")
     if not origin:
-        raise _bad("Project origin is required — pick why this project exists: Customer requirement, Improvement of existing "
-                   "product, New product (internal) or Process / technology research.")
+        raise _bad("Project origin is required — pick why this project exists: Existing Projects or New Project.")
     if origin not in RND_PROJECT_ORIGINS:
         raise _bad(f"Unknown project origin '{origin}'. Pick one of: {', '.join(RND_ORIGIN_LABELS.values())}.")
     note = (data.get("origin_note") or "").strip() or None
@@ -168,36 +175,29 @@ def resolve(db: Session, user: User, data: dict, *, creating: bool, attachment_c
            "source_kind": None, "source_id": None, "source_ref": None, "improvement_reason": None, "product_id": None,
            "machine_id": None}
 
-    def need_proof(why: str) -> None:
-        if creating and attachment_count < 1:
-            raise _bad(f"Attach at least one proof document in Attachments — {why}.")
-
-    def link(expected: tuple[str, ...], what: str) -> None:
-        if kind not in expected or not source_id:
-            raise _bad(f"Pick the {what} this project comes from — it is the proof of the project's origin.")
-        _, opt = load_source(db, user, kind, source_id)
-        out.update(source_kind=kind, source_id=source_id, source_ref=opt["label"])
-
-    if origin == "customer_requirement":
-        link(("inquiry", "tender"), "customer inquiry or tender (sent to R&D)")
-        if product_id:
-            out["product_id"] = _product(db, product_id).id
-    elif origin == "product_improvement":
+    if origin == "existing_projects":
         if not machine_id:
-            raise _bad("Pick the existing project being improved (its PEW number — Project Management › All Projects).")
+            raise _bad("Pick the existing project being improved (PEW number).")
         out["machine_id"] = _machine(db, machine_id).id
         if not reason:
             raise _bad("Pick the reason for the improvement: customer complaint, NCR, service report, cost reduction or production difficulty.")
         if reason not in RND_IMPROVEMENT_REASONS:
             raise _bad(f"Unknown improvement reason '{reason}'. Pick one of: {', '.join(RND_IMPROVEMENT_REASON_LABELS.values())}.")
         out["improvement_reason"] = reason
-        # Owner 2026-10-27: the project + reason are enough — no extra complaint / NCR /
-        # service request pick or proof per reason; the note stays optional.
-    else:  # new_development / process_research
+    else:  # new_project
         if not note:
-            raise _bad("Fill 'Who proposed it and why' — who proposed this "
-                       f"{'new product' if origin == 'new_development' else 'research'} and the reason for it.")
-        need_proof("the proposal or management note approving this work")
+            raise _bad("Fill 'Who proposed it and why' — who proposed this new project and the reason for it.")
+        if creating and attachment_count < 1:
+            raise _bad("Attach at least one proof document in Attachments — the proposal or management note approving this work.")
+        if kind or source_id:
+            # Optional: the customer requirement this project answers.
+            if kind not in ("inquiry", "tender") or not source_id:
+                raise _bad("Pick the customer requirement (inquiry or tender sent to R&D) from the list, or clear the field — "
+                           "only a requirement can be linked to a new project.")
+            _, opt = load_source(db, user, kind, source_id)
+            out.update(source_kind=kind, source_id=source_id, source_ref=opt["label"])
+        if product_id:
+            out["product_id"] = _product(db, product_id).id
     return out
 
 
@@ -209,7 +209,7 @@ def link_requirement(db: Session, user: User, project: RndProject) -> None:
     """Add the customer requirement to the requirement's Linked projects (no duplicate)."""
     from app.modules.main.models.audit_log import AuditLog
     from app.modules.rnd.models.requirement_work import RndRequirementProjectLink
-    if project.origin != "customer_requirement" or project.source_kind not in ("inquiry", "tender") or not project.source_id:
+    if project.origin != "new_project" or project.source_kind not in ("inquiry", "tender") or not project.source_id:
         return
     exists = db.query(RndRequirementProjectLink.id).filter(
         RndRequirementProjectLink.source == project.source_kind, RndRequirementProjectLink.record_id == project.source_id,
@@ -285,9 +285,10 @@ def source_options(db: Session, user: User, kind: str, q: str | None) -> list[di
             org_ids = db.query(Organization.id).filter(Organization.name.ilike(like))
             query = query.filter(or_(model.universal_id.ilike(like), model.technical_offer_number.ilike(like),
                                      what.ilike(like), model.org_id.in_(org_ids)))
-        rows = query.order_by(model.technical_offer_sent_at.desc()).limit(OPTION_LIMIT).all()
+        rows = query.order_by(model.universal_id.asc()).limit(OPTION_LIMIT).all()
         orgs = _org_names(db, [r.org_id for r in rows])
-        return [_option(kind, r, orgs) for r in rows]
+        rd = _rd_numbers(db, kind, [r.id for r in rows])
+        return [_option(kind, r, orgs, rd) for r in rows]
     query = apply_scope(query, user, model, db)
     if kind == "quality_complaint":
         if q:

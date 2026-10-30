@@ -22,6 +22,12 @@ const config: TourConfig = {
       after: 'Click to see both lists — this is also where you create a new Inquiry or Tender.',
     },
     {
+      target: 'crm-nav-box',
+      title: 'Products',
+      purpose: 'The finished-product master (machines and spares) the quotation lines pick from, with each product’s technical specifications and country-wise prices inside it.',
+      after: 'Click to open the Products list. Shown only if your role has CRM › Products; the Pricing section inside a product needs its own Pricing permission.',
+    },
+    {
       target: 'crm-nav-chart',
       title: 'Reports',
       purpose: 'Graphs for management: leads received month by month, open pipeline, won and lost (and why), quotations and per-BD-owner figures.',
@@ -30,7 +36,7 @@ const config: TourConfig = {
     {
       target: 'crm-nav-settings',
       title: 'Settings',
-      purpose: 'The lists quotations and inquiries pick from (Products, Product Categories, Payment Terms) and the notification rules — who is told when an customer organization, inquiry or tender is created or a Discussion message is posted.',
+      purpose: 'The lists quotations and inquiries pick from (Product Categories, Payment Terms) and the notification rules — who is told when an customer organization, inquiry or tender is created or a Discussion message is posted.',
       after: 'Click to open CRM Settings.',
     },
     {

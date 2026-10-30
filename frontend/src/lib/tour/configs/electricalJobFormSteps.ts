@@ -20,9 +20,7 @@ export const JOB_FORM_FIELD_STEPS: TourStep[] = [
     required: false,
     purpose: 'How urgent this job is compared with the other electrical jobs.',
     options: [
-      { value: 'Low', meaning: 'Can wait — no committed date pressure.' },
-      { value: 'Normal', meaning: 'Default. Work it in the usual order.' },
-      { value: 'High', meaning: 'Committed date is close or the customer is pushing — do it before Normal jobs.' },
+      { value: 'Standard', meaning: 'Default. Work it in the usual order.' },
       { value: 'Urgent', meaning: 'Drop other work — e.g. a vehicle waiting at the customer, penalty at risk.' },
     ],
     why: 'Priority shows as a coloured badge on the job list and dashboard, so the team leader can see at a glance what to staff first.',

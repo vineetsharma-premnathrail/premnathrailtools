@@ -1,3 +1,5 @@
+import { PRIORITY_OPTIONS } from '@/lib/priority'
+
 // Enumerations shared by the Design pages — mirror the backend tuples in
 // app/modules/design/models/*.py. Status badge colours stay page-local
 // (see premnathrail-ui-behavior), these are just the option lists.
@@ -49,7 +51,7 @@ export const ECN_REASON_LABELS: Record<string, string> = {
   other: 'Other',
 }
 
-export const ECN_PRIORITY_LABELS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', urgent: 'Urgent' }
+export const ECN_PRIORITY_LABELS: Record<string, string> = Object.fromEntries(PRIORITY_OPTIONS.map((o) => [o.value, o.label]))
 
 // Accept list for the revision file picker — must stay within the backend
 // allowlist in app/utils/sharepoint.py or the upload 400s.
@@ -77,7 +79,7 @@ export const REQUEST_SOURCE_LABELS: Record<string, string> = { bd: 'BD / CRM', p
 export const REQUEST_STATUS_LABELS: Record<string, string> = {
   open: 'Open', accepted: 'Accepted', in_progress: 'In progress', on_hold: 'On hold', completed: 'Completed', cancelled: 'Cancelled',
 }
-export const PRIORITY_LABELS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', urgent: 'Urgent' }
+export const PRIORITY_LABELS: Record<string, string> = Object.fromEntries(PRIORITY_OPTIONS.map((o) => [o.value, o.label]))
 
 export const SUBMISSION_STATUS_LABELS: Record<string, string> = { draft: 'Draft', sent: 'With customer', closed: 'Closed', cancelled: 'Cancelled' }
 export const CUSTOMER_RESPONSE_LABELS: Record<string, string> = {

@@ -35,9 +35,7 @@ const config: TourConfig = {
       target: 'production-wo-new-priority',
       title: 'Priority',
       options: [
-        { value: 'Low', meaning: 'Stock build, no deadline pressure.' },
-        { value: 'Normal', meaning: 'Standard order (default).' },
-        { value: 'High', meaning: 'Customer waiting — goes ahead of Normal on the Shop Floor board.' },
+        { value: 'Standard', meaning: 'Standard order (default).' },
         { value: 'Urgent', meaning: 'Breakdown or penalty risk — shown first on the Shop Floor board.' },
       ],
     },

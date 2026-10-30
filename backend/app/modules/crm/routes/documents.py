@@ -67,7 +67,7 @@ def _ensure_can_open(db: Session, user: User, doc: CrmDocument) -> None:
 # related_sub_module values owned by R&D / the requirement discussion. Their
 # lists match only on (sub_module, sub_id), so a file uploaded here with one of
 # them would show up on another requirement's R&D task or discussion message.
-_RESERVED_SUB_MODULES = {"rnd_task", "rnd_requirement", "discussion", "rnd_request", "rnd_dept_share"}
+_RESERVED_SUB_MODULES = {"rnd_task", "rnd_requirement", "discussion", "rnd_request", "rnd_dept_share", "technical_offer"}
 
 
 def _ensure_upload_target(db: Session, related_module: str | None, related_id: int | None,

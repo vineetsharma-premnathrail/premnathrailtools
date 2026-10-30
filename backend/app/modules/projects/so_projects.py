@@ -1,13 +1,14 @@
-"""Sales-order projects — a confirmed New Project Sales Order gets its project in
-Project Management > All Projects (a PmProject); its vehicles / lots are the
-project's Units (PmProjectElement, table pm_project_elements).
+"""Project linking hub — what Production, Store, Quality, Dispatch, Procurement and
+Design link their work to (a PmProject).
 
-The project is NOT created automatically (owner, 2026-10-28): confirming the
-order notifies the Project Managers (notify_project_needed) and the order shows
-"Pending project creation" until a Project Manager creates it from Project
-Management › All Projects › From Sales Order (routes/units.py), which picks the
-project manager and takes the next PEW number. Once it exists, every approved
-amendment re-syncs its units here.
+One project = one machine (owner, 2026-10-30). Every project made in Project
+Management has NO units, so departments link at PROJECT level
+(order_project_id = project, order_project_element_id = NULL) — see
+project_has_units / resolve_link below. Only the historic sales-order projects
+(PmProjectElement rows: vehicles / lots, table pm_project_elements) still need a
+unit. Sales Orders can no longer be raised (2026-10-30): the sales-order helpers
+in this file (ensure_project_for_order, sync_elements, delivery-derived status)
+only keep those historic projects consistent.
 
 The API other modules call (import as `from app.modules.projects import so_projects as op_core`):
 
@@ -19,6 +20,10 @@ The API other modules call (import as `from app.modules.projects import so_proje
     element_for_schedule(db, schedule_id) -> PmProjectElement | None
     resolve_element(db, element_id, *, project_id=None, allow_cancelled=False) -> (PmProject, PmProjectElement)
     resolve_project(db, project_id, *, allow_closed=False) -> PmProject
+    project_has_units(db, project_id) -> bool            # live units = historic sales-order project
+    resolve_link(db, project_id, element_id, *, what, allow_closed=False) -> (PmProject | None, PmProjectElement | None)
+    refresh_project_lifecycle(db, project, user=None) -> bool
+    register_project_provider(key, fn)      fn(db, project) -> cell | None   (the "Whole project" row of a unit-less project)
     element_display(project, element) -> "PEW-78 / 01 · Vehicle 1"
     project_label(project) -> "PEW-78 — <name>"
     refresh_element_status(db, element, *, so=None, events=None) -> str
@@ -31,8 +36,11 @@ A department cell (what the 360 table shows) is a small dict:
     {"status": "<code>", "label": "<short text>", "tone": "neutral|info|success|warning|danger",
      "detail": "<tooltip / second line>" | None, "date": "yyyy-mm-dd" | None}
 None means "not linked yet". Departments: design, purchase, store,
-production, quality, dispatch, delivery — dispatch and delivery are filled
-here from the Sales delivery events; the others by their module's provider.
+production, quality, dispatch, delivery — for a historic project dispatch and
+delivery are filled here from the Sales delivery events; the others by their
+module's provider. A project with no live units shows ONE "Whole project" row:
+department_cells(...)[None] is filled by the project providers (register_project_provider),
+and its dispatch cell comes from the Store dispatch issues of the project.
 
 Plain functions; business-rule failures raise HTTPException with the reason
 and the fix (routes and other modules can call them directly)."""
@@ -71,6 +79,7 @@ PROJECT_STATUS_LABEL = {
 
 _status_hooks: list[Callable] = []
 _department_providers: dict[str, Callable] = {}
+_project_providers: dict[str, Callable] = {}
 _project_hooks: list[Callable] = []
 
 
@@ -97,6 +106,15 @@ def register_department_provider(key: str, fn: Callable) -> None:
     if key not in DEPARTMENTS:
         raise ValueError(f"Unknown department '{key}' — use one of {', '.join(DEPARTMENTS)}.")
     _department_providers[key] = fn
+
+
+def register_project_provider(key: str, fn: Callable) -> None:
+    """fn(db, project) -> cell | None for ONE department of the "Whole project" row —
+    the 360 line of a project with no units (every new project: one project =
+    one machine). Records are the ones with order_project_id = project and no unit."""
+    if key not in DEPARTMENTS:
+        raise ValueError(f"Unknown department '{key}' — use one of {', '.join(DEPARTMENTS)}.")
+    _project_providers[key] = fn
 
 
 # ---------------------------------------------------------------- numbering
@@ -384,16 +402,51 @@ def _delivery_cells(element: PmProjectElement, evs: list[SalesDeliveryEvent]) ->
     return out[0], out[1]
 
 
-def department_cells(db: Session, project: PmProject, so: SalesOrder,
-                     elements: list[PmProjectElement]) -> dict[int, dict[str, dict | None]]:
-    """{element_id: {department: cell | None}} for the 360 table."""
-    events = _live_events(db, so.id)
-    cells: dict[int, dict[str, dict | None]] = {el.id: {k: None for k in DEPARTMENTS} for el in elements}
-    for el in elements:
-        if el.status == "cancelled":
+def project_dispatch_cell(db: Session, project: PmProject) -> dict | None:
+    """Dispatch of a project with no units: the Store dispatch issues booked to the
+    project itself (order_project_id = project, no unit) — date and issue number."""
+    from app.modules.store.models.material_issue import StoreMaterialIssue
+    rows = (db.query(StoreMaterialIssue).filter(
+        StoreMaterialIssue.issue_type == "dispatch", StoreMaterialIssue.order_project_id == project.id,
+        StoreMaterialIssue.order_project_element_id.is_(None))
+        .order_by(StoreMaterialIssue.issue_date, StoreMaterialIssue.id).all())
+    if not rows:
+        return None
+    last = rows[-1]
+    refs = ", ".join(r.issue_number for r in rows[-3:])
+    return {"status": "done", "label": "Dispatched", "tone": "success",
+            "detail": f"{_date_txt(last.issue_date)} · {refs}", "date": last.issue_date.isoformat()}
+
+
+def project_level_cells(db: Session, project: PmProject) -> dict[str, dict | None]:
+    """{department: cell | None} of the "Whole project" row (no units)."""
+    row: dict[str, dict | None] = {k: None for k in DEPARTMENTS}
+    row["dispatch"] = project_dispatch_cell(db, project)
+    for key, fn in _project_providers.items():
+        try:
+            cell = fn(db, project)
+        except Exception:
+            logger.exception("Project-level provider '%s' failed for %s", key, project.project_code)
             continue
-        disp, deliv = _delivery_cells(el, _element_events(el, so, events))
-        cells[el.id]["dispatch"], cells[el.id]["delivery"] = disp, deliv
+        if cell is not None:
+            row[key] = cell
+    return row
+
+
+def department_cells(db: Session, project: PmProject, so: SalesOrder | None,
+                     elements: list[PmProjectElement]) -> dict[int | None, dict[str, dict | None]]:
+    """{element_id: {department: cell | None}} for the 360 table. A project with no
+    live units gets one more entry, key None = the "Whole project" row."""
+    cells: dict[int | None, dict[str, dict | None]] = {el.id: {k: None for k in DEPARTMENTS} for el in elements}
+    if not project_has_units(db, project.id):
+        cells[None] = project_level_cells(db, project)
+    if so is not None:
+        events = _live_events(db, so.id)
+        for el in elements:
+            if el.status == "cancelled":
+                continue
+            disp, deliv = _delivery_cells(el, _element_events(el, so, events))
+            cells[el.id]["dispatch"], cells[el.id]["delivery"] = disp, deliv
     for key, fn in _department_providers.items():
         try:
             filled = fn(db, project, elements) or {}
@@ -407,6 +460,13 @@ def department_cells(db: Session, project: PmProject, so: SalesOrder,
 
 
 # ---------------------------------------------------------------- lookups for other modules
+
+def project_has_units(db: Session, project_id: int) -> bool:
+    """True for a historic sales-order project: it has live (non-cancelled) vehicles / lots, so work
+    must name its unit. A project made in Project Management has none."""
+    return db.query(PmProjectElement.id).filter(
+        PmProjectElement.project_id == project_id, PmProjectElement.status != "cancelled").first() is not None
+
 
 def project_for_order(db: Session, so_id: int) -> PmProject | None:
     return db.query(PmProject).filter(PmProject.sales_order_id == so_id).first()
@@ -455,6 +515,68 @@ def resolve_element(db: Session, element_id: int, *, project_id: int | None = No
         raise HTTPException(status_code=422, detail=f"{el.element_no} ({el.label}) was cancelled by an amendment of the "
                                                     f"sales order — pick another vehicle / lot of {project.project_code}.")
     return project, el
+
+
+def resolve_link(db: Session, project_id: int | None, element_id: int | None, *, what: str,
+                 allow_closed: bool = False) -> tuple[PmProject | None, PmProjectElement | None]:
+    """The one rule every department uses to validate a project pick (AC-61b).
+
+    * element given -> resolve_element (404 unknown / 422 wrong project / cancelled);
+    * project only  -> resolve_project; a project WITH live units needs the unit:
+      422 "Pick the vehicle / lot of PEW-78 this {what} is for ...";
+    * project without units (every new project) -> (project, None): the record
+      links to the project itself, no unit to pick;
+    * nothing given -> (None, None).
+    `what` names the record in the message ("material issue", "work order"...)."""
+    if element_id:
+        project, el = resolve_element(db, element_id, project_id=project_id, allow_cancelled=allow_closed)
+        return project, el
+    if not project_id:
+        return None, None
+    project = resolve_project(db, project_id, allow_closed=allow_closed)
+    if project_has_units(db, project.id):
+        raise HTTPException(status_code=422, detail=(
+            f"Pick the vehicle / lot of {project.project_code} this {what} is for — this project was created from a "
+            f"sales order and has units, so each {what} is booked to one of them."))
+    return project, None
+
+
+def project_machine(db: Session, project: PmProject) -> tuple[int, str] | None:
+    """(machine id, serial) of the project's machine (lowest id), None if none registered yet."""
+    from app.modules.erp.models.project import Project as Machine
+    row = (db.query(Machine.id, Machine.serial_number)
+           .filter(Machine.pm_project_id == project.id, Machine.is_deleted == False)  # noqa: E712
+           .order_by(Machine.id).first())
+    return (row[0], row[1]) if row else None
+
+
+def project_pick_label(db: Session, project: PmProject) -> str:
+    """'PEW-82 · Central Railway · machine MC-1042' — how a picker names a project without units."""
+    machine = project_machine(db, project)
+    bits = [project.project_code, project.client_name or None, f"machine {machine[1]}" if machine else None]
+    return " · ".join(b for b in bits if b)
+
+
+def refresh_project_lifecycle(db: Session, project: PmProject, user: User | None = None) -> bool:
+    """Move the lifecycle stage to 'dispatched' when the work is dispatched. With units: every live
+    unit dispatched (lifecycle.on_units_changed). Without units: the project has a Store dispatch
+    issue (order_project_id = project). Never backwards; no commit. True when the stage moved."""
+    from app.modules.projects import lifecycle
+    if project_has_units(db, project.id):
+        return lifecycle.on_units_changed(db, project, user)
+    if lifecycle.stage_index(project.lifecycle_stage) >= lifecycle.stage_index("dispatched"):
+        return False
+    if project_dispatch_cell(db, project) is None:
+        return False
+    actor = user
+    if actor is None:
+        uid = project.project_manager_id or project.created_by_id
+        actor = db.get(User, uid) if uid else None
+    if actor is None:
+        project.lifecycle_stage = "dispatched"
+        lifecycle.mirror_to_machines(db, project, "dispatched")
+        return True
+    return lifecycle.set_stage(db, project, "dispatched", actor, auto=True)
 
 
 # ---------------------------------------------------------------- awaiting / notify

@@ -82,7 +82,7 @@ const config: TourConfig = {
     {
       target: 'pm-proj-tab-units',
       title: 'Units tab',
-      purpose: 'Only on a project made from a sales order: the sales order link and one row per vehicle or spares lot, with a column per department (Design, Purchase, Store, Production, Quality, Dispatch, Delivered).',
+      purpose: 'Where the project stands in each department (Design, Purchase, Store, Production, Quality, Dispatch, Delivered). A project made here is one machine, so it has a single "Whole project" row. An older project that came from a sales order still lists one row per vehicle or spares lot.',
       autoActivate: true,
     },
     {

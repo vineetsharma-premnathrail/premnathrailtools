@@ -14,7 +14,6 @@ const FileTextIcon = <FileText size={20} />
 const WarehouseIcon = <Storefront size={20} />
 const QualityIcon = <ShieldCheck size={20} />
 const ProductionIcon = <Factory size={20} />
-const SalesIcon = <ShoppingCart size={20} />
 const MaintenanceIcon = <Wrench size={20} />
 const DesignIcon = <PenNib size={20} />
 const ElectricalIcon = <Lightning size={20} />
@@ -115,19 +114,6 @@ const modules = [
     tagColor: '#334155',
   },
   {
-    title: 'Sales',
-    app: 'sales' as const,
-    description: 'Sales orders from won inquiries and tenders — approval, order acknowledgement, delivery schedule per vehicle, LD and DP extensions.',
-    icon: SalesIcon,
-    href: '/dashboard/sales',
-    features: ['Orders', 'Delivery', 'Products', 'LD'],
-    barColor: 'linear-gradient(90deg,#0f766e,#14b8a6)',
-    iconBg: 'rgba(15,118,110,0.12)',
-    iconColor: '#0f766e',
-    tagBg: 'rgba(15,118,110,0.12)',
-    tagColor: '#115e59',
-  },
-  {
     title: 'Maintenance',
     app: 'maintenance' as const,
     description: 'Plant equipment register, breakdown requests, maintenance work orders, spares issue and downtime tracking.',
@@ -208,7 +194,7 @@ const modules = [
 ]
 
 // Card order + live/upcoming split — keep in step with the sidebar (Sidebar.tsx `upcoming: true`).
-const LIVE_APPS = ['erp', 'rnd', 'crm', 'sales', 'p2p', 'store', 'projects', 'accounts']
+const LIVE_APPS = ['erp', 'rnd', 'crm', 'p2p', 'store', 'projects', 'accounts']
 const UPCOMING_APPS = ['production', 'maintenance', 'electrical', 'hydraulic', 'hr', 'quality', 'design']
 
 const HrIcon = <IdentificationCard size={20} />
@@ -255,11 +241,6 @@ export default function DashboardPage() {
   })
 
   const byApp = (app: string) => {
-    // Sales without the sales app but with Products: the card opens the product master (as in the sidebar).
-    if (app === 'sales' && !user?.apps?.includes('sales') && user?.apps?.includes('products')) {
-      const sales = modules.find((m) => m.app === 'sales')
-      return sales && { ...sales, href: '/dashboard/products' }
-    }
     return modules.find((m) => m.app === app && user?.apps?.includes(app))
   }
   const canSeeOrganization = user?.role === 'admin' || !!user?.permissions?.some((p) => p.startsWith('organization:') && p.endsWith(':view'))

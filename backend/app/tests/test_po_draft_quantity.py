@@ -3,6 +3,8 @@ a draft may be saved with unpriced lines; Send for approval still needs prices."
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.rfq import RFQ
+from app.modules.p2p.routes.rfq import build_po_draft
+from app.modules.p2p.schemas.purchase_order import P2PPurchaseOrderCreate
 from app.tests.p2p_workflow_helpers import master_item
 from app.tests.test_p2p_requests import (  # noqa: F401 - _sqlite_number_series is an autouse fixture
     _approve_pr, _create_pr, _purchaser, _requester, _sqlite_number_series, auth_header, make_user,
@@ -24,7 +26,11 @@ def _draft(client, db, tag, qty=10):
     rfq = RFQ(rfq_number=f"RFQ-QD-{tag}", p2p_request_id=pr["id"], status="locked")
     db.add(rfq)
     db.commit()
-    r = client.post(f"{RFQS}/{rfq.id}/po-draft", json={"vendor_name": "Ad hoc vendor"}, headers=auth_header(buyer))
+    # A draft PO exists only when one was returned for changes (a PO is made by Upload PO on the
+    # requisition now), so the draft is built in the database the way the app builds it.
+    po = build_po_draft(db, rfq, row, buyer, P2PPurchaseOrderCreate(vendor_name="Ad hoc vendor"))
+    db.commit()
+    r = client.get(f"/api/v1/p2p/purchase-orders/{po.id}", headers=auth_header(buyer))
     assert r.status_code == 200, r.text
     return buyer, rfq, r.json(), pr
 

@@ -5,7 +5,7 @@ fixes that live outside a single module's workflow tests:
   is still HTML) and blocks XML; dot-only SharePoint path segments;
 * user-typed text is HTML-escaped in outgoing emails;
 * the in-memory presence store only takes known record types;
-* GET /sales/proforma needs Finance › Sales Invoices (not just any Finance tab);
+* the retired /sales/... API answers 410 (it used to list proforma invoices unscoped);
 * Quality controlled-document upload needs Quality › Documents 'Create'.
 """
 from app.core.permission_words import place
@@ -112,24 +112,13 @@ def test_presence_only_accepts_known_record_types(client, db):
     assert ok.status_code == 204
 
 
-# ── Sales › proforma lookup ──────────────────────────────────────────────
-def test_proforma_lookup_needs_sales_invoices_not_any_finance_tab(client, db):
-    """It used to accept any Finance tab and then return every PI unscoped."""
-    gst_clerk = make_user(db, "gst.clerk@premnathrail.com", grants=["accounts:gst:view"])
-    resp = client.get("/api/v1/sales/proforma", headers=auth(gst_clerk))
-    assert resp.status_code == 403 and place("accounts:sales_invoices:view").split(" › ")[-1] in resp.json()["detail"]
+# ── Sales API retired (2026-10-30) ───────────────────────────────────────
+def test_proforma_lookup_is_gone_for_everyone(client, db):
+    """GET /sales/proforma (and the rest of /sales/...) answers 410 whatever the caller can do:
+    no unscoped list of proforma invoices is left to leak."""
     billing = make_user(db, "billing@premnathrail.com", grants=["accounts:sales_invoices:view"])
-    assert client.get("/api/v1/sales/proforma", headers=auth(billing)).status_code == 200
-
-
-def test_proforma_lookup_needs_proforma_feature_for_sales_users(client, db):
-    # A customised role (a feature picked) no longer inherits the others — no Proforma here.
-    viewer = make_user(db, "so.viewer@premnathrail.com", grants=["sales:orders:view", "sales:orders.lines:view"])
-    assert "sales:orders.proforma:view" not in viewer.effective_permissions
-    resp = client.get("/api/v1/sales/proforma", headers=auth(viewer))
-    assert resp.status_code == 403 and place("sales:orders.proforma:view").split(" › ")[-1] in resp.json()["detail"]
-    full = make_user(db, "so.full@premnathrail.com", grants=["sales:orders:view"])  # inherits proforma + prices
-    assert client.get("/api/v1/sales/proforma", headers=auth(full)).status_code == 200
+    resp = client.get("/api/v1/sales/proforma", headers=auth(billing))
+    assert resp.status_code == 410 and "Sales Orders were removed" in resp.json()["detail"]
 
 
 # ── Quality › controlled documents ───────────────────────────────────────

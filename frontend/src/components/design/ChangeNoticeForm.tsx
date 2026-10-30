@@ -10,6 +10,7 @@ import DateField from '@/components/erp/DateField'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
+import { normalizePriority } from '@/lib/priority'
 import { DISPOSITION_LABELS, ECN_EFFECTIVITY_LABELS, ECN_PRIORITY_LABELS, ECN_REASON_LABELS, toOptions } from '@/components/design/designMeta'
 
 const inputStyle = sheetInput
@@ -59,7 +60,7 @@ export default function ChangeNoticeForm({
 
   const [title, setTitle] = useState(initial?.title || '')
   const [reason, setReason] = useState(initial?.reason || 'design_improvement')
-  const [priority, setPriority] = useState<string>(initial?.priority || 'medium')
+  const [priority, setPriority] = useState<string>(normalizePriority(initial?.priority))
   const [description, setDescription] = useState(initial?.description || '')
   const [impact, setImpact] = useState(initial?.impact_assessment || '')
   const [targetDate, setTargetDate] = useState(initial?.target_date || '')
@@ -85,7 +86,7 @@ export default function ChangeNoticeForm({
   const draft = useFormDraft(initial ? null : 'design-change-notice-new',
     { title, reason, priority, description, impact, targetDate, pmProjectId, erpProjectId, approverId, rows, bomRows, effectivityType, effectivityDate, effectivitySerial, effectivityNote, stockDisposition, wipDisposition, dispositionNote },
     (d) => {
-      setTitle(d.title ?? ''); setReason(d.reason ?? 'design_improvement'); setPriority(d.priority ?? 'medium'); setDescription(d.description ?? '')
+      setTitle(d.title ?? ''); setReason(d.reason ?? 'design_improvement'); setPriority(normalizePriority(d.priority)); setDescription(d.description ?? '')
       setImpact(d.impact ?? ''); setTargetDate(d.targetDate ?? ''); setPmProjectId(d.pmProjectId ?? ''); setErpProjectId(d.erpProjectId ?? '')
       setApproverId(d.approverId ?? ''); setRows(d.rows ?? []); setBomRows(d.bomRows ?? [])
       setEffectivityType(d.effectivityType ?? 'immediate'); setEffectivityDate(d.effectivityDate ?? ''); setEffectivitySerial(d.effectivitySerial ?? '')

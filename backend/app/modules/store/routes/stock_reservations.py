@@ -31,7 +31,7 @@ def _to_response(db: Session, reservation: StoreStockReservation) -> StoreStockR
         "uom": item.uom if item else None,
         "location_name": location.name if location else None,
         "reserved_by_name": reserver.name if reserver else None,
-        **element_info(db, reservation.order_project_element_id),
+        **element_info(db, reservation.order_project_element_id, reservation.order_project_id),
     })
 
 
@@ -42,7 +42,7 @@ async def list_stock_reservations(
     status: str | None = Query(None),
     order_project_id: int | None = Query(None),
     order_project_element_id: int | None = Query(None),
-    project_stock: bool | None = Query(None, description="true = only holds for a project unit; false = only others"),
+    project_stock: bool | None = Query(None, description="true = only holds for a project (or its unit); false = only others"),
     db: Session = Depends(get_db),
     user: User = Depends(require_tab_access("store", "reservations")),
 ):
@@ -52,9 +52,9 @@ async def list_stock_reservations(
     if order_project_element_id is not None:
         query = query.filter(StoreStockReservation.order_project_element_id == order_project_element_id)
     if project_stock is True:
-        query = query.filter(StoreStockReservation.order_project_element_id.isnot(None))
+        query = query.filter(StoreStockReservation.order_project_id.isnot(None))
     elif project_stock is False:
-        query = query.filter(StoreStockReservation.order_project_element_id.is_(None))
+        query = query.filter(StoreStockReservation.order_project_id.is_(None))
     if item_id is not None:
         query = query.filter(StoreStockReservation.item_id == item_id)
     if location_id is not None:
@@ -92,15 +92,12 @@ async def create_stock_reservation(
         raise HTTPException(status_code=404, detail="Store not found")
     ensure_location_allowed(db, user, payload.location_id)
     project_id = element_id = None
-    if payload.order_project_element_id:
-        from app.modules.projects.so_projects import resolve_element
-        project, element = resolve_element(db, payload.order_project_element_id, project_id=payload.order_project_id)
-        project_id, element_id = project.id, element.id
-    elif payload.order_project_id:
-        from app.modules.projects.so_projects import resolve_project
-        project = resolve_project(db, payload.order_project_id)
-        raise HTTPException(status_code=422, detail=f"Pick the vehicle / lot of {project.project_code} the stock is held for — "
-                                                    "project stock is reserved for one element, not the project as a whole.")
+    if payload.order_project_element_id or payload.order_project_id:
+        # A project without units is reserved for as a whole; a historic sales-order project (units)
+        # needs its vehicle / lot (so_projects.resolve_link).
+        from app.modules.projects.so_projects import resolve_link
+        project, element = resolve_link(db, payload.order_project_id, payload.order_project_element_id, what="stock reservation")
+        project_id, element_id = project.id, element.id if element is not None else None
 
     try:
         adjust_reserved_qty(db, item_id=payload.item_id, location_id=payload.location_id, delta=payload.quantity)

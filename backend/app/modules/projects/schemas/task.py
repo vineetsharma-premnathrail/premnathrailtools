@@ -10,7 +10,7 @@ class PmTaskCreate(BaseModel):
     description: str | None = None
     assignee_id: int
     due_date: date
-    priority: str = "medium"
+    priority: str = "standard"
     estimated_hours: float | None = None
 
 
@@ -28,7 +28,7 @@ class PmSelfTaskCreate(BaseModel):
     title: str
     description: str | None = None
     due_date: date
-    priority: str = "medium"
+    priority: str = "standard"
     estimated_hours: float | None = None
 
 

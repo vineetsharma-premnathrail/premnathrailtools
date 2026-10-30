@@ -1,5 +1,6 @@
 'use client'
 
+import { normalizePriority } from '@/lib/priority'
 import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -42,7 +43,7 @@ export function TaskTable({ tasks, onOpen, showAssignee = true, showProject = fa
                   {t.is_overdue && <FlagPill text="Overdue" color="#dc2626" />}
                 </div>
               </td>
-              <td style={tdStyle}><Pill value={t.priority} labels={PRIORITY_LABELS} hex={PRIORITY_HEX} /></td>
+              <td style={tdStyle}><Pill value={normalizePriority(t.priority)} labels={PRIORITY_LABELS} hex={PRIORITY_HEX} /></td>
               <td style={{ ...tdStyle, color: t.is_overdue ? '#dc2626' : TEXT.body }}>{formatDate(t.due_date)}</td>
               <td style={tdStyle}>
                 <ProgressBar value={t.progress_percent} width={60} />

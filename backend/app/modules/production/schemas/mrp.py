@@ -37,14 +37,14 @@ class ProductionPlannedOrderConvertWoPayload(BaseModel):
     source_location_id: int | None = None
     target_location_id: int | None = None
     supervisor_id: int | None = None
-    priority: str = "normal"
+    priority: str = "standard"
 
 
 class ProductionPlannedOrderConvertPrPayload(BaseModel):
     planned_order_ids: list[int] = Field(min_length=1)
     # One PR per category. Empty = suggested from each item's Item Master category.
     category_code: str | None = None
-    priority: str = "medium"
+    priority: str = "standard"
     save_as_draft: bool = False
     remarks: str | None = None
 

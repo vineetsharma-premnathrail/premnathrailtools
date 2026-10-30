@@ -1,11 +1,12 @@
 'use client'
 
 import Select from '@/components/shared/Select'
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi, usersApi } from '@/lib/api'
-import { DirectoryUser, RndProjectPriority } from '@/types'
+import { DirectoryUser } from '@/types'
+import { PRIORITY_OPTIONS, normalizePriority, type Priority } from '@/lib/priority'
 import DateField from '@/components/erp/DateField'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, FileDropZone, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import RndNav from '@/components/rnd/RndNav'
@@ -21,14 +22,26 @@ import ProjectOriginFields, { EMPTY_ORIGIN, OriginDraft, originError, originPayl
 const inputStyle = sheetInput
 const labelStyle = sheetLabel
 
+// ?from=pm — opened from Project Management › + Create Project › New Prototype: Back returns to PM,
+// and after the project is created its Tasks tab opens.
 export default function NewRndProjectPage() {
+  return (
+    <Suspense fallback={null}>
+      <NewRndProject />
+    </Suspense>
+  )
+}
+
+function NewRndProject() {
   const { isAuthorized, isLoading, user } = useRequireApp('rnd')
   const router = useRouter()
+  const fromPm = useSearchParams().get('from') === 'pm'
+  const backHref = fromPm ? '/dashboard/projects/all' : '/dashboard/rnd/projects'
 
   const [users, setUsers] = useState<DirectoryUser[]>([])
 
   const [title, setTitle] = useState('')
-  const [priority, setPriority] = useState<RndProjectPriority>('medium')
+  const [priority, setPriority] = useState<Priority>('standard')
   const [objective, setObjective] = useState('')
   const [scope, setScope] = useState('')
   // Leads default to the creator until the user changes the list.
@@ -52,7 +65,7 @@ export default function NewRndProjectPage() {
   const draft = useFormDraft('rnd-project-new',
     { title, priority, objective, scope, leadChoice, teamIds, startDate, targetEndDate, remarks, files, origin, budget },
     (d) => {
-      setTitle(d.title || ''); setPriority(d.priority || 'medium'); setObjective(d.objective || ''); setScope(d.scope || '')
+      setTitle(d.title || ''); setPriority(normalizePriority(d.priority)); setObjective(d.objective || ''); setScope(d.scope || '')
       setLeadChoice(Array.isArray(d.leadChoice) ? d.leadChoice : null); setTeamIds(d.teamIds || []); setStartDate(d.startDate || ''); setTargetEndDate(d.targetEndDate || '')
       setRemarks(d.remarks || ''); setOrigin({ ...EMPTY_ORIGIN, ...d.origin }); setBudget({ ...EMPTY_RND_BUDGET, ...d.budget })
     })
@@ -121,7 +134,7 @@ export default function NewRndProjectPage() {
         ])
         return
       }
-      router.push(recordPath('/dashboard/rnd/projects', project))
+      router.push(`${recordPath('/dashboard/rnd/projects', project)}?tab=tasks`)
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to create R&D project.'))
     } finally {
@@ -137,11 +150,11 @@ export default function NewRndProjectPage() {
         tour="rnd-pf-form"
         nav={<RndNav />}
         icon="flag"
-        title="New R&D Project"
+        title="New Prototype / Research Project"
         subtitle="Start a prototype / research project — what it should achieve and who works on it."
-        onBack={() => router.push('/dashboard/rnd/projects')} backTour="rnd-pf-back-btn"
+        onBack={() => router.push(backHref)} backTour="rnd-pf-back-btn"
         footer={<>
-          <button data-tour="rnd-pf-cancel-btn" onClick={() => router.push('/dashboard/rnd/projects')} disabled={submitting} type="button" style={sheetBtn('secondary', SHEET.INK, submitting)}>
+          <button data-tour="rnd-pf-cancel-btn" onClick={() => router.push(backHref)} disabled={submitting} type="button" style={sheetBtn('secondary', SHEET.INK, submitting)}>
             Cancel
           </button>
           <button data-tour="rnd-pf-submit-btn" onClick={handleSubmit} disabled={submitting || !!createdProject} type="button" style={sheetBtn('primary', SHEET.BLUE, submitting || !!createdProject)}>
@@ -188,10 +201,8 @@ export default function NewRndProjectPage() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div data-tour="rnd-pf-priority" style={{ flex: '1 1 240px', minWidth: 220, maxWidth: 300 }}>
                   <label style={labelStyle}>Priority</label>
-                  <Select style={inputStyle} value={priority} onChange={(e) => setPriority(e.target.value as RndProjectPriority)}>
-                    <option value="high">High — Important requirement</option>
-                    <option value="medium">Medium — Normal requirement</option>
-                    <option value="low">Low — Can be handled later</option>
+                  <Select style={inputStyle} value={priority} onChange={(e) => setPriority(e.target.value as Priority)}>
+                    {PRIORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </Select>
                 </div>
                 <div data-tour="rnd-pf-start" style={{ flex: '0 1 160px', minWidth: 150 }}>

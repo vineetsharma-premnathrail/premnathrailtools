@@ -1,62 +1,99 @@
-"""Units (vehicles / lots) of Project Management projects created from Sales Orders:
-the 360 table for one project and the cross-module picker lookup.
+"""Units (vehicles / lots) of historic Sales-Order projects, the 360 table for one project and
+the cross-module picker lookup.
+
+Since 2026-10-30 a project is one machine: projects made in Project Management have no units
+and every department links to the project itself (so_projects.resolve_link). The "From Sales
+Order" create path is gone with Sales Orders.
 
 Register this router BEFORE projects/routes/project.py so /projects/units/lookup
 is not swallowed by /projects/{project_id}."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_
+from sqlalchemy import exists, or_
 from sqlalchemy.orm import Session
 
 from app.core.data_scope import ensure_in_scope
 from app.core.permissions import require_tab_access, require_any_app_access
 from app.db.session import get_db
+from app.modules.erp.models.project import Project as Machine
 from app.modules.main.models.user import User
 from app.modules.projects import so_projects as op_core
 from app.modules.projects.models.element import PmProjectElement
 from app.modules.projects.models.project import PmProject
-from app.modules.projects.schemas.project import PmProjectResponse
 from app.modules.projects.schemas.units import (
-    ProjectFromSalesOrder, ProjectUnitLookupItem, ProjectUnitResponse, ProjectUnitsResponse, SalesOrderAwaitingProject,
+    ProjectUnitLookupItem, ProjectUnitResponse, ProjectUnitsResponse, ProjectWholeRow,
 )
 from app.modules.sales.models.order import SalesOrder
 
 router = APIRouter(prefix="/projects", tags=["Project Management"])
-# Departments that link their work to a project unit (pickers).
-_LOOKUP_APPS = ("sales", "projects", "design", "p2p", "purchase", "store", "production", "quality")
+# Departments that link their work to a project / project unit (pickers).
+_LOOKUP_APPS = ("projects", "design", "electrical", "hydraulic", "p2p", "purchase", "store", "production", "quality")
+
+
+def _machines(db: Session, project_ids: list[int]) -> dict[int, tuple[int, str]]:
+    """{project id: (machine id, serial)} — the lowest machine id of each project."""
+    found: dict[int, tuple[int, str]] = {}
+    if not project_ids:
+        return found
+    for mid, pid, serial in (db.query(Machine.id, Machine.pm_project_id, Machine.serial_number)
+                             .filter(Machine.pm_project_id.in_(project_ids), Machine.is_deleted == False)  # noqa: E712
+                             .order_by(Machine.id).all()):
+        found.setdefault(pid, (mid, serial))
+    return found
+
+
+def _live_unit_exists():
+    return exists().where(PmProjectElement.project_id == PmProject.id, PmProjectElement.status != "cancelled")
 
 
 @router.get("/units/lookup", response_model=list[ProjectUnitLookupItem])
 async def lookup_units(
     q: str | None = None,
-    kind: str | None = Query(None, description="vehicle / lot — only that unit kind"),
-    include_projects: bool = Query(False, description="also return one row per project (no unit)"),
+    kind: str | None = Query(None, description="vehicle / lot — only that unit kind (project rows without units are still offered)"),
+    include_projects: bool = Query(False, description="also return one row per project that HAS units (whole-project rows)"),
     project_id: int | None = None,
     db: Session = Depends(get_db),
     _user: User = Depends(require_any_app_access(*_LOOKUP_APPS)),
 ):
-    """Picker rows for the departments (not data-scoped: it only says that a
-    project / unit exists, which a planner linking work needs)."""
+    """Picker rows for the departments (not data-scoped: it only says that a project / unit exists,
+    which a planner linking work needs).
+
+    A project WITHOUT live units (every project made in Project Management) always gets one row,
+    element_id null and project_level true — picking it links the work to the project itself.
+    A historic sales-order project gets one row per live unit (plus a whole-project row when
+    include_projects is set)."""
     if kind and kind not in ("vehicle", "lot"):
         raise HTTPException(status_code=422, detail=f"kind '{kind}' is unknown — use vehicle or lot.")
     base = (db.query(PmProject, SalesOrder.so_number)
-            .outerjoin(SalesOrder, SalesOrder.id == PmProject.sales_order_id)
+            .outerjoin(SalesOrder, SalesOrder.id == PmProject.sales_order_id)  # historic display only
             .filter(PmProject.status.in_(op_core.PICKABLE_PROJECT_STATUSES)))
     if project_id:
         base = base.filter(PmProject.id == project_id)
     like = f"%{q.strip()}%" if q and q.strip() else None
+    machine_hit = (PmProject.id.in_(db.query(Machine.pm_project_id).filter(
+        Machine.pm_project_id.isnot(None), Machine.serial_number.ilike(like))) if like else None)
+
     out: list[ProjectUnitLookupItem] = []
-    if include_projects and not kind:
-        pq = base
-        if like:
-            pq = pq.filter(or_(PmProject.project_code.ilike(like), PmProject.client_name.ilike(like),
-                               PmProject.name.ilike(like), SalesOrder.so_number.ilike(like),
-                               SalesOrder.customer_po_number.ilike(like)))
-        for p, so_number in pq.order_by(PmProject.id.desc()).limit(30).all():
-            out.append(ProjectUnitLookupItem(
-                project_id=p.id, project_code=p.project_code, client_name=p.client_name, so_number=so_number,
-                display=f"{p.project_code} · whole project · {p.client_name or ''}".rstrip(" ·")))
+    pq = base if include_projects else base.filter(~_live_unit_exists())
+    if like:
+        pq = pq.filter(or_(PmProject.project_code.ilike(like), PmProject.client_name.ilike(like),
+                           PmProject.name.ilike(like), SalesOrder.so_number.ilike(like),
+                           SalesOrder.customer_po_number.ilike(like), machine_hit))
+    prows = pq.order_by(PmProject.id.desc()).limit(30).all()
+    machines = _machines(db, [p.id for p, _ in prows])
+    unit_less = {p.id for p, _ in prows if not op_core.project_has_units(db, p.id)}
+    for p, so_number in prows:
+        m = machines.get(p.id)
+        if p.id in unit_less:
+            bits = [p.project_code, p.client_name or None, f"machine {m[1]}" if m else None]
+            display, level = " · ".join(b for b in bits if b), True
+        else:
+            display, level = f"{p.project_code} · whole project · {p.client_name or ''}".rstrip(" ·"), False
+        out.append(ProjectUnitLookupItem(
+            project_id=p.id, project_code=p.project_code, client_name=p.client_name, so_number=so_number,
+            project_level=level, machine_id=m[0] if m else None, machine_serial=m[1] if m else None, display=display))
+
     eq = (base.add_columns(PmProjectElement)
           .join(PmProjectElement, PmProjectElement.project_id == PmProject.id)
           .filter(PmProjectElement.status != "cancelled"))
@@ -65,86 +102,17 @@ async def lookup_units(
     if like:
         eq = eq.filter(or_(PmProject.project_code.ilike(like), PmProject.client_name.ilike(like),
                            SalesOrder.so_number.ilike(like), SalesOrder.customer_po_number.ilike(like),
-                           PmProjectElement.element_no.ilike(like), PmProjectElement.label.ilike(like)))
+                           PmProjectElement.element_no.ilike(like), PmProjectElement.label.ilike(like), machine_hit))
     rows = eq.order_by(PmProject.id.desc(), PmProjectElement.id.asc()).limit(max(0, 30 - len(out))).all()
+    machines.update(_machines(db, [p.id for p, _, _ in rows if p.id not in machines]))
     for p, so_number, el in rows:
+        m = machines.get(p.id)
         disp = op_core.element_display(p, el) + (f" · {p.client_name}" if p.client_name else "")
         out.append(ProjectUnitLookupItem(
             project_id=p.id, project_code=p.project_code, element_id=el.id, element_no=el.element_no, label=el.label,
-            kind=el.kind, client_name=p.client_name, so_number=so_number, display=disp))
+            kind=el.kind, client_name=p.client_name, so_number=so_number,
+            machine_id=m[0] if m else None, machine_serial=m[1] if m else None, display=disp))
     return out
-
-
-# ---------------------------------------------------------------- projects from sales orders
-# The Project Manager creates the project of a confirmed New Project order (owner,
-# 2026-10-28) — same gate as All Projects › Create (routes/project.py create_project).
-
-def _awaiting_info(db: Session, so: SalesOrder) -> SalesOrderAwaitingProject:
-    rrv_ids = {ln.id for ln in so.lines if ln.line_type == "rrv"}
-    rows = [r for r in so.schedules if r.status != "cancelled" and r.so_line_id in rrv_ids]
-    dates = sorted(r.contract_delivery_date for r in so.schedules if r.status != "cancelled" and r.contract_delivery_date)
-    owner = db.get(User, so.sales_owner_id) if so.sales_owner_id else None
-    return SalesOrderAwaitingProject(
-        id=so.id, so_number=so.so_number, customer_name=so.customer_name, customer_po_number=so.customer_po_number,
-        confirmed_at=so.confirmed_at, sales_owner_name=(owner.name or owner.email) if owner else None,
-        vehicles=int(sum(float(r.quantity or 1) for r in rows)),
-        first_delivery_date=dates[0] if dates else None, last_delivery_date=dates[-1] if dates else None)
-
-
-@router.get("/units/awaiting-sales-orders", response_model=list[SalesOrderAwaitingProject])
-async def sales_orders_awaiting_project(
-    db: Session = Depends(get_db),
-    user: User = Depends(require_tab_access("projects", "all_projects")),
-):
-    """Confirmed-or-later New Project sales orders that have no project yet, SO number ascending."""
-    from app.modules.projects import workflow as wf
-    wf.require_management(user, "create projects from sales orders")
-    linked = db.query(PmProject.sales_order_id).filter(PmProject.sales_order_id.isnot(None))
-    orders = (db.query(SalesOrder)
-              .filter(SalesOrder.is_deleted == False, SalesOrder.status.in_(op_core.PROJECT_SO_STATUSES),  # noqa: E712
-                      SalesOrder.so_number.isnot(None), SalesOrder.id.notin_(linked))
-              .order_by(SalesOrder.so_number.asc(), SalesOrder.id.asc()).all())
-    return [_awaiting_info(db, so) for so in orders if op_core.needs_project(so)]
-
-
-@router.post("/units/from-sales-order", response_model=PmProjectResponse)
-async def create_project_from_sales_order(
-    payload: ProjectFromSalesOrder,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_tab_access("projects", "all_projects")),
-):
-    """Creates the PEW project of a confirmed New Project sales order: next PEW
-    number, the chosen project manager, one unit per vehicle / lot."""
-    from app.modules.projects import views, workflow as wf
-    wf.require_management(user, "create projects from sales orders")
-    so = db.get(SalesOrder, payload.sales_order_id)
-    if so is None or so.is_deleted:
-        raise HTTPException(status_code=404, detail=f"Sales order #{payload.sales_order_id} doesn't exist or was deleted — "
-                                                    f"refresh the list and pick the order again.")
-    existing = op_core.project_for_order(db, so.id)
-    if existing is not None:
-        raise HTTPException(status_code=409, detail=f"{so.display_number} already has project {existing.project_code} — "
-                                                    f"open it from All Projects instead of creating another one.")
-    if not so.so_number or so.status not in op_core.PROJECT_SO_STATUSES:
-        label = so.status.replace("_", " ")
-        raise HTTPException(status_code=409, detail=f"{so.display_number} is {label} — a project can be created only for a "
-                                                    f"confirmed sales order. Get the order approved in Sales › Sales Orders first.")
-    if not op_core.needs_project(so):
-        raise HTTPException(status_code=422, detail=f"{so.display_number} is not a New Project order with a vehicle (RRV) line, "
-                                                    f"so it gets no project. Service and Rental orders are run without a PEW project.")
-    pm = db.get(User, payload.project_manager_id)
-    if pm is None or not pm.is_active:
-        raise HTTPException(status_code=422, detail="The selected project manager doesn't exist or is deactivated. Pick an active user.")
-    project = op_core.ensure_project_for_order(db, so, user, create=True, project_manager_id=pm.id, name=payload.name)
-    if project is None:  # pragma: no cover — guarded above
-        raise HTTPException(status_code=409, detail=f"No project could be created for {so.display_number} — check that it is "
-                                                    f"confirmed and has a vehicle (RRV) line.")
-    wf.notify_many(db, [project.project_manager_id], user, "You are project manager",
-                   f"{wf.user_label(user)} made you project manager of {project.project_code} {project.name} "
-                   f"(sales order {so.so_number}).", "pm_project_manager", "pm_project", project.id)
-    db.commit()
-    db.refresh(project)
-    return views.project_response(db, project, user)
 
 
 @router.get("/{project_id}/units", response_model=ProjectUnitsResponse)
@@ -153,9 +121,14 @@ async def project_units(
     db: Session = Depends(get_db),
     user: User = Depends(require_tab_access("projects", "all_projects")),
 ):
-    """Vehicles / lots of one project with the 360 department cells. Same data scope
-    as the project itself; a project not created from a Sales Order has no units."""
-    from app.modules.sales.views import prices_hidden
+    """The 360 table of one project, same data scope as the project itself.
+
+    A project with units (historic sales order): one row per vehicle / lot with the department
+    cells. A project without units (every new project, one project = one machine): has_units is
+    false and whole_project carries the single "Whole project" row — what Design, Purchase, Store,
+    Production, Quality and Dispatch linked to the project itself."""
+    from app.modules.projects import lifecycle
+    from app.modules.sales.legacy import prices_hidden
 
     project = db.get(PmProject, project_id)
     if project is None:
@@ -164,20 +137,30 @@ async def project_units(
     ensure_in_scope(db, user, project)
     resp = ProjectUnitsResponse()
     so = db.get(SalesOrder, project.sales_order_id) if project.sales_order_id else None
-    if so is None or so.is_deleted:
-        return resp
-    # Read-only: units are synced when the sales order is confirmed / amended and on delivery events.
-    resp.sales_order_id, resp.so_number, resp.so_status = so.id, so.so_number, so.status
-    resp.customer_po_number, resp.customer_po_date, resp.currency = so.customer_po_number, so.customer_po_date, so.currency
-    resp.order_value = None if prices_hidden(user) else float(so.grand_total or 0)
+    if so is not None and so.is_deleted:
+        so = None
     live = [el for el in project.elements if el.status != "cancelled"]
+    resp.has_units = bool(live)
+    if so is not None:
+        # Read-only: units are synced from the historic sales order's delivery events.
+        resp.sales_order_id, resp.so_number, resp.so_status = so.id, so.so_number, so.status
+        resp.customer_po_number, resp.customer_po_date, resp.currency = so.customer_po_number, so.customer_po_date, so.currency
+        resp.order_value = None if prices_hidden(user) else float(so.grand_total or 0)
     resp.vehicles_total = sum(1 for el in live if el.kind == "vehicle")
     resp.vehicles_delivered = sum(1 for el in live if el.kind == "vehicle" and el.status == "delivered")
     resp.lots_total = sum(1 for el in live if el.kind == "lot")
-    lines = {ln.id: ln for ln in so.lines}
-    rows = {r.id: r for r in so.schedules}
+    lines = {ln.id: ln for ln in so.lines} if so is not None else {}
+    rows = {r.id: r for r in so.schedules} if so is not None else {}
     elements = sorted(project.elements, key=lambda el: (el.status == "cancelled", el.element_no))
     cells = op_core.department_cells(db, project, so, elements)
+    if not live:
+        machine = op_core.project_machine(db, project)
+        stage = project.lifecycle_stage or "planned"
+        resp.whole_project = ProjectWholeRow(
+            label="Whole project" + (f" · {machine[1]}" if machine else ""),
+            machine_id=machine[0] if machine else None, machine_serial=machine[1] if machine else None,
+            lifecycle_stage=stage, lifecycle_stage_label=lifecycle.stage_label(stage),
+            departments=cells.get(None, {}))
     for el in elements:
         e = ProjectUnitResponse.model_validate(el)
         ln = lines.get(el.sales_order_line_id)

@@ -15,6 +15,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.priority import priority_label
 from app.auth.microsoft import get_app_graph_token
 from app.modules.main.models.audit_log import AuditLog
 
@@ -398,7 +399,7 @@ async def send_p2p_pr_approval_email(db: Session, pr, approver, role_label: str)
       {_sr_email_table_row("Requested By", requester_name, False)}
       {_sr_email_table_row("Request Date", request_date, True)}
       {_sr_email_table_row("Required Date", required_date, False)}
-      {_sr_email_table_row("Priority", (pr.priority or "medium").title(), True)}
+      {_sr_email_table_row("Priority", priority_label(pr.priority), True)}
       {_sr_email_table_row("Project / Machine", pr.project_label or "—", False)}
       {_sr_email_table_row("Requirement Type", pr.requirement_type or "—", True)}
       {_sr_email_table_row("Remarks", pr.remarks or "—", False)}

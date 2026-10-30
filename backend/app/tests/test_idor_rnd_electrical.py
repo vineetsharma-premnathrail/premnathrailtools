@@ -33,7 +33,7 @@ def auth(user):
 
 
 def _project(client, owner, **extra):
-    resp = client.post(f"{RND}/projects", json={"title": "Bogie test rig", "objective": "Validate", "origin": "new_development", "origin_note": "Proposed by R&D head", "attachment_count": 1, **extra}, headers=auth(owner))
+    resp = client.post(f"{RND}/projects", json={"title": "Bogie test rig", "objective": "Validate", "origin": "new_project", "origin_note": "Proposed by R&D head", "attachment_count": 1, **extra}, headers=auth(owner))
     assert resp.status_code == 200, resp.text
     return resp.json()
 

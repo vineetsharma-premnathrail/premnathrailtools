@@ -32,7 +32,7 @@ function initialValues(job?: ElectricalJob | null): Values {
     const raw = job ? (job as unknown as Record<string, unknown>)[f] : undefined
     v[f] = raw === null || raw === undefined ? '' : String(raw)
   }
-  if (!v.priority) v.priority = 'normal'
+  if (!v.priority) v.priority = 'standard'
   return v
 }
 

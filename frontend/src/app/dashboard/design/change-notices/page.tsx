@@ -14,11 +14,10 @@ import { ECN_REASON_LABELS, ECN_STATUS_LABELS, ECR_SOURCE_LABELS, ECR_STATUS_LAB
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
+import { priorityLabel, priorityTone } from '@/lib/priority'
 
 const ECN_STATUS_HEX: Record<string, string> = { draft: '#78716c', submitted: '#F59E0B', approved: '#2563EB', rejected: '#DC2626', implemented: '#16A34A', closed: '#0f766e', cancelled: '#a8a29e' }
 const ECR_STATUS_HEX: Record<string, string> = { open: '#F59E0B', impact_checked: '#7C3AED', approved: '#16A34A', rejected: '#DC2626', deferred: '#78716c', withdrawn: '#a8a29e' }
-const PRIORITY_LABELS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', urgent: 'Urgent' }
-const PRIORITY_HEX: Record<string, string> = { low: '#78716c', medium: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
 const URGENCY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', critical: '#DC2626' }
 
 const ECN_TABS = [
@@ -256,7 +255,7 @@ export default function DesignChangesPage() {
                           ) : '—'}
                         </td>
                         <td style={cellStyle}>{ECN_REASON_LABELS[e.reason] || e.reason}</td>
-                        <td style={cellStyle}>{pill(PRIORITY_LABELS[e.priority] || e.priority, PRIORITY_HEX[e.priority] || '#78716c')}</td>
+                        <td style={cellStyle}>{pill(priorityLabel(e.priority), priorityTone(e.priority).color)}</td>
                         <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{['approved', 'implemented', 'closed'].includes(e.status) ? `${e.released_count} / ${total} released` : total}</td>
                         <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{e.created_by_name || '—'}</td>
                         <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{formatDate(e.target_date)}</td>

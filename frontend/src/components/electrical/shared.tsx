@@ -7,6 +7,7 @@ import { useCallback, useState } from 'react'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, DANGER } from '@/lib/theme'
 import { secondaryBtnStyle, pillStyle, inputStyle as sharedInput, primaryBtnStyle as sharedPrimary, smallSecondaryBtnStyle, tableWrapStyle, thStyle as sharedTh, tdStyle as sharedTd } from '@/components/shared/ui'
 import { ElectricalLookupOption } from '@/types'
+import { PRIORITY_OPTIONS } from '@/lib/priority'
 import { extractErrorMessages } from '@/lib/validation'
 import { FormSheet, SheetIcon, SheetIconName, SHEET, sheetBtn, sheetLabel, Req, Optional } from '@/components/shared/FormSheet'
 import { useCan, PermissionAction } from '@/lib/permissions'
@@ -83,8 +84,8 @@ export function NoticeBanner({ notice }: { notice: string }) {
 
 export const JOB_STATUS_LABELS: Record<string, string> = { draft: 'Draft', in_progress: 'In Progress', on_hold: 'On Hold', handed_over: 'Handed Over', closed: 'Closed', cancelled: 'Cancelled' }
 export const JOB_STATUS_HEX: Record<string, string> = { draft: '#78716c', in_progress: '#F59E0B', on_hold: '#9333EA', handed_over: '#2563EB', closed: '#16A34A', cancelled: '#a8a29e' }
-export const PRIORITY_LABELS: Record<string, string> = { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' }
-export const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
+export const PRIORITY_LABELS: Record<string, string> = Object.fromEntries(PRIORITY_OPTIONS.map((o) => [o.value, o.label]))
+export const PRIORITY_HEX: Record<string, string> = { standard: '#475569', urgent: '#DC2626' }
 export const STAGE_STATUS_LABELS: Record<string, string> = { not_started: 'Not Started', in_progress: 'In Progress', completed: 'Completed', not_applicable: 'N/A' }
 export const STAGE_STATUS_HEX: Record<string, string> = { not_started: '#a8a29e', in_progress: '#F59E0B', completed: '#16A34A', not_applicable: '#64748b' }
 export const PHASE_LABELS: Record<string, string> = { design: 'Design & Engineering', procurement: 'Procurement', build: 'Assembly & Installation', test_qc: 'Testing & QC', handover: 'Commissioning & Handover' }

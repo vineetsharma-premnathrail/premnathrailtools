@@ -1,5 +1,6 @@
 'use client'
 
+import { normalizePriority } from '@/lib/priority'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { pmWorkApi } from '@/lib/api'
@@ -103,7 +104,7 @@ export default function TaskDetailView({ taskId }: { taskId: number }) {
         <h1 style={{ fontSize: 21, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>{t.title}</h1>
         <div data-tour="pm-task-badges" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <Pill value={t.status} labels={TASK_LABELS} hex={TASK_HEX} />
-          <Pill value={t.priority} labels={PRIORITY_LABELS} hex={PRIORITY_HEX} />
+          <Pill value={normalizePriority(t.priority)} labels={PRIORITY_LABELS} hex={PRIORITY_HEX} />
           {t.is_overdue && <FlagPill text="Overdue" color="#dc2626" />}
           <span style={{ fontSize: 12.5, color: TEXT.secondary }}>
             {t.assignee_name} · due {formatDate(t.due_date)} (milestone {formatDate(t.milestone_target_date)}){t.estimated_hours ? ` · ${t.estimated_hours} h est.` : ''} · {t.logged_hours} h logged{t.is_self_created ? ' · added by assignee' : ''}

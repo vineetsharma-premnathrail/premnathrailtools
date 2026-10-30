@@ -1,5 +1,6 @@
 'use client'
 
+import { normalizePriority, priorityLabel } from '@/lib/priority'
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireAnyApp } from '@/hooks/useAuth'
@@ -15,7 +16,7 @@ import { PRIORITY_LABELS, REQUEST_STATUS_LABELS, REQUEST_TYPE_LABELS, WO_STATUS_
 import Select from '@/components/shared/Select'
 
 const STATUS_HEX: Record<string, string> = { open: '#F59E0B', acknowledged: '#2563EB', converted: '#0f766e', rejected: '#DC2626', duplicate: '#78716c' }
-const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
+const PRIORITY_HEX: Record<string, string> = { standard: '#475569', urgent: '#DC2626' }
 
 const inputStyle: React.CSSProperties = {
   padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
@@ -144,7 +145,7 @@ export default function MaintenanceRequestsPage() {
                   </td>
                   <td style={{ ...cellStyle, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.problem_description}>{r.problem_description}</td>
                   <td style={cellStyle}>
-                    <Pill label={PRIORITY_LABELS[r.priority] || r.priority} hex={PRIORITY_HEX[r.priority]} />
+                    <Pill label={priorityLabel(r.priority)} hex={PRIORITY_HEX[normalizePriority(r.priority)]} />
                   </td>
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{formatDateTime(r.reported_at)}</td>
                   <td style={cellStyle}>{r.raised_by_name || '—'}</td>

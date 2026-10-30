@@ -12,7 +12,7 @@ REFS = {"X-Record-Refs": "1"}
 def _frontend_body(item, **over):
     # Exactly what frontend/src/app/dashboard/p2p/new/page.tsx sends.
     body = {"save_as_draft": False, "purpose": "department", "project_label": None,
-            "account_assignment": None, "priority": "medium",
+            "account_assignment": None, "priority": "standard",
             "items": [{"store_item_id": item.id, "quantity": 2, "project_inhouse": "Inhouse",
                        "order_project_element_id": None}]}
     body.update(over)

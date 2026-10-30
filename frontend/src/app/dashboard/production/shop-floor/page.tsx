@@ -1,5 +1,6 @@
 'use client'
 
+import { normalizePriority, priorityLabel } from '@/lib/priority'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -17,8 +18,8 @@ import { recordPath } from '@/lib/recordRef'
 import { useCan } from '@/lib/permissions'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
-const PRIORITY_LABELS: Record<string, string> = { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' }
-const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
+const PRIORITY_LABELS: Record<string, string> = { standard: 'Standard', urgent: 'Urgent' }
+const PRIORITY_HEX: Record<string, string> = { standard: '#475569', urgent: '#DC2626' }
 const OP_STATUS_LABELS: Record<string, string> = { pending: 'Pending', in_progress: 'In Progress' }
 const OP_STATUS_HEX: Record<string, string> = { pending: '#78716c', in_progress: '#F59E0B' }
 const INSP_LABELS: Record<string, string> = { pending: 'Inspection pending', in_progress: 'Inspecting', passed: 'Passed', failed: 'Failed — rework', conditionally_passed: 'Passed (conditional)' }
@@ -187,7 +188,7 @@ export default function ShopFloorPage() {
                   const canRequest = q.requires_inspection && (!q.inspection_status || q.inspection_status === 'failed')
                   const hoursPct = q.planned_hours ? Math.min((q.actual_hours / q.planned_hours) * 100, 100) : 0
                   return (
-                    <div key={q.operation_id} data-tour="production-sf-card" style={{ ...cardStyle, borderLeft: `4px solid ${PRIORITY_HEX[q.priority]}` }}>
+                    <div key={q.operation_id} data-tour="production-sf-card" style={{ ...cardStyle, borderLeft: `4px solid ${PRIORITY_HEX[normalizePriority(q.priority)]}` }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
                         <div style={{ minWidth: 0 }}>
                           <p onClick={() => router.push(recordPath('/dashboard/production/work-orders', q, 'work_order_id'))} style={{ fontSize: 13, fontWeight: 700, color: '#FF6A2A', margin: 0, cursor: 'pointer' }}>{q.wo_number}</p>
@@ -198,7 +199,7 @@ export default function ShopFloorPage() {
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
                           <span style={pill(OP_STATUS_HEX[q.status])}>{OP_STATUS_LABELS[q.status] || q.status}</span>
-                          <span style={pill(PRIORITY_HEX[q.priority])}>{PRIORITY_LABELS[q.priority]}</span>
+                          <span style={pill(PRIORITY_HEX[normalizePriority(q.priority)])}>{priorityLabel(q.priority)}</span>
                         </div>
                       </div>
                       {q.instructions && <p style={{ fontSize: 12, color: TEXT.muted, margin: '8px 0 0' }}>{q.instructions}</p>}

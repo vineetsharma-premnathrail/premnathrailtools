@@ -10,7 +10,7 @@ from app.db.mixins import TimestampMixin
 # milestone is submitted, or cancel an open one (with a reason).
 PM_TASK_STATUSES = ("todo", "in_progress", "blocked", "done", "cancelled")
 PM_TASK_OPEN_STATUSES = ("todo", "in_progress", "blocked")
-PM_TASK_PRIORITIES = ("low", "medium", "high", "critical")
+PM_TASK_PRIORITIES = ("standard", "urgent")
 # A milestone's task: To do → In progress ⇄ On hold → Done (its checklist
 # ticked first). Its checklist items are only todo / done.
 PM_SUBTASK_STATUSES = ("todo", "in_progress", "on_hold", "done")
@@ -37,7 +37,7 @@ class PmProjectTask(Base, TimestampMixin):
     # Milestones: further responsible people besides assignee_id (user ids).
     co_owner_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="todo", nullable=False)
-    priority: Mapped[str] = mapped_column(String(20), default="medium", nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), default="standard", nullable=False)  # standard | urgent
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     # Milestones (no WBS): planned start, and how it looks on the plan timeline.
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -71,7 +71,7 @@ class PmTaskSubtask(Base, TimestampMixin):
     collaborator_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    priority: Mapped[str] = mapped_column(String(20), default="medium", server_default="medium", nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), default="standard", server_default="standard", nullable=False)  # standard | urgent
     status: Mapped[str] = mapped_column(String(20), default="todo", nullable=False)
     labels: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)

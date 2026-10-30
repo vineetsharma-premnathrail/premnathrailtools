@@ -24,6 +24,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.permissions import ensure_tab_action, require_app_access, require_tab_action
+from app.core.priority import map_legacy_priority
 from app.core.data_scope import apply_scope
 from app.db.session import get_db
 from app.modules.erp.importing import (
@@ -200,7 +201,11 @@ async def import_service_requests(
             service_type = parse_choice(r, "service_type", "Service Type", SERVICE_TYPE_CHOICES)
             if not service_type:
                 raise ValueError(f"Service Type is empty — use one of: {', '.join(SERVICE_TYPE_CHOICES.values())}.")
-            priority = parse_choice(r, "priority", "Priority", PRIORITY_CHOICES, default="standard")
+            try:
+                priority = parse_choice(r, "priority", "Priority", PRIORITY_CHOICES, default="standard")
+            except ValueError:
+                # Older sheets used Low / Medium / High / Critical: High and Critical become Urgent, the rest Standard.
+                priority = map_legacy_priority(text(r, "priority"))
             status = parse_choice(r, "status", "Status", STATUS_CHOICES, default="open")
             payment_status = parse_choice(r, "payment_status", "Payment Status", PAYMENT_CHOICES)
             dates = {k: parse_date(r, k, LABELS[k]) for k in (

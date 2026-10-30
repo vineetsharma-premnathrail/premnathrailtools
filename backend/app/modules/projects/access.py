@@ -195,8 +195,8 @@ register_transaction(TransactionType(
         "acceptor_ids": {"label": "Management (project manager, Partners, Directors, All Projects › Create holders)", "type": "user"},
         "project_manager_id": {"label": "Project manager", "type": "user"},
         "department_id": {"label": "Department id", "type": "number"},
-        "project_priority": {"label": "Project priority", "type": "choice", "choices": ["low", "medium", "high", "critical"],
-                             "choice_labels": {"low": "Low", "medium": "Medium", "high": "High", "critical": "Critical"}},
+        "project_priority": {"label": "Project priority", "type": "choice", "choices": ["standard", "urgent"],
+                             "choice_labels": {"standard": "Standard", "urgent": "Urgent"}},
     },
     default_stages=[StageDef("Management acceptance", "record_field", {"field": "acceptor_ids"})],
     # The Milestones tab has no 'approve' action; the stage names the people.

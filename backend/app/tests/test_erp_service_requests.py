@@ -378,7 +378,7 @@ def test_raise_pr_from_form_items_skips_approval(client, db):
     response = client.post(
         f"/api/v1/erp/service-requests/{sr['id']}/raise-pr",
         json={
-            "priority": "high",
+            "priority": "urgent",
             "category_code": "OTH",
             "reason": "Fan controller faulty",
             "items": [
@@ -620,7 +620,7 @@ def test_material_request_splits_store_stock_and_purchase(client, db):
     assert stock == {str(in_stock.id): 10, str(partial.id): 3, str(none.id): 0}
 
     r = client.post(f"/api/v1/erp/service-requests/{sr['id']}/material-request", json={
-        "priority": "high", "remarks": "Breakdown at site",
+        "priority": "urgent", "remarks": "Breakdown at site",
         "items": [{"store_item_id": in_stock.id, "quantity": 4}, {"store_item_id": partial.id, "quantity": 5},
                   {"store_item_id": none.id, "quantity": 2}],
     }, headers=auth_header(user))
@@ -631,7 +631,7 @@ def test_material_request_splits_store_stock_and_purchase(client, db):
 
     pr = db.query(P2PRequest).one()
     assert body["pr_number"] == pr.p2p_number
-    assert (pr.status, pr.requirement_type, pr.priority) == ("approved", "Service", "high")
+    assert (pr.status, pr.requirement_type, pr.priority) == ("approved", "Service", "urgent")
     assert sorted((i.item_name, i.quantity, i.project_inhouse) for i in pr.items) == [
         ("Hydraulic hose", 2, "Project"), ("Pump seal kit", 2, "Project")]
 

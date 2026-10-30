@@ -4,12 +4,15 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.priority import PRIORITIES, parse_priority
 from app.core.permissions import ensure_can_delete, require_app_access, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.organization.models.department import Department
-from app.modules.projects.models.project import PmProject, PM_PROJECT_STATUSES, PM_PROJECT_PRIORITIES
+from app.modules.projects.models.project import PmProject, PM_PROJECT_STATUSES
+from app.modules.crm.models.inquiry import Inquiry
+from app.modules.crm.models.tender import Tender
 from app.modules.projects.models.milestone import PmProjectMilestone
 from app.modules.projects.models.task import PmProjectTask, PM_TASK_OPEN_STATUSES
 from app.modules.projects.schemas.project import (
@@ -70,7 +73,7 @@ def _check_user(db: Session, user_id: int, label: str) -> User:
 @router.get("/meta")
 async def get_project_meta(user: User = Depends(require_app_access("projects"))):
     return {
-        "statuses": PM_PROJECT_STATUSES, "priorities": PM_PROJECT_PRIORITIES,
+        "statuses": PM_PROJECT_STATUSES, "priorities": PRIORITIES,
         "lifecycle_stages": lifecycle.stage_options(),
         # All Projects › Create is itself the management grant (an authority
         # grant); Partners and Directors hold that authority by flag.
@@ -123,7 +126,7 @@ async def list_projects(
     if stage:
         query = query.filter(PmProject.lifecycle_stage == lifecycle.validate_stage(stage))
     if priority:
-        query = query.filter(PmProject.priority == priority)
+        query = query.filter(PmProject.priority == parse_priority(priority))
     if search:
         like = f"%{search}%"
         query = query.filter(
@@ -261,6 +264,26 @@ async def create_project(
     return views.project_response(db, project, user)
 
 
+BUDGET_ON_CREATE_MSG = ("Finance budgets aren't linked when a project is created — create the project first, "
+                        "then link a budget later from the project's Overview, if needed.")
+
+
+def _check_crm_source(db: Session, kind: str | None, source_id: int | None) -> tuple[str | None, int | None, str | None]:
+    """The optional CRM source of a new project: ('inquiry' | 'tender', id) that must exist.
+    Returns (kind, id, its CRM number) or (None, None, None) when none was given."""
+    kind = (kind or "").strip().lower() or None
+    if kind is None and source_id is None:
+        return None, None, None
+    if kind not in ("inquiry", "tender"):
+        raise HTTPException(status_code=422, detail="CRM source must be an inquiry or a tender. Pick one from the CRM source list, or leave it blank.")
+    if source_id is None:
+        raise HTTPException(status_code=422, detail=f"Pick which {kind} is the CRM source, or clear the CRM source field.")
+    rec = db.get(Inquiry if kind == "inquiry" else Tender, source_id)
+    if rec is None or rec.is_deleted:
+        raise HTTPException(status_code=422, detail=f"The CRM {kind} #{source_id} doesn't exist or was deleted. Refresh the list and pick another one, or leave the CRM source blank.")
+    return kind, source_id, rec.universal_id
+
+
 def _add_project(db: Session, user: User, payload) -> PmProject:
     """Validates and adds a Planning project (flushed, NOT committed) — shared by
     create_project and create_project_with_machine so the rules live once.
@@ -269,28 +292,28 @@ def _add_project(db: Session, user: User, payload) -> PmProject:
     for field, label in (("name", "Project name"), ("client_name", "Customer")):
         if not (getattr(payload, field) or "").strip():
             raise HTTPException(status_code=422, detail=f"{label} is required.")
-    if payload.priority not in PM_PROJECT_PRIORITIES:
-        raise HTTPException(status_code=422, detail=f"Priority '{payload.priority}' is not valid — use one of {', '.join(PM_PROJECT_PRIORITIES)}.")
+    priority = parse_priority(payload.priority)
+    if getattr(payload, "internal_order_id", None) is not None:
+        raise HTTPException(status_code=422, detail=BUDGET_ON_CREATE_MSG)
     if payload.target_handover_date < payload.start_date:
         raise HTTPException(status_code=422, detail=f"Target handover date {payload.target_handover_date:%d-%m-%Y} is before the start date {payload.start_date:%d-%m-%Y}. Fix one of the dates.")
     pm_id = payload.project_manager_id or user.id
     _check_user(db, pm_id, "project manager")
-    io_id = getattr(payload, "internal_order_id", None)
-    budget = _linkable_budget(db, io_id) if io_id else None
+    source_kind, source_id, source_number = _check_crm_source(db, getattr(payload, "source_kind", None), getattr(payload, "source_id", None))
 
     project = PmProject(
         project_code=code, name=payload.name.strip(), client_name=payload.client_name.strip(),
         customer_po_ref=payload.customer_po_ref, sales_order_ref=payload.sales_order_ref,
         description=payload.description,
         project_manager_id=pm_id, start_date=payload.start_date,
-        target_handover_date=payload.target_handover_date, priority=payload.priority,
-        status="planning", created_by_id=user.id, internal_order_id=budget.id if budget else None,
+        target_handover_date=payload.target_handover_date, priority=priority,
+        status="planning", created_by_id=user.id, source_kind=source_kind, source_id=source_id,
     )
     db.add(project)
     db.flush()
     wf.audit(db, project.id, user, "created", f"Project {project.project_code} ({project.name}) created by {wf.user_label(user)}.", subtab_key="overview")
-    if budget:
-        wf.audit(db, project.id, user, "updated", f"Finance budget {budget.code} ({budget.name}) linked.", subtab_key="overview")
+    if source_kind:
+        wf.audit(db, project.id, user, "updated", f"CRM source {source_kind} {source_number} linked.", subtab_key="overview")
     wf.notify_many(db, [project.project_manager_id], user, "You are project manager",
                    f"{wf.user_label(user)} made you project manager of {project.project_code} {project.name}.",
                    "pm_project_manager", "pm_project", project.id)
@@ -325,7 +348,7 @@ async def create_project_with_machine(
         project_code=payload.project_code, name=payload.name, client_name=client, customer_po_ref=po,
         sales_order_ref=so, description=payload.description, project_manager_id=payload.project_manager_id,
         start_date=payload.start_date, target_handover_date=payload.target_handover_date, priority=payload.priority,
-        internal_order_id=payload.internal_order_id,
+        internal_order_id=payload.internal_order_id, source_kind=payload.source_kind, source_id=payload.source_id,
     )
     try:
         project = _add_project(db, user, pm_payload)
@@ -384,8 +407,8 @@ async def update_project(
     for field, label in (("name", "Project name"), ("client_name", "Customer")):
         if field in updates and not (updates[field] or "").strip():
             raise HTTPException(status_code=422, detail=f"{label} can't be empty.")
-    if "priority" in updates and updates["priority"] not in PM_PROJECT_PRIORITIES:
-        raise HTTPException(status_code=422, detail=f"Priority '{updates['priority']}' is not valid — use one of {', '.join(PM_PROJECT_PRIORITIES)}.")
+    if "priority" in updates:
+        updates["priority"] = parse_priority(updates["priority"])
     if "project_manager_id" in updates:
         if not updates["project_manager_id"]:
             raise HTTPException(status_code=422, detail="A project must have a project manager.")

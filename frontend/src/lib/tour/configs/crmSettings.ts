@@ -22,13 +22,8 @@ const config: TourConfig = {
     {
       target: 'crm-settings-group-notify_organization_create',
       title: 'Notification rules',
-      purpose: 'One row per event — Customer Organization created, Inquiry created, Tender created, Discussion message. Flip the switch to turn it on, then click the row to pick who (people), how (Portal bell / Email / Teams) and optionally extra email addresses. The row summary shows who gets it.',
+      purpose: 'One row per event — Customer Organization created, Inquiry created, Tender created. Flip the switch to turn it on, then click the row to pick who (people), how (Portal bell / Email / Teams) and optionally extra email addresses. The row summary shows who gets it.',
       why: 'Off by default, so nobody is spammed; switch on only what someone actually acts on. The person who did the action is never notified about it.',
-    },
-    {
-      target: 'crm-settings-group-notify_discussion_message',
-      title: 'Discussion message',
-      purpose: 'Sent when BD or R&D posts in a requirement Discussion. You can pick R&D people here too. People @tagged in the message are told anyway and are not notified twice.',
     },
     {
       target: 'crm-settings-save',

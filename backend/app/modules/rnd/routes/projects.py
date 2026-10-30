@@ -5,12 +5,13 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core import assignee_rules
+from app.core.priority import parse_priority
 from app.core.permissions import ensure_can_delete, require_app_access, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.rnd.scope import apply_scope, ensure_in_scope
 from app.modules.rnd.models.project import (
-    RndProject, RND_PROJECT_TYPES, RND_PROJECT_PRIORITIES, RND_PROJECT_STATUSES,
+    RndProject, RND_PROJECT_TYPES, RND_PROJECT_STATUSES,
 )
 from app.modules.rnd.models.experiment import RndExperiment
 from app.modules.rnd.models.prototype import RndPrototype
@@ -62,8 +63,8 @@ _NON_NULLABLE_UPDATE_FIELDS = {
 def _validate_choices(project_type: str | None, priority: str | None, status: str | None) -> None:
     if project_type and project_type not in RND_PROJECT_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid project type '{project_type}'. Valid types: {', '.join(RND_PROJECT_TYPES)}.")
-    if priority and priority not in RND_PROJECT_PRIORITIES:
-        raise HTTPException(status_code=400, detail=f"Invalid priority '{priority}'. Valid priorities: {', '.join(RND_PROJECT_PRIORITIES)}.")
+    if priority:
+        parse_priority(priority)  # 422 "Priority must be Standard or Urgent."
     if status and status not in RND_PROJECT_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status '{status}'. Valid statuses: {', '.join(RND_PROJECT_STATUSES)}.")
 
@@ -258,7 +259,7 @@ async def create_project(
     project = RndProject(
         project_number=generate_project_number(db),
         title=payload.title.strip(),
-        priority=payload.priority,
+        priority=parse_priority(payload.priority),
         objective=payload.objective.strip(),
         scope=payload.scope,
         lead_id=lead_ids[0] if lead_ids else None,
@@ -339,6 +340,8 @@ async def update_project(project_id: int, payload: RndProjectUpdate, db: Session
     if "objective" in updates and not (updates["objective"] or "").strip():
         raise HTTPException(status_code=400, detail="Project objective can't be empty.")
     _validate_choices(updates.get("project_type"), updates.get("priority"), updates.get("status"))
+    if updates.get("priority"):
+        updates["priority"] = parse_priority(updates["priority"])
     if "lead_ids" in updates:
         updates["lead_ids"] = list(dict.fromkeys(i for i in (updates["lead_ids"] or []) if i))
         updates["lead_id"] = updates["lead_ids"][0] if updates["lead_ids"] else None

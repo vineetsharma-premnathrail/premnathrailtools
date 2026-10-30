@@ -23,9 +23,9 @@ const config: TourConfig = {
     },
     {
       target: 'pm-all-new-btn',
-      title: '+ New Project',
-      purpose: 'Creates a new project for a customer order, together with its machine: the one form has the project details and the full machine details (identity, client & site, specs, warranty, documents). There is no separate machine registration. Only shown to authorised management (Partners, Directors, or users given "All Projects › Create").',
-      after: 'Opens the New Project form — its own tour explains every field. After saving, open the project to add its milestones.',
+      title: '+ Create Project',
+      purpose: 'Opens a popup that asks what you are creating. New Project: a customer order — one form has the project details and the full machine details (identity, client & site, specs, warranty, documents), with an optional CRM source. New Prototype: research and development work with no customer order, opened in the R&D form. A choice you may not use stays greyed with the reason and who can grant it. The button shows only if you may create at least one of the two (New Project needs "All Projects › Create" or Partner / Director; New Prototype needs R&D › Prototype / Research › Create).',
+      after: 'New Project opens the New Project form — its own tour explains every field. After saving, open the project to add its milestones.',
     },
     {
       target: 'pm-all-search',
@@ -48,7 +48,7 @@ const config: TourConfig = {
     {
       target: 'pm-all-table',
       title: 'Project rows',
-      purpose: 'Code, name, customer, stage, project manager and target handover date. The Stage pill shows where the project stands; an extra On hold / Cancelled pill appears when the project is paused or cancelled. Projects made from a sales order are created here automatically.',
+      purpose: 'Code, name, customer, stage, project manager and target handover date. The Stage pill shows where the project stands; an extra On hold / Cancelled pill appears when the project is paused or cancelled.',
       after: 'Click a row to open the project — its Overview, Documents and History.',
     },
   ],

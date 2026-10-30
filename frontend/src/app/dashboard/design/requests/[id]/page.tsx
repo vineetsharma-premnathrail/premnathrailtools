@@ -13,6 +13,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { secondaryBtnStyle, dangerBtnStyle, primaryBtnStyle, smallSecondaryBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
+import { normalizePriority, priorityLabel, priorityTone } from '@/lib/priority'
 import { PRIORITY_LABELS, REQUEST_SOURCE_LABELS, REQUEST_STATUS_LABELS, toOptions } from '@/components/design/designMeta'
 import { useDesignFeature } from '@/components/design/useDesignFeature'
 import { useDesignMe } from '@/components/design/useDesignMe'
@@ -28,7 +29,6 @@ import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/compo
 const STATUS_HEX: Record<string, string> = {
   open: '#2563EB', accepted: '#7C3AED', in_progress: '#0f766e', on_hold: '#b45309', completed: '#16A34A', cancelled: '#a8a29e',
 }
-const PRIORITY_HEX: Record<string, string> = { low: '#78716c', medium: '#2563EB', high: '#b45309', urgent: '#DC2626' }
 const DELIVERABLE_LABELS: Record<string, string> = {
   draft: 'Draft', in_review: 'In check', in_approval: 'In approval', approved: 'Awaiting customer', released: 'Released',
   revising: 'Released · revising', obsolete: 'Obsolete', customer_rejected: 'Customer rejected',
@@ -214,7 +214,7 @@ export default function DesignRequestDetailPage() {
     setEdit({
       title: req.title, customer_id: req.customer_id ? String(req.customer_id) : '', pm_project_id: req.pm_project_id ? String(req.pm_project_id) : '',
       pm_milestone_id: req.pm_milestone_id ? String(req.pm_milestone_id) : '', erp_project_id: req.erp_project_id ? String(req.erp_project_id) : '',
-      priority: req.priority, due_date: req.due_date || '', lead_designer_id: req.lead_designer_id ? String(req.lead_designer_id) : '',
+      priority: normalizePriority(req.priority), due_date: req.due_date || '', lead_designer_id: req.lead_designer_id ? String(req.lead_designer_id) : '',
     })
     setEditOp(req.order_project_id ? { projectId: req.order_project_id, elementId: req.order_project_element_id ?? null } : null)
     setSheetError('')
@@ -304,7 +304,7 @@ export default function DesignRequestDetailPage() {
               title={req.title}
               meta={<span data-tour="design-req-subline" style={{ display: 'contents' }}>
                 {badge(REQUEST_STATUS_LABELS[req.status] || req.status, STATUS_HEX[req.status] || '#78716c')}
-                {badge(PRIORITY_LABELS[req.priority] || req.priority, PRIORITY_HEX[req.priority] || '#78716c')}
+                {badge(priorityLabel(req.priority), priorityTone(req.priority).color)}
                 <span style={{ color: req.is_overdue ? '#DC2626' : undefined, fontWeight: req.is_overdue ? 700 : 400 }}>
                   · Due {req.due_date ? formatDate(req.due_date) : 'not set'}{req.is_overdue ? ' · overdue' : ''}
                 </span>

@@ -46,7 +46,7 @@ def test_number_operator_on_choice_field_is_refused(db):
 def test_choice_value_must_be_valid(db):
     admin = _admin(db)
     with pytest.raises(HTTPException) as e:
-        engine.save_workflow(db, PR_KEY, {"stages": [_stage(conditions=[{"field": "priority", "op": "eq", "value": "urgent"}])]}, admin)
+        engine.save_workflow(db, PR_KEY, {"stages": [_stage(conditions=[{"field": "priority", "op": "eq", "value": "critical"}])]}, admin)
     assert "isn't a valid value" in e.value.detail
 
 

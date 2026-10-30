@@ -1,21 +1,22 @@
-"""Production ↔ project Units (projects/so_projects.py, owner decision
-2026-10-17: RRVs are built to order and every department works against the
-PM project of the confirmed Sales Order).
+"""Production ↔ project (projects/so_projects.py). One project = one machine
+(2026-10-30): a build, work order or MRP order of a project WITHOUT units links
+to the PROJECT itself (order_project_id set, order_project_element_id NULL, no
+"pick a unit" error). Only a historic sales-order project (live units) still
+needs its vehicle / lot.
 
 What Production plugs in (registered at import — routes/rrv_builds.py and
 routes/work_orders.py import this module, so it runs at app start-up):
 
-* project hook   — every NEW vehicle element gets a planned RRV build, linked
-                   to the element and to its Sales delivery row through the
-                   Sales link_build (so the row's status / committed date stay
-                   in sync). A row that already has a build keeps it; the
-                   element is just attached. Planners are told.
+* (no project hook any more — Sales Orders were retired 2026-10-30, so no new
+  vehicle element appears; a build is planned by hand and linked to its project)
 * status hook    — a vehicle element is in_progress while its build is
                    running (in progress / on hold) and ready once the build is
                    completed / handed over; a lot element follows its work
                    orders. Delivery events (dispatched / delivered) still win.
 * 'production'   — the 360 column: build number + state + target date per
   provider         vehicle, work-order count / state per lot.
+* project        — the same cell for the "Whole project" row of a project
+  provider         without units: its build (and work orders) linked to the project.
 
 Plus the helpers the work-order routes and MRP use: apply_wo_element (the
 "element required when the sales order has a project" rule),
@@ -68,9 +69,45 @@ def resolve_build_element(db: Session, build, *, persist: bool = False) -> PmPro
         # left its row no longer makes that vehicle.
         el = stored if stored is not None and stored.kind != "vehicle" else None
     if persist:
+        if el is None and build.order_project_id and not op_core.project_has_units(db, build.order_project_id):
+            return None  # a build of a project without units keeps its project-level link
         build.order_project_element_id = el.id if el else None
         build.order_project_id = el.project_id if el else None
     return el
+
+
+def build_project(db: Session, build) -> PmProject | None:
+    """The project a build is linked to: its unit's project, else its project-level link."""
+    el = resolve_build_element(db, build)
+    if el is not None:
+        return el.project
+    return db.get(PmProject, build.order_project_id) if getattr(build, "order_project_id", None) else None
+
+
+def build_projects(db: Session, builds: list) -> dict[int, PmProject]:
+    """{build_id: project} for builds linked at PROJECT level (no unit) — list responses."""
+    pids = {b.order_project_id for b in builds if b.order_project_id and not b.order_project_element_id and not b.sales_schedule_id}
+    if not pids:
+        return {}
+    projects = {p.id: p for p in db.query(PmProject).filter(PmProject.id.in_(pids)).all()}
+    return {b.id: projects[b.order_project_id] for b in builds
+            if b.order_project_id in projects and not b.order_project_element_id and not b.sales_schedule_id}
+
+
+def ensure_build_link_free(db: Session, project: PmProject, *, exclude_build_id: int | None = None) -> None:
+    """One project is one machine: a project without units has at most one live build.
+    409 names the existing build."""
+    from app.modules.production.models.rrv_build import ProductionRrvBuild
+    q = db.query(ProductionRrvBuild).filter(
+        ProductionRrvBuild.order_project_id == project.id, ProductionRrvBuild.order_project_element_id.is_(None),
+        ProductionRrvBuild.is_deleted == False, ProductionRrvBuild.status != "cancelled")  # noqa: E712
+    if exclude_build_id:
+        q = q.filter(ProductionRrvBuild.id != exclude_build_id)
+    other = q.order_by(ProductionRrvBuild.id).first()
+    if other is not None:
+        raise HTTPException(status_code=409, detail=(
+            f"{project.project_code} already has build {other.build_number} — one project is one machine. Open that build, "
+            f"or cancel it first if it was raised by mistake."))
 
 
 def build_elements(db: Session, builds: list) -> dict[int, tuple[PmProject, PmProjectElement]]:
@@ -104,80 +141,6 @@ def sync_build_element(db: Session, build) -> None:
             op_core.refresh_element_status(db, el)
     except Exception:  # noqa: BLE001
         logger.exception("Project unit sync failed for build %s", getattr(build, "build_number", build))
-
-
-# ---------------------------------------------------------------- project hook: plan builds
-
-def plan_builds_for_project(db: Session, project: PmProject, so, actor, new_elements: list[PmProjectElement]) -> None:
-    """A planned build per new vehicle element (idempotent — a delivery row
-    that already has a build keeps it and the element is attached)."""
-    from app.modules.production.models.rrv_build import ProductionRrvBuild, PRODUCTION_RRV_DEFAULT_REQUIRED_TESTS
-    from app.modules.production.service import generate_rrv_build_number, rrv_log, seed_rrv_stages
-    from app.modules.sales import service as sales_svc
-
-    vehicles = [el for el in new_elements if el.kind == "vehicle" and el.status != "cancelled" and el.sales_schedule_id]
-    if not vehicles:
-        return
-    rows = {r.id: r for r in so.schedules}
-    lines = {ln.id: ln for ln in so.lines}
-    created: list[tuple[ProductionRrvBuild, PmProjectElement]] = []
-    attached = 0
-    for el in vehicles:
-        row = rows.get(el.sales_schedule_id)
-        if row is None or row.status == "cancelled":
-            continue
-        existing = None
-        if row.rrv_build_id:
-            existing = db.get(ProductionRrvBuild, row.rrv_build_id)
-        if existing is None:
-            existing = (db.query(ProductionRrvBuild)
-                        .filter(ProductionRrvBuild.sales_schedule_id == row.id, ProductionRrvBuild.is_deleted == False)  # noqa: E712
-                        .first())
-        if existing is not None:
-            existing.order_project_id, existing.order_project_element_id = project.id, el.id
-            if (existing.build_number or "").startswith("RRV-") and not db.query(ProductionRrvBuild.id).filter(
-                    ProductionRrvBuild.build_number == el.element_no).first():
-                # Known by its project vehicle number from now on (owner 2026-10-27).
-                rrv_log(db, existing.id, "renumbered", actor, f"{existing.build_number} is now {el.element_no}")
-                existing.build_number = el.element_no
-            attached += 1
-            continue
-        line = lines.get(el.sales_order_line_id)
-        model = (line.rrv_model if line is not None and line.rrv_model else None) or \
-                (" ".join((line.description or "").split())[:200] if line is not None else None) or "RRV"
-        build = ProductionRrvBuild(
-            build_number=generate_rrv_build_number(db, el), rrv_model=model[:200], status="planned", priority="normal",
-            branch_id=so.branch_id, created_by_id=actor.id if actor else None,
-            target_handover_date=el.contractual_date or row.current_delivery_date,
-            required_tests=list(PRODUCTION_RRV_DEFAULT_REQUIRED_TESTS),
-            order_project_id=project.id, order_project_element_id=el.id,
-        )
-        seed_rrv_stages(build)
-        db.add(build)
-        db.flush()
-        # The Sales link (customer, PO, SO ids, delivery row ↔ build) — same
-        # rules as linking a build by hand on the delivery schedule.
-        sales_svc.link_build(db, so, row, build.id)
-        rrv_log(db, build.id, "created", actor,
-                f"Planned automatically for {op_core.element_display(project, el)} ({so.so_number or so.display_number}) "
-                f"when the sales order was confirmed")
-        created.append((build, el))
-    if not created and not attached:
-        return
-    db.flush()
-    sales_svc.refresh_order(db, so)
-    if created:
-        parts = ", ".join(f"{b.build_number} ({el.label})" for b, el in created)
-        msg = (f"{so.customer_name or 'Customer'}: PO {so.customer_po_number or '—'} — {project.project_code}. "
-               f"Planned build created for each vehicle: {parts}. Assign a build manager and plan the stages "
-               f"(Production › RRV Builds).")
-        try:
-            sales_svc.notify_bell(db, sales_svc.production_planners(db),
-                                  f"Planned build created — {so.so_number or so.display_number}", msg,
-                                  "production_rrv_planned", "sales_order", so.id,
-                                  exclude_user_id=actor.id if actor else None)
-        except Exception:  # noqa: BLE001 — a notification must never undo the plan
-            logger.exception("Planned-build notification failed for %s", project.project_code)
 
 
 # ---------------------------------------------------------------- status hook
@@ -217,10 +180,66 @@ def element_status_hook(db: Session, element: PmProjectElement, so, status: str)
 
 # ---------------------------------------------------------------- 360 provider
 
-def production_cells(db: Session, project: PmProject, elements: list[PmProjectElement]) -> dict[int, dict | None]:
-    from app.modules.production.models.rrv_build import ProductionRrvBuild, PRODUCTION_RRV_DONE_STAGE_STATUSES
-    from app.modules.production.models.work_order import ProductionWorkOrder
+def _build_cell(b, today: date) -> dict:
+    """The 360 cell of one RRV build: number + state, stage progress, target date."""
+    from app.modules.production.models.rrv_build import PRODUCTION_RRV_DONE_STAGE_STATUSES
     from app.modules.production.service import RRV_STAGE_META
+    target = b.target_handover_date or b.target_completion_date
+    overdue = bool(target and target < today and b.status in ("planned", "in_progress", "on_hold"))
+    done = sum(1 for s in b.stages if s.status in PRODUCTION_RRV_DONE_STAGE_STATUSES)
+    current = next((s for s in b.stages if s.status not in PRODUCTION_RRV_DONE_STAGE_STATUSES), None)
+    bits = [f"{done}/{len(b.stages)} stages"]
+    if current is not None and b.status in ("in_progress", "on_hold"):
+        bits.append(RRV_STAGE_META[current.stage_key][0])
+    if target:
+        bits.append(("Overdue — target " if overdue else "Target ") + _d(target))
+    return {
+        "status": b.status, "label": f"{b.build_number} · {BUILD_STATUS_LABEL.get(b.status, b.status)}",
+        "tone": "danger" if overdue else _BUILD_TONE.get(b.status, "neutral"),
+        "detail": " · ".join(bits), "date": target.isoformat() if target else None,
+    }
+
+
+def project_production_cell(db: Session, project: PmProject) -> dict | None:
+    """Production cell of a project WITHOUT units: its build (one project = one machine) and the
+    work orders linked to the project itself. None when Production has nothing for it yet."""
+    from app.modules.production.models.rrv_build import ProductionRrvBuild
+    from app.modules.production.models.work_order import ProductionWorkOrder
+    today = date.today()
+    builds = (db.query(ProductionRrvBuild)
+              .filter(ProductionRrvBuild.order_project_id == project.id, ProductionRrvBuild.order_project_element_id.is_(None),
+                      ProductionRrvBuild.is_deleted == False)  # noqa: E712
+              .all())
+    build = next(iter(sorted(builds, key=lambda x: (x.status == "cancelled", -x.id))), None)
+    wos = (db.query(ProductionWorkOrder)
+           .filter(ProductionWorkOrder.order_project_id == project.id, ProductionWorkOrder.order_project_element_id.is_(None),
+                   ProductionWorkOrder.is_deleted == False, ProductionWorkOrder.status.in_(_WO_LIVE))  # noqa: E712
+           .order_by(ProductionWorkOrder.id).all())
+    n = len(wos)
+    wo_txt = ", ".join(f"{w.wo_number} ({w.status.replace('_', ' ')})" for w in wos)[:300]
+    if build is not None and build.status != "cancelled":
+        cell = _build_cell(build, today)
+        if n:
+            cell["detail"] = f"{cell['detail']} · {n} work order{'s' if n != 1 else ''}: {wo_txt}"
+        return cell
+    if not n:
+        return None
+    states = [w.status for w in wos]
+    if all(s in ("completed", "closed") for s in states):
+        status, label, tone = "done", "Done", "success"
+    elif any(s in ("released", "in_progress", "completed", "closed") for s in states):
+        status, label, tone = "in_progress", "In progress", "info"
+    else:
+        status, label, tone = "draft", "Draft", "neutral"
+    end = max((w.planned_end_date for w in wos if w.planned_end_date), default=None)
+    overdue = bool(end and end < today and status != "done")
+    return {"status": status, "label": f"{n} WO{'s' if n != 1 else ''} · {label}", "tone": "danger" if overdue else tone,
+            "detail": wo_txt, "date": end.isoformat() if end else None}
+
+
+def production_cells(db: Session, project: PmProject, elements: list[PmProjectElement]) -> dict[int, dict | None]:
+    from app.modules.production.models.rrv_build import ProductionRrvBuild
+    from app.modules.production.models.work_order import ProductionWorkOrder
 
     today = date.today()
     out: dict[int, dict | None] = {}
@@ -240,20 +259,7 @@ def production_cells(db: Session, project: PmProject, elements: list[PmProjectEl
             if b is None:
                 out[el.id] = None
                 continue
-            target = b.target_handover_date or b.target_completion_date
-            overdue = bool(target and target < today and b.status in ("planned", "in_progress", "on_hold"))
-            done = sum(1 for s in b.stages if s.status in PRODUCTION_RRV_DONE_STAGE_STATUSES)
-            current = next((s for s in b.stages if s.status not in PRODUCTION_RRV_DONE_STAGE_STATUSES), None)
-            bits = [f"{done}/{len(b.stages)} stages"]
-            if current is not None and b.status in ("in_progress", "on_hold"):
-                bits.append(RRV_STAGE_META[current.stage_key][0])
-            if target:
-                bits.append(("Overdue — target " if overdue else "Target ") + _d(target))
-            out[el.id] = {
-                "status": b.status, "label": f"{b.build_number} · {BUILD_STATUS_LABEL.get(b.status, b.status)}",
-                "tone": "danger" if overdue else _BUILD_TONE.get(b.status, "neutral"),
-                "detail": " · ".join(bits), "date": target.isoformat() if target else None,
-            }
+            out[el.id] = _build_cell(b, today)
 
     if lots:
         wos = (db.query(ProductionWorkOrder)
@@ -296,13 +302,17 @@ def _so_number(db: Session, so_id: int) -> str:
 
 
 def apply_wo_element(db: Session, data: dict, product_item_id: int) -> None:
-    """Validate / fill the project unit of a work order. Mutates
+    """Validate / fill the project link of a work order. Mutates
     `data` (order_project_id, order_project_element_id and — when only the
     element was picked — sales_order_id / sales_order_line_id).
 
     * A picked element must exist, be live and belong to the WO's sales order
       (and line, when one is set); it fills in an empty sales order.
-    * A WO assigned to a sales order that has a project must name its
+    * A picked PROJECT without units (every new project: one project = one
+      machine) links the work order to the project itself — no unit to pick
+      (so_projects.resolve_link). A historic sales-order project (units) 422s
+      with "pick the vehicle / lot".
+    * A WO assigned to a historic sales order that has a project must name its
       element; when the order line has exactly one live element (a spares lot,
       or a one-vehicle line) it is filled in, otherwise 422."""
     from app.modules.production import routing_control
@@ -310,7 +320,7 @@ def apply_wo_element(db: Session, data: dict, product_item_id: int) -> None:
     element_id = data.get("order_project_element_id")
     project_id = data.get("order_project_id")
     if element_id:
-        project, el = op_core.resolve_element(db, element_id, project_id=project_id)
+        project, el = op_core.resolve_link(db, project_id, element_id, what="work order")
         so_id, line_id = data.get("sales_order_id"), data.get("sales_order_line_id")
         if so_id and project.sales_order_id and so_id != project.sales_order_id:
             raise HTTPException(status_code=422, detail=(
@@ -330,6 +340,16 @@ def apply_wo_element(db: Session, data: dict, product_item_id: int) -> None:
         data["order_project_id"], data["order_project_element_id"] = project.id, el.id
         return
 
+    if project_id:
+        project, _none = op_core.resolve_link(db, project_id, None, what="work order")
+        so_id = data.get("sales_order_id")
+        if so_id and project.sales_order_id and so_id != project.sales_order_id:
+            raise HTTPException(status_code=422, detail=(
+                f"{project.project_code} is the project of sales order {_so_number(db, project.sales_order_id)}, but this work "
+                f"order is assigned to sales order {_so_number(db, so_id)}. Pick that order's project, or clear the sales order."))
+        data["order_project_id"], data["order_project_element_id"] = project.id, None
+        return
+
     data["order_project_id"] = None
     data["order_project_element_id"] = None
     so_id = data.get("sales_order_id")
@@ -339,6 +359,9 @@ def apply_wo_element(db: Session, data: dict, product_item_id: int) -> None:
     if project is None:
         return
     candidates = [el for el in project.elements if el.status != "cancelled"]
+    if not candidates:  # every unit was cancelled — work links to the project itself
+        data["order_project_id"] = project.id
+        return
     if data.get("sales_order_line_id"):
         candidates = [el for el in candidates if el.sales_order_line_id == data["sales_order_line_id"]]
         if len(candidates) == 1:
@@ -351,10 +374,12 @@ def apply_wo_element(db: Session, data: dict, product_item_id: int) -> None:
 
 
 def inherit_element(target: dict, source) -> None:
-    """Copy the element of a build / parent order onto new work-order data."""
+    """Copy the project (and unit, when it has one) of a build / parent order onto new work-order data."""
     if getattr(source, "order_project_element_id", None):
         target["order_project_id"] = source.order_project_id
         target["order_project_element_id"] = source.order_project_element_id
+    elif getattr(source, "order_project_id", None):  # a project without units
+        target["order_project_id"] = source.order_project_id
 
 
 # ---------------------------------------------------------------- MRP
@@ -382,6 +407,14 @@ def element_labels(db: Session, element_ids: set[int]) -> dict[int, tuple[str, s
     return {el.id: (op_core.element_display(p, el), p.project_code, p.id) for el, p in rows}
 
 
-op_core.register_project_hook(plan_builds_for_project)
+def project_labels(db: Session, project_ids: set[int]) -> dict[int, str]:
+    """{project_id: 'PEW-82 — name'} for project-level rows in list responses."""
+    ids = {i for i in project_ids if i}
+    if not ids:
+        return {}
+    return {p.id: op_core.project_label(p) for p in db.query(PmProject).filter(PmProject.id.in_(ids)).all()}
+
+
 op_core.register_element_status_hook(element_status_hook)
 op_core.register_department_provider("production", production_cells)
+op_core.register_project_provider("production", project_production_cell)

@@ -85,8 +85,10 @@ def _po_responses(db: Session, orders: list[ProductionPlannedOrder]) -> list[Pro
     parents = {p.id: p.order_number for p in db.query(ProductionPlannedOrder).filter(
         ProductionPlannedOrder.id.in_({o.parent_planned_order_id for o in orders if o.parent_planned_order_id} or {-1})).all()}
     branches = _branch_names(db, {o.branch_id for o in orders})
-    from app.modules.production.order_project_links import element_labels
+    from app.modules.production.order_project_links import element_labels, project_labels
     op_labels = element_labels(db, {o.order_project_element_id for o in orders})
+    # Project-level orders (a project without units): the project itself.
+    proj_only = project_labels(db, {o.order_project_id for o in orders if o.order_project_id and not o.order_project_element_id})
     today = date.today()
     out = []
     for o in orders:
@@ -99,7 +101,8 @@ def _po_responses(db: Session, orders: list[ProductionPlannedOrder]) -> list[Pro
         r.branch_name = branches.get(o.branch_id)
         r.start_in_past = o.status == "open" and o.start_date < today
         r.suggested_category_code = suggest_category(item) if o.procurement == "buy" else None
-        r.order_project_label = op_labels[o.order_project_element_id][0] if o.order_project_element_id in op_labels else None
+        r.order_project_label = (op_labels[o.order_project_element_id][0] if o.order_project_element_id in op_labels
+                                 else proj_only.get(o.order_project_id) if not o.order_project_element_id else None)
         out.append(r)
     return out
 
@@ -366,6 +369,8 @@ async def convert_to_work_order(po_id: int, payload: ProductionPlannedOrderConve
         remarks=f"From planned order {po.order_number}" + (f" — {po.demand_label}" if po.demand_label else "") + ".",
         rrv_build_id=po.rrv_build_id, build_role=build_role,
         order_project_element_id=po.order_project_element_id if not po.rrv_build_id else None,
+        # A planned order of a project without units links its work order to the project itself.
+        order_project_id=_unitless_project_id(db, po),
     )
     try:
         wo = await create_work_order(payload=wo_payload, db=db, user=user, _perm=user)
@@ -379,15 +384,42 @@ async def convert_to_work_order(po_id: int, payload: ProductionPlannedOrderConve
     return _po_responses(db, [po])[0]
 
 
+def _unitless_project_id(db: Session, po: ProductionPlannedOrder) -> int | None:
+    """The project to link a converted work order to: only a planned order that is linked at project
+    level (no unit, no build) to a project WITHOUT units. A build's work orders follow the build."""
+    if po.rrv_build_id or po.order_project_element_id or not po.order_project_id:
+        return None
+    from app.modules.projects import so_projects as op_core
+    return None if op_core.project_has_units(db, po.order_project_id) else po.order_project_id
+
+
 def _po_element_id(db: Session, po: ProductionPlannedOrder) -> int | None:
     """The project unit of a planned order's demand: carried by MRP,
-    else the vehicle / lot of its pegged Sales delivery row."""
+    else the vehicle / lot of its pegged (historic) Sales delivery row. None for demand
+    of a project without units — see _po_project_id."""
     if po.order_project_element_id:
         return po.order_project_element_id
     if po.sales_schedule_id:
         from app.modules.store.services.project_stock import element_for_schedule_row
         el = element_for_schedule_row(db, po.sales_schedule_id)
         return el.id if el is not None else None
+    return None
+
+
+def _po_project_id(db: Session, po: ProductionPlannedOrder, element_id: int | None) -> int | None:
+    """The PM project a planned order's demand belongs to: its unit's project, else the project the
+    order (or its RRV build) is linked to. A project WITHOUT units is linked at project level — one
+    project = one machine, so the PR needs no vehicle / lot."""
+    if element_id:
+        from app.modules.projects.models.element import PmProjectElement
+        el = db.get(PmProjectElement, element_id)
+        return el.project_id if el is not None else None
+    if po.order_project_id:
+        return po.order_project_id
+    if po.rrv_build_id:
+        from app.modules.production.models.rrv_build import ProductionRrvBuild
+        build = db.get(ProductionRrvBuild, po.rrv_build_id)
+        return build.order_project_id if build is not None else None
     return None
 
 
@@ -425,7 +457,8 @@ async def convert_to_requisition(payload: ProductionPlannedOrderConvertPrPayload
     service (create_p2p_request: Item Master lines by store_item_id, approval
     engine, auto buyer). One PR per category and pegged project; the same
     item's planned orders in a group become one line."""
-    from app.modules.p2p.models.p2p_request import P2P_CATEGORIES, P2P_REQUEST_PRIORITIES
+    from app.core.priority import parse_priority
+    from app.modules.p2p.models.p2p_request import P2P_CATEGORIES
     from app.modules.p2p.routes.p2p_requests import create_p2p_request
     from app.modules.p2p.schemas.p2p_request import P2PRequestCreate, P2PRequestItemPayload
 
@@ -435,8 +468,7 @@ async def convert_to_requisition(payload: ProductionPlannedOrderConvertPrPayload
     ensure_tab_action(user, "p2p", "purchase_requisitions", "create")
     if payload.category_code and payload.category_code not in P2P_CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Pick a valid PR category ({', '.join(P2P_CATEGORIES)}) — got '{payload.category_code}'.")
-    if payload.priority not in P2P_REQUEST_PRIORITIES:
-        raise HTTPException(status_code=400, detail=f"Priority must be one of {', '.join(P2P_REQUEST_PRIORITIES)}.")
+    payload.priority = parse_priority(payload.priority)
     ids = list(dict.fromkeys(payload.planned_order_ids))
     orders = db.query(ProductionPlannedOrder).filter(ProductionPlannedOrder.id.in_(ids)).all()
     orders = [o for o in orders if o.status != "deleted"]
@@ -455,15 +487,22 @@ async def convert_to_requisition(payload: ProductionPlannedOrderConvertPrPayload
     for o in sorted(orders, key=lambda x: (x.finish_date, x.order_number)):
         cat = payload.category_code or suggest_category(items.get(o.item_id))
         label, for_project = _project_label(db, o)
-        key = (cat, label, _po_element_id(db, o))
+        element_id = _po_element_id(db, o)
+        # Project-level demand of a project without units groups by its project.
+        project_id = _po_project_id(db, o, element_id)
+        if element_id is None and project_id is not None:
+            from app.modules.projects import so_projects as op_core
+            if op_core.project_has_units(db, project_id):
+                project_id = None  # a historic project's loose demand stays a plain project-less PR (as before)
+        key = (cat, label, element_id, project_id if element_id is None else None)
         groups.setdefault(key, []).append(o)
         labels[key] = (label, for_project)
 
     created, errors = [], []
     today = date.today()
     from app.modules.projects.models.element import PmProjectElement
-    for (cat, label, element_id), group in groups.items():
-        for_project = labels[(cat, label, element_id)][1]
+    for (cat, label, element_id, project_level_id), group in groups.items():
+        for_project = labels[(cat, label, element_id, project_level_id)][1]
         qty_by_item: dict[int, float] = {}
         for o in group:
             qty_by_item[o.item_id] = qty_by_item.get(o.item_id, 0.0) + o.quantity
@@ -477,13 +516,20 @@ async def convert_to_requisition(payload: ProductionPlannedOrderConvertPrPayload
                    for item_id, q in qty_by_item.items()],
             save_as_draft=payload.save_as_draft,
         )
-        # Project-pegged demand: the PR is charged to the sales order (account
-        # assignment) and every line names its vehicle / lot — Purchase's create
-        # route validates the element against the order's project.
+        # Project-pegged demand: a project without units is charged as a whole (account assignment
+        # "Project", lines tied to the project, no vehicle / lot). A historic sales-order project
+        # keeps the sales-order assignment and names the unit on every line — Purchase's create
+        # route validates the element against the project.
         el = db.get(PmProjectElement, element_id) if element_id else None
-        if el is not None:
+        if el is not None and el.project.sales_order_id:
             pr_payload.account_assignment = "sales_order"
             pr_payload.sales_order_id = el.project.sales_order_id
+        elif el is not None:
+            pr_payload.account_assignment = "order_project"
+            pr_payload.order_project_id = el.project_id
+        elif project_level_id is not None:
+            pr_payload.account_assignment = "order_project"
+            pr_payload.order_project_id = project_level_id
         ids_in_group = [o.id for o in group]
         now = datetime.now(timezone.utc)
         for o in group:
@@ -499,7 +545,8 @@ async def convert_to_requisition(payload: ProductionPlannedOrderConvertPrPayload
             o.converted_ref_id, o.converted_number = pr.id, pr.p2p_number
         db.commit()
         created.append({"pr_id": pr.id, "p2p_number": pr.p2p_number, "status": pr.status, "category_code": cat,
-                        "project_label": label, "planned_orders": numbers, "order_project_element_id": element_id})
+                        "project_label": label, "planned_orders": numbers, "order_project_element_id": element_id,
+                        "order_project_id": project_level_id})
     if errors and not created:
         detail = errors[0]["detail"]
         raise HTTPException(status_code=422, detail=f"No requisition was raised — {detail}" if isinstance(detail, str) else detail)

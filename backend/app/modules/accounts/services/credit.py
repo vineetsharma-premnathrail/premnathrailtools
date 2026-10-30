@@ -198,7 +198,7 @@ def dispatch_orders(db: Session, *, sales_order_id: int | None, items: list[dict
         so_ids |= {so for (so,) in db.query(SalesOrderSchedule.so_id).filter(SalesOrderSchedule.id.in_(row_ids)).all()}
     if not so_ids and erp_project_id:
         try:
-            from app.modules.sales.delivery import rows_for_machine
+            from app.modules.sales.legacy import rows_for_machine
             rows = [r for r in rows_for_machine(db, erp_project_id) if float(r.quantity or 0) - float(r.qty_dispatched or 0) > 1e-6]
             if len(rows) == 1:
                 so_ids.add(rows[0].so_id)

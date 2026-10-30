@@ -45,7 +45,7 @@ def test_sr_update_sends_no_notification(client, db):
         headers=auth_header(creator),
     ).json()
 
-    client.patch(f"/api/v1/erp/service-requests/{sr['id']}", json={"priority": "high"}, headers=auth_header(admin))
+    client.patch(f"/api/v1/erp/service-requests/{sr['id']}", json={"priority": "urgent"}, headers=auth_header(admin))
 
     creator_notifications = client.get("/api/v1/notifications", headers=auth_header(creator)).json()
     assert not any(n["notification_type"] == "sr_updated" for n in creator_notifications)

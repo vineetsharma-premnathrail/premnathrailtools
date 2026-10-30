@@ -8,7 +8,7 @@ from app.db.mixins import TimestampMixin, SoftDeleteMixin
 # draft → released → in_progress → completed → closed; cancelled from draft,
 # released, or in_progress (only once nothing is still issued or received).
 PRODUCTION_WORK_ORDER_STATUSES = ("draft", "released", "in_progress", "completed", "closed", "cancelled")
-PRODUCTION_WORK_ORDER_PRIORITIES = ("low", "normal", "high", "urgent")
+PRODUCTION_WORK_ORDER_PRIORITIES = ("standard", "urgent")
 PRODUCTION_OPERATION_STATUSES = ("pending", "in_progress", "completed")
 
 # Stock ledger reference_type for everything a work order posts (material
@@ -33,7 +33,7 @@ class ProductionWorkOrder(Base, TimestampMixin, SoftDeleteMixin):
     quantity_planned: Mapped[float] = mapped_column(Float, nullable=False)
     quantity_completed: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     quantity_scrapped: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    priority: Mapped[str] = mapped_column(String(20), default="normal", nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), default="standard", nullable=False)  # standard | urgent
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True, nullable=False)
     # Where components are issued from, and where finished goods are received into.
     source_location_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("store_locations.id"), nullable=True)

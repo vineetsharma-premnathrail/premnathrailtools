@@ -17,13 +17,14 @@ from app.modules.crm.models.inquiry import Inquiry
 from app.modules.crm.models.organization import Organization
 from app.modules.crm.models.tender import Tender
 from app.modules.design.access import head_ids, is_head, next_number, require_team, year_prefix
+from app.core.priority import parse_priority
 from app.modules.design.bom_service import bom_display_status, released_bom_revision
 from app.modules.design.models.bom import DesignBom
 from app.modules.design.models.document import DesignDocument
 from app.modules.design.models.event import DesignEvent
 from app.modules.design.models.request import (
     DesignRequest, DesignRequirementRevision, DesignTaskDeliverable, DESIGN_REQUEST_ACTIVE_STATUSES,
-    DESIGN_REQUEST_PRIORITIES, DESIGN_REQUEST_SOURCES,
+    DESIGN_REQUEST_SOURCES,
 )
 from app.modules.design.routes.documents import machine_label, validate_links
 from app.modules.design.schemas.event import DesignCommentPayload, DesignEventResponse
@@ -208,8 +209,8 @@ def _crm_reference(db: Session, crm_source: str | None, record_id: int | None) -
 def _validate(db: Session, values: dict) -> None:
     if values.get("source") is not None and values["source"] not in DESIGN_REQUEST_SOURCES:
         raise HTTPException(status_code=400, detail=f"'{values['source']}' isn't a valid source. Choose one of: {', '.join(DESIGN_REQUEST_SOURCES)}.")
-    if values.get("priority") is not None and values["priority"] not in DESIGN_REQUEST_PRIORITIES:
-        raise HTTPException(status_code=400, detail=f"'{values['priority']}' isn't a valid priority. Choose one of: {', '.join(DESIGN_REQUEST_PRIORITIES)}.")
+    if values.get("priority") is not None:
+        values["priority"] = parse_priority(values["priority"])
     if values.get("customer_id") and not db.query(Organization.id).filter(Organization.id == values["customer_id"]).first():
         raise HTTPException(status_code=400, detail=f"Customer #{values['customer_id']} wasn't found in CRM organizations.")
     if values.get("pm_milestone_id"):
@@ -288,7 +289,7 @@ async def create_request(payload: DesignRequestCreate, background_tasks: Backgro
         source=payload.source, crm_source=payload.crm_source if payload.crm_record_id else None,
         crm_record_id=payload.crm_record_id, crm_reference=reference, customer_id=payload.customer_id or org_id,
         pm_project_id=payload.pm_project_id, pm_milestone_id=payload.pm_milestone_id, erp_project_id=payload.erp_project_id,
-        requirement=payload.requirement.strip(), requirement_revision=0, reviewed_revision=-1, priority=payload.priority,
+        requirement=payload.requirement.strip(), requirement_revision=0, reviewed_revision=-1, priority=parse_priority(payload.priority),
         due_date=payload.due_date, status="open", waiting_on="design", lead_designer_id=payload.lead_designer_id,
         requested_by_id=user.id, **link,
     )
@@ -337,6 +338,8 @@ async def update_request(request_id: int, payload: DesignRequestUpdate, db: Sess
         raise HTTPException(status_code=400, detail="Title can't be empty.")
     if "priority" in changes and not changes["priority"]:
         changes.pop("priority")
+    if "priority" in changes:
+        changes["priority"] = parse_priority(changes["priority"])
     old_lead = req.lead_designer_id
     for key, value in changes.items():
         setattr(req, key, value.strip() if key == "title" else value)

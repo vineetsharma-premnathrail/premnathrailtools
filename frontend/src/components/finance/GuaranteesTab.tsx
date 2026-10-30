@@ -6,7 +6,7 @@
  *  the bank application; margin, commission, release and invocation post
  *  through vouchers. Expiry reminders go out 30/15/7/1 days before. */
 import { useEffect, useState } from 'react'
-import { accountsApi, crmApi, salesApi } from '@/lib/api'
+import { accountsApi, crmApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
 import { BankGuarantee, financeTreasuryApi } from '@/lib/financeTreasuryApi'
 import { BankAccount, GLAccount } from '@/types'
@@ -141,13 +141,12 @@ export default function GuaranteesTab({ initialId }: { initialId?: number | null
 function NewInstrument({ types, onClose, onSaved }: { types: Opt[]; onClose: () => void; onSaved: (bg: BankGuarantee) => void }) {
   const [f, setF] = useState<Record<string, string>>({
     direction: 'issued', instrument_type: 'pbg', instrument_form: 'bank_guarantee', amount: '', margin_percent: '10', bank_account_id: '',
-    customer_id: '', vendor_id: '', sales_order_id: '', tender_id: '', counterparty_name: '', issuing_bank_name: '', instrument_number: '',
+    customer_id: '', vendor_id: '', tender_id: '', counterparty_name: '', issuing_bank_name: '', instrument_number: '',
     issue_date: '', expiry_date: '', claim_expiry_date: '', purpose: '',
   })
   const [banks, setBanks] = useState<BankAccount[]>([])
   const [customers, setCustomers] = useState<Opt[]>([])
   const [vendors, setVendors] = useState<Opt[]>([])
-  const [orders, setOrders] = useState<Opt[]>([])
   const [tenders, setTenders] = useState<Opt[]>([])
   const [error, setError] = useState<string[] | null>(null)
   const [busy, setBusy] = useState(false)
@@ -161,9 +160,6 @@ function NewInstrument({ types, onClose, onSaved }: { types: Opt[]; onClose: () 
   }, [])
   useEffect(() => {
     if (!f.customer_id) return
-    salesApi.listOrders({ customer_id: Number(f.customer_id) })
-      .then((rows) => setOrders(rows.filter((o) => !['cancelled', 'rejected'].includes(o.status)).map((o) => ({ value: String(o.id), label: `${o.display_number} (${o.status})` }))))
-      .catch(() => {})
     crmApi.listTenders({ org_id: Number(f.customer_id) })
       .then((rows: { id: number; tender_number?: string | null; tender_name?: string | null; universal_id: string }[]) =>
         setTenders(rows.map((t) => ({ value: String(t.id), label: [t.tender_number, t.tender_name].filter(Boolean).join(' — ') || t.universal_id }))))
@@ -180,7 +176,7 @@ function NewInstrument({ types, onClose, onSaved }: { types: Opt[]; onClose: () 
       const bg = await financeTreasuryApi.createGuarantee({
         direction: f.direction, instrument_type: f.instrument_type, instrument_form: f.instrument_type === 'lc' ? 'lc' : f.instrument_form,
         amount: Number(f.amount), margin_percent: issued && f.instrument_form !== 'deposit' && f.margin_percent !== '' ? Number(f.margin_percent) : null,
-        bank_account_id: n('bank_account_id'), customer_id: n('customer_id'), vendor_id: n('vendor_id'), sales_order_id: n('sales_order_id'),
+        bank_account_id: n('bank_account_id'), customer_id: n('customer_id'), vendor_id: n('vendor_id'),
         tender_id: n('tender_id'), counterparty_name: s('counterparty_name'), issuing_bank_name: s('issuing_bank_name'),
         instrument_number: s('instrument_number'), issue_date: s('issue_date'), expiry_date: s('expiry_date'),
         claim_expiry_date: s('claim_expiry_date'), purpose: s('purpose'),
@@ -230,7 +226,7 @@ function NewInstrument({ types, onClose, onSaved }: { types: Opt[]; onClose: () 
           <SheetSection icon="users" title={issued ? 'Beneficiary & bank' : 'Applicant & bank'}>
             <SRow>
               {issued
-                ? <SField label="Customer (beneficiary)" style={sg(240, 340)}><SearchableSelect value={f.customer_id} onChange={(v) => { setOrders([]); setTenders([]); setF((p) => ({ ...p, customer_id: v, sales_order_id: '', tender_id: '' })) }} options={customers} placeholder="Select customer…" /></SField>
+                ? <SField label="Customer (beneficiary)" style={sg(240, 340)}><SearchableSelect value={f.customer_id} onChange={(v) => { setTenders([]); setF((p) => ({ ...p, customer_id: v, tender_id: '' })) }} options={customers} placeholder="Select customer…" /></SField>
                 : <SField label="Supplier (applicant)" style={sg(240, 340)}><SearchableSelect value={f.vendor_id} onChange={(v) => set('vendor_id', v)} options={vendors} placeholder="Select vendor…" /></SField>}
               <SField label={issued ? 'Beneficiary as on instrument' : 'Applicant as on instrument'} style={sg(240, 340)}>
                 <input style={sheetInput} value={f.counterparty_name} maxLength={255} onChange={(e) => set('counterparty_name', e.target.value)} placeholder={issued ? 'e.g. PCMM, Central Railway' : ''} />
@@ -248,7 +244,6 @@ function NewInstrument({ types, onClose, onSaved }: { types: Opt[]; onClose: () 
           {issued && (
             <SheetSection icon="link" title="Linked to">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <SField label="Sales order" optional><SearchableSelect value={f.sales_order_id} onChange={(v) => set('sales_order_id', v)} options={orders} placeholder={f.customer_id ? 'None' : 'Pick the customer first'} /></SField>
                 <SField label="Tender" optional><SearchableSelect value={f.tender_id} onChange={(v) => set('tender_id', v)} options={tenders} placeholder={f.customer_id ? 'None' : 'Pick the customer first'} /></SField>
               </div>
             </SheetSection>

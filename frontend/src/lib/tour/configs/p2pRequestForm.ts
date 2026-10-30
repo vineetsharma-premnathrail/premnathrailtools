@@ -38,9 +38,8 @@ const config: TourConfig = {
       title: 'Priority',
       purpose: 'How urgently this requisition needs to be actioned by Purchase.',
       options: [
-        { value: 'low', meaning: 'No particular urgency.' },
-        { value: 'medium', meaning: 'Standard priority — the default.' },
-        { value: 'high', meaning: 'Needs urgent attention from the Purchase team.' },
+        { value: 'Standard', meaning: 'Standard priority — the default.' },
+        { value: 'Urgent', meaning: 'Needs urgent attention from the Purchase team.' },
       ],
     },
     {

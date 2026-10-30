@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core import assignee_rules
 from app.core.data_scope import apply_scope
+from app.core.priority import parse_priority, priority_label
 from app.core.permission_registry import can_feature
 from app.core.permissions import ensure_can_delete, require_app_access, require_feature_action, require_tab_access, require_tab_action
 from app.modules.production.sensitive import mask_movement, mask_work_order, sees_costs
@@ -20,7 +21,7 @@ from app.modules.production import costing
 from app.modules.production.models.bom import ProductionBom
 from app.modules.production.models.work_order import (
     ProductionWorkOrder, ProductionWorkOrderMaterial, ProductionWorkOrderOperation, ProductionTimeLog, ProductionOrderCostPosting,
-    PRODUCTION_WORK_ORDER_PRIORITIES, PRODUCTION_WORK_ORDER_STATUSES, WORK_ORDER_REFERENCE_TYPE,
+    PRODUCTION_WORK_ORDER_STATUSES, WORK_ORDER_REFERENCE_TYPE,
 )
 from app.modules.production.models.workstation import ProductionWorkstation
 from app.modules.production.reports.job_card_pdf import build_job_card_pdf
@@ -200,8 +201,8 @@ def _require_status(wo: ProductionWorkOrder, allowed: tuple[str, ...], action: s
 
 
 def _validate_refs(db: Session, data: dict, user: User, current_supervisor_id: int | None = None) -> None:
-    if data.get("priority") and data["priority"] not in PRODUCTION_WORK_ORDER_PRIORITIES:
-        raise HTTPException(status_code=400, detail=f"Invalid priority '{data['priority']}'. Use one of: {', '.join(PRODUCTION_WORK_ORDER_PRIORITIES)}.")
+    if data.get("priority"):
+        data["priority"] = parse_priority(data["priority"])
     if data.get("erp_project_id") and not db.query(Project).filter(Project.id == data["erp_project_id"], Project.is_deleted == False).first():  # noqa: E712
         raise HTTPException(status_code=404, detail=f"Machine / project #{data['erp_project_id']} not found in ERP")
     if data.get("branch_id") and not db.query(Branch).filter(Branch.id == data["branch_id"]).first():
@@ -334,6 +335,8 @@ async def create_work_order(
                 raise HTTPException(status_code=409, detail=f"{build.build_number} builds {build_el.element_no} ({build_el.label}), so its work "
                                                             "orders work for that unit too. Clear the project unit field to use the build's.")
             data["order_project_id"], data["order_project_element_id"] = build_el.project_id, build_el.id
+        elif build.order_project_id and not data.get("order_project_id"):
+            data["order_project_id"] = build.order_project_id  # project-level build (one project = one machine)
     _validate_refs(db, data, user)
     _validate_dates(payload.planned_start_date, payload.planned_end_date)
     try:
@@ -387,7 +390,7 @@ async def update_work_order(
         ensure_not_pending(db, WO_ENTITY, wo.id, f"The release of {wo.wo_number}", "edited")
     updates = payload.model_dump(exclude_unset=True)
     if "priority" in updates and updates["priority"] is None:
-        raise HTTPException(status_code=400, detail=f"Priority can't be empty — use one of: {', '.join(PRODUCTION_WORK_ORDER_PRIORITIES)}.")
+        raise HTTPException(status_code=400, detail="Priority can't be empty — choose Standard or Urgent.")
     _validate_refs(db, updates, user, wo.supervisor_id)
     _validate_dates(updates.get("planned_start_date", wo.planned_start_date), updates.get("planned_end_date", wo.planned_end_date))
     if "sales_order_id" in updates or "sales_order_line_id" in updates:
@@ -677,7 +680,7 @@ async def issue_materials(
             # respect what is held for other elements (409, or a Store Manager
             # override with a reason).
             secure_issue_qty(db, item_id=line.item_id, location_id=location_id, qty=line.quantity,
-                             element_id=wo.order_project_element_id, user=user, location=issue_location,
+                             element_id=wo.order_project_element_id, project_id=wo.order_project_id, user=user, location=issue_location,
                              override_reason=payload.project_stock_override_reason, document=f"work order {wo.wo_number}")
             txn = post_stock_transaction(
                 db, item_id=line.item_id, location_id=location_id, transaction_type="issue", quantity=line.quantity,
@@ -902,7 +905,7 @@ async def download_job_card(
     planned = " to ".join(d.strftime("%d-%m-%Y") if d else "—" for d in (resp.planned_start_date, resp.planned_end_date))
     try:
         pdf = build_job_card_pdf({
-            "wo_number": resp.wo_number, "status": resp.status.replace("_", " ").title(), "priority": resp.priority.title(),
+            "wo_number": resp.wo_number, "status": resp.status.replace("_", " ").title(), "priority": priority_label(resp.priority),
             "product": f"{resp.product_code} — {resp.product_name}", "quantity": resp.quantity_planned, "uom": resp.product_uom,
             "bom": f"{resp.bom_number} v{resp.bom_version}", "project": resp.project_label, "planned": planned,
             "supervisor": resp.supervisor_name, "source_location": resp.source_location_name,

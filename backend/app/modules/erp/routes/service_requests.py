@@ -4,6 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
+from app.core.priority import parse_priority
 from app.core.permissions import (
     ensure_can_delete, ensure_feature_action, ensure_tab_action, has_erp_permission, require_app_access,
     require_feature_action, require_tab_access,
@@ -35,7 +36,7 @@ from app.modules.erp.schemas.service_request import (
 from app.modules.erp import billing as sr_billing, spares as sr_spares, warranty as sr_warranty
 from app.modules.erp import sensitive as sr_sensitive
 from app.modules.p2p.models.p2p_request import (
-    P2PRequest, resolve_auto_buyer_id, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES, P2P_REQUEST_PRIORITIES,
+    P2PRequest, resolve_auto_buyer_id, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES,
 )
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.item_link import item_snapshot, purchasable_item
@@ -81,7 +82,7 @@ class RaisePurchaseRequestPayload(BaseModel):
     """Payload for raising a P2P request out of this SR's Materials tab. Field
     shape kept identical to the old (now-deleted) purchase module's
     PurchaseRequisitionRaisePayload so the frontend call site is unaffected."""
-    priority: str = "medium"
+    priority: str = "standard"
     required_by_date: date | None = None
     reason: str | None = None
     category_code: str | None = None
@@ -1674,8 +1675,7 @@ async def raise_purchase_requisition(
     Requester and department are always taken from the logged-in user;
     priority/required-by/reason are supplied by the caller and, once set,
     are not editable afterwards."""
-    if payload.priority not in P2P_REQUEST_PRIORITIES:
-        raise HTTPException(status_code=400, detail=f"Invalid priority '{payload.priority}' — must be one of {', '.join(P2P_REQUEST_PRIORITIES)}")
+    payload.priority = parse_priority(payload.priority)
     if payload.category_code and payload.category_code not in P2P_CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Invalid category_code '{payload.category_code}'")
     if payload.requirement_type and payload.requirement_type not in P2P_REQUIREMENT_TYPES:
@@ -1781,7 +1781,7 @@ class MaterialRequestPayload(BaseModel):
     (Project line, requirement type Service) that goes straight to Purchase."""
     items: list[MaterialRequestLine]
     required_by_date: date | None = None
-    priority: str = "medium"
+    priority: str = "standard"
     remarks: str | None = None
 
 
@@ -1812,8 +1812,7 @@ async def material_request(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("erp")),
 ):
-    if payload.priority not in P2P_REQUEST_PRIORITIES:
-        raise HTTPException(status_code=400, detail=f"Invalid priority '{payload.priority}' — must be one of {', '.join(P2P_REQUEST_PRIORITIES)}.")
+    payload.priority = parse_priority(payload.priority)
     if not payload.items:
         raise HTTPException(status_code=400, detail="Add at least one item — pick it from the Item Master.")
     sr = _get_live_sr(db, sr_id, user=user)

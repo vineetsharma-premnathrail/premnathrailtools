@@ -22,7 +22,7 @@ export const RRV_DEFAULT_REQUIRED_TESTS = [
   'static_inspection', 'guide_wheel_deployment', 'brake_test_road', 'brake_test_rail', 'road_trial', 'rail_trial', 'emergency_stop',
 ]
 
-export const RRV_PRIORITY_LABELS: Record<string, string> = { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' }
+export const RRV_PRIORITY_LABELS: Record<string, string> = { standard: 'Standard', urgent: 'Urgent' }
 
 export const RRV_BUILD_STATUS_LABELS: Record<string, string> = {
   planned: 'Planned', in_progress: 'In Progress', on_hold: 'On Hold', completed: 'Completed', handed_over: 'Handed Over', cancelled: 'Cancelled',

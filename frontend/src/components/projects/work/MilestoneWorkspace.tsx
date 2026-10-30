@@ -29,7 +29,7 @@ import { recordPath } from '@/lib/recordRef'
 import { pillStyle } from '@/components/shared/ui'
 
 type TaskForm = { id?: number; title: string; description: string; assignee_id: string; due_date: string; priority: string; estimated_hours: string }
-const emptyTask = (): TaskForm => ({ title: '', description: '', assignee_id: '', due_date: '', priority: 'medium', estimated_hours: '' })
+const emptyTask = (): TaskForm => ({ title: '', description: '', assignee_id: '', due_date: '', priority: 'standard', estimated_hours: '' })
 
 /** One milestone. The lead (or a department head) plans and assigns its
  * tasks, manages the team, attaches evidence and submits it; management

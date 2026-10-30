@@ -1,9 +1,7 @@
 """IDOR / object-level authorization regressions for Production, Project
-Management and Sales: a second record id in the URL (or a file's owning
+Management (and the retired Sales API): a second record id in the URL (or a file's owning
 record) is checked against the caller's data scope, and soft-deleted parents
 don't leak through their children."""
-from datetime import date
-
 import pytest
 from fastapi import HTTPException
 
@@ -14,8 +12,6 @@ from app.modules.production.models.rrv_build import ProductionRrvBuild
 from app.modules.production.models.work_order import ProductionWorkOrder
 from app.modules.projects.models.document import PmProjectDocument
 from app.modules.projects.models.project import PmProject
-from app.modules.sales.models.extension import SalesDeliveryExtension
-from app.modules.sales.models.order import SalesOrder, SalesOrderSchedule
 
 API = "/api/v1"
 OUT_OF_SCOPE = "outside your data access"
@@ -123,30 +119,15 @@ def test_pm_final_report_document_checks_project_scope(db):
     assert e.value.status_code == 403 and OUT_OF_SCOPE in e.value.detail
 
 
-# ── Sales ────────────────────────────────────────────────────────────────
+# ── Sales (retired 2026-10-30) ───────────────────────────────────────────
 
-def _deleted_order(db, admin):
-    so = SalesOrder(customer_id=1, status="confirmed", created_by_id=admin.id, is_deleted=True)
-    db.add(so)
-    db.commit()
-    return so
-
-
-def test_schedule_by_build_hides_deleted_orders(client, db):
+def test_retired_sales_api_answers_410_and_exposes_no_data(client, db):
+    """Every /sales/... call gets 410 with where to go instead — orders, attachments, delivery rows
+    and the by-build / by-source lookups are gone, so there is nothing left to leak by id."""
     admin = _user(db, "idor.sales.admin@premnathrail.com", role="admin")
-    so = _deleted_order(db, admin)
-    db.add(SalesOrderSchedule(so_id=so.id, so_line_id=1, sequence=1, rrv_build_id=987654, status="planned"))
-    db.commit()
-    r = client.get(f"{API}/sales/schedule/by-build/987654", headers=h(admin))
-    assert r.status_code == 200 and r.json() == {"link": None}
-
-
-def test_extension_documents_of_deleted_order_404(client, db):
-    admin = _user(db, "idor.sales.admin2@premnathrail.com", role="admin")
-    so = _deleted_order(db, admin)
-    e = SalesDeliveryExtension(so_id=so.id, requested_on=date.today(), requested_new_date=date.today(),
-                               reason_category="customer", reason="Site not ready")
-    db.add(e)
-    db.commit()
-    r = client.get(f"{API}/sales/attachments", params={"entity_type": "sales_extension", "entity_id": e.id}, headers=h(admin))
-    assert r.status_code == 404 and "deleted" in r.json()["detail"]
+    for method, path in (("get", "/sales/orders"), ("get", "/sales/orders/1"), ("post", "/sales/orders"),
+                         ("get", "/sales/schedule/by-build/987654"), ("get", "/sales/attachments"),
+                         ("delete", "/sales/orders/1"), ("get", "/sales/orders/by-source")):
+        r = getattr(client, method)(f"{API}{path}", headers=h(admin))
+        assert r.status_code == 410, (method, path, r.text)
+        assert "Sales Orders were removed" in r.json()["detail"] and "Create Project" in r.json()["detail"]

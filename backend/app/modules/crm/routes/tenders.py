@@ -16,7 +16,8 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.crm.models.tender import Tender
 from app.modules.crm.services.cascade import cascade_delete_children
 from app.modules.crm.services import requirement_movement, technical_offer
-from app.modules.crm.services.stage_guard import check_stage_move, ensure_deletable, ensure_no_live_order
+from app.modules.crm.services.stage_guard import check_stage_move, ensure_deletable
+from app.core.priority import parse_priority
 from app.modules.crm.models.activity import Activity
 from app.modules.crm.models.stage_log import CrmStageLog
 from app.modules.crm.models.organization import Organization, OrgContact
@@ -191,6 +192,7 @@ async def create_tender(
 
     universal_id = _generate_universal_id(db)
     data = payload.model_dump()
+    data["priority"] = parse_priority(data.get("priority"))
     data["tender_date"] = data.get("tender_date") or date.today()
     _check_doc_date(data["tender_date"])
     # The BD owner is always the person who logs the tender — not picked on the form.
@@ -267,6 +269,10 @@ async def update_tender(
         raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this tender.")
 
     updates = payload.model_dump(exclude_unset=True, exclude={"stage_reason"})
+    if updates.get("priority") is not None:
+        updates["priority"] = parse_priority(updates["priority"])
+    elif "priority" in updates:
+        updates.pop("priority")  # null = leave as is (the column is never empty)
     if "tender_date" in updates:
         if updates["tender_date"] is None:
             updates.pop("tender_date")  # the date is always kept; clearing it is ignored
@@ -295,10 +301,6 @@ async def update_tender(
     if updates.get("current_stage") is not None:
         moved_back = check_stage_move(db, stages=TND_STAGES, old=tender.current_stage, new=updates["current_stage"], user=user,
                                       reason=payload.stage_reason, label="tender", tender_id=tender.id)
-    if "status" in updates and updates["status"] != tender.status:
-        ensure_no_live_order(db, tender_id=tender.id, label="tender", what="status")
-    if "org_id" in updates and updates["org_id"] != tender.org_id:
-        ensure_no_live_order(db, tender_id=tender.id, label="tender", what="customer")
     if ("org_id" in updates and updates["org_id"] != tender.org_id) or (
         "org_contact_id" in updates and updates["org_contact_id"] != tender.org_contact_id
     ):

@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.notify_rules import fire_rule
+from app.core.priority import parse_priority
 from app.core.permissions import require_app_access, require_feature_action, require_tab_access, require_tab_action
 from app.modules.maintenance.sensitive import sees_costs
 from app.modules.maintenance.role_events import role_event
@@ -46,7 +47,7 @@ class WorkOrderPRLine(BaseModel):
 class WorkOrderRaisePRPayload(BaseModel):
     purpose: str = "spares"          # spares | external_service
     category_code: str = "OTH"
-    priority: str = "medium"
+    priority: str = "standard"
     required_date: date | None = None
     requirement_type: str | None = None
     reason: str | None = None
@@ -88,7 +89,7 @@ async def raise_wo_purchase_request(
 ):
     from app.modules.p2p import approvals as p2p_approvals
     from app.modules.p2p.models.p2p_request import (
-        ENGINE_SCHEME, LINE_CATEGORY, P2P_CATEGORIES, P2P_REQUEST_PRIORITIES, P2P_REQUIREMENT_TYPES, P2PRequest, resolve_auto_buyer_id,
+        ENGINE_SCHEME, LINE_CATEGORY, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES, P2PRequest, resolve_auto_buyer_id,
     )
     from app.modules.p2p.routes.p2p_requests import _sync_pr_lines, _validate_pr_payload, _write_audit as p2p_audit
     from app.modules.p2p.schemas.p2p_request import P2PRequestCreate, P2PRequestItemPayload
@@ -107,8 +108,7 @@ async def raise_wo_purchase_request(
         raise HTTPException(status_code=400, detail=f"Invalid purpose '{payload.purpose}'. Valid: spares (out-of-stock parts) or external_service (outside repair).")
     if payload.category_code not in P2P_CATEGORIES or payload.category_code == LINE_CATEGORY:
         raise HTTPException(status_code=400, detail=f"Pick a valid Purchase Requisition category (got '{payload.category_code}').")
-    if payload.priority not in P2P_REQUEST_PRIORITIES:
-        raise HTTPException(status_code=400, detail=f"Invalid priority '{payload.priority}' — use {', '.join(P2P_REQUEST_PRIORITIES)}.")
+    payload.priority = parse_priority(payload.priority)
     requirement_type = payload.requirement_type or ("Service" if payload.purpose == "external_service" else "Material")
     if requirement_type not in P2P_REQUIREMENT_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid requirement type '{requirement_type}'.")

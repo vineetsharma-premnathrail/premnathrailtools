@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
 from app.core import assignee_rules
+from app.core.priority import parse_priority
 from app.core.permission_registry import can_feature
 from app.core.permissions import (
     ensure_can_delete, ensure_feature_action, require_app_access, require_feature_action, require_tab_access,
@@ -12,7 +13,7 @@ from app.core.permissions import (
 from app.db.session import get_db
 from app.modules.design.order_project_links import clean_op_link, fill_op_labels
 from app.modules.electrical.models.job import (
-    ElectricalJob, ElectricalJobStage, ELECTRICAL_JOB_PRIORITIES, ELECTRICAL_STAGE_KEYS, ELECTRICAL_STAGE_LABELS,
+    ElectricalJob, ElectricalJobStage, ELECTRICAL_STAGE_KEYS, ELECTRICAL_STAGE_LABELS,
     ELECTRICAL_STAGE_PHASES, ELECTRICAL_DONE_STAGE_STATUSES, ELECTRICAL_WORKING_STATUSES,
 )
 from app.modules.electrical.schemas.job import (
@@ -168,8 +169,8 @@ def _prefill_from_order_project(db: Session, data: dict) -> None:
 
 
 def _validate(db: Session, data: dict) -> None:
-    if data.get("priority") and data["priority"] not in ELECTRICAL_JOB_PRIORITIES:
-        raise HTTPException(status_code=400, detail=f"Invalid priority '{data['priority']}'. Use one of: {', '.join(ELECTRICAL_JOB_PRIORITIES)}.")
+    if data.get("priority"):
+        data["priority"] = parse_priority(data["priority"])
     if data.get("erp_project_id") and not db.query(Project).filter(Project.id == data["erp_project_id"], Project.is_deleted == False).first():  # noqa: E712
         raise HTTPException(status_code=404, detail=f"RRV / machine #{data['erp_project_id']} not found in ERP (it may have been deleted). Pick the machine again.")
     if data.get("branch_id") and not db.query(Branch).filter(Branch.id == data["branch_id"]).first():
@@ -305,6 +306,11 @@ async def update_job(
     if job.status in ("closed", "cancelled"):
         raise HTTPException(status_code=409, detail=f"Job {job.job_number} is {job.status} — its details can't be changed any more.")
     updates = payload.model_dump(exclude_unset=True)
+    if "priority" in updates:
+        if updates["priority"]:
+            updates["priority"] = parse_priority(updates["priority"])
+        else:
+            updates.pop("priority")
     _guard_feature_fields(user, job, updates)
     if "title" in updates and updates["title"]:
         updates["title"] = updates["title"].strip()

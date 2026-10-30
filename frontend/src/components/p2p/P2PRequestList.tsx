@@ -17,6 +17,7 @@ import Select from '@/components/shared/Select'
 import { RowCount, pillStyle, smallSecondaryBtnStyle, smallDangerBtnStyle, inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import { Funnel } from '@phosphor-icons/react'
 import Checkbox from '@/components/Checkbox'
+import { priorityLabel } from '@/lib/priority'
 
 // One-row text longer than 25 characters is cut with "…" (full text in the title); two-row columns cut at 50.
 const clip = (v?: string | null, max = 25) => (!v ? '—' : v.length > max ? `${v.slice(0, max).trimEnd()}…` : v)
@@ -362,7 +363,7 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
                 <td title={pr.category_label || pr.category_code || undefined} style={{ padding: '10px 8px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{clip(pr.category_label || pr.category_code)}</td>
                 <td data-fit-clamp style={{ padding: '10px 8px', fontSize: 13, color: TEXT.secondary }}><div title={pr.project_label || undefined}>{clip2(pr.project_label)}</div></td>
                 <td style={{ padding: '10px 8px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(pr.required_date)}</td>
-                <td style={{ padding: '10px 8px', fontSize: 13, color: TEXT.secondary, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{pr.priority ? pr.priority.replace(/_/g, ' ') : '—'}</td>
+                <td style={{ padding: '10px 8px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{pr.priority ? priorityLabel(pr.priority) : '—'}</td>
                 {showPoValue && (
                   <td style={{ padding: '10px 8px', fontSize: 13, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap', textAlign: 'right' }}>
                     {pr.po_value != null ? `₹ ${pr.po_value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}

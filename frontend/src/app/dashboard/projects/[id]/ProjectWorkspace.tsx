@@ -23,7 +23,7 @@ import UnitsTab from './tabs/UnitsTab'
 // WBS, Discussions and Activity Log were removed from the UI: a project is
 // its details, its milestones, documents and history. Old ?tab= links open
 // Overview; ?tab=Tasks (before the rename) opens Milestones.
-// Units (vehicles / lots with the department 360 view) exists only on a project made from a sales order.
+// Units = department 360 view: per vehicle / lot on old sales-order projects, one "Whole project" row otherwise.
 const TABS = ['Overview', 'Milestones', 'Units', 'Documents', 'History'] as const
 const TAB_KEYS: Record<typeof TABS[number], string> = {
   Overview: 'overview', Milestones: 'overview', Units: 'overview', Documents: 'documents', History: 'project_history',
@@ -50,7 +50,7 @@ export default function ProjectWorkspace({ project, onProjectUpdate, onDeleted }
   const initial = ((asked === 'Tasks' ? 'Milestones' : asked) as typeof TABS[number]) || 'Overview'
   const { can, canDelete, canFeature } = useCan()
   // Milestones is a feature of Overview (core/features/projects.py: projects:overview.milestones).
-  const visibleTabs = TABS.filter((t) => t === 'Units' ? (!!project.sales_order_id && can('projects', 'overview', 'view')) : (t === 'Milestones' ? canFeature('projects', 'overview', 'milestones', 'view') : can('projects', TAB_KEYS[t], 'view')))
+  const visibleTabs = TABS.filter((t) => t === 'Units' ? can('projects', 'overview', 'view') : (t === 'Milestones' ? canFeature('projects', 'overview', 'milestones', 'view') : can('projects', TAB_KEYS[t], 'view')))
   const [chosen, setTab] = useState<typeof TABS[number]>(TABS.includes(initial) ? initial : 'Overview')
   const tab = visibleTabs.includes(chosen) ? chosen : visibleTabs[0]
   const [pending, setPending] = useState<ActionDef | null>(null)

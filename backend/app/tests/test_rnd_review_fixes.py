@@ -28,7 +28,7 @@ def _h(user):
 
 
 def _project(client, h, **kw):
-    r = client.post(f"{BASE}/projects", json={"title": "Bogie", "objective": "Lighter frame", "origin": "new_development", "origin_note": "Proposed by R&D head", "attachment_count": 1, **kw}, headers=h)
+    r = client.post(f"{BASE}/projects", json={"title": "Bogie", "objective": "Lighter frame", "origin": "new_project", "origin_note": "Proposed by R&D head", "attachment_count": 1, **kw}, headers=h)
     assert r.status_code == 200, r.text
     return r.json()
 

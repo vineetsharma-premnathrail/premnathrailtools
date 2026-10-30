@@ -1,30 +1,34 @@
 'use client'
 
 // "Project Origin" fields for an R&D (Prototype / Research) project — WHY the
-// project exists and the record that proves it. Used by the New Project form
-// and the project's Edit sheet; the server (rnd/services/project_origin.py)
-// applies the same rules.
+// project exists. Two origins: Existing Projects (improve a project / machine we
+// already built) and New Project (a new product, process or technology, optionally
+// linked to the customer requirement behind it). Used by the New Project form and
+// the project's Edit page; the server (rnd/services/project_origin.py) applies the
+// same rules.
 
 import Select from '@/components/shared/Select'
 import { useEffect, useRef, useState } from 'react'
-import { Handshake, Wrench, Lightbulb, Flask } from '@phosphor-icons/react'
+import { Wrench, Lightbulb } from '@phosphor-icons/react'
 import type { Icon as PhosphorIcon } from '@phosphor-icons/react'
 import { rndApi } from '@/lib/api'
-import { RndImprovementReason, RndProject, RndProjectOrigin, RndProjectSourceKind, RndProjectSourceOption } from '@/types'
+import { RndImprovementReason, RndProject, RndProjectSourceKind, RndProjectSourceOption } from '@/types'
+import type { RndProjectOriginV2 } from '@/types/rndIntake'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { Req, Optional, SHEET, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
 import { segmentBtnStyle } from '@/components/shared/ui'
 
 export interface OriginDraft {
-  origin: RndProjectOrigin | ''
+  origin: RndProjectOriginV2 | ''
+  /** New Project: the customer requirement (inquiry / tender) behind it, optional. */
   sourceKind: RndProjectSourceKind | ''
   sourceId: number | null
   sourceLabel: string
   reason: RndImprovementReason | ''
   productId: number | null
   productLabel: string
-  /** Improvement of existing product: the existing project / machine (PEW) being improved. */
+  /** Existing Projects: the existing project / machine (PEW) being improved. */
   machineId: number | null
   machineLabel: string
   note: string
@@ -35,15 +39,18 @@ export const EMPTY_ORIGIN: OriginDraft = {
   machineId: null, machineLabel: '', note: '',
 }
 
-export const ORIGINS: { value: RndProjectOrigin; label: string; meaning: string; icon: PhosphorIcon }[] = [
-  { value: 'customer_requirement', label: 'Customer requirement', meaning: 'A customer inquiry or tender that BD sent to R&D.', icon: Handshake },
-  { value: 'product_improvement', label: 'Improvement of existing product', meaning: 'Fix or improve a project / machine we already built — complaint, NCR, service issue, cost or production.', icon: Wrench },
-  { value: 'new_development', label: 'New product (internal)', meaning: 'Our own idea for a new product — no customer has asked for it yet.', icon: Lightbulb },
-  { value: 'process_research', label: 'Process / technology research', meaning: 'Research a process, material or technology rather than a product.', icon: Flask },
+export const ORIGINS: { value: RndProjectOriginV2; label: string; meaning: string; icon: PhosphorIcon }[] = [
+  { value: 'existing_projects', label: 'Existing Projects', meaning: 'Fix or improve a project / machine we already built — complaint, NCR, service issue, cost or production.', icon: Wrench },
+  { value: 'new_project', label: 'New Project', meaning: 'A new product, process or technology — our own idea or a customer requirement that BD sent to R&D.', icon: Lightbulb },
 ]
 export const ORIGIN_LABELS: Record<string, string> = Object.fromEntries(ORIGINS.map((o) => [o.value, o.label]))
-export const ORIGIN_HEX: Record<string, string> = {
-  customer_requirement: '#2563EB', product_improvement: '#D97706', new_development: '#7C3AED', process_research: '#0D9488',
+export const ORIGIN_HEX: Record<string, string> = { existing_projects: '#D97706', new_project: '#7C3AED' }
+
+/** Any stored origin as one of the two current ones (older values: product_improvement → Existing Projects, the rest → New Project). */
+export function normalizeOrigin(v: string | null | undefined): RndProjectOriginV2 | '' {
+  if (!v) return ''
+  if (v === 'existing_projects' || v === 'product_improvement') return 'existing_projects'
+  return 'new_project'
 }
 
 export const REASONS: { value: RndImprovementReason; label: string }[] = [
@@ -59,7 +66,7 @@ export const KIND_LABELS: Record<RndProjectSourceKind, string> = {
 
 export function originFromProject(p: RndProject): OriginDraft {
   return {
-    origin: p.origin || '', sourceKind: p.source_kind || '', sourceId: p.source_id ?? null, sourceLabel: p.source_ref || '',
+    origin: normalizeOrigin(p.origin), sourceKind: p.source_kind || '', sourceId: p.source_id ?? null, sourceLabel: p.source_ref || '',
     reason: p.improvement_reason || '', productId: p.product_id ?? null, productLabel: p.product_name || '',
     machineId: p.machine_id ?? null, machineLabel: p.machine_label || '', note: p.origin_note || '',
   }
@@ -67,37 +74,35 @@ export function originFromProject(p: RndProject): OriginDraft {
 
 /** Whether the rules need an attached proof document (proposal / note / study). */
 export function originProofRequired(d: OriginDraft): boolean {
-  return d.origin === 'new_development' || d.origin === 'process_research'
+  return d.origin === 'new_project'
 }
-
-const noteRequired = originProofRequired
 
 /** The first missing origin field as a message saying what to pick, or ''.
  *  `attachments` = files staged on the form (null when editing — proof is only checked on create). */
 export function originError(d: OriginDraft, attachments: number | null): string {
-  if (!d.origin) return 'Pick the project origin — why this project exists (Customer requirement, Improvement of existing product, New product or Process / technology research).'
-  if (d.origin === 'customer_requirement' && !d.sourceId) return 'Pick the customer inquiry or tender this project comes from (Project Origin).'
-  if (d.origin === 'product_improvement') {
-    if (!d.machineId) return 'Pick the existing project being improved (Project Origin).'
-    if (!d.reason) return 'Pick the reason for the improvement (Project Origin).'
+  if (!d.origin) return 'Pick the project origin — why this project exists (Existing Projects or New Project).'
+  if (d.origin === 'existing_projects') {
+    if (!d.machineId) return 'Pick the existing project being improved (PEW number) — Project Origin › Existing Projects.'
+    if (!d.reason) return 'Pick the reason for the improvement (Project Origin › Existing Projects).'
   }
-  if (noteRequired(d) && !d.note.trim()) return "Fill 'Who proposed it and why' in Project Origin."
+  if (d.origin === 'new_project' && !d.note.trim()) return "Fill 'Who proposed it and why' in Project Origin — it is required for a New Project."
   if (attachments !== null && originProofRequired(d) && attachments < 1) {
-    return 'Attach at least one proof document in Attachments — the proposal, management note or study behind this project.'
+    return 'Attach at least one proof document in Attachments — the proposal, management note or study behind this New Project.'
   }
   return ''
 }
 
 /** Fields for the create / update API call. */
 export function originPayload(d: OriginDraft): Record<string, unknown> {
-  const kind = d.origin === 'customer_requirement' ? d.sourceKind : ''
+  const kind = d.origin === 'new_project' ? d.sourceKind : ''
+  const linked = !!kind && !!d.sourceId
   return {
     origin: d.origin || null,
-    source_kind: kind || null,
-    source_id: kind ? d.sourceId : null,
-    improvement_reason: d.origin === 'product_improvement' ? d.reason || null : null,
-    product_id: d.origin === 'customer_requirement' ? d.productId : null,
-    machine_id: d.origin === 'product_improvement' ? d.machineId : null,
+    source_kind: linked ? kind : null,
+    source_id: linked ? d.sourceId : null,
+    improvement_reason: d.origin === 'existing_projects' ? d.reason || null : null,
+    product_id: d.origin === 'new_project' ? d.productId : null,
+    machine_id: d.origin === 'existing_projects' ? d.machineId : null,
     origin_note: d.note.trim() || null,
   }
 }
@@ -165,33 +170,30 @@ function Toggle<T extends string>({ value, options, onChange }: { value: T | '';
 }
 
 const PROOF_HINT: Record<string, string> = {
-  customer_requirement: 'Proof: the linked inquiry / tender. The project is also added to that requirement\'s Linked projects.',
-  product_improvement: 'The project being improved and the reason are enough; add who proposed it if useful.',
-  new_development: 'Proof: attach the proposal or management note in Attachments.',
-  process_research: 'Proof: attach the research proposal or management note in Attachments.',
+  existing_projects: 'The project being improved and the reason are enough; add who proposed it if useful.',
+  new_project: 'Proof: attach the proposal or management note in Attachments. Linking a customer requirement keeps the project traceable to it.',
 }
 
 export default function ProjectOriginFields({ value, onChange, creating }: {
   value: OriginDraft
   onChange: (next: OriginDraft) => void
-  /** New project form: attachments are mandatory proof for some origins. */
+  /** New project form: attachments are mandatory proof for a New Project. */
   creating?: boolean
 }) {
   const d = value
   const set = (patch: Partial<OriginDraft>) => onChange({ ...d, ...patch })
-  const clearSource = { sourceKind: '' as const, sourceId: null, sourceLabel: '' }
-  const needNote = noteRequired(d)
+  const needNote = d.origin === 'new_project'
 
   return (
     <div>
-      <div data-tour="rnd-pf-origin" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
+      <div data-tour="rnd-pf-origin" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
         {ORIGINS.map((o) => {
           const on = d.origin === o.value
           const Icon = o.icon
           return (
             // ui-audit-ignore-next-line custom-button — origin option card (icon + title + description tile), not a pill button
             <button key={o.value} type="button" aria-pressed={on}
-              onClick={() => { if (!on) onChange({ ...EMPTY_ORIGIN, origin: o.value, note: d.note, sourceKind: o.value === 'customer_requirement' ? 'inquiry' : '' }) }}
+              onClick={() => { if (!on) onChange({ ...EMPTY_ORIGIN, origin: o.value, note: d.note, sourceKind: o.value === 'new_project' ? 'inquiry' : '' }) }}
               style={{
                 textAlign: 'left', padding: '12px 14px', borderRadius: 12, cursor: 'pointer', display: 'flex', gap: 10, alignItems: 'flex-start',
                 border: `1.5px solid ${on ? SHEET.BLUE : SHEET.LINE}`, background: on ? 'rgba(37,99,235,0.06)' : '#fff',
@@ -206,19 +208,19 @@ export default function ProjectOriginFields({ value, onChange, creating }: {
         })}
       </div>
 
-      {d.origin === 'customer_requirement' && (
+      {d.origin === 'new_project' && (
         <div data-tour="rnd-pf-origin-source" style={{ marginTop: 14 }}>
-          <label style={sheetLabel}>Customer requirement <Req /></label>
+          <label style={sheetLabel}>Customer requirement <Optional /></label>
           <div style={{ marginBottom: 8 }}>
             <Toggle value={d.sourceKind as 'inquiry' | 'tender' | ''} options={[{ value: 'inquiry', label: 'Inquiry' }, { value: 'tender', label: 'Tender' }]}
-              onChange={(k) => { if (k !== d.sourceKind) set({ ...clearSource, sourceKind: k }) }} />
+              onChange={(k) => { if (k !== d.sourceKind) set({ sourceKind: k, sourceId: null, sourceLabel: '' }) }} />
           </div>
           {d.sourceKind && (
             <SourcePicker key={d.sourceKind} kind={d.sourceKind} value={d.sourceId} label={d.sourceLabel}
               onChange={(id, label) => set({ sourceId: id, sourceLabel: label })}
-              placeholder={`Search ${d.sourceKind === 'inquiry' ? 'inquiries' : 'tenders'} sent to R&D — number, customer, product…`} />
+              placeholder={`Search ${d.sourceKind === 'inquiry' ? 'inquiries' : 'tenders'} sent to R&D — R&D ID, customer, product…`} />
           )}
-          <p style={sheetHint}>Only requirements sent to R&D (Technical Offer Request) that you can open are listed.</p>
+          <p style={sheetHint}>Only requirements sent to R&D that you can open are listed, by R&D ID. Leave empty for an internal idea.</p>
           <div style={{ marginTop: 12 }}>
             <label style={sheetLabel}>Product <Optional /></label>
             <SourcePicker kind="product" value={d.productId} label={d.productLabel}
@@ -227,17 +229,17 @@ export default function ProjectOriginFields({ value, onChange, creating }: {
         </div>
       )}
 
-      {d.origin === 'product_improvement' && (
+      {d.origin === 'existing_projects' && (
         <div data-tour="rnd-pf-origin-source" style={{ marginTop: 14 }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ flex: '1 1 260px', maxWidth: 380 }}>
-              <label style={sheetLabel}>Project being improved <Req /></label>
+              <label style={sheetLabel}>Existing project being improved <Req /></label>
               <SourcePicker kind="machine" value={d.machineId} label={d.machineLabel}
                 onChange={(id, label) => set({ machineId: id, machineLabel: label })} placeholder="Search project — PEW number, model or client…" />
             </div>
             <div style={{ flex: '0 1 240px', minWidth: 210 }}>
               <label style={sheetLabel}>Reason <Req /></label>
-              <Select style={sheetInput} value={d.reason} onChange={(e) => set({ ...clearSource, reason: e.target.value as RndImprovementReason })}>
+              <Select style={sheetInput} value={d.reason} onChange={(e) => set({ reason: e.target.value as RndImprovementReason })}>
                 <option value="">Select reason…</option>
                 {REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
               </Select>
@@ -250,7 +252,7 @@ export default function ProjectOriginFields({ value, onChange, creating }: {
         <div data-tour="rnd-pf-origin-note" style={{ marginTop: 12 }}>
           <label style={sheetLabel}>Who proposed it and why {needNote ? <Req /> : <Optional />}</label>
           <textarea style={{ ...sheetInput, resize: 'vertical', minHeight: 64 }} value={d.note} onChange={(e) => set({ note: e.target.value })}
-            placeholder={d.origin === 'product_improvement' ? 'e.g. Production (Mr. X) — the casting needs 3 re-machining steps; a fabricated part would halve the cost.'
+            placeholder={d.origin === 'existing_projects' ? 'e.g. Production (Mr. X) — the casting needs 3 re-machining steps; a fabricated part would halve the cost.'
               : 'e.g. Proposed by the R&D head after the Jan review — the market needs a lighter model.'} />
         </div>
       )}

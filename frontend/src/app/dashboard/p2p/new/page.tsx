@@ -18,10 +18,10 @@ import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { RowCount } from '@/components/shared/ui'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
+import { normalizePriority, PRIORITY_OPTIONS } from '@/lib/priority'
 
 type LineFilter = { type: string; category: string; q?: string; custom?: boolean }
 
-const PRIORITIES = ['low', 'medium', 'high']
 const STANDARD_ITEM_TYPES = ['material', 'service', 'asset', 'consumable', 'tool_equipment']
 const typeLabel = (t: string) => { const s = t.replace(/_/g, ' '); return s.charAt(0).toUpperCase() + s.slice(1) }
 
@@ -158,7 +158,7 @@ export default function NewP2PRequestPage() {
       .catch((err) => setRndError(extractErrorMessages(err, 'R&D projects could not be loaded.').join(' ')))
   }, [purpose, rndProjects])
   const [requiredDate, setRequiredDate] = useState('')
-  const [priority, setPriority] = useState('medium')
+  const [priority, setPriority] = useState<string>('standard')
   const [remarks, setRemarks] = useState('')
   const [items, setItems] = useState<P2PRequestLineItemInput[]>([emptyItem()])
   const [specFiles, setSpecFiles] = useState<File[]>([])
@@ -174,7 +174,7 @@ export default function NewP2PRequestPage() {
     { purpose, projectId, acctKind, acctId, requiredDate, priority, remarks, items, lineFilters },
     (d) => {
       setPurpose(d.purpose || ''); setProjectId(d.projectId || ''); setAcctKind(d.acctKind || ''); setAcctId(d.acctId || '')
-      setRequiredDate(d.requiredDate || ''); setPriority(d.priority || 'medium'); setRemarks(d.remarks || '')
+      setRequiredDate(d.requiredDate || ''); setPriority(normalizePriority(d.priority)); setRemarks(d.remarks || '')
       setItems(d.items?.length ? d.items : [emptyItem()])
       setLineFilters(d.lineFilters?.length ? d.lineFilters : [{ type: '', category: '' }])
     })
@@ -264,7 +264,7 @@ export default function NewP2PRequestPage() {
             : kind === 'cost_center' ? 'department' : match ? 'machine_project' : ''))
         }
         setRequiredDate(pr.required_date || '')
-        setPriority(pr.priority || 'medium')
+        setPriority(normalizePriority(pr.priority))
         setRemarks(pr.remarks || '')
         setItems(pr.items.length ? pr.items.map((it) => ({
           ...emptyItem(), id: it.id, store_item_id: it.store_item_id ?? null, make: it.make || '',
@@ -560,7 +560,7 @@ export default function NewP2PRequestPage() {
                 <label style={labelStyle}>Priority</label>
                 <div data-tour="pr-new-priority">
                   <SearchableSelect value={priority} onChange={setPriority} ariaLabel="Priority" placeholder="Priority"
-                    options={PRIORITIES.map((p) => ({ value: p, label: p[0].toUpperCase() + p.slice(1) }))} />
+                    options={PRIORITY_OPTIONS} />
                 </div>
               </div>
             </div>

@@ -6,7 +6,7 @@ from app.db.base import Base
 from app.db.mixins import TimestampMixin
 
 MAINTENANCE_REQUEST_TYPES = ("breakdown", "abnormality", "improvement", "safety")
-MAINTENANCE_PRIORITIES = ("low", "normal", "high", "urgent")
+MAINTENANCE_PRIORITIES = ("standard", "urgent")
 # open → acknowledged → converted (to a work order), or rejected / duplicate.
 MAINTENANCE_REQUEST_STATUSES = ("open", "acknowledged", "converted", "rejected", "duplicate")
 
@@ -25,7 +25,7 @@ class MaintenanceRequest(Base, TimestampMixin):
     machine_down: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     problem_description: Mapped[str] = mapped_column(Text, nullable=False)
-    priority: Mapped[str] = mapped_column(String(10), default="normal", nullable=False)
+    priority: Mapped[str] = mapped_column(String(10), default="standard", nullable=False)  # standard | urgent
     status: Mapped[str] = mapped_column(String(20), default="open", nullable=False)
 
     raised_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)

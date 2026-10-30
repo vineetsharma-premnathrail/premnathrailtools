@@ -354,6 +354,10 @@ def test_rnd_response_rules(client, db, people, tor_env):
 
     # The CRM user has no R&D app at all.
     assert client.post(url, data={"remarks": "x"}, headers=auth(people["bd"])).status_code == 403
+    # R&D answers only what it accepted.
+    resp = client.post(url, data={"remarks": "x"}, headers=auth(people["rnd"]))
+    assert resp.status_code == 409 and resp.json()["detail"].startswith("Accept the requirement first")
+    assert client.post(f"/api/v1/rnd/requirements/inquiry/{inq.id}/accept", json={}, headers=auth(people["rnd"])).status_code == 200
     # Older requests that named an engineer stay with that engineer.
     req.assigned_to_id = people["rnd"].id
     db.commit()
@@ -382,6 +386,7 @@ def test_late_rnd_response_requires_delay_reason(client, db, people, tor_env):
     req = db.query(CrmRndRequest).one()
     req.due_date = date.today() - timedelta(days=2)
     db.commit()
+    assert client.post(f"/api/v1/rnd/requirements/inquiry/{inq.id}/accept", json={}, headers=auth(people["rnd"])).status_code == 200
     url = f"/api/v1/rnd/requirements/requests/{req.id}/respond"
     resp = client.post(url, data={"remarks": "late answer"}, headers=auth(people["rnd"]))
     assert resp.status_code == 400 and "reason for the delay" in resp.json()["detail"]

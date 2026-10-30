@@ -31,9 +31,7 @@ export const ECN_FORM_STEPS: TourStep[] = [
     target: 'design-ecnform-priority',
     title: 'Priority',
     options: [
-      { value: 'Low', meaning: 'Do when convenient.' },
-      { value: 'Medium', meaning: 'Normal queue (default).' },
-      { value: 'High', meaning: 'Ahead of normal work.' },
+      { value: 'Standard', meaning: 'Normal queue (default).' },
       { value: 'Urgent', meaning: 'Production or safety is affected now.' },
     ],
   },

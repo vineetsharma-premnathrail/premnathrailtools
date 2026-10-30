@@ -1,19 +1,17 @@
-"""SD wave 2 (CRM / Sales): customer master tax data, the SO consignee,
-quotation document status + release on the central approval engine, quotation
-expiry, opportunity owners / lost reasons / win-loss + forecast, and the
-proforma invoice for an advance milestone."""
+"""SD wave 2 (CRM): customer master tax data, quotation document status + release
+on the central approval engine (BD Head -> Director -> Partner, limits in CRM >
+Settings), quotation expiry, opportunity owners / lost reasons / win-loss + forecast.
+(The SO consignee, prefill and proforma tests went with the Sales module, 2026-10-30.)"""
 from datetime import date, datetime, timedelta, timezone
 
 from app.modules.crm.models.inquiry import Inquiry, Quotation
 from app.modules.crm.models.organization import Organization
 from app.modules.crm.services import quotation_status as qs
 from app.modules.main.models.module_setting import ModuleSetting
-from app.modules.organization.models.company import Company
 from app.modules.organization.services import approval_engine as engine
-from app.modules.sales.models.order import SalesOrder
 from app.tests.quote_lines import LINE_REF, quote_product  # noqa: F401 — autouse fixture
 from app.tests.test_accounts_finance import gstin_for
-from app.tests.test_sales import BASE, confirm, create_order, hdr, make_user, setup_customer, setup_people
+from app.tests._so_project_helpers import hdr, make_user
 
 CRM = "/api/v1/crm"
 ITEM = {"description": "RRV 10T", "model_number": "RRV-10T", "quantity": 1, "unit_price": 1000000, "gst_percent": 18, **LINE_REF}
@@ -38,40 +36,14 @@ def test_org_pan_and_gst_state_derived_and_checked(client, db):
     assert r.json()["gst_state_code"] == "07"
 
 
-def test_so_consignee_typed_on_the_delivery_row(client, db):
-    # The customer Addresses tab was removed: the consignee (name, address,
-    # GSTIN) is typed on the SO delivery schedule row itself.
-    maker, head, director, _ = setup_people(db)
-    org, inq, _q = setup_customer(db, qty=1, price=1000000)
-    shed = gstin_for("09", "AAAGC1234F")
-    so = create_order(client, db, maker, inq)
-    body = [{"id": so["schedules"][0]["id"], "line_number": 1, "quantity": 1, "consignee_name": "ELS Ghaziabad",
-             "consignee_address": "Loco Shed Rd, Ghaziabad", "consignee_gstin": shed,
-             "contract_delivery_date": so["schedules"][0]["contract_delivery_date"]}]
-    r = client.put(f"{BASE}/orders/{so['id']}/schedule", json=body, headers=hdr(maker))
-    assert r.status_code == 200, r.text
-    row = r.json()["schedules"][0]
-    assert (row["consignee_name"], row["consignee_address"], row["consignee_gstin"]) == ("ELS Ghaziabad", "Loco Shed Rd, Ghaziabad", shed)
-
-
-def test_place_of_supply_defaults_from_customer_gst_state(db):
-    from app.modules.sales import service as svc
-    org = Organization(name="Unregistered Buyer", state="Delhi", gst_state_code="07")
-    db.add(org)
-    db.commit()
-    so = SalesOrder(customer_id=org.id, status="draft")
-    svc.snapshot_customer(db, so)
-    assert so.place_of_supply_state_code == "07"
-
-
 # ---------------------------------------------------------------- quotation status
 
 def _people(db):
     owner = make_user(db, "q.owner@premnathrail.com", apps=("crm",))
-    head = make_user(db, "q.head@premnathrail.com", apps=("crm", "sales"))
-    director = make_user(db, "q.dir@premnathrail.com", apps=("crm", "sales"), is_director=True)
-    partner = make_user(db, "q.partner@premnathrail.com", apps=("crm", "sales"), is_partner=True)
-    db.add(ModuleSetting(module_key="sales", key="sales_head_id", value=head.id))
+    head = make_user(db, "q.head@premnathrail.com", apps=("crm",))
+    director = make_user(db, "q.dir@premnathrail.com", apps=("crm",), is_director=True)
+    partner = make_user(db, "q.partner@premnathrail.com", apps=("crm",), is_partner=True)
+    db.add(ModuleSetting(module_key="crm", key="quotation_head_id", value=head.id))
     db.commit()
     return owner, head, director, partner
 
@@ -97,7 +69,7 @@ def _act(client, inq, q, action, user, **body):
     return client.post(f"{CRM}/inquiries/{inq.id}/quotations/{q['id']}/{action}", json=body, headers=hdr(user))
 
 
-def test_quotation_draft_approve_send_accept_and_prefill(client, db):
+def test_quotation_draft_approve_send_and_accept(client, db):
     owner, head, _d, _p = _people(db)
     inq = _inq(db, owner)
     q = _quote(client, inq, owner, customer_response="Accepted")
@@ -106,8 +78,8 @@ def test_quotation_draft_approve_send_accept_and_prefill(client, db):
 
     r = _act(client, inq, q, "submit", owner)
     assert r.status_code == 200, r.text
-    assert r.json()["status"] == "submitted" and r.json()["status_view"]["approval_stage"] == "Sales Head"
-    # The creator can't approve; the Sales Head can.
+    assert r.json()["status"] == "submitted" and r.json()["status_view"]["approval_stage"] == "BD Head"
+    # The creator can't approve; the BD Head can.
     assert _act(client, inq, q, "approve", owner).status_code == 403
     # Revising while waiting for approval is refused.
     assert client.patch(f"{CRM}/inquiries/{inq.id}/quotations/{q['id']}", json={"delivery_time": "6 weeks"},
@@ -121,13 +93,6 @@ def test_quotation_draft_approve_send_accept_and_prefill(client, db):
     assert _act(client, inq, q, "lost", owner).status_code == 422  # a reason is required
     r = _act(client, inq, q, "accept", owner)
     assert r.json()["status"] == "accepted" and r.json()["customer_response"] == "Accepted"
-
-    # Sales prefill takes the quotation by status.
-    db.get(Inquiry, inq.id).current_stage = "Order Received"
-    db.commit()
-    sales_maker = make_user(db, "q.sales@premnathrail.com", apps=("sales",))
-    p = client.get(f"{BASE}/orders/prefill", params={"inquiry": inq.id}, headers=hdr(sales_maker)).json()
-    assert p["source_quotation_id"] == q["id"] and "accepted" in p["note"]
 
 
 def test_quotation_return_and_revision_back_to_draft(client, db):
@@ -154,13 +119,13 @@ def test_discount_and_value_escalate_to_director_and_partner(client, db):
     q = _quote(client, inq, owner, discount=15, discount_type="percent")
     _act(client, inq, q, "submit", owner)
     req = engine.latest_request(db, qs.APPROVAL_ENTITY, q["id"])
-    assert [s.stage_name for s in req.steps] == ["Sales Head", "Director"]
+    assert [s.stage_name for s in req.steps] == ["BD Head", "Director"]
 
     big = _quote(client, inq, owner, items=[{**ITEM, "unit_price": 30000000}])
     r = _act(client, inq, big, "submit", owner)
     assert r.status_code == 200, r.text
     req = engine.latest_request(db, qs.APPROVAL_ENTITY, big["id"])
-    assert [s.stage_name for s in req.steps] == ["Sales Head", "Director", "Partner"]
+    assert [s.stage_name for s in req.steps] == ["BD Head", "Director", "Partner"]
     for u in (head, director, partner):
         assert _act(client, inq, big, "approve", u).status_code == 200
     assert db.get(Quotation, big["id"]).status == "approved"
@@ -168,7 +133,7 @@ def test_discount_and_value_escalate_to_director_and_partner(client, db):
 
 def test_auto_approve_limit_and_expiry(client, db):
     owner, *_ = _people(db)
-    db.add(ModuleSetting(module_key="sales", key="quotation_auto_approve_value", value=5000000))
+    db.add(ModuleSetting(module_key="crm", key="quotation_auto_approve_value", value=5000000))
     db.commit()
     inq = _inq(db, owner, 4)
     q = _quote(client, inq, owner)
@@ -187,7 +152,7 @@ def test_submit_without_approver_explains(client, db):
     inq = _inq(db, owner, 5)
     q = _quote(client, inq, owner)
     r = _act(client, inq, q, "submit", owner)
-    assert r.status_code == 422 and "Sales Head" in r.json()["detail"]
+    assert r.status_code == 422 and "BD Head" in r.json()["detail"]
     assert db.get(Quotation, q["id"]).status == "draft"
 
 
@@ -231,39 +196,3 @@ def test_forecast_weights_open_pipeline(client, db):
     db.commit()
     f = client.get(f"{CRM}/opportunity/forecast", headers=hdr(owner)).json()
     assert f["weighted_value"] == 1000000 and f["by_month"][0]["month"] == "2026-12"
-
-
-# ---------------------------------------------------------------- proforma invoice
-
-def test_proforma_for_advance_milestone(client, db):
-    db.add(Company(name="Premnath Rail Tools", code="PRT", gstin=gstin_for("27")))
-    db.commit()
-    maker, head, director, _ = setup_people(db)
-    _org, inq, _q = setup_customer(db, qty=1, price=1000000)
-    so = confirm(client, db, create_order(client, db, maker, inq), maker, head, director)
-    adv = next(b for b in so["billing_lines"] if b["milestone_type"] == "advance")
-    other = next(b for b in so["billing_lines"] if b["milestone_type"] != "advance")
-    url = f"{BASE}/orders/{so['id']}/proforma"
-
-    assert client.post(url, json={"billing_line_id": other["id"]}, headers=hdr(maker)).status_code == 422
-    r = client.post(url, json={"billing_line_id": adv["id"]}, headers=hdr(maker))
-    assert r.status_code == 201, r.text
-    pi = r.json()
-    assert pi["pi_number"].startswith("PI/") and not pi["interstate"]
-    assert (pi["taxable_amount"], pi["cgst_amount"], pi["sgst_amount"], pi["total_amount"]) == (200000, 18000, 18000, 236000)
-    dup = client.post(url, json={"billing_line_id": adv["id"]}, headers=hdr(maker))
-    assert dup.status_code == 409 and pi["pi_number"] in dup.json()["detail"]
-
-    # Finance lookup, then cancel (reason required) and re-issue with a new number.
-    assert client.get(f"{BASE}/proforma", params={"so_id": so["id"], "status": "issued"}, headers=hdr(maker)).json()[0]["id"] == pi["id"]
-    assert client.post(f"{BASE}/proforma/{pi['id']}/cancel", json={}, headers=hdr(maker)).status_code == 422
-    c = client.post(f"{BASE}/proforma/{pi['id']}/cancel", json={"reason": "Wrong PO date"}, headers=hdr(maker))
-    assert c.status_code == 200 and c.json()["status"] == "cancelled"
-    again = client.post(url, json={"billing_line_id": adv["id"]}, headers=hdr(maker)).json()
-    assert again["pi_number"] != pi["pi_number"]
-
-    # Draft orders can't have a PI.
-    from app.modules.sales.reports.proforma import pi_spec
-    spec = pi_spec(db, db.get(__import__("app.modules.sales.models.proforma", fromlist=["x"]).SalesProformaInvoice, again["id"]),
-                   db.get(SalesOrder, so["id"]))
-    assert spec["title"] == "PROFORMA INVOICE" and spec["number"] == again["pi_number"]

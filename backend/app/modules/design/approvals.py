@@ -35,7 +35,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.modules.design.models.bom import DesignBom, DesignBomRevision
-from app.modules.design.models.change_notice import DesignChangeNotice, DESIGN_ECN_PRIORITIES
+from app.core.priority import PRIORITIES, PRIORITY_LABELS
+from app.modules.design.models.change_notice import DesignChangeNotice
 from app.modules.design.models.document import DesignDocument, DesignDocumentRevision, DESIGN_DISCIPLINES, DESIGN_DOCUMENT_TYPES
 from app.modules.main.models.user import User
 from app.modules.organization.models.approval import ApprovalRequest
@@ -425,8 +426,8 @@ engine.register_transaction(engine.TransactionType(
                 "ECNs created from an approved ECR start approved and don't go through this.",
     context_fields={
         "approver_id": {"label": "Approver (named on the ECN)", "type": "user"},
-        "priority": {"label": "Priority", "type": "choice", "choices": list(DESIGN_ECN_PRIORITIES),
-                     "choice_labels": {p: p.capitalize() for p in DESIGN_ECN_PRIORITIES}},
+        "priority": {"label": "Priority", "type": "choice", "choices": list(PRIORITIES),
+                     "choice_labels": dict(PRIORITY_LABELS)},
     },
     default_stages=[engine.StageDef("Approval", "record_field", {"field": "approver_id"})],
     require_permission=True, distinct_approvers=False, allow_self_approval=False,

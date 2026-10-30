@@ -9,7 +9,7 @@ from app.db.mixins import TimestampMixin, SoftDeleteMixin
 # carry a reason. A build starts moving (in_progress) on its first stage start.
 PRODUCTION_RRV_BUILD_STATUSES = ("planned", "in_progress", "on_hold", "completed", "handed_over", "cancelled")
 PRODUCTION_RRV_OPEN_STATUSES = ("planned", "in_progress", "on_hold")
-PRODUCTION_RRV_PRIORITIES = ("low", "normal", "high", "urgent")
+PRODUCTION_RRV_PRIORITIES = ("standard", "urgent")
 PRODUCTION_RRV_WO_ROLES = ("main", "sub_assembly")
 
 # (key, label, phase, not-applicable allowed). Order is the build sequence;
@@ -99,7 +99,7 @@ class ProductionRrvBuild(Base, TimestampMixin, SoftDeleteMixin):
 
     branch_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("branches.id"), nullable=True)
     build_manager_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=True)
-    priority: Mapped[str] = mapped_column(String(20), default="normal", nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), default="standard", nullable=False)  # standard | urgent
     status: Mapped[str] = mapped_column(String(20), default="planned", index=True, nullable=False)
     planned_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     target_completion_date: Mapped[date | None] = mapped_column(Date, nullable=True)

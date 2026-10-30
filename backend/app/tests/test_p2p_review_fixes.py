@@ -12,6 +12,7 @@ from app.modules.main.models.user import User
 from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
+from app.tests.p2p_po_helpers import upload_po_for_pr
 from app.tests.p2p_workflow_helpers import link_items, set_po_workflow, set_pr_workflow
 
 BASE = "/api/v1/p2p/requests"
@@ -70,7 +71,7 @@ def _pr(client, db, po_pick=None, qty=2, partner=False):
     set_pr_workflow(db, [u.id for u in pr_appr.values()], requester)
     set_po_workflow(db, [u.id for u in po_appr.values()], requester, partner=partner)
     r = client.post(BASE, json=link_items(db, {
-        "category_code": "RAW", "project_label": "Project Alpha", "project_type": "new", "priority": "medium",
+        "category_code": "RAW", "project_label": "Project Alpha", "project_type": "new", "priority": "standard",
         "items": [{"item_name": "Hydraulic Cylinder", "quantity": qty, "unit": "pcs", "project_inhouse": "Project"}],
     }), headers=_h(requester))
     assert r.status_code == 200, r.text
@@ -85,11 +86,7 @@ def _approve_pr(client, pr, pr_appr):
 
 def _raise_po(client, db, pr, n_suffix=""):
     buyer = _user(db, f"rf.buyer.{pr['id']}{n_suffix}@premnathrail.com", apps=("purchase", "p2p"))
-    r = client.post(f"{BASE}/{pr['id']}/create-po", json={
-        "po_number": f"PO-RF-{pr['id']}{n_suffix}",
-        "item_pricing": [{"pr_item_id": i["id"], "unit_price": 100, "tax_rate": 18} for i in pr["items"]],
-    }, headers=_h(buyer))
-    assert r.status_code == 200, r.text
+    upload_po_for_pr(client, db, pr["id"], buyer, tally_po_no=f"PO-RF-{pr['id']}{n_suffix}")
     return buyer
 
 
@@ -208,9 +205,9 @@ def test_attachment_delete_is_audited(client, db):
     assert db.query(AuditLog).filter_by(entity_type="p2p_request", entity_id=pr["id"], action="attachment_deleted").count() == 1
 
 
-# ── Legacy create-po orders only the shortfall ──────────────────────────────
+# ── Upload PO orders only the shortfall ──────────────────────────────
 
-def test_legacy_create_po_orders_only_the_unissued_shortfall(client, db):
+def test_upload_po_orders_only_the_unissued_shortfall(client, db):
     pr, pr_appr, _, _ = _pr(client, db, qty=5)
     _approve_pr(client, pr, pr_appr)
     line = db.query(P2PRequestItem).filter_by(p2p_request_id=pr["id"]).one()

@@ -15,7 +15,6 @@ import { ENTRIES as ERP } from './modules/erp'
 import { ENTRIES as PROJECTS } from './modules/projects'
 import { ENTRIES as MAINTENANCE } from './modules/maintenance'
 import { ENTRIES as QUALITY } from './modules/quality'
-import { ENTRIES as SALES } from './modules/sales'
 
 type Loader = (search: string) => Promise<{ default: TourConfig }>
 export type TourEntry = { pattern: RegExp; load: Loader }
@@ -283,7 +282,6 @@ const ENTRIES: TourEntry[] = [
   ...CORE_ENTRIES,
   ...CRM, ...P2P, ...STORE, ...FINANCE, ...ORGANIZATION, ...HR, ...PRODUCTION, ...DESIGN,
   ...ELECTRICAL, ...HYDRAULIC, ...RND, ...ERP, ...PROJECTS, ...MAINTENANCE, ...QUALITY,
-  ...SALES,
 ]
 
 export async function loadTourForPath(pathname: string, search: string = ''): Promise<TourConfig | null> {

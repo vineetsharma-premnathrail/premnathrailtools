@@ -155,7 +155,7 @@ class ProductionRrvBuildCreate(BaseModel):
     year_of_manufacture: str | None = Field(None, max_length=10)
     branch_id: int | None = None
     build_manager_id: int | None = None
-    priority: str = "normal"
+    priority: str = "standard"
     planned_start_date: date | None = None
     target_completion_date: date | None = None
     target_handover_date: date | None = None

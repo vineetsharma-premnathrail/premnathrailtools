@@ -54,8 +54,7 @@ export default function CreditPage() {
       <OutstandingSubNav />
       <InfoBanner>
         A hold is lifted only by a <b>credit release</b> approved by a Finance approver (Approvals inbox; a Partner too for a large excess).
-        Disputed amounts never count as overdue. Sales order confirmation blocks only when Sales › Settings › Credit check is &lsquo;Block&rsquo;;
-        dispatch follows Finance › Settings › Credit check at dispatch.
+        Disputed amounts never count as overdue. Dispatch follows Finance › Settings › Credit check at dispatch.
       </InfoBanner>
       <ErrorBanner error={error} />
 

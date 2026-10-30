@@ -8,6 +8,7 @@ import { Inquiry, InquiryLineItem, Organization, OrgContact, Tender } from '@/ty
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import PhoneField, { isPhoneValid } from '@/components/erp/PhoneField'
+import { normalizePriority } from '@/lib/priority'
 import { RAILWAY_ZONES, leadSourceOptions, inquiryStatusOptions, priorityOptions, priorityLabel } from './constants'
 import { Row, handleEnterAsTab, InfoRow, XIcon } from './ui'
 import { AddMoreButton, RemoveValueButton, ValueRow, canAddMore, squareBtn } from '@/components/shared/MoreValuesButtons'
@@ -80,7 +81,7 @@ function toFormState(initial?: Inquiry, defaultOrgId?: number): FormState {
     quantity: initial?.quantity != null ? String(initial.quantity) : '',
     required_delivery_date: initial?.required_delivery_date || '',
     project_details: initial?.project_details || '',
-    priority: initial?.priority || 'Medium',
+    priority: normalizePriority(initial?.priority),
   }
 }
 
@@ -297,7 +298,7 @@ export default function InquiryForm({
       return
     }
     if (!form.priority) {
-      setError('Please select the Customer Requirement Priority (High, Medium or Low).')
+      setError('Please select the Customer Requirement Priority (Standard or Urgent).')
       return
     }
     if (!form.status) {

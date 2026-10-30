@@ -9,8 +9,10 @@ from app.modules.store.models.item import StoreItem
 from app.modules.rnd.models.project import RndProject, RND_PROJECT_STAGES
 from app.modules.rnd.models.experiment import RndExperiment
 from app.modules.rnd.models.prototype import RndPrototype, RndPrototypeBomItem, RND_PROTOTYPE_STATUSES
+from app.modules.rnd.models.requirement import RndRequirement
 from app.modules.rnd.scope import apply_scope
 from app.modules.rnd.service import user_names
+from app.modules.rnd.services import requirement_access as ra
 
 router = APIRouter(tags=["RnD Dashboard"], dependencies=[Depends(require_app_access("rnd"))])
 
@@ -60,7 +62,15 @@ async def rnd_dashboard(
     recent_experiments = live_exps.order_by(RndExperiment.updated_at.desc()).limit(6).all()
     completed = sum(by_result.values())
 
+    # Requirement intake (R&D side only): how many sent requirements wait for review / came back.
+    intake_counts = {"awaiting_review": None, "accepted": None, "returned": None}
+    if ra.is_rnd_side(_tab):
+        by_req = dict(db.query(RndRequirement.status, func.count(RndRequirement.id)).group_by(RndRequirement.status).all())
+        intake_counts = {s: by_req.get(s, 0) for s in ("submitted", "accepted", "returned")}
+        intake_counts = {"awaiting_review": intake_counts["submitted"], "accepted": intake_counts["accepted"], "returned": intake_counts["returned"]}
+
     return {
+        "requirements": intake_counts,
         "projects": {
             "total": sum(by_status.values()),
             "active": by_status.get("active", 0),

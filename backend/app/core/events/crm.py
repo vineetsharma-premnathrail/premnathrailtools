@@ -1,6 +1,6 @@
 """CRM notifiable events (see core/notification_events.py).
 
-Fired from app/modules/crm (inquiry / tender / discussion routes, the
+Fired from app/modules/crm (inquiry / tender routes, the
 quotation status service and its approval-engine callback, the R&D response
 in services/requirement_movement.py) and from the daily CRM job
 (app/tasks/followup_reminders.py — bell / Teams only, no email from a job).
@@ -49,15 +49,20 @@ register_event(
     default_channels=("bell",), kind="info",
 )
 
-# ── R&D / discussion ─────────────────────────────────────────────────────────
+# ── R&D ─────────────────────────────────────────────────────────
 register_event(
     "crm", "tor_responded", "R&D answered a Technical Requirement",
     "R&D submits its response to a Technical Requirement (TOR) sent from an inquiry / tender",
     ("inquiries_tenders", "send_tor", "view"), default_channels=("bell",), kind="info",
 )
 register_event(
-    "crm", "discussion_message", "New message in a requirement discussion",
-    "someone posts in the BD ↔ R&D discussion of an inquiry / tender", ("inquiries_tenders", "discussion", "view"),
+    "crm", "rnd_accepted", "R&D accepted a requirement",
+    "R&D accepts a requirement (or a new revision of it) that BD sent", ("inquiries_tenders", "send_tor", "view"),
+    default_channels=("bell",), kind="info",
+)
+register_event(
+    "crm", "rnd_returned", "R&D returned a requirement",
+    "R&D returns a requirement to BD with the reason to fix before it is sent again", ("inquiries_tenders", "send_tor", "view"),
     default_channels=("bell",), kind="info",
 )
 

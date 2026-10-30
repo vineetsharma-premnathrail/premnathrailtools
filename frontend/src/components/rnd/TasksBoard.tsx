@@ -14,15 +14,16 @@
 //    completion date — which becomes the new due date — or a delay reason
 //    when completing. They can also split their task into sub-tasks, which
 //    they then review like a manager.
-//  * Requirement tasks are shared across departments (R&D + the departments
-//    the requirement is shared with): anyone who can open it creates tasks
-//    (`canCreate`), each task carries its department, and `departmentFilter`
-//    adds the All · My department · per-department chips.
+//  * Progress: with a checklist the percentage follows the ticked steps (read
+//    only); without one the assignee types it (0-100). Completing sets 100.
+//  * Tasks are a flat list: no milestones, no department chips. The assignee's
+//    department (Organization) is shown on R&D › R&D Tasks.
 
 import Select from '@/components/shared/Select'
 import { useEffect, useState } from 'react'
 import { ArrowCounterClockwise, Calendar, ChatCenteredText, Check, Clock, PencilSimple, Plus, ShieldCheck, X } from '@phosphor-icons/react'
-import { RndPerson, RndTask, RndTaskApproval, RndTaskCreateInput, RndTaskEditInput, RndTaskPriority, RndTaskWorkStatus, RndWorkDepartment, RndWorkDocument } from '@/types'
+import { RndPerson, RndTask, RndTaskApproval, RndTaskCreateInput, RndTaskEditInput, RndTaskWorkStatus, RndWorkDocument } from '@/types'
+import { PRIORITY_OPTIONS, normalizePriority, priorityTone, type Priority } from '@/lib/priority'
 import { TEXT, BORDER } from '@/lib/theme'
 import { formatDate, formatDateTime } from '@/lib/format'
 import SearchableSelect from '@/components/erp/SearchableSelect'
@@ -46,7 +47,7 @@ export interface TaskApi {
   /** Omit to turn editing off. */
   edit?: (taskId: number, p: RndTaskEditInput) => Promise<RndTask>
   /** Tick / untick a checklist step or change the work status of an open task. */
-  progress: (taskId: number, p: { work_status?: RndTaskWorkStatus; item_id?: string; done?: boolean }) => Promise<RndTask>
+  progress: (taskId: number, p: { work_status?: RndTaskWorkStatus; item_id?: string; done?: boolean; progress_percent?: number }) => Promise<RndTask>
   extend: (taskId: number, reason: string, newDueDate: string) => Promise<RndTask>
   /** Assignee completes the task themselves. */
   complete: (taskId: number, p: { remarks: string; delay_reason?: string; files: File[] }) => Promise<RndTask>
@@ -71,8 +72,8 @@ export interface TaskLabels {
 }
 
 const STATUS_LABELS: Record<string, string> = { open: 'Open', submitted: 'Completed', closed: 'Completed', cancelled: 'Cancelled' }
-const PRIORITY_LABELS: Record<RndTaskPriority, string> = { low: 'Low', medium: 'Medium', high: 'High', urgent: 'Urgent' }
-const PRIORITY_HEX: Record<RndTaskPriority, string> = { low: '#64748b', medium: '#2563EB', high: '#EA580C', urgent: '#DC2626' }
+const PRIORITY_LABELS: Record<Priority, string> = { standard: 'Standard', urgent: 'Urgent' }
+const PRIORITY_HEX: Record<Priority, string> = { standard: priorityTone('standard').color, urgent: priorityTone('urgent').color }
 // How the open work stands — set by the assignee; the workflow status above stays separate.
 const WORK_LABELS: Record<RndTaskWorkStatus, string> = { not_started: 'Not started', in_progress: 'In progress', on_hold: 'On hold' }
 const WORK_HEX: Record<RndTaskWorkStatus, string> = { not_started: '#78716c', in_progress: '#7C3AED', on_hold: '#D97706' }
@@ -290,10 +291,10 @@ function ApprovalList({ approvals, canDecide, userId, api, onChanged, onOpen }: 
   )
 }
 
-type DraftStep = { id?: string; text: string; done?: boolean }
+export type DraftStep = { id?: string; text: string; done?: boolean }
 
 /** Checklist editor in the task form: steps in order, add with Enter, remove with ×. */
-function ChecklistEditor({ steps, onChange }: { steps: DraftStep[]; onChange: (s: DraftStep[]) => void }) {
+export function ChecklistEditor({ steps, onChange }: { steps: DraftStep[]; onChange: (s: DraftStep[]) => void }) {
   const [draft, setDraft] = useState('')
   const add = () => {
     const text = draft.trim()
@@ -324,18 +325,11 @@ function ChecklistEditor({ steps, onChange }: { steps: DraftStep[]; onChange: (s
   )
 }
 
-// A requirement's assignee list has one row per person and department, so the
-// picker value carries both ("design:12"); project pickers use the bare id.
-const personKey = (p: { id: number; department?: string }) => (p.department ? `${p.department}:${p.id}` : String(p.id))
-const parsePersonKey = (key: string): { id: number; department?: RndWorkDepartment } => {
-  const [a, b] = key.split(':')
-  return b === undefined ? { id: Number(a) } : { id: Number(b), department: a as RndWorkDepartment }
-}
-const DEPT_HEX: Record<string, string> = { rnd: '#16A34A', design: '#7C3AED', electrical: '#D97706', hydraulic: '#0891B2' }
+const personKey = (p: { id: number }) => String(p.id)
 
 /** One popup form for a new task, a new sub-task and editing a task (no files when editing) — same layout as PM's Create Task. */
 function TaskForm({
-  mode, people, labels, onSubmit, onCancel, initial, maxDue, parentTitle, milestoneChoices, draftId,
+  mode, people, labels, onSubmit, onCancel, initial, maxDue, parentTitle, draftId,
 }: {
   /** Create mode only: keeps the typed task across a refresh (lib/formDraft.ts). */
   draftId?: string
@@ -344,30 +338,27 @@ function TaskForm({
   labels: TaskLabels
   onSubmit: (p: TaskInput) => Promise<void>
   onCancel: () => void
-  initial?: Pick<RndTask, 'title' | 'assigned_to_id' | 'due_date' | 'remarks' | 'priority' | 'start_date' | 'work_status' | 'checklist' | 'department' | 'parent_task_id' | 'milestone_id'>
-  /** Edit of a main requirement task by the head: the milestones it can move to. */
-  milestoneChoices?: { id: number; title: string }[]
+  initial?: Pick<RndTask, 'title' | 'assigned_to_id' | 'due_date' | 'remarks' | 'priority' | 'start_date' | 'work_status' | 'checklist' | 'parent_task_id'>
   maxDue?: string
   /** Sub-task: the main task it belongs to. */
   parentTitle?: string
 }) {
   const [title, setTitle] = useState(initial?.title || '')
-  const [assignee, setAssignee] = useState(initial ? personKey({ id: initial.assigned_to_id, department: people.some((p) => p.department) ? initial.department : undefined }) : '')
+  const [assignee, setAssignee] = useState(initial ? personKey({ id: initial.assigned_to_id }) : '')
   const [due, setDue] = useState(initial?.due_date || '')
   const [remarks, setRemarks] = useState(initial?.remarks || '')
-  const [priority, setPriority] = useState<RndTaskPriority>(initial?.priority || 'medium')
+  const [priority, setPriority] = useState<Priority>(initial ? normalizePriority(initial.priority) : 'standard')
   const [start, setStart] = useState(initial?.start_date || '')
   const [workStatus, setWorkStatus] = useState<RndTaskWorkStatus>(initial?.work_status || 'not_started')
   const [steps, setSteps] = useState<DraftStep[]>(() => (initial?.checklist || []).map((c) => ({ id: c.id, text: c.text, done: c.done })))
-  const [milestone, setMilestone] = useState(initial?.milestone_id ? String(initial.milestone_id) : '')
   const [files, setFiles] = useState<File[]>([])
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
   const draft = useFormDraft(mode === 'create' && !initial && draftId ? draftId : null,
-    { title, assignee, due, remarks, priority, start, workStatus, steps, milestone, files },
+    { title, assignee, due, remarks, priority, start, workStatus, steps, files },
     (d) => {
-      setTitle(d.title || ''); setAssignee(d.assignee || ''); setDue(d.due || ''); setRemarks(d.remarks || ''); setPriority(d.priority || 'medium')
-      setStart(d.start || ''); setWorkStatus(d.workStatus || 'not_started'); setSteps(Array.isArray(d.steps) ? d.steps : []); setMilestone(d.milestone || '')
+      setTitle(d.title || ''); setAssignee(d.assignee || ''); setDue(d.due || ''); setRemarks(d.remarks || ''); setPriority(normalizePriority(d.priority))
+      setStart(d.start || ''); setWorkStatus(d.workStatus || 'not_started'); setSteps(Array.isArray(d.steps) ? d.steps : [])
     })
 
   const submit = async () => {
@@ -381,11 +372,9 @@ function TaskForm({
     setSaving(true)
     setError('')
     try {
-      const who = parsePersonKey(assignee)
       await onSubmit({
-        title: title.trim(), assigned_to_id: who.id, department: who.department, due_date: due, remarks: remarks.trim() || undefined,
+        title: title.trim(), assigned_to_id: Number(assignee), due_date: due, remarks: remarks.trim() || undefined,
         priority, start_date: start || undefined, work_status: workStatus, checklist, files,
-        ...(milestoneChoices && milestone ? { milestone_id: Number(milestone) } : {}),
       })
       draft.clear()
     } catch (err) {
@@ -421,7 +410,7 @@ function TaskForm({
           <SheetSection icon="user" title="Assignment">
             <label style={sheetLabel}>Assignee <Req /></label>
             <SearchableSelect value={assignee} onChange={setAssignee} placeholder={labels.assignPlaceholder}
-              options={people.map((p) => ({ value: personKey(p), label: `${p.department_label ? `${p.department_label} · ` : ''}${p.name}${p.designation ? ` — ${p.designation}` : ''}` }))} />
+              options={people.map((p) => ({ value: personKey(p), label: `${p.name}${p.designation ? ` — ${p.designation}` : ''}` }))} />
             <p style={sheetHint}>The assignee is notified, posts updates and completes it; you review it and decide their approval requests.</p>
           </SheetSection>
           <SheetSection icon="calendar" title="Schedule & Status">
@@ -430,21 +419,11 @@ function TaskForm({
               <div style={{ flex: '1 1 150px' }}><label style={sheetLabel}>{labels.dueDate} <Req /></label><DateField value={due} onChange={setDue} /></div>
             </div>
             {maxDue && <p style={sheetHint}>Must be due by {formatDate(maxDue)} — the main task&apos;s date.</p>}
-            {milestoneChoices && (
-              <div style={{ marginTop: 12 }}>
-                <label style={sheetLabel}>Milestone</label>
-                <Select style={sheetInput} value={milestone} onChange={(e) => setMilestone(e.target.value)}>
-                  {!initial?.milestone_id && <option value="">No milestone</option>}
-                  {milestoneChoices.map((m) => <option key={m.id} value={String(m.id)}>{m.title}</option>)}
-                </Select>
-                <p style={sheetHint}>Moves the task, with its sub-tasks, into the milestone. The due date must fit the milestone&apos;s end date.</p>
-              </div>
-            )}
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
               <div style={{ flex: '1 1 130px' }}>
                 <label style={sheetLabel}>Priority</label>
-                <Select style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value as RndTaskPriority)}>
-                  {(Object.keys(PRIORITY_LABELS) as RndTaskPriority[]).map((k) => <option key={k} value={k}>{PRIORITY_LABELS[k]}</option>)}
+                <Select style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value as Priority)}>
+                  {PRIORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </Select>
               </div>
               <div style={{ flex: '1 1 140px' }}>
@@ -502,7 +481,7 @@ function taskState(t: RndTask): { text: string; c: string; bg: string } {
   return { text: WORK_LABELS[w], c: WORK_HEX[w], bg: `${WORK_HEX[w]}1a` }
 }
 const isDoneTask = (t: RndTask) => t.status === 'closed' || t.status === 'submitted'
-const taskPercent = (t: RndTask) => (isDoneTask(t) ? 100 : t.checklist?.length ? Math.round((t.checklist_done * 100) / t.checklist.length) : 0)
+const taskPercent = (t: RndTask) => (isDoneTask(t) ? 100 : typeof t.progress_percent === 'number' ? t.progress_percent : t.checklist?.length ? Math.round((t.checklist_done * 100) / t.checklist.length) : 0)
 const docCount = (t: RndTask) => t.brief_documents.length + t.work_documents.length + (t.approvals || []).reduce((n, a) => n + a.documents.length, 0)
 
 function Chip({ text, c, bg }: { text: string; c: string; bg: string }) {
@@ -555,7 +534,7 @@ const ALL_RIGHTS: Required<TaskRights> = { create: true, edit: true, approve: tr
 
 /** One task opened: header with its actions, then Overview · Sub-tasks · Files · Approvals · Activity tabs. */
 function TaskView({
-  task, all, userId, canManage, rights = ALL_RIGHTS, api, labels, people, team, startPanel, milestoneChoices, onChanged, onCreated, onOpen, onClose, prevId, nextId,
+  task, all, userId, canManage, rights = ALL_RIGHTS, api, labels, people, team, startPanel, onChanged, onCreated, onOpen, onClose, prevId, nextId,
 }: {
   task: RndTask
   all: RndTask[]
@@ -567,7 +546,6 @@ function TaskView({
   people: RndPerson[]
   team: RndPerson[]
   startPanel?: Panel
-  milestoneChoices?: { id: number; title: string }[]
   onChanged: (t: RndTask) => void
   onCreated: () => void
   onOpen: (id: number) => void
@@ -593,7 +571,7 @@ function TaskView({
   const checklist = task.checklist || []
   const unticked = checklist.filter((c) => !c.done)
   const openSubs = subtasks.filter((s) => s.status === 'open')
-  const priority: RndTaskPriority = task.priority || 'medium'
+  const priority: Priority = normalizePriority(task.priority)
   const workStatus: RndTaskWorkStatus = task.work_status || 'not_started'
   const state = taskState(task)
   const dueMissed = task.due_date < todayIso()
@@ -607,6 +585,10 @@ function TaskView({
   const [error, setError] = useState<string | string[]>('')
   const [viewError, setViewError] = useState<string | string[]>('')
   const [busy, setBusy] = useState(false)
+  // Typed progress (tasks without a checklist); a checklist task shows its ticked share, read-only.
+  const [pct, setPct] = useState(String(typeof task.progress_percent === 'number' ? task.progress_percent : 0))
+  const pctValid = /^\d{1,3}$/.test(pct.trim()) && Number(pct) >= 0 && Number(pct) <= 100
+  const pctChanged = pctValid && Number(pct) !== (typeof task.progress_percent === 'number' ? task.progress_percent : 0)
 
   const openDoc = async (d: RndWorkDocument) => {
     try { await api.openDoc(d) } catch (err) { setViewError(extractErrorMessages(err, `Could not open "${d.name}".`)) }
@@ -627,7 +609,7 @@ function TaskView({
     }
   }
   // Checklist ticks / status change — straight on the task, no popup.
-  const progress = async (body: { work_status?: RndTaskWorkStatus; item_id?: string; done?: boolean }, fallback: string) => {
+  const progress = async (body: { work_status?: RndTaskWorkStatus; item_id?: string; done?: boolean; progress_percent?: number }, fallback: string) => {
     setBusy(true)
     setViewError('')
     try { onChanged(await api.progress(task.id, body)) } catch (err) { setViewError(extractErrorMessages(err, fallback)) } finally { setBusy(false) }
@@ -697,7 +679,6 @@ function TaskView({
           </div>
           <div style={{ fontSize: 12.5, color: MUTED, marginTop: 6 }}>
             Given by <b style={{ color: BODY }}>{task.created_by}</b>{task.created_by_id === userId ? ' (you)' : ''}{task.created_at ? ` on ${formatDate(task.created_at)}` : ''}
-            {task.department_label ? ` · ${task.department_label}` : ''}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -793,14 +774,28 @@ function TaskView({
                   ['Status', <Chip key="s" text={state.text} c={state.c} bg={state.bg} />],
                   ['Priority', <Chip key="p" text={PRIORITY_LABELS[priority]} c={PRIORITY_HEX[priority]} bg={`${PRIORITY_HEX[priority]}1a`} />],
                   ['Assignee', <span key="a" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Avatar name={task.assigned_to} size={22} />{mine ? 'You' : task.assigned_to}</span>],
-                  ...(task.department_label ? [['Department', task.department_label] as [string, React.ReactNode]] : []),
                   ['Start Date', task.start_date ? formatDate(task.start_date) : '—'],
                   ['Due Date', <span key="d" style={{ color: task.is_overdue ? '#be123c' : BODY, fontWeight: task.is_overdue ? 600 : 400 }}>{formatDate(task.due_date)}{task.due_date !== task.original_due_date ? ` (re-dated ${task.extensions}×, was ${formatDate(task.original_due_date)})` : ''}</span>],
                   ...(task.closed_at ? [[task.status === 'cancelled' ? 'Cancelled' : 'Completed', formatDate(task.closed_at)] as [string, React.ReactNode]] : []),
                 ]} />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', fontSize: 13 }}>
+                <div data-tour="rnd-task-progress" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', fontSize: 13 }}>
                   <span style={{ width: 96, color: MUTED, flexShrink: 0 }}>Progress</span><Bar value={taskPercent(task)} color="#16a34a" /><span style={{ fontWeight: 700, color: INK }}>{taskPercent(task)}%</span>
                 </div>
+                {checklist.length > 0 && <p style={{ fontSize: 11.5, color: MUTED, margin: '2px 0 0' }}>Follows the ticked checklist steps ({task.checklist_done} of {checklist.length}).</p>}
+                {checklist.length === 0 && isOpen && canProgress && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                    <input aria-label="Progress percent" inputMode="numeric" value={pct} onChange={(e) => setPct(e.target.value.replace(/[^\d]/g, '').slice(0, 3))}
+                      style={{ ...sheetInput, width: 84 }} />
+                    <span style={{ fontSize: 13, color: MUTED }}>%</span>
+                    <button type="button" disabled={busy || !pctChanged} onClick={() => progress({ progress_percent: Number(pct) }, 'Could not save the progress.')} style={sheetBtn('secondary', BLUE, busy || !pctChanged)}>Save progress</button>
+                  </div>
+                )}
+                {checklist.length === 0 && isOpen && canProgress && !pctValid && <p style={{ ...sheetHint, color: '#b91c1c' }}>Progress must be a whole number from 0 to 100.</p>}
+                {task.requirement_changed && isOpen && (
+                  <p style={{ fontSize: 12, color: '#9a3412', margin: '8px 0 0', padding: '6px 10px', borderRadius: 8, background: 'rgba(234,88,12,0.08)', border: '1px solid rgba(234,88,12,0.25)' }}>
+                    The requirement changed since this task was created — check the latest revision before you continue.
+                  </p>
+                )}
               </Box>
               <Box icon="flag" title="Related Items" color={BLUE}>
                 <InfoRows rows={[
@@ -888,18 +883,14 @@ function TaskView({
           people={isSub ? team : people}
           initial={task}
           parentTitle={parent?.title}
-          milestoneChoices={!isSub ? milestoneChoices : undefined}
           onCancel={() => setPanel('')}
           onSubmit={async (p) => {
-            const moved = !isSub && !!milestoneChoices && !!p.milestone_id && p.milestone_id !== task.milestone_id
             const t = await api.edit!(task.id, {
-              ...(moved ? { milestone_id: p.milestone_id } : {}),
-              title: p.title, remarks: p.remarks || null, due_date: p.due_date, assigned_to_id: p.assigned_to_id, department: p.department,
+              title: p.title, remarks: p.remarks || null, due_date: p.due_date, assigned_to_id: p.assigned_to_id,
               priority: p.priority, start_date: p.start_date || null, work_status: p.work_status, checklist: p.checklist,
             })
             setPanel('')
             onChanged(t)
-            if (moved) onCreated()
           }}
         />
       )}
@@ -977,7 +968,7 @@ function TaskView({
 
 type Filter = 'all' | 'pending' | 'completed' | 'overdue' | 'mine' | 'given'
 
-export default function TasksBoard({ api, userId, canManage, canCreate = canManage, rights: rightsIn, departmentFilter, milestoneChoices, labels, reloadKey, onTasksChange, draftKey }: {
+export default function TasksBoard({ api, userId, canManage, canCreate = canManage, rights: rightsIn, labels, reloadKey, draftKey }: {
   api: TaskApi
   /** Names this board's "Create Task" draft (e.g. the project / requirement / milestone it belongs to). */
   draftKey?: string
@@ -988,15 +979,9 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
   canCreate?: boolean
   /** Role-level rights from the module's Tasks feature (default: all allowed). */
   rights?: TaskRights
-  /** Department chips: All · My department · one per department. */
-  departmentFilter?: { options: { key: string; label: string }[]; mine: string[] }
-  /** Requirement head only: the milestones a main task can be moved to (shown in the Edit form). Omit everywhere else. */
-  milestoneChoices?: { id: number; title: string }[]
   labels: TaskLabels
   /** Change to reload (e.g. when the caller's record changes). */
   reloadKey?: string | number
-  /** Called with the list after every load / change (e.g. to refresh milestone progress). */
-  onTasksChange?: (tasks: RndTask[]) => void
 }) {
   const [tasks, setTasks] = useState<RndTask[] | null>(null)
   const [people, setPeople] = useState<RndPerson[]>([])
@@ -1004,7 +989,6 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
   const [error, setError] = useState<string | string[]>('')
   const [creating, setCreating] = useState(false)
   const [query, setQuery] = useState('')
-  const [dept, setDept] = useState<string>('all')
   const [filter, setFilter] = useState<Filter>('all')
   const [open, setOpen] = useState<{ id: number; panel?: Panel } | null>(null)
   const rights: Required<TaskRights> = { ...ALL_RIGHTS, ...rightsIn }
@@ -1019,11 +1003,6 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
     if (api.team) api.team().then(setTeam).catch(() => setTeam([]))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadKey, canCreate])
-
-  useEffect(() => {
-    if (tasks && onTasksChange) onTasksChange(tasks)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks])
 
   const list = tasks || []
   const ids = new Set(list.map((t) => t.id))
@@ -1041,17 +1020,15 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
     const dates = [t.due_date, t.original_due_date, t.created_at?.slice(0, 10), t.closed_at?.slice(0, 10)]
       .filter(Boolean).flatMap((d) => [d as string, formatDate(d as string), formatDate(d as string).replace(/\//g, '-')])
     return [t.title, t.remarks, t.assigned_to, STATUS_LABELS[t.status], t.is_overdue ? 'overdue' : '',
-      PRIORITY_LABELS[t.priority || 'medium'], t.status === 'open' ? WORK_LABELS[t.work_status || 'not_started'] : '',
+      PRIORITY_LABELS[normalizePriority(t.priority)], t.status === 'open' ? WORK_LABELS[t.work_status || 'not_started'] : '',
       ...(t.checklist || []).map((c) => c.text), ...dates]
       .filter(Boolean).join(' ').toLowerCase()
   }
-  const inDept = (t: RndTask, key: string) =>
-    key === 'all' || (key === 'mine' ? (departmentFilter?.mine || []).includes(t.department || 'rnd') : (t.department || 'rnd') === key)
   const inFilter = (t: RndTask, f: Filter) =>
     f === 'all' || (f === 'pending' ? t.status === 'open' : f === 'completed' ? isDoneTask(t) : f === 'overdue' ? t.is_overdue
       : f === 'mine' ? t.assigned_to_id === userId : t.created_by_id === userId)
-  const matches = (t: RndTask) => words.every((w) => haystack(t).includes(w)) && inDept(t, dept) && inFilter(t, filter)
-  const narrowed = words.length > 0 || dept !== 'all' || filter !== 'all'
+  const matches = (t: RndTask) => words.every((w) => haystack(t).includes(w)) && inFilter(t, filter)
+  const narrowed = words.length > 0 || filter !== 'all'
   // A sub-task sits under its main task; if the main task isn't visible to this user, it shows on its own.
   // A main task shows when it or one of its sub-tasks matches.
   const rows: { t: RndTask; depth: number; n: number }[] = []
@@ -1064,7 +1041,7 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
     rows.push({ t: r, depth: 0, n })
     shownKids.forEach((k) => rows.push({ t: k, depth: 1, n }))
   }
-  const deptList = list.filter((t) => inDept(t, dept))
+  const deptList = list
   const chips: { k: Filter; t: string; c: number }[] = [
     { k: 'all', t: 'All', c: deptList.length },
     { k: 'pending', t: 'Pending', c: deptList.filter((t) => inFilter(t, 'pending')).length },
@@ -1116,19 +1093,6 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
           {addBtn}
         </div>
       </div>
-      {departmentFilter && list.length > 0 && (
-        <div data-tour="rnd-task-dept-chips" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: MUTED, marginRight: 2 }}>Department:</span>
-          {[{ key: 'all', label: 'All' }, ...(departmentFilter.mine.length ? [{ key: 'mine', label: 'My department' }] : []), ...departmentFilter.options].map((c) => {
-            const active = dept === c.key
-            return (
-              <button key={c.key} type="button" onClick={() => setDept(c.key)} style={{ ...chipBtnStyle(active), borderColor: active ? (DEPT_HEX[c.key] || BLUE) : LINE, background: active ? `${DEPT_HEX[c.key] || BLUE}14` : '#fff', color: active ? (DEPT_HEX[c.key] || BLUE) : BODY }}>
-                {c.label} ({list.filter((t) => inDept(t, c.key)).length})
-              </button>
-            )
-          })}
-        </div>
-      )}
 
       {tasks === null ? (
         <p style={{ fontSize: 13, color: MUTED }}>Loading…</p>
@@ -1163,7 +1127,6 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
             })}
           </div>
           <TaskView key={openTask.id} task={openTask} all={list} userId={userId} canManage={canManage} rights={rights} api={api} labels={labels} people={people} team={team}
-            milestoneChoices={milestoneChoices}
             startPanel={open?.panel}
             onChanged={(nt) => { replace(nt); if (nt.status === 'cancelled') load() }} onCreated={load}
             onOpen={(id) => setOpen({ id })} onClose={() => setOpen(null)}
@@ -1188,14 +1151,14 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
               {rows.length === 0 && (
                 <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: MUTED, padding: 24 }}>
                   {query.trim() ? `No task matches “${query.trim()}”.` : 'No tasks match these filters.'}{' '}
-                  <button type="button" onClick={() => { setQuery(''); setFilter('all'); setDept('all') }} style={{ ...sheetBtn('ghost', BLUE), padding: 0, display: 'inline' }}>Clear filters</button>
+                  <button type="button" onClick={() => { setQuery(''); setFilter('all') }} style={{ ...sheetBtn('ghost', BLUE), padding: 0, display: 'inline' }}>Clear filters</button>
                 </td></tr>
               )}
               {rows.map(({ t, depth, n: num }) => {
                 const ss = taskState(t)
                 const kids = list.filter((k) => k.parent_task_id === t.id)
                 const files = docCount(t)
-                const pr = t.priority || 'medium'
+                const pr = normalizePriority(t.priority)
                 return (
                   <tr key={t.id} onClick={() => setOpen({ id: t.id })} style={{ cursor: 'pointer', background: depth ? '#fcfcfd' : undefined }}
                     onMouseEnter={(e) => { e.currentTarget.style.background = SOFT }} onMouseLeave={(e) => { e.currentTarget.style.background = depth ? '#fcfcfd' : '' }}>
@@ -1203,7 +1166,7 @@ export default function TasksBoard({ api, userId, canManage, canCreate = canMana
                     <td style={{ ...td, paddingLeft: depth ? 32 : 12 }}>
                       <div style={{ fontWeight: 600, color: INK }}>{depth ? <span style={{ color: '#7C3AED', marginRight: 6 }}>↳</span> : null}{t.title}</div>
                       <div style={{ display: 'flex', gap: 10, fontSize: 11.5, color: MUTED, marginTop: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-                        {t.department_label && <span style={{ ...pillStyle(DEPT_HEX[t.department || 'rnd'] || '#57534e'), fontSize: 'inherit', fontWeight: 600, padding: '1px 7px', background: `${DEPT_HEX[t.department || 'rnd'] || '#57534e'}14` }}>{t.department_label}</span>}
+                        {t.requirement_changed && t.status === 'open' && <span title="The requirement changed since this task was created" style={{ color: '#9a3412', fontWeight: 600 }}>Requirement changed</span>}
                         {kids.length > 0 && <span>Sub-tasks {kids.filter(isDoneTask).length}/{kids.length}</span>}
                         {t.checklist?.length > 0 && <span>☑ {t.checklist_done}/{t.checklist.length}</span>}
                         {files > 0 && <span>📎 {files}</span>}

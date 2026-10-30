@@ -1,8 +1,10 @@
 """Design / Electrical / Hydraulic <-> PM projects and their Units (projects/so_projects.py).
 
-RRVs are built to order: every confirmed Sales Order with an RRV line gets a
-project (PEW-nn) with one unit per vehicle. This module is the
-engineering side of it:
+One project = one machine (2026-10-30): design requests, BOMs, electrical jobs and hydraulic
+systems of a project WITHOUT units link to the project itself (order_project_id set, no unit); the
+unit is optional here for every project (a model's design serves the whole project) so clean_op_link
+never asks to "pick a unit". The sections below about the Sales Order hook and the unit table
+describe the historic sales-order projects. This module is the engineering side of it:
 
 * Link helpers — `clean_op_link` validates an (order_project_id,
   order_project_element_id) pair a form sent (design requests, BOMs,
@@ -17,7 +19,8 @@ engineering side of it:
   request raised by hand. Idempotent (one request per project + model).
 * 360 provider 'design' — per vehicle: request status, customer approval of
   its drawings, BOM release, plus the linked electrical job / hydraulic
-  system in the detail line.
+  system in the detail line. Project provider 'design' — the same cell for the
+  "Whole project" row of a project without units.
 * Billing — when the customer has approved every drawing of a project that
   needs customer approval, the order's 'drawing_approval' billing milestone
   falls due (accounts/services/billing.py trigger_event — the same call as
@@ -249,7 +252,7 @@ def on_order_project(db: Session, project: PmProject, so: SalesOrder, actor: Use
             title=_request_title(g["name"], project), source="project", customer_id=so.customer_id,
             crm_reference=f"{so.display_number} · PO {so.customer_po_number or so.loa_number or '—'}"[:255],
             requirement=_requirement_text(so, project, g["lines"], g["vehicles"], g["name"]),
-            requirement_revision=0, reviewed_revision=-1, priority="high", due_date=min(dates) if dates else None,
+            requirement_revision=0, reviewed_revision=-1, priority="urgent", due_date=min(dates) if dates else None,
             status="open", waiting_on="design", requested_by_id=actor.id if actor else so.created_by_id,
             order_project_id=project.id, order_project_element_id=None,
         )
@@ -312,6 +315,54 @@ def _engineering_bits(db: Session, project: PmProject) -> tuple[dict, dict]:
     systems = db.query(HydSystem).filter(HydSystem.order_project_id == project.id,
                                          HydSystem.is_deleted == False).all()  # noqa: E712
     return ({j.id: j for j in jobs}, {s.id: s for s in systems})
+
+
+def _status_cell(reqs, my_boms, my_docs, state, eng, today) -> dict:
+    """The design cell from a set of requests / BOMs / drawings (customer approvals in `state`), plus
+    the engineering jobs (`eng` text bits)."""
+    released = [(b, released_bom_revision(b)) for b in my_boms]
+    released = [(b, r) for b, r in released if r]
+    need = _approval_set(my_docs, state)
+    approved = [d for d in need if state.get(d.id) == "approved"]
+    rejected = [d for d in need if state.get(d.id) == "rejected"]
+    drawings_ok = len(approved) == len(need)
+    active = [r for r in reqs if r.status in DESIGN_REQUEST_ACTIVE_STATUSES]
+    due = min((r.due_date for r in active if r.due_date), default=None) or min((r.due_date for r in reqs if r.due_date), default=None)
+
+    if released and drawings_ok:
+        status, label, tone = "bom_released", "BOM released", "success"
+    elif rejected:
+        status, label, tone = "customer_rejected", "Drawing rejected", "danger"
+    elif need and not drawings_ok and any(state.get(d.id) == "pending" for d in need):
+        status, label, tone = "awaiting_customer", "Awaiting customer approval", "info"
+    elif released:
+        status, label, tone = "bom_released", "BOM released — approval pending", "info"
+    elif all(r.status == "cancelled" for r in reqs) and reqs:
+        status, label, tone = "cancelled", "Request cancelled", "neutral"
+    else:
+        lead = next((r for r in active), reqs[0] if reqs else None)
+        status = lead.status if lead else "in_progress"
+        label = _REQ_LABEL.get(status, status.replace("_", " ").capitalize()) if lead else "BOM in progress"
+        tone = "info" if status in ("accepted", "in_progress") else ("warning" if status == "on_hold" else "neutral")
+    if tone != "success" and status != "cancelled" and due and due < today:
+        tone = "warning"
+        label = f"{label} — overdue"
+
+    bits = [", ".join(r.request_number for r in reqs)] if reqs else []
+    if my_docs:
+        rel = sum(1 for d in my_docs if released_revision(d))
+        bits.append(f"Drawings {rel}/{len(my_docs)} released")
+    if need:
+        bits.append(f"customer-approved {len(approved)}/{len(need)}" + (f", rejected {len(rejected)}" if rejected else ""))
+    if released:
+        bits.append("BOM " + ", ".join(f"{b.bom_number} rev {r.revision_label}" for b, r in released) + " released")
+    elif my_boms:
+        bits.append("BOM " + ", ".join(b.bom_number for b in my_boms) + " not released")
+    if due:
+        bits.append(f"required by {due:%d-%b-%Y}")
+    bits += eng
+    return {"status": status, "label": label, "tone": tone, "detail": " · ".join(x for x in bits if x) or None,
+            "date": due.isoformat() if due else None}
 
 
 def design_cells(db: Session, project: PmProject, elements: list[PmProjectElement]) -> dict[int, dict | None]:
@@ -380,50 +431,29 @@ def design_cells(db: Session, project: PmProject, elements: list[PmProjectElemen
                 out[el.id] = None
             continue
 
-        released = [(b, released_bom_revision(b)) for b in my_boms]
-        released = [(b, r) for b, r in released if r]
-        need = _approval_set(my_docs, state)
-        approved = [d for d in need if state.get(d.id) == "approved"]
-        rejected = [d for d in need if state.get(d.id) == "rejected"]
-        drawings_ok = len(approved) == len(need)
-        active = [r for r in reqs if r.status in DESIGN_REQUEST_ACTIVE_STATUSES]
-        due = min((r.due_date for r in active if r.due_date), default=None) or min((r.due_date for r in reqs if r.due_date), default=None)
-
-        if released and drawings_ok:
-            status, label, tone = "bom_released", "BOM released", "success"
-        elif rejected:
-            status, label, tone = "customer_rejected", "Drawing rejected", "danger"
-        elif need and not drawings_ok and any(state.get(d.id) == "pending" for d in need):
-            status, label, tone = "awaiting_customer", "Awaiting customer approval", "info"
-        elif released:
-            status, label, tone = "bom_released", "BOM released — approval pending", "info"
-        elif all(r.status == "cancelled" for r in reqs) and reqs:
-            status, label, tone = "cancelled", "Request cancelled", "neutral"
-        else:
-            lead = next((r for r in active), reqs[0] if reqs else None)
-            status = lead.status if lead else "in_progress"
-            label = _REQ_LABEL.get(status, status.replace("_", " ").capitalize()) if lead else "BOM in progress"
-            tone = "info" if status in ("accepted", "in_progress") else ("warning" if status == "on_hold" else "neutral")
-        if tone != "success" and status != "cancelled" and due and due < today:
-            tone = "warning"
-            label = f"{label} — overdue"
-
-        bits = [", ".join(r.request_number for r in reqs)] if reqs else []
-        if my_docs:
-            rel = sum(1 for d in my_docs if released_revision(d))
-            bits.append(f"Drawings {rel}/{len(my_docs)} released")
-        if need:
-            bits.append(f"customer-approved {len(approved)}/{len(need)}" + (f", rejected {len(rejected)}" if rejected else ""))
-        if released:
-            bits.append("BOM " + ", ".join(f"{b.bom_number} rev {r.revision_label}" for b, r in released) + " released")
-        elif my_boms:
-            bits.append("BOM " + ", ".join(b.bom_number for b in my_boms) + " not released")
-        if due:
-            bits.append(f"required by {due:%d-%b-%Y}")
-        bits += eng
-        out[el.id] = {"status": status, "label": label, "tone": tone, "detail": " · ".join(x for x in bits if x) or None,
-                      "date": due.isoformat() if due else None}
+        out[el.id] = _status_cell(reqs, my_boms, my_docs, state, eng, today)
     return out
+
+
+def project_design_cell(db: Session, project: PmProject) -> dict | None:
+    """Design cell of a project WITHOUT units: requests, BOMs, drawings and engineering jobs linked to
+    the project itself. None when Design has nothing for it yet."""
+    requests = db.query(DesignRequest).filter(DesignRequest.order_project_id == project.id,
+                                              DesignRequest.is_deleted == False).all()  # noqa: E712
+    boms = (db.query(DesignBom).options(selectinload(DesignBom.revisions))
+            .filter(DesignBom.is_deleted == False,  # noqa: E712
+                    (DesignBom.order_project_id == project.id)
+                    | DesignBom.design_request_id.in_([r.id for r in requests] or [-1])).all())
+    docs = project_drawings(db, [r.id for r in requests])
+    state = _approval_state(db, [d.id for d in docs])
+    jobs, systems = _engineering_bits(db, project)
+    eng = [f"Electrical {j.job_number} {j.status.replace('_', ' ')}" for j in jobs.values()]
+    eng += [f"{s.system_type.capitalize()} {s.system_number} {s.status.replace('_', ' ')}" for s in systems.values()]
+    if not requests and not boms:
+        if not eng:
+            return None
+        return {"status": "engineering", "label": "Engineering linked", "tone": "info", "detail": "; ".join(eng), "date": None}
+    return _status_cell(requests, boms, docs, state, eng, date.today())
 
 
 # ---------------------------------------------------------------- drawing approval → billing
@@ -445,11 +475,11 @@ def on_customer_approval(db: Session, document_ids: list[int], *, on: date, acto
     if not project_ids:
         return done
     from app.modules.accounts.services import billing
-    from app.modules.sales.views import get_order
+    from app.modules.sales.legacy import get_order
     for pid in project_ids:
         project = db.get(PmProject, pid)
-        if project is None:
-            continue
+        if project is None or not project.sales_order_id:
+            continue  # only a historic sales-order project has billing milestones
         all_req = [r.id for r in db.query(DesignRequest.id).filter(
             DesignRequest.order_project_id == pid, DesignRequest.is_deleted == False,  # noqa: E712
             DesignRequest.status != "cancelled").all()]
@@ -476,3 +506,4 @@ def on_customer_approval(db: Session, document_ids: list[int], *, on: date, acto
 
 op_core.register_project_hook(on_order_project)
 op_core.register_department_provider("design", design_cells)
+op_core.register_project_provider("design", project_design_cell)

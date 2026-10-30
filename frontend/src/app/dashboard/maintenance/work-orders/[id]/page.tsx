@@ -1,5 +1,6 @@
 'use client'
 
+import { normalizePriority, priorityLabel } from '@/lib/priority'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -31,7 +32,7 @@ import {
 import Select from '@/components/shared/Select'
 
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', assigned: '#2563EB', in_progress: '#F59E0B', on_hold: '#9333EA', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
-const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
+const PRIORITY_HEX: Record<string, string> = { standard: '#475569', urgent: '#DC2626' }
 const RESULT_OPTIONS = [
   { value: 'ok', label: 'OK', hex: '#16A34A' },
   { value: 'not_ok', label: 'Not OK', hex: '#DC2626' },
@@ -263,7 +264,7 @@ export default function MaintenanceWorkOrderDetailPage() {
   const openDetails = () => {
     if (!wo) return
     setDt({
-      title: wo.title, wo_type: wo.wo_type, priority: wo.priority, description: wo.description || '',
+      title: wo.title, wo_type: wo.wo_type, priority: normalizePriority(wo.priority), description: wo.description || '',
       planned_start: wo.planned_start || '', planned_end: wo.planned_end || '', estimated_hours: wo.estimated_hours != null ? String(wo.estimated_hours) : '',
       external_vendor_id: wo.external_vendor_id ? String(wo.external_vendor_id) : '', external_cost: wo.external_cost ? String(wo.external_cost) : '',
     })
@@ -450,7 +451,7 @@ export default function MaintenanceWorkOrderDetailPage() {
               title={wo.title}
               text={wo.description || undefined}
               meta={<>
-                <Pill label={PRIORITY_LABELS[wo.priority] || wo.priority} hex={PRIORITY_HEX[wo.priority] || '#78716c'} />
+                <Pill label={priorityLabel(wo.priority)} hex={PRIORITY_HEX[normalizePriority(wo.priority)]} />
                 <span>· {WO_TYPE_LABELS[wo.wo_type] || wo.wo_type}</span>
                 <span>· Technician <strong style={{ color: TEXT.heading }}>{wo.assigned_to_name || 'Unassigned'}</strong></span>
                 {wo.machine_down && <span style={{ color: '#DC2626', fontWeight: 600 }}>· Machine down {formatMinutes(downtime)}</span>}

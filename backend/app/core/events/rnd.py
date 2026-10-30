@@ -1,16 +1,23 @@
 """R&D notifiable events (see core/notification_events.py). Fired from
-app/modules/rnd (requirement work, technical offers, department replies,
-project tasks, prototypes) through app/modules/rnd/services/events.py.
-Requirement events also check the per-requirement access
+app/modules/rnd (requirement intake and work, technical offers, project tasks,
+prototypes) through app/modules/rnd/services/events.py.
+Requirement events also check the requirement access
 (services/requirement_access.access_for(...)["view"]), so a member hears only
-about requirements they can open."""
+about requirements they can open. Teams carries only approvals and reminders:
+a new / accepted / returned requirement is bell-only; "review pending" is the
+one Teams reminder."""
 from app.core.notification_events import register_event
 
 # ── Waiting for someone ──────────────────────────────────────────────────────
 register_event(
-    "rnd", "tor_received", "New Technical Offer Request from CRM",
-    "CRM sends a requirement (TOR) to R&D, or re-sends it", ("requirements", "view"),
-    default_channels=("bell", "teams"), kind="assignment",
+    "rnd", "tor_received", "New requirement received",
+    "BD sends a requirement to R&D, or re-sends it (a new revision)", ("requirements", "view"),
+    default_channels=("bell",), kind="assignment",
+)
+register_event(
+    "rnd", "review_pending", "Requirement waiting for R&D review",
+    "a requirement sent by BD is still not accepted or returned after 2 working days (repeats every 3 days)",
+    ("requirements", "view"), default_channels=("bell", "teams"), kind="reminder",
 )
 register_event(
     "rnd", "task_approval_requested", "Requirement task — approval requested",
@@ -19,7 +26,7 @@ register_event(
 )
 register_event(
     "rnd", "task_assigned", "Requirement task assigned",
-    "someone gives a task or sub-task on a requirement (to R&D or a shared department)", ("requirements", "tasks", "view"),
+    "someone gives a task or sub-task on a requirement", ("requirements", "tasks", "view"),
     kind="assignment",
 )
 register_event(
@@ -34,12 +41,8 @@ register_event(
     "the assignee completes a requirement task", ("requirements", "tasks", "view"),
 )
 register_event(
-    "rnd", "department_replied", "Department feasibility reply received",
-    "Design / Electrical / Hydraulic & Pneumatic replies to a requirement R&D shared with it", ("requirements", "departments", "view"),
-)
-register_event(
     "rnd", "technical_offer_released", "Technical Offer sent to the BD team",
-    "the R&D head sends (releases) a Technical Offer to the BD team", ("requirements", "technical_offers", "view"),
+    "the R&D head releases an uploaded Technical Offer to the BD team", ("requirements", "technical_offers", "view"),
 )
 register_event(
     "rnd", "prototype_released", "Prototype released to Production",

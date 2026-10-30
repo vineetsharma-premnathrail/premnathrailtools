@@ -21,8 +21,7 @@ from app.modules.store.models.stock_reservation import StoreStockReservation
 from app.modules.store.services import project_stock
 from app.modules.store.services.stock_ledger import post_stock_transaction
 from app.tests._stock_seed import seed_opening_stock
-from app.tests._so_project_helpers import confirm_with_project
-from app.tests.test_sales import create_order, hdr, make_user, setup_customer, setup_people
+from app.tests._so_project_helpers import hdr, make_user, order_with_project
 
 ISS = "/api/v1/store/material-issues"
 RES = "/api/v1/store/stock-reservations"
@@ -30,9 +29,7 @@ RES = "/api/v1/store/stock-reservations"
 
 @pytest.fixture
 def env(client, db):
-    maker, head, director, _ = setup_people(db)
-    _org, inq, _ = setup_customer(db, qty=2, price=1000000)
-    so = confirm_with_project(client, db, create_order(client, db, maker, inq), maker, head, director)
+    so = order_with_project(db, qty=2, price=1000000)
     db.expire_all()
     project = db.query(PmProject).filter(PmProject.sales_order_id == so["id"]).one()
     v1, v2 = sorted(project.elements, key=lambda e: e.element_no)
@@ -119,7 +116,7 @@ def test_other_element_needs_store_manager_override_with_reason(client, db, env)
     body = {"order_project_id": env["project"].id, "order_project_element_id": env["v2"].id}
     # Keeper: refused.
     r = _issue(client, env, 4, **body)
-    assert r.status_code == 409 and "another vehicle" in r.json()["detail"]
+    assert r.status_code == 409 and "another project / vehicle" in r.json()["detail"]
     # Store Manager without a reason: asked for one.
     r = _issue(client, env, 4, user=env["manager"], **body)
     assert r.status_code == 422 and "Reason for using project stock" in r.json()["detail"]

@@ -86,7 +86,7 @@ def test_own_scope_limits_lists_records_and_children(client, db):
                       headers=h).status_code == 403
     assert client.get(f"{API}/activities", params={"related_module": "tender", "related_id": theirs["tnd"]},
                       headers=h).status_code == 403
-    r = client.patch(f"{API}/inquiries/{theirs['inq']}", json={"priority": "High"}, headers=h)
+    r = client.patch(f"{API}/inquiries/{theirs['inq']}", json={"priority": "Urgent"}, headers=h)
     assert r.status_code == 403 and "outside your data access" in r.json()["detail"]
 
 

@@ -8,6 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.permissions import require_app_access, require_tab_access
+from app.core.priority import map_legacy_priority
 from app.db.session import get_db
 from app.modules.design.access import get_settings, head_ids, is_head, is_team, next_number, require_head, require_team, year_prefix
 from app.modules.design.bom_service import released_bom_revision
@@ -55,7 +56,7 @@ _REASON = {
     "customer": "customer_request", "production": "manufacturing_issue", "purchase": "other", "design": "design_improvement",
     "other": "other",
 }
-_PRIORITY = {"low": "low", "normal": "medium", "high": "high", "critical": "urgent"}
+# ECR urgency (low/normal/high/critical) -> ECN priority (standard/urgent): high and critical are urgent.
 
 
 def _get(db: Session, ecr_id: int, lock: bool = False, user: User | None = None) -> DesignChangeRequest:
@@ -537,7 +538,7 @@ async def create_ecn(ecr_id: int, payload: DesignEcrToEcnPayload, db: Session = 
     now = utcnow()
     ecn = DesignChangeNotice(
         ecn_number=generate_ecn_number(db), title=ecr.title, reason=_REASON.get(ecr.source, "other"),
-        priority=_PRIORITY.get(ecr.urgency, "medium"), description=f"{ecr.reason}\n\nProposed change:\n{ecr.proposed_change}",
+        priority=map_legacy_priority(ecr.urgency), description=f"{ecr.reason}\n\nProposed change:\n{ecr.proposed_change}",
         impact_assessment=ecr.impact_summary, target_date=_date(payload.target_date, "Target date"),
         pm_project_id=ecr.pm_project_id, erp_project_id=ecr.erp_project_id, ecr_id=ecr.id,
         status="approved", created_by_id=user.id, approver_id=ecr.decided_by_id, submitted_at=now,

@@ -1,7 +1,9 @@
-"""MM purchasing (2026-10-14): ME47/ME49 line quotations + comparison +
-award, ME21N split of one PR into POs by vendor, ME22N amendment with
-re-release, ME11/ME01/ME1P info records, source list and price history."""
-from app.tests.p2p_workflow_helpers import attach_tally_po
+"""MM purchasing (2026-10-14): line quotations + comparison + award, PO amendment
+with re-release, info records, source list and price history.
+
+The PO is not made in the portal any more (2026-10-30): the buyer uploads the
+Tally PO on the requisition (Upload PO), one PO per requisition, so the old
+split-into-POs-by-vendor route and its tests are gone."""
 import pytest
 
 from app.modules.accounts.models.vendor import Vendor
@@ -10,6 +12,7 @@ from app.modules.organization.services import approval_engine as engine
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
 from app.modules.p2p.models.rfq import RFQ
+from app.tests.p2p_po_helpers import post_upload_po
 from app.tests.p2p_workflow_helpers import master_item, set_po_workflow
 from app.tests.test_p2p_item_master_link import _store
 from app.tests.test_p2p_requests import (  # noqa: F401 — _sqlite_number_series is an autouse fixture
@@ -117,59 +120,50 @@ def test_line_quotes_comparison_and_award_needs_reason_when_not_l1(client, db, s
     assert client.get(f"{RFQS}/{s['rfq'].id}/comparison/export", headers=auth_header(s["admin"])).status_code == 200
 
 
-def _split(client, s, q1, q2):
-    client.post(f"{RFQS}/{s['rfq'].id}/awards", json={"awards": [
-        {"pr_item_id": s["line_a"], "vendor_quotation_item_id": _qi(q2, s["line_a"])},
-        {"pr_item_id": s["line_b"], "vendor_quotation_item_id": _qi(q1, s["line_b"])}]}, headers=auth_header(s["buyer"]))
-    prop = client.get(f"{RFQS}/{s['rfq'].id}/split-proposal", headers=auth_header(s["buyer"])).json()
-    assert len(prop["groups"]) == 2 and prop["unawarded"] == []
-    loc = _store(db_of(s), "MMS")
-    groups = [{"vendor_id": g["vendor_id"], "vendor_quotation_id": g["vendor_quotation_id"],
-               "lines": [{"pr_item_id": ln["pr_item_id"], "vendor_quotation_item_id": ln["vendor_quotation_item_id"]} for ln in g["lines"]]}
-              for g in prop["groups"]]
-    r = client.post(f"{RFQS}/{s['rfq'].id}/split-pos", json={"ship_to_location_id": loc.id, "pos": groups}, headers=auth_header(s["buyer"]))
-    assert r.status_code == 200, r.text
-    return {p["vendor_id"]: p for p in r.json()}, loc
-
-
 def db_of(s):
     from sqlalchemy.orm import object_session
     return object_session(s["v1"])
 
 
-def test_split_one_pr_into_pos_by_vendor_release_and_rollup(client, db, setup):
+_tally_seq = iter(range(1, 1000))
+
+
+def _upload_po(client, s, vendor, prices=None, **extra):
+    """Upload the Tally PO on the requisition to `vendor`: every open PR line priced from
+    `prices` (pr_item_id -> unit price; default A 90, B 50), GST 18%. Returns (po, ship_to)."""
+    prices = prices or {s["line_a"]: 90, s["line_b"]: 50}
+    loc = _store(db_of(s), f"MMS{next(_tally_seq)}")
+    details = {"vendor_id": vendor.id, "ship_to_location_id": loc.id,
+               "lines": [{"pr_item_id": pid, "unit_price": price, "tax_rate": 18} for pid, price in prices.items()], **extra}
+    r = post_upload_po(client, s["buyer"], s["rfq"].id, details, f"TALLY-MM-{next(_tally_seq)}")
+    assert r.status_code == 200, r.text
+    return r.json(), loc
+
+
+def test_upload_po_release_and_rollup_makes_info_records(client, db, setup):
     s = setup
     q1, q2 = _quoted_and_awarded(client, s)
-    # Over-ordering a PR line across groups is refused.
-    r = client.post(f"{RFQS}/{s['rfq'].id}/split-pos", json={"pos": [
-        {"vendor_id": s["v2"].id, "lines": [{"pr_item_id": s["line_a"], "quantity": 11, "vendor_quotation_item_id": _qi(q2, s["line_a"])}]}]},
-        headers=auth_header(s["buyer"]))
-    assert r.status_code == 409 and "more than is left" in r.json()["detail"]
-    pos, _loc = _split(client, s, q1, q2)
-    p_a, p_b = pos[s["v2"].id], pos[s["v1"].id]
-    assert [i["pr_item_id"] for i in p_a["items"]] == [s["line_a"]] and p_a["items"][0]["unit_price"] == 90
-    assert p_a["items"][0]["price_source"] == "quotation" and p_a["items"][0]["delivery_date"]
-    assert p_b["items"][0]["unit_price"] == 50 and p_a["ship_to_location_id"]
-    db.expire_all()
-    assert db.get(P2PRequest, s["pr"]["id"]).status == "po_drafted"
-
-    for p in (p_a, p_b):
-        attach_tally_po(db, p['id'])
-        r = client.post(f"{RFQS}/{s['rfq'].id}/po-draft/{p['id']}/submit", headers=auth_header(s["buyer"]))
-        assert r.status_code == 200, r.text
+    # One PO per requisition: every open PR line is on it, priced from the Tally PO.
+    p_a, _loc = _upload_po(client, s, s["v2"])
+    assert sorted(i["pr_item_id"] for i in p_a["items"]) == sorted([s["line_a"], s["line_b"]])
+    by_line = {i["pr_item_id"]: i for i in p_a["items"]}
+    assert by_line[s["line_a"]]["unit_price"] == 90 and by_line[s["line_a"]]["price_source"] == "manual"
+    assert by_line[s["line_a"]]["store_item_id"] == s["a"].id and p_a["ship_to_location_id"]
+    assert p_a["status"] == "issued" and p_a["vendor_id"] == s["v2"].id
     db.expire_all()
     assert db.get(P2PRequest, s["pr"]["id"]).status == "po_raised"
+    from app.modules.p2p.routes.goods_receipts import _po_approval_block_reason
+    assert _po_approval_block_reason(db, db.get(P2PPurchaseOrder, p_a["id"])) is not None  # still in approval
+    # A second upload on the same requisition is refused: it already has its PO.
+    again = post_upload_po(client, s["buyer"], s["rfq"].id, {"vendor_id": s["v1"].id, "ship_to_location_id": _loc.id,
+                           "lines": [{"pr_item_id": s["line_a"], "unit_price": 1}]}, "TALLY-MM-DUP")
+    assert again.status_code == 409 and "already has PO" in again.json()["detail"]
+
     _decide_all(client, db, "p2p_purchase_order", p_a["id"], s["approvers"])
     db.expire_all()
     pr = db.get(P2PRequest, s["pr"]["id"])
-    assert pr.status == "po_raised"  # the other PO is still in approval
-    from app.modules.p2p.routes.goods_receipts import _po_approval_block_reason
-    assert _po_approval_block_reason(db, db.get(P2PPurchaseOrder, p_a["id"])) is None  # this PO can be received
-    assert _po_approval_block_reason(db, db.get(P2PPurchaseOrder, p_b["id"])) is not None
-    _decide_all(client, db, "p2p_purchase_order", p_b["id"], s["approvers"])
-    db.expire_all()
-    pr = db.get(P2PRequest, s["pr"]["id"])
-    assert pr.status == "po_approved" and pr.po_value == pytest.approx(900 * 1.18 + 200 * 1.18)
+    assert pr.status == "po_approved" and pr.po_value == pytest.approx((900 + 200) * 1.18)
+    assert _po_approval_block_reason(db, db.get(P2PPurchaseOrder, p_a["id"])) is None  # now it can be received
     # ME11: released prices became the info records.
     rec = db.query(VendorCatalogItem).filter_by(vendor_id=s["v2"].id, store_item_id=s["a"].id).one()
     assert rec.unit_price == 90 and rec.last_po_number == p_a["po_number"]
@@ -182,15 +176,17 @@ def test_split_one_pr_into_pos_by_vendor_release_and_rollup(client, db, setup):
 def test_po_amendment_floors_rerelease_and_versions(client, db, setup):
     s = setup
     q1, q2 = _quoted_and_awarded(client, s)
-    pos, loc = _split(client, s, q1, q2)
-    p_a = pos[s["v2"].id]
-    line = p_a["items"][0]["id"]
-    # A draft PO isn't amended.
+    p_a, loc = _upload_po(client, s, s["v2"])
+    line = next(i["id"] for i in p_a["items"] if i["pr_item_id"] == s["line_a"])
+    # A draft PO (e.g. one returned for changes) isn't amended - it is edited on its own page.
+    row = db.get(P2PPurchaseOrder, p_a["id"])
+    row.status = "draft"
+    db.commit()
     r = client.post(f"{POS}/{p_a['id']}/amendments", json={"reason": "Vendor revised rate", "changes": [{"po_item_id": line, "unit_price": 85}]},
                     headers=auth_header(s["buyer"]))
     assert r.status_code == 409
-    attach_tally_po(db, p_a['id'])
-    client.post(f"{RFQS}/{s['rfq'].id}/po-draft/{p_a['id']}/submit", headers=auth_header(s["buyer"]))
+    row.status = "issued"
+    db.commit()
     _decide_all(client, db, "p2p_purchase_order", p_a["id"], s["approvers"])
 
     # Receive 6 of 10.
@@ -219,15 +215,16 @@ def test_po_amendment_floors_rerelease_and_versions(client, db, setup):
     assert client.post(f"{POS}/{p_a['id']}/amendments", json={"reason": "Another one", "changes": [{"po_item_id": line, "quantity": 9}]},
                        headers=auth_header(s["buyer"])).status_code == 409
     db.expire_all()
-    assert db.get(P2PPurchaseOrder, p_a["id"]).items[0].quantity == 10
+    assert next(i for i in db.get(P2PPurchaseOrder, p_a["id"]).items if i.pr_item_id == s["line_a"]).quantity == 10
 
     req = _decide_all(client, db, "p2p_po_amendment", am["id"], s["approvers"])
     assert req.status == "approved" and req.workflow_key == "p2p.po_amendment"
     assert {st.stage_name for st in req.steps} == {"PO approvers", "Partner (final approval)"}  # same as the PO workflow
     db.expire_all()
     po = db.get(P2PPurchaseOrder, p_a["id"])
-    assert po.amendment_no == 1 and po.items[0].quantity == 8 and po.items[0].unit_price == 85
-    assert po.total_value == pytest.approx(8 * 85 * 1.18)
+    line_a = next(i for i in po.items if i.pr_item_id == s["line_a"])
+    assert po.amendment_no == 1 and line_a.quantity == 8 and line_a.unit_price == 85
+    assert po.total_value == pytest.approx((8 * 85 + 4 * 50) * 1.18)
     rec = db.query(VendorCatalogItem).filter_by(vendor_id=s["v2"].id, store_item_id=s["a"].id).one()
     assert rec.unit_price == 85
     hist = client.get(f"{POS}/{p_a['id']}/amendments", headers=auth_header(s["buyer"])).json()
@@ -257,24 +254,21 @@ def test_source_list_and_info_record_keyed_by_item(client, db, setup):
     assert client.get(f"{IR}/default-price", params={"vendor_id": s["v2"].id, "store_item_id": s["b"].id},
                       headers=auth_header(buyer)).json()["unit_price"] == 60
 
-    # Source list: item A only from V1 → a split PO for A to V2 is refused.
+    # Source list: item A only from V1 -> a PO for A to V2 is refused.
     r = client.post(f"{IR}/source-list", json={"store_item_id": s["a"].id, "vendor_id": s["v1"].id, "is_fixed": True}, headers=auth_header(admin))
     assert r.status_code == 201, r.text
-    r = client.post(f"{RFQS}/{s['rfq'].id}/split-pos", json={"pos": [
-        {"vendor_id": s["v2"].id, "selection_reason": "No quotes recorded", "lines": [{"pr_item_id": s["line_a"]}]}]},
-        headers=auth_header(buyer))
+    loc = _store(db, "MMSRC")
+    prices = [{"pr_item_id": s["line_a"], "unit_price": 95}, {"pr_item_id": s["line_b"], "unit_price": 50}]
+    r = post_upload_po(client, buyer, s["rfq"].id, {"vendor_id": s["v2"].id, "ship_to_location_id": loc.id, "lines": prices}, "TALLY-SRC-1")
     assert r.status_code == 409 and "approved-vendor list" in r.json()["detail"]
-    # V1 is allowed, and its price comes from the info record (no quote recorded).
-    r = client.post(f"{RFQS}/{s['rfq'].id}/split-pos", json={"pos": [
-        {"vendor_id": s["v1"].id, "lines": [{"pr_item_id": s["line_a"], "quantity": 6}]}]}, headers=auth_header(buyer))
+    db.rollback()  # a refused request leaves nothing behind (the app's session is rolled back per request)
+    # V1 is allowed: the PO is built for it, at the prices of the Tally PO.
+    r = post_upload_po(client, buyer, s["rfq"].id, {"vendor_id": s["v1"].id, "ship_to_location_id": loc.id, "lines": prices}, "TALLY-SRC-2")
     assert r.status_code == 200, r.text
-    line = r.json()[0]["items"][0]
-    assert line["unit_price"] == 95 and line["price_source"] == "info_record" and line["quantity"] == 6
+    line = next(i for i in r.json()["items"] if i["pr_item_id"] == s["line_a"])
+    assert line["unit_price"] == 95 and line["price_source"] == "manual" and line["quantity"] == 10
     fi = client.get(f"{IR}/for-item", params={"store_item_id": s["a"].id}, headers=auth_header(buyer)).json()
     assert fi["source_list"][0]["vendor_name"] == "Alpha Hydraulics" and fi["info_records"][0]["unit_price"] == 95
-    # Remaining 4 of A + all of B still open for another PO.
-    prop = client.get(f"{RFQS}/{s['rfq'].id}/split-proposal", headers=auth_header(buyer)).json()
-    assert {u["pr_item_id"]: u["quantity"] for u in prop["unawarded"]} == {s["line_a"]: 4, s["line_b"]: 4}
     # Vendor lookup for an item is by Item Master id.
     hits = client.get("/api/v1/p2p/vendors/for-item", params={"store_item_id": s["a"].id}, headers=auth_header(buyer)).json()
     assert [h["vendor_name"] for h in hits] == ["Alpha Hydraulics"]
@@ -284,11 +278,8 @@ def test_item_overview_shows_every_vendor_without_typing_anything(client, db, se
     """Search an item → each vendor's last PO rate, last quote and current
     rate, straight from POs and quotations (no info record typed first)."""
     s = setup
-    q1, q2 = _quoted_and_awarded(client, s)
-    pos, _loc = _split(client, s, q1, q2)
-    p_a = pos[s["v2"].id]
-    attach_tally_po(db, p_a['id'])
-    client.post(f"{RFQS}/{s['rfq'].id}/po-draft/{p_a['id']}/submit", headers=auth_header(s["buyer"]))
+    _quoted_and_awarded(client, s)
+    p_a, _loc = _upload_po(client, s, s["v2"], prices={s["line_a"]: 90, s["line_b"]: 70})
     _decide_all(client, db, "p2p_purchase_order", p_a["id"], s["approvers"])
     # The release mirrored its rate into an info record — that is "last PO",
     # not a rate contract; setting a different rate on it makes it one.

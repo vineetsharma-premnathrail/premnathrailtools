@@ -18,10 +18,7 @@ from app.modules.projects import so_projects as ops
 from app.modules.sales.models.order import SalesOrder
 from app.modules.projects.models.project import PmProject
 from app.modules.store.models.item import StoreItem
-from app.tests._so_project_helpers import confirm_with_project
-from app.tests.test_sales import (
-    BASE, TODAY, hdr, make_user, payload_from_prefill, setup_customer, setup_people,
-)
+from app.tests._so_project_helpers import TODAY, hdr, make_user, order_with_project
 
 DESIGN = "/api/v1/design"
 
@@ -50,16 +47,8 @@ def _head(db):
 
 
 def _order(client, db, item=None, billing=None):
-    maker, head, director, _ = setup_people(db)
-    _org, inq, _ = setup_customer(db, qty=2, price=1000000)
-    body = payload_from_prefill(client, hdr(maker), inq)
-    if item is not None:
-        body["lines"][0]["product_item_id"] = item.id
-    if billing:
-        body["billing_plan"] = billing
-    r = client.post(f"{BASE}/orders", json=body, headers=hdr(maker))
-    assert r.status_code == 200, r.text
-    so = confirm_with_project(client, db, r.json(), maker, head, director)
+    head = make_user(db, "head@premnathrail.com", apps=("projects",))
+    so = order_with_project(db, qty=2, price=1000000, owner=head, product_item_id=item.id if item else None, billing=billing)
     db.expire_all()
     project = db.query(PmProject).filter(PmProject.sales_order_id == so["id"]).first()
     return so, project, head
@@ -111,7 +100,6 @@ def test_new_model_opens_one_design_request_idempotently(client, db):
 
 
 def _admin(db):
-    from app.tests.test_sales import make_user
     return make_user(db, "units.admin@premnathrail.com", role="admin")
 
 

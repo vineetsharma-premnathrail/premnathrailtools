@@ -1,5 +1,6 @@
 'use client'
 
+import { normalizePriority, priorityLabel } from '@/lib/priority'
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -16,7 +17,7 @@ import { PRIORITY_LABELS, WO_STATUS_LABELS, WO_TYPE_LABELS, formatINR, formatMin
 import Select from '@/components/shared/Select'
 
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', assigned: '#2563EB', in_progress: '#F59E0B', on_hold: '#9333EA', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
-const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
+const PRIORITY_HEX: Record<string, string> = { standard: '#475569', urgent: '#DC2626' }
 
 const inputStyle: React.CSSProperties = {
   padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
@@ -152,7 +153,7 @@ export default function MaintenanceWorkOrdersPage() {
                     <td style={{ ...cellStyle, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={w.title}>{w.title}</td>
                     <td style={cellStyle}>{WO_TYPE_LABELS[w.wo_type] || w.wo_type}</td>
                     <td style={cellStyle}>
-                      <Pill label={PRIORITY_LABELS[w.priority] || w.priority} hex={PRIORITY_HEX[w.priority]} />
+                      <Pill label={priorityLabel(w.priority)} hex={PRIORITY_HEX[normalizePriority(w.priority)]} />
                     </td>
                     <td style={cellStyle}>{w.assigned_to_name || <span style={{ color: '#b45309' }}>Unassigned</span>}</td>
                     <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{formatDate(w.planned_start)}</td>

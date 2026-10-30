@@ -1098,9 +1098,14 @@ export interface RndTask {
   /** Steps that make up "done" — all must be ticked before the task can be completed. */
   checklist: RndTaskChecklistItem[]
   checklist_done: number
+  /** 0-100; follows the ticked steps when the task has a checklist. */
+  progress_percent?: number
+  progress_from_checklist?: boolean
+  /** BD re-sent the requirement after this task was created. */
+  requirement_changed?: boolean
 }
 
-export type RndTaskPriority = 'low' | 'medium' | 'high' | 'urgent'
+export type RndTaskPriority = import('@/lib/priority').Priority
 export type RndTaskWorkStatus = 'not_started' | 'in_progress' | 'on_hold'
 
 export interface RndTaskChecklistItem {
@@ -1559,7 +1564,7 @@ export interface P2PRequest {
   department?: string
   requested_by_id?: number
   requested_by_name?: string
-  priority: 'low' | 'medium' | 'high'
+  priority: import('@/lib/priority').Priority
   // Department Head slot (column name kept for backward compatibility).
   approver_id?: number
   approver_name?: string
@@ -4897,7 +4902,7 @@ export type PmProjectStatus = 'planning' | 'active' | 'on_hold' | 'technically_c
 export type PmProjectAction = 'activate' | 'hold' | 'resume' | 'complete' | 'close' | 'cancel'
 export interface PmClosureCheck { key: string; label: string; ok: boolean; required: boolean; detail?: string | null }
 export interface PmClosure { status: string; can_close: boolean; checks: PmClosureCheck[] }
-export type PmPriority = 'low' | 'medium' | 'high' | 'critical'
+export type PmPriority = import('@/lib/priority').Priority
 export type PmHealth = 'on_track' | 'at_risk' | 'delayed'
 
 export interface PmNextMilestone {
@@ -4916,6 +4921,9 @@ export interface PmProject {
   customer_po_ref?: string | null
   /** The sales order (SO) number this project is delivered under: typed text, required when a project is created (Project Management stays standalone: no link to Sales). */
   sales_order_ref?: string | null
+  /** Optional CRM inquiry / tender the project was won from. */
+  source_kind?: 'inquiry' | 'tender' | null
+  source_id?: number | null
   description?: string | null
   project_manager_id?: number | null
   project_manager_name?: string | null
@@ -5227,7 +5235,7 @@ export interface PmDeptSubtask {
   collab?: boolean
   start_date?: string | null
   due_date?: string | null
-  priority?: 'low' | 'medium' | 'high' | 'critical'
+  priority?: import('@/lib/priority').Priority
   status: 'todo' | 'in_progress' | 'on_hold' | 'done'
   /** Done = 100, else the share of its checklist ticked. */
   progress?: number
@@ -5435,9 +5443,9 @@ export interface PmBoard {
 // ---------------------------------------------------------------------------
 
 export type RndProjectType = 'new_product' | 'product_improvement' | 'process_development' | 'technology_research'
-export type RndProjectPriority = 'low' | 'medium' | 'high' | 'critical'
+export type RndProjectPriority = import('@/lib/priority').Priority
 /** Why an R&D project exists (null on projects saved before it was recorded). */
-export type RndProjectOrigin = 'customer_requirement' | 'product_improvement' | 'new_development' | 'process_research'
+export type RndProjectOrigin = 'existing_projects' | 'new_project'
 export type RndProjectSourceKind = 'inquiry' | 'tender' | 'quality_complaint' | 'ncr' | 'service_request'
 export type RndImprovementReason = 'customer_complaint' | 'ncr' | 'service_report' | 'cost_reduction' | 'production_difficulty'
 export interface RndProjectSourceOption { id: number; label: string; sub?: string | null }
@@ -6628,7 +6636,7 @@ export type ProductionBomItemCategory = 'stock' | 'non_stock' | 'text' | 'docume
 export type ProductionControlKey = 'internal' | 'external'
 export type ProductionConfirmation = 'required' | 'optional' | 'none'
 export type ProductionWorkOrderStatus = 'draft' | 'released' | 'in_progress' | 'completed' | 'closed' | 'cancelled'
-export type ProductionPriority = 'low' | 'normal' | 'high' | 'urgent'
+export type ProductionPriority = import('@/lib/priority').Priority
 export type ProductionOperationStatus = 'pending' | 'in_progress' | 'completed'
 
 export interface ProductionLookupOption {
@@ -7744,7 +7752,7 @@ export interface ProductionReport {
 // ---- Electrical (RRV electrical jobs) ----
 
 export type ElectricalJobStatus = 'draft' | 'in_progress' | 'on_hold' | 'handed_over' | 'closed' | 'cancelled'
-export type ElectricalPriority = 'low' | 'normal' | 'high' | 'urgent'
+export type ElectricalPriority = import('@/lib/priority').Priority
 export type ElectricalStageStatus = 'not_started' | 'in_progress' | 'completed' | 'not_applicable'
 export type ElectricalPhase = 'design' | 'procurement' | 'build' | 'test_qc' | 'handover'
 export type ElectricalSelectionStatus = 'proposed' | 'selected' | 'approved'
@@ -8256,7 +8264,7 @@ export interface DesignChangeNotice {
   ecn_number: string
   title: string
   reason: string
-  priority: 'low' | 'medium' | 'high' | 'urgent'
+  priority: import('@/lib/priority').Priority
   description?: string | null
   impact_assessment?: string | null
   target_date?: string | null
@@ -8843,7 +8851,7 @@ export interface DesignRequest {
   requirement_revision: number
   requirement_revised_at?: string | null
   reviewed_revision: number
-  priority: 'low' | 'medium' | 'high' | 'urgent'
+  priority: import('@/lib/priority').Priority
   due_date?: string | null
   status: DesignRequestStatus
   waiting_on: 'design' | 'requester'
@@ -9533,7 +9541,7 @@ export interface ProductionRrvBuild {
   branch_name?: string | null
   build_manager_id?: number | null
   build_manager_name?: string | null
-  priority: 'low' | 'normal' | 'high' | 'urgent'
+  priority: import('@/lib/priority').Priority
   status: ProductionRrvBuildStatus
   planned_start_date?: string | null
   target_completion_date?: string | null
@@ -10618,6 +10626,19 @@ export interface ProjectUnitsResponse {
   vehicles_delivered: number
   lots_total: number
   elements: ProjectUnit[]
+  /** false for every project created in Project Management (one project = one machine). */
+  has_units?: boolean
+  /** The single "Whole project" row of a project without units. */
+  whole_project?: ProjectWholeRow | null
+}
+
+export interface ProjectWholeRow {
+  label: string
+  machine_id: number | null
+  machine_serial: string | null
+  lifecycle_stage: string | null
+  lifecycle_stage_label: string | null
+  departments: Partial<Record<ProjectUnitDepartment, ProjectUnitCell | null>>
 }
 
 /** GET /projects/units/lookup row (feeds ProjectUnitPicker). */
@@ -10631,6 +10652,10 @@ export interface ProjectUnitLookupItem {
   client_name: string | null
   so_number: string | null
   display: string
+  /** A project without units: pick the project itself (element_id null). */
+  project_level?: boolean
+  machine_id?: number | null
+  machine_serial?: string | null
 }
 
 /** Project lifecycle stage (backend projects/lifecycle.py). */

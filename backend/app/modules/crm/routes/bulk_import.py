@@ -54,6 +54,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.permissions import require_tab_action
+from app.core.priority import map_legacy_priority
 from app.core.validators import validate_email_format, validate_gst_format
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -149,7 +150,7 @@ _EXAMPLE_ROWS = [
         "011-23387100", "info@nr.railnet.gov.in", "",
         "Ramesh Kumar", "Senior Section Engineer", "9876543210", "ramesh.kumar@nr.railnet.gov.in", "Procurement",
         "OLD-CRM-1001", "Tender", "Brake Shoe Assembly", "Braking Systems", "As per RDSO spec", "500",
-        "2026-12-31", "Delhi Depot", "Annual rate contract requirement", "Medium", "500000", "480000",
+        "2026-12-31", "Delhi Depot", "Annual rate contract requirement", "Standard", "500000", "480000",
         "2026-11-15", "Suraj Panwar", "", "Delhi Division",
         "Call", "First discussion", "2026-09-01", "2026-09-15", "Suraj Panwar", "Open", "Introduced our product range", "",
     ],
@@ -178,7 +179,7 @@ _EXAMPLE_ROWS = [
         *_ORG_BLANK,
         "Priya Sharma", "Deputy Chief Engineer", "9123456780", "priya.sharma@nr.railnet.gov.in", "Engineering",
         "OLD-CRM-1002", "Referral", "Hydraulic Buffer", "Hydraulic Systems", "As per drawing XYZ", "20",
-        "2026-10-31", "Delhi Depot", "Replacement stock requirement", "High", "200000", "190000",
+        "2026-10-31", "Delhi Depot", "Replacement stock requirement", "Urgent", "200000", "190000",
         "2026-10-01", "Gaurav Katiyar", "", "Delhi Division",
         "Email", "Sent catalogue", "2026-09-05", "2026-09-12", "Gaurav Katiyar", "Open", "Awaiting technical feedback", "",
     ],
@@ -465,7 +466,7 @@ async def bulk_import(
                 required_delivery_date=_parse_date(row, "required_delivery_date"),
                 delivery_location=_get(row, "delivery_location") or None,
                 requirement_desc=_get(row, "requirement_desc") or None,
-                priority=_get(row, "priority") or None,
+                priority=map_legacy_priority(_get(row, "priority")),
                 budget=_parse_float(row, "budget"),
                 expected_value=_parse_float(row, "expected_value"),
                 expected_order_date=_parse_date(row, "expected_order_date"),
@@ -487,7 +488,7 @@ async def bulk_import(
                         org_id=org.id, org_contact_id=contact.id if contact else None,
                         bulk_import_ref=inquiry_ref or None,
                         lead_source=inquiry_fields["lead_source"] or "Bulk Import",
-                        priority=inquiry_fields["priority"] or "Medium",
+                        priority=inquiry_fields["priority"],
                         **{k: v for k, v in inquiry_fields.items() if k not in ("lead_source", "priority")},
                         created_by_id=user.id,
                     )

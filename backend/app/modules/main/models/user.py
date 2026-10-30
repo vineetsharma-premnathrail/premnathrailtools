@@ -7,7 +7,7 @@ from app.modules.main.models.role import Role, user_roles
 
 # Every portal app (module) key. Which of them a user sees is derived from
 # their effective permissions (see get_apps) — admins get all of them.
-AVAILABLE_APPS = {"erp", "rnd", "crm", "p2p", "store", "purchase", "quality", "projects", "accounts", "hr", "production", "design", "electrical", "hydraulic", "maintenance", "sales", "products"}
+AVAILABLE_APPS = {"erp", "rnd", "crm", "p2p", "store", "purchase", "quality", "projects", "accounts", "hr", "production", "design", "electrical", "hydraulic", "maintenance"}
 
 
 class User(Base, TimestampMixin):
@@ -187,16 +187,13 @@ class User(Base, TimestampMixin):
         one tab of (through a role or an extra grant)."""
         if self.role == "admin" or self.is_azure_admin:
             return sorted(AVAILABLE_APPS)
-        from app.core.permission_registry import PRODUCT_TABS, PURCHASE_DESK_GRANT
+        from app.core.permission_registry import PURCHASE_DESK_GRANT
         perms = self.effective_permissions
         modules = set()
         for g in perms:
             if not g.endswith(":view"):
                 continue
-            mk, tab = g.split(":", 2)[:2]
-            # Sales › Products tabs are the "products" app (Product Management
-            # inside Sales), not the "sales" app.
-            modules.add("products" if mk == "sales" and tab.split(".", 1)[0] in PRODUCT_TABS else mk)
+            modules.add(g.split(":", 1)[0])
         if PURCHASE_DESK_GRANT in perms:
             modules.add("purchase")  # buyer desk lives under Procurement
         return sorted(modules & AVAILABLE_APPS)

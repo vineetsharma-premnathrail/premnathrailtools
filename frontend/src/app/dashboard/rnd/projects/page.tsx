@@ -15,20 +15,15 @@ import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { formatDate } from '@/lib/format'
+import { PRIORITY_OPTIONS, priorityLabel, priorityTone } from '@/lib/priority'
+import { ORIGIN_HEX as ORIGIN_COLORS, ORIGIN_LABELS as ORIGIN_NAMES, normalizeOrigin } from '@/components/rnd/ProjectOriginFields'
 
 const STAGE_LABELS: Record<string, string> = { initiation: 'Initiation', research: 'Research', development: 'Development', feasibility: 'Feasibility', handover: 'Handover', closed: 'Closed' }
 const STATUS_LABELS: Record<string, string> = { active: 'Active', on_hold: 'On Hold', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { active: '#16A34A', on_hold: '#F59E0B', cancelled: '#DC2626' }
-const PRIORITY_LABELS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', critical: 'Critical' }
-const PRIORITY_HEX: Record<string, string> = { low: '#78716c', medium: '#2563EB', high: '#F59E0B', critical: '#DC2626' }
-// Why the project exists (Project Origin); 'not_recorded' = saved before origin existed.
-const ORIGIN_LABELS: Record<string, string> = {
-  customer_requirement: 'Customer requirement', product_improvement: 'Product improvement',
-  new_development: 'New product (internal)', process_research: 'Process / tech research', not_recorded: 'Not recorded',
-}
-const ORIGIN_HEX: Record<string, string> = {
-  customer_requirement: '#2563EB', product_improvement: '#D97706', new_development: '#7C3AED', process_research: '#0D9488', not_recorded: '#78716c',
-}
+// Why the project exists (Project Origin): Existing Projects or New Project; 'not_recorded' = saved before origin existed.
+const ORIGIN_LABELS: Record<string, string> = { ...ORIGIN_NAMES, not_recorded: 'Not recorded' }
+const ORIGIN_HEX: Record<string, string> = { ...ORIGIN_COLORS, not_recorded: '#78716c' }
 
 // Shared 34px control scale; list filters keep their own width.
 const inputStyle: React.CSSProperties = { ...sharedInputStyle, width: 'auto', background: 'rgba(255,255,255,.7)' }
@@ -79,7 +74,7 @@ function RndProjectList() {
     if (originFilter) params.origin = originFilter
     if (search.trim()) params.search = search.trim()
     rndApi.listProjects(params)
-      .then((data) => { setProjects(Array.isArray(data) ? data : []); setError('') })
+      .then((data) => { setProjects(Array.isArray(data) ? [...data].sort((a: RndProject, b: RndProject) => a.project_number.localeCompare(b.project_number, undefined, { numeric: true })) : []); setError('') })
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load R&D projects.')))
       .finally(() => setLoading(false))
   }, [isAuthorized, stageFilter, statusFilter, priorityFilter, originFilter, search])
@@ -140,14 +135,14 @@ function RndProjectList() {
             <label style={sheetLabel}>Priority</label>
             <Select data-tour="rnd-proj-priority-filter" style={sheetInput} value={draft.priority} onChange={(e) => setDraft((d) => ({ ...d, priority: e.target.value }))}>
               <option value="">All priorities</option>
-              {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              {PRIORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </Select>
           </div>
           <div>
             <label style={sheetLabel}>Origin</label>
             <Select data-tour="rnd-proj-origin-filter" style={sheetInput} value={draft.origin} onChange={(e) => setDraft((d) => ({ ...d, origin: e.target.value }))}>
               <option value="">All origins</option>
-              {Object.entries(ORIGIN_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              {Object.entries(ORIGIN_NAMES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </Select>
           </div>
         </FiltersSheet>
@@ -179,13 +174,13 @@ function RndProjectList() {
                     <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{p.project_number}</td>
                     <td style={tdStyle}>{p.title}</td>
                     <td style={tdStyle} title={p.source_ref || undefined}>
-                      <span style={pillStyle(ORIGIN_HEX[p.origin || 'not_recorded'])}>
-                        {ORIGIN_LABELS[p.origin || 'not_recorded'] || p.origin}
+                      <span style={pillStyle(ORIGIN_HEX[normalizeOrigin(p.origin) || 'not_recorded'])}>
+                        {ORIGIN_LABELS[normalizeOrigin(p.origin) || 'not_recorded']}
                       </span>
                     </td>
                     <td style={tdStyle}>
-                      <span style={pillStyle(PRIORITY_HEX[p.priority])}>
-                        {PRIORITY_LABELS[p.priority] || p.priority}
+                      <span style={pillStyle(priorityTone(p.priority).color)}>
+                        {priorityLabel(p.priority)}
                       </span>
                     </td>
                     <td style={tdStyle}>

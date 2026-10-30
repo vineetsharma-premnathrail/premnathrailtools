@@ -126,7 +126,7 @@ def test_work_order_full_lifecycle(client, db, setup):
     plate, bolt, product = setup["plate"], setup["bolt"], setup["product"]
     client.post(f"{API}/boms/{setup['bom']['id']}/activate", headers=h)
 
-    wo = client.post(f"{API}/work-orders", json={"bom_id": setup["bom"]["id"], "quantity_planned": 2, "priority": "high"}, headers=h)
+    wo = client.post(f"{API}/work-orders", json={"bom_id": setup["bom"]["id"], "quantity_planned": 2, "priority": "urgent"}, headers=h)
     assert wo.status_code == 200, wo.text
     wo = wo.json()
     assert wo["wo_number"].startswith("WO-") and wo["status"] == "draft"

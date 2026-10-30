@@ -257,10 +257,10 @@ def test_rerun_refuses_non_idempotent_job(client, db):
 # ------------------------------------------------------------------ SM12
 
 def test_parse_lock_target():
-    t = parse_target("PATCH", "/api/v1/sales/orders/12", "3")
-    assert t["table"] == "sales_orders" and t["ident"] == "12" and t["expected"] == 3
-    assert parse_target("GET", "/api/v1/sales/orders/12", "3") is None
-    assert parse_target("PATCH", "/api/v1/sales/orders/12", None) is None
+    t = parse_target("PATCH", "/api/v1/p2p/purchase-orders/12", "3")
+    assert t["table"] == "p2p_purchase_orders" and t["ident"] == "12" and t["expected"] == 3
+    assert parse_target("GET", "/api/v1/p2p/purchase-orders/12", "3") is None
+    assert parse_target("PATCH", "/api/v1/p2p/purchase-orders/12", None) is None
 
 
 def test_stale_save_raises_and_fresh_save_bumps_version(db):
@@ -322,10 +322,10 @@ def test_cockpit_access_and_shape(client, db):
     r = client.get("/api/v1/analytics/cockpit?refresh=true", headers=_auth(partner))
     assert r.status_code == 200, r.text
     kpis = {k["key"]: k for k in r.json()["kpis"]}
-    assert list(kpis) == ["enquiries", "order_intake", "backlog", "production_wip", "qc_holds", "dispatch",
-                          "billing", "collections", "service_sla"]
+    # Sales retired (2026-10-30): the order intake, backlog and dispatch tiles are gone.
+    assert list(kpis) == ["enquiries", "production_wip", "qc_holds", "billing", "collections", "service_sla"]
     assert all(k["status"] in ("ok", "unavailable") for k in kpis.values())
-    assert kpis["order_intake"]["status"] == "ok" and len(kpis["order_intake"]["trend"]) == 12
+    assert kpis["billing"]["status"] == "ok" and len(kpis["billing"]["trend"]) == 12
 
     viewer = _user(db, "viewer@premnathrail.com", grants=["organization:cockpit:view"])
     r = client.get("/api/v1/analytics/cockpit?refresh=true", headers=_auth(viewer))

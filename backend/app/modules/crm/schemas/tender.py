@@ -1,5 +1,7 @@
 from datetime import date, datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from app.core.priority import coerce_priority_field
 
 
 class TenderCreate(BaseModel):
@@ -19,7 +21,7 @@ class TenderCreate(BaseModel):
     tender_details: str | None = None
     tender_date: date | None = None
     lead_source: str | None = None
-    priority: str = "Medium"
+    priority: str = "standard"
     bd_owner: str | None = None
     railway_zone: str | None = None
     division: str | None = None
@@ -41,6 +43,12 @@ class TenderCreate(BaseModel):
     loi_number: str | None = None
     contract_value: float | None = None
     loss_reason: str | None = None
+
+    @field_validator("priority")
+    @classmethod
+    def _priority_two_values(cls, v):
+        return coerce_priority_field(v, blank_to="standard")
+
 
 
 class TenderUpdate(BaseModel):
@@ -84,6 +92,12 @@ class TenderUpdate(BaseModel):
     loi_number: str | None = None
     contract_value: float | None = None
     loss_reason: str | None = None
+
+    @field_validator("priority")
+    @classmethod
+    def _priority_two_values(cls, v):
+        return coerce_priority_field(v)
+
 
 
 class TenderResponse(BaseModel):

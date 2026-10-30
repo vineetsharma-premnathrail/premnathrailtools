@@ -1,10 +1,17 @@
-"""R&D work on a requirement: per-requirement access (set by the R&D head),
-tasks the head hands out, and the requirement's R&D documents.
+"""R&D work on a requirement: tasks the head hands out, linked projects and the
+requirement's R&D documents (with their category).
 
 Requirement = a CRM Inquiry / Tender sent to R&D, addressed by
 (source, record_id). Files are stored as CrmDocument rows in folder "rnd"
 (never shown on CRM's Documents tab) and are opened only through this
-router, which checks the per-requirement rights first.
+router, which checks the requirement access first
+(rnd/services/requirement_access.py).
+
+R&D rework 2026-10-30: no per-requirement Access tab, no Share Department
+and no Milestones — the R&D side sees every requirement, people outside R&D
+see the ones they hold a task on, and work is plain tasks. Creating a task
+(and uploading an R&D offer / responding) needs the latest revision to be
+accepted (rnd/services/requirements.py).
 
 Task flow: head creates (title, remarks, assignee, due date, files) → assignee
 works, posts updates, and completes the task themselves (remarks + files; a
@@ -13,13 +20,8 @@ new completion date from the assignee, which becomes the new due date. While
 working, the assignee can "ask for approval" on something task-related (a
 drawing, material, deviation): the person who gave the task or the R&D head
 approves / rejects it and the task stays open. Whoever gave the task can
-reopen a completed task with a reason.
-
-Departments the requirement is shared with (Design / Electrical / Hydraulic
-& Pneumatic) use this same router: they see every department's tasks, give
-tasks to anyone in R&D or a shared department (the assignee's department
-head is told), upload documents — each department decides whether the
-others see its files — and take part in the discussion.
+reopen a completed task with a reason. Progress (0-100) follows the checklist
+when there is one, otherwise the assignee enters it.
 """
 from datetime import date, datetime, timezone
 from typing import Literal
@@ -28,7 +30,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.audit import record_audit
+from app.core import assignee_rules
 from app.core.config import settings
 from app.core.permissions import ensure_feature_action
 from app.db.session import get_db
@@ -40,31 +42,29 @@ from app.modules.crm.services.requirement_movement import today_ist
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.user import User
 from app.modules.main.routes.auth import get_current_user
-from app.modules.rnd.models.requirement_work import (
-    RndRequirementAccess, RndRequirementDocVisibility, RndRequirementProjectLink, RndRequirementShare, RndRequirementTask, RndTaskEvent,
-)
+from app.modules.rnd.models.document import RND_DOC_CATEGORY_LABELS, RND_DOC_PICKER_CATEGORIES
 from app.modules.rnd.models.project import RndProject
-from app.modules.rnd.models.requirement_milestone import (
-    RND_MILESTONE_OPEN, RND_MILESTONE_STATUS_LABELS, RndRequirementMilestone,
+from app.modules.rnd.models.requirement_work import (
+    RndRequirementDocVisibility, RndRequirementProjectLink, RndRequirementTask, RndTaskEvent,
 )
+from app.modules.rnd.services import events as rnd_events
 from app.modules.rnd.services import requirement_access as ra
-from app.modules.rnd.services import requirement_shares as rs
+from app.modules.rnd.services import requirements as intake
 from app.modules.rnd.services import task_approvals
 from app.modules.rnd.services import task_fields
-from app.modules.rnd.services import events as rnd_events
 from app.utils.notifications import notify_user
 from app.utils.sharepoint import build_sharepoint_folder_path, download_file_content, get_download_url, upload_file_to_sharepoint
 
-def _require_requirement_side(user: User = Depends(get_current_user)) -> User:
-    """R&D › Requirements, or a department's Requirements tab — what each
-    person may do on a given requirement is checked per endpoint (ra.ensure)."""
-    if not ra.has_requirement_side(user):
-        raise HTTPException(status_code=403, detail="Requirements need 'view' on R&D › Requirements, or on Design / Electrical / Hydraulic & Pneumatic › Requirements. "
-                                                    "Ask an admin to add it to one of your roles (Organization › Role & Permissions — the Permission Matrix).")
+
+def _require_requirement_side(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
+    """R&D › Requirements, or a task on a requirement — what each person may do
+    on a given requirement is checked per endpoint (ra.ensure)."""
+    if not ra.has_requirement_side(db, user):
+        raise HTTPException(status_code=403, detail="Requirements need 'view' on R&D › Requirements, or a task on the requirement. "
+                                                    "Ask an admin to add it to one of your roles (Organization › Role & Permissions), "
+                                                    f"or ask the R&D head ({ra._head_names(db)}) to give you a task on it.")
     return user
 
-
-from app.core import assignee_rules
 
 RULE_KEY = "rnd:requirements.tasks"  # core/assignee_rules.PICKERS
 router = APIRouter(
@@ -76,9 +76,15 @@ Source = Literal["inquiry", "tender"]
 MAX_FILES = 10
 REQ_DOC = "rnd_requirement"      # related_sub_module of a requirement-level R&D document
 TASK_DOC = "rnd_task"            # related_sub_module of a task file
+OFFER_DOC = "technical_offer"    # related_sub_module of an uploaded Technical Offer (R&D or BD)
 TASK_BRIEF, TASK_WORK = "rnd_task_brief", "rnd_task_work"   # doc_category: head's files / assignee's files
 TASK_APPROVAL = "rnd_task_approval"   # doc_category: files attached to an approval request
 KIND = "requirement"                  # task_kind on rnd_task_approvals
+
+# Fixed document categories (no admin editing); the list lives in rnd/models/document.py.
+# "technical_offer" is set only by the offer upload flow and is not offered in the picker.
+DOC_CATEGORIES = dict(RND_DOC_CATEGORY_LABELS)
+UPLOAD_CATEGORIES = tuple(RND_DOC_PICKER_CATEGORIES)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────
@@ -93,8 +99,7 @@ def _users(db: Session, ids) -> dict[int, User]:
 
 
 def _notify(db: Session, uids, source: str, record_id: int, *, title: str, message: str, notification_type: str, teams: bool = False) -> None:
-    """Bell notification linked to the page each person can open: R&D's
-    requirement page, or their department's Requirements page."""
+    """Bell notification linked to the requirement's page."""
     for u in _users(db, uids).values():
         entity_type, entity_id = ra.link_for(db, u, source, record_id)
         notify_user(db, u.id, title=title, message=message, notification_type=notification_type,
@@ -155,40 +160,16 @@ def _is_overdue(t: RndRequirementTask) -> bool:
     return t.status == "open" and today_ist() > t.due_date
 
 
-def _open_milestone(db: Session, source: str, record_id: int, record, milestone_id: int | None) -> RndRequirementMilestone | None:
-    """The milestone a task goes into: on this requirement and still open."""
-    if not milestone_id:
-        return None
-    m = db.query(RndRequirementMilestone).filter(
-        RndRequirementMilestone.id == milestone_id, RndRequirementMilestone.source == source,
-        RndRequirementMilestone.record_id == record_id).first()
-    if not m:
-        raise HTTPException(status_code=404, detail=f"Milestone #{milestone_id} isn't on {_ref(source, record)} any more — refresh the page.")
-    if m.status not in RND_MILESTONE_OPEN:
-        raise HTTPException(status_code=409, detail=f"Milestone '{m.title}' is {RND_MILESTONE_STATUS_LABELS[m.status]}, so it can't get tasks. Reopen it first, or pick another milestone.")
-    return m
-
-
-def _check_in_milestone(m: RndRequirementMilestone | None, due: date, start: date | None = None) -> None:
-    if not m:
-        return
-    if due > m.due_date:
-        raise HTTPException(status_code=422, detail=f"A task in '{m.title}' can't be due after the milestone's end date ({m.due_date.strftime('%d %b %Y')}). Pick an earlier date, or move the milestone's end date first.")
-    if start and m.start_date and start < m.start_date:
-        raise HTTPException(status_code=422, detail=f"A task in '{m.title}' can't start before the milestone starts ({m.start_date.strftime('%d %b %Y')}).")
-
-
 def _serialize_tasks(db: Session, tasks: list[RndRequirementTask]) -> list[dict]:
     if not tasks:
         return []
     ids = [t.id for t in tasks]
-    ms_ids = {t.milestone_id for t in tasks if t.milestone_id}
-    milestone_titles = {m.id: m.title for m in db.query(RndRequirementMilestone).filter(RndRequirementMilestone.id.in_(ms_ids)).all()} if ms_ids else {}
     events = db.query(RndTaskEvent).filter(RndTaskEvent.task_id.in_(ids)).order_by(RndTaskEvent.id.asc()).all()
     docs = db.query(CrmDocument).filter(
         CrmDocument.related_sub_module == TASK_DOC, CrmDocument.related_sub_id.in_(ids), CrmDocument.is_deleted == False,  # noqa: E712
     ).order_by(CrmDocument.id.asc()).all()
     users = _users(db, [t.assigned_to_id for t in tasks] + [t.created_by_id for t in tasks] + [e.user_id for e in events])
+    changed = intake.changed_flags(db, tasks)
     by_task_events: dict[int, list] = {}
     for e in events:
         by_task_events.setdefault(e.task_id, []).append({
@@ -204,9 +185,9 @@ def _serialize_tasks(db: Session, tasks: list[RndRequirementTask]) -> list[dict]
     return [
         {
             "id": t.id, "source": t.source, "record_id": t.record_id, "parent_task_id": t.parent_task_id,
-            "milestone_id": t.milestone_id, "milestone_title": milestone_titles.get(t.milestone_id) if t.milestone_id else None,
             "title": t.title, "remarks": t.remarks,
-            "department": t.department, "department_label": ra.side_label(t.department),
+            # Whose work it is: the assignee's department from Organization (R&D, Design …).
+            "department": (users.get(t.assigned_to_id).department if users.get(t.assigned_to_id) else None) or "R&D",
             "assigned_to_id": t.assigned_to_id, "assigned_to": _name(users.get(t.assigned_to_id)),
             "created_by_id": t.created_by_id, "created_by": _name(users.get(t.created_by_id)),
             "created_at": t.created_at.isoformat() if t.created_at else None,
@@ -220,6 +201,8 @@ def _serialize_tasks(db: Session, tasks: list[RndRequirementTask]) -> list[dict]
             "work_documents": [d for d in by_task_docs.get(t.id, []) if d["category"] == TASK_WORK],
             "approvals": approvals.get(t.id, []),
             "pending_approval": any(a["status"] == "pending" for a in approvals.get(t.id, [])),
+            "revision_no": t.revision_no,
+            "requirement_changed": changed.get(t.id, False),
             **task_fields.fields_out(t),
         }
         for t in tasks
@@ -240,85 +223,12 @@ def _parse_date(value: str, label: str) -> date:
         raise HTTPException(status_code=422, detail=f"{label} '{value}' isn't a valid date — pick it from the calendar.") from None
 
 
-# ── my access + access management ─────────────────────────────────────────
+# ── my access ─────────────────────────────────────────────────────────────
 
 @router.get("/{source}/{record_id}/my-access")
 async def my_access(source: Source, record_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _record(db, source, record_id)
     return ra.access_for(db, user, source, record_id)
-
-
-@router.get("/{source}/{record_id}/access")
-async def list_access(source: Source, record_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    _record(db, source, record_id)
-    ra.ensure_head(db, user, "see or change who has access to a requirement")
-    if ra.is_rnd_side(user):
-        ensure_feature_action(user, "rnd", "requirements", "access", "view")
-    rows = db.query(RndRequirementAccess).filter(
-        RndRequirementAccess.source == source, RndRequirementAccess.record_id == record_id,
-    ).order_by(RndRequirementAccess.id).all()
-    users = _users(db, [r.user_id for r in rows] + [r.granted_by_id for r in rows])
-    return [
-        {"user_id": r.user_id, "name": _name(users.get(r.user_id)), "can_view": r.can_view, "can_download": r.can_download,
-         "can_upload": r.can_upload, "can_respond": r.can_respond, "granted_by": _name(users.get(r.granted_by_id)) if r.granted_by_id else None}
-        for r in rows
-    ]
-
-
-class AccessRow(BaseModel):
-    user_id: int
-    can_view: bool = True
-    can_download: bool = False
-    can_upload: bool = False
-    can_respond: bool = False
-
-
-class AccessUpdate(BaseModel):
-    rows: list[AccessRow]
-
-
-@router.put("/{source}/{record_id}/access")
-async def update_access(source: Source, record_id: int, payload: AccessUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    record = _record(db, source, record_id)
-    ra.ensure_head(db, user, "change who has access to a requirement")
-    if ra.is_rnd_side(user):
-        ensure_feature_action(user, "rnd", "requirements", "access", "edit")
-    people = _users(db, [r.user_id for r in payload.rows])
-    seen: set[int] = set()
-    for r in payload.rows:
-        u = people.get(r.user_id)
-        if not u:
-            raise HTTPException(status_code=400, detail=f"User #{r.user_id} no longer exists — remove them and save again.")
-        if r.user_id in seen:
-            raise HTTPException(status_code=400, detail=f"{_name(u)} is listed twice — keep one row per person.")
-        if not u.is_active or "rnd" not in u.get_apps():
-            raise HTTPException(status_code=400, detail=f"{_name(u)} is deactivated or has no R&D access, so they couldn't open this requirement. Remove them or grant R&D access in User Management.")
-        if (r.can_download or r.can_upload or r.can_respond) and not r.can_view:
-            raise HTTPException(status_code=400, detail=f"{_name(u)}: tick View too — Download, Upload and Respond only work for someone who can open the requirement.")
-        seen.add(r.user_id)
-
-    existing = {a.user_id: a for a in db.query(RndRequirementAccess).filter(
-        RndRequirementAccess.source == source, RndRequirementAccess.record_id == record_id).all()}
-    for uid, row in existing.items():
-        if uid not in seen:
-            db.delete(row)
-    ref = _ref(source, record)
-    for r in payload.rows:
-        row = existing.get(r.user_id)
-        is_new = row is None
-        if is_new:
-            row = RndRequirementAccess(source=source, record_id=record_id, user_id=r.user_id, granted_by_id=user.id)
-            db.add(row)
-        row.can_view, row.can_download, row.can_upload, row.can_respond = r.can_view, r.can_download, r.can_upload, r.can_respond
-        if is_new and r.user_id != user.id:
-            rights = [label for flag, label in ((r.can_view, "view"), (r.can_download, "download"), (r.can_upload, "upload"), (r.can_respond, "respond")) if flag]
-            notify_user(db, r.user_id, title=f"Access to requirement {ref}",
-                        message=f"{_name(user)} gave you access ({', '.join(rights)}) to {ref}.",
-                        notification_type="rnd_access_granted", entity_type=f"rnd_req_{source}", entity_id=record_id)
-    db.add(AuditLog(entity_type=f"rnd_req_{source}", entity_id=record_id, action="access_updated", module_key="rnd",
-                    summary=f"{_name(user)} set R&D access on {ref} for {len(payload.rows)} people.", performed_by_id=user.id))
-    db.commit()
-    return await list_access(source, record_id, db, user)
 
 
 # ── linked Prototype / Research projects ──────────────────────────────────
@@ -408,180 +318,146 @@ async def unlink_project(source: Source, record_id: int, project_id: int, db: Se
     return await linked_projects(source, record_id, db, user)
 
 
-# ── shared with Design / Electrical / Hydraulic & Pneumatic ───────────────
-
-@router.get("/{source}/{record_id}/shares")
-async def list_shares(source: Source, record_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Every time this requirement was shared with a department, newest first, with the department's reply."""
-    _record(db, source, record_id)
-    ra.ensure(db, user, source, record_id, "view")
-    if ra.is_rnd_side(user):
-        ensure_feature_action(user, "rnd", "requirements", "departments", "view")
-    shares = db.query(RndRequirementShare).filter(
-        RndRequirementShare.source == source, RndRequirementShare.record_id == record_id,
-    ).order_by(RndRequirementShare.id.desc()).all()
-    return rs.serialize(db, shares)
-
-
-class SharePayload(BaseModel):
-    departments: list[str]
-    note: str
-    due_date: date | None = None
-
-
-@router.post("/{source}/{record_id}/shares")
-async def share_requirement(source: Source, record_id: int, payload: SharePayload, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    record = _record(db, source, record_id)
-    ra.ensure_head(db, user, "share a requirement with Design, Electrical or Hydraulic & Pneumatic")
-    if ra.is_rnd_side(user):
-        ensure_feature_action(user, "rnd", "requirements", "departments", "create")
-    departments = list(dict.fromkeys(payload.departments))
-    if not departments:
-        raise HTTPException(status_code=422, detail="Pick at least one department to share this requirement with.")
-    for d in departments:
-        rs.ensure_department(d)
-    note = (payload.note or "").strip()
-    if not note:
-        raise HTTPException(status_code=422, detail="Write what R&D needs from the department (e.g. \"Check if the 600 mm platform fits the hydraulic power pack\") — the note is required.")
-    rs.validate_due_date(payload.due_date)
-    ref = _ref(source, record)
-    due_text = f" — reply by {payload.due_date.strftime('%d %b %Y')}" if payload.due_date else ""
-    for d in departments:
-        previous = rs.open_share(db, source, record_id, d)
-        share = RndRequirementShare(source=source, record_id=record_id, department=d, note=note, due_date=payload.due_date,
-                                    status="open", shared_by_id=user.id)
-        db.add(share)
-        db.flush()
-        # Asking again while the earlier request is unanswered replaces it, so
-        # the department answers only the latest note / date.
-        if previous:
-            previous.status, previous.replaced_by_id, previous.replaced_at = "replaced", share.id, datetime.now(timezone.utc)
-        for u in rs.recipients(db, d):
-            notify_user(db, u.id, title=f"R&D requirement {ref} for {rs.label(d)}",
-                        message=f"{_name(user)} shared {ref} with {rs.label(d)} for a feasibility reply{due_text}"
-                                + (" — this replaces the earlier request" if previous else "") + f". {note}",
-                        notification_type="rnd_requirement_shared", entity_type=f"{d}_rnd_requirement", entity_id=share.id)
-    db.add(AuditLog(entity_type=f"rnd_req_{source}", entity_id=record_id, action="shared_with_departments", module_key="rnd",
-                    summary=f"{_name(user)} shared {ref} with {', '.join(rs.label(d) for d in departments)}{due_text}.", performed_by_id=user.id))
-    db.commit()
-    return await list_shares(source, record_id, db, user)
-
-
 # ── requirement documents (R&D side) ──────────────────────────────────────
 
-def _visibility(db: Session, docs: list[CrmDocument]) -> dict[int, RndRequirementDocVisibility]:
+def _categories(db: Session, docs: list[CrmDocument]) -> dict[int, str | None]:
     ids = [d.id for d in docs if d.related_sub_module == REQ_DOC]
     if not ids:
         return {}
-    return {v.document_id: v for v in db.query(RndRequirementDocVisibility).filter(RndRequirementDocVisibility.document_id.in_(ids)).all()}
+    return {v.document_id: v.category for v in db.query(RndRequirementDocVisibility).filter(RndRequirementDocVisibility.document_id.in_(ids)).all()}
 
 
-def _visible_doc(user: User, vis: RndRequirementDocVisibility | None, my_departments: list[str]) -> bool:
-    """A requirement document kept to its own department is seen only by that
-    department's people (and admins). No row = R&D's, visible to all."""
-    return user.role == "admin" or vis is None or vis.shared_with_all or vis.department in my_departments
+def _category_key(raw: str | None) -> str:
+    return raw if raw in DOC_CATEGORIES else "other"
 
 
-def _req_doc_dict(d: CrmDocument, vis: RndRequirementDocVisibility | None, my_departments: list[str]) -> dict:
-    department = vis.department if vis else ra.RND
-    return {**_doc_dict(d), "department": department, "department_label": ra.side_label(department),
-            "shared_with_all": vis.shared_with_all if vis else True,
-            "can_change_visibility": department in my_departments}
+def _req_doc_dict(d: CrmDocument, category: str | None, can_change: bool = False) -> dict:
+    key = _category_key(category)
+    return {**_doc_dict(d), "category": key, "category_label": DOC_CATEGORIES[key],
+            "department": "rnd", "department_label": "R&D", "can_change_category": can_change}
+
+
+def _can_change_category(user: User, doc: CrmDocument, head: bool) -> bool:
+    """The uploader or the R&D head."""
+    return head or doc.created_by_id == user.id
+
+
+def _check_category(value: str | None) -> str:
+    key = (value or "").strip()
+    if not key:
+        raise HTTPException(status_code=422, detail="Pick a category — Customer Specification, Technical Specification, Reference Standard, "
+                                                    "Drawing, Calculation, Test Report, Datasheet or Other.")
+    if key == "technical_offer":
+        raise HTTPException(status_code=422, detail="'Technical Offer' is set only when you upload a Technical Offer (Technical Offers tab). "
+                                                    "Pick another category for this file.")
+    if key not in UPLOAD_CATEGORIES:
+        raise HTTPException(status_code=422, detail=f"'{key}' isn't a document category — pick one of: "
+                                                    f"{', '.join(DOC_CATEGORIES[k] for k in UPLOAD_CATEGORIES)}.")
+    return key
+
+
+@router.get("/document-categories")
+async def document_categories(user: User = Depends(get_current_user)):
+    """The fixed category list for the upload picker (Technical Offer is system-set and not offered)."""
+    return [{"key": k, "label": DOC_CATEGORIES[k]} for k in UPLOAD_CATEGORIES]
 
 
 @router.get("/{source}/{record_id}/documents")
-async def list_documents(source: Source, record_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def list_documents(source: Source, record_id: int, category: str | None = None,
+                         db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _record(db, source, record_id)
-    access = ra.ensure(db, user, source, record_id, "view")
+    ra.ensure(db, user, source, record_id, "view")
     if ra.is_rnd_side(user):
         ensure_feature_action(user, "rnd", "requirements", "documents", "view")
     docs = db.query(CrmDocument).filter(
         CrmDocument.related_module == source, CrmDocument.related_id == record_id,
         CrmDocument.related_sub_module == REQ_DOC, CrmDocument.is_deleted == False,  # noqa: E712
     ).order_by(CrmDocument.id.desc()).all()
-    vis = _visibility(db, docs)
-    mine = access["departments"]
-    return [_req_doc_dict(d, vis.get(d.id), mine) for d in docs if _visible_doc(user, vis.get(d.id), mine)]
+    cats = _categories(db, docs)
+    head = ra.is_head(db, user)
+    rows = [_req_doc_dict(d, cats.get(d.id), _can_change_category(user, d, head)) for d in docs]
+    if category:
+        rows = [r for r in rows if r["category"] == category]
+    return rows
 
 
 @router.post("/{source}/{record_id}/documents")
 async def upload_documents(source: Source, record_id: int, files: list[UploadFile] = File(...),
-                           department: str = Form(ra.RND), visibility: Literal["all", "own"] = Form("all"),
+                           category: str | None = Form(None),
                            db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Upload under one of your departments on this requirement; "own" keeps
-    the files to that department, "all" lets every department see them."""
+    """Upload files to the requirement under one fixed category (required)."""
     record = _record(db, source, record_id)
-    access = ra.ensure(db, user, source, record_id, "upload")
+    ra.ensure(db, user, source, record_id, "upload")
     if ra.is_rnd_side(user):
         ensure_feature_action(user, "rnd", "requirements", "documents", "create")
-    if department not in access["departments"]:
-        mine = ", ".join(ra.side_label(d) for d in access["departments"]) or "none"
-        raise HTTPException(status_code=403, detail=f"You can't upload for {ra.side_label(department)} — you belong to: {mine}. Pick one of those.")
+    key = _check_category(category)
     docs = await _store_files(db, source=source, record=record, files=files, sub_module=REQ_DOC, sub_id=None,
-                              category="rnd_document" if department == ra.RND else f"{department}_document", user=user,
-                              folder="rnd-documents" if department == ra.RND else f"{department}-documents")
+                              category="rnd_document", user=user, folder="rnd-documents")
     if not docs:
         raise HTTPException(status_code=422, detail="Choose at least one file to upload.")
     rows = []
     for d in docs:
-        row = RndRequirementDocVisibility(document_id=d.id, department=department, shared_with_all=visibility == "all", updated_by_id=user.id)
+        row = RndRequirementDocVisibility(document_id=d.id, department=ra.RND, shared_with_all=True, category=key, updated_by_id=user.id)
         db.add(row)
         rows.append(row)
+        db.add(AuditLog(entity_type=f"rnd_req_{source}", entity_id=record_id, action="document_uploaded", module_key="rnd",
+                        summary=f"{_name(user)} uploaded \"{d.file_name}\" ({DOC_CATEGORIES[key]}).", performed_by_id=user.id))
     db.commit()
-    return [_req_doc_dict(d, row, access["departments"]) for d, row in zip(docs, rows)]
+    return [_req_doc_dict(d, row.category, True) for d, row in zip(docs, rows)]
 
 
-class VisibilityPayload(BaseModel):
-    shared_with_all: bool
+class CategoryPayload(BaseModel):
+    category: str | None = None
 
 
-@router.patch("/documents/{document_id}/visibility")
-async def set_document_visibility(document_id: int, payload: VisibilityPayload, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """The uploading department shows its file to the other departments, or keeps it to itself."""
+@router.patch("/documents/{document_id}/category")
+async def set_document_category(document_id: int, payload: CategoryPayload, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """The uploader or the R&D head changes a file's category."""
     doc = db.query(CrmDocument).filter(CrmDocument.id == document_id, CrmDocument.is_deleted == False).first()  # noqa: E712
     if not doc or doc.related_sub_module != REQ_DOC:
         raise HTTPException(status_code=404, detail="This document was deleted or isn't a requirement document — refresh the page.")
-    access = ra.ensure(db, user, doc.related_module, doc.related_id, "view")
+    ra.ensure(db, user, doc.related_module, doc.related_id, "view")
     if ra.is_rnd_side(user):
         ensure_feature_action(user, "rnd", "requirements", "documents", "create")
+    if doc.created_by_id != user.id and not ra.is_head(db, user):
+        raise HTTPException(status_code=403, detail="Only the person who uploaded this file, or the R&D head, can change its category.")
+    key = _check_category(payload.category)
     row = db.query(RndRequirementDocVisibility).filter(RndRequirementDocVisibility.document_id == doc.id).first()
-    department = row.department if row else ra.RND
-    if department not in access["departments"]:
-        raise HTTPException(status_code=403, detail=f"Only {ra.side_label(department)} decides who sees its documents — you're not in {ra.side_label(department)} on this requirement.")
-    if not row:
-        row = RndRequirementDocVisibility(document_id=doc.id, department=department)
+    old = _category_key(row.category if row else None)
+    if row is None:
+        row = RndRequirementDocVisibility(document_id=doc.id, department=ra.RND, shared_with_all=True)
         db.add(row)
-    row.shared_with_all, row.updated_by_id = payload.shared_with_all, user.id
-    db.add(AuditLog(entity_type=f"rnd_req_{doc.related_module}", entity_id=doc.related_id, action="document_visibility", module_key="rnd",
-                    summary=f"{_name(user)} made \"{doc.file_name}\" " + ("visible to every department." if payload.shared_with_all else f"visible to {ra.side_label(department)} only."),
-                    performed_by_id=user.id))
+    row.category, row.updated_by_id = key, user.id
+    if old != key:
+        db.add(AuditLog(entity_type=f"rnd_req_{doc.related_module}", entity_id=doc.related_id, action="document_category_changed", module_key="rnd",
+                        summary=f"{_name(user)} changed the category of \"{doc.file_name}\": {DOC_CATEGORIES[old]} → {DOC_CATEGORIES[key]}.",
+                        performed_by_id=user.id))
     db.commit()
-    return _req_doc_dict(doc, row, access["departments"])
+    return _req_doc_dict(doc, row.category, True)
 
 
-DISCUSSION_DOC = "discussion"      # CRM ↔ R&D discussion attachments (requirement_discussion.py)
 RND_RESPONSE_DOC = "rnd_request"   # R&D's response files to a CRM ask
 
 
 @router.get("/{source}/{record_id}/all-documents")
-async def all_documents(source: Source, record_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def all_documents(source: Source, record_id: int, category: str | None = None,
+                        db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Every file on the requirement R&D may see, in one list for the
     Documents tab: what the business team sent (TOR + shared client files),
-    task files, discussion attachments, R&D's own documents and responses.
-    Task files are listed only for the head and the task's assignee — the
-    same rule as opening them."""
+    task files, R&D's own documents (with their category), uploaded Technical
+    Offers and responses. Task files are listed only for the head and the
+    task's assignee / giver — the same rule as opening them."""
     _record(db, source, record_id)
     access = ra.ensure(db, user, source, record_id, "view")
     if ra.is_rnd_side(user):
         ensure_feature_action(user, "rnd", "requirements", "documents", "view")
     head = access["is_head"]
-    mine = access["departments"]
     docs = db.query(CrmDocument).filter(
         CrmDocument.related_module == source, CrmDocument.related_id == record_id, CrmDocument.is_deleted == False,  # noqa: E712
     ).order_by(CrmDocument.id.desc()).all()
     task_ids = {d.related_sub_id for d in docs if d.related_sub_module == TASK_DOC and d.related_sub_id}
     tasks = {t.id: t for t in db.query(RndRequirementTask).filter(RndRequirementTask.id.in_(task_ids)).all()} if task_ids else {}
-    vis = _visibility(db, docs)
+    cats = _categories(db, docs)
     out = []
     for d in docs:
         sub, context = d.related_sub_module, None
@@ -591,49 +467,45 @@ async def all_documents(source: Source, record_id: int, db: Session = Depends(ge
                 continue
             group = "task"
             context = f"Task: {t.title}" + (" · from the person who gave it" if d.doc_category == TASK_BRIEF else " · work / update")
-        elif sub == DISCUSSION_DOC:
-            group, context = "discussion", "Discussion"
+            row = {**_doc_dict(d), "category": "other", "category_label": DOC_CATEGORIES["other"], "can_change_category": False}
         elif sub == REQ_DOC:
-            v = vis.get(d.id)
-            if not _visible_doc(user, v, mine):
-                continue
-            row = _req_doc_dict(d, v, mine)
-            own = row["department"] == ra.RND
-            out.append({**row, "group": "rnd" if own else "dept",
-                        "context": f"{row['department_label']} document" + ("" if row["shared_with_all"] else f" · {row['department_label']} only")})
-            continue
+            row = _req_doc_dict(d, cats.get(d.id), _can_change_category(user, d, head))
+            group, context = "rnd", "R&D document"
+        elif sub == OFFER_DOC:
+            group, context = "rnd", "Technical Offer"
+            row = {**_doc_dict(d), "category": "technical_offer", "category_label": DOC_CATEGORIES["technical_offer"], "can_change_category": False}
         elif sub == RND_RESPONSE_DOC:
             group, context = "rnd", "R&D response to CRM"
-        elif sub == rs.SHARE_DOC:
-            group, context = "rnd", f"{rs.label((d.doc_category or '').removesuffix('_feasibility'))} feasibility reply"
+            row = {**_doc_dict(d), "category": "other", "category_label": DOC_CATEGORIES["other"], "can_change_category": False}
         elif d.shared_via_tor:
             group = "crm"
             context = "Technical Offer Request" if (d.doc_category or "").lower().replace(" ", "_") == "technical_offer_request" else (d.doc_category or "Client document")
+            # Files BD shared keep their CRM category as the label (they were not picked from R&D's list).
+            row = {**_doc_dict(d), "category": "other", "category_label": context, "can_change_category": False}
         else:
             continue  # CRM-internal file never shared with R&D
-        out.append({**_doc_dict(d), "group": group, "context": context})
+        if category and row["category"] != category:
+            continue
+        out.append({**row, "group": group, "context": context})
     return out
 
 
 def _ensure_can_open(db: Session, user: User, doc: CrmDocument) -> None:
     """Task files: the task's assignee or a head. Everything else on the
-    requirement (TOR, reference docs, R&D documents, R&D responses): Download."""
+    requirement (TOR, reference docs, R&D documents, offers, R&D responses): Download."""
     source, record_id = doc.related_module, doc.related_id
     if source not in ("inquiry", "tender"):
         raise HTTPException(status_code=404, detail="This document doesn't belong to an R&D requirement.")
     _record(db, source, record_id)  # 404 unless the requirement was sent to R&D (and isn't deleted)
     # Same rule as the all-documents list: only files R&D may see open here —
     # never a CRM-internal file (quotation, PO, internal notes) by guessing its id.
-    if doc.related_sub_module not in (TASK_DOC, DISCUSSION_DOC, REQ_DOC, RND_RESPONSE_DOC, rs.SHARE_DOC) and not doc.shared_via_tor:
+    if doc.related_sub_module not in (TASK_DOC, REQ_DOC, OFFER_DOC, RND_RESPONSE_DOC) and not doc.shared_via_tor:
         raise HTTPException(status_code=403, detail="This is a CRM-internal file that wasn't shared with R&D. Ask the BD owner to attach it to "
                                                     "the Technical Offer Request if R&D needs it.")
-    # Role-level gate (R&D side): task files follow Tasks, discussion files
-    # follow Discussion, everything else is opened from Documents.
+    # Role-level gate (R&D side): task files follow Tasks, everything else is opened from Documents.
     if ra.is_rnd_side(user):
         if doc.related_sub_module == TASK_DOC:
             ensure_feature_action(user, "rnd", "requirements", "tasks", "view")
-        elif doc.related_sub_module == DISCUSSION_DOC:
-            ensure_feature_action(user, "rnd", "requirements", "discussion", "view")
         else:
             ensure_feature_action(user, "rnd", "requirements", "documents", "export")
     if doc.related_sub_module == TASK_DOC:
@@ -643,11 +515,7 @@ def _ensure_can_open(db: Session, user: User, doc: CrmDocument) -> None:
         raise HTTPException(status_code=403, detail="Task files can be opened only by the task's assignee, the person who gave the task, or the R&D head.")
     if doc.folder_type == "client" and not doc.shared_via_tor:
         raise HTTPException(status_code=403, detail="This client document wasn't shared with R&D in a Technical Offer Request. Ask the BD owner to attach it to the next send.")
-    access = ra.ensure(db, user, source, record_id, "download")
-    if doc.related_sub_module == REQ_DOC:
-        vis = _visibility(db, [doc]).get(doc.id)
-        if not _visible_doc(user, vis, access["departments"]):
-            raise HTTPException(status_code=403, detail=f"{ra.side_label(vis.department)} keeps this file to its own people. Ask them to make it visible to every department if you need it.")
+    ra.ensure(db, user, source, record_id, "download")
 
 
 @router.get("/documents/{document_id}/content")
@@ -699,80 +567,74 @@ async def my_tasks(include_done: bool = False, db: Session = Depends(get_db), us
 
 @router.get("/{source}/{record_id}/tasks")
 async def list_tasks(source: Source, record_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Every department's tasks on the requirement — R&D's and those of the
-    departments it is shared with — for everyone who can open it (the page
-    filters by department)."""
+    """Every task on the requirement for the R&D side; someone outside R&D
+    (a Design / Electrical / Hydraulic & Pneumatic assignee) sees the tasks
+    assigned to them, the tasks they gave, and the sub-tasks under those."""
     _record(db, source, record_id)
-    ra.ensure(db, user, source, record_id, "view")
+    access = ra.ensure(db, user, source, record_id, "view")
     if ra.is_rnd_side(user):
         ensure_feature_action(user, "rnd", "requirements", "tasks", "view")
     tasks = db.query(RndRequirementTask).filter(
         RndRequirementTask.source == source, RndRequirementTask.record_id == record_id,
     ).order_by(RndRequirementTask.id.desc()).all()
+    if not access["is_rnd_side"] and not access["is_head"]:
+        mine = {t.id for t in tasks if user.id in (t.assigned_to_id, t.created_by_id)}
+        tasks = [t for t in tasks if t.id in mine or t.parent_task_id in mine]
     return _serialize_tasks(db, tasks)
 
 
 @router.get("/{source}/{record_id}/assignees")
 async def list_assignees(source: Source, record_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Who can be given a task here: R&D people and the people of every
-    department the requirement is shared with — one row per person and
-    department (someone in two departments appears under both)."""
+    """Who can be given a task here: R&D people and the engineers of Design /
+    Electrical / Hydraulic & Pneumatic — every active person, narrowed by the
+    role's "Assign to" rule. Each row names the person's own department."""
     _record(db, source, record_id)
     ra.ensure(db, user, source, record_id, "view")
     if ra.is_rnd_side(user):
         ensure_feature_action(user, "rnd", "requirements", "tasks", "view")
     roles = ra.team_roles(db)
-    out = []
-    for d in ra.working_departments(db, source, record_id):
-        for u in ra.department_people(db, d):
-            out.append({"id": u.id, "name": _name(u), "email": u.email, "designation": u.designation,
-                        "team_role": roles.get(u.id) if d == ra.RND else None,
-                        "department": d, "department_label": ra.side_label(d)})
+    active = db.query(User).filter(User.is_active == True).order_by(User.name.asc()).all()  # noqa: E712
+    people = [u for u in active if u.role != "admin" and not u.is_azure_admin] or active
+    out = [{"id": u.id, "name": _name(u), "email": u.email, "designation": u.designation,
+            "team_role": roles.get(u.id), "department": u.department, "in_rnd": "rnd" in u.get_apps()} for u in people]
     # The role's assign-to rule (Role & Permissions › R&D › Requirements › Tasks).
     return assignee_rules.filter_people(db, user, RULE_KEY, out)
 
 
-@router.post("/{source}/{record_id}/tasks")
-async def create_task(
-    source: Source, record_id: int,
-    title: str = Form(...), assigned_to_id: int = Form(...), due_date: str = Form(...),
-    remarks: str | None = Form(None), files: list[UploadFile] | None = File(None),
-    priority: str | None = Form(None), start_date: str | None = Form(None),
-    work_status: str | None = Form(None), checklist: str | None = Form(None),
-    department: str = Form(ra.RND),
-    milestone_id: int | None = Form(None),
-    background_tasks: BackgroundTasks = None,
-    db: Session = Depends(get_db), user: User = Depends(get_current_user),
-):
-    """Anyone who can open the requirement gives a task to a person in R&D or
-    in a department it is shared with; that person's department head is told.
-    The task can sit inside one of the requirement's open milestones."""
+async def create_requirement_task(
+    db: Session, user: User, *, source: str, record_id: int, title: str, assigned_to_id: int, due_date: str,
+    remarks: str | None = None, files: list[UploadFile] | None = None, priority: str | None = None,
+    start_date: str | None = None, work_status: str | None = None, checklist: str | None = None,
+    background_tasks: BackgroundTasks | None = None, check_feature: bool = True,
+) -> dict:
+    """Create a task on a requirement (shared by this router and POST /rnd/tasks).
+
+    Anyone who can open the requirement gives a task, once its latest revision
+    is accepted. R&D-side users also need the role's Tasks > Create feature
+    (`check_feature`; the R&D Tasks board checks rnd:tasks:create instead).
+    The assignee's department head is told."""
     record = _record(db, source, record_id)
     ra.ensure(db, user, source, record_id, "view")
-    if ra.is_rnd_side(user):
+    if check_feature and ra.is_rnd_side(user):
         ensure_feature_action(user, "rnd", "requirements", "tasks", "create")
+    revision = intake.require_accepted(db, source, record_id, "give tasks on it")
     title = (title or "").strip()
     if not title:
         raise HTTPException(status_code=422, detail="Give the task a title — what should be done.")
     if len(title) > 200:
         raise HTTPException(status_code=422, detail=f"Title is {len(title)} characters — keep it under 200 and put details in Remarks.")
-    due = _parse_date(due_date, "Response Due Date")
+    due = _parse_date(due_date, "Due date")
     if due < today_ist():
-        raise HTTPException(status_code=422, detail=f"Response Due Date {due.strftime('%d %b %Y')} is in the past — pick today or a later date.")
-    assignee = ra.check_assignee(db, source, record_id, assigned_to_id, department)
+        raise HTTPException(status_code=422, detail=f"Due date {due.strftime('%d %b %Y')} is in the past — pick today or a later date.")
+    assignee = ra.check_assignee(db, assigned_to_id)
     assignee_rules.ensure_allowed(db, user, RULE_KEY, assignee)
-    milestone = _open_milestone(db, source, record_id, record, milestone_id)
 
     task = RndRequirementTask(
         source=source, record_id=record_id, title=title, remarks=(remarks or "").strip() or None,
         assigned_to_id=assignee.id, created_by_id=user.id, original_due_date=due, due_date=due, status="open",
-        department=department, milestone_id=milestone.id if milestone else None,
+        revision_no=revision.revision_no if revision else None,
     )
     task_fields.apply_create(task, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist)
-    _check_in_milestone(milestone, due, task.start_date)
-    if milestone and milestone.status == "todo":
-        # Work has begun on the milestone once its first task is handed out.
-        milestone.status = "in_progress"
     db.add(task)
     db.flush()
     await _store_files(db, source=source, record=record, files=files or [], sub_module=TASK_DOC, sub_id=task.id,
@@ -784,29 +646,45 @@ async def create_task(
     return _serialize_tasks(db, [task])[0]
 
 
+@router.post("/{source}/{record_id}/tasks")
+async def create_task(
+    source: Source, record_id: int,
+    title: str = Form(...), assigned_to_id: int = Form(...), due_date: str = Form(...),
+    remarks: str | None = Form(None), files: list[UploadFile] | None = File(None),
+    priority: str | None = Form(None), start_date: str | None = Form(None),
+    work_status: str | None = Form(None), checklist: str | None = Form(None),
+    background_tasks: BackgroundTasks = None,
+    db: Session = Depends(get_db), user: User = Depends(get_current_user),
+):
+    """Give a task on the requirement to a person in R&D or in an engineering department."""
+    return await create_requirement_task(
+        db, user, source=source, record_id=record_id, title=title, assigned_to_id=assigned_to_id, due_date=due_date,
+        remarks=remarks, files=files, priority=priority, start_date=start_date, work_status=work_status,
+        checklist=checklist, background_tasks=background_tasks,
+    )
+
+
 def _after_assign(db: Session, task: RndRequirementTask, assignee: User, user: User, record, message: str,
                   background_tasks: BackgroundTasks | None = None) -> None:
-    """A task just went to `assignee`: open the requirement to them (R&D
-    people get View + Download; department people already see it through
-    the share), tell them, and tell their department head(s)."""
-    if task.department == ra.RND:
-        ra.grant_task_access(db, source=task.source, record_id=task.record_id, user_id=assignee.id, granted_by=user)
+    """A task just went to `assignee`: the task opens the requirement to them
+    (View + Download — requirement_access), tell them, and tell their
+    department head(s)."""
     ref = _ref(task.source, record)
     kind = "sub-task" if task.parent_task_id else "task"
     if assignee.id != user.id:
         _notify(db, [assignee.id], task.source, task.record_id, title=f"New {kind} on requirement {ref}",
                 message=f"{_name(user)} {message}", notification_type="rnd_task_assigned")
-    heads = ra.assignee_heads(db, task, assignee) - {assignee.id, user.id}
+    heads = ra.assignee_heads(db, assignee) - {assignee.id, user.id}
     if heads:
         _notify(db, heads, task.source, task.record_id, title=f"{_name(assignee)} got a {kind} on {ref}",
-                message=f"{_name(user)} assigned {_name(assignee)} ({ra.side_label(task.department)}) \"{task.title}\" — due {task.due_date.strftime('%d %b %Y')}.",
+                message=f"{_name(user)} assigned {_name(assignee)} ({assignee.department or 'R&D'}) \"{task.title}\" — due {task.due_date.strftime('%d %b %Y')}.",
                 notification_type="rnd_task_assigned_head")
     # Role subscribers (R&D › Requirements › Tasks) who can open this requirement;
     # the assignee and their heads were told above.
     rnd_events.requirement_event(
         db, "task_assigned", task.source, task.record_id,
         title=f"{_name(assignee)} got a {kind} on {ref}",
-        message=f"{_name(user)} assigned {_name(assignee)} ({ra.side_label(task.department)}) \"{task.title}\" — due {task.due_date.strftime('%d %b %Y')}.",
+        message=f"{_name(user)} assigned {_name(assignee)} ({assignee.department or 'R&D'}) \"{task.title}\" — due {task.due_date.strftime('%d %b %Y')}.",
         actor=user, skip_user_ids={assignee.id, *heads}, background_tasks=background_tasks,
     )
 
@@ -882,6 +760,7 @@ async def complete_task(task_id: int, remarks: str = Form(...), delay_reason: st
                        category=TASK_WORK, user=user, folder=f"rnd-tasks/{task.id}")
     task.status = "closed"
     task.closed_at = datetime.now(timezone.utc)
+    task_fields.mark_complete(task)
     _event(db, task, "completed", user, remarks=remarks + (f"\nDelay reason: {delay_reason}" if delay_reason else ""))
     told = ({task.created_by_id} if task.parent_task_id else {task.created_by_id, *ra.head_ids(db)}) - {user.id}
     for uid in told:
@@ -974,12 +853,11 @@ async def create_subtask(
     remarks: str | None = Form(None), files: list[UploadFile] | None = File(None),
     priority: str | None = Form(None), start_date: str | None = Form(None),
     work_status: str | None = Form(None), checklist: str | None = Form(None),
-    department: str = Form(ra.RND),
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db), user: User = Depends(get_current_user),
 ):
-    """The assignee of an open task hands part of it to someone in R&D or a
-    department the requirement is shared with."""
+    """The assignee of an open task hands part of it to someone in R&D or an
+    engineering department."""
     parent = _task(db, task_id)
     _ensure_assignee(parent, user, "split it into sub-tasks")
     if ra.is_rnd_side(user):
@@ -998,15 +876,14 @@ async def create_subtask(
         raise HTTPException(status_code=422, detail=f"Response Due Date {due.strftime('%d %b %Y')} is in the past — pick today or a later date.")
     if due > parent.due_date:
         raise HTTPException(status_code=422, detail=f"A sub-task can't be due after its main task ({parent.due_date.strftime('%d %b %Y')}). Pick an earlier date, or ask for more time on the main task first.")
-    assignee = ra.check_assignee(db, parent.source, parent.record_id, assigned_to_id, department)
+    assignee = ra.check_assignee(db, assigned_to_id)
     assignee_rules.ensure_allowed(db, user, RULE_KEY, assignee)
     record = _record(db, parent.source, parent.record_id)
 
     task = RndRequirementTask(
         source=parent.source, record_id=parent.record_id, parent_task_id=parent.id, title=title,
         remarks=(remarks or "").strip() or None, assigned_to_id=assignee.id, created_by_id=user.id,
-        original_due_date=due, due_date=due, status="open", department=department,
-        milestone_id=parent.milestone_id,
+        original_due_date=due, due_date=due, status="open", revision_no=parent.revision_no,
     )
     task_fields.apply_create(task, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist)
     db.add(task)
@@ -1025,22 +902,20 @@ class TaskEditPayload(BaseModel):
     remarks: str | None = None
     due_date: date | None = None
     assigned_to_id: int | None = None
-    # The assignee's department — sent with assigned_to_id when reassigning.
-    department: str | None = None
     priority: str | None = None
     start_date: date | None = None
     work_status: str | None = None
     # [{id?, text, done?}] — the whole list; items keep their id / who ticked them.
     checklist: list[dict] | None = None
-    # Move a main task into (another) milestone of this requirement; R&D head only. Sub-tasks follow.
-    milestone_id: int | None = None
 
 
 class TaskProgressPayload(BaseModel):
-    """Either a new work status, or one checklist step ticked / unticked."""
+    """A new work status, one checklist step ticked / unticked, or the progress
+    percentage (0-100; only for a task without a checklist)."""
     work_status: str | None = None
     item_id: str | None = None
     done: bool | None = None
+    progress_percent: int | None = None
 
 
 @router.patch("/tasks/{task_id}")
@@ -1089,32 +964,13 @@ async def edit_task(task_id: int, payload: TaskEditPayload, db: Session = Depend
         changes.append(f"Due date: {task.due_date.strftime('%d %b %Y')} → {due.strftime('%d %b %Y')}")
         task.due_date = due
     new_assignee: User | None = None
-    new_department = data.get("department") or task.department
-    if (data.get("assigned_to_id") and data["assigned_to_id"] != task.assigned_to_id) or new_department != task.department:
-        new_assignee = ra.check_assignee(db, task.source, task.record_id, data.get("assigned_to_id") or task.assigned_to_id, new_department)
-        if new_assignee.id != task.assigned_to_id:
-            assignee_rules.ensure_allowed(db, user, RULE_KEY, new_assignee)
+    if data.get("assigned_to_id") and data["assigned_to_id"] != task.assigned_to_id:
+        new_assignee = ra.check_assignee(db, data["assigned_to_id"])
+        assignee_rules.ensure_allowed(db, user, RULE_KEY, new_assignee)
         prev = db.query(User).filter(User.id == task.assigned_to_id).first()
-        if new_assignee.id != task.assigned_to_id:
-            changes.append(f"Assignee: {_name(prev)} → {_name(new_assignee)}")
-        if new_department != task.department:
-            changes.append(f"Department: {ra.side_label(task.department)} → {ra.side_label(new_department)}")
-        task.assigned_to_id, task.department = new_assignee.id, new_department
+        changes.append(f"Assignee: {_name(prev)} → {_name(new_assignee)}")
+        task.assigned_to_id = new_assignee.id
     changes += task_fields.apply_edit(task, data, _name(user))
-    if data.get("milestone_id") and data["milestone_id"] != task.milestone_id:
-        if task.parent_task_id:
-            raise HTTPException(status_code=409, detail="A sub-task stays in its main task's milestone — move the main task instead.")
-        ra.ensure_head(db, user, "move tasks between milestones")
-        target = _open_milestone(db, task.source, task.record_id, _record(db, task.source, task.record_id), data["milestone_id"])
-        _check_in_milestone(target, task.due_date)
-        changes.append(f"Milestone: → '{target.title}'")
-        task.milestone_id = target.id
-        for sub in db.query(RndRequirementTask).filter(RndRequirementTask.parent_task_id == task.id).all():
-            sub.milestone_id = target.id
-        if target.status == "todo":
-            target.status = "in_progress"
-    elif task.milestone_id and not task.parent_task_id and task.due_date != old_due:
-        _check_in_milestone(db.get(RndRequirementMilestone, task.milestone_id), task.due_date)
 
     if not changes:
         return _serialize_tasks(db, [task])[0]
@@ -1140,8 +996,9 @@ async def edit_task(task_id: int, payload: TaskEditPayload, db: Session = Depend
 
 @router.post("/tasks/{task_id}/progress")
 async def task_progress(task_id: int, payload: TaskProgressPayload, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Tick / untick a checklist step or change the work status of an open task —
-    the assignee, or whoever reviews the task (its creator or the R&D head)."""
+    """Tick / untick a checklist step, change the work status or enter the progress
+    percentage of an open task — the assignee, or whoever reviews the task (its
+    creator or the R&D head). Progress follows the ticked steps when there is a checklist."""
     task = _task(db, task_id)
     if task.assigned_to_id != user.id:
         _ensure_reviewer(db, task, user, "update its checklist or status")
@@ -1149,7 +1006,8 @@ async def task_progress(task_id: int, payload: TaskProgressPayload, db: Session 
             ensure_feature_action(user, "rnd", "requirements", "tasks", "edit")
     if task.status != "open":
         raise HTTPException(status_code=409, detail=f"This task is {task.status} — the checklist and status can change only while it is open. Reopen it first if needed.")
-    line = task_fields.apply_progress(task, work_status=payload.work_status, item_id=payload.item_id, done=payload.done, actor_name=_name(user))
+    line = task_fields.apply_progress(task, work_status=payload.work_status, item_id=payload.item_id, done=payload.done,
+                                      actor_name=_name(user), progress_percent=payload.progress_percent)
     if line:
         _event(db, task, "progress", user, remarks=line)
         db.commit()
@@ -1210,19 +1068,9 @@ async def reopen_task(task_id: int, payload: ReviewPayload, db: Session = Depend
         raise HTTPException(status_code=422, detail=f"The due date ({task.due_date.strftime('%d %b %Y')}) has passed — set a new due date when reopening the task.")
     task.status = "open"
     task.closed_at = None
+    task_fields.on_reopen(task)
     _event(db, task, "reopened", user, remarks=reason, old_due=old if task.due_date != old else None,
            new_due=task.due_date if task.due_date != old else None)
-    milestone = db.get(RndRequirementMilestone, task.milestone_id) if task.milestone_id else None
-    if milestone and milestone.status == "done":
-        # An achieved milestone can't hold an open task: it is open again.
-        milestone.status, milestone.completed_at, milestone.completed_by_id = "in_progress", None, None
-        record = _record(db, task.source, task.record_id)
-        record_audit(db, entity_type=f"rnd_req_{task.source}", entity_id=task.record_id, action="milestone_reopened_by_task", module_key="rnd",
-                     summary=f"Milestone '{milestone.title}' is open again: {_name(user)} reopened task '{task.title}'. Reason: {reason}", user_id=user.id)
-        owners = {milestone.assignee_id, *(milestone.co_owner_ids or [])} - {user.id}
-        _notify(db, owners, task.source, task.record_id, title=f"Milestone reopened ({_ref(task.source, record)})",
-                message=f"'{milestone.title}' is open again because {_name(user)} reopened task \"{task.title}\".",
-                notification_type="rnd_requirement_milestone_edited")
     if task.assigned_to_id != user.id:
         record = _record(db, task.source, task.record_id)
         _notify(db, [task.assigned_to_id], task.source, task.record_id, title=f"Task reopened ({_ref(task.source, record)})",

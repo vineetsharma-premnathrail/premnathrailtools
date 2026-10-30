@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core import assignee_rules
 from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.priority import map_legacy_priority, parse_priority
 from app.modules.maintenance.role_events import role_event
 from app.core.permissions import require_any_app_access, require_feature_action, require_tab_action
 from app.db.session import get_db
@@ -12,7 +13,7 @@ from app.modules.main.models.user import User
 from app.modules.organization.models.branch import Branch
 from app.modules.maintenance.models.asset import MaintenanceAsset
 from app.modules.maintenance.models.request import (
-    MaintenanceRequest, MAINTENANCE_REQUEST_TYPES, MAINTENANCE_PRIORITIES, MAINTENANCE_REQUEST_STATUSES,
+    MaintenanceRequest, MAINTENANCE_REQUEST_TYPES, MAINTENANCE_REQUEST_STATUSES,
 )
 from app.modules.maintenance.models.work_order import MaintenanceWorkOrder, MAINTENANCE_WO_TYPES
 from app.modules.maintenance.schemas.request import (
@@ -120,8 +121,8 @@ async def create_request(
 ):
     if payload.request_type not in MAINTENANCE_REQUEST_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid request type '{payload.request_type}'. Valid: {', '.join(MAINTENANCE_REQUEST_TYPES)}.")
-    if payload.priority and payload.priority not in MAINTENANCE_PRIORITIES:
-        raise HTTPException(status_code=400, detail=f"Invalid priority '{payload.priority}'. Valid: {', '.join(MAINTENANCE_PRIORITIES)}.")
+    if payload.priority:
+        payload.priority = parse_priority(payload.priority)
     if not payload.problem_description.strip():
         raise HTTPException(status_code=400, detail="Describe the problem — what happened, and what you saw or heard.")
     asset = db.query(MaintenanceAsset).filter(MaintenanceAsset.id == payload.asset_id, MaintenanceAsset.is_deleted == False).first()  # noqa: E712
@@ -246,9 +247,7 @@ async def convert_request(
     wo_type = payload.wo_type or REQUEST_WO_TYPE.get(req.request_type, "corrective")
     if wo_type not in MAINTENANCE_WO_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid work order type '{wo_type}'.")
-    priority = payload.priority or req.priority
-    if priority not in MAINTENANCE_PRIORITIES:
-        raise HTTPException(status_code=400, detail=f"Invalid priority '{priority}'.")
+    priority = parse_priority(payload.priority) if payload.priority else map_legacy_priority(req.priority)
     if payload.assigned_to_id:
         tech = db.query(User).filter(User.id == payload.assigned_to_id, User.is_active == True).first()  # noqa: E712
         if not tech:

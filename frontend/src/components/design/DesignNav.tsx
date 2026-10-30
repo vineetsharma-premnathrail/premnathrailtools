@@ -8,12 +8,11 @@ import { filterTabsByAccess } from '@/lib/tabAccess'
 import NotificationBell from '@/components/erp/NotificationBell'
 import NavSettingsGear from '@/components/shared/NavSettingsGear'
 import TourButton from '@/components/tour/TourButton'
-import { ArrowsClockwise, Blueprint, BookOpen, ChartBar, Gear, Kanban, ListChecks, SealCheck, SquaresFour, Stack, Tray, type Icon } from '@phosphor-icons/react'
+import { ArrowsClockwise, Blueprint, BookOpen, ChartBar, Gear, Kanban, ListChecks, SealCheck, SquaresFour, Stack, type Icon } from '@phosphor-icons/react'
 
 const TABS = [
   { href: '/dashboard/design', label: 'Dashboard', icon: 'dashboard', subtabKey: 'dashboard' },
   { href: '/dashboard/design/project-work', label: 'Requests', icon: 'pm-work', subtabKey: 'project_work' },
-  { href: '/dashboard/design/requirements', label: 'Requirements', icon: 'rnd-inbox', subtabKey: 'requirements' },
   { href: '/dashboard/design/tasks', label: 'My Work', icon: 'check', subtabKey: 'tasks' },
   { href: '/dashboard/design/documents', label: 'Drawings', icon: 'file', subtabKey: 'documents' },
   { href: '/dashboard/design/boms', label: 'BOMs', icon: 'layers', subtabKey: 'boms' },
@@ -37,7 +36,6 @@ const TAB_ICONS: Record<string, Icon> = {
   book: BookOpen,
   settings: Gear,
   'pm-work': Kanban,
-  'rnd-inbox': Tray,
 }
 
 function TabIcon({ name }: { name: string }) {

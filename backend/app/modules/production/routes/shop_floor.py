@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core import assignee_rules
 from app.core.data_scope import apply_scope, ensure_in_scope, scope_filter
+from app.core.priority import priority_rank
 from app.core.permissions import ensure_can_delete, require_app_access, require_feature_action, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -28,7 +29,6 @@ router = APIRouter(
     dependencies=[Depends(require_app_access("production"))],
 )
 
-_PRIORITY_RANK = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
 OPERATOR_RULE = "production:shop_floor.run_operations"  # core/assignee_rules.PICKERS
 
 
@@ -90,7 +90,7 @@ async def shop_floor_queue(
             instructions=op.instructions,
         ))
     out.sort(key=lambda e: (
-        0 if e.status == "in_progress" else 1, _PRIORITY_RANK.get(e.priority, 9),
+        0 if e.status == "in_progress" else 1, priority_rank(e.priority),
         e.planned_end_date or date.max, e.wo_number, e.sequence,
     ))
     return out

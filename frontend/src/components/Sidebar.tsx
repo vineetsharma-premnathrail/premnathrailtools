@@ -88,13 +88,6 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
     { href: '/dashboard/erp', label: 'Service Module', icon: 'erp', visible: !!user?.apps?.includes('erp') },
     { href: '/dashboard/rnd', label: 'R&D', icon: 'rnd', visible: !!user?.apps?.includes('rnd') },
     { href: '/dashboard/crm', label: 'CRM', icon: 'crm', visible: !!user?.apps?.includes('crm') },
-    // Product Management lives inside Sales (a Products tab in SalesNav); a
-    // products-only user lands straight on the product master.
-    {
-      href: user?.apps?.includes('sales') ? '/dashboard/sales' : '/dashboard/products',
-      label: 'Sales', icon: 'sales',
-      visible: !!user?.apps?.includes('sales') || !!user?.apps?.includes('products'),
-    },
     { href: '/dashboard/p2p', label: 'Procurement', icon: 'p2p', visible: !!user?.apps?.includes('p2p') },
     { href: '/dashboard/store', label: 'Store & Inventory', icon: 'store', visible: !!user?.apps?.includes('store') },
     { href: '/dashboard/projects', label: 'Project Management', icon: 'projects', visible: !!user?.apps?.includes('projects') },

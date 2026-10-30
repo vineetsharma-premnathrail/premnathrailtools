@@ -40,9 +40,7 @@ const config: TourConfig = {
       purpose: 'Six values: asset criticality (A / B / C) × machine down or running. Used only when the requester leaves priority blank.',
       options: [
         { value: 'Urgent', meaning: 'Drop other work — a critical machine is stopped.' },
-        { value: 'High', meaning: 'Next job to pick up.' },
-        { value: 'Normal', meaning: 'Planned into the normal queue.' },
-        { value: 'Low', meaning: 'When time allows.' },
+        { value: 'Standard', meaning: 'Planned into the normal queue.' },
       ],
       why: 'Criticality A + machine down defaults to Urgent so production-stopping failures are never queued behind routine jobs.',
     },

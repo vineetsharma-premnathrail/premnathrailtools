@@ -2,13 +2,12 @@
 
 // Price conditions panel (list + create/edit popup). Used on the Product detail
 // page (locked to one product: list and country prices only, never per customer,
-// owner 2026-10-29) and in Sales Settings (spares, service rates, freight and
-// general discounts). Documents (sales order lines, quotation lines, service
-// invoices) default their price from these records.
+// owner 2026-10-29). Pricing is a feature of CRM › Products. Documents
+// (quotation lines, service invoices) default their price from these records.
 
 import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { salesApi } from '@/lib/api'
+import { crmApi } from '@/lib/api'
 import { pricingApi, PriceCondition, Option } from '@/lib/sdServiceApi'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
@@ -83,7 +82,7 @@ export default function PriceConditionsPanel({ productId, itemKinds, emptyText }
   itemKinds?: PriceItemKind[]
   emptyText?: string
 }) {
-  const { can } = useCan()
+  const { canFeature } = useCan()
   // Memoised on the kinds' values: a new array every render made load() re-run in a loop
   // (endless "Loading…" and a flood of requests to the server).
   const kindsKey = productId ? 'product' : (itemKinds || []).join(',')
@@ -136,7 +135,7 @@ export default function PriceConditionsPanel({ productId, itemKinds, emptyText }
   useEffect(() => {
     pricingApi.meta().then(setMeta).catch((e) => { setMeta(null); setMetaError(extractErrorMessages(e, 'Could not load the price types and service rates, so new prices cannot be added — reload the page.')) })
     if (productId) return  // products are priced by country, no customer picker
-    salesApi.lookupCustomers().then((cs: { id: number; name: string; gst_number: string | null }[]) =>
+    crmApi.listOrganizations({ picker: true }).then((cs: { id: number; name: string; gst_number?: string | null }[]) =>
       setCustomers(cs.map((c) => ({ value: String(c.id), label: c.gst_number ? `${c.name} (${c.gst_number})` : c.name })))).catch(() => setCustomers([]))
   }, [productId])
   useEffect(() => {
@@ -198,9 +197,9 @@ export default function PriceConditionsPanel({ productId, itemKinds, emptyText }
   // A product takes prices only (the server refuses product discounts / customer prices).
   const types = useMemo(() => (meta ? meta.condition_types.filter((t) => (!productId || t.value === 'price') && kindsFor(t.value, meta.item_kinds).length > 0) : []), [meta, kindsFor, productId])
 
-  const canCreate = can('sales', 'pricing', 'create')
-  const canEdit = can('sales', 'pricing', 'edit')
-  const canDel = can('sales', 'pricing', 'delete')
+  const canCreate = canFeature('crm', 'products', 'pricing', 'create')
+  const canEdit = canFeature('crm', 'products', 'pricing', 'edit')
+  const canDel = canFeature('crm', 'products', 'pricing', 'delete')
   const showKindPicker = kinds.length > 1
   const showForCol = !productId
 

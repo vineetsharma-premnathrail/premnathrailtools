@@ -67,10 +67,9 @@ export interface PrePoReceiptCreate {
   items: { store_item_id: number; quantity: number; remarks?: string }[]
 }
 
-/** Response of "Create PO": the locked direct RFQ and the draft PO (both carry id_ref). */
-export interface PrePoCreatePoResult {
-  rfq: { id: number; id_ref?: string }
-  po: { id: number; id_ref?: string; po_number?: string }
+/** Response of "Create requisition": the locked direct RFQ (carries id_ref and p2p_request_id_ref). */
+export interface PrePoRequisitionResult {
+  rfq: { id: number; id_ref?: string; p2p_request_id: number; p2p_request_id_ref?: string }
 }
 
 function uploadForm(file: File, docType: PrePoDocType): FormData {
@@ -119,6 +118,7 @@ export const prePoProcurementApi = {
     (await apiClient.post(`/p2p/pre-po-receipts/${id}/attachments`, uploadForm(file, docType), { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })).data,
   attachmentBlob: async (id: number, attId: number): Promise<Blob> =>
     (await apiClient.get(`/p2p/pre-po-receipts/${id}/attachments/${attId}/content`, { responseType: 'blob' })).data,
-  createPo: async (id: number): Promise<PrePoCreatePoResult> =>
-    (await apiClient.post(`/p2p/pre-po-receipts/${id}/create-po`)).data,
+  /** The requisition the Tally PO is then uploaded on (POs aren't made in the portal). */
+  createRequisition: async (id: number): Promise<PrePoRequisitionResult> =>
+    (await apiClient.post(`/p2p/pre-po-receipts/${id}/create-requisition`)).data,
 }

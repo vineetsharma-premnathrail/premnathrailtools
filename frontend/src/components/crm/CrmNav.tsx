@@ -15,8 +15,10 @@ const TABS = [
   { href: '/dashboard/crm', label: 'Dashboard', icon: 'grid', subtabKey: 'dashboard' },
   { href: '/dashboard/crm/organizations', label: 'Customer Organizations', icon: 'building', subtabKey: 'organizations' },
   { href: '/dashboard/crm/inquiries', label: 'Inquiries & Tenders', icon: 'file', subtabKey: 'inquiries_tenders' },
+  // Products (with Pricing inside) is a CRM tab since 2026-10-30; the pages keep the /dashboard/products URL.
+  { href: '/dashboard/products', label: 'Products', icon: 'box', subtabKey: 'products' },
   { href: '/dashboard/crm/reports', label: 'Reports', icon: 'chart', subtabKey: 'reports' },
-  // Products, categories, payment terms and notification rules live here
+  // Categories, payment terms and notification rules live here
   // (the old Masters and Bulk Import tabs were folded into Settings / the lists' Import button).
   { href: '/dashboard/crm/settings', label: 'Settings', icon: 'gear', subtabKey: 'settings' },
 ] as const

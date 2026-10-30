@@ -8,7 +8,7 @@ import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import Link from 'next/link'
-import { accountsApi, crmApi, costCentersApi, salesApi, purchaseOrdersApi } from '@/lib/api'
+import { accountsApi, crmApi, costCentersApi, purchaseOrdersApi } from '@/lib/api'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import DraftBanner from '@/components/shared/DraftBanner'
 import { useFormDraft } from '@/lib/formDraft'
@@ -259,12 +259,8 @@ function PaymentsPage() {
     setOrderOptions([])
     setOrderNote('')
     if (!id) return
-    if (t === 'customer') {
-      salesApi.listOrders({ customer_id: Number(id) })
-        .then((rows) => setOrderOptions(rows.filter((o) => !['cancelled', 'rejected', 'draft'].includes(o.status))
-          .map((o) => ({ value: String(o.id), label: `${o.display_number} (${o.status})` }))))
-        .catch(() => setOrderNote('Sales orders could not be loaded (you may not have Sales access) — give the reason instead.'))
-    } else if (t === 'vendor') {
+    // Customer advances are held on account with a reason — Sales Orders no longer exist to link to.
+    if (t === 'vendor') {
       purchaseOrdersApi.list({ limit: 500 })
         .then((rows: { id: number; po_number: string; status: string; vendor_id?: number | null }[]) =>
           setOrderOptions(rows.filter((o) => (!o.vendor_id || o.vendor_id === Number(id)) && !['cancelled', 'rejected', 'draft'].includes(o.status))
@@ -343,7 +339,7 @@ function PaymentsPage() {
     if (!bankId) errs.push(`Pick the ${ptype === 'customer' || ptype === 'other_receipt' ? 'receiving' : 'paying'} bank/cash account.`)
     if (amountNum <= 0) errs.push('Enter an amount greater than zero.')
     if (isParty && !partyId) errs.push(ptype === 'vendor' ? 'Pick the vendor being paid.' : 'Pick the customer the money is received from.')
-    if (isParty && isAdvance && !orderId && !advanceReason.trim()) errs.push(`Link the advance to the ${ptype === 'customer' ? 'sales order' : 'purchase order'} it is for, or give the reason it is on account.`)
+    if (isParty && isAdvance && !orderId && !advanceReason.trim()) errs.push(ptype === 'customer' ? 'Give the reason this advance is held on account (for example the tender, LOA or project it is for).' : 'Link the advance to the purchase order it is for, or give the reason it is on account.')
     if (isParty && !isAdvance) {
       for (const d of deductions) {
         const doc = openDocs.find((x) => String(x.id) === d.target_id)
@@ -387,7 +383,7 @@ function PaymentsPage() {
     if (ptype === 'customer') payload.customer_id = Number(partyId)
     if (isParty && isAdvance) {
       payload.is_advance = true
-      if (orderId) payload[ptype === 'customer' ? 'sales_order_id' : 'purchase_order_id'] = Number(orderId)
+      if (orderId && ptype === 'vendor') payload.purchase_order_id = Number(orderId)
       payload.advance_reason = advanceReason.trim() || null
     }
     if (isParty && !isAdvance && deductions.length) {
@@ -596,15 +592,17 @@ function PaymentsPage() {
                       setIsAdvance(e.target.checked); setSettle({}); setDeductions([]); setOrderId('')
                       if (e.target.checked && partyId) loadOrders(ptype, partyId)
                     }} />
-                    This is an advance (down payment) {ptype === 'customer' ? 'received against a sales order' : 'paid against a purchase order'}
+                    This is an advance (down payment) {ptype === 'customer' ? 'received from the customer' : 'paid against a purchase order'}
                   </label>
                   {isAdvance && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 10 }}>
-                      <SField label={ptype === 'customer' ? 'Sales order' : 'Purchase order'} style={{ flex: '1 1 240px', maxWidth: 360 }}>
-                        <SearchableSelect value={orderId} onChange={setOrderId} options={[{ value: '', label: '— on account (no order) —' }, ...orderOptions]}
-                          placeholder={ptype === 'customer' ? 'Pick sales order' : 'Pick purchase order'} />
-                      </SField>
-                      <SField label="Reason (if on account)" style={{ flex: '1 1 240px', maxWidth: 420 }}>
+                      {ptype === 'vendor' && (
+                        <SField label="Purchase order" style={{ flex: '1 1 240px', maxWidth: 360 }}>
+                          <SearchableSelect value={orderId} onChange={setOrderId} options={[{ value: '', label: '— on account (no order) —' }, ...orderOptions]}
+                            placeholder="Pick purchase order" />
+                        </SField>
+                      )}
+                      <SField label={ptype === 'customer' ? 'Reason (what the advance is for)' : 'Reason (if on account)'} style={{ flex: '1 1 240px', maxWidth: 420 }}>
                         <input style={sheetInput} value={advanceReason} onChange={(e) => setAdvanceReason(e.target.value)} placeholder="e.g. tender EMD, advance against LOA" />
                       </SField>
                       <p style={{ ...sheetHint, flexBasis: '100%', margin: 0 }}>

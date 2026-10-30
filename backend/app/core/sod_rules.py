@@ -72,12 +72,6 @@ SOD_RULES: tuple[SodRule, ...] = (
         "Open / close periods", ("accounts:period_close:edit", "accounts:period_close:approve"),
     ),
     SodRule(
-        "SOD-08", "Sales order create + approve", "medium",
-        "A salesperson approving their own order bypasses the price / payment-term check.",
-        "Create sales orders", ("sales:orders:create",),
-        "Approve sales orders", ("sales:orders:approve",),
-    ),
-    SodRule(
         "SOD-09", "Stock adjustment create + approve", "medium",
         "One person could write stock off and approve it, hiding a shortage.",
         "Create stock adjustments", ("store:adjustments:create",),

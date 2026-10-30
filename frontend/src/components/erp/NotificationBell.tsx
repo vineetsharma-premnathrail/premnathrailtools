@@ -27,11 +27,11 @@ const NOTIFICATION_TYPE_LINK: Record<string, (ref: string) => string> = {
   pm_goal_due_today: () => '/dashboard/projects/my-tasks',
   pm_goal_overdue: () => '/dashboard/projects/my-tasks',
   pm_project_task_done: (ref) => `/dashboard/projects/${ref}?tab=Milestones`,
-  // @mention in a requirement Discussion — open straight on the Discussion tab.
-  req_mention_crm_inquiry: (ref) => `/dashboard/crm/inquiries/${ref}?tab=discussion`,
-  req_mention_crm_tender: (ref) => `/dashboard/crm/tenders/${ref}?tab=discussion`,
-  req_mention_rnd_inquiry: (ref) => `/dashboard/rnd/requirements/inquiry/${ref}?tab=discussion`,
-  req_mention_rnd_tender: (ref) => `/dashboard/rnd/requirements/tender/${ref}?tab=discussion`,
+  // @mention bells from the removed requirement Discussion (old notifications only) — open the record itself.
+  req_mention_crm_inquiry: (ref) => `/dashboard/crm/inquiries/${ref}`,
+  req_mention_crm_tender: (ref) => `/dashboard/crm/tenders/${ref}`,
+  req_mention_rnd_inquiry: (ref) => `/dashboard/rnd/requirements/inquiry/${ref}`,
+  req_mention_rnd_tender: (ref) => `/dashboard/rnd/requirements/tender/${ref}`,
   // Pending HR requests moved to a new manager (entity = the requester, a user).
   hr_approval_rerouted: () => '/dashboard/hr/approvals',
 }
@@ -53,9 +53,10 @@ const ENTITY_LINK: Record<string, (ref: string) => string> = {
   inquiry: (ref) => `/dashboard/crm/inquiries/${ref}`,
   rnd_req_inquiry: (ref) => `/dashboard/rnd/requirements/inquiry/${ref}`,
   rnd_req_tender: (ref) => `/dashboard/rnd/requirements/tender/${ref}`,
-  design_rnd_requirement: (ref) => `/dashboard/design/requirements/${ref}`,
-  electrical_rnd_requirement: (ref) => `/dashboard/electrical/requirements/${ref}`,
-  hydraulic_rnd_requirement: (ref) => `/dashboard/hydraulic/requirements/${ref}`,
+  // Department requirement pages were removed with Share Department (2026-10-30): old bells open the module home.
+  design_rnd_requirement: () => '/dashboard/design',
+  electrical_rnd_requirement: () => '/dashboard/electrical',
+  hydraulic_rnd_requirement: () => '/dashboard/hydraulic',
   tender: (ref) => `/dashboard/crm/tenders/${ref}`,
   activity: () => `/dashboard/crm/followups`,
   design_document: (ref) => `/dashboard/design/documents/${ref}`,
@@ -66,10 +67,11 @@ const ENTITY_LINK: Record<string, (ref: string) => string> = {
   maintenance_pm_plan: (ref) => `/dashboard/maintenance/schedule/${ref}`,
   maintenance_spare: () => '/dashboard/maintenance/spares',
   maintenance_asset: (ref) => `/dashboard/maintenance/assets/${ref}`,
-  sales_order: (ref) => `/dashboard/sales/orders/${ref}`,
-  sales_amendment: (ref) => `/dashboard/sales/amendments/${ref}`,
+  // Sales Orders were retired 2026-10-30: old sales_* bells open the explanation page.
+  sales_order: () => '/dashboard/sales',
+  sales_amendment: () => '/dashboard/sales',
   crm_quotation: (ref) => `/dashboard/crm/quotations/${ref}`,
-  sales_extension: () => '/dashboard/sales/orders',
+  sales_extension: () => '/dashboard/sales',
   pm_project: (ref) => `/dashboard/projects/${ref}`,
   pm_milestone: (ref) => `/dashboard/projects/milestones/${ref}`,
   pm_task: (ref) => `/dashboard/projects/tasks/${ref}`,
@@ -126,6 +128,24 @@ const ENTITY_LINK: Record<string, (ref: string) => string> = {
   role: (ref) => `/dashboard/organization/roles/${ref}`,
   user: () => '/dashboard/organization/users',
   company: () => '/dashboard/organization/info',
+}
+
+// R&D requirement review bells (entity_type rnd_req_inquiry / rnd_req_tender, entity_id = the
+// inquiry or tender id). Accepted / returned go to BD, who open the CRM record (it shows the
+// R&D answer and the Re-send button); the review reminder goes to R&D, who open the requirement.
+function rndRequirementHref(n: Notification): string | undefined {
+  if (!n.entity_id) return undefined
+  const source = (n.entity_type || '').includes('tender') ? 'tender' : 'inquiry'
+  const ref = refOf(n, 'entity_id')
+  switch (n.notification_type) {
+    case 'rnd_requirement_accepted':
+    case 'rnd_requirement_returned':
+      return source === 'tender' ? `/dashboard/crm/tenders/${ref}` : `/dashboard/crm/inquiries/${ref}`
+    case 'rnd_review_reminder':
+      return `/dashboard/rnd/requirements/${source}/${ref}`
+    default:
+      return undefined
+  }
 }
 
 // Deleted entities 404 on their normal detail route (soft-deleted rows are excluded
@@ -317,7 +337,7 @@ export default function NotificationBell() {
             <p style={{ fontSize: 12.5, color: '#a8a29e', padding: 16, margin: 0 }}>No notifications yet.</p>
           ) : (
             notifications.map((n) => {
-              const href = DELETED_TYPE_LINK[n.notification_type] ?? (n.entity_id ? NOTIFICATION_TYPE_LINK[n.notification_type]?.(refOf(n, 'entity_id')) : undefined) ?? (n.entity_type && n.entity_id ? ENTITY_LINK[n.entity_type]?.(refOf(n, 'entity_id')) : undefined) ?? hrNotificationHref(n)
+              const href = DELETED_TYPE_LINK[n.notification_type] ?? rndRequirementHref(n) ?? (n.entity_id ? NOTIFICATION_TYPE_LINK[n.notification_type]?.(refOf(n, 'entity_id')) : undefined) ?? (n.entity_type && n.entity_id ? ENTITY_LINK[n.entity_type]?.(refOf(n, 'entity_id')) : undefined) ?? hrNotificationHref(n)
                 ?? (n.notification_type === 'approval' ? '/dashboard/organization/approvals' : undefined)
               const content = (
                 <div

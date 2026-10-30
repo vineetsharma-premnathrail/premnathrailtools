@@ -12,6 +12,7 @@ import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import { primaryBtnStyle, smallSecondaryBtnStyle, chipBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
+import { priorityLabel, priorityTone } from '@/lib/priority'
 import { PRIORITY_LABELS, REQUEST_SOURCE_LABELS, REQUEST_STATUS_LABELS, toOptions } from '@/components/design/designMeta'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
@@ -28,7 +29,6 @@ import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/compo
 const STATUS_HEX: Record<string, string> = {
   open: '#2563EB', accepted: '#7C3AED', in_progress: '#0f766e', on_hold: '#b45309', completed: '#16A34A', cancelled: '#a8a29e',
 }
-const PRIORITY_HEX: Record<string, string> = { low: '#78716c', medium: '#2563EB', high: '#b45309', urgent: '#DC2626' }
 const DELIVERABLE_HEX: Record<string, string> = {
   draft: '#78716c', in_review: '#2563EB', in_approval: '#7C3AED', approved: '#0891b2', released: '#16A34A', revising: '#0f766e',
   obsolete: '#DC2626', customer_rejected: '#DC2626',
@@ -72,7 +72,7 @@ function badge(label: string, hex: string) {
 
 const EMPTY_FORM = {
   title: '', source: 'project', crm_source: 'inquiry', crm_record_id: '', customer_id: '', pm_project_id: '', pm_milestone_id: '',
-  requirement: '', priority: 'medium', due_date: '', lead_designer_id: '',
+  requirement: '', priority: 'standard', due_date: '', lead_designer_id: '',
   order_project: null as OrderProjectValue | null,
 }
 
@@ -406,7 +406,7 @@ export default function DesignRequestsPage() {
                 <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/design/requests', r))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>
                     {r.request_number}
-                    <div style={{ marginTop: 4 }}>{badge(PRIORITY_LABELS[r.priority] || r.priority, PRIORITY_HEX[r.priority] || '#78716c')}</div>
+                    <div style={{ marginTop: 4 }}>{badge(priorityLabel(r.priority), priorityTone(r.priority).color)}</div>
                   </td>
                   <td style={{ ...cellStyle, maxWidth: 280 }}>
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</div>

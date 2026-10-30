@@ -12,6 +12,7 @@ from sqlalchemy.orm import object_session
 
 from app.auth.jwt_handler import create_access_token
 from app.modules.main.models.user import User
+from app.tests.p2p_po_helpers import upload_po_for_pr
 from app.tests.p2p_workflow_helpers import link_items, master_item, set_po_workflow, set_pr_workflow
 
 BASE = "/api/v1/p2p/requests"
@@ -92,7 +93,7 @@ def _create_payload(**overrides):
         "project_label": "Project Alpha",
         "project_type": "new",
         "approvers": {},
-        "priority": "medium",
+        "priority": "standard",
         "items": [{"item_name": "Hydraulic Cylinder", "quantity": 2, "unit": "pcs", "project_inhouse": "Project"}],
     }
     payload.update(overrides)
@@ -508,26 +509,19 @@ def test_select_vendor_success(client, db):
 
 # ── PO creation ──────────────────────────────────────────────────────────────
 
-def test_create_po_requires_approved_status(client, db):
+def test_legacy_create_po_route_is_gone(client, db):
+    """POs are made in Tally and uploaded on the requisition (Upload PO) - the old approved-PR
+    -> PO route no longer exists."""
     requester = _requester(db, "reqz@premnathrail.com")
     pr = _create_pr(client, requester)
     buyer = _purchaser(db, "buyerz@premnathrail.com")
-
-    response = client.post(f"{BASE}/{pr['id']}/create-po", json={"po_number": "PO-1"}, headers=auth_header(buyer))
-    assert response.status_code == 409
-
-
-def test_create_po_refuses_unpriced_lines(client, db):
-    requester = _requester(db, "reqaa0@premnathrail.com")
-    pr = _create_pr(client, requester)
-    buyer = _purchaser(db, "buyeraa0@premnathrail.com")
     _approve_pr(client, pr)
 
-    response = client.post(f"{BASE}/{pr['id']}/create-po", json={"po_number": "PO-99"}, headers=auth_header(buyer))
-    assert response.status_code == 400 and "unit price" in response.json()["detail"]
+    response = client.post(f"{BASE}/{pr['id']}/create-po", json={"po_number": "PO-1"}, headers=auth_header(buyer))
+    assert response.status_code in (404, 405)
 
 
-def test_create_po_defaults_ordered_quantity_to_item_sum(client, db):
+def test_upload_po_totals_the_priced_lines_and_orders_the_item_sum(client, db):
     requester = _requester(db, "reqaa@premnathrail.com")
     pr = _create_pr(client, requester, items=[
         {"item_name": "Bolt", "quantity": 5, "unit": "pcs", "project_inhouse": "Project"},
@@ -538,46 +532,27 @@ def test_create_po_defaults_ordered_quantity_to_item_sum(client, db):
     set_po_workflow(db, [u.id for u in pr["_po_approvers"].values()], buyer)
     bolt, nut = pr["items"]
 
-    # po_value in the payload is ignored — the total is computed from the priced lines.
-    response = client.post(f"{BASE}/{pr['id']}/create-po", json={
-        "po_number": "PO-100", "po_value": 999.5,
-        "item_pricing": [{"pr_item_id": bolt["id"], "unit_price": 10}, {"pr_item_id": nut["id"], "unit_price": 20}],
-    }, headers=auth_header(buyer))
-    assert response.status_code == 200, response.text
-    body = response.json()
+    # The PO value is computed from the priced lines (5 x 10 + 5 x 20), never typed.
+    po = upload_po_for_pr(client, db, pr["id"], buyer, tally_po_no="PO-100",
+                          prices={bolt["id"]: 10, nut["id"]: 20}, tax_rate=None)
+    assert po["status"] == "issued" and po["external_ref"] == "PO-100"
+    body = client.get(f"{BASE}/{pr['id']}", headers=auth_header(buyer)).json()
     assert body["status"] == "po_raised"
-    assert body["po_number"] == "PO-100"
+    assert body["po_number"] == po["po_number"]
     assert body["ordered_quantity"] == 10
     assert body["po_value"] == 150.0
-
-
-def test_create_po_respects_explicit_ordered_quantity(client, db):
-    requester = _requester(db, "reqab@premnathrail.com")
-    pr = _create_pr(client, requester)
-    buyer = _purchaser(db, "buyerab@premnathrail.com")
-    _approve_pr(client, pr)
-    set_po_workflow(db, [u.id for u in pr["_po_approvers"].values()], buyer)
-
-    response = client.post(
-        f"{BASE}/{pr['id']}/create-po",
-        json={"po_number": "PO-2", "ordered_quantity": 7, "item_pricing": [{"pr_item_id": pr["items"][0]["id"], "unit_price": 50}]},
-        headers=auth_header(buyer),
-    )
-    assert response.status_code == 200, response.text
-    assert response.json()["ordered_quantity"] == 7
 
 
 # ── PO approval (manager matrix: any ONE holder of the PO role set) ─────────
 
 def _raise_po(client, db, pr, buyer, po_number="PO-REC"):
+    """Approve the PR and upload the Tally PO (`po_number` is the Tally PO number) priced at
+    100 + 18% per unit; the PO goes into approval and the PR is returned (status po_raised)."""
     _approve_pr(client, pr)
     # The "Purchase order" workflow: this PR's three PO approvers, all must approve.
     set_po_workflow(db, [u.id for u in pr["_po_approvers"].values()], buyer)
-    raised = client.post(f"{BASE}/{pr['id']}/create-po", json={
-        "po_number": po_number, "item_pricing": [{"pr_item_id": i["id"], "unit_price": 100, "tax_rate": 18} for i in pr["items"]],
-    }, headers=auth_header(buyer))
-    assert raised.status_code == 200, raised.text
-    return raised.json()
+    upload_po_for_pr(client, db, pr["id"], buyer, tally_po_no=po_number)
+    return client.get(f"{BASE}/{pr['id']}", headers=auth_header(buyer)).json()
 
 
 def _approve_po_as(client, pr, user, comment="Checked and OK"):
@@ -806,10 +781,10 @@ def test_update_header_fields(client, db):
     pr = _create_pr(client, requester)
     buyer = _purchaser(db, "buyeral@premnathrail.com")
 
-    response = client.patch(f"{BASE}/{pr['id']}", json={"remarks": "Updated remarks", "priority": "high"}, headers=auth_header(buyer))
+    response = client.patch(f"{BASE}/{pr['id']}", json={"remarks": "Updated remarks", "priority": "urgent"}, headers=auth_header(buyer))
     assert response.status_code == 200
     assert response.json()["remarks"] == "Updated remarks"
-    assert response.json()["priority"] == "high"
+    assert response.json()["priority"] == "urgent"
 
 
 def test_update_rejects_invalid_status(client, db):

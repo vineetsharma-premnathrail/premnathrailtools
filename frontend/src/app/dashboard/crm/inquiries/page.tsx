@@ -25,6 +25,7 @@ import { useCan } from '@/lib/permissions'
 import { PINNED_INQUIRY_TENDER_KEY } from '@/lib/crmShortcuts'
 import { recordHref, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { priorityLabel } from '@/lib/priority'
 
 const PINNED_KEY = PINNED_INQUIRY_TENDER_KEY
 
@@ -165,7 +166,7 @@ export default function InquiriesPage() {
       title: i.product || 'Not provided',
       product: i.product || 'Not provided',
       status: i.status || 'Not provided',
-      secondary: i.priority || 'Not provided',
+      secondary: i.priority ? priorityLabel(i.priority) : 'Not provided',
       date: i.next_followup_date || 'Not provided',
       created_at: i.created_at || 'Not provided',
       created_by_name: i.created_by_name || 'Not provided',

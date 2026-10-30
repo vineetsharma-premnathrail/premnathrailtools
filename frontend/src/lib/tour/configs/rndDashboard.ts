@@ -11,14 +11,14 @@ const config: TourConfig = {
       purpose: 'Overview of R&D work: requirements, ongoing projects and your tasks.',
     },
     {
-      target: 'rnd-nav-pm-work',
-      title: 'Project Work',
-      purpose: 'WBS that management has assigned to the R&D department, and the project tasks assigned to you.',
-    },
-    {
       target: 'rnd-nav-requirements',
       title: 'Requirements',
-      purpose: 'Engineering work requested from R&D by other modules (for example a CRM inquiry or tender that needs R&D input).',
+      purpose: 'Customer requirements sent to R&D by BD, each with an R&D ID. The R&D head accepts one or returns it to BD with a reason.',
+    },
+    {
+      target: 'rnd-nav-tasks',
+      title: 'R&D Tasks',
+      purpose: 'Create tasks on accepted requirements and on prototype / research projects, and track progress with tiles, filters and views by person and by project.',
     },
     {
       target: 'rnd-nav-projects',
@@ -31,11 +31,6 @@ const config: TourConfig = {
       purpose: 'The engineering calculators — Braking, Hydraulic, Qmax, Load Distribution, Tractive Effort, Vehicle Performance and Spline.',
     },
     {
-      target: 'rnd-nav-history',
-      title: 'History',
-      purpose: 'Every calculation run from the Engineering Tools is saved here automatically, so you can reopen or re-download it.',
-    },
-    {
       target: 'rnd-nav-bell',
       title: 'Notifications',
       purpose: 'Alerts for R&D work assigned to you or waiting on your action.',
@@ -43,13 +38,13 @@ const config: TourConfig = {
     {
       target: 'rnd-dash-stats',
       title: 'Requirements, Projects, Tasks',
-      purpose: 'Requirements: every requirement the business team sent to R&D that you can see; Awaiting R&D: how many still need a response from R&D. Ongoing projects: active projects not yet closed; On hold: paused projects. My open tasks: requirement and project tasks assigned to you; Overdue: those past their due date. Click a counter to open its list.',
+      purpose: 'Requirements: every requirement the business team sent to R&D that you can see; Awaiting review: how many wait for R&D to accept or return them. Ongoing projects: active projects not yet closed; On hold: paused projects. My open tasks: requirement and project tasks assigned to you; Overdue: those past their due date. Click a counter to open its list.',
       options: RND_STATUS_OPTIONS,
     },
     {
       target: 'rnd-dash-requirements',
       title: 'Recently Received Requirements',
-      purpose: 'The latest requirements sent to R&D, with the customer, product, date received and whether R&D has responded. Click one to open it.',
+      purpose: 'The latest requirements sent to R&D, with R&D ID, customer, product, date received and where the review stands (awaiting review, accepted, returned, responded). Click one to open it.',
     },
     {
       target: 'rnd-dash-recent',

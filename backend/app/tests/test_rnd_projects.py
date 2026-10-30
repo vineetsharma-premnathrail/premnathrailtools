@@ -28,7 +28,7 @@ def auth_header(user):
 
 
 def create_project(client, headers, **overrides):
-    payload = {"title": "Rail grinder bogie", "objective": "Lighter bogie frame", "budget_amount": 100000, "origin": "new_development", "origin_note": "Proposed by R&D head", "attachment_count": 1, **overrides}
+    payload = {"title": "Rail grinder bogie", "objective": "Lighter bogie frame", "budget_amount": 100000, "origin": "new_project", "origin_note": "Proposed by R&D head", "attachment_count": 1, **overrides}
     response = client.post(f"{BASE}/projects", json=payload, headers=headers)
     assert response.status_code == 200, response.text
     return response.json()
@@ -58,7 +58,7 @@ def test_create_project_rejects_target_before_start(client, db):
     h = auth_header(make_user(db, "rnd2@premnathrail.com"))
     response = client.post(
         f"{BASE}/projects",
-        json={"title": "X", "objective": "Y", "start_date": "2026-10-10", "target_end_date": "2026-10-01", "origin": "new_development", "origin_note": "Proposed by R&D head", "attachment_count": 1},
+        json={"title": "X", "objective": "Y", "start_date": "2026-10-10", "target_end_date": "2026-10-01", "origin": "new_project", "origin_note": "Proposed by R&D head", "attachment_count": 1},
         headers=h,
     )
     assert response.status_code == 400

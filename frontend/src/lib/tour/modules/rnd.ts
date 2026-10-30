@@ -6,6 +6,9 @@ import type { TourEntry } from '../registry'
 export const ENTRIES: TourEntry[] = [
   { pattern: /^\/dashboard\/rnd$/, load: () => import('../configs/rndDashboard') },
 
+  // R&D Tasks (requirement + prototype tasks, analytics)
+  { pattern: /^\/dashboard\/rnd\/tasks$/, load: () => import('../configs/rndTasks') },
+
   // Requirements (CRM Technical Offer Requests)
   { pattern: /^\/dashboard\/rnd\/requirements\/(inquiry|tender)\/[A-Za-z0-9_-]{19}$/, load: () => import('../configs/rndRequirementDetail') },
   { pattern: /^\/dashboard\/rnd\/requirements$/, load: () => import('../configs/rndRequirementsList') },

@@ -17,10 +17,8 @@ export const RND_STATUS_OPTIONS = [
 ]
 
 export const RND_PRIORITY_OPTIONS = [
-  { value: 'Low', meaning: 'Nice to have — work on it when capacity allows.' },
-  { value: 'Medium', meaning: 'Normal priority (default).' },
-  { value: 'High', meaning: 'Important for business — schedule ahead of normal work.' },
-  { value: 'Critical', meaning: 'Urgent — customer order, safety issue or management commitment depends on it.' },
+  { value: 'Standard', meaning: 'Normal priority (default) — work on it in turn.' },
+  { value: 'Urgent', meaning: 'Do it ahead of normal work — a customer order, safety issue or management commitment depends on it.' },
 ]
 
 export const RND_TYPE_OPTIONS = [

@@ -80,6 +80,7 @@ from app.modules.rnd.models.experiment import RndExperiment
 from app.modules.rnd.models.prototype import RndPrototype, RndPrototypeBomItem
 from app.modules.rnd.models.feasibility import RndFeasibilityStudy
 from app.modules.rnd.models.document import RndDocument
+from app.modules.rnd.models.requirement import RndRequirement, RndRequirementRevision
 
 from app.modules.store.models.item import StoreItem
 from app.modules.store.models.category import StoreItemCategory
@@ -335,6 +336,8 @@ register_audited(
 )
 register_audited(RndFeasibilityStudy, entity_type="rnd_feasibility_study", module_key="rnd", label="Feasibility study", ref=lambda o: f"for project #{o.project_id}")
 register_audited(RndDocument, entity_type="rnd_document", module_key="rnd", label="R&D document", ref=lambda o: f"'{o.title}' ({o.file_name})")
+register_audited(RndRequirement, entity_type="rnd_requirement", module_key="rnd", label="R&D requirement", ref=lambda o: o.rd_number)
+register_audited(RndRequirementRevision, entity_type="rnd_requirement_revision", module_key="rnd", label="R&D requirement revision", ref=lambda o: o.revision_code)
 
 # ---------------------------------------------------------------------------
 # Production
@@ -535,7 +538,7 @@ register_audited(
 )
 register_audited(MaintenanceAttachment, entity_type="maintenance_attachment", module_key="maintenance", label="Maintenance attachment", ref=lambda o: f"'{o.filename}'")
 
-# Sales (docs/02-modules/sales/plan.md)
+# Sales (retired 2026-10-30; kept so the audit trail of historic orders still reads)
 register_audited(SalesOrder, entity_type="sales_order", module_key="sales", label="Sales order", ref=lambda o: o.so_number or f"Draft #{o.id}")
 register_audited(
     SalesOrderLine, entity_type="sales_order_line", module_key="sales", label="Order line",
@@ -580,9 +583,9 @@ register_audited(AccountsCollectionNote, entity_type="collection_note", module_k
 register_audited(AccountsDunningLetter, entity_type="dunning_letter", module_key="accounts", label="Reminder letter", ref=lambda o: o.letter_number)
 register_audited(AccountsDispute, entity_type="dispute", module_key="accounts", label="Dispute", ref=lambda o: o.dispute_number)
 
-register_audited(FinishedProduct, entity_type="product", module_key="sales", label="Product", ref=lambda o: f"{o.code} — {o.name}")
+register_audited(FinishedProduct, entity_type="product", module_key="crm", label="Product", ref=lambda o: f"{o.code} — {o.name}")
 register_audited(
-    ProductSpecification, entity_type="product_specification", module_key="sales", label="Specification",
+    ProductSpecification, entity_type="product_specification", module_key="crm", label="Specification",
     ref=lambda o: f"'{o.parameter}'", parent_attr="product_id", parent_entity_type="product", child_action="specification",
 )
-register_audited(ProductApplication, entity_type="product_application", module_key="sales", label="Application", ref=lambda o: f"{o.code} — {o.name}")
+register_audited(ProductApplication, entity_type="product_application", module_key="crm", label="Application", ref=lambda o: f"{o.code} — {o.name}")

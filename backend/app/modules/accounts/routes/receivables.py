@@ -41,7 +41,7 @@ from app.modules.accounts.services import disputes as disp
 
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
 
-_CREDIT_VIEWERS = (("accounts", "credit_management"), ("sales", "orders"), ("store", "issues"))
+_CREDIT_VIEWERS = (("accounts", "credit_management"), ("store", "issues"))
 
 
 def _credit_viewer(user: User = Depends(get_current_user)) -> User:

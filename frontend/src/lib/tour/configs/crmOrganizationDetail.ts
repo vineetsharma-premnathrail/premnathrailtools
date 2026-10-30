@@ -139,7 +139,7 @@ const steps: TourStep[] = [
   {
     target: 'orgdetail-delete-btn',
     title: 'Delete',
-    purpose: 'Deletes this customer organization — only its creator or an admin can. It works only when the organization has no inquiries, tenders or sales orders left: delete its inquiries / tenders one by one first.',
+    purpose: 'Deletes this customer organization — only its creator or an admin can. It works only when the organization has no inquiries or tenders left: delete its inquiries / tenders one by one first.',
     why: 'This cannot be undone — a confirmation dialog appears before anything is actually deleted.',
   },
   {

@@ -1,12 +1,13 @@
 import json
 import re
-from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Response
+from datetime import date, datetime, timezone
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, object_session, selectinload
 
 from app.db.session import get_db
-from app.core.permissions import ensure_can_delete, ensure_feature_action, require_feature_action, require_tab_access, require_tab_action
+from app.core.permission_registry import can_feature
+from app.core.permissions import ensure_can_delete, ensure_feature_action, require_feature_action, require_tab_access
 from app.core.data_scope import apply_scope, ensure_in_scope
 import app.modules.crm.access  # noqa: F401 — registers the CRM data-scope models
 from app.modules.crm.access import QUOTATION_LINE_MONEY_FIELDS, QUOTATION_MONEY_FIELDS, blank, sees_quotation_prices
@@ -14,6 +15,8 @@ from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.crm.models.inquiry import Inquiry, Quotation, QuotationLineItem
 from app.modules.crm.models.organization import Organization as OrgModel
+from app.modules.crm.models.document import CrmDocument
+from app.modules.crm.models.tender import Tender
 from app.modules.crm.schemas.workflow import (
     QuotationCreate, QuotationUpdate, QuotationResponse, QuotationLineItemPayload,
 )
@@ -169,11 +172,38 @@ def _user_label(db: Session, user_id: int | None) -> str:
     return (u.name or u.email) if u else f"user #{user_id}"
 
 
-# ── R&D Technical Offers (picked on a quotation) ─────────────────────────
+# ── Technical Offers (picked on a quotation) ─────────────────────────────
+# R&D's released offers and BD's own uploads (origin "bd"). An offer is an uploaded Word / PDF file
+# (rnd/services/technical_offers.py); offers written in Word before uploads existed keep their managed document.
 
-def _offer_dict(o: RndTechnicalOffer) -> dict:
+def _offer_dict(db: Session, o: RndTechnicalOffer, user: User | None = None) -> dict:
+    doc = db.get(CrmDocument, o.document_id) if o.document_id else None
+    ext = technical_offers._extension(doc.file_name) if doc else ".docx"   # legacy offers are Word documents
     return {"id": o.id, "offer_number": o.offer_number, "offer_date": o.offer_date.isoformat(), "title": o.title,
-            "revision": o.revision, "status": o.status, "released_at": o.released_at.isoformat() if o.released_at else None}
+            "revision": o.revision, "status": o.status, "status_label": technical_offers.status_label(o),
+            "released_at": o.released_at.isoformat() if o.released_at else None,
+            "origin": o.origin, "notes": o.notes,
+            "label": "Uploaded by BD, not reviewed by R&D" if o.origin == "bd" else None,
+            "based_on_earlier_revision": _based_on_earlier_revision(db, o),
+            "file_type": ext.lstrip("."),
+            # A Word offer is stacked on top of the quotation Word file; a PDF is attached separately (AC-33).
+            "stacked_in_quotation": ext == ".docx",
+            "file_name": doc.file_name if doc else f"{o.offer_number}.docx",
+            "file_size": doc.file_size if doc else None,
+            "uploaded_by": _user_label(db, o.created_by_id) if o.created_by_id else None,
+            "uploaded_at": o.created_at.isoformat() if o.created_at else None,
+            "quoted_in": [q.quot_number or f"quotation #{q.id}" for q in db.query(Quotation).filter(Quotation.technical_offer_id == o.id).all()],
+            # BD deletes its own upload while no quotation uses it (AC-32).
+            "can_delete": bool(user and o.origin == "bd" and can_feature(user, "crm", "inquiries_tenders", "technical_offer", "delete")
+                               and not db.query(Quotation.id).filter(Quotation.technical_offer_id == o.id).first())}
+
+
+def _based_on_earlier_revision(db: Session, o: RndTechnicalOffer) -> bool:
+    if o.origin != "rnd" or o.requirement_revision_no is None:
+        return False
+    from app.modules.rnd.models.requirement import RndRequirement
+    req = db.query(RndRequirement).filter(RndRequirement.source == o.source, RndRequirement.record_id == o.record_id).first()
+    return bool(req and o.requirement_revision_no < req.current_revision)
 
 
 def _quotable_offer(db: Session, inquiry: Inquiry, offer_id: int) -> RndTechnicalOffer:
@@ -181,31 +211,191 @@ def _quotable_offer(db: Session, inquiry: Inquiry, offer_id: int) -> RndTechnica
     if not offer or offer.source != "inquiry" or offer.record_id != inquiry.id:
         raise HTTPException(status_code=422, detail="That Technical Offer doesn't belong to this inquiry — reopen the quotation form and pick one from the list.")
     if offer.status not in ("released", "superseded"):
-        raise HTTPException(status_code=422, detail=f"Technical Offer {offer.offer_number} isn't approved yet ({'waiting for the R&D head' if offer.status == 'submitted' else 'still a draft'}). Ask the R&D head to approve it (R&D › Requirements), then pick it again.")
+        waiting = ("waiting for the R&D head's release" if offer.status == "submitted"
+                   else "returned by the R&D head — R&D has to upload a corrected file" if offer.returned_reason
+                   else "not uploaded yet")
+        raise HTTPException(status_code=422, detail=f"Technical Offer {offer.offer_number} isn't released yet ({waiting}). Ask R&D to release it (R&D › Requirements), then pick it again.")
     return offer
+
+
+def _load_live_tender(db: Session, tender_id: int, user: User, lock: bool = False) -> Tender:
+    q = db.query(Tender).filter(Tender.id == tender_id, Tender.is_deleted == False)  # noqa: E712
+    if lock:
+        q = q.with_for_update()
+    tender = q.first()
+    if not tender:
+        raise HTTPException(status_code=404, detail="Tender not found or deleted — restore it before working on its Technical Offers.")
+    ensure_in_scope(db, user, tender)
+    return tender
+
+
+def _record_offers(db: Session, source: str, record_id: int, user: User | None = None) -> list[dict]:
+    """Released R&D offers and BD's uploads for the record, newest first (superseded ones stay listed
+    for quoting against an older revision). Pending / returned R&D offers are never listed (AC-30)."""
+    offers = db.query(RndTechnicalOffer).filter(
+        RndTechnicalOffer.source == source, RndTechnicalOffer.record_id == record_id,
+        RndTechnicalOffer.status.in_(("released", "superseded")),
+    ).order_by(RndTechnicalOffer.id.desc()).all()
+    return [_offer_dict(db, o, user) for o in offers]
 
 
 @router.get("/inquiries/{inquiry_id}/technical-offers")
 async def list_inquiry_technical_offers(inquiry_id: int, db: Session = Depends(get_db), _user: User = Depends(require_tab_access("crm", "inquiries_tenders"))):
-    """R&D's released Technical Offers for this inquiry (latest revision first;
-    superseded ones stay listed for quoting against an older revision)."""
+    """Offers a quotation can quote against: R&D's released ones and BD's own uploads (latest first)."""
     _load_live_inquiry(db, inquiry_id, _user)
-    offers = db.query(RndTechnicalOffer).filter(
-        RndTechnicalOffer.source == "inquiry", RndTechnicalOffer.record_id == inquiry_id,
-        RndTechnicalOffer.status.in_(("released", "superseded")),
-    ).order_by(RndTechnicalOffer.id.desc()).all()
-    return [_offer_dict(o) for o in offers]
+    return _record_offers(db, "inquiry", inquiry_id, _user)
 
 
-@router.get("/inquiries/{inquiry_id}/technical-offers/{offer_id}/pdf")
-async def download_inquiry_technical_offer(inquiry_id: int, offer_id: int, db: Session = Depends(get_db), _user: User = Depends(require_tab_action("crm", "inquiries_tenders", "print"))):
+@router.get("/tenders/{tender_id}/technical-offers")
+async def list_tender_technical_offers(tender_id: int, db: Session = Depends(get_db), _user: User = Depends(require_tab_access("crm", "inquiries_tenders"))):
+    _load_live_tender(db, tender_id, _user)
+    return _record_offers(db, "tender", tender_id, _user)
+
+
+def _rnd_requirement_out(db: Session, source: str, record_id: int) -> dict | None:
+    """BD's view of the R&D intake state: R&D ID, current revision and status, why R&D returned it,
+    and every revision (who sent / reviewed it). None until the requirement was sent to R&D."""
+    from app.modules.rnd.services import requirements as intake
+    req = intake.get(db, source, record_id)
+    if req is None:
+        return None
+    rev = intake.latest_revision(db, req)
+    revisions = intake.revisions_out(db, req, None)
+    latest = revisions[0] if revisions else {}
+    return {
+        **intake.requirement_out(db, req, rev),
+        "review_remarks": latest.get("review_remarks"), "return_reason": latest.get("return_reason") if req.status == "returned" else None,
+        "reviewed_by": latest.get("reviewed_by"), "reviewed_at": latest.get("reviewed_at"),
+        "can_resend": True,   # a re-send is always allowed — after a return it opens the next revision even if nothing changed
+        "revisions": revisions,
+    }
+
+
+@router.get("/inquiries/{inquiry_id}/rnd-requirement")
+async def get_inquiry_rnd_requirement(inquiry_id: int, db: Session = Depends(get_db), _user: User = Depends(require_tab_access("crm", "inquiries_tenders"))):
+    _load_live_inquiry(db, inquiry_id, _user)
+    return _rnd_requirement_out(db, "inquiry", inquiry_id)
+
+
+@router.get("/tenders/{tender_id}/rnd-requirement")
+async def get_tender_rnd_requirement(tender_id: int, db: Session = Depends(get_db), _user: User = Depends(require_tab_access("crm", "inquiries_tenders"))):
+    _load_live_tender(db, tender_id, _user)
+    return _rnd_requirement_out(db, "tender", tender_id)
+
+
+def _parse_offer_date(value: str | None) -> date:
+    if not (value or "").strip():
+        raise HTTPException(status_code=422, detail="Enter the offer date — it is printed on the quotation next to the offer number.")
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Offer date '{value}' isn't a valid date — pick it from the calendar.") from None
+
+
+async def _upload_bd_offer(db: Session, user: User, source: str, record, file: UploadFile | None, title: str | None,
+                           offer_date: str | None, notes: str | None) -> dict:
+    """BD's own Technical Offer: no R&D requirement needed, quotable at once (status released),
+    numbered BTO-…[-Rn]; a newer BD upload supersedes the previous one."""
+    title = (title or "").strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="Give the offer a title — what it is for, e.g. 'Rail Grinding Machine RGM-25'.")
+    if len(title) > 255:
+        raise HTTPException(status_code=422, detail=f"Title is {len(title)} characters — keep it under 255.")
+    when = _parse_offer_date(offer_date)
+    upload = await technical_offers.read_upload(file)
+    latest, revision = technical_offers.next_revision(db, source, record.id, "bd")
+    now = datetime.now(timezone.utc)
+    base = technical_offers.number_base(source, record, technical_offers.BD_PREFIX)
+    offer = RndTechnicalOffer(
+        source=source, record_id=record.id, origin="bd", offer_number_base=base, revision=revision,
+        offer_number=technical_offers.number_for(base, revision), offer_date=when, title=title[:255],
+        notes=(notes or "").strip() or None, status="released", created_by_id=user.id,
+        released_by_id=user.id, released_at=now, submitted_by_id=user.id, submitted_at=now,
+        revision_reason=(f"Replaces {latest.offer_number}" if latest else None),
+    )
+    db.add(offer)
+    technical_offers.flush_offer(db)
+    for prev in db.query(RndTechnicalOffer).filter(
+        RndTechnicalOffer.source == source, RndTechnicalOffer.record_id == record.id, RndTechnicalOffer.origin == "bd",
+        RndTechnicalOffer.status == "released", RndTechnicalOffer.id != offer.id,
+    ).all():
+        prev.status = "superseded"
+    await technical_offers.store_file(db, source=source, record=record, offer=offer, file=upload, user=user)
+    db.add(AuditLog(entity_type=source, entity_id=record.id, action="technical_offer_uploaded", module_key="crm",
+                    summary=f"{user.name or user.email} uploaded Technical Offer {offer.offer_number} ({upload.filename}) — BD's own offer.",
+                    performed_by_id=user.id))
+    db.commit()
+    db.refresh(offer)
+    return _offer_dict(db, offer, user)
+
+
+@router.post("/inquiries/{inquiry_id}/technical-offers", status_code=201)
+async def upload_inquiry_technical_offer(
+    inquiry_id: int, file: UploadFile | None = File(None), title: str | None = Form(None), offer_date: str | None = Form(None),
+    notes: str | None = Form(None), db: Session = Depends(get_db),
+    user: User = Depends(require_feature_action("crm", "inquiries_tenders", "technical_offer", "create")),
+):
+    """Upload BD's own Technical Offer (Word .docx or PDF) on an inquiry."""
+    inquiry = _load_live_inquiry(db, inquiry_id, user)
+    return await _upload_bd_offer(db, user, "inquiry", inquiry, file, title, offer_date, notes)
+
+
+@router.post("/tenders/{tender_id}/technical-offers", status_code=201)
+async def upload_tender_technical_offer(
+    tender_id: int, file: UploadFile | None = File(None), title: str | None = Form(None), offer_date: str | None = Form(None),
+    notes: str | None = Form(None), db: Session = Depends(get_db),
+    user: User = Depends(require_feature_action("crm", "inquiries_tenders", "technical_offer", "create")),
+):
+    """Upload BD's own Technical Offer (Word .docx or PDF) on a tender."""
+    tender = _load_live_tender(db, tender_id, user)
+    return await _upload_bd_offer(db, user, "tender", tender, file, title, offer_date, notes)
+
+
+@router.delete("/technical-offers/{offer_id}")
+async def delete_bd_technical_offer(offer_id: int, db: Session = Depends(get_db),
+                                    user: User = Depends(require_feature_action("crm", "inquiries_tenders", "technical_offer", "delete"))):
+    """Delete BD's own offer — refused while a quotation uses it (AC-32). R&D's offers are R&D's to manage."""
+    offer = db.query(RndTechnicalOffer).filter(RndTechnicalOffer.id == offer_id).first()
+    if not offer:
+        raise HTTPException(status_code=404, detail="This Technical Offer was already deleted — refresh the page.")
+    record = _load_live_inquiry(db, offer.record_id, user) if offer.source == "inquiry" else _load_live_tender(db, offer.record_id, user)
+    if offer.origin != "bd":
+        raise HTTPException(status_code=403, detail=f"{offer.offer_number} is R&D's offer — only R&D manages it (R&D › Requirements › Technical Offers).")
+    using = [q.quot_number or f"quotation #{q.id}" for q in db.query(Quotation).filter(Quotation.technical_offer_id == offer.id).all()]
+    if using:
+        raise HTTPException(status_code=409, detail=f"Used by quotation {', '.join(using)} — remove it from the quotation first.")
+    if offer.document_id:
+        doc = db.get(CrmDocument, offer.document_id)
+        if doc:
+            doc.is_deleted = True
+    db.add(AuditLog(entity_type=offer.source, entity_id=record.id, action="technical_offer_deleted", module_key="crm",
+                    summary=f"{user.name or user.email} deleted BD's Technical Offer {offer.offer_number}.", performed_by_id=user.id))
+    db.delete(offer)
+    db.commit()
+    return {"message": f"Technical Offer {offer.offer_number} deleted."}
+
+
+async def _offer_response(db: Session, offer: RndTechnicalOffer):
+    content, filename, mime = await technical_offers.offer_file(db, offer)
+    return Response(content=content, media_type=mime, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.get("/inquiries/{inquiry_id}/technical-offers/{offer_id}/file")
+async def download_inquiry_technical_offer(inquiry_id: int, offer_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "technical_offer", "view"))):
+    """The offer's file (as uploaded). The offer must be on this inquiry and quotable — released or superseded."""
     inquiry = _load_live_inquiry(db, inquiry_id, _user)
-    offer = _quotable_offer(db, inquiry, offer_id)
-    doc = managed_documents.get_active(db, technical_offers.ENTITY, offer.id)
-    if not doc:
-        raise HTTPException(status_code=404, detail=f"Technical Offer {offer.offer_number} has no Word document on record — ask R&D to create it.")
-    return Response(content=await managed_documents.current_pdf(doc), media_type="application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="{offer.offer_number}.pdf"'})
+    return await _offer_response(db, _quotable_offer(db, inquiry, offer_id))
+
+
+@router.get("/tenders/{tender_id}/technical-offers/{offer_id}/file")
+async def download_tender_technical_offer(tender_id: int, offer_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "technical_offer", "view"))):
+    tender = _load_live_tender(db, tender_id, _user)
+    offer = db.query(RndTechnicalOffer).filter(RndTechnicalOffer.id == offer_id).first()
+    if not offer or offer.source != "tender" or offer.record_id != tender.id:
+        raise HTTPException(status_code=404, detail="That Technical Offer isn't on this tender — refresh the page.")
+    if offer.status not in ("released", "superseded"):
+        raise HTTPException(status_code=422, detail=f"Technical Offer {offer.offer_number} isn't released yet — R&D has to release it first.")
+    return await _offer_response(db, offer)
 
 
 # ── Quotations ───────────────────────────────────────────────────────────
@@ -349,10 +539,10 @@ def _line_summary(it) -> str:
 
 
 def _ensure_not_ordered(db: Session, quot: Quotation, action: str) -> None:
-    """A quotation a live sales order was raised from is that order's reference
+    """A quotation a live HISTORIC sales order was raised from is that order's reference
     document (prices / terms were copied from it) — it can't be revised or deleted
-    afterwards, or the order and its reference would disagree. A new offer to the
-    customer is a new quotation; a change of the order is a Sales amendment."""
+    afterwards. Sales Orders were retired on 2026-10-30; only old orders still guard their
+    quotation. A new offer to the customer is a new quotation."""
     from app.modules.sales.models.order import SalesOrder, SALES_ORDER_LIVE_STATUSES
     so = db.query(SalesOrder).filter(
         SalesOrder.source_quotation_id == quot.id, SalesOrder.is_deleted == False,  # noqa: E712
@@ -360,8 +550,8 @@ def _ensure_not_ordered(db: Session, quot: Quotation, action: str) -> None:
     ).first()
     if so:
         raise HTTPException(status_code=409, detail=(
-            f"Quotation {quot.quot_number} can't be {action}: sales order {so.display_number} was raised from it. "
-            f"Change the order through a Sales amendment instead, or cancel {so.display_number} first."))
+            f"Quotation {quot.quot_number} can't be {action}: historic sales order {so.display_number} was raised from it — "
+            "make a new quotation instead."))
 
 
 @router.patch("/inquiries/{inquiry_id}/quotations/{quot_id}", response_model=QuotationResponse)
@@ -589,11 +779,13 @@ async def download_quotation_pdf(inquiry_id: int, quot_id: int, db: Session = De
     if word:
         content = await managed_documents.current_pdf(word)
     else:
-        # No Word document yet: the Technical Offer's PDF on top, then the commercial quotation.
+        # No Word document yet: the Technical Offer's PDF on top (an uploaded PDF, or a legacy Word offer
+        # rendered to PDF), then the commercial quotation. An uploaded Word offer can't be rendered here — it is
+        # stacked into the Word file and otherwise attached separately (technical-offer-file).
         content = build_quotation_pdf(quotation_document_context(db, quot)).getvalue()
-        offer_doc = _technical_offer_document(db, quot)
-        if offer_doc:
-            content = merge_pdf(await managed_documents.current_pdf(offer_doc), content)
+        offer_pdf = await _technical_offer_pdf(db, quot)
+        if offer_pdf:
+            content = merge_pdf(offer_pdf, content)
     return Response(
         content=content, media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
@@ -655,22 +847,61 @@ def _quotation_document_target(db: Session, quot_id: int, user: User, modify: bo
     )
 
 
-def _technical_offer_document(db: Session, quot: Quotation):
-    """The Word document of the R&D Technical Offer this quotation quotes against, if any."""
+def _quotation_offer(db: Session, quot: Quotation) -> RndTechnicalOffer | None:
+    """The Technical Offer this quotation quotes against, if any."""
     if not quot.technical_offer_id:
         return None
-    return managed_documents.get_active(db, technical_offers.ENTITY, quot.technical_offer_id)
+    return db.get(RndTechnicalOffer, quot.technical_offer_id)
+
+
+async def _technical_offer_docx(db: Session, quot: Quotation) -> bytes | None:
+    """The offer as Word bytes when it can be stacked on top of the quotation: an uploaded .docx, or an
+    offer written in Word before uploads existed. None for an uploaded PDF (attached separately)."""
+    offer = _quotation_offer(db, quot)
+    if offer is None:
+        return None
+    if not offer.document_id:
+        legacy = managed_documents.get_active(db, technical_offers.ENTITY, offer.id)
+        return await managed_documents.current_docx(legacy) if legacy else None
+    content, filename, _ = await technical_offers.offer_file(db, offer)
+    return content if filename.lower().endswith(".docx") else None
+
+
+async def _technical_offer_pdf(db: Session, quot: Quotation) -> bytes | None:
+    offer = _quotation_offer(db, quot)
+    if offer is None:
+        return None
+    if not offer.document_id:
+        legacy = managed_documents.get_active(db, technical_offers.ENTITY, offer.id)
+        return await managed_documents.current_pdf(legacy) if legacy else None
+    content, filename, _ = await technical_offers.offer_file(db, offer)
+    return content if filename.lower().endswith(".pdf") else None
+
+
+@router.get("/inquiries/{inquiry_id}/quotations/{quot_id}/technical-offer-file")
+async def download_quotation_technical_offer(inquiry_id: int, quot_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "quotations", "print"))):
+    """The Technical Offer file attached to this quotation, for an offer that can't be stacked into the
+    quotation document (an uploaded PDF) — it goes to the customer as a separate attachment."""
+    _load_live_inquiry(db, inquiry_id, _user)
+    quot = db.query(Quotation).filter(Quotation.id == quot_id, Quotation.inquiry_id == inquiry_id).first()
+    if not quot:
+        raise HTTPException(status_code=404, detail="Quotation not found — it may have been deleted. Refresh the inquiry.")
+    offer = _quotation_offer(db, quot)
+    if offer is None:
+        raise HTTPException(status_code=404, detail=f"Quotation {quot.quot_number} doesn't quote a Technical Offer — pick one in the quotation first.")
+    return await _offer_response(db, offer)
 
 
 async def _quotation_docx(db: Session, quot: Quotation) -> bytes:
-    """Owner, 2026-10-27: the quotation the customer gets is one Word file — R&D's
-    Technical Offer (as R&D last saved it) on top, the commercial quotation below,
-    editable together in Word."""
+    """Owner, 2026-10-27: the quotation the customer gets is one Word file — the Technical
+    Offer on top (an uploaded .docx, or a legacy Word offer as R&D last saved it), the commercial
+    quotation below, editable together in Word. An uploaded PDF offer is not stacked: it is attached
+    separately (technical-offer-file) and the screen says so (AC-33)."""
     commercial = build_quotation_docx(quotation_document_context(db, quot)).getvalue()
-    offer_doc = _technical_offer_document(db, quot)
-    if not offer_doc:
+    offer_docx = await _technical_offer_docx(db, quot)
+    if not offer_docx:
         return commercial
-    return merge_docx(await managed_documents.current_docx(offer_doc), commercial)
+    return merge_docx(offer_docx, commercial)
 
 
 managed_documents.register(managed_documents.DocumentAdapter(entity_type=QUOTATION_ENTITY, app="crm", load=_quotation_document_target,

@@ -1,3 +1,5 @@
+import { PRIORITY_OPTIONS, normalizePriority } from '@/lib/priority'
+
 export const RAILWAY_ZONES = [
   'Northern Railway', 'Southern Railway', 'Eastern Railway', 'Western Railway', 'Central Railway',
   'South Eastern Railway', 'North Eastern Railway', 'Northeast Frontier Railway', 'South Central Railway',
@@ -104,20 +106,22 @@ export const leadSourceOptions = (current?: string | null) =>
 
 export const PRODUCT_CATEGORIES = ['Road Rail Vehicle', 'Rail Vehicle', 'Hydraulic System', 'Braking System', 'Spare Parts', 'Other']
 
-export const PRIORITIES = ['High', 'Medium', 'Low']
+// Priority is exactly Standard / Urgent app-wide (lib/priority.ts). Older rows
+// (High / Medium / Low) are shown and edited as their two-value equivalent.
+export const PRIORITIES: string[] = PRIORITY_OPTIONS.map((o) => o.value)
 
 export const PRIORITY_MEANINGS: Record<string, string> = {
-  High: 'Important requirement, quick action needed',
-  Medium: 'Normal requirement',
-  Low: 'Can be handled later',
+  standard: 'Normal requirement',
+  urgent: 'Important requirement, quick action needed',
 }
 
-// Older records may still carry a retired value (e.g. 'Urgent') — keep it
-// selectable so opening such a record doesn't silently change it.
-export const priorityOptions = (current?: string | null) =>
-  current && !PRIORITIES.includes(current) ? [...PRIORITIES, current] : PRIORITIES
+export const priorityOptions = (_current?: string | null) => PRIORITIES
 
-export const priorityLabel = (p: string) => (PRIORITY_MEANINGS[p] ? `${p} — ${PRIORITY_MEANINGS[p]}` : p)
+export const priorityLabel = (p: string) => {
+  const v = normalizePriority(p)
+  return `${PRIORITY_LABELS_TEXT[v]} — ${PRIORITY_MEANINGS[v]}`
+}
+const PRIORITY_LABELS_TEXT: Record<string, string> = Object.fromEntries(PRIORITY_OPTIONS.map((o) => [o.value, o.label]))
 
 export const INQUIRY_STATUSES = [
   'Lead',

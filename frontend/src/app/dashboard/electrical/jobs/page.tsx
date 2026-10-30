@@ -10,7 +10,8 @@ import { recordPath } from '@/lib/recordRef'
 import { ElectricalJob } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { primaryBtnStyle, segmentBtnStyle, thStyle, tdStyle, Pill, RowCount } from '@/components/shared/ui'
-import { inputStyle, JOB_STATUS_LABELS as STATUS_LABELS, JOB_STATUS_HEX as STATUS_HEX, PRIORITY_LABELS, PRIORITY_HEX } from '@/components/electrical/shared'
+import { inputStyle, JOB_STATUS_LABELS as STATUS_LABELS, JOB_STATUS_HEX as STATUS_HEX, PRIORITY_HEX } from '@/components/electrical/shared'
+import { normalizePriority, priorityLabel } from '@/lib/priority'
 import ElectricalNav from '@/components/electrical/ElectricalNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
@@ -147,7 +148,7 @@ export default function ElectricalJobsPage() {
                   <td style={{ ...cellStyle, color: j.is_overdue ? '#DC2626' : TEXT.body, fontWeight: j.is_overdue ? 600 : 400, whiteSpace: 'nowrap' }}>
                     {j.target_handover_date ? formatDate(j.target_handover_date) : '—'}
                   </td>
-                  <td style={cellStyle}><Pill label={PRIORITY_LABELS[j.priority] || j.priority} hex={PRIORITY_HEX[j.priority]} /></td>
+                  <td style={cellStyle}><Pill label={priorityLabel(j.priority)} hex={PRIORITY_HEX[normalizePriority(j.priority)]} /></td>
                   <td style={cellStyle}><Pill label={STATUS_LABELS[j.status] || j.status} hex={STATUS_HEX[j.status]} /></td>
                 </tr>
               ))

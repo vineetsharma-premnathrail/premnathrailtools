@@ -13,6 +13,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.permissions import require_app_access, require_tab_action
+from app.core.priority import priority_label
 from app.core.data_scope import apply_scope
 import app.modules.crm.access  # noqa: F401 — registers the CRM data-scope models
 from app.modules.crm.access import sees_prices
@@ -162,7 +163,7 @@ def export_inquiries_tenders(
                    "Technical Offer No.", "Sent to R&D On", "Created On", "Created By"]
     inq_rows = [[i.universal_id, orgs.get(i.org_id, ""), _v(i.product),
                  _v(i.product_spec),
-                 _v(i.status), _v(i.priority), _v(i.lead_source), _v(i.bd_owner), _v(i.sales_engineer),
+                 _v(i.status), priority_label(i.priority), _v(i.lead_source), _v(i.bd_owner), _v(i.sales_engineer),
                  money(i.expected_value), _v(i.probability), _v(i.expected_order_date), _v(i.next_followup_date),
                  _v(i.technical_offer_number), _v(ist_date(i.technical_offer_sent_at)), _v(ist_date(i.created_at)),
                  names.get(i.created_by_id, "")] for i in inquiries]
@@ -172,7 +173,7 @@ def export_inquiries_tenders(
                    "Contract Value", "Technical Offer No.", "Created On", "Created By"]
     tnd_rows = [[t.universal_id, orgs.get(t.org_id, ""), _v(t.tender_name), _v(t.tender_number), _v(t.tender_authority),
                  _v(t.tender_portal), _v(t.tender_type), _v(t.tender_category), money(t.tender_value), _v(t.currency),
-                 _v(t.status), _v(t.current_stage), _v(t.tender_details), _v(t.priority), _v(t.bd_owner), _v(t.railway_zone), _v(t.division),
+                 _v(t.status), _v(t.current_stage), _v(t.tender_details), priority_label(t.priority), _v(t.bd_owner), _v(t.railway_zone), _v(t.division),
                  _v(t.publish_date), _v(t.pre_bid_meeting_date), _v(t.submission_date),
                  t.closing_at.strftime("%d-%m-%Y %H:%M") if t.closing_at else "", _v(t.opening_date),
                  "" if t.participate is None else ("Yes" if t.participate else "No"), _v(t.awarded_to), money(t.contract_value),

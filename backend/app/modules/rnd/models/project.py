@@ -7,7 +7,7 @@ from app.db.base import Base
 from app.db.mixins import TimestampMixin, SoftDeleteMixin
 
 RND_PROJECT_TYPES = ("new_product", "product_improvement", "process_development", "technology_research")
-RND_PROJECT_PRIORITIES = ("low", "medium", "high", "critical")
+RND_PROJECT_PRIORITIES = ("standard", "urgent")
 # Lifecycle from the SAP mapping (Dept 4 R&D workflow): Initiation → Research
 # → Development → Feasibility → Handover to Production → Closed.
 RND_PROJECT_STAGES = ("initiation", "research", "development", "feasibility", "handover", "closed")
@@ -15,18 +15,22 @@ RND_PROJECT_STATUSES = ("active", "on_hold", "cancelled")
 
 # Project origin — WHY the project exists (null on projects saved before it
 # was recorded). project_type is kept in sync from it so older reports work.
-RND_PROJECT_ORIGINS = ("customer_requirement", "product_improvement", "new_development", "process_research")
+# Since 2026-10-30 there are two origins; the four older ones are mapped by the
+# migration (RND_LEGACY_ORIGIN_MAP) and are no longer accepted by the API.
+RND_PROJECT_ORIGINS = ("existing_projects", "new_project")
 RND_ORIGIN_LABELS = {
-    "customer_requirement": "Customer requirement",
-    "product_improvement": "Improvement of existing product",
-    "new_development": "New product (internal)",
-    "process_research": "Process / technology research",
+    "existing_projects": "Existing Projects",
+    "new_project": "New Project",
 }
 RND_ORIGIN_PROJECT_TYPE = {
-    "customer_requirement": "new_product",
-    "product_improvement": "product_improvement",
-    "new_development": "new_product",
-    "process_research": "technology_research",
+    "existing_projects": "product_improvement",
+    "new_project": "new_product",
+}
+RND_LEGACY_ORIGIN_MAP = {
+    "product_improvement": "existing_projects",
+    "new_development": "new_project",
+    "process_research": "new_project",
+    "customer_requirement": "new_project",
 }
 # The record that proves the origin (source_kind + source_id).
 RND_SOURCE_KINDS = ("inquiry", "tender", "quality_complaint", "ncr", "service_request")
@@ -53,7 +57,7 @@ class RndProject(Base, TimestampMixin, SoftDeleteMixin):
     project_number: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     project_type: Mapped[str] = mapped_column(String(30), default="new_product", nullable=False)
-    priority: Mapped[str] = mapped_column(String(20), default="medium", nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), default="standard", nullable=False)  # standard | urgent
     stage: Mapped[str] = mapped_column(String(20), default="initiation", nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
     objective: Mapped[str] = mapped_column(Text, nullable=False)

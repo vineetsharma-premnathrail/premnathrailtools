@@ -149,7 +149,7 @@ def milestone_views(db: Session, so, *, as_of: date | None = None) -> list[dict]
     """Per live milestone: amounts invoiced (posted) / reserved (drafts), when
     it fell due, what can be billed now (per delivery row for the
     delivery-linked ones)."""
-    from app.modules.sales.service import today_ist
+    from app.modules.sales.legacy import today_ist
     as_of = as_of or today_ist()
     lines = {ln.id: ln for ln in so.lines}
     events = _events(db, so.id)
@@ -222,7 +222,7 @@ def _trigger_date(so, b, events, as_of: date) -> date | None:
 
 
 def sync_order(db: Session, so, as_of: date | None = None) -> None:
-    from app.modules.sales.service import today_ist
+    from app.modules.sales.legacy import today_ist
     if so.status in ("draft", "pending_approval", "cancelled"):
         return
     as_of = as_of or today_ist()
@@ -301,9 +301,9 @@ def on_inspection_accepted(db: Session, *, erp_project_id: int | None, on: date 
     call on a machine makes the 'inspection' milestone of its order due."""
     if not erp_project_id:
         return
-    from app.modules.sales.delivery import rows_for_machine
-    from app.modules.sales.views import get_order
-    from app.modules.sales.service import today_ist
+    from app.modules.sales.legacy import rows_for_machine
+    from app.modules.sales.legacy import get_order
+    from app.modules.sales.legacy import today_ist
     for so_id in {r.so_id for r in rows_for_machine(db, erp_project_id)}:
         try:
             so = get_order(db, so_id)
@@ -361,7 +361,7 @@ def create_invoice_from_so(db: Session, *, so_id: int, billing_plan_line_id: int
     from app.modules.accounts.service import create_ar_transaction
     from app.modules.sales.models.delivery import SalesInvoiceLink
     from app.modules.sales.models.order import SalesOrder
-    from app.modules.sales.views import get_order
+    from app.modules.sales.legacy import get_order
 
     db.query(SalesOrder.id).filter(SalesOrder.id == so_id).with_for_update().first()
     so = get_order(db, so_id)

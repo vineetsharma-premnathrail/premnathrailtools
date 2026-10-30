@@ -7,7 +7,8 @@ import { erpApi, projectsApi, usersApi } from '@/lib/api'
 import { DirectoryUser } from '@/types'
 import { FormPage, SHEET, SheetSection, Optional, Req, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import ProjectsNav from '@/components/projects/ProjectsNav'
-import { ProjectBudgetSection, ProjectFormValues, emptyProjectForm } from '@/components/projects/ProjectForm'
+import { ProjectFormValues, emptyProjectForm } from '@/components/projects/ProjectForm'
+import CrmSourcePicker, { parseCrmSource } from '@/components/projects/CrmSourcePicker'
 import MachineForm from '@/components/erp/ProjectForm'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
@@ -24,9 +25,11 @@ export default function NewProjectPage() {
   const [pf, setPf] = useState<ProjectFormValues>(emptyProjectForm())
   const [users, setUsers] = useState<DirectoryUser[]>([])
   const [canCreate, setCanCreate] = useState<boolean | null>(null)
+  // Optional CRM inquiry / tender this project comes from ("inquiry:12", "tender:5" or "").
+  const [crmSource, setCrmSource] = useState('')
   // Only the Project tab is kept; the machine tabs belong to the shared machine form.
-  const draft = useFormDraft(canCreate ? 'projects-project-new' : null, pf,
-    (d) => setPf({ ...emptyProjectForm(), ...d }))
+  const draft = useFormDraft(canCreate ? 'projects-project-new' : null, { ...pf, crm_source: crmSource },
+    (d) => { const { crm_source, ...rest } = d; setPf({ ...emptyProjectForm(), ...rest }); setCrmSource(crm_source || '') })
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -91,7 +94,12 @@ export default function NewProjectPage() {
           </div>
         </div>
       </SheetSection>
-      <ProjectBudgetSection value={pf.internal_order_id} onChange={(v) => set('internal_order_id', v)} />
+      <SheetSection icon="link" title="CRM source" extra={<Optional />}>
+        <div data-tour="pm-form-crm-source" style={{ maxWidth: 520 }}>
+          <label style={sheetLabel}>CRM inquiry or tender</label>
+          <CrmSourcePicker value={crmSource} onChange={setCrmSource} />
+        </div>
+      </SheetSection>
       <SheetSection icon="user" title="Ownership & Scope" extra={<Optional />}>
         <div style={row}>
           <div data-tour="pm-form-code" style={{ flex: '0 1 240px', minWidth: 170 }}>
@@ -135,7 +143,7 @@ export default function NewProjectPage() {
           project_manager_id: pf.project_manager_id ? Number(pf.project_manager_id) : null,
           start_date: pf.start_date,
           target_handover_date: pf.target_handover_date,
-          internal_order_id: pf.internal_order_id ? Number(pf.internal_order_id) : null,
+          ...(parseCrmSource(crmSource) || {}),
           machine,
         })
         draft.clear()

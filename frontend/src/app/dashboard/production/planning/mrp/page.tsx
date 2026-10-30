@@ -96,7 +96,7 @@ export default function MrpPage() {
   const [deleting, setDeleting] = useState<PlannedOrder | null>(null)
   const [converting, setConverting] = useState<PlannedOrder | null>(null)
   const [prOpen, setPrOpen] = useState(false)
-  const [prForm, setPrForm] = useState({ category_code: '', priority: 'medium', save_as_draft: false, remarks: '' })
+  const [prForm, setPrForm] = useState({ category_code: '', priority: 'standard', save_as_draft: false, remarks: '' })
   const [prResult, setPrResult] = useState<PrConversionResult | null>(null)
   const [newOpen, setNewOpen] = useState(false)
   const [newForm, setNewForm] = useState({ item_id: '', quantity: '', finish_date: '', procurement: '', remarks: '' })
@@ -492,7 +492,7 @@ export default function MrpPage() {
                     <div style={{ flex: '0 1 140px' }}>
                       <label style={sheetLabel}>Priority</label>
                       <Select value={prForm.priority} onChange={(e) => setPrForm({ ...prForm, priority: e.target.value })} style={sheetInput}>
-                        <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+                        <option value="standard">Standard</option><option value="urgent">Urgent</option>
                       </Select>
                     </div>
                   </div>

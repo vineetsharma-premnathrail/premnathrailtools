@@ -1,11 +1,14 @@
 """Product master: the finished products the company makes and sells, with
-their applications and technical specifications."""
+their applications and technical specifications.
+
+Lives in CRM › Products (one tab, `crm:products`; moved from Sales on 2026-10-30).
+The master is tab-gated, not owner-scoped: anyone who may open the tab sees every
+product, like the vendor master (owner decision, 2026-10-30)."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.data_scope import apply_scope, ensure_in_scope
-from app.core.permissions import ensure_can_delete, require_app_access, require_tab_action
+from app.core.permissions import ensure_can_delete, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.products.models.application import ProductApplication
@@ -16,12 +19,11 @@ from app.modules.products.schemas.product import (
     ProductCreate, ProductUpdate, ProductResponse, ProductSpecificationPayload,
 )
 from app.modules.store.models.item import StoreItem
-from app.modules.products import access  # noqa: F401 — registers the product data scope
 
-router = APIRouter(prefix="/products", tags=["Products"], dependencies=[Depends(require_app_access("products"))])
+router = APIRouter(prefix="/products", tags=["Products"], dependencies=[Depends(require_tab_access("crm", "products"))])
 
-_CAN_CREATE = require_tab_action("sales", "products", "create")
-_CAN_EDIT = require_tab_action("sales", "products", "edit")
+_CAN_CREATE = require_tab_action("crm", "products", "create")
+_CAN_EDIT = require_tab_action("crm", "products", "edit")
 
 
 def _norm_code(code: str) -> str:
@@ -83,7 +85,7 @@ def _out(p: FinishedProduct) -> ProductResponse:
     return out
 
 
-def _get(db: Session, product_id: int, user: User | None = None) -> FinishedProduct:
+def _get(db: Session, product_id: int) -> FinishedProduct:
     p = (
         db.query(FinishedProduct)
         .options(selectinload(FinishedProduct.applications), selectinload(FinishedProduct.specifications))
@@ -92,8 +94,6 @@ def _get(db: Session, product_id: int, user: User | None = None) -> FinishedProd
     )
     if not p:
         raise HTTPException(status_code=404, detail=f"Product #{product_id} not found — it may have been deleted; go back to the product list.")
-    if user is not None:
-        ensure_in_scope(db, user, p)  # 403 when outside the user's Products data scope
     return p
 
 
@@ -121,12 +121,9 @@ async def lookup_store_items(search: str = "", db: Session = Depends(get_db)):
 @router.get("", response_model=list[ProductResponse])
 async def list_products(
     search: str = "", product_type: str = "", status: str = "", application_id: int | None = None,
-    db: Session = Depends(get_db), user: User = Depends(require_app_access("products")),
+    db: Session = Depends(get_db), _user: User = Depends(require_tab_access("crm", "products")),
 ):
-    q = apply_scope(
-        db.query(FinishedProduct).options(selectinload(FinishedProduct.applications), selectinload(FinishedProduct.specifications)),
-        user, FinishedProduct,
-    )
+    q = db.query(FinishedProduct).options(selectinload(FinishedProduct.applications), selectinload(FinishedProduct.specifications))
     term = search.strip()
     if term:
         like = f"%{term}%"
@@ -170,13 +167,13 @@ async def create_product(payload: ProductCreate, db: Session = Depends(get_db), 
 
 
 @router.get("/{product_id}", response_model=ProductResponse)
-async def get_product(product_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("products"))):
-    return _out(_get(db, product_id, user))
+async def get_product(product_id: int, db: Session = Depends(get_db), _user: User = Depends(require_tab_access("crm", "products"))):
+    return _out(_get(db, product_id))
 
 
 @router.patch("/{product_id}", response_model=ProductResponse)
-async def update_product(product_id: int, payload: ProductUpdate, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
-    p = _get(db, product_id, user)
+async def update_product(product_id: int, payload: ProductUpdate, db: Session = Depends(get_db), _user: User = Depends(_CAN_EDIT)):
+    p = _get(db, product_id)
     data = payload.model_dump(exclude_unset=True)
     _check_choices(data.get("product_type"), data.get("status"))
     _check_numbers(data.get("warranty_months"))
@@ -207,9 +204,9 @@ async def update_product(product_id: int, payload: ProductUpdate, db: Session = 
 
 
 @router.delete("/{product_id}")
-async def delete_product(product_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("products"))):
-    p = _get(db, product_id, user)
-    ensure_can_delete(user, p, "sales", "products", "product")
+async def delete_product(product_id: int, db: Session = Depends(get_db), user: User = Depends(require_tab_access("crm", "products"))):
+    p = _get(db, product_id)
+    ensure_can_delete(user, p, "crm", "products", "product")
     if p.status != "development":
         raise HTTPException(
             status_code=409,

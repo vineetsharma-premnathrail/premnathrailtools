@@ -30,6 +30,11 @@ const config: TourConfig = {
       purpose: 'Department, requester, request/required dates, requirement type, priority, assigned buyer, and remarks — everything entered when this requisition was raised.',
     },
     {
+      target: 'pr-detail-upload-po',
+      title: 'Upload PO',
+      purpose: 'Once the quotations are in, the buyer makes the PO in Tally and uploads it here: Tally PO number + PDF, the vendor, the delivery store and each line’s price. The PO is built from this requisition’s lines and goes for approval.',
+    },
+    {
       target: 'pr-detail-po-info',
       title: 'Purchase Order',
       purpose: 'Shown once a Purchase Order has been raised against this requisition — its PO number, vendor, and the PO document itself.',
@@ -101,6 +106,11 @@ const config: TourConfig = {
       target: 'pr-detail-attachments',
       title: 'Attachments',
       purpose: 'Supporting and specification documents uploaded when this requisition was created.',
+    },
+    {
+      target: 'pr-detail-history',
+      title: 'History',
+      purpose: 'Everything that happened on this requisition, newest first. Each uploaded Tally PO keeps its own PDF here (Open PO PDF), even if it was uploaded again later.',
     },
   ],
 }

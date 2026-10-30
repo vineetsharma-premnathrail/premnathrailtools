@@ -92,7 +92,15 @@ def upgrade() -> None:
     import app.main  # noqa: F401 — registers every module's transaction types and scoped models
 
     for module, fn in MODULE_STEPS:
-        result = getattr(importlib.import_module(module), fn)(bind)
+        try:
+            mod = importlib.import_module(module)
+        except ModuleNotFoundError as exc:
+            # Only a module that was deliberately retired (Sales, 2026-10-30) may be missing.
+            if not (exc.name or "").startswith("app.modules.sales"):
+                raise
+            log.info("central authorization: skipped %s — module retired", module)
+            continue
+        result = getattr(mod, fn)(bind)
         log.info("central authorization: %s.%s -> %s", module, fn, result)
     log.info("central authorization: submit/cancel granted on %s role/user row(s)", grant_submit_cancel(bind))
 

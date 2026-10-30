@@ -4,7 +4,7 @@ import FilterMenu from '@/components/shared/FilterMenu'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { recordPath } from '@/lib/recordRef'
-import { useRequireApp } from '@/hooks/useAuth'
+import { useProductsAccess } from '@/components/products/useProductsAccess'
 import { useCan } from '@/lib/permissions'
 import { productsApi } from '@/lib/api'
 import { FinishedProduct } from '@/types'
@@ -17,7 +17,7 @@ import {
 import { extractErrorMessages } from '@/lib/validation'
 
 export default function ProductsPage() {
-  const { isAuthorized, isLoading } = useRequireApp('products')
+  const { isAuthorized, isLoading } = useProductsAccess()
   const { can } = useCan()
   const router = useRouter()
   const [rows, setRows] = useState<FinishedProduct[]>([])
@@ -50,14 +50,14 @@ export default function ProductsPage() {
     <div>
       <ProductsNav />
       <PageHeader title="Products">
-        {can('sales', 'products', 'create') && (
-          <button type="button" style={primaryBtnStyle} onClick={() => router.push('/dashboard/products/new')}>+ New Product</button>
+        {can('crm', 'products', 'create') && (
+          <button type="button" data-tour="prod-new-btn" style={primaryBtnStyle} onClick={() => router.push('/dashboard/products/new')}>+ New Product</button>
         )}
       </PageHeader>
       <ErrorBanner error={error} />
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
-        <input style={{ ...inputStyle, flex: '1 1 220px', maxWidth: 320 }} placeholder="Search code, name or model…" value={filters.search} onChange={(e) => setF('search', e.target.value)} />
+        <input data-tour="prod-search" style={{ ...inputStyle, flex: '1 1 220px', maxWidth: 320 }} placeholder="Search code, name or model…" value={filters.search} onChange={(e) => setF('search', e.target.value)} />
         <FilterMenu
           fields={[
             { key: 'product_type', label: 'Type', value: filters.product_type, allLabel: 'All types',
@@ -70,7 +70,7 @@ export default function ProductsPage() {
         />
       </div>
 
-      <div style={tableWrapStyle}>
+      <div data-tour="prod-table" style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead><tr>{['Code', 'Name', 'Type', 'Model', 'Status'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>

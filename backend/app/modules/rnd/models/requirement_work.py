@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, SmallInteger, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -68,6 +68,7 @@ class RndRequirementTask(Base, TimestampMixin):
     other R&D people; the creator of a task reviews and can edit it."""
 
     __tablename__ = "rnd_requirement_tasks"
+    __table_args__ = (CheckConstraint("progress_percent BETWEEN 0 AND 100", name="ck_rnd_req_task_progress"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     source: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -84,10 +85,15 @@ class RndRequirementTask(Base, TimestampMixin):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Planning fields (services/task_fields.py): priority, start date, the
     # assignee's work status while open, and the checklist (definition of done).
-    priority: Mapped[str] = mapped_column(String(10), nullable=False, default="medium", server_default="medium")
+    priority: Mapped[str] = mapped_column(String(10), nullable=False, default="standard", server_default="standard")  # standard | urgent
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     work_status: Mapped[str] = mapped_column(String(20), nullable=False, default="not_started", server_default="not_started")
     checklist: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # 0-100. Typed by the assignee; read-only (computed from the ticked steps) when a checklist exists.
+    progress_percent: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
+    # The requirement revision (rnd_requirement_revisions.revision_no) that was current when the task
+    # was created; drives the "requirement changed since this task was created" flag. NULL on old tasks.
+    revision_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Whose work it is: "rnd" or a department the requirement is shared with
     # (design / electrical / hydraulic) — the assignee's side when assigned.
     # Drives the department chips on the requirement's task list.
@@ -177,3 +183,6 @@ class RndRequirementDocVisibility(Base, TimestampMixin):
     department: Mapped[str] = mapped_column(String(20), nullable=False)
     shared_with_all: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     updated_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    # Document category (RND_DOC_CATEGORIES in rnd/models/document.py). One row per requirement
+    # document; shared_with_all is ignored since the 2026-10-30 rework (every R&D user sees all).
+    category: Mapped[str | None] = mapped_column(String(40), nullable=True)

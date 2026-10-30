@@ -1,22 +1,22 @@
 """Who may do what on an R&D requirement (a CRM Inquiry / Tender sent to R&D).
 
+R&D rework 2026-10-30 — need-to-know now comes from roles, not per-record ticks:
+
 * R&D head(s) — the heads of the R&D department in Organization › Department
   — and portal admins can do everything on every requirement: see it,
-  open/download its documents, upload documents, respond to CRM, set access
-  and hand out tasks. Until an R&D department head is set, every R&D user
-  acts as head, so the module keeps working.
-* R&D › Settings lists who may create Technical Offers (they open every
-  requirement) and who may only see every requirement and its offers.
-* Everyone else sees a requirement only when the head granted them access on
-  it (rnd_requirement_access), with each right ticked separately. Assigning a
-  task grants View + Download automatically, so the assignee can work on it.
-
-* Departments the head shared the requirement with (Design / Electrical /
-  Hydraulic & Pneumatic, Permission Matrix `<department>:requirements` view)
-  work on it with R&D: they see it, every department's tasks, its documents
-  and the discussion, and upload documents. Anyone who can open the
-  requirement can give a task to a person in R&D or any shared department;
-  the assignee's department head is told.
+  open/download its documents, upload documents, respond to CRM, accept or
+  return it to BD and hand out tasks. Until an R&D department head is set,
+  every R&D user acts as head, so the module keeps working.
+* Everyone on the R&D side (R&D app + View on R&D › Requirements) sees every
+  requirement, downloads its files and uploads documents. The role's features
+  (core/features/rnd.py) decide which blocks and actions they get on top.
+* Responding to CRM stays with the head (or a legacy per-requirement Respond
+  tick that an earlier release gave to someone).
+* People outside R&D (Design, Electrical, Hydraulic & Pneumatic …) see only the
+  requirements where they hold a task — View and Download, nothing else.
+  Assigning a task grants this automatically. Legacy `rnd_requirement_access`
+  rows (View / Download only) are still honoured; there is no screen to
+  change them any more.
 
 Every check raises a 403 that says what is missing and who can grant it.
 """
@@ -27,14 +27,11 @@ from sqlalchemy.orm import Session
 
 from app.core.permission_registry import can_feature, can_view_tab
 from app.modules.main.models.user import User
-from app.modules.rnd.models.requirement_work import (
-    RND_SHARE_DEPARTMENTS, RndRequirementAccess, RndRequirementShare, RndRequirementTask,
-)
+from app.modules.rnd.models.requirement_work import RndRequirementAccess, RndRequirementTask
 
 PERMS = ("view", "download", "upload", "respond")
 RND = "rnd"
 TAB = "requirements"
-SIDE_LABELS = {"rnd": "R&D", "design": "Design", "electrical": "Electrical", "hydraulic": "Hydraulic & Pneumatic"}
 PERM_LABELS = {
     "view": "view this requirement",
     "download": "open or download this requirement's documents",
@@ -90,6 +87,16 @@ def can_view_technical_offer(db: Session, user: User) -> bool:
     return can_create_technical_offer(db, user) or can_feature(user, "rnd", "requirements", "offer_team", "view")
 
 
+def can_accept(db: Session, user: User) -> bool:
+    """Accept a requirement: the R&D head, an admin, or R&D › Requirements › Review › Approve."""
+    return is_head(db, user) or can_feature(user, "rnd", "requirements", "review", "approve")
+
+
+def can_return(db: Session, user: User) -> bool:
+    """Return a requirement to BD: the R&D head, an admin, or R&D › Requirements › Review › Reject."""
+    return is_head(db, user) or can_feature(user, "rnd", "requirements", "review", "reject")
+
+
 def rnd_users(db: Session) -> list[User]:
     return [u for u in db.query(User).filter(User.is_active == True).order_by(User.name.asc()).all() if "rnd" in u.get_apps()]  # noqa: E712
 
@@ -117,77 +124,50 @@ def _row(db: Session, user: User, source: str, record_id: int) -> RndRequirement
     ).first()
 
 
-# ── departments working on a requirement ──────────────────────────────────
-
-def side_label(department: str) -> str:
-    return SIDE_LABELS.get(department, department)
-
+# ── sides ─────────────────────────────────────────────────────────────────
 
 def is_rnd_side(user: User) -> bool:
     """Works in R&D › Requirements (admins count everywhere)."""
     return user.role == "admin" or (RND in user.get_apps() and can_view_tab(user, RND, TAB))
 
 
-def can_see_department(user: User, department: str) -> bool:
-    return can_view_tab(user, department, TAB)
+def has_task(db: Session, user: User, source: str, record_id: int) -> bool:
+    return db.query(RndRequirementTask.id).filter(
+        RndRequirementTask.source == source, RndRequirementTask.record_id == record_id,
+        RndRequirementTask.assigned_to_id == user.id, RndRequirementTask.status != "cancelled",
+    ).first() is not None
 
 
-def has_requirement_side(user: User) -> bool:
-    return is_rnd_side(user) or any(can_see_department(user, d) for d in RND_SHARE_DEPARTMENTS)
+def has_any_task(db: Session, user: User) -> bool:
+    return db.query(RndRequirementTask.id).filter(
+        RndRequirementTask.assigned_to_id == user.id, RndRequirementTask.status != "cancelled",
+    ).first() is not None
 
 
-def shared_departments(db: Session, source: str, record_id: int) -> list[str]:
-    """Departments the R&D head shared this requirement with (any request, answered or not)."""
-    rows = {d for (d,) in db.query(RndRequirementShare.department).filter(
-        RndRequirementShare.source == source, RndRequirementShare.record_id == record_id).distinct().all()}
-    return [d for d in RND_SHARE_DEPARTMENTS if d in rows]
+def has_requirement_side(db: Session, user: User) -> bool:
+    """May reach the requirement routes at all: the R&D side, or someone who
+    holds a task on a requirement (what they may open is checked per record)."""
+    return is_rnd_side(user) or has_any_task(db, user)
 
 
-def working_departments(db: Session, source: str, record_id: int) -> list[str]:
-    """R&D plus every department the requirement is shared with."""
-    return [RND, *shared_departments(db, source, record_id)]
+def side_label(department: str | None) -> str:
+    return {"rnd": "R&D", "design": "Design", "electrical": "Electrical", "hydraulic": "Hydraulic & Pneumatic"}.get(department or "", department or "—")
 
 
-def user_departments(db: Session, user: User, source: str, record_id: int, shared: list[str] | None = None) -> list[str]:
-    """Which of the requirement's departments this person belongs to — "My department"."""
-    shared = shared_departments(db, source, record_id) if shared is None else shared
-    return ([RND] if is_rnd_side(user) else []) + [d for d in shared if can_see_department(user, d)]
-
-
-def department_people(db: Session, department: str) -> list[User]:
-    """Who can be given a task for this department. Admins pass every
-    permission check, so they count only when nobody else holds the right."""
-    if department == RND:
-        return rnd_users(db)
-    users = [u for u in db.query(User).filter(User.is_active == True).order_by(User.name.asc()).all()  # noqa: E712
-             if can_see_department(u, department)]
-    return [u for u in users if u.role != "admin" and not u.is_azure_admin] or users
-
-
-def check_assignee(db: Session, source: str, record_id: int, assignee_id: int, department: str) -> User:
-    """The person must belong to the department the task is for, and the
-    department must be working on this requirement."""
-    if department not in working_departments(db, source, record_id):
-        if department in RND_SHARE_DEPARTMENTS:
-            raise HTTPException(status_code=422, detail=f"This requirement isn't shared with {side_label(department)}, so its people can't get tasks on it. "
-                                                        f"The R&D head ({_head_names(db)}) shares it from the Milestones tab › Departments first.")
-        raise HTTPException(status_code=422, detail=f"'{department}' isn't a department that works on R&D requirements — pick R&D, Design, Electrical or Hydraulic & Pneumatic.")
+def check_assignee(db: Session, assignee_id: int) -> User:
+    """The person a requirement task goes to: any active user. R&D people and
+    the Design / Electrical / Hydraulic & Pneumatic engineers who give input
+    through tasks all qualify; the role's "Assign to" rule narrows the list."""
     assignee = db.query(User).filter(User.id == assignee_id).first()
     if not assignee or not assignee.is_active:
         raise HTTPException(status_code=400, detail="The selected person was not found or is deactivated — pick someone else.")
-    name = assignee.name or assignee.email
-    if department == RND and RND not in assignee.get_apps():
-        raise HTTPException(status_code=400, detail=f"{name} has no access to the R&D module, so they couldn't see this task. Pick someone with R&D access, or grant it in User Management.")
-    if department != RND and not can_see_department(assignee, department):
-        raise HTTPException(status_code=400, detail=f"{name} can't open {side_label(department)} › Requirements, so they couldn't see this task. Pick someone from "
-                                                    f"{side_label(department)}, or ask an admin to give them 'View' on {side_label(department)} › Requirements (Organization › Role & Permissions).")
     return assignee
 
 
-def assignee_heads(db: Session, task: RndRequirementTask, assignee: User) -> set[int]:
+def assignee_heads(db: Session, assignee: User) -> set[int]:
     """The assignee's department head(s), from Organization › Department
-    (matched on the person's department + branch). R&D work falls back to
-    the R&D head(s) when the person's department has no head set."""
+    (matched on the person's department + branch). Falls back to the R&D
+    head(s) when the person's department has no head set."""
     from app.modules.organization.models.department import Department  # local: keeps rnd ↔ organization imports one-way
     ids: set[int] = set()
     name = (assignee.department or "").strip()
@@ -196,53 +176,44 @@ def assignee_heads(db: Session, task: RndRequirementTask, assignee: User) -> set
         for d in [d for d in rows if d.branch_id == assignee.branch_id] or rows:
             ids |= {d.head_user_id, d.secondary_head_user_id, *(d.additional_head_user_ids or [])}
     ids.discard(None)
-    if not ids and task.department == RND:
+    if not ids:
         ids = set(head_ids(db))
     return ids
 
 
 def link_for(db: Session, user: User, source: str, record_id: int) -> tuple[str, int]:
-    """Where this person opens the requirement from a notification: R&D's page,
-    or their department's Requirements page (addressed by the latest share)."""
-    if not is_rnd_side(user):
-        for d in shared_departments(db, source, record_id):
-            if can_see_department(user, d):
-                share = db.query(RndRequirementShare).filter(
-                    RndRequirementShare.source == source, RndRequirementShare.record_id == record_id,
-                    RndRequirementShare.department == d).order_by(RndRequirementShare.id.desc()).first()
-                return f"{d}_rnd_requirement", share.id
+    """Where a notification opens the requirement: R&D's requirement page."""
     return f"rnd_req_{source}", record_id
 
 
 def access_for(db: Session, user: User, source: str, record_id: int) -> dict:
-    """{view, download, upload, respond, is_head, create_technical_offer, departments}
-    for this user on this requirement."""
-    departments = user_departments(db, user, source, record_id)
-    if is_head(db, user):
-        return {**{p: True for p in PERMS}, "is_head": True, "create_technical_offer": True, "departments": departments}
-    row = _row(db, user, source, record_id)
-    has_task = db.query(RndRequirementTask.id).filter(
-        RndRequirementTask.source == source, RndRequirementTask.record_id == record_id,
-        RndRequirementTask.assigned_to_id == user.id, RndRequirementTask.status != "cancelled",
-    ).first() is not None
+    """{view, download, upload, respond, is_head, is_rnd_side, can_review,
+    create_technical_offer} for this user on this requirement."""
+    head = is_head(db, user)
+    rnd_side = is_rnd_side(user)
     out = {
-        "view": bool(row and row.can_view) or has_task,
-        "download": bool(row and row.can_download),
-        "upload": bool(row and row.can_upload),
-        "respond": bool(row and row.can_respond),
-        "is_head": False,
+        "view": False, "download": False, "upload": False, "respond": False,
+        "is_head": head, "is_rnd_side": rnd_side, "can_review": can_accept(db, user) or can_return(db, user),
         "create_technical_offer": can_create_technical_offer(db, user),
-        "departments": departments,
     }
-    # A department the requirement is shared with works on it with R&D.
-    if any(d != RND for d in departments):
-        out.update(view=True, download=True, upload=True)
-    if not out["view"]:
-        out.update(download=False, upload=False, respond=False)
+    if head:
+        out.update({p: True for p in PERMS})
+        out["can_review"] = True
+        return out
+    row = _row(db, user, source, record_id)
+    if rnd_side:
+        # R&D-side users with View on Requirements see every requirement.
+        out.update(view=True, download=True, upload=True, respond=bool(row and row.can_respond))
+    else:
+        task = has_task(db, user, source, record_id)
+        out["view"] = task or bool(row and row.can_view)
+        out["download"] = task or bool(row and row.can_download)
     # A Technical Offer creator works on any requirement's offer, so opens it
     # too; a "Can see Technical Offers" person only views and downloads.
     if out["create_technical_offer"] or can_view_technical_offer(db, user):
         out.update(view=True, download=True)
+    if not out["view"]:
+        out.update(download=False, upload=False, respond=False)
     return out
 
 
@@ -254,10 +225,21 @@ def _head_names(db: Session) -> str:
 def ensure(db: Session, user: User, source: str, record_id: int, perm: str) -> dict:
     access = access_for(db, user, source, record_id)
     if not access[perm]:
+        if not access["view"]:
+            raise HTTPException(
+                status_code=403,
+                detail=f"You don't have access to this requirement — ask the R&D head ({_head_names(db)}) to give you a task on it.",
+            )
+        if perm == "respond":
+            raise HTTPException(
+                status_code=403,
+                detail=f"Only the R&D head ({_head_names(db)}) can {PERM_LABELS[perm]}. Ask them to send "
+                       "R&D's response to BD.",
+            )
         raise HTTPException(
             status_code=403,
-            detail=f"You don't have permission to {PERM_LABELS[perm]}. Ask the R&D head ({_head_names(db)}) "
-                   "to grant it in the requirement's Access tab, or to share the requirement with your department.",
+            detail=f"You don't have permission to {PERM_LABELS[perm]}. People outside R&D can only view and download the "
+                   f"requirements they hold a task on. Ask the R&D head ({_head_names(db)}) if you need more.",
         )
     return access
 
@@ -271,9 +253,21 @@ def ensure_head(db: Session, user: User, what: str) -> None:
         )
 
 
+def ensure_can_review(db: Session, user: User, action: str) -> None:
+    """403 with who can accept / return a requirement (AC-14)."""
+    ok = can_accept(db, user) if action == "accept" else can_return(db, user)
+    if not ok:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Only the R&D head ({_head_names(db)}) or someone with R&D › Requirements › Review can accept or return a "
+                   "requirement — an admin grants it in Organization › Role & Permissions.",
+        )
+
+
 def visible_keys(db: Session, user: User) -> set[tuple[str, int]] | None:
-    """(source, record_id) pairs the user may see; None = all (head/admin)."""
-    if can_view_technical_offer(db, user):
+    """(source, record_id) pairs the user may see; None = all (R&D side, head,
+    Technical Offer team, admin)."""
+    if is_rnd_side(user) or is_head(db, user) or can_view_technical_offer(db, user):
         return None
     keys = {
         (r.source, r.record_id)
@@ -284,19 +278,3 @@ def visible_keys(db: Session, user: User) -> set[tuple[str, int]] | None:
         for t in db.query(RndRequirementTask).filter(RndRequirementTask.assigned_to_id == user.id, RndRequirementTask.status != "cancelled").all()
     }
     return keys
-
-
-def grant_task_access(db: Session, *, source: str, record_id: int, user_id: int, granted_by: User) -> None:
-    """A task assignee can open the requirement and read its documents."""
-    row = db.query(RndRequirementAccess).filter(
-        RndRequirementAccess.source == source, RndRequirementAccess.record_id == record_id,
-        RndRequirementAccess.user_id == user_id,
-    ).first()
-    if row:
-        row.can_view = True
-        row.can_download = True
-        return
-    db.add(RndRequirementAccess(
-        source=source, record_id=record_id, user_id=user_id, can_view=True, can_download=True,
-        granted_by_id=granted_by.id,
-    ))

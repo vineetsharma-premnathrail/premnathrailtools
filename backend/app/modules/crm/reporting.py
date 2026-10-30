@@ -24,6 +24,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.data_scope import apply_scope
+from app.core.priority import priority_label
 import app.modules.crm.access  # noqa: F401 — registers the CRM data-scope models (Inquiry)
 from app.core.reporting import (
     DashboardDef, DashboardPage, DateField, DetailColumn, Dimension, FilterDef, Measure, ReportDataset, ReportDef,
@@ -113,7 +114,7 @@ def _load_leads(db: Session, user: Any, today: date) -> list[dict]:
             "customer_id": org_id, "customer": org_name or NOT_SET,
             "zone": _text(zone), "division": _text(division), "source": _text(source),
             "product": _text(product), "category": _text(category),
-            "stage": _text(stage), "status": _text(status), "priority": _text(priority),
+            "stage": _text(stage), "status": _text(status), "priority": priority_label(priority) if priority else NOT_SET,
             "owner_id": owner_id, "owner": names.get(owner_id) or (owner_text or "No BD owner"),
             "outcome": outcome, "is_open": outcome == "open", "is_won": won, "is_lost": lost,
             "lost_reason": LOST_REASONS.get(lost_code or "", NOT_SET) if lost else None,

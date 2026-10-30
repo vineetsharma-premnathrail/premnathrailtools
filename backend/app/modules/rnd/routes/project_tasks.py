@@ -29,7 +29,6 @@ from app.modules.main.models.user import User
 from app.modules.main.routes.auth import get_current_user
 from app.modules.rnd.models.document import RndDocument
 from app.modules.rnd.models.project import RndProject
-from app.modules.rnd.models.project_milestone import RND_MILESTONE_OPEN, RND_MILESTONE_STATUS_LABELS, RndProjectMilestone
 from app.modules.rnd.models.project_task import RndProjectTask, RndProjectTaskEvent
 from app.modules.rnd.scope import ensure_in_scope
 from app.modules.rnd.services import project_roles as roles
@@ -99,27 +98,6 @@ def _check_assignee(db: Session, project: RndProject, assignee_id: int, allowed:
     # The role's assign-to rule (Role & Permissions › R&D › Prototype / Research › Project tasks).
     assignee_rules.ensure_allowed(db, user, RULE_KEY, assignee)
     return assignee
-
-
-def _open_milestone(db: Session, project: RndProject, milestone_id: int | None) -> RndProjectMilestone | None:
-    """The milestone a task goes into — on this project and still open."""
-    if not milestone_id:
-        return None
-    m = db.query(RndProjectMilestone).filter(RndProjectMilestone.id == milestone_id).first()
-    if not m or m.project_id != project.id:
-        raise HTTPException(status_code=404, detail=f"That milestone isn't on {project.project_number} any more — refresh the page.")
-    if m.status not in RND_MILESTONE_OPEN:
-        raise HTTPException(status_code=409, detail=f"Milestone '{m.title}' is {RND_MILESTONE_STATUS_LABELS[m.status]}, so it can't get tasks. Reopen it first, or pick another milestone.")
-    return m
-
-
-def _check_in_milestone(m: RndProjectMilestone | None, due: date, start: date | None = None) -> None:
-    if not m:
-        return
-    if due > m.due_date:
-        raise HTTPException(status_code=422, detail=f"A task in '{m.title}' can't be due after the milestone's end date ({m.due_date.strftime('%d %b %Y')}). Pick an earlier date, or move the milestone's end date first.")
-    if start and m.start_date and start < m.start_date:
-        raise HTTPException(status_code=422, detail=f"A task in '{m.title}' can't start before the milestone starts ({m.start_date.strftime('%d %b %Y')}).")
 
 
 def _ensure_assignee(task: RndProjectTask, user: User, what: str) -> None:
@@ -196,7 +174,8 @@ def _serialize(db: Session, tasks: list[RndProjectTask]) -> list[dict]:
     approvals = task_approvals.serialize(db, KIND, ids, doc_dicts)
     return [
         {
-            "id": t.id, "source": "project", "record_id": t.project_id, "parent_task_id": t.parent_task_id, "milestone_id": t.milestone_id,
+            "id": t.id, "source": "project", "record_id": t.project_id, "parent_task_id": t.parent_task_id,
+            "department": (users.get(t.assigned_to_id).department if users.get(t.assigned_to_id) else None) or "R&D",
             "title": t.title, "remarks": t.remarks,
             "assigned_to_id": t.assigned_to_id, "assigned_to": _name(users.get(t.assigned_to_id)),
             "created_by_id": t.created_by_id, "created_by": _name(users.get(t.created_by_id)),
@@ -274,23 +253,20 @@ async def list_tasks(project_id: int, db: Session = Depends(get_db), user: User 
     return _serialize(db, tasks)
 
 
-@router.post("/projects/{project_id}/tasks")
-async def create_task(
-    project_id: int,
-    title: str = Form(...), assigned_to_id: int = Form(...), due_date: str = Form(...),
-    remarks: str | None = Form(None), files: list[UploadFile] | None = File(None),
-    priority: str | None = Form(None), start_date: str | None = Form(None),
-    work_status: str | None = Form(None), checklist: str | None = Form(None),
-    milestone_id: int | None = Form(None),
-    background_tasks: BackgroundTasks = None,
-    db: Session = Depends(get_db), user: User = Depends(get_current_user),
-):
+async def create_project_task(
+    db: Session, user: User, *, project_id: int, title: str, assigned_to_id: int, due_date: str,
+    remarks: str | None = None, files: list[UploadFile] | None = None, priority: str | None = None,
+    start_date: str | None = None, work_status: str | None = None, checklist: str | None = None,
+    background_tasks: BackgroundTasks | None = None, check_feature: bool = True,
+) -> dict:
+    """Create a task on a Prototype / Research project (shared by this router and
+    POST /rnd/tasks). Project leads (and admins) give tasks; `check_feature`
+    also asks for the role's Project tasks > Create feature (the R&D Tasks
+    board checks rnd:tasks:create instead)."""
     project = _project(db, project_id, user)
-    milestone = _open_milestone(db, project, milestone_id)
-    # Leads give tasks; a milestone's responsible people may add tasks to it.
-    if not (milestone and user.id in [milestone.assignee_id, *(milestone.co_owner_ids or [])]):
-        _ensure_manager(user, project, "create tasks")
-    ensure_feature_action(user, "rnd", "projects", "tasks", "create")
+    _ensure_manager(user, project, "create tasks")
+    if check_feature:
+        ensure_feature_action(user, "rnd", "projects", "tasks", "create")
     title = (title or "").strip()
     if not title:
         raise HTTPException(status_code=422, detail="Give the task a title — what should be done.")
@@ -302,14 +278,10 @@ async def create_task(
     assignee = _check_assignee(db, project, assigned_to_id, roles.member_ids(project), "a team member", user)
 
     task = RndProjectTask(
-        project_id=project.id, milestone_id=milestone.id if milestone else None, title=title, remarks=(remarks or "").strip() or None,
+        project_id=project.id, title=title, remarks=(remarks or "").strip() or None,
         assigned_to_id=assignee.id, created_by_id=user.id, original_due_date=due, due_date=due, status="open",
     )
     task_fields.apply_create(task, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist)
-    _check_in_milestone(milestone, due, task.start_date)
-    if milestone and milestone.status == "todo":
-        # Work has begun on the milestone once its first task is handed out.
-        milestone.status = "in_progress"
     db.add(task)
     db.flush()
     await _store_files(db, project, task, files, BRIEF, user)
@@ -325,6 +297,23 @@ async def create_task(
     )
     db.commit()
     return _serialize(db, [task])[0]
+
+
+@router.post("/projects/{project_id}/tasks")
+async def create_task(
+    project_id: int,
+    title: str = Form(...), assigned_to_id: int = Form(...), due_date: str = Form(...),
+    remarks: str | None = Form(None), files: list[UploadFile] | None = File(None),
+    priority: str | None = Form(None), start_date: str | None = Form(None),
+    work_status: str | None = Form(None), checklist: str | None = Form(None),
+    background_tasks: BackgroundTasks = None,
+    db: Session = Depends(get_db), user: User = Depends(get_current_user),
+):
+    return await create_project_task(
+        db, user, project_id=project_id, title=title, assigned_to_id=assigned_to_id, due_date=due_date, remarks=remarks,
+        files=files, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist,
+        background_tasks=background_tasks,
+    )
 
 
 @router.post("/project-tasks/{task_id}/subtasks")
@@ -359,7 +348,7 @@ async def create_subtask(
     assignee = _check_assignee(db, project, assigned_to_id, _team_ids(project), "on the project team", user)
 
     task = RndProjectTask(
-        project_id=project.id, parent_task_id=parent.id, milestone_id=parent.milestone_id, title=title, remarks=(remarks or "").strip() or None,
+        project_id=project.id, parent_task_id=parent.id, title=title, remarks=(remarks or "").strip() or None,
         assigned_to_id=assignee.id, created_by_id=user.id, original_due_date=due, due_date=due, status="open",
     )
     task_fields.apply_create(task, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist)
@@ -390,15 +379,15 @@ class TaskEditPayload(BaseModel):
     work_status: str | None = None
     # [{id?, text, done?}] — the whole list; items keep their id / who ticked them.
     checklist: list[dict] | None = None
-    # Move a main task into (another) milestone; its sub-tasks move with it.
-    milestone_id: int | None = None
 
 
 class TaskProgressPayload(BaseModel):
-    """Either a new work status, or one checklist step ticked / unticked."""
+    """A new work status, one checklist step ticked / unticked, or the progress
+    percentage (0-100; only for a task without a checklist)."""
     work_status: str | None = None
     item_id: str | None = None
     done: bool | None = None
+    progress_percent: int | None = None
 
 
 @router.patch("/project-tasks/{task_id}")
@@ -454,20 +443,6 @@ async def edit_task(task_id: int, payload: TaskEditPayload, db: Session = Depend
         changes.append(f"Assignee: {_name(prev)} → {_name(assignee)}")
         task.assigned_to_id = assignee.id
     changes += task_fields.apply_edit(task, data, _name(user))
-    if data.get("milestone_id") and data["milestone_id"] != task.milestone_id:
-        if task.parent_task_id:
-            raise HTTPException(status_code=409, detail="A sub-task stays in its main task's milestone — move the main task instead.")
-        _ensure_manager(user, project, "move tasks between milestones")
-        target = _open_milestone(db, project, data["milestone_id"])
-        _check_in_milestone(target, task.due_date)
-        changes.append(f"Milestone: → '{target.title}'")
-        task.milestone_id = target.id
-        for sub in db.query(RndProjectTask).filter(RndProjectTask.parent_task_id == task.id).all():
-            sub.milestone_id = target.id
-        if target.status == "todo":
-            target.status = "in_progress"
-    elif task.milestone_id and not task.parent_task_id and "due_date" in data:
-        _check_in_milestone(db.get(RndProjectMilestone, task.milestone_id), task.due_date)
 
     if not changes:
         return _serialize(db, [task])[0]
@@ -547,6 +522,7 @@ async def complete_task(task_id: int, remarks: str = Form(...), delay_reason: st
     await _store_files(db, project, task, files, WORK, user)
     task.status = "closed"
     task.closed_at = datetime.now(timezone.utc)
+    task_fields.mark_complete(task)
     _event(db, task, "completed", user, remarks=remarks + (f"\nDelay reason: {delay_reason}" if delay_reason else ""))
     _notify_managers(db, project, task, user, f"Task completed ({project.project_number})",
                      f"{_name(user)} completed \"{task.title}\"" + (" after its due date." if delay_reason else ".") + f" {remarks[:200]}",
@@ -566,7 +542,8 @@ async def task_progress(task_id: int, payload: TaskProgressPayload, db: Session 
         ensure_feature_action(user, "rnd", "projects", "tasks", "edit")
     if task.status != "open":
         raise HTTPException(status_code=409, detail=f"This task is {task.status} — the checklist and status can change only while it is open. Reopen it first if needed.")
-    line = task_fields.apply_progress(task, work_status=payload.work_status, item_id=payload.item_id, done=payload.done, actor_name=_name(user))
+    line = task_fields.apply_progress(task, work_status=payload.work_status, item_id=payload.item_id, done=payload.done,
+                                      actor_name=_name(user), progress_percent=payload.progress_percent)
     if line:
         _event(db, task, "progress", user, remarks=line)
         db.commit()
@@ -679,6 +656,7 @@ async def reopen_task(task_id: int, payload: ReviewPayload, db: Session = Depend
         raise HTTPException(status_code=422, detail=f"The due date ({task.due_date.strftime('%d %b %Y')}) has passed — set a new due date when reopening the task.")
     task.status = "open"
     task.closed_at = None
+    task_fields.on_reopen(task)
     changed = task.due_date != old
     _event(db, task, "reopened", user, remarks=reason, old_due=old if changed else None, new_due=task.due_date if changed else None)
     if task.assigned_to_id != user.id:

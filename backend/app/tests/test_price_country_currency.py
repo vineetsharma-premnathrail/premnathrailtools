@@ -25,7 +25,7 @@ def _setup(db):
 
 def test_country_price_sits_between_customer_and_list(client, db):
     p, india, bd = _setup(db)
-    admin = mk_user(db, "price_admin@premnathrail.com", apps=("sales", "products"))
+    admin = mk_user(db, "price_admin@premnathrail.com", apps=("crm",))
     base = {"condition_type": "price", "item_kind": "product", "product_id": p.id, "valid_from": "2026-01-01"}
     assert client.post(PC, json={**base, "amount": 5000000}, headers=hdr(admin)).status_code == 201
     r = client.post(PC, json={**base, "amount": 62000, "currency": "USD", "country": "Bangladesh"}, headers=hdr(admin))
@@ -46,7 +46,7 @@ def test_country_price_sits_between_customer_and_list(client, db):
 
 def test_price_converts_into_every_active_currency(client, db):
     _setup(db)
-    admin = mk_user(db, "fx_admin@premnathrail.com", apps=("sales", "products"))
+    admin = mk_user(db, "fx_admin@premnathrail.com", apps=("crm",))
     r = client.get(f"{PC}/convert", params={"amount": 8000000, "currency": "INR"}, headers=hdr(admin))
     assert r.status_code == 200, r.text
     rows = {x["currency"]: x for x in r.json()["rows"]}
