@@ -100,7 +100,7 @@ export default function StoreItemTypesPage() {
       <MasterEditDialog
         open={editing !== null}
         title={editing === 'new' ? 'Add Item Type' : 'Edit Item Type'}
-        note="The prefix starts every new item code of this type (e.g. SP-0001). Changing it applies only to items created from now on."
+        note="The prefix is a short 2-character tag for this type. Item codes are one running number for all items (01, 02 …) and do not use it."
         fields={FIELDS}
         initial={editing && editing !== 'new' ? { label: editing.label, prefix: editing.prefix } : { label: '', prefix: '' }}
         onSave={save}

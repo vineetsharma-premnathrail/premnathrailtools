@@ -14,7 +14,7 @@ from app.modules.store.models.valuation import StoreItemValuation
 from app.modules.store.routes.item_types import check_item_type, type_options
 from app.modules.store.models.location import StoreLocation
 from app.modules.store.schemas.item import StoreItemCreate, StoreItemUpdate, StoreItemResponse
-from app.modules.store.service import generate_item_code
+from app.modules.store.service import generate_item_code, preview_item_code
 from app.modules.store.routes.uoms import uom_options
 from app.modules.store.services.stock_values import sees_standard_cost, sees_stock_values
 from app.modules.store.services.item_accounts import LEDGER_PURPOSES, check_item_ledger, item_ledger, ledger_label
@@ -267,15 +267,12 @@ async def item_meta(db: Session = Depends(get_db), _user: User = Depends(require
 
 @router.get("/next-code")
 async def next_item_code(
-    item_type: str | None = Query(None),
-    category: str | None = Query(None),
     db: Session = Depends(get_db),
     _user: User = Depends(require_tab_action("store", "items", "create")),
 ):
-    """Preview of the code the next item of this type + category would get.
+    """Preview of the code the next item would get (one global running number).
     Not reserved — the real code is assigned when the item is saved."""
-    _validate_type_and_uom(item_type, None, db)
-    return {"item_code": generate_item_code(db, item_type, category)}
+    return {"item_code": preview_item_code(db)}
 
 
 @router.get("/{item_id}", response_model=StoreItemResponse)
@@ -389,7 +386,7 @@ async def create_item(
         if db.query(StoreItem).filter(StoreItem.item_code == code).first():
             raise HTTPException(status_code=409, detail=f"Item code '{code}' already exists — leave the code blank to auto-generate one.")
     else:
-        code = generate_item_code(db, data.get("item_type"), data.get("category"))
+        code = generate_item_code(db)
     data["item_code"] = code
     data["item_name"] = data["item_name"].strip()
     item = StoreItem(**data)

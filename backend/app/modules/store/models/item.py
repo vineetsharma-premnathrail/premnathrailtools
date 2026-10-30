@@ -10,8 +10,8 @@ from sqlalchemy import Numeric
 # the DB (see item_type below) — kept as a suggested set for the frontend.
 STORE_ITEM_TYPES = ("material", "service", "asset", "consumable", "tool_equipment")
 
-# Item-code prefix per type. Auto codes are <TYPE>-<CATEGORY CODE>-<NNNN>,
-# e.g. RM-HYD-0001 (see service.generate_item_code).
+# Short code per item type. Item codes themselves are one global running
+# number (01, 02 … 100 …), not built from type/category (service.generate_item_code).
 STORE_ITEM_TYPE_PREFIXES: dict[str, str] = {
     "material": "MT", "service": "SV", "asset": "AS", "consumable": "CN", "tool_equipment": "TE",
 }

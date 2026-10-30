@@ -2159,8 +2159,8 @@ export const storeApi = {
     return data
   },
   // Preview only — the real code is assigned when the item is saved.
-  previewItemCode: async (itemType: string, category?: string): Promise<string> => {
-    const { data } = await apiClient.get('/store/items/next-code', { params: { item_type: itemType, category: category || undefined }, background: true })
+  previewItemCode: async (): Promise<string> => {
+    const { data } = await apiClient.get('/store/items/next-code', { background: true })
     return data.item_code
   },
   updateItem: async (id: number, payload: Record<string, unknown>) => {

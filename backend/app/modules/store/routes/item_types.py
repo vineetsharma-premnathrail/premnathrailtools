@@ -58,14 +58,14 @@ def _clean(db: Session, payload: ItemTypeIn, current: StoreItemType | None = Non
         q = db.query(StoreItemType.id).filter(StoreItemType.prefix == code)
         return (q.filter(StoreItemType.id != current.id) if current else q).first() is not None
 
-    # Item codes are <TYPE 2>-<CATEGORY 3>-<NNNN>: the prefix is exactly 2 characters.
+    # A short 2-character tag for the type; item codes themselves are a global running number.
     prefix = re.sub(r"[^A-Z0-9]", "", payload.prefix.upper())
     if not prefix:
         return label, fixed_length_code(label, ITEM_TYPE_PREFIX_LEN, taken)
     if len(prefix) != ITEM_TYPE_PREFIX_LEN:
         raise HTTPException(status_code=400, detail=(
-            f"Code prefix '{prefix}' must be exactly {ITEM_TYPE_PREFIX_LEN} letters or digits (e.g. SP) — it starts every item code "
-            f"of this type (SP-ELE-0001). Leave it blank to make one from the name."))
+            f"Code prefix '{prefix}' must be exactly {ITEM_TYPE_PREFIX_LEN} letters or digits (e.g. SP). "
+            f"Leave it blank to make one from the name."))
     if taken(prefix):
         raise HTTPException(status_code=409, detail=f"Code prefix '{prefix}' is already used by another item type — enter a different prefix.")
     return label, prefix

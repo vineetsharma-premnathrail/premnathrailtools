@@ -1,4 +1,4 @@
-"""Store item master: auto item codes (<TYPE>-<CATEGORY>-<NNNN>), the fixed
+"""Store item master: auto item codes (one global running number 01, 02 … 100 …), the fixed
 UOM list, and the meta/preview endpoints the Add Item form uses."""
 import pytest
 
@@ -23,20 +23,36 @@ def create(client, h, **body):
     return client.post(API, json={"item_name": "Item", "uom": "NOS", "item_type": "material", **body}, headers=h)
 
 
-def test_codes_are_generated_per_type_and_category(client, h):
+def test_codes_are_one_global_running_number(client, h):
     first = create(client, h, item_name="Hydraulic cylinder 80 bore", category="Hydraulics")
     assert first.status_code == 200, first.text
-    assert first.json()["item_code"] == "MT-HYD-0001"
-    assert create(client, h, item_name="Hose 1/2in", category="Hydraulics").json()["item_code"] == "MT-HYD-0002"
-    assert create(client, h, item_name="Bearing 6205", category="Bearings", item_type="tool_equipment").json()["item_code"] == "TE-BRG-0001"
-    assert create(client, h, item_name="Misc part").json()["item_code"] == "MT-GEN-0001"
+    assert first.json()["item_code"] == "01"
+    # Type and category play no part in the number.
+    assert create(client, h, item_name="Bearing 6205", category="Bearings", item_type="tool_equipment").json()["item_code"] == "02"
+    assert create(client, h, item_name="Misc part").json()["item_code"] == "03"
+
+
+def test_numbers_pass_99_and_skip_hand_typed_numbers(client, h):
+    assert create(client, h, item_code="98").json()["item_code"] == "98"
+    assert create(client, h).json()["item_code"] == "99"
+    assert create(client, h).json()["item_code"] == "100"
+
+
+def test_deleted_items_number_is_never_reused(client, h, db):
+    from app.modules.store.models.item import StoreItem
+    create(client, h)
+    last = create(client, h).json()
+    assert last["item_code"] == "02"
+    db.query(StoreItem).filter(StoreItem.id == last["id"]).delete()
+    db.commit()
+    assert create(client, h).json()["item_code"] == "03"
 
 
 def test_preview_matches_the_next_saved_code(client, h):
     create(client, h, category="Hydraulics")
-    preview = client.get(f"{API}/next-code", params={"item_type": "material", "category": "Hydraulics"}, headers=h).json()
-    assert preview["item_code"] == "MT-HYD-0002"
-    assert create(client, h, category="Hydraulics").json()["item_code"] == preview["item_code"]
+    preview = client.get(f"{API}/next-code", headers=h).json()
+    assert preview["item_code"] == "02"
+    assert create(client, h, category="Bearings").json()["item_code"] == preview["item_code"]
 
 
 def test_manual_code_still_accepted_but_must_be_unique(client, h):
@@ -145,13 +161,13 @@ def test_item_types_can_be_added_and_renamed(client, h):
     assert client.post("/api/v1/store/item-types", json={"label": "spare kit"}, headers=h).status_code == 409
     assert client.post("/api/v1/store/item-types", json={"label": "Other", "prefix": "MT"}, headers=h).status_code == 409
     item = create(client, h, item_type="spare_kit").json()
-    assert item["item_code"].startswith("SK-")
-    # Item codes are <TYPE 2>-<CATEGORY 3>-<NNNN>: a 3-letter prefix is refused with the fix.
+    assert item["item_code"].isdigit()  # the type prefix is not part of the item code
+    # The prefix is exactly 2 characters: a 3-letter prefix is refused with the fix.
     bad = client.put("/api/v1/store/item-types/spare_kit", json={"label": "Spare Kits", "prefix": "SPK"}, headers=h)
     assert bad.status_code == 400 and "exactly 2" in bad.json()["detail"]
     renamed = client.put("/api/v1/store/item-types/spare_kit", json={"label": "Spare Kits", "prefix": "SQ"}, headers=h)
     assert {"value": "spare_kit", "label": "Spare Kits", "prefix": "SQ"} in renamed.json()
-    assert create(client, h, item_type="spare_kit").json()["item_code"].startswith("SQ-")
+    assert create(client, h, item_type="spare_kit").json()["item_code"] == "02"
     # A category made without a code gets exactly 3 characters, a typed one must be 3.
     cat = client.post("/api/v1/store/categories", json={"name": "Electrical Spares"}, headers=h)
     assert cat.status_code == 200 and len(cat.json()["code"]) == 3, cat.text

@@ -27,8 +27,8 @@ def _to_response(category: StoreItemCategory, db: Session) -> StoreItemCategoryR
 
 
 def _auto_code(db: Session, name: str) -> str:
-    """Category code from the name — always exactly 3 characters (item codes are
-    <TYPE 2>-<CATEGORY 3>-<NNNN>), unique: ELE, then ELC, ELT… if taken."""
+    """Category code from the name — always exactly 3 characters, unique: ELE,
+    then ELC, ELT… if taken. (Not part of item codes, which are a global number.)"""
     return fixed_length_code(name, CATEGORY_CODE_LEN,
                              lambda c: db.query(StoreItemCategory.id).filter(StoreItemCategory.code == c).first() is not None)
 
@@ -84,8 +84,8 @@ async def create_category(
     data["code"] = (data.get("code") or "").strip().upper() or _auto_code(db, data["name"])
     if not re.fullmatch(rf"[A-Z0-9]{{{CATEGORY_CODE_LEN}}}", data["code"]):
         raise HTTPException(status_code=400, detail=(
-            f"Category code '{data['code']}' must be exactly {CATEGORY_CODE_LEN} letters or digits (e.g. ELE) — it becomes the middle "
-            f"part of every item code (CN-ELE-0001). Leave it blank to make one from the name."))
+            f"Category code '{data['code']}' must be exactly {CATEGORY_CODE_LEN} letters or digits (e.g. ELE). "
+            f"Leave it blank to make one from the name."))
     if db.query(StoreItemCategory).filter(StoreItemCategory.code == data["code"]).first():
         raise HTTPException(status_code=409, detail=f"Category code '{data['code']}' already exists — use a different code.")
     category = StoreItemCategory(**data)

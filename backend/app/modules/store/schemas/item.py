@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 
 class StoreItemCreate(BaseModel):
-    # Leave blank to auto-generate <TYPE>-<CATEGORY>-<NNNN> (service.generate_item_code).
+    # Leave blank to auto-generate the next global number 01, 02 … (service.generate_item_code).
     item_code: str | None = None
     item_name: str
     item_type: str | None = "material"

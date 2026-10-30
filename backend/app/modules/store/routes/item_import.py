@@ -218,7 +218,7 @@ async def import_items(
             continue
 
         item = StoreItem(
-            item_code=generate_item_code(db, item_type, category),
+            item_code=generate_item_code(db),
             item_name=name, item_type=item_type, category=category, subcategory=subcategory,
             description=_spec(r) or None, uom=uom, lead_time_days=lead_time, legacy_code=legacy,
             part_number=_cell(r, "part_code", "part code").strip() or None, hsn_sac_code=hsn, gst_rate=gst,

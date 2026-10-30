@@ -139,30 +139,41 @@ def fixed_length_code(name: str, length: int, taken) -> str:
     raise ValueError(f"No free {length}-character code left for '{name}'.")
 
 
-def generate_item_code(db: Session, item_type: str | None, category_name: str | None) -> str:
-    """<TYPE>-<CATEGORY>-<NNNN>, e.g. RM-HYD-0001 — numbered per type +
-    category pair. The category code comes from the item category master
-    (matched by name, as items store the category name); no category → GEN.
-    Serialized with the same advisory lock as the other Store numbers on
-    Postgres (skipped on SQLite, which has no advisory locks)."""
-    from app.modules.store.models.category import StoreItemCategory
-    from app.modules.store.models.item import StoreItem, StoreItemType, STORE_ITEM_TYPE_PREFIXES, STORE_ITEM_NO_CATEGORY_CODE
+# Item codes are one global running number — 01, 02 … 99, 100, 101 … — with
+# no type/category part (owner, 2026-10-30). The last number issued is kept in
+# accounts_number_series, so a deleted item's number is never handed out again.
+ITEM_CODE_SERIES = "STORE/ITEM"
 
-    row = db.query(StoreItemType).filter(StoreItemType.value == (item_type or "material")).first()
-    type_code = row.prefix if row else STORE_ITEM_TYPE_PREFIXES.get(item_type or "material", "MT")
-    cat_code = STORE_ITEM_NO_CATEGORY_CODE
-    if category_name:
-        cat = db.query(StoreItemCategory).filter(
-            func.lower(StoreItemCategory.name) == category_name.strip().lower(), StoreItemCategory.parent_id.is_(None)
-        ).first()
-        if cat and cat.code:
-            cat_code = cat.code.strip().upper()
-    prefix = f"{type_code}-{cat_code}-"
-    if db.get_bind().dialect.name == "postgresql":
-        _lock_number_series(db, prefix)
-    rows = db.query(StoreItem.item_code).filter(StoreItem.item_code.like(f"{prefix}%")).all()
-    numbers = [int(code.rsplit("-", 1)[-1]) for (code,) in rows if code.rsplit("-", 1)[-1].isdigit()]
-    return f"{prefix}{(max(numbers) + 1) if numbers else 1:04d}"
+
+def _item_code_floor(db: Session) -> int:
+    """Highest number already used: the series counter, or a plain numeric code
+    that is higher (typed by hand or imported before the counter existed)."""
+    from app.modules.accounts.models.settings import NumberSeries
+    from app.modules.store.models.item import StoreItem
+
+    last = db.query(NumberSeries.last_number).filter(NumberSeries.series_key == ITEM_CODE_SERIES).scalar() or 0
+    codes = db.query(StoreItem.item_code).filter(~StoreItem.item_code.like("%-%")).all()
+    return max([last] + [int(c) for (c,) in codes if c and c.isdigit()])
+
+
+def preview_item_code(db: Session) -> str:
+    """The code the next item would get (not reserved)."""
+    return f"{_item_code_floor(db) + 1:02d}"
+
+
+def generate_item_code(db: Session) -> str:
+    """Next global item number, at least 2 digits (01 … 99, 100 …). Serialized
+    with an advisory lock + row lock so two saves never draw the same number."""
+    from app.modules.accounts.models.settings import NumberSeries
+
+    _lock_number_series(db, ITEM_CODE_SERIES)
+    series = db.query(NumberSeries).filter(NumberSeries.series_key == ITEM_CODE_SERIES).with_for_update().first()
+    if not series:
+        series = NumberSeries(series_key=ITEM_CODE_SERIES, last_number=0)
+        db.add(series)
+    series.last_number = _item_code_floor(db) + 1
+    db.flush()
+    return f"{series.last_number:02d}"
 
 
 def generate_stock_entry_number(db: Session) -> str:
