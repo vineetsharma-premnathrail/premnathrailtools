@@ -198,7 +198,8 @@ def batch_stock(db: Session, *, item_id: int | None = None, location_id: int | N
     if location_ids is not None:
         q = q.filter(StoreStockTransaction.location_id.in_(list(location_ids) or [-1]))
     if batch_numbers is not None:
-        q = q.filter(StoreStockTransaction.batch_number.in_(batch_numbers or ["\x00"]))
+        # An empty list is a plain "no match" in SQLAlchemy; never a NUL sentinel (Postgres refuses 0x00 in text).
+        q = q.filter(StoreStockTransaction.batch_number.in_(batch_numbers))
     out: dict[tuple[int, str, int], dict[str, float]] = {}
     for iid, bno, lid, ttype, qty in q.group_by(StoreStockTransaction.item_id, StoreStockTransaction.batch_number,
                                                 StoreStockTransaction.location_id, StoreStockTransaction.transaction_type).all():
@@ -226,7 +227,7 @@ def available_batches(db: Session, item: StoreItem, location_id: int) -> list[di
     expired batches are listed but marked not issuable."""
     stock = batch_stock(db, item_id=item.id, location_id=location_id)
     numbers = [bno for (_, bno, _), b in stock.items() if b["free"] > _EPS]
-    rows = db.query(StoreBatch).filter(StoreBatch.item_id == item.id, StoreBatch.batch_number.in_(numbers or ["\x00"])).all()
+    rows = db.query(StoreBatch).filter(StoreBatch.item_id == item.id, StoreBatch.batch_number.in_(numbers)).all()
     known = {r.batch_number for r in rows}
     today = date.today()
     out = []

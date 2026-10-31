@@ -101,13 +101,15 @@ def test_requirement_work_cannot_open_crm_internal_file_by_id(client, db, tor_en
 
     sent = make_inquiry(db, bd)
     assert send_tor(client, sent.id, bd).status_code == 200
-    tor = db.query(CrmDocument).filter(CrmDocument.related_id == sent.id, CrmDocument.shared_via_tor == True).first()  # noqa: E712
+    # Sending to R&D no longer generates a TOR document (2026-10-30); a file BD shared with R&D is one marked shared_via_tor.
+    tor = CrmDocument(related_module="inquiry", related_id=sent.id, folder_type="technical_offer", file_name="shared.pdf",
+                      file_path="x/shared.pdf", sharepoint_path="x/shared.pdf", org_id=sent.org_id, shared_via_tor=True)
     internal = CrmDocument(related_module="inquiry", related_id=sent.id, folder_type="quotation", file_name="q.pdf",
                            file_path="x/q.pdf", sharepoint_path="x/q.pdf", org_id=sent.org_id)
     unsent = make_inquiry(db, bd, uid="INQ-20261007-0099")
     other = CrmDocument(related_module="inquiry", related_id=unsent.id, folder_type="technical_offer", file_name="t.pdf",
                         file_path="x/t.pdf", sharepoint_path="x/t.pdf", org_id=unsent.org_id, shared_via_tor=True)
-    db.add_all([internal, other])
+    db.add_all([tor, internal, other])
     db.commit()
 
     assert client.get(f"{WORK}/documents/{tor.id}/content", headers=auth(head)).status_code == 200

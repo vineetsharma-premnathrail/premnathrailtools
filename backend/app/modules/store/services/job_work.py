@@ -460,7 +460,7 @@ def create_receipt(db: Session, payload, user) -> StoreJobWorkReceipt:
                 from app.modules.store.models.batch import StoreBatch
                 if heats is None:
                     heats = [b.heat_number for b in db.query(StoreBatch).filter(
-                        StoreBatch.batch_number.in_([l.batch_number for l, _, _ in comps if l.batch_number] or ["\x00"])).all() if b.heat_number]
+                        StoreBatch.batch_number.in_([l.batch_number for l, _, _ in comps if l.batch_number])).all() if b.heat_number]
                 ob = StoreBatch(item_id=out_item.id, batch_number=batch_service.generate_batch_number(db),
                                 heat_number=", ".join(dict.fromkeys(heats))[:100] or None, vendor_id=issue.vendor_id, vendor_name=issue.vendor_name,
                                 location_id=location_id, received_qty=qty, received_date=receipt_date,
