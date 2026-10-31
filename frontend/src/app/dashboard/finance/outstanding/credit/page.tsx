@@ -32,6 +32,8 @@ export default function CreditPage() {
   const [error, setError] = useState<string[] | null>(null)
   const [requestFor, setRequestFor] = useState<CreditPosition | null>(null)
   const [reload, setReload] = useState(0)
+  const [holdOnly, setHoldOnly] = useState(false)
+  const [pendingOnly, setPendingOnly] = useState(false)
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -45,6 +47,8 @@ export default function CreditPage() {
   if (isLoading || !isAuthorized) return null
   const blocked = rows.filter((r) => r.would_block).length
   const pending = releases.filter((r) => r.status === 'pending_approval').length
+  const shownRows = holdOnly ? rows.filter((r) => r.would_block) : rows
+  const shownReleases = pendingOnly ? releases.filter((r) => r.status === 'pending_approval') : releases
 
   return (
     <div>
@@ -59,23 +63,23 @@ export default function CreditPage() {
       <ErrorBanner error={error} />
 
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 20 }}>
-        <StatCard label="Customers on hold" value={String(blocked)} tone={blocked ? '#b91c1c' : undefined} />
-        <StatCard label="Releases waiting" value={String(pending)} tone={pending ? '#b45309' : undefined} />
+        <StatCard label="Customers on hold" value={String(blocked)} tone={blocked ? '#b91c1c' : undefined} onClick={() => setHoldOnly((v) => !v)} active={holdOnly} />
+        <StatCard label="Releases waiting" value={String(pending)} tone={pending ? '#b45309' : undefined} onClick={() => setPendingOnly((v) => !v)} active={pendingOnly} />
         <StatCard label="Total exposure" value={`₹ ${inr(rows.reduce((s, r) => s + r.exposure, 0))}`} />
       </div>
 
       <TableWrap minWidth={1250} tour="fin-credit-table">
         <thead>
           <tr>
-            <th style={thStyle}>Customer <RowCount count={rows.length} /></th><th style={numTh}>Limit (₹)</th><th style={numTh}>Open invoices (₹)</th>
+            <th style={thStyle}>Customer <RowCount count={shownRows.length} /></th><th style={numTh}>Limit (₹)</th><th style={numTh}>Open invoices (₹)</th>
             <th style={numTh}>Delivered, not billed (₹)</th><th style={numTh}>Open orders (₹)</th><th style={numTh}>Unapplied (₹)</th>
             <th style={numTh}>Exposure (₹)</th><th style={numTh}>Available (₹)</th><th style={numTh}>Overdue (₹)</th><th style={thStyle}>Status</th><th style={thStyle}></th>
           </tr>
         </thead>
         <tbody>
           {loading ? <EmptyRow colSpan={11} text="Loading…" />
-            : rows.length === 0 ? <EmptyRow colSpan={11} text="No customer has a credit limit, open invoices or open orders." />
-            : rows.map((r) => (
+            : shownRows.length === 0 ? <EmptyRow colSpan={11} text={holdOnly ? 'No customer is on hold. Click Customers on hold again to show everyone.' : 'No customer has a credit limit, open invoices or open orders.'} />
+            : shownRows.map((r) => (
               <tr key={r.customer_id} style={{ background: r.would_block ? 'rgba(220,38,38,0.04)' : undefined }}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{r.customer_name}</td>
                 <td style={numTd}>{r.credit_limit != null ? inr(r.credit_limit) : '—'}</td>
@@ -104,13 +108,13 @@ export default function CreditPage() {
         <TableWrap minWidth={1100} maxHeight="420px">
           <thead>
             <tr>
-              <th style={thStyle}>Release <RowCount count={releases.length} /></th><th style={thStyle}>Customer</th><th style={thStyle}>For</th><th style={thStyle}>Order</th>
+              <th style={thStyle}>Release <RowCount count={shownReleases.length} /></th><th style={thStyle}>Customer</th><th style={thStyle}>For</th><th style={thStyle}>Order</th>
               <th style={thStyle}>Why blocked</th><th style={thStyle}>Reason given</th><th style={thStyle}>Status</th><th style={thStyle}>Valid until</th><th style={thStyle}></th>
             </tr>
           </thead>
           <tbody>
-            {releases.length === 0 ? <EmptyRow colSpan={9} text="No credit release requested yet." />
-              : releases.map((r) => (
+            {shownReleases.length === 0 ? <EmptyRow colSpan={9} text={pendingOnly ? 'No release is waiting for approval. Click Releases waiting again to show all.' : 'No credit release requested yet.'} />
+              : shownReleases.map((r) => (
                 <tr key={r.id}>
                   <td style={{ ...tdStyle, fontWeight: 600 }}>{r.release_number}<div style={{ fontSize: 11, color: TEXT.muted }}>{r.requested_by_name}</div></td>
                   <td style={tdStyle}>{r.customer_name}</td>

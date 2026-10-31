@@ -167,12 +167,26 @@ export function RowCount({ count, title }: { count: number; title?: string }) {
 }
 
 /** Small counter chip for the header of a list page: a number in colour and a label ("305 Machines"). */
-export function StatChip({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <span style={{ ...pillStyle('#57534e'), gap: 6, padding: '3px 12px', fontSize: 12, fontWeight: 600, background: 'rgba(255,255,255,.7)', border: '1px solid rgba(0,0,0,0.08)' }}>
+/** Count chip. With `onClick` it is a filter button (owner, 2026-10-31: every count
+ * applies its filter); `active` = that filter is on — clicking again should clear it. */
+export function StatChip({ label, value, color, onClick, active }: { label: string; value: number; color: string; onClick?: () => void; active?: boolean }) {
+  const style: React.CSSProperties = {
+    ...pillStyle('#57534e'), gap: 6, padding: '3px 12px', fontSize: 12, fontWeight: 600,
+    background: active ? `${color}14` : 'rgba(255,255,255,.7)', border: `1px solid ${active ? color : 'rgba(0,0,0,0.08)'}`,
+  }
+  const body = (
+    <>
       <span style={{ fontSize: 15, fontWeight: 700, color }}>{value.toLocaleString('en-IN')}</span>
       {label}
-    </span>
+    </>
+  )
+  if (!onClick) return <span style={style}>{body}</span>
+  return (
+    // ui-audit-ignore-next-line custom-button — count chip used as a filter toggle, keeps the chip look
+    <button type="button" onClick={onClick} aria-pressed={!!active} title={active ? `Showing ${label} — click to show all` : `Show ${label}`}
+      style={{ ...style, cursor: 'pointer', fontFamily: 'inherit' }}>
+      {body}
+    </button>
   )
 }
 

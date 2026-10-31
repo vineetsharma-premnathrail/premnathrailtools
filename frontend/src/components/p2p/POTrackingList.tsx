@@ -143,6 +143,17 @@ export default function POTrackingList({ lead }: { lead?: React.ReactNode }) {
     if (draft.sort !== sort) { setSort(draft.sort); setDesc(false) }
     setSkip(0); setShowFilters(false)
   }
+  // Count chips = quick filters on the same states the Filters popup sets (Stage, Delivery); clicking the active one clears it.
+  const chipOverdue = overdueOnly && !stage
+  const chipDueSoon = dueSoonOnly && !stage
+  const chipWithVendor = stage === 'with_vendor' && !overdueOnly && !dueSoonOnly
+  const chipAll = !stage && !overdueOnly && !dueSoonOnly
+  const pickChip = (c: 'all' | 'overdue' | 'due_soon' | 'with_vendor') => {
+    setStage(c === 'with_vendor' && !chipWithVendor ? 'with_vendor' : '')
+    setOverdueOnly(c === 'overdue' && !chipOverdue)
+    setDueSoonOnly(c === 'due_soon' && !chipDueSoon)
+    setSkip(0)
+  }
   const sortBy = (key: SortKey) => { if (sort === key) setDesc(!desc); else { setSort(key); setDesc(false) } setSkip(0) }
 
   const rows = data?.rows ?? []
@@ -172,10 +183,10 @@ export default function POTrackingList({ lead }: { lead?: React.ReactNode }) {
 
       {/* Counters follow the active filters. */}
       <div data-tour="p2p-pot-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 14 }}>
-        <StatChip label="Purchase orders" value={data?.all ?? 0} color="#3b82f6" />
-        <StatChip label="Overdue" value={data?.overdue ?? 0} color="#dc2626" />
-        <StatChip label={`Due in ${data?.due_soon_days ?? 7} days`} value={data?.due_soon ?? 0} color="#ca8a04" />
-        <StatChip label="With vendor" value={counts.with_vendor ?? 0} color="#16a34a" />
+        <StatChip label="Purchase orders" value={data?.all ?? 0} color="#3b82f6" onClick={() => pickChip('all')} active={chipAll} />
+        <StatChip label="Overdue" value={data?.overdue ?? 0} color="#dc2626" onClick={() => pickChip('overdue')} active={chipOverdue} />
+        <StatChip label={`Due in ${data?.due_soon_days ?? 7} days`} value={data?.due_soon ?? 0} color="#ca8a04" onClick={() => pickChip('due_soon')} active={chipDueSoon} />
+        <StatChip label="With vendor" value={counts.with_vendor ?? 0} color="#16a34a" onClick={() => pickChip('with_vendor')} active={chipWithVendor} />
         {data?.open_value != null && (
           <span style={{ whiteSpace: 'nowrap', fontSize: 13, color: TEXT.secondary, marginLeft: 6 }} title="Value still awaited from vendors: released POs, balance only. Short-closed and closed POs are not counted.">
             Open value <strong style={{ color: TEXT.heading }}>{money(data.open_value)}</strong>

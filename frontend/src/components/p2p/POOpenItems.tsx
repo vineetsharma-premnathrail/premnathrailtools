@@ -99,6 +99,8 @@ export default function POOpenItems({ lead }: { lead?: React.ReactNode }) {
   const seeHistory = canFeature('p2p', 'purchase_orders', 'history', 'view')
   const seePrices = canFeature('p2p', 'purchase_orders', 'prices', 'view') || can('p2p', 'purchase_orders', 'edit')
   const [rows, setRows] = useState<Row[]>([])
+  // The same lines without the Overdue-only filter: what the count chips count, so they stay totals when a chip is on.
+  const [baseRows, setBaseRows] = useState<Row[]>([])
   const [byVendor, setByVendor] = useState<Summary[]>([])
   const [byItem, setByItem] = useState<Summary[]>([])
   const [total, setTotal] = useState(0)
@@ -119,7 +121,12 @@ export default function POOpenItems({ lead }: { lead?: React.ReactNode }) {
     setLoading(true)
     const t = setTimeout(() => {
       poReportsApi.openItems(params())
-        .then((d) => { setRows(d.rows); setByVendor(d.by_vendor); setByItem(d.by_item); setTotal(d.total_open_value) })
+        .then(async (d) => {
+          setRows(d.rows); setByVendor(d.by_vendor); setByItem(d.by_item); setTotal(d.total_open_value)
+          if (!overdueOnly) { setBaseRows(d.rows); return }
+          const base = await poReportsApi.openItems({ ...params(), overdue_only: false })
+          setBaseRows(base.rows)
+        })
         .catch((err) => setError(extractErrorMessages(err, 'Could not load the open PO items.')))
         .finally(() => setLoading(false))
     }, 300)
@@ -151,9 +158,9 @@ export default function POOpenItems({ lead }: { lead?: React.ReactNode }) {
       <MessageDialog open={!!error} variant="error" title="Open PO Items" message={error} onClose={() => setError('')} />
       {historyFor !== null && <POHistoryDialog poId={historyFor} onClose={() => setHistoryFor(null)} />}
       <div data-tour="po-open-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 14 }}>
-        <StatChip label="Open PO lines" value={rows.length} color="#3b82f6" />
-        <StatChip label="Overdue lines" value={rows.filter((r) => r.days_overdue > 0).length} color="#dc2626" />
-        <StatChip label="Vendors" value={new Set(rows.map((r) => r.vendor_name || '')).size} color="#ca8a04" />
+        <StatChip label="Open PO lines" value={baseRows.length} color="#3b82f6" onClick={() => { setOverdueOnly(false); setGroup('po') }} active={!overdueOnly && group === 'po'} />
+        <StatChip label="Overdue lines" value={baseRows.filter((r) => r.days_overdue > 0).length} color="#dc2626" onClick={() => { setOverdueOnly((v) => !v); setGroup('po') }} active={overdueOnly} />
+        <StatChip label="Vendors" value={new Set(baseRows.map((r) => r.vendor_name || '')).size} color="#ca8a04" onClick={() => setGroup(group === 'vendor' ? 'po' : 'vendor')} active={group === 'vendor'} />
         <span style={{ whiteSpace: 'nowrap', fontSize: 13, color: TEXT.secondary, marginLeft: 6 }}>Open value <strong style={{ color: TEXT.heading }}>{money(total)}</strong></span>
       </div>
       <div style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>

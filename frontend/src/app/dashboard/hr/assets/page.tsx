@@ -58,14 +58,13 @@ export default function HrAssetsPage() {
     const params: Record<string, unknown> = {}
     if (debounced.trim()) params.search = debounced.trim()
     if (category) params.category = category
-    if (status) params.status = status
     if (branchId) params.branch_id = Number(branchId)
     if (holderId) params.holder_id = Number(holderId)
     hrApi.listAssets(params)
       .then((data) => { setAssets(Array.isArray(data) ? data : []); setError([]) })
       .catch((err) => setError(extractErrorMessages(err, 'The asset register could not be loaded.')))
       .finally(() => setLoading(false))
-  }, [debounced, category, status, branchId, holderId])
+  }, [debounced, category, branchId, holderId])
 
   useEffect(() => {
     if (isAuthorized) load()
@@ -76,6 +75,14 @@ export default function HrAssetsPage() {
     assets.forEach((a) => { c[a.status] = (c[a.status] || 0) + 1 })
     return c
   }, [assets])
+
+  // The status filter runs here (not on the server) so the count cards keep showing every status's real count.
+  const shown = useMemo(() => {
+    if (!status) return assets
+    if (status === 'lost_retired') return assets.filter((a) => a.status === 'lost' || a.status === 'retired')
+    return assets.filter((a) => a.status === status)
+  }, [assets, status])
+  const toggleStatus = (v: string) => setStatus((cur) => (cur === v ? '' : v))
 
   const filtersActive = !!(debounced || category || status || branchId || holderId)
 
@@ -95,11 +102,11 @@ export default function HrAssetsPage() {
       <SuccessBanner message={notice} />
 
       <div data-tour="hr-asset-stats" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
-        <StatCard label={filtersActive ? 'Matching' : 'Total assets'} value={assets.length} hex={TEXT.heading} />
-        <StatCard label="In stock" value={counts.in_stock || 0} hex={STATUS_HEX.in_stock} />
-        <StatCard label="Issued" value={counts.issued || 0} hex={STATUS_HEX.issued} />
-        <StatCard label="Under repair" value={counts.under_repair || 0} hex={STATUS_HEX.under_repair} />
-        <StatCard label="Lost / retired" value={(counts.lost || 0) + (counts.retired || 0)} hex={STATUS_HEX.lost} />
+        <StatCard label={debounced || category || branchId || holderId ? 'Matching' : 'Total assets'} value={assets.length} hex={TEXT.heading} onClick={() => setStatus('')} />
+        <StatCard label="In stock" value={counts.in_stock || 0} hex={STATUS_HEX.in_stock} onClick={() => toggleStatus('in_stock')} active={status === 'in_stock'} />
+        <StatCard label="Issued" value={counts.issued || 0} hex={STATUS_HEX.issued} onClick={() => toggleStatus('issued')} active={status === 'issued'} />
+        <StatCard label="Under repair" value={counts.under_repair || 0} hex={STATUS_HEX.under_repair} onClick={() => toggleStatus('under_repair')} active={status === 'under_repair'} />
+        <StatCard label="Lost / retired" value={(counts.lost || 0) + (counts.retired || 0)} hex={STATUS_HEX.lost} onClick={() => toggleStatus('lost_retired')} active={status === 'lost_retired'} />
       </div>
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -117,6 +124,7 @@ export default function HrAssetsPage() {
         <Select data-tour="hr-asset-status-filter" style={{ ...filterInputStyle, flex: '0 1 150px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          <option value="lost_retired">Lost / retired</option>
         </Select>
         <Select data-tour="hr-asset-plant-filter" style={{ ...filterInputStyle, flex: '0 1 170px' }} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
           <option value="">All plants</option>
@@ -142,17 +150,17 @@ export default function HrAssetsPage() {
           <thead>
             <tr>
               {['Code', 'Asset', 'Category', 'Serial', 'Plant', 'Status', 'Held by', 'Condition'].map((h, i) => (
-                <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={assets.length} />}</th>
+                <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={shown.length} />}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <EmptyRow colSpan={8} text="Loading…" />
-            ) : assets.length === 0 ? (
+            ) : shown.length === 0 ? (
               <EmptyRow colSpan={8} text={filtersActive ? 'No assets match these filters.' : 'No assets registered yet. Use “+ Add Asset” to register the first one.'} />
             ) : (
-              assets.map((a) => (
+              shown.map((a) => (
                 <tr key={a.id} onClick={() => router.push(recordPath('/dashboard/hr/assets', a))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{a.asset_code}</td>
                   <td style={tdStyle}>

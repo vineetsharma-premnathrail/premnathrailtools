@@ -216,11 +216,13 @@ export default function OrganizationsPage() {
 
   if (isLoading || !isAuthorized) return null
 
-  // Counter chips follow the search and the column filters, like the table.
+  // Counter chips follow the search and the other column filters, but not the Scope filter,
+  // so Domestic / International stay visible and clickable while one of them is applied.
+  const statBase = orgs.filter((o) => FILTER_KEYS.every((key) => key === 'org_scope' || !filters[key] || o[key as keyof Organization] === filters[key]))
   const orgStats = {
-    total: filteredOrgs.length,
-    domestic: filteredOrgs.filter((o) => o.org_scope !== 'international').length,
-    international: filteredOrgs.filter((o) => o.org_scope === 'international').length,
+    total: statBase.length,
+    domestic: statBase.filter((o) => o.org_scope !== 'international').length,
+    international: statBase.filter((o) => o.org_scope === 'international').length,
   }
 
   const header = (
@@ -228,9 +230,10 @@ export default function OrganizationsPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 10 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Customer Organizations</h1>
         <div data-tour="crm-org-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0 14px' }}>
-          <StatChip label="Organizations" value={orgStats.total} color="#3b82f6" />
-          <StatChip label="Domestic" value={orgStats.domestic} color="#16a34a" />
-          <StatChip label="International" value={orgStats.international} color="#ea580c" />        </div>
+          <StatChip label="Organizations" value={orgStats.total} color="#3b82f6" onClick={() => setFilter('org_scope', '')} active={!filters.org_scope} />
+          <StatChip label="Domestic" value={orgStats.domestic} color="#16a34a" onClick={() => setFilter('org_scope', filters.org_scope === 'domestic' ? '' : 'domestic')} active={filters.org_scope === 'domestic'} />
+          <StatChip label="International" value={orgStats.international} color="#ea580c" onClick={() => setFilter('org_scope', filters.org_scope === 'international' ? '' : 'international')} active={filters.org_scope === 'international'} />
+        </div>
         {/* One toolbar row: add, search, clear, then export / import; wraps on narrow screens. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {can('crm', 'organizations', 'create') && <Link

@@ -68,7 +68,7 @@ export default function CrmDashboardPage() {
             <StatCard tourId="dash-stat-open-followups" label="Open follow-ups" value={data.open_followups} color="#10b981" href="/dashboard/crm/followups?bucket=open" />
             <StatCard tourId="dash-stat-overdue-followups" label="Overdue follow-ups" value={data.overdue_followups} color="#dc2626" href="/dashboard/crm/followups?bucket=overdue" />
             <StatCard tourId="dash-stat-today-followups" label="Due today" value={data.today_activities} color="#06b6d4" href="/dashboard/crm/followups?bucket=today" />
-            <StatCard tourId="dash-stat-pending-tenders" label="Pending tenders" value={data.pending_tenders} color="#eab308" href="/dashboard/crm/inquiries?type=tender" />
+            <StatCard tourId="dash-stat-pending-tenders" label="Pending tenders" value={data.pending_tenders} color="#eab308" href="/dashboard/crm/inquiries?type=tender&stat=pending" />
           </div>
 
           <div className="grid-3" style={{ gap: 20, marginBottom: 20 }}>

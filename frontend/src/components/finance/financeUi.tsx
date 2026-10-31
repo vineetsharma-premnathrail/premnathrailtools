@@ -173,12 +173,22 @@ export function EmptyRow({ colSpan, text }: { colSpan: number; text: string }) {
   return <tr><td colSpan={colSpan} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted, padding: 24 }}>{text}</td></tr>
 }
 
-export function StatCard({ label, value, tone, tour }: { label: string; value: string; tone?: string; tour?: string }) {
-  return (
-    <div data-tour={tour} style={{ ...sectionStyle, padding: '14px 18px', marginBottom: 0, flex: '1 1 180px', maxWidth: 280 }}>
+export function StatCard({ label, value, tone, tour, onClick, active }: { label: string; value: string; tone?: string; tour?: string; onClick?: () => void; active?: boolean }) {
+  const base: React.CSSProperties = { ...sectionStyle, padding: '14px 18px', marginBottom: 0, flex: '1 1 180px', maxWidth: 280 }
+  const body = (
+    <>
       <div style={{ fontSize: 11, fontWeight: 700, color: TEXT.secondary, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
       <div style={{ fontSize: 20, fontWeight: 800, color: tone || TEXT.heading, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
-    </div>
+    </>
+  )
+  if (!onClick) return <div data-tour={tour} style={base}>{body}</div>
+  const colour = tone || TEXT.heading
+  return (
+    // ui-audit-ignore-next-line custom-button — stat card used as a filter toggle, keeps the card look
+    <button type="button" data-tour={tour} onClick={onClick} aria-pressed={!!active} title={active ? `Showing ${label} — click to show all` : `Show ${label}`}
+      style={{ ...base, display: 'block', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', ...(active ? { border: `1.5px solid ${colour}`, background: `${colour.startsWith('#') && colour.length === 7 ? colour + '14' : 'rgba(255,255,255,.7)'}` } : {}) }}>
+      {body}
+    </button>
   )
 }
 

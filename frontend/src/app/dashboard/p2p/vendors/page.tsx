@@ -49,19 +49,24 @@ export default function VendorsPage() {
     if (!allowed) return
     let cancelled = false
     setLoading(true); setError('')
-    vendorsApi.list({ status: status || undefined })
+    // Always the full list: the status is applied here, so the count chips stay real totals.
+    vendorsApi.list({})
       .then((v) => { if (!cancelled) { setVendors(v); setError('') } })
       .catch((err) => { if (!cancelled) setError(extractErrorMessages(err, 'Could not load vendors — reload the page.').join(' ')) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [allowed, status, reload])
+  }, [allowed, reload])
 
-  const shown = useMemo(() => {
+  // Search only (every status): what the count chips count. `shown` then applies the status filter.
+  const searched = useMemo(() => {
     const q = search.trim().toLowerCase()
     const sorted = [...vendors].sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }))
     if (!q) return sorted
     return sorted.filter((v) => [v.name, v.code, v.gstin, v.city, v.contact_name, v.contact_phone].some((x) => (x || '').toLowerCase().includes(q)))
   }, [vendors, search])
+  const shown = useMemo(() => (status ? searched.filter((v) => v.status === status) : searched), [searched, status])
+  // A count chip sets the same Status filter as the popup; clicking the active one goes back to the default (Active).
+  const toggleStatus = (s: string) => setStatus((cur) => (cur === s ? 'active' : s))
 
   // The list opens on Active vendors; any other status choice counts as an active filter.
   const activeFilterCount = status !== 'active' ? 1 : 0
@@ -78,10 +83,10 @@ export default function VendorsPage() {
       <div style={{ marginBottom: 14 }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Vendors</h1>
         <div data-tour="vendors-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-          <StatChip label="Vendors" value={shown.length} color="#3b82f6" />
-          <StatChip label="Active" value={shown.filter((v) => v.status === 'active').length} color="#16a34a" />
-          <StatChip label="Inactive" value={shown.filter((v) => v.status === 'inactive').length} color="#78716c" />
-          <StatChip label="Blocked" value={shown.filter((v) => v.status === 'blocked').length} color="#dc2626" />
+          <StatChip label="Vendors" value={searched.length} color="#3b82f6" onClick={() => setStatus('')} active={status === ''} />
+          <StatChip label="Active" value={searched.filter((v) => v.status === 'active').length} color="#16a34a" onClick={() => toggleStatus('active')} active={status === 'active'} />
+          <StatChip label="Inactive" value={searched.filter((v) => v.status === 'inactive').length} color="#78716c" onClick={() => toggleStatus('inactive')} active={status === 'inactive'} />
+          <StatChip label="Blocked" value={searched.filter((v) => v.status === 'blocked').length} color="#dc2626" onClick={() => toggleStatus('blocked')} active={status === 'blocked'} />
         </div>
       </div>
 
@@ -133,7 +138,7 @@ export default function VendorsPage() {
           <thead><tr>{['Code', 'Company', 'Contact', 'City', 'GSTIN', 'Referred by / Added by', 'Catalog', 'Status'].map((h, i) => <th key={h} data-fit-min={60} data-fit-cut={CUT_COLS.includes(h) ? '' : undefined} style={h === 'Catalog' ? { ...th, textAlign: 'right' } : th}>{h}{i === 0 && <RowCount count={shown.length} />}</th>)}</tr></thead>
           <tbody>
             {loading && <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: '#a8a29e' }}>Loading…</td></tr>}
-            {!loading && !error && shown.length === 0 && <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: '#a8a29e' }}>{vendors.length ? 'No vendor matches the search — clear it or try a code, GSTIN or city.' : status ? `No ${STATUS_LABEL[status]?.toLowerCase() || ''} vendors — change the status in Filters, or use + Add Vendor / Import.` : 'No vendors yet — use + Add Vendor or Import a list.'}</td></tr>}
+            {!loading && !error && shown.length === 0 && <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: '#a8a29e' }}>{vendors.length ? (search.trim() && searched.length === 0 ? 'No vendor matches the search — clear it or try a code, GSTIN or city.' : `No ${STATUS_LABEL[status]?.toLowerCase() || ''} vendors${search.trim() ? ' for this search' : ''} — click the Vendors count or change the status in Filters.`) : 'No vendors yet — use + Add Vendor or Import a list.'}</td></tr>}
             {shown.map((v) => (
               <tr key={v.id} onClick={() => router.push(recordPath('/dashboard/p2p/vendors', v))} style={{ cursor: 'pointer' }}>
                 <td style={{ ...td, fontWeight: 600, color: '#FF7A45', whiteSpace: 'nowrap' }}>{v.code}</td>

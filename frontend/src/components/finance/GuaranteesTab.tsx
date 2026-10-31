@@ -51,6 +51,7 @@ export default function GuaranteesTab({ initialId }: { initialId?: number | null
   const [error, setError] = useState<string[] | null>(null)
   const [openOnly, setOpenOnly] = useState(true)
   const [direction, setDirection] = useState('')
+  const [cardFilter, setCardFilter] = useState<'' | 'issued_active' | 'margin' | 'expiring'>('')
   const [types, setTypes] = useState<Opt[]>([])
   const [showNew, setShowNew] = useState(false)
   const [detailId, setDetailId] = useState<number | null>(initialId ?? null)
@@ -72,6 +73,13 @@ export default function GuaranteesTab({ initialId }: { initialId?: number | null
   const issuedTotal = active.filter((r) => r.direction === 'issued').reduce((s, r) => s + r.amount, 0)
   const margin = rows.filter((r) => r.margin_status === 'placed').reduce((s, r) => s + r.margin_amount, 0)
   const expiring = active.filter((r) => r.days_to_expiry != null && r.days_to_expiry <= 30).length
+  const toggleCard = (v: 'issued_active' | 'margin' | 'expiring') => setCardFilter((cur) => (cur === v ? '' : v))
+  const shown = rows.filter((r) => {
+    if (cardFilter === 'issued_active') return r.status === 'active' && r.direction === 'issued'
+    if (cardFilter === 'margin') return r.margin_status === 'placed'
+    if (cardFilter === 'expiring') return r.status === 'active' && r.days_to_expiry != null && r.days_to_expiry <= 30
+    return true
+  })
 
   return (
     <>
@@ -83,9 +91,9 @@ export default function GuaranteesTab({ initialId }: { initialId?: number | null
       </InfoBanner>
       <ErrorBanner error={error} />
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 16 }}>
-        <StatCard label="Issued & Active" value={`₹ ${inr(issuedTotal)}`} />
-        <StatCard label="Margin / Deposits Blocked" value={`₹ ${inr(margin)}`} />
-        <StatCard label="Expiring ≤ 30 Days" value={String(expiring)} tone={expiring ? '#d97706' : undefined} />
+        <StatCard label="Issued & Active" value={`₹ ${inr(issuedTotal)}`} onClick={() => toggleCard('issued_active')} active={cardFilter === 'issued_active'} />
+        <StatCard label="Margin / Deposits Blocked" value={`₹ ${inr(margin)}`} onClick={() => toggleCard('margin')} active={cardFilter === 'margin'} />
+        <StatCard label="Expiring ≤ 30 Days" value={String(expiring)} tone={expiring ? '#d97706' : undefined} onClick={() => toggleCard('expiring')} active={cardFilter === 'expiring'} />
       </div>
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12 }}>
         <Field label="Direction" style={{ flex: '0 1 170px' }}>
@@ -103,15 +111,15 @@ export default function GuaranteesTab({ initialId }: { initialId?: number | null
       <TableWrap minWidth={1180}>
         <thead>
           <tr>
-            <th style={thStyle}>BG No. <RowCount count={rows.length} /></th><th style={thStyle}>Type</th><th style={thStyle}>Beneficiary / Applicant</th><th style={thStyle}>Linked To</th>
+            <th style={thStyle}>BG No. <RowCount count={shown.length} /></th><th style={thStyle}>Type</th><th style={thStyle}>Beneficiary / Applicant</th><th style={thStyle}>Linked To</th>
             <th style={thStyle}>Bank / Instrument No.</th><th style={numTh}>Amount (₹)</th><th style={thStyle}>Expiry</th><th style={thStyle}>Claim Until</th>
             <th style={thStyle}>Margin</th><th style={thStyle}>Status</th>
           </tr>
         </thead>
         <tbody>
           {loading && <EmptyRow colSpan={10} text="Loading…" />}
-          {!loading && rows.length === 0 && <EmptyRow colSpan={10} text="No instruments in this view." />}
-          {!loading && rows.map((r) => (
+          {!loading && shown.length === 0 && <EmptyRow colSpan={10} text={cardFilter ? 'No instruments match this card. Click the highlighted card again to show all.' : 'No instruments in this view.'} />}
+          {!loading && shown.map((r) => (
             <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setDetailId(r.id)}>
               <td style={{ ...tdStyle, fontWeight: 700, whiteSpace: 'nowrap' }}>{r.bg_number}<div style={{ fontSize: 10.5, color: TEXT.muted }}>{r.direction === 'issued' ? 'Issued' : 'Received'}</div></td>
               <td style={tdStyle}>{r.instrument_type_label}</td>

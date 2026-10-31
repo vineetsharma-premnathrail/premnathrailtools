@@ -26,6 +26,15 @@ const clip2 = (v?: string | null) => clip(v, 50)
 // Statuses counted as "in progress" on the counter row (approved, then sourcing / PO / receiving).
 const IN_PROGRESS = ['approved', 'vendor_quotations', 'technical_evaluation', 'commercial_evaluation', 'vendor_selected', 'po_drafted', 'po_raised', 'po_approved', 'partially_received']
 
+// Status "groups" the count chips and the Status dropdown share (filter value 'group:<key>').
+const STATUS_GROUPS: Record<string, { label: string; statuses: string[] }> = {
+  pending: { label: 'Pending approval', statuses: ['submitted'] },
+  progress: { label: 'In progress (all stages)', statuses: IN_PROGRESS },
+  closed: { label: 'Closed (received / closed)', statuses: ['received', 'closed'] },
+}
+const matchesStatus = (status: string, filter: string) =>
+  !filter || (filter.startsWith('group:') ? !!STATUS_GROUPS[filter.slice(6)]?.statuses.includes(status) : status === filter)
+
 export type P2PListStats = { total: number; pending: number; inProgress: number; closed: number }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -81,14 +90,16 @@ function displayStatus(pr: P2PRequest): { label: string; hex: string } {
   return { label: STATUS_LABELS[pr.status] || pr.status, hex: STATUS_HEX[pr.status] || '#64748b' }
 }
 
-export default function P2PRequestList({ statuses, emptyLabel, context, queue, onlyPendingForViewer, showFilters, onlyMine, mineToggle, toolbarLeft, toolbarRight, onStats }: {
+export default function P2PRequestList({ statuses, emptyLabel, context, queue, onlyPendingForViewer, showFilters, onlyMine, mineToggle, toolbarLeft, toolbarRight, onStats, statusFilter: statusFilterProp, onStatusFilterChange }: {
   statuses?: string[]; emptyLabel: string; context?: string; queue?: string; onlyPendingForViewer?: boolean; showFilters?: boolean;
   /** Only the requisitions this user raised (the My Requisitions tab). */ onlyMine?: boolean;
   /** Adds a "Raised by me" switch to the Filters popup. */ mineToggle?: boolean;
   /** Registry toolbar (only with showFilters): left = create button, right = Export / Import after the Filters button. */
   toolbarLeft?: React.ReactNode; toolbarRight?: React.ReactNode;
   /** Counter numbers for the rows shown (they follow the search and filters). */
-  onStats?: (s: P2PListStats) => void }) {
+  onStats?: (s: P2PListStats) => void;
+  /** Controlled Status filter ('' = all, a status code, or 'group:pending|progress|closed') so count chips outside the list stay in sync with the Filters popup. */
+  statusFilter?: string; onStatusFilterChange?: (v: string) => void }) {
   const router = useRouter()
   const { user } = useAuth()
   const [prs, setPrs] = useState<P2PRequest[]>([])
@@ -102,7 +113,9 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
   const [decisionError, setDecisionError] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [buyerFilter, setBuyerFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  const [ownStatusFilter, setOwnStatusFilter] = useState('')
+  const statusFilter = statusFilterProp ?? ownStatusFilter
+  const setStatusFilter = onStatusFilterChange ?? setOwnStatusFilter
   const [search, setSearch] = useState('')
   // PR numbers sort ascending by default (app standard); the header toggles it.
   const [sortAsc, setSortAsc] = useState(true)
@@ -157,12 +170,13 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
   const statusOptions = Array.from(new Map(prs.map((pr) => [pr.status, STATUS_LABELS[pr.status] || pr.status])).entries())
     .sort((a, b) => a[1].localeCompare(b[1]))
   const q = search.trim().toLowerCase()
-  const visiblePrs = prs.filter(pendingOnViewer).filter((pr) =>
+  // Everything except the Status filter: the count chips count these, so they stay totals when a chip is on.
+  const visibleAnyStatus = prs.filter(pendingOnViewer).filter((pr) =>
     ((!onlyMine && !mineOnly) || pr.requested_by_id === user?.id)
     && (!categoryFilter || pr.category_code === categoryFilter)
-    && (!statusFilter || pr.status === statusFilter)
     && (!q || [pr.p2p_number, pr.category_label, pr.project_label, pr.requested_by_name, pr.assigned_buyer_name].some((x) => (x || '').toLowerCase().includes(q)))
     && (!buyerFilter || (buyerFilter === 'none' ? pr.assigned_buyer_id == null : String(pr.assigned_buyer_id) === buyerFilter)))
+  const visiblePrs = visibleAnyStatus.filter((pr) => matchesStatus(pr.status, statusFilter))
     .sort((a, b) => (sortAsc ? 1 : -1) * (a.p2p_number || '').localeCompare(b.p2p_number || '', undefined, { numeric: true }))
   const filtersActive = !!(categoryFilter || buyerFilter || statusFilter || q || opFilter || mineOnly)
   // Filters-popup count (search is outside the popup and not counted).
@@ -170,10 +184,10 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
   const clearPopupFilters = () => { setCategoryFilter(''); setBuyerFilter(''); setStatusFilter(''); setOpFilter(null); setMineOnly(false); setFilterOpen(false) }
   const openFilters = () => { setDraft({ status: statusFilter, category: categoryFilter, buyer: buyerFilter, op: opFilter, mine: mineOnly }); setFilterOpen(true) }
   const applyFilters = () => { setStatusFilter(draft.status); setCategoryFilter(draft.category); setBuyerFilter(draft.buyer); setOpFilter(draft.op); setMineOnly(draft.mine); setFilterOpen(false) }
-  const statTotal = visiblePrs.length
-  const statPending = visiblePrs.filter((pr) => pr.status === 'submitted').length
-  const statProgress = visiblePrs.filter((pr) => IN_PROGRESS.includes(pr.status)).length
-  const statClosed = visiblePrs.filter((pr) => pr.status === 'received' || pr.status === 'closed').length
+  const statTotal = visibleAnyStatus.length
+  const statPending = visibleAnyStatus.filter((pr) => pr.status === 'submitted').length
+  const statProgress = visibleAnyStatus.filter((pr) => IN_PROGRESS.includes(pr.status)).length
+  const statClosed = visibleAnyStatus.filter((pr) => pr.status === 'received' || pr.status === 'closed').length
   useEffect(() => {
     onStats?.({ total: statTotal, pending: statPending, inProgress: statProgress, closed: statClosed })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -301,6 +315,7 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
               <label style={sheetLabel}>Status</label>
               <Select aria-label="Filter by status" style={sheetInput} value={draft.status} onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))}>
                 <option value="">All statuses</option>
+                {Object.entries(STATUS_GROUPS).map(([k, g]) => <option key={k} value={`group:${k}`}>{g.label}</option>)}
                 {statusOptions.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
               </Select>
             </div>

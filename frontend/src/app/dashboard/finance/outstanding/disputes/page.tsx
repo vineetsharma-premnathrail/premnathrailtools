@@ -79,8 +79,9 @@ export default function DisputesPage() {
       </InfoBanner>
       <ErrorBanner error={error} />
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 20 }}>
-        <StatCard label="Open disputes" value={String(open.length)} />
-        <StatCard label="Disputed amount (open)" value={`₹ ${inr(open.reduce((s, r) => s + r.disputed_amount, 0))}`} tone="#7c3aed" />
+        <StatCard label="Open disputes" value={String(open.length)} onClick={() => setFilter((f) => (f === 'Open' ? 'All' : 'Open'))} active={filter === 'Open'} />
+        <StatCard label="Disputed amount (open)" value={`₹ ${inr(open.reduce((s, r) => s + r.disputed_amount, 0))}`} tone="#7c3aed"
+          onClick={() => setFilter((f) => (f === 'Open' ? 'All' : 'Open'))} active={filter === 'Open'} />
       </div>
       <SubTabs tabs={FILTERS} value={filter} onChange={setFilter} />
       <TableWrap minWidth={1200} tour="fin-disp-table">

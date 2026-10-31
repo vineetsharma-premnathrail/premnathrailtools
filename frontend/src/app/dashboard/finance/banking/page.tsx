@@ -111,6 +111,9 @@ export default function FinanceBankingPage() {
 
 function AccountsTab({ accounts, loading, onOpenBook }: { accounts: BankAccount[]; loading: boolean; onOpenBook: (id: number) => void }) {
   const total = (kind: string) => accounts.filter((a) => a.account_kind === kind).reduce((s, a) => s + (a.book_balance || 0), 0)
+  const [kindFilter, setKindFilter] = useState<'' | 'bank' | 'cash'>('')
+  const toggleKind = (k: 'bank' | 'cash') => setKindFilter((cur) => (cur === k ? '' : k))
+  const shownAccounts = kindFilter ? accounts.filter((a) => a.account_kind === kindFilter) : accounts
   return (
     <>
       <InfoBanner>
@@ -119,15 +122,15 @@ function AccountsTab({ accounts, loading, onOpenBook }: { accounts: BankAccount[
       </InfoBanner>
       {!loading && accounts.length > 0 && (
         <div data-tour="fin-bk-stats" style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 18 }}>
-          <StatCard label="Total at Bank" value={`₹ ${inr(total('bank'))}`} />
-          <StatCard label="Total Cash in Hand" value={`₹ ${inr(total('cash'))}`} />
-          <StatCard label="Total Liquid Funds" value={`₹ ${inr(total('bank') + total('cash'))}`} />
+          <StatCard label="Total at Bank" value={`₹ ${inr(total('bank'))}`} onClick={() => toggleKind('bank')} active={kindFilter === 'bank'} />
+          <StatCard label="Total Cash in Hand" value={`₹ ${inr(total('cash'))}`} onClick={() => toggleKind('cash')} active={kindFilter === 'cash'} />
+          <StatCard label="Total Liquid Funds" value={`₹ ${inr(total('bank') + total('cash'))}`} onClick={() => setKindFilter('')} />
         </div>
       )}
       {loading && <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>}
       {!loading && accounts.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted }}>No active bank or cash accounts. Add one under Finance → Masters → Bank & Cash.</p>}
       <div data-tour="fin-bk-accounts" style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
-        {accounts.map((a) => (
+        {shownAccounts.map((a) => (
           <div key={a.id} style={{ ...sectionStyle, marginBottom: 0, flex: '1 1 260px', maxWidth: 340, padding: '16px 18px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
               <div>

@@ -78,6 +78,8 @@ export default function ItemRatesPage() {
   const [src, setSrc] = useState({ vendor_id: '', valid_from: '', valid_to: '', is_fixed: false })
   const [removeSource, setRemoveSource] = useState<ItemVendorRow | null>(null)
   const [endContract, setEndContract] = useState<ItemVendorRow | null>(null)
+  // Count chips narrow the supplier table: rows with a rate contract / rows on the approved-vendor list.
+  const [vendorView, setVendorView] = useState<'contract' | 'approved' | null>(null)
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -149,6 +151,9 @@ export default function ItemRatesPage() {
 
   const sources = (ov?.vendors || []).filter((v) => v.source)
   const s = ov?.summary
+  const shownVendors = (ov?.vendors || []).filter((v) => vendorView === 'contract' ? !!v.contract : vendorView === 'approved' ? !!v.source : true)
+  const toggleVendorView = (v: 'contract' | 'approved' | null) => setVendorView((cur) => (v === null || cur === v ? null : v))
+  const showPoLines = () => { setShowHistory(true); setTimeout(() => document.getElementById('p2p-rates-history')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0) }
 
   return (
     <div>
@@ -157,10 +162,10 @@ export default function ItemRatesPage() {
         <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Item Rates</h1>
         {itemId && ov && s && (
           <div data-tour="p2p-rates-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-            <StatChip label="Vendors" value={s.vendor_count} color="#3b82f6" />
-            <StatChip label="Rate contracts" value={ov.vendors.filter((v) => v.contract).length} color="#ea580c" />
-            <StatChip label="Approved vendors" value={sources.length} color="#16a34a" />
-            <StatChip label="PO lines" value={ov.history.length} color="#ca8a04" />
+            <StatChip label="Vendors" value={s.vendor_count} color="#3b82f6" onClick={() => toggleVendorView(null)} active={vendorView === null} />
+            <StatChip label="Rate contracts" value={ov.vendors.filter((v) => v.contract).length} color="#ea580c" onClick={() => toggleVendorView('contract')} active={vendorView === 'contract'} />
+            <StatChip label="Approved vendors" value={sources.length} color="#16a34a" onClick={() => toggleVendorView('approved')} active={vendorView === 'approved'} />
+            <StatChip label="PO lines" value={ov.history.length} color="#ca8a04" onClick={showPoLines} />
           </div>
         )}
       </div>
@@ -177,7 +182,7 @@ export default function ItemRatesPage() {
           <button type="button" data-tour="p2p-rates-sources-btn" onClick={() => setShowSources(true)} style={secondaryBtnStyle}>Approved vendors ({sources.length})</button>
         )}
         <div data-tour="p2p-rates-item" style={{ marginLeft: 'auto', width: 420, maxWidth: '100%' }}>
-          <SearchableSelect autoFocus ariaLabel="Item" value={itemId} onChange={(v) => { setOv(null); setLoading(!!v); setItemId(v) }} placeholder="Search item code / name…" options={itemOptions} />
+          <SearchableSelect autoFocus ariaLabel="Item" value={itemId} onChange={(v) => { setOv(null); setLoading(!!v); setVendorView(null); setItemId(v) }} placeholder="Search item code / name…" options={itemOptions} />
         </div>
       </div>
 
@@ -211,7 +216,7 @@ export default function ItemRatesPage() {
             </div>
             <div style={{ overflow: 'auto', border: `1px solid ${BORDER.normal}`, borderRadius: 10 }}>
               <table data-tour="p2p-rates-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr>{['Vendor', 'Rate today', 'Last PO', 'Last quotation', 'Rate contract', 'Lead time', ''].map((h, i) => <th key={h || 'actions'} data-fit-min={60} data-fit-cut={i === 0 ? '' : undefined} style={th}>{h}{i === 0 && <RowCount count={ov.vendors.length} />}</th>)}</tr></thead>
+                <thead><tr>{['Vendor', 'Rate today', 'Last PO', 'Last quotation', 'Rate contract', 'Lead time', ''].map((h, i) => <th key={h || 'actions'} data-fit-min={60} data-fit-cut={i === 0 ? '' : undefined} style={th}>{h}{i === 0 && <RowCount count={shownVendors.length} />}</th>)}</tr></thead>
                 <tbody>
                   {ov.vendors.length === 0 && (
                     <tr><td colSpan={7} style={{ ...td, color: TEXT.muted, padding: 20 }}>
@@ -219,7 +224,12 @@ export default function ItemRatesPage() {
                       or a PO for this item is approved. Have an agreed rate already? Add it with <b>+ Rate contract</b>.
                     </td></tr>
                   )}
-                  {ov.vendors.map((v) => {
+                  {ov.vendors.length > 0 && shownVendors.length === 0 && (
+                    <tr><td colSpan={7} style={{ ...td, color: TEXT.muted, padding: 20 }}>
+                      No vendor matches this count for the item. Click the <b>Vendors</b> count to show all.
+                    </td></tr>
+                  )}
+                  {shownVendors.map((v) => {
                     const blocked = !!v.source?.is_blocked
                     return (
                       <tr key={`${v.vendor_id}-${v.vendor_name}`} style={{ opacity: blocked ? 0.55 : 1 }}>
@@ -283,7 +293,7 @@ export default function ItemRatesPage() {
             </div>
           </div>
 
-          <div style={card}>
+          <div id="p2p-rates-history" style={card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <h2 style={h2}>Purchase history ({ov.history.length} approved PO line{ov.history.length === 1 ? '' : 's'})</h2>
               {ov.history.length > 0 && <span onClick={() => setShowHistory((x) => !x)} style={linkStyle}>{showHistory ? 'Hide' : 'Show'}</span>}

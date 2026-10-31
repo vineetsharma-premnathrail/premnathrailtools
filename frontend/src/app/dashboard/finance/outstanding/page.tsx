@@ -53,6 +53,7 @@ export default function OutstandingPage() {
   // Key date (S_ALR_87012078/87012168): empty = today; a past date shows
   // only bills open on that date, at the amount that was due then.
   const [asOf, setAsOf] = useState('')
+  const [partyFilter, setPartyFilter] = useState<'' | 'overdue' | 'advances'>('')
   const loadKey = `${partyType}|${asOf}`
 
   useEffect(() => {
@@ -67,7 +68,9 @@ export default function OutstandingPage() {
   if (isLoading || !isAuthorized) return null
 
   const current = !loading && data?.party_type === partyType ? data : null
-  const rows = current?.rows || []
+  const allRows = current?.rows || []
+  const rows = partyFilter ? allRows.filter((r) => (partyFilter === 'overdue' ? r.overdue > 0 : r.advances > 0)) : allRows
+  const togglePartyFilter = (v: 'overdue' | 'advances') => { setPartyFilter((cur) => (cur === v ? '' : v)); setSelected(null) }
   const totals = current?.totals || {}
   const showDisputed = partyType === 'customer'
   const COLS = showDisputed ? 12 : 11
@@ -88,7 +91,7 @@ export default function OutstandingPage() {
         </InfoBanner>
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
-        <SubTabs tabs={visibleTabs} value={tab} onChange={(t) => { setTab(t); setSelected(null) }} />
+        <SubTabs tabs={visibleTabs} value={tab} onChange={(t) => { setTab(t); setSelected(null); setPartyFilter('') }} />
         <Field label="Key date (as of)" style={{ flex: '0 1 170px', minWidth: 160, marginBottom: 14 }} tour="fin-os-asof">
           <DateField value={asOf} onChange={(v) => { setAsOf(v); setSelected(null) }} />
         </Field>
@@ -108,8 +111,8 @@ export default function OutstandingPage() {
 
       <div data-tour="fin-os-stats" style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 20 }}>
         <StatCard label="Total outstanding" value={`₹ ${inr(totals.outstanding ?? 0)}`} />
-        <StatCard label="Overdue" value={`₹ ${inr(totals.overdue ?? 0)}`} tone={(totals.overdue ?? 0) > 0 ? '#b91c1c' : undefined} />
-        <StatCard label={partyType === 'vendor' ? 'Advances paid' : 'Advances received'} value={`₹ ${inr(totals.advances ?? 0)}`} tone="#b45309" />
+        <StatCard label="Overdue" value={`₹ ${inr(totals.overdue ?? 0)}`} tone={(totals.overdue ?? 0) > 0 ? '#b91c1c' : undefined} onClick={() => togglePartyFilter('overdue')} active={partyFilter === 'overdue'} />
+        <StatCard label={partyType === 'vendor' ? 'Advances paid' : 'Advances received'} value={`₹ ${inr(totals.advances ?? 0)}`} tone="#b45309" onClick={() => togglePartyFilter('advances')} active={partyFilter === 'advances'} />
         <StatCard label="Net" value={`₹ ${inr(totals.net ?? 0)}`} />
       </div>
 
@@ -128,7 +131,7 @@ export default function OutstandingPage() {
         </thead>
         <tbody>
           {loading ? <EmptyRow colSpan={COLS} text="Loading…" />
-            : rows.length === 0 ? <EmptyRow colSpan={COLS} text={`No ${partyType === 'vendor' ? 'payables' : 'receivables'} outstanding.`} />
+            : rows.length === 0 ? <EmptyRow colSpan={COLS} text={partyFilter ? `No ${partyType === 'vendor' ? 'vendor' : 'customer'} matches this card. Click the highlighted card again to show everyone.` : `No ${partyType === 'vendor' ? 'payables' : 'receivables'} outstanding.`} />
             : (
               <>
                 {rows.map((r) => {
@@ -148,8 +151,8 @@ export default function OutstandingPage() {
                   )
                 })}
                 <tr>
-                  <td style={{ ...tdStyle, fontWeight: 800 }}>Total</td>
-                  <td style={numTd}>{rows.reduce((s, r) => s + r.open_bills, 0)}</td>
+                  <td style={{ ...tdStyle, fontWeight: 800 }}>{partyFilter ? 'Total (all parties)' : 'Total'}</td>
+                  <td style={numTd}>{allRows.reduce((s, r) => s + r.open_bills, 0)}</td>
                   <td style={{ ...numTd, fontWeight: 800 }}>{inr(totals.outstanding ?? 0)}</td>
                   {BUCKETS.map((b) => <td key={b} style={{ ...numTd, fontWeight: 800 }}>{inr(totals[b] ?? 0, { blankZero: true })}</td>)}
                   {showDisputed && <td style={{ ...numTd, fontWeight: 800 }}>{inr(totals.disputed ?? 0, { blankZero: true })}</td>}

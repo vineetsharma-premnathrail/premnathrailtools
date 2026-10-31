@@ -34,6 +34,7 @@ export default function MsmeDuesPage() {
   // Separate errors: a successful 43B(h) reload must not wipe an alerts failure.
   const [alertsError, setAlertsError] = useState<string[] | null>(null)
   const [reportError, setReportError] = useState<string[] | null>(null)
+  const [billFilter, setBillFilter] = useState<'' | 'breached' | 'due_soon'>('')
   const allowed = useCan().canFeature('accounts', 'outstanding', 'msme_dues', 'view')
 
   useEffect(() => {
@@ -49,6 +50,8 @@ export default function MsmeDuesPage() {
   }, [isAuthorized, allowed, fy])
 
   if (isLoading || !isAuthorized) return null
+  const shownBills = alerts ? (billFilter ? alerts.rows.filter((r) => r.status === billFilter) : alerts.rows) : []
+  const toggleBills = (v: 'breached' | 'due_soon') => setBillFilter((cur) => (cur === v ? '' : v))
   const years = Array.from({ length: Math.max(currentFyStart() - 2023 + 1, 1) }, (_, i) => 2023 + i)
 
   return (
@@ -66,9 +69,9 @@ export default function MsmeDuesPage() {
       <ErrorBanner error={[...(alertsError || []), ...(reportError || [])]} />
       {allowed && alerts && (
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-          <StatCard label="Bills past the limit" value={String(alerts.breached_count)} tone="#dc2626" />
-          <StatCard label="Amount past the limit" value={`₹ ${inr(alerts.breached_amount)}`} tone="#dc2626" />
-          <StatCard label="Due within 7 days" value={String(alerts.due_soon_count)} tone="#f59e0b" />
+          <StatCard label="Bills past the limit" value={String(alerts.breached_count)} tone="#dc2626" onClick={() => toggleBills('breached')} active={billFilter === 'breached'} />
+          <StatCard label="Amount past the limit" value={`₹ ${inr(alerts.breached_amount)}`} tone="#dc2626" onClick={() => toggleBills('breached')} active={billFilter === 'breached'} />
+          <StatCard label="Due within 7 days" value={String(alerts.due_soon_count)} tone="#f59e0b" onClick={() => toggleBills('due_soon')} active={billFilter === 'due_soon'} />
         </div>
       )}
       {allowed && <>
@@ -77,12 +80,12 @@ export default function MsmeDuesPage() {
         <TableWrap minWidth={980}>
           <thead>
             <tr>
-              <th style={thStyle}>Vendor <RowCount count={alerts?.rows.length ?? 0} /></th><th style={thStyle}>Category</th><th style={thStyle}>Bill</th><th style={thStyle}>Bill date</th>
+              <th style={thStyle}>Vendor <RowCount count={shownBills.length} /></th><th style={thStyle}>Category</th><th style={thStyle}>Bill</th><th style={thStyle}>Bill date</th>
               <th style={thStyle}>Pay by</th><th style={numTh}>Days left</th><th style={numTh}>Amount due</th><th style={thStyle}>Status</th>
             </tr>
           </thead>
           <tbody>
-            {!alerts || alerts.rows.length === 0 ? <EmptyRow colSpan={8} text={alerts ? 'No open bills of MSME suppliers.' : alertsError ? 'MSME dues could not be loaded — see the message above.' : 'Loading…'} /> : alerts.rows.map((r) => (
+            {!alerts || shownBills.length === 0 ? <EmptyRow colSpan={8} text={alerts ? (billFilter ? 'No bills in this group. Click the highlighted card again to show all bills.' : 'No open bills of MSME suppliers.') : alertsError ? 'MSME dues could not be loaded — see the message above.' : 'Loading…'} /> : shownBills.map((r) => (
               <tr key={r.invoice_id}>
                 <td style={tdStyle}>{r.vendor_name} <span style={{ opacity: 0.6 }}>({r.vendor_code})</span></td>
                 <td style={tdStyle}>{r.msme_category}</td>

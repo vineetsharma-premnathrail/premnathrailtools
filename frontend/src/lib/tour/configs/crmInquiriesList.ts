@@ -7,7 +7,7 @@ const config: TourConfig = {
     {
       target: 'crm-inq-stats',
       title: 'Counters',
-      purpose: 'Small numbers under the title: Leads (inquiries not yet qualified - status Lead, Requirement Received or R&D / Technical Review), Inquiries (status Qualified Inquiry, Quotation Sent or Order Received - not closed), Tenders published (every tender except cancelled) and Tender participation (tenders at Participation or any later status). They follow Search and the column filters, but always count leads, inquiries and tenders whatever the Type filter shows.',
+      purpose: 'Small numbers under the title: Leads (inquiries not yet qualified - status Lead, Requirement Received or R&D / Technical Review), Inquiries (status Qualified Inquiry, Quotation Sent or Order Received - not closed), Tenders published (every tender except cancelled) Tender participation (tenders at Participation or any later status) and Pending tenders (not closed and not cancelled). They follow Search and the column filters, but always count leads, inquiries and tenders whatever the Type filter shows. Click a counter to show only those records in the list (it also switches the list to Inquiries or Tenders as needed); click the same counter again to remove that filter.',
     },
     {
       target: 'iq-add-btn',

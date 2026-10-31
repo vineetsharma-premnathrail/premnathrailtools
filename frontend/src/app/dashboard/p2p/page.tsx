@@ -26,6 +26,9 @@ const SEGMENTS: Record<View, { label: string; statuses?: string[]; empty: string
   all: { label: 'All', statuses: undefined, empty: 'No Purchase Requisitions yet.' },
 }
 
+// Count chips above the list set the list's Status filter (value 'group:<key>'), the same one as its Filters popup.
+type Chip = 'pending' | 'progress' | 'closed'
+
 // ?view=approvals (old P.R Approval links, notifications) opens Waiting for me; ?view=all / ?bucket=... the matching segment.
 const viewFromUrl = (): View | null => {
   if (typeof window === 'undefined') return null
@@ -45,6 +48,7 @@ export default function P2PHomePage() {
   const [exportItems, setExportItems] = useState<ExportItem[] | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [listKey, setListKey] = useState(0)
+  const [statusFilter, setStatusFilter] = useState('')
   const [stats, setStats] = useState<P2PListStats>({ total: 0, pending: 0, inProgress: 0, closed: 0 })
   const approverFlags = useP2PApproverFlags()
 
@@ -73,6 +77,9 @@ export default function P2PHomePage() {
     return () => { live = false }
   }, [isAuthorized, canApprove, user?.id, user?.role])
 
+  // Chip click: show that group, click again (or the total) to show all.
+  const toggleChip = (c: Chip | null) => setStatusFilter((cur) => (c === null || cur === `group:${c}` ? '' : `group:${c}`))
+
   if (isLoading || !isAuthorized) return null
 
   const openExport = async () => {
@@ -89,7 +96,7 @@ export default function P2PHomePage() {
     <>
       {newBtn}
       {tabs.map(([v, label]) => (
-        <button key={v} type="button" data-tour={`p2p-view-${v}`} onClick={() => setView(v)} style={{ ...segmentBtnStyle(view === v), whiteSpace: 'nowrap' }}>
+        <button key={v} type="button" data-tour={`p2p-view-${v}`} onClick={() => { setStatusFilter(''); setView(v) }} style={{ ...segmentBtnStyle(view === v), whiteSpace: 'nowrap' }}>
           {label}
           {v === 'waiting' && pendingCount != null && pendingCount > 0 && (
             <span aria-label={`${pendingCount} waiting for you`} style={{ ...pillStyle('#dc2626'), marginLeft: 6 }}>{pendingCount}</span>
@@ -115,18 +122,18 @@ export default function P2PHomePage() {
       <div style={{ marginBottom: 14 }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Purchase Requisitions</h1>
         <div data-tour="p2p-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-          <StatChip label="Requisitions" value={stats.total} color="#3b82f6" />
-          <StatChip label="Pending approval" value={stats.pending} color="#ea580c" />
-          <StatChip label="In progress" value={stats.inProgress} color="#ca8a04" />
-          <StatChip label="Closed" value={stats.closed} color="#16a34a" />
+          <StatChip label="Requisitions" value={stats.total} color="#3b82f6" onClick={() => toggleChip(null)} active={statusFilter === ''} />
+          <StatChip label="Pending approval" value={stats.pending} color="#ea580c" onClick={() => toggleChip('pending')} active={statusFilter === 'group:pending'} />
+          <StatChip label="In progress" value={stats.inProgress} color="#ca8a04" onClick={() => toggleChip('progress')} active={statusFilter === 'group:progress'} />
+          <StatChip label="Closed" value={stats.closed} color="#16a34a" onClick={() => toggleChip('closed')} active={statusFilter === 'group:closed'} />
         </div>
       </div>
 
       {tabs.length === 0
         ? <p role="status" style={{ fontSize: 13.5, color: '#78716c' }}>Your role does not show any requisition tab. Ask an administrator to switch one on for your role (Organization › Role &amp; Permissions › Purchase Requisitions).</p>
-        : <P2PRequestList key={`${view}-${listKey}`} showFilters mineToggle onStats={setStats}
+        : <P2PRequestList key={`${view}-${listKey}`} showFilters mineToggle onStats={setStats} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter}
             statuses={SEGMENTS[view].statuses} queue={view === 'waiting' ? 'pr-approval' : undefined} context={view === 'waiting' ? 'approval' : undefined}
-            onlyPendingForViewer={view === 'waiting'} toolbarLeft={toolbarLeft} toolbarRight={toolbarRight} emptyLabel={SEGMENTS[view].empty} />}
+            onlyPendingForViewer={view === 'waiting'} toolbarLeft={toolbarLeft} toolbarRight={toolbarRight} emptyLabel={statusFilter ? 'No requisitions match the status filter in this tab. Click the Requisitions count to show all.' : SEGMENTS[view].empty} />}
 
       {exportItems && (
         <ExportDialog onClose={() => setExportItems(null)} filename="purchase_requisitions" noun="requisitions" dateLabel="Request date"

@@ -47,6 +47,7 @@ export default function CollectionsPage() {
   const [showRun, setShowRun] = useState(false)
   const [reload, setReload] = useState(0)
   const [letters, setLetters] = useState<DunningLetter[]>([])
+  const [priorityFilter, setPriorityFilter] = useState('')
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -61,6 +62,7 @@ export default function CollectionsPage() {
   }, [isAuthorized, reload, seeDunning])
 
   if (isLoading || !isAuthorized) return null
+  const shownRows = priorityFilter ? rows.filter((r) => r.priority === priorityFilter) : rows
   const canCreate = canFeature('accounts', 'collections', 'dunning', 'create')
 
   return (
@@ -80,23 +82,24 @@ export default function CollectionsPage() {
 
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 20 }}>
         <StatCard label="Overdue (undisputed)" value={`₹ ${inr(totals.overdue_amount ?? 0)}`} tone={(totals.overdue_amount ?? 0) > 0 ? '#b91c1c' : undefined} />
-        <StatCard label="Customers to chase" value={String(totals.customers ?? 0)} />
-        <StatCard label="High priority" value={String(totals.high ?? 0)} tone={(totals.high ?? 0) > 0 ? '#b91c1c' : undefined} />
+        <StatCard label="Customers to chase" value={String(totals.customers ?? 0)} onClick={() => setPriorityFilter('')} />
+        <StatCard label="High priority" value={String(totals.high ?? 0)} tone={(totals.high ?? 0) > 0 ? '#b91c1c' : undefined}
+          onClick={() => setPriorityFilter((p) => (p === 'high' ? '' : 'high'))} active={priorityFilter === 'high'} />
         <StatCard label="Disputed (not chased)" value={`₹ ${inr(totals.disputed ?? 0)}`} tone="#7c3aed" />
       </div>
 
       <TableWrap minWidth={1200} maxHeight={selected ? '360px' : undefined} tour="fin-coll-worklist">
         <thead>
           <tr>
-            <th style={thStyle}>Priority <RowCount count={rows.length} /></th><th style={thStyle}>Customer</th><th style={numTh}>Overdue (₹)</th><th style={numTh}>Invoices</th>
+            <th style={thStyle}>Priority <RowCount count={shownRows.length} /></th><th style={thStyle}>Customer</th><th style={numTh}>Overdue (₹)</th><th style={numTh}>Invoices</th>
             <th style={numTh}>Oldest (days)</th><th style={numTh}>Level</th><th style={thStyle}>Last contact</th>
             <th style={thStyle}>Promise to pay</th><th style={thStyle}>Next follow-up</th><th style={numTh}>Broken promises</th>
           </tr>
         </thead>
         <tbody>
           {loading ? <EmptyRow colSpan={10} text="Loading…" />
-            : rows.length === 0 ? <EmptyRow colSpan={10} text="No customer has an undisputed overdue invoice." />
-            : rows.map((r) => {
+            : shownRows.length === 0 ? <EmptyRow colSpan={10} text={priorityFilter ? 'No high-priority customers right now. Click High priority again to show everyone.' : 'No customer has an undisputed overdue invoice.'} />
+            : shownRows.map((r) => {
               const active = selected?.customer_id === r.customer_id
               return (
                 <tr key={r.customer_id} onClick={() => setSelected(active ? null : r)} style={{ cursor: 'pointer', background: active ? `${BRAND.primary}14` : undefined }}>

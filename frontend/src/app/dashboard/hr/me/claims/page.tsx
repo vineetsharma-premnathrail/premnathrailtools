@@ -33,11 +33,11 @@ export default function MyClaimsPage() {
 
   const load = useCallback(() => {
     setLoading(true)
-    hrApi.myClaims(status ? { status } : {})
+    hrApi.myClaims({})
       .then((r) => { setRows(r); setError([]) })
       .catch((err) => setError(extractErrorMessages(err, 'Your expense claims could not be loaded.')))
       .finally(() => setLoading(false))
-  }, [status])
+  }, [])
 
   useEffect(() => { if (user) load() }, [user, load])
 
@@ -45,6 +45,14 @@ export default function MyClaimsPage() {
     const sum = (st: string[]) => rows.filter((r) => st.includes(r.status)).reduce((a, r) => a + Number(r.total_amount || 0), 0)
     return { pending: sum(['submitted']), approved: sum(['approved']), paid: sum(['paid']), drafts: rows.filter((r) => r.status === 'draft' || r.status === 'rejected').length }
   }, [rows])
+
+  // Status filter runs here so the count cards keep showing every status's real total.
+  const shown = useMemo(() => {
+    if (!status) return rows
+    if (status === 'draft_fix') return rows.filter((r) => r.status === 'draft' || r.status === 'rejected')
+    return rows.filter((r) => r.status === status)
+  }, [rows, status])
+  const toggleStatus = (v: string) => setStatus((cur) => (cur === v ? '' : v))
 
   if (isLoading || !user) return null
 
@@ -63,12 +71,12 @@ export default function MyClaimsPage() {
 
       <ErrorBanner error={error} />
 
-      {!status && rows.length > 0 && (
+      {rows.length > 0 && (
         <div data-tour="hr-myclaims-stats" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
-          <StatCard label="Drafts / to fix" value={totals.drafts} hex="#64748B" />
-          <StatCard label="Awaiting approval" value={fmtINR(totals.pending)} hex="#F59E0B" />
-          <StatCard label="Approved, not paid" value={fmtINR(totals.approved)} hex="#16A34A" />
-          <StatCard label="Paid" value={fmtINR(totals.paid)} hex="#2563EB" />
+          <StatCard label="Drafts / to fix" value={totals.drafts} hex="#64748B" onClick={() => toggleStatus('draft_fix')} active={status === 'draft_fix'} />
+          <StatCard label="Awaiting approval" value={fmtINR(totals.pending)} hex="#F59E0B" onClick={() => toggleStatus('submitted')} active={status === 'submitted'} />
+          <StatCard label="Approved, not paid" value={fmtINR(totals.approved)} hex="#16A34A" onClick={() => toggleStatus('approved')} active={status === 'approved'} />
+          <StatCard label="Paid" value={fmtINR(totals.paid)} hex="#2563EB" onClick={() => toggleStatus('paid')} active={status === 'paid'} />
         </div>
       )}
 
@@ -76,18 +84,19 @@ export default function MyClaimsPage() {
         <Select data-tour="hr-myclaims-status-filter" style={{ ...filterInputStyle, flex: '0 1 170px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(CLAIM_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          <option value="draft_fix">Drafts / to fix</option>
         </Select>
       </div>
 
       <div data-tour="hr-myclaims-table" style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
           <thead>
-            <tr>{['Claim', 'Title', 'Date', 'Trip', 'Lines', 'Amount', 'Status'].map((h, hi) => <th key={h} style={{ ...thStyle, textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr>
+            <tr>{['Claim', 'Title', 'Date', 'Trip', 'Lines', 'Amount', 'Status'].map((h, hi) => <th key={h} style={{ ...thStyle, textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}{hi === 0 && <RowCount count={shown.length} />}</th>)}</tr>
           </thead>
           <tbody>
-            {loading ? <EmptyRow colSpan={7} text="Loading…" /> : rows.length === 0 ? (
+            {loading ? <EmptyRow colSpan={7} text="Loading…" /> : shown.length === 0 ? (
               <EmptyRow colSpan={7} text={status ? 'No claims with this status.' : 'No expense claims yet. Use “+ New Claim” to start one.'} />
-            ) : rows.map((c) => (
+            ) : shown.map((c) => (
               <tr key={c.id} onClick={() => open(c)} style={{ cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{c.claim_no}</td>
                 <td style={tdStyle}>

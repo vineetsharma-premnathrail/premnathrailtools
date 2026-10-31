@@ -32,6 +32,8 @@ export default function StoreBeforePoPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  // Status picked by clicking a count chip ('' = all); click the same chip again to clear it.
+  const [statusFilter, setStatusFilter] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [notice, setNotice] = useState('')
   const [openId, setOpenId] = useState<number | null>(null)
@@ -56,7 +58,7 @@ export default function StoreBeforePoPage() {
   }
 
   const q = search.trim().toLowerCase()
-  const shown = rows.filter((r) => !q || [r.receipt_number, r.vendor_name, r.po_number, r.p2p_number, r.delivery_challan_number, r.vendor_invoice_number, ...r.items.map((i) => i.item_name)].some((x) => (x || '').toLowerCase().includes(q)))
+  const shown = rows.filter((r) => (!statusFilter || r.status === statusFilter) && (!q || [r.receipt_number, r.vendor_name, r.po_number, r.p2p_number, r.delivery_challan_number, r.vendor_invoice_number, ...r.items.map((i) => i.item_name)].some((x) => (x || '').toLowerCase().includes(q))))
   const count = (s: string) => rows.filter((r) => r.status === s).length
   const open = rows.find((r) => r.id === openId) || null
 
@@ -80,9 +82,9 @@ export default function StoreBeforePoPage() {
       </div>
 
       <div data-tour="store-bpo-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-        <StatChip label="PO pending" value={count('pending_po')} color="#ea580c" />
-        <StatChip label="PO created" value={count('po_created')} color="#2563eb" />
-        <StatChip label="Closed" value={count('closed')} color="#16a34a" />
+        <StatChip label="PO pending" value={count('pending_po')} color="#ea580c" onClick={() => setStatusFilter((f) => (f === 'pending_po' ? '' : 'pending_po'))} active={statusFilter === 'pending_po'} />
+        <StatChip label="PO created" value={count('po_created')} color="#2563eb" onClick={() => setStatusFilter((f) => (f === 'po_created' ? '' : 'po_created'))} active={statusFilter === 'po_created'} />
+        <StatChip label="Closed" value={count('closed')} color="#16a34a" onClick={() => setStatusFilter((f) => (f === 'closed' ? '' : 'closed'))} active={statusFilter === 'closed'} />
       </div>
 
       {notice && <div role="alert" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(234,88,12,0.08)', border: '1px solid rgba(234,88,12,0.25)', color: '#9a3412', fontSize: 13 }}>{notice}</div>}
@@ -101,7 +103,7 @@ export default function StoreBeforePoPage() {
           <tbody>
             {loading && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>}
             {!loading && rows.length === 0 && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No Before PO receipts yet. When goods arrive and no PO exists, record them with + Before PO receipt.</td></tr>}
-            {!loading && rows.length > 0 && shown.length === 0 && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No receipt matches the search — change or clear it.</td></tr>}
+            {!loading && rows.length > 0 && shown.length === 0 && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No receipt matches the search or the selected count — change the search, or click the highlighted count again to show all.</td></tr>}
             {shown.map((r) => (
               <tr key={r.id} onClick={() => setOpenId(r.id)} style={{ cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{r.receipt_number}</td>

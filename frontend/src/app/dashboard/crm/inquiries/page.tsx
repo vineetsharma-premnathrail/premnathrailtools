@@ -41,6 +41,11 @@ const panelOuterStyle: React.CSSProperties = {
 
 type Kind = 'inquiry' | 'tender'
 
+/** The four count chips above the list; each one is also a filter on the list below. */
+type StatKey = 'leads' | 'inquiries' | 'published' | 'participation' | 'pending'
+const STAT_KIND: Record<StatKey, Kind> = { leads: 'inquiry', inquiries: 'inquiry', published: 'tender', participation: 'tender', pending: 'tender' }
+const STAT_KEYS = Object.keys(STAT_KIND) as StatKey[]
+
 interface CombinedRow {
   key: string
   id: number
@@ -57,6 +62,28 @@ interface CombinedRow {
   created_at: string
   created_by_name: string
   org_name: string
+}
+
+function matchesStat(r: { kind: Kind; status: string }, key: StatKey): boolean {
+  const closed = r.status.startsWith('Closed')
+  const qualifiedAt = INQUIRY_STATUSES.indexOf('Qualified Inquiry')
+  switch (key) {
+    // Leads = not yet qualified: Lead, Requirement Received, R&D / Technical Review (owner, 2026-10-28).
+    case 'leads':
+      return r.kind === 'inquiry' && !closed && INQUIRY_STATUSES.indexOf(r.status) >= 0 && INQUIRY_STATUSES.indexOf(r.status) < qualifiedAt
+    // Counted once qualified: 'Qualified Inquiry' or a later open status; closed (won / lost) ones are not counted.
+    case 'inquiries':
+      return r.kind === 'inquiry' && !closed && INQUIRY_STATUSES.indexOf(r.status) >= qualifiedAt
+    // Every tender we logged was published; cancelled ones are left out.
+    case 'published':
+      return r.kind === 'tender' && r.status !== 'Tender Cancelled'
+    // Participated = reached 'Tender Participation' or any later status.
+    case 'participation':
+      return r.kind === 'tender' && r.status !== 'Tender Cancelled' && TENDER_STATUSES.indexOf(r.status) >= TENDER_STATUSES.indexOf('Tender Participation')
+    // Pending = not closed and not cancelled (same rule as the CRM home "Pending tenders" count).
+    case 'pending':
+      return r.kind === 'tender' && !closed && r.status !== 'Tender Cancelled'
+  }
 }
 
 export default function InquiriesPage() {
@@ -76,6 +103,8 @@ export default function InquiriesPage() {
   // Inquiries by default; ?type=tender (dashboard Tenders cards) opens the tenders. No All/Inquiry/Tender switch (owner, 2026-10-27).
   const [typeFilter, setTypeFilter] = useState<'all' | Kind>('inquiry')
   const [pinnedKeys, setPinnedKeys] = useState<string[]>([])
+  // Count chip currently applied as a filter ('' = none). Cleared when the Type filter moves to the other kind.
+  const [statFilter, setStatFilter] = useState<StatKey | ''>('')
 
   const selectedRef = searchParams.get('id')
   const { id: selectedId, error: linkError } = useRecordId(selectedRef)
@@ -86,7 +115,9 @@ export default function InquiriesPage() {
   useEffect(() => {
     if (searchParams.get('id')) return
     const t = searchParams.get('type')
-    if (t === 'tender' || t === 'inquiry') setTypeFilter(t)
+    // ?stat=pending etc. (CRM home cards) also applies that counter's filter.
+    const st = searchParams.get('stat') as StatKey | null
+    if (t === 'tender' || t === 'inquiry') { setTypeFilter(t); setStatFilter(st && STAT_KEYS.includes(st) && STAT_KIND[st] === t ? st : '') }
   }, [searchParams])
 
   useEffect(() => {
@@ -152,7 +183,18 @@ export default function InquiriesPage() {
 
   const clearFilters = () => {
     setSearch('')
+    setStatFilter('')
     setColFilters({ status: '', org_name: '', created_by_name: '' })
+  }
+
+  const changeType = (t: 'all' | Kind) => {
+    setTypeFilter(t)
+    setStatFilter((cur) => (cur && t !== 'all' && STAT_KIND[cur] !== t ? '' : cur))
+  }
+  const toggleStat = (key: StatKey) => {
+    if (statFilter === key) { setStatFilter(''); return }
+    setStatFilter(key)
+    setTypeFilter(STAT_KIND[key])
   }
 
   const allRows = useMemo<CombinedRow[]>(() => {
@@ -206,9 +248,9 @@ export default function InquiriesPage() {
   }, [combined])
 
   const filteredRows = useMemo(() => {
-    return combined.filter((r) => COL_FILTER_KEYS.every((key) => !colFilters[key] || r[key] === colFilters[key]))
+    return combined.filter((r) => (!statFilter || matchesStat(r, statFilter)) && COL_FILTER_KEYS.every((key) => !colFilters[key] || r[key] === colFilters[key]))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [combined, colFilters])
+  }, [combined, colFilters, statFilter])
 
   type SortKey = 'universal_id' | 'created_at'
   const [sortKey, setSortKey] = useState<SortKey>('universal_id')
@@ -257,21 +299,12 @@ export default function InquiriesPage() {
   // tenders are always all counted (owner, 2026-10-27).
   const stats = useMemo(() => {
     const rows = allRows.filter((r) => COL_FILTER_KEYS.every((key) => !colFilters[key] || r[key] === colFilters[key]))
-    const isClosed = (r: CombinedRow) => r.status.startsWith('Closed')
     return {
-      // Leads = not yet qualified: Lead, Requirement Received, R&D / Technical Review (owner, 2026-10-28).
-      leads: rows.filter((r) => r.kind === 'inquiry' && !isClosed(r)
-        && INQUIRY_STATUSES.indexOf(r.status) >= 0
-        && INQUIRY_STATUSES.indexOf(r.status) < INQUIRY_STATUSES.indexOf('Qualified Inquiry')).length,
-      // Counted once qualified: 'Qualified Inquiry' or a later open status (owner, 2026-10-28);
-      // closed (won / lost) ones are not counted.
-      inquiries: rows.filter((r) => r.kind === 'inquiry' && !isClosed(r)
-        && INQUIRY_STATUSES.indexOf(r.status) >= INQUIRY_STATUSES.indexOf('Qualified Inquiry')).length,
-      // Every tender we logged was published; cancelled ones are left out.
-      published: rows.filter((r) => r.kind === 'tender' && r.status !== 'Tender Cancelled').length,
-      // Participated = reached 'Tender Participation' or any later status.
-      participation: rows.filter((r) => r.kind === 'tender' && r.status !== 'Tender Cancelled'
-        && TENDER_STATUSES.indexOf(r.status) >= TENDER_STATUSES.indexOf('Tender Participation')).length,
+      leads: rows.filter((r) => matchesStat(r, 'leads')).length,
+      inquiries: rows.filter((r) => matchesStat(r, 'inquiries')).length,
+      published: rows.filter((r) => matchesStat(r, 'published')).length,
+      participation: rows.filter((r) => matchesStat(r, 'participation')).length,
+      pending: rows.filter((r) => matchesStat(r, 'pending')).length,
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allRows, colFilters])
@@ -290,10 +323,11 @@ export default function InquiriesPage() {
         <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Inquiries &amp; Tenders</h1>
         {!loading && (
           <div data-tour="crm-inq-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0 14px' }}>
-            <StatChip label="Leads" value={stats.leads} color="#475569" />
-            <StatChip label="Inquiries" value={stats.inquiries} color="#3b82f6" />
-            <StatChip label="Tenders published" value={stats.published} color="#7c3aed" />
-            <StatChip label="Tender participation" value={stats.participation} color="#0891b2" />
+            <StatChip label="Leads" value={stats.leads} color="#475569" onClick={() => toggleStat('leads')} active={statFilter === 'leads'} />
+            <StatChip label="Inquiries" value={stats.inquiries} color="#3b82f6" onClick={() => toggleStat('inquiries')} active={statFilter === 'inquiries'} />
+            <StatChip label="Tenders published" value={stats.published} color="#7c3aed" onClick={() => toggleStat('published')} active={statFilter === 'published'} />
+            <StatChip label="Tender participation" value={stats.participation} color="#0891b2" onClick={() => toggleStat('participation')} active={statFilter === 'participation'} />
+            <StatChip label="Pending tenders" value={stats.pending} color="#eab308" onClick={() => toggleStat('pending')} active={statFilter === 'pending'} />
           </div>
         )}
         {/* One toolbar row: add, search + type filter, then export / import; wraps on narrow screens. */}
@@ -320,8 +354,8 @@ export default function InquiriesPage() {
                 key, label, value: colFilters[key], options: colFilterOptions[key].map((v) => ({ value: v, label: v })),
               })),
             ]}
-            onChange={(key, v) => { if (key === 'kind') setTypeFilter(v as 'all' | Kind); else setColFilter(key as ColFilterKey, v) }}
-            onClear={() => { setTypeFilter('inquiry'); setColFilters({ status: '', org_name: '', created_by_name: '' }) }}
+            onChange={(key, v) => { if (key === 'kind') changeType(v as 'all' | Kind); else setColFilter(key as ColFilterKey, v) }}
+            onClear={() => { setTypeFilter('inquiry'); setStatFilter(''); setColFilters({ status: '', org_name: '', created_by_name: '' }) }}
           />
           <button onClick={clearFilters} data-tour="iq-clear-btn" type="button" style={secondaryBtnStyle}>Clear</button>
           <div style={{ display: 'flex', gap: 8 }}>

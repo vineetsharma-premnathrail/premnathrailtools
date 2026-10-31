@@ -85,8 +85,13 @@ export default function P2PRfqPage() {
     && (filters.status === 'all' || filters.status === 'pending') && filters.vendors === 'all')
   const shownRfqs = rfqs.filter((r) =>
     (!q || has(r.rfq_number, r.p2p_number))
-    && (filters.status === 'all' || r.status === filters.status)
+    && (filters.status === 'all' || filters.status === 'sent' || r.status === filters.status)
     && (filters.vendors === 'all' || (filters.vendors === 'single' ? !!r.is_single_quotation : !r.is_single_quotation)))
+  // Count chips stay totals (they follow the search, not the chips/filters) and set the same two filters as the popup.
+  const chipPending = prsAwaitingRfq.filter((pr) => !q || has(pr.p2p_number, pr.project_label, pr.category_label, pr.category_code))
+  const chipRfqs = rfqs.filter((r) => !q || has(r.rfq_number, r.p2p_number))
+  const toggleStatus = (v: string) => setFilters((f) => ({ ...f, status: f.status === v ? 'all' : v }))
+  const toggleSingle = () => setFilters((f) => ({ ...f, vendors: f.vendors === 'single' ? 'all' : 'single' }))
   const activeFilterCount = [filters.status, filters.vendors].filter((v) => v !== 'all').length
   const openFilters = () => { setDraft(filters); setShowFilters(true) }
   const applyFilters = () => { setFilters(draft); setShowFilters(false) }
@@ -97,11 +102,11 @@ export default function P2PRfqPage() {
       <P2PNav />
       <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Quotation requests (RFQ)</h1>
       <div data-tour="rfq-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10, marginBottom: 14 }}>
-        <StatChip label="RFQ pending" value={shownPending.length} color="#dc2626" />
-        <StatChip label="RFQs" value={shownRfqs.length} color="#3b82f6" />
-        <StatChip label="Single vendor" value={shownRfqs.filter((r) => r.is_single_quotation).length} color="#ea580c" />
-        <StatChip label="Draft" value={shownRfqs.filter((r) => r.status === 'draft').length} color="#ca8a04" />
-        <StatChip label="Closed" value={shownRfqs.filter((r) => r.status === 'locked').length} color="#16a34a" />
+        <StatChip label="RFQ pending" value={chipPending.length} color="#dc2626" onClick={() => toggleStatus('pending')} active={filters.status === 'pending'} />
+        <StatChip label="RFQs" value={chipRfqs.length} color="#3b82f6" onClick={() => toggleStatus('sent')} active={filters.status === 'sent'} />
+        <StatChip label="Single vendor" value={chipRfqs.filter((r) => r.is_single_quotation).length} color="#ea580c" onClick={toggleSingle} active={filters.vendors === 'single'} />
+        <StatChip label="Draft" value={chipRfqs.filter((r) => r.status === 'draft').length} color="#ca8a04" onClick={() => toggleStatus('draft')} active={filters.status === 'draft'} />
+        <StatChip label="Closed" value={chipRfqs.filter((r) => r.status === 'locked').length} color="#16a34a" onClick={() => toggleStatus('locked')} active={filters.status === 'locked'} />
       </div>
 
       <MessageDialog open={!!error} variant="error" title="Cannot Load RFQ Data" message={error} onClose={() => setError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
@@ -122,6 +127,7 @@ export default function P2PRfqPage() {
             <Select value={draft.status} onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))} style={sheetInput} data-tour="rfq-status-filter">
               <option value="all">All Statuses</option>
               <option value="pending">RFQ pending</option>
+              <option value="sent">RFQs sent (all)</option>
               {Object.entries(RFQ_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </Select>
           </div>

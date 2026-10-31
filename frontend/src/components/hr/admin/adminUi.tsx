@@ -162,11 +162,20 @@ export function FormDialog({
   )
 }
 
-export function StatCard({ label, value, hex }: { label: string; value: number | string; hex: string }) {
-  return (
-    <div style={{ ...sectionStyle, padding: '14px 16px', marginBottom: 0, flex: '1 1 150px', minWidth: 140 }}>
+export function StatCard({ label, value, hex, onClick, active }: { label: string; value: number | string; hex: string; onClick?: () => void; active?: boolean }) {
+  const base: React.CSSProperties = { ...sectionStyle, padding: '14px 16px', marginBottom: 0, flex: '1 1 150px', minWidth: 140 }
+  const body = (
+    <>
       <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 6px' }}>{label}</p>
       <p style={{ fontSize: 22, fontWeight: 700, color: hex, margin: 0 }}>{value}</p>
-    </div>
+    </>
+  )
+  if (!onClick) return <div style={base}>{body}</div>
+  return (
+    // ui-audit-ignore-next-line custom-button — stat card used as a filter toggle, keeps the card look
+    <button type="button" onClick={onClick} aria-pressed={!!active} title={active ? `Showing ${label} — click to show all` : `Show ${label}`}
+      style={{ ...base, display: 'block', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', ...(active ? { border: `1.5px solid ${hex}`, background: `${hex.startsWith('#') && hex.length === 7 ? hex + '14' : 'rgba(255,255,255,.7)'}` } : {}) }}>
+      {body}
+    </button>
   )
 }

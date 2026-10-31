@@ -74,11 +74,11 @@ export default function HrTravelPage() {
 
   const loadClaims = useCallback(() => {
     setClaimsLoading(true)
-    hrApi.listClaims({ ...common, ...(claimStatus ? { status: claimStatus } : {}) })
+    hrApi.listClaims({ ...common })
       .then((r) => { setClaims(r); setError([]) })
       .catch((err) => setError(extractErrorMessages(err, 'Expense claims could not be loaded.')))
       .finally(() => setClaimsLoading(false))
-  }, [common, claimStatus])
+  }, [common])
 
   useEffect(() => { if (isAuthorized && tab === 'travel') loadTravel() }, [isAuthorized, tab, loadTravel])
   useEffect(() => { if (isAuthorized && tab === 'claims') loadClaims() }, [isAuthorized, tab, loadClaims])
@@ -102,6 +102,10 @@ export default function HrTravelPage() {
     const sum = (s: string) => claims.filter((c) => c.status === s).reduce((a, c) => a + Number(c.total_amount || 0), 0)
     return { submitted: sum('submitted'), approved: sum('approved'), paid: sum('paid') }
   }, [claims])
+
+  // Claim status filter runs here so the cards keep showing every status's real total.
+  const shownClaims = useMemo(() => (claimStatus ? claims.filter((c) => c.status === claimStatus) : claims), [claims, claimStatus])
+  const toggleClaimStatus = (v: string) => setClaimStatus((cur) => (cur === v ? '' : v))
 
   if (isLoading || !isAuthorized) return null
 
@@ -203,17 +207,17 @@ export default function HrTravelPage() {
       ) : (
         <>
           <div data-tour="hr-claims-stats" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-            <StatCard label="Awaiting approval" value={fmtINR(claimTotals.submitted)} hex="#F59E0B" />
-            <StatCard label="Approved — to pay" value={fmtINR(claimTotals.approved)} hex="#16A34A" />
-            <StatCard label="Paid" value={fmtINR(claimTotals.paid)} hex="#2563EB" />
+            <StatCard label="Awaiting approval" value={fmtINR(claimTotals.submitted)} hex="#F59E0B" onClick={() => toggleClaimStatus('submitted')} active={claimStatus === 'submitted'} />
+            <StatCard label="Approved — to pay" value={fmtINR(claimTotals.approved)} hex="#16A34A" onClick={() => toggleClaimStatus('approved')} active={claimStatus === 'approved'} />
+            <StatCard label="Paid" value={fmtINR(claimTotals.paid)} hex="#2563EB" onClick={() => toggleClaimStatus('paid')} active={claimStatus === 'paid'} />
           </div>
           <div data-tour="hr-claims-table" style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
               <thead>
-                <tr>{['Claim', 'Employee', 'Title', 'Date', 'Trip', 'Amount', 'Approver', 'Status'].map((h, hi) => <th key={h} style={{ ...thStyle, textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}{hi === 0 && <RowCount count={claims.length} />}</th>)}</tr>
+                <tr>{['Claim', 'Employee', 'Title', 'Date', 'Trip', 'Amount', 'Approver', 'Status'].map((h, hi) => <th key={h} style={{ ...thStyle, textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}{hi === 0 && <RowCount count={shownClaims.length} />}</th>)}</tr>
               </thead>
               <tbody>
-                {claimsLoading ? <EmptyRow colSpan={8} text="Loading…" /> : claims.length === 0 ? <EmptyRow colSpan={8}text="No claims match these filters. Drafts stay private until the employee submits them." /> : claims.map((c) => (
+                {claimsLoading ? <EmptyRow colSpan={8} text="Loading…" /> : shownClaims.length === 0 ? <EmptyRow colSpan={8}text="No claims match these filters. Drafts stay private until the employee submits them." /> : shownClaims.map((c) => (
                   <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/hr/travel/claims', c))} style={{ cursor: 'pointer' }}>
                     <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{c.claim_no}</td>
                     <td style={tdStyle}>

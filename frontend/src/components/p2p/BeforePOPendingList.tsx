@@ -60,7 +60,7 @@ export default function BeforePOPendingList() {
   return (
     <div>
       <div data-tour="po-before-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-        <StatChip label="Receipts waiting for a PO" value={rows.length} color="#ea580c" />
+        <StatChip label="Receipts waiting for a PO" value={rows.length} color="#ea580c" onClick={() => setSearch('')} active={!q} />
       </div>
       <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 12px' }}>
         The store already holds these goods. Create the requisition for the same vendor and items, make the PO in Tally and upload it on the requisition; the goods enter stock only when the GRN is done after the PO is approved.

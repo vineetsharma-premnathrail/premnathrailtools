@@ -96,6 +96,9 @@ export default function ServiceRequestsPage() {
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [serviceTypeFilter, setServiceTypeFilter] = useState('all')
   const [overdueOnly, setOverdueOnly] = useState(false)
+  // Status picked by clicking a count chip: narrows the loaded rows on screen only (so the other chips keep their counts).
+  // The Filters sheet shows it as its Status and Apply turns it into the normal server-side status filter.
+  const [chipStatus, setChipStatus] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [draft, setDraft] = useState({ status: 'all', priority: 'all', service_type: 'all', overdue: false })
   const [showImport, setShowImport] = useState(false)
@@ -145,20 +148,30 @@ export default function ServiceRequestsPage() {
     setPriorityFilter('all')
     setServiceTypeFilter('all')
     setOverdueOnly(false)
+    setChipStatus('')
     setShowFilters(false)
   }
+  // Count chips: click = show that status, click again = back to all. Works on top of the Status filter.
+  const pickStatusChip = (value: string) => {
+    if (statusFilter === value) { setStatusFilter('all'); return }
+    if (chipStatus === value) { setChipStatus(''); return }
+    setStatusFilter('all')
+    setChipStatus(value)
+  }
+  const clearStatusChips = () => { setStatusFilter('all'); setChipStatus('') }
   const applyFilters = () => {
     setStatusFilter(draft.status)
     setPriorityFilter(draft.priority)
     setServiceTypeFilter(draft.service_type)
     setOverdueOnly(draft.overdue)
+    setChipStatus('')
     setShowFilters(false)
   }
   const openFilters = () => {
-    setDraft({ status: statusFilter, priority: priorityFilter, service_type: serviceTypeFilter, overdue: overdueOnly })
+    setDraft({ status: statusFilter !== 'all' ? statusFilter : chipStatus || 'all', priority: priorityFilter, service_type: serviceTypeFilter, overdue: overdueOnly })
     setShowFilters(true)
   }
-  const activeFilterCount = [statusFilter, priorityFilter, serviceTypeFilter].filter((v) => v !== 'all').length + (overdueOnly ? 1 : 0)
+  const activeFilterCount = [statusFilter, priorityFilter, serviceTypeFilter].filter((v) => v !== 'all').length + (overdueOnly ? 1 : 0) + (chipStatus && statusFilter === 'all' ? 1 : 0)
 
   const filteredSrs = useMemo(
     () =>
@@ -169,7 +182,9 @@ export default function ServiceRequestsPage() {
     [srs, overdueOnly]
   )
 
-  const pagedSrs = filteredSrs
+  const visibleSrs = useMemo(() => (chipStatus ? filteredSrs.filter((sr) => sr.status === chipStatus) : filteredSrs), [filteredSrs, chipStatus])
+  const pagedSrs = visibleSrs
+  const statusActive = (v: string) => statusFilter === v || chipStatus === v
 
   if (isLoading || !isAuthorized) return null
 
@@ -180,10 +195,10 @@ export default function ServiceRequestsPage() {
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>Service Request Registry</h1>
           <div data-tour="erp-sr-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-            <StatChip label="Requests" value={filteredSrs.length} color="#3b82f6" />
-            <StatChip label="Open" value={filteredSrs.filter((sr) => sr.status === 'open').length} color="#ea580c" />
-            <StatChip label="In progress" value={filteredSrs.filter((sr) => sr.status === 'in_progress').length} color="#ca8a04" />
-            <StatChip label="Closed" value={filteredSrs.filter((sr) => sr.status === 'closed').length} color="#16a34a" />
+            <StatChip label="Requests" value={filteredSrs.length} color="#3b82f6" onClick={clearStatusChips} active={statusFilter === 'all' && !chipStatus} />
+            <StatChip label="Open" value={filteredSrs.filter((sr) => sr.status === 'open').length} color="#ea580c" onClick={() => pickStatusChip('open')} active={statusActive('open')} />
+            <StatChip label="In progress" value={filteredSrs.filter((sr) => sr.status === 'in_progress').length} color="#ca8a04" onClick={() => pickStatusChip('in_progress')} active={statusActive('in_progress')} />
+            <StatChip label="Closed" value={filteredSrs.filter((sr) => sr.status === 'closed').length} color="#16a34a" onClick={() => pickStatusChip('closed')} active={statusActive('closed')} />
           </div>
         </div>
       </div>
@@ -191,14 +206,14 @@ export default function ServiceRequestsPage() {
       <BulkImportDialog kind="service-requests" open={showImport} onClose={() => setShowImport(false)} onImported={load} />
       {showExport && (
         <ExportDialog kind="service-requests" onClose={() => setShowExport(false)} filename="service_requests" noun="service requests"
-          items={filteredSrs.map((sr) => {
+          items={visibleSrs.map((sr) => {
             const p = projectById.get(sr.project_id)
             return { id: sr.id, label: `${sr.request_number} — ${sr.issue_title}`, sub: [p?.serial_number, p?.client_company, STATUS_LABELS[sr.status] || sr.status].filter(Boolean).join(' · ') }
           })}
           dateLabel="Reported date"
           filterParams={{
             search: search || undefined,
-            status: statusFilter !== 'all' ? statusFilter : undefined,
+            status: statusFilter !== 'all' ? statusFilter : chipStatus || undefined,
             priority: priorityFilter !== 'all' ? priorityFilter : undefined,
             service_type: serviceTypeFilter !== 'all' ? serviceTypeFilter : undefined,
           }} />
@@ -309,7 +324,7 @@ export default function ServiceRequestsPage() {
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
               {['SR Number', 'Machine Serial', 'Client & Site', 'Issue Summary', 'Priority', 'Status', 'Opening Date', 'Closing Date', 'Age', 'Warranty'].map((h, hi) => (
                 <th key={h} data-fit-min={WRAP_MIN[h]} data-fit-wrap-head data-fit-cut={h === 'Client & Site' || h === 'Issue Summary' ? '' : undefined} style={{ textAlign: 'left', padding: '12px 8px', fontSize: 12, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#57534e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, ...(WRAP_MIN[h] ? { whiteSpace: 'normal' as const } : {}), ...(h === 'Priority' ? { minWidth: 76, overflow: 'visible', textOverflow: 'clip' } : {}) }}>
-                  {h}{hi === 0 && <RowCount count={filteredSrs.length} />}
+                  {h}{hi === 0 && <RowCount count={visibleSrs.length} />}
                 </th>
               ))}
             </tr>

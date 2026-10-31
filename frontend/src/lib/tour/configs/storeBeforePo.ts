@@ -24,7 +24,7 @@ const config: TourConfig = {
     {
       target: 'store-bpo-stats',
       title: 'PO pending / PO created / Closed',
-      purpose: 'PO pending: waiting for Procurement. PO created: a PO exists for it. Closed: the GRN for the full quantity is done.',
+      purpose: 'PO pending: waiting for Procurement. PO created: a PO exists for it. Closed: the GRN for the full quantity is done. Click a number to show only those rows; click it again to show all.',
     },
     {
       target: 'store-bpo-table',

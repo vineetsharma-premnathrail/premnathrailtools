@@ -47,6 +47,11 @@ function ageInDays(dateStr?: string) {
   return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)))
 }
 
+/** What the count chips, bars and legend rows narrow the Recent Service Tickets table to. */
+type TicketFilter = { active: boolean; status: string; priority: string }
+const NO_FILTER: TicketFilter = { active: false, status: '', priority: '' }
+const sameFilter = (a: TicketFilter, b: TicketFilter) => a.active === b.active && a.status === b.status && a.priority === b.priority
+
 export default function ErpDashboardPage() {
   const { user } = useAuth()
   const { isAuthorized, isLoading } = useRequireApp('erp')
@@ -54,6 +59,9 @@ export default function ErpDashboardPage() {
   const [srs, setSrs] = useState<ServiceRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [loadErrors, setLoadErrors] = useState<string[]>([])
+  const [filter, setFilter] = useState<TicketFilter>(NO_FILTER)
+  // Clicking what is already applied clears it, so every chip is a toggle.
+  const applyFilter = (next: TicketFilter) => setFilter((cur) => (sameFilter(cur, next) ? NO_FILTER : next))
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -90,9 +98,13 @@ export default function ErpDashboardPage() {
 
   // Enough rows to fill the page; the layout fits the table to the window bottom and it scrolls inside.
   const recentSrs = useMemo(
-    () => [...srs].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).slice(0, 50),
-    [srs]
+    () => srs
+      .filter((s) => (!filter.active || !CLOSED_STATUSES.includes(s.status)) && (!filter.status || s.status === filter.status) && (!filter.priority || s.priority === filter.priority))
+      .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+      .slice(0, 50),
+    [srs, filter]
   )
+  const isFiltered = !sameFilter(filter, NO_FILTER)
 
   if (isLoading || !isAuthorized) return null
 
@@ -110,10 +122,10 @@ export default function ErpDashboardPage() {
         Welcome back, {user?.name || 'there'}. Here is the current state of your service requests.
       </p>
       <div data-tour="erp-dash-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0 18px' }}>
-        <StatChip label="Service requests" value={stats.totalSrs} color="#ea580c" />
-        <StatChip label="Active tickets" value={stats.activeTickets} color="#ca8a04" />
-        <StatChip label="In progress" value={stats.inProgress} color="#2563eb" />
-        <StatChip label="Closed" value={stats.closed} color="#78716c" />
+        <StatChip label="Service requests" value={stats.totalSrs} color="#ea580c" onClick={() => setFilter(NO_FILTER)} active={!isFiltered} />
+        <StatChip label="Active tickets" value={stats.activeTickets} color="#ca8a04" onClick={() => applyFilter({ ...NO_FILTER, active: true })} active={sameFilter(filter, { ...NO_FILTER, active: true })} />
+        <StatChip label="In progress" value={stats.inProgress} color="#2563eb" onClick={() => applyFilter({ ...NO_FILTER, status: 'in_progress' })} active={sameFilter(filter, { ...NO_FILTER, status: 'in_progress' })} />
+        <StatChip label="Closed" value={stats.closed} color="#78716c" onClick={() => applyFilter({ ...NO_FILTER, status: 'closed' })} active={sameFilter(filter, { ...NO_FILTER, status: 'closed' })} />
       </div>
 
       <div className="grid-2" data-tour="erp-dash-charts" style={{ gap: 16, marginBottom: 20 }}>
@@ -121,7 +133,9 @@ export default function ErpDashboardPage() {
           {statusBreakdown.length === 0 ? (
             <p style={{ fontSize: 13, color: '#a8a29e' }}>No service requests yet.</p>
           ) : (
-            <BarChart data={statusBreakdown} colorMap={STATUS_COLORS} />
+            <BarChart data={statusBreakdown} colorMap={STATUS_COLORS}
+              isActive={(label) => sameFilter(filter, { ...NO_FILTER, status: label })}
+              onSelect={(label) => applyFilter({ ...NO_FILTER, status: label })} />
           )}
         </Section>
 
@@ -129,14 +143,23 @@ export default function ErpDashboardPage() {
           {activeTicketsByPriority.length === 0 ? (
             <p style={{ fontSize: 13, color: '#a8a29e' }}>No open tickets.</p>
           ) : (
-            <PieChart data={activeTicketsByPriority} colorMap={PRIORITY_COLORS} />
+            <PieChart data={activeTicketsByPriority} colorMap={PRIORITY_COLORS}
+              isActive={(label) => sameFilter(filter, { active: true, status: '', priority: label })}
+              onSelect={(label) => applyFilter({ active: true, status: '', priority: label })} />
           )}
         </Section>
       </div>
 
       <div data-tour="erp-dash-recent-srs">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1f1108', margin: 0 }}>Recent Service Tickets</h2>
+          <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1f1108', margin: 0 }}>
+            Recent Service Tickets
+            {isFiltered && (
+              <span style={{ fontSize: 12, fontWeight: 500, color: '#78716c', marginLeft: 8 }}>
+                (filtered: {[filter.active ? 'active' : '', filter.status.replace(/_/g, ' '), filter.priority].filter(Boolean).join(' · ')} — click the count again to show all)
+              </span>
+            )}
+          </h2>
           <Link href="/dashboard/erp/service-requests" data-tour="erp-dash-srs-viewall" style={{ fontSize: 12, color: '#ea580c', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
         </div>
         <div style={glassCard}>
@@ -151,7 +174,7 @@ export default function ErpDashboardPage() {
             </thead>
             <tbody>
               {loading && <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
-              {!loading && recentSrs.length === 0 && <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No service requests yet.</td></tr>}
+              {!loading && recentSrs.length === 0 && <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>{isFiltered ? 'No service tickets match this count. Click the highlighted count again to show all.' : 'No service requests yet.'}</td></tr>}
               {recentSrs.map((sr) => {
                 const age = ageInDays(sr.opened_at || sr.created_at)
                 return (
@@ -184,12 +207,16 @@ export default function ErpDashboardPage() {
   )
 }
 
-function BarChart({ data, colorMap }: { data: [string, number][]; colorMap: Record<string, string> }) {
+const rowButtonReset: React.CSSProperties = { background: 'none', border: 'none', padding: 0, font: 'inherit', textAlign: 'left', cursor: 'pointer' }
+
+function BarChart({ data, colorMap, onSelect, isActive }: { data: [string, number][]; colorMap: Record<string, string>; onSelect: (label: string) => void; isActive: (label: string) => boolean }) {
   const max = Math.max(...data.map(([, v]) => v), 1)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {data.map(([label, value]) => (
-        <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        // ui-audit-ignore-next-line custom-button — chart row used as a filter toggle
+        <button type="button" key={label} onClick={() => onSelect(label)} aria-pressed={isActive(label)} title={isActive(label) ? 'Click to show all tickets' : `Show ${label.replace(/_/g, ' ')} tickets`}
+          style={{ ...rowButtonReset, display: 'flex', alignItems: 'center', gap: 10, width: '100%', borderRadius: 6, background: isActive(label) ? 'rgba(234,88,12,0.08)' : 'none' }}>
           <span style={{ fontSize: 11.5, color: '#57534e', width: 130, flexShrink: 0, textTransform: 'capitalize', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {label.replace(/_/g, ' ')}
           </span>
@@ -197,13 +224,13 @@ function BarChart({ data, colorMap }: { data: [string, number][]; colorMap: Reco
             <div style={{ width: `${(value / max) * 100}%`, height: '100%', background: colorMap[label] || '#FF7A45', borderRadius: 6 }} />
           </div>
           <span style={{ fontSize: 12, fontWeight: 600, color: '#1f1108', width: 24, textAlign: 'right' }}>{value}</span>
-        </div>
+        </button>
       ))}
     </div>
   )
 }
 
-function PieChart({ data, colorMap }: { data: [string, number][]; colorMap: Record<string, string> }) {
+function PieChart({ data, colorMap, onSelect, isActive }: { data: [string, number][]; colorMap: Record<string, string>; onSelect: (label: string) => void; isActive: (label: string) => boolean }) {
   const total = data.reduce((sum, [, v]) => sum + v, 0) || 1
   let cumulative = 0
   const radius = 15.9155
@@ -236,11 +263,13 @@ function PieChart({ data, colorMap }: { data: [string, number][]; colorMap: Reco
       </svg>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {data.map(([label, value]) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          // ui-audit-ignore-next-line custom-button — legend row used as a filter toggle
+          <button type="button" key={label} onClick={() => onSelect(label)} aria-pressed={isActive(label)} title={isActive(label) ? 'Click to show all tickets' : `Show active ${label} tickets`}
+            style={{ ...rowButtonReset, display: 'flex', alignItems: 'center', gap: 6, borderRadius: 6, background: isActive(label) ? 'rgba(234,88,12,0.08)' : 'none' }}>
             <span style={{ width: 9, height: 9, borderRadius: '50%', background: colorMap[label] || '#a8a29e', flexShrink: 0 }} />
             <span style={{ fontSize: 12, color: '#57534e', textTransform: 'capitalize' }}>{label}</span>
             <span style={{ fontSize: 12, fontWeight: 600, color: '#1f1108' }}>{value}</span>
-          </div>
+          </button>
         ))}
       </div>
     </div>

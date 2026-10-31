@@ -65,6 +65,7 @@ function StockValueTab() {
   const [data, setData] = useState<StockValueSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string[] | null>(null)
+  const [noCostOnly, setNoCostOnly] = useState(false)
 
   useEffect(() => {
     accountsApi.stockValue()
@@ -72,6 +73,8 @@ function StockValueTab() {
       .catch((err: unknown) => setError(extractErrorMessages(err, 'Could not load the stock value from Store')))
       .finally(() => setLoading(false))
   }, [])
+
+  const itemRows = data ? (noCostOnly ? data.rows.filter((r) => r.rate_source === 'none') : data.rows) : []
 
   return (
     <div>
@@ -83,8 +86,9 @@ function StockValueTab() {
       {data?.note && <InfoBanner tone="warning">{data.note}</InfoBanner>}
       <div data-tour="fin-inv-sv-stats" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
         <StatCard label={`Stock value (as of ${data ? dmy(data.as_of) : '—'})`} value={data ? `₹ ${inr(data.total_value)}` : '—'} />
-        <StatCard label="Items in stock" value={data ? String(data.rows.length) : '—'} />
-        <StatCard label="Items without cost" value={data ? String(data.unvalued_items) : '—'} tone={data?.unvalued_items ? '#b91c1c' : undefined} />
+        <StatCard label="Items in stock" value={data ? String(data.rows.length) : '—'} onClick={() => setNoCostOnly(false)} />
+        <StatCard label="Items without cost" value={data ? String(data.unvalued_items) : '—'} tone={data?.unvalued_items ? '#b91c1c' : undefined}
+          onClick={() => setNoCostOnly((v) => !v)} active={noCostOnly} />
       </div>
 
       <h3 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 10px' }}>By category</h3>
@@ -109,13 +113,13 @@ function StockValueTab() {
       <TableWrap minWidth={1000} tour="fin-inv-sv-items">
         <thead>
           <tr>
-            <th style={thStyle}>Code <RowCount count={data?.rows.length ?? 0} /></th><th style={thStyle}>Item</th><th style={thStyle}>Category</th>
+            <th style={thStyle}>Code <RowCount count={itemRows.length} /></th><th style={thStyle}>Item</th><th style={thStyle}>Category</th>
             <th style={numTh}>Qty</th><th style={thStyle}>UoM</th><th style={numTh}>Rate (₹)</th><th style={numTh}>Value (₹)</th><th style={thStyle}>Rate source</th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <EmptyRow colSpan={8} text="Loading…" /> : !data || data.rows.length === 0 ? <EmptyRow colSpan={8} text="No stock on hand in Store." />
-            : data.rows.map((r) => (
+          {loading ? <EmptyRow colSpan={8} text="Loading…" /> : !data || itemRows.length === 0 ? <EmptyRow colSpan={8} text={noCostOnly ? 'Every item in stock has a cost. Click Items without cost again to show all.' : 'No stock on hand in Store.'} />
+            : itemRows.map((r) => (
               <tr key={r.store_item_id}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{r.item_code}</td>
                 <td style={tdStyle}>{r.item_name}</td>

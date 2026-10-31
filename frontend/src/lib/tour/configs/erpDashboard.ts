@@ -32,7 +32,7 @@ const config: TourConfig = {
     {
       target: 'erp-dash-stats',
       title: 'Headline numbers',
-      purpose: 'Total service requests ever raised, Active Tickets (not yet Closed or Cancelled), In progress and Closed.',
+      purpose: 'Total service requests ever raised, Active Tickets (not yet Closed or Cancelled), In progress and Closed. Click a number to filter Recent Service Tickets to it; click it again, or the total, to show all.',
       why: 'Active Tickets is the service team\'s current workload; if it keeps growing month on month, jobs are being opened faster than they are being closed.',
     },
     {
