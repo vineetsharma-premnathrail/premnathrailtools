@@ -180,7 +180,7 @@ def test_head_links_existing_project(client, db, tor_env):
 
     # The project shows the requirement it serves.
     detail = client.get(f"{RND}/projects/{proj.id}", headers=auth(head)).json()
-    assert [r["ref"] for r in detail["linked_requirements"]] == ["TOR-20261007-0001"]
+    assert [r["ref"] for r in detail["linked_requirements"]] == ["RDR-2026-0001-R0"]
 
     assert client.delete(f"{url}/{proj.id}", headers=auth(head)).json() == []
 

@@ -521,8 +521,14 @@ async def send_technical_offer_request_email(
     actor_email: str | None = None,
     attachment_bytes: bytes | None = None,
     attachment_filename: str | None = None,
+    response_due_date: "_dt.date | None" = None,
+    remarks: str | None = None,
+    open_link: str | None = None,
 ) -> tuple[bool, str]:
-    """Emails R&D the Technical Offer Request PDF as a direct attachment (also
+    """`open_link` = this requirement's page in R&D › Requirements (an "Open & Accept"
+    button; accepting happens on that page after sign-in, never from the email itself).
+
+    Emails R&D the Technical Offer Request PDF as a direct attachment (also
     already uploaded to SharePoint by the caller — see technical_offer_pdf.py /
     upload_bytes_to_sharepoint), with the offer number they must reference in
     their reply. Writes an AuditLog row either way (entity_type is "inquiry" or
@@ -537,7 +543,7 @@ async def send_technical_offer_request_email(
     if not sender_email or not rnd_email:
         return False, "Sender or R&D email is not configured."
 
-    subject = f"Technical Offer Request {offer_number} — {universal_id}"
+    subject = f"New requirement {offer_number} for R&D — {universal_id}"
     ref_docs_html = ""
     if reference_documents:
         items = "".join(
@@ -551,17 +557,22 @@ async def send_technical_offer_request_email(
     body_content = f"""
     <p style="margin:0 0 16px;font-size:14px;color:#1e293b;font-weight:700">Dear R&amp;D Team,</p>
     <p style="margin:0 0 20px;font-size:14px;color:#475569;line-height:1.7">
-      A Technical Offer Request has been raised for the requirement below. The full details
-      (Organization, Project, and Product Requirement) are in the attached PDF.
+      A new customer requirement has been sent to R&amp;D. {"The full details (Organization, Project, and Product Requirement) are in the attached PDF." if attachment_bytes else f'The full requirement is in the portal under <a href="{escape(documents_link)}" style="color:#2563eb">R&amp;D › Requirements</a>.'}
     </p>
     <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:20px">
-      {_sr_email_table_row("Technical Offer No.", offer_number, True)}
+      {_sr_email_table_row("R&D ID", offer_number, True)}
       {_sr_email_table_row("Reference ID", universal_id, False)}
       {_sr_email_table_row("Organization", org_name or "—", True)}
       {_sr_email_table_row("Project", project_name or "—", False)}
       {_sr_email_table_row("Raised By", actor_name, True)}
+      {_sr_email_table_row("Response Due Date", response_due_date.strftime("%d %b %Y"), False) if response_due_date else ""}
+      {_sr_email_table_row("Remarks", remarks, True) if remarks else ""}
     </table>
-    <p style="margin:0 0 8px;font-size:13.5px;color:#1e293b;font-weight:700">Please quote <span style="color:#f97316">{offer_number}</span> in your technical offer.</p>
+    {f'''<p style="margin:0 0 20px;text-align:center">
+      <a href="{escape(open_link)}" style="display:inline-block;padding:12px 28px;background:#16a34a;color:#fff;font-size:14px;font-weight:700;text-decoration:none;border-radius:8px">Open &amp; Accept</a>
+    </p>
+    <p style="margin:0 0 20px;font-size:12px;color:#64748b;text-align:center">Opens this requirement in the portal, where you can accept it.</p>''' if open_link else ""}
+    <p style="margin:0 0 8px;font-size:13.5px;color:#1e293b;font-weight:700">Please quote <span style="color:#f97316">{offer_number}</span> in your reply.</p>
     {ref_docs_html}
     <p style="margin:0;font-size:14px;color:#1e293b">Regards,<br><strong>{actor_name}</strong></p>"""
     html = f"""<!DOCTYPE html>
@@ -570,7 +581,7 @@ async def send_technical_offer_request_email(
 <div style="font-family:Arial,sans-serif;max-width:660px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08)">
   <div style="background:#fff;padding:20px 28px;border-bottom:3px solid #f97316">{_logo_header()}</div>
   <div style="background:#0f172a;padding:18px 28px">
-    <p style="color:#94a3b8;font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:1px">Technical Offer Request</p>
+    <p style="color:#94a3b8;font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:1px">Requirement for R&amp;D</p>
     <h2 style="color:#fff;margin:0;font-size:20px;font-weight:700">{offer_number}</h2>
   </div>
   <div style="padding:28px">{body_content}</div>

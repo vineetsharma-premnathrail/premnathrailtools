@@ -180,6 +180,9 @@ async def cancel_pre_po_receipt(
     receipt.cancelled_by_id = user.id
     receipt.cancelled_at = datetime.now(timezone.utc).replace(tzinfo=None)
     receipt.cancel_reason = payload.reason
+    # Its requisition (if any, and no PO raised yet) has no purpose any more: cancel it with the reason.
+    from app.modules.p2p.routes.pre_po_receipts import cancel_requisition_for_receipt
+    cancel_requisition_for_receipt(db, receipt, user, payload.reason)
     db.commit()
     db.refresh(receipt)
     return receipt_to_response(db, receipt)

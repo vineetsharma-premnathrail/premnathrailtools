@@ -191,6 +191,7 @@ def test_upload_po_vendor_choice_and_word_document(client, db):
     from app.modules.p2p.models.p2p_request import P2PRequest
     from app.modules.p2p.models.p2p_request_item import P2PRequestItem
     from app.modules.p2p.models.rfq import RFQ
+    from app.modules.p2p.models.rfq_item import RFQItem
     from app.modules.p2p.models.rfq_attachment import RFQAttachment
     from app.modules.p2p.reports.purchase_order import build_po_docx, po_context
     from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
@@ -205,13 +206,16 @@ def test_upload_po_vendor_choice_and_word_document(client, db):
                     project_type="new", request_date=date.today(), requested_by_id=buyer.id, priority="standard")
     db.add(pr)
     db.flush()
-    db.add(P2PRequestItem(p2p_request_id=pr.id, item_name="O-ring", quantity=10, unit="Nos", project_inhouse="Project",
-                          fulfillment_status="sent_to_procurement"))
+    line = P2PRequestItem(p2p_request_id=pr.id, item_name="O-ring", quantity=10, unit="Nos", project_inhouse="Project",
+                          fulfillment_status="sent_to_procurement", buyer_id=buyer.id)
+    db.add(line)
+    db.flush()
     # Company terms come from Procurement → Settings (default text here), not from the RFQ.
-    rfq = RFQ(rfq_number="RFQ-2026-9001", p2p_request_id=pr.id, status="locked",
+    rfq = RFQ(rfq_number="RFQ-2026-9001", p2p_request_id=pr.id, status="locked", buyer_id=buyer.id, created_by_id=buyer.id,
               late_delivery_clause="0.5% per week of delay, max 10%")
     db.add(rfq)
     db.flush()
+    db.add(RFQItem(rfq_id=rfq.id, pr_item_id=line.id, quantity=10))  # the RFQ's own line
     for tier, v in (("L1", v1), ("L2", v2)):
         db.add(RFQAttachment(rfq_id=rfq.id, vendor_tier=tier, vendor_name=v.name, vendor_id=v.id, filename=f"{tier}.pdf",
                              sharepoint_path=f"x/{tier}.pdf", created_by_id=buyer.id))

@@ -56,6 +56,7 @@ from app.modules.p2p.models.p2p_request_approval import P2PRequestApproval  # no
 from app.modules.p2p.models.p2p_request_po_approver import P2PRequestPOApprover  # noqa: F401
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
 from app.modules.p2p.models.rfq import RFQ
+from app.modules.p2p.models.rfq_item import RFQItem  # noqa: F401
 from app.modules.p2p.models.rfq_attachment import RFQAttachment
 from app.modules.p2p.models.rfq_invite import RFQVendorInvite
 from app.modules.p2p.models.vendor_quotation import VendorQuotation

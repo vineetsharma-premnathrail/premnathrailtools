@@ -1,0 +1,25 @@
+{
+  "authorities": [
+    {
+      "type": "AAD",
+      "authority_url": "https://login.microsoftonline.com/organizations",
+      "audience": {
+        "type": "AzureADMultipleOrgs"
+      }
+    }
+  ],
+  "authorization_user_agent": "WEBVIEW",
+  "broker_redirect_uri_registered": false,
+  "multiple_clouds_supported": false,
+  "shared_device_mode_supported": false,
+  "account_mode": "SINGLE",
+  "http": {
+    "connect_timeout": 10000,
+    "read_timeout": 30000
+  },
+  "logging": {
+    "pii_enabled": false,
+    "log_level": "WARNING",
+    "logcat_enabled": false
+  }
+}

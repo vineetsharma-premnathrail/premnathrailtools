@@ -5,19 +5,20 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
-import { rfqApi, purchaseOrdersApi, vendorsApi } from '@/lib/api'
+import { p2pApi, rfqApi, purchaseOrdersApi, vendorsApi } from '@/lib/api'
 import { rfqInvitesApi, RfqInvite, RfqInvites } from '@/lib/mmPurchasingApi'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { formatDate, formatDateTime } from '@/lib/format'
-import { RFQ, P2PPurchaseOrder, ProcurementVendor } from '@/types'
+import { RFQ, RFQLine, MyLineRow, P2PPurchaseOrder, ProcurementVendor } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle, primaryBtnStyle, smallSecondaryBtnStyle, RowCount, Pill, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
-import { recordHref, recordPath, useRecordId } from '@/lib/recordRef'
+import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
-import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import DiscardPoDraftDialog, { DiscardPoDraftTarget } from '@/components/p2p/DiscardPoDraftDialog'
+import { FormSheet, SheetSection, SheetIcon, SheetError, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -26,24 +27,15 @@ const sectionStyle: React.CSSProperties = {
 const textArea: React.CSSProperties = { ...sheetInput, minHeight: 60, resize: 'vertical' }
 const primaryBtn = primaryBtnStyle
 const ghostBtn = secondaryBtnStyle
-const PO_WORKFLOW_STAGE_LABELS: Record<string, string> = {
-  vendor_quotations: 'Pending PO',
-  technical_evaluation: 'Pending PO',
-  commercial_evaluation: 'Pending PO',
-  vendor_selected: 'Pending PO',
-  po_drafted: 'PO Draft',
-  po_raised: 'Sent for PO Approval',
-  po_approved: 'PO Approved',
-  partially_received: 'PO Approved',
-  received: 'PO Approved',
-  closed: 'PO Approved',
+const RFQ_STATUS_HEX: Record<string, string> = { draft: '#f59e0b', locked: '#22c55e', cancelled: '#94a3b8' }
+const RFQ_STATUS_LABELS: Record<string, string> = { draft: 'Draft', locked: 'Locked', cancelled: 'Cancelled' }
+// A PO of this RFQ: draft = waiting for approval (or returned), issued / acknowledged = approved and with the vendor.
+const PO_STATUS: Record<string, { label: string; hex: string }> = {
+  draft: { label: 'Draft - not sent for approval', hex: '#d97706' }, issued: { label: 'Approved, with vendor', hex: '#16a34a' },
+  acknowledged: { label: 'Approved, with vendor', hex: '#16a34a' }, partially_fulfilled: { label: 'Partly received', hex: '#d97706' },
+  fulfilled: { label: 'Received', hex: '#16a34a' }, cancelled: { label: 'Cancelled', hex: '#94a3b8' },
 }
-
-const RFQ_STATUS_HEX: Record<string, string> = { draft: '#f59e0b', locked: '#22c55e' }
-const RFQ_STATUS_LABELS: Record<string, string> = { draft: 'Draft', locked: 'Locked' }
-// Amber while the PO is still pending/awaiting approval, grey for a draft,
-// green once the PO is approved (incl. receipt stages after it).
-const PO_STAGE_HEX = (label: string) => label === 'PO Approved' ? '#16a34a' : label === 'PO Draft' ? '#64748b' : '#d97706'
+const fmtQty = (n: number | null | undefined) => (n == null ? '—' : Number(n.toFixed(3)).toLocaleString('en-IN'))
 
 // Emailed RFQs — per-page status maps (repo convention).
 const EMAIL_STATUS_HEX: Record<RfqInvite['email_status'], string> = { sent: '#16a34a', failed: '#dc2626', pending: '#64748b' }
@@ -79,6 +71,9 @@ export default function RfqDetailPage() {
   const seePoPrices = canFeature('p2p', 'purchase_orders', 'prices', 'view') || can('p2p', 'purchase_orders', 'edit')
   // The PO built from this RFQ is Procurement › Purchase Orders work.
   const canCreatePo = isPurchaseDesk && can('p2p', 'purchase_orders', 'create')
+  const canViewPos = can('p2p', 'purchase_orders', 'view')
+  // The Purchase head (all buyers' lines > Edit) and admins may change any buyer's RFQ lines; a buyer only their own.
+  const canWorkAll = isAdmin || canFeature('p2p', 'purchase_requisitions', 'all_lines', 'edit')
 
   const [rfq, setRfq] = useState<RFQ | null>(null)
   const [loading, setLoading] = useState(true)
@@ -97,8 +92,16 @@ export default function RfqDetailPage() {
   // vendor pick, auto PO number, generated Word document), then priced and
   // sent for approval.
   const [poVendorName, setPoVendorName] = useState('')
-  const [poDraft, setPoDraft] = useState<P2PPurchaseOrder | null>(null)
-  const [poDraftLoading, setPoDraftLoading] = useState(false)
+  // POs uploaded on THIS RFQ (one requisition can have POs on several RFQs, one per buyer).
+  const [rfqPos, setRfqPos] = useState<P2PPurchaseOrder[]>([])
+  const [posLoading, setPosLoading] = useState(false)
+  const [posError, setPosError] = useState('')
+  // Discard a draft PO of this RFQ (reason asked in a popup); the notice shows after it is done.
+  const [discardTarget, setDiscardTarget] = useState<DiscardPoDraftTarget | null>(null)
+  const [poNotice, setPoNotice] = useState('')
+  // Draft RFQ lines: add / remove.
+  const [addOpen, setAddOpen] = useState(false)
+  const [lineBusy, setLineBusy] = useState(false)
 
   // --- Emailed RFQs: invited vendors, send / resend / remind / invite more.
   const [invites, setInvites] = useState<RfqInvites | null>(null)
@@ -127,11 +130,8 @@ export default function RfqDetailPage() {
       const l1 = data.attachments?.find((a: { vendor_tier: string }) => a.vendor_tier === 'L1') || data.attachments?.[0]
       if (l1) setPoVendorName(l1.vendor_name || '')
 
-      if (['po_drafted', 'po_raised', 'po_approved', 'partially_received', 'received', 'closed'].includes(data.p2p_status || '')) {
-        loadPoDraft(data.p2p_request_id)
-      } else {
-        setPoDraft(null)
-      }
+      if (data.status === 'locked' && canViewPos) loadRfqPos(data.id, data.p2p_request_id)
+      else setRfqPos([])
     } catch (err) {
       setError(extractErrorMessages(err, 'RFQ not found, or you do not have access to it.').join(' '))
     } finally {
@@ -139,16 +139,16 @@ export default function RfqDetailPage() {
     }
   }
 
-  const loadPoDraft = async (p2pRequestId: number) => {
-    setPoDraftLoading(true)
+  const loadRfqPos = async (id: number, p2pRequestId: number) => {
+    setPosLoading(true)
+    setPosError('')
     try {
-      const list = await purchaseOrdersApi.list({ p2p_request_id: p2pRequestId })
-      const po: P2PPurchaseOrder | null = list[0] || null
-      setPoDraft(po)
+      const list: P2PPurchaseOrder[] = await purchaseOrdersApi.list({ p2p_request_id: p2pRequestId })
+      setRfqPos(list.filter((po) => po.rfq_id === id).sort((a, b) => (a.po_number || '').localeCompare(b.po_number || '', undefined, { numeric: true })))
     } catch (err) {
-      setError(extractErrorMessages(err, 'Could not load the purchase order for this RFQ.'))
+      setPosError(extractErrorMessages(err, 'Could not load the purchase orders of this RFQ.').join(' ') + ' Reload the page to try again.')
     } finally {
-      setPoDraftLoading(false)
+      setPosLoading(false)
     }
   }
 
@@ -160,7 +160,18 @@ export default function RfqDetailPage() {
   if (isLoading || !isAuthorized) return null
   if (linkError) return (<div><P2PNav /><InvalidRecordLink message={linkError} listHref="/dashboard/p2p/rfq" listLabel="Back to RFQs" /></div>)
   if (loading) return <p style={{ fontSize: 13, color: TEXT.secondary }}>Loading…</p>
-  if (error && !rfq) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{error}</p>
+  if (error && !rfq) return (
+    // Includes "This RFQ belongs to X - only X or the Purchase head can open its quotes." (403): shown as the server wrote it.
+    <div>
+      <P2PNav />
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+        <button type="button" onClick={() => router.push('/dashboard/p2p/rfq')} style={secondaryBtnStyle}>← Back</button>
+      </div>
+      <div role="alert" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+        {Array.isArray(error) ? error.join(' ') : error}
+      </div>
+    </div>
+  )
   if (!rfq) return null
 
   const openAdminEdit = () => {
@@ -195,12 +206,31 @@ export default function RfqDetailPage() {
   }
 
   const statusColor = RFQ_STATUS_HEX[rfq.status] || '#64748b'
-  const poStageLabel = rfq.p2p_status ? (PO_WORKFLOW_STAGE_LABELS[rfq.p2p_status] || rfq.p2p_status) : ''
   // Emailed RFQ = has invited vendors. Old RFQs (L1–L4 attachment slots) keep the old layout.
   const inviteList = invites?.invites || []
   const hasInvites = inviteList.length > 0
   const canEditRfq = can('p2p', 'rfq', 'edit')
   const comparisonHref = `${recordPath('/dashboard/p2p/rfq', rfq)}/comparison`
+  const allLines: RFQLine[] = rfq.items || []
+  const activeLines = allLines.filter((l) => !l.withdrawn_at)
+  const takenOff = allLines.filter((l) => !!l.withdrawn_at)
+  const closedNoLines = rfq.status === 'locked' && allLines.length > 0 && activeLines.length === 0
+  const anyOpen = activeLines.some((l) => (l.open_qty ?? 1) > 1e-6)
+  const isDraft = rfq.status === 'draft'
+  const iOwn = !!user?.id && user.id === rfq.buyer_id
+  const canChangeLines = isDraft && canEditRfq && (iOwn || canWorkAll)
+  // Discarding a draft PO: the RFQ's own buyer or the Purchase head, with Edit on Purchase Orders (the server checks again).
+  const canDiscardDraft = can('p2p', 'purchase_orders', 'edit') && (iOwn || canWorkAll)
+
+  const removeLine = async (line: RFQLine) => {
+    setLineBusy(true)
+    try {
+      await rfqApi.setLines(rfq.id, activeLines.filter((l) => l.pr_item_id !== line.pr_item_id).map((l) => l.pr_item_id))
+      await load()
+    } catch (err) {
+      setError(extractErrorMessages(err, `Could not take ${line.item_name || 'the line'} off this RFQ.`))
+    } finally { setLineBusy(false) }
+  }
 
   const runInviteAction = async (key: string, fn: () => Promise<RfqInvites>, done: (r: RfqInvites) => string, fallback: string) => {
     setInviteBusy(key)
@@ -236,6 +266,8 @@ export default function RfqDetailPage() {
       </div>
 
       <MessageDialog open={!!error} variant="error" title="Cannot Update RFQ" message={error} onClose={() => setError('')} />
+      <DiscardPoDraftDialog target={discardTarget} onClose={() => setDiscardTarget(null)}
+        onDone={(poNumber) => { setDiscardTarget(null); setPoNotice(`Draft PO ${poNumber} discarded. Its quantity is open to order again and its Tally number can be used again.`); load() }} />
 
       {/* One read-only record card: what this RFQ is, its key facts, then its terms. */}
       <DetailCard tour="rfq-detail-meta">
@@ -247,7 +279,8 @@ export default function RfqDetailPage() {
               ? `Emailed to ${inviteList.length} vendor${inviteList.length === 1 ? '' : 's'} for their quotes.`
               : 'Vendor quotations (L1 = lowest) are attached below.'}
           meta={<>
-            <Pill label={RFQ_STATUS_LABELS[rfq.status] ?? rfq.status} hex={statusColor} />
+            {closedNoLines ? <Pill label="Closed - no lines left" hex="#64748b" title="Every line moved to another buyer or was written off. The quotes stay readable." /> : <Pill label={RFQ_STATUS_LABELS[rfq.status] ?? rfq.status} hex={statusColor} />}
+            <span>· Buyer <strong style={{ color: TEXT.heading }}>{rfq.buyer_name || '—'}</strong></span>
             <span>· Created {formatDateTime(rfq.created_at)} by <strong style={{ color: TEXT.heading }}>{rfq.created_by_name || '—'}</strong></span>
             {rfq.locked_at && <span>· Locked {formatDateTime(rfq.locked_at)}</span>}
           </>}
@@ -269,6 +302,57 @@ export default function RfqDetailPage() {
           </div>
         )}
       </DetailCard>
+
+      <div data-tour="rfq-detail-lines" style={sectionStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+          <div>
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 2px' }}>Lines on this RFQ</h2>
+            <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>
+              {isDraft
+                ? 'Vendors quote only these lines. Add or take off lines until the RFQ is sent; after that its lines are fixed.'
+                : 'Vendors quoted only these lines. Lines moved to another buyer or written off stay listed in grey.'}
+            </p>
+          </div>
+          {isDraft && (canChangeLines
+            ? <button type="button" data-tour="rfq-detail-add-lines" disabled={lineBusy} onClick={() => setAddOpen(true)} style={{ ...smallSecondaryBtnStyle, opacity: lineBusy ? 0.6 : 1 }}>+ Add lines</button>
+            : <span style={{ fontSize: 12.5, color: TEXT.muted }}>{canEditRfq ? `Only ${rfq.buyer_name || 'the buyer'} or the Purchase head can change these lines.` : 'Changing lines needs Edit access on Procurement › R.F.Q.'}</span>)}
+        </div>
+        {allLines.length === 0 ? (
+          <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>
+            {isDraft ? 'No line is on this RFQ yet. Add the lines you want quotes for.' : 'This RFQ has no line list (it was raised before lines were tracked per RFQ). Its quotes cover the whole requisition.'}
+          </p>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+              <thead>
+                <tr>{['Item', 'Asked', 'Not yet ordered', 'Status', ''].map((h, i) => <th key={i} style={{ ...invTh, textAlign: i === 1 || i === 2 ? 'right' : 'left' }}>{h}{i === 0 && <RowCount count={allLines.length} />}</th>)}</tr>
+              </thead>
+              <tbody>
+                {[...activeLines, ...takenOff].map((l) => {
+                  const gone = !!l.withdrawn_at
+                  return (
+                    <tr key={l.id} style={gone ? { opacity: 0.55 } : undefined}>
+                      <td style={invTd}><span style={{ fontWeight: 600, color: TEXT.heading, textDecoration: gone ? 'line-through' : undefined }}>{l.item_name}</span>
+                        <div style={{ fontSize: 11.5, color: TEXT.muted }}>{l.item_code || 'No item code'}</div></td>
+                      <td style={{ ...invTd, textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtQty(l.quantity)} {l.unit || ''}</td>
+                      <td style={{ ...invTd, textAlign: 'right', whiteSpace: 'nowrap' }}>{gone ? '—' : fmtQty(l.open_qty)}</td>
+                      <td style={invTd}>{gone ? <span title={l.withdrawn_reason || undefined}>Taken off {formatDate(l.withdrawn_at)}{l.withdrawn_reason ? `: ${l.withdrawn_reason}` : ''}</span> : <span style={{ color: '#166534' }}>On this RFQ</span>}</td>
+                      <td style={{ ...invTd, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        {!gone && canChangeLines && <button type="button" disabled={lineBusy} onClick={() => removeLine(l)} style={{ ...linkBtn, color: '#b91c1c', opacity: lineBusy ? 0.6 : 1 }}>Remove</button>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {addOpen && (
+        <AddLinesSheet rfq={rfq} currentIds={activeLines.map((l) => l.pr_item_id)}
+          onClose={() => setAddOpen(false)} onSaved={async () => { setAddOpen(false); await load() }} />
+      )}
 
       {hasInvites && invites && (
         <InvitedVendorsSection
@@ -339,84 +423,71 @@ export default function RfqDetailPage() {
       </div>
       )}
 
-      {rfq.status === 'locked' && rfq.p2p_status && rfq.p2p_status !== 'approved' && (
-        <div style={sectionStyle}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
-            <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Purchase Order</h2>
-            <Pill label={poStageLabel} hex={PO_STAGE_HEX(poStageLabel)} />
-          </div>
+      {rfq.status === 'locked' && (
+        <div data-tour="rfq-detail-purchase-orders" style={sectionStyle}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 12px' }}>Purchase orders of this RFQ</h2>
 
-          {/* No PO yet — next step is creating it in the application: pick the vendor from
-              the quotes (L1 by default), the PO number is generated, the PO document is
-              built on the letterhead. Nothing is typed in or attached here. */}
-          {!['po_drafted', 'po_raised', 'po_approved', 'partially_received', 'received', 'closed'].includes(rfq.p2p_status) && (
+          {canViewPos && posError && <p style={{ fontSize: 12.5, color: '#b91c1c', margin: '0 0 10px' }}>{posError}</p>}
+          {poNotice && <div role="status" style={{ padding: '10px 14px', marginBottom: 12, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.25)', color: '#166534', fontSize: 13 }}>{poNotice}</div>}
+          {canViewPos && posLoading && <p style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 10px' }}>Loading purchase orders…</p>}
+          {canViewPos && !posLoading && rfqPos.length > 0 && (
+            <div style={{ overflowX: 'auto', marginBottom: 14 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+                <thead><tr>{['PO', 'Vendor', 'Status', ...(seePoPrices ? ['Value (incl. tax)'] : []), ''].map((h, i) => <th key={i} style={{ ...invTh, textAlign: h.startsWith('Value') ? 'right' : 'left' }}>{h}{i === 0 && <RowCount count={rfqPos.length} />}</th>)}</tr></thead>
+                <tbody>
+                  {rfqPos.map((po) => {
+                    const st = PO_STATUS[po.status] || { label: po.status, hex: '#64748b' }
+                    return (
+                      <tr key={po.id}>
+                        <td style={{ ...invTd, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{po.po_number}</td>
+                        <td style={invTd}>{po.vendor_name || '—'}</td>
+                        <td style={invTd}><Pill label={st.label} hex={st.hex} /></td>
+                        {seePoPrices && <td style={{ ...invTd, textAlign: 'right', whiteSpace: 'nowrap' }}>{po.total_value != null ? `₹${po.total_value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>}
+                        <td style={{ ...invTd, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'inline-flex', gap: 12, alignItems: 'center' }}>
+                            <button type="button" onClick={() => router.push(recordPath('/dashboard/p2p/purchase-orders', po))} style={linkBtn}>Open</button>
+                            {po.status === 'draft' && canDiscardDraft && (
+                              <button type="button" data-tour="rfq-detail-discard-po-draft" onClick={() => { setPoNotice(''); setDiscardTarget({ rfqId: rfq.id, poId: po.id, poNumber: po.po_number, vendorName: po.vendor_name }) }}
+                                style={{ ...linkBtn, color: '#b91c1c' }}
+                                title="Throw this draft PO away: its quantity goes back to open and the Tally number can be used again">Discard draft</button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {canViewPos && !posLoading && !posError && rfqPos.length === 0 && (
+            <p style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 12px' }}>No PO has been uploaded on this RFQ yet.</p>
+          )}
+
+          {closedNoLines ? (
+            <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>This RFQ has no lines left: they moved to another buyer or were written off. The quotes stay readable; nothing more can be awarded or ordered here.</p>
+          ) : !anyOpen && allLines.length > 0 ? (
+            <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>Every line of this RFQ is on a PO or short-closed, so nothing is left to order here.</p>
+          ) : (
             <>
-              {hasInvites ? (
-                <>
-                  <p style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 14px' }}>
-                    Next: record each vendor&apos;s emailed quote and award the lines on the comparison, then make the PO in Tally and upload it on the requisition.
-                  </p>
-                  {isPurchaseDesk && seeComparison
-                    ? <button type="button" data-tour="rfq-detail-record-quotes-btn" onClick={() => router.push(comparisonHref)} style={primaryBtn}>Record quotes &amp; compare →</button>
-                    : <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Recording quotes needs the Purchase desk and R.F.Q › Quotation comparison (view) on your role.</p>}
-                </>
-              ) : (<>
               <p style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 14px' }}>
-                Next: make the PO in Tally for the chosen vendor (L1 {poVendorName ? `${poVendorName} ` : ''}is the lowest), then upload it
-                on the requisition with Upload PO — it goes for approval from there.
+                {hasInvites
+                  ? "Next: record each vendor's quote on the line quotations page and award each line there (a line can be split between vendors). Then make the PO in Tally for each awarded vendor and upload it on the requisition."
+                  : `Next: make the PO in Tally for the chosen vendor (L1 ${poVendorName ? `${poVendorName} ` : ''}is the lowest), then upload it on the requisition with Upload PO. It goes for approval from there.`}
               </p>
-              {canCreatePo
-                ? <button data-tour="rfq-detail-po-create-btn" onClick={() => router.push(recordPath('/dashboard/p2p', rfq, 'p2p_request_id'))} style={primaryBtn}>Open requisition to upload PO →</button>
-                : <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Uploading the PO needs Create access on Procurement › Purchase Orders.</p>}
-              {/* ME47/ME49: per-line vendor prices, comparison and line-level award. */}
-              {isPurchaseDesk && seeComparison && <button type="button" onClick={() => router.push(`${recordPath('/dashboard/p2p/rfq', rfq)}/comparison`)} style={{ ...ghostBtn, marginLeft: 10 }}>Line quotes &amp; comparison →</button>}
-              </>)}
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                {isPurchaseDesk && seeComparison
+                  ? <button type="button" data-tour="rfq-detail-record-quotes-btn" onClick={() => router.push(comparisonHref)} style={primaryBtn}>Line quotes &amp; comparison →</button>
+                  : <span style={{ fontSize: 12.5, color: TEXT.muted }}>Recording quotes needs the Purchase desk and R.F.Q › Quotation comparison (view) on your role.</span>}
+                {canCreatePo
+                  ? <button data-tour="rfq-detail-po-create-btn" onClick={() => router.push(recordPath('/dashboard/p2p', rfq, 'p2p_request_id'))} style={ghostBtn}>Open requisition to upload PO →</button>
+                  : <span style={{ fontSize: 12.5, color: TEXT.muted }}>Uploading the PO needs Create access on Procurement › Purchase Orders.</span>}
+              </div>
             </>
           )}
-
-          {/* Stage: po_drafted — the PO is priced and saved on the Purchase Orders page;
-              saving it there sends it for approval. Nothing is sent from the RFQ. */}
-          {rfq.p2p_status === 'po_drafted' && (
-            poDraftLoading ? (
-              <p style={{ fontSize: 13, color: TEXT.secondary }}>Loading PO…</p>
-            ) : (
-              <>
-                {poDraft && (
-                  <div style={{ marginBottom: 10 }}>
-                    <DetailRow label="PO Number">{poDraft.po_number}</DetailRow>
-                    <DetailRow label="Vendor">{poDraft.vendor_name}</DetailRow>
-                  </div>
-                )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                  <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0, flex: '1 1 320px' }}>
-                    The PO is a draft (returned for changes). Correct it and send it for approval again.
-                  </p>
-                  <button data-tour="rfq-detail-po-open-btn" type="button" style={primaryBtn}
-                    onClick={() => router.push(recordHref('/dashboard/p2p/purchase-orders/new', rfq, 'id',
-                      { po: poDraft ? (poDraft as unknown as { id_ref?: string }).id_ref : undefined }, 'rfq'))}>
-                    Open PO →
-                  </button>
-                </div>
-              </>
-            )
-          )}
-
-          {/* Stage: po_raised and beyond — PO approval through the approval engine takes over */}
-          {['po_raised', 'po_approved', 'partially_received', 'received', 'closed'].includes(rfq.p2p_status) && (
-            <div>
-              {poDraft?.po_number && (
-                <div style={{ marginBottom: 10 }}>
-                  <DetailRow label="PO Number">{poDraft.po_number}</DetailRow>
-                  <DetailRow label="Vendor">{poDraft.vendor_name}</DetailRow>
-                  {seePoPrices && <DetailRow label="PO Value (incl. tax)">{poDraft.total_value != null ? `₹${poDraft.total_value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null}</DetailRow>}
-                </div>
-              )}
-              <p style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 12px' }}>
-                {rfq.p2p_status === 'po_raised'
-                  ? 'This PO has been sent for approval — the requisition page shows who it is waiting for.'
-                  : 'This PO has been approved.'}
-              </p>
-              <button data-tour="rfq-detail-po-view-approval-btn" onClick={() => router.push(`${recordPath('/dashboard/p2p', rfq, 'p2p_request_id')}?from=po-approval`)} style={ghostBtn}>View Approval Status</button>
+          {rfqPos.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <button data-tour="rfq-detail-po-view-approval-btn" onClick={() => router.push(`${recordPath('/dashboard/p2p', rfq, 'p2p_request_id')}?from=po-approval`)} style={ghostBtn}>View approval status</button>
             </div>
           )}
         </div>
@@ -663,6 +734,89 @@ function InviteMoreSheet({ rfq, invited, onClose, onSaved }: {
             </div>
           )}
           {invited.length > 0 && <p style={{ fontSize: 12, color: SHEET.MUTED, margin: '12px 0 0' }}>Already invited: {invited.map((i) => i.vendor_name).join(', ')}</p>}
+        </SheetSection>
+      </div>
+    </FormSheet>
+  )
+}
+
+/** Draft RFQ: pick more lines of this requisition for this RFQ's buyer. Eligible = not yet ordered, no RFQ yet, stock check done. */
+function AddLinesSheet({ rfq, currentIds, onClose, onSaved }: {
+  rfq: RFQ
+  currentIds: number[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [rows, setRows] = useState<MyLineRow[] | null>(null)
+  const [picked, setPicked] = useState<number[]>([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    p2pApi.myLines({ p2p_request_id: rfq.p2p_request_id, ...(rfq.buyer_id ? { buyer_id: rfq.buyer_id } : {}), limit: 500 })
+      .then((d) => { if (alive) setRows(d.rows) })
+      .catch((err) => { if (alive) { setRows([]); setError(extractErrorMessages(err, 'Could not load the lines of this requisition.').join(' ')) } })
+    return () => { alive = false }
+  }, [rfq.p2p_request_id, rfq.buyer_id])
+
+  const mine = new Set(currentIds)
+  const offered = (rows || []).filter((r) => !mine.has(r.pr_item_id))
+  const eligible = offered.filter((r) => r.open_to_order > 1e-6 && r.state === 'to_quote' && r.rfqs.every((q) => q.id === rfq.id))
+  const blocked = offered.filter((r) => !eligible.includes(r) && r.open_to_order > 1e-6)
+  const whyNot = (r: MyLineRow) => {
+    const other = r.rfqs.find((q) => q.id !== rfq.id)
+    return other ? `already on RFQ ${other.rfq_number}` : r.state_label.toLowerCase()
+  }
+  const toggle = (id: number) => setPicked((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
+  const close = () => { if (!busy) onClose() }
+
+  const save = async () => {
+    if (!picked.length) { setError('Tick at least one line to add.'); return }
+    setBusy(true); setError('')
+    try {
+      await rfqApi.setLines(rfq.id, [...currentIds, ...picked])
+      onSaved()
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not add the lines to this RFQ.').join(' '))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <FormSheet width={600} icon="list" title="Add lines to this RFQ" subtitle={`${rfq.rfq_number} · ${rfq.p2p_number || 'requisition'}${rfq.buyer_name ? ` · buyer ${rfq.buyer_name}` : ''}`}
+      onClose={close} busy={busy}
+      footer={<>
+        <button type="button" onClick={close} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+        <button type="button" data-tour="rfq-add-lines-save" onClick={save} disabled={busy || !picked.length} style={sheetBtn('primary', SHEET.BLUE, busy || !picked.length)}>
+          <SheetIcon name="check" size={16} />{busy ? 'Adding…' : `Add${picked.length ? ` (${picked.length})` : ''}`}
+        </button>
+      </>}>
+      <div style={{ padding: '20px 24px' }}>
+        <SheetError error={error} />
+        <SheetSection icon="list" title="Lines you can add">
+          {rows === null && <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>Loading lines…</p>}
+          {rows !== null && eligible.length === 0 && (
+            <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>No other line of this requisition is ready for an RFQ with this buyer. A line is ready when its stock check is done, it has not been ordered and it is on no other RFQ.</p>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {eligible.map((r) => (
+              <label key={r.pr_item_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, border: `1px solid ${SHEET.LINE}`, cursor: 'pointer' }}>
+                <input type="checkbox" checked={picked.includes(r.pr_item_id)} onChange={() => toggle(r.pr_item_id)} disabled={busy} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: SHEET.INK }}>{r.item_name}</span>
+                  <span style={{ display: 'block', fontSize: 12, color: SHEET.MUTED }}>{r.item_code || 'No item code'}</span>
+                </span>
+                <span style={{ fontSize: 12.5, color: SHEET.BODY, whiteSpace: 'nowrap' }}>{fmtQty(r.open_to_order)} {r.unit || ''} not yet ordered</span>
+              </label>
+            ))}
+          </div>
+          {blocked.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <p style={{ ...sheetLabel, marginBottom: 4 }}>Not available now</p>
+              {blocked.map((r) => <p key={r.pr_item_id} style={{ fontSize: 12.5, color: SHEET.MUTED, margin: '2px 0' }}>{r.item_name}: {whyNot(r)}</p>)}
+            </div>
+          )}
         </SheetSection>
       </div>
     </FormSheet>

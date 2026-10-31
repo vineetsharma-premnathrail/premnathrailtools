@@ -67,6 +67,15 @@ class P2PRequestItem(Base, TimestampMixin, OrderProjectLineMixin):
     order_project_element_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("pm_project_elements.id", ondelete="SET NULL"), nullable=True, index=True)
 
+    # Short-close (2026-10-31): quantity the buyer/purchase head decided NOT to buy (supplier cannot
+    # supply, need dropped, ...). Reduces what is still open to order:
+    # open_to_order = quantity - issued_qty - short_closed_qty - qty on live POs.
+    short_closed_qty: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
+    short_closed_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    short_closed_by_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    short_closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     store_item = relationship("StoreItem")
     order_project_element = relationship("PmProjectElement", viewonly=True, lazy="select")
     p2p_request: Mapped["P2PRequest"] = relationship("P2PRequest", back_populates="items")

@@ -12,3 +12,4 @@ backend/scripts/
 backend/migrations/
 backend/organizations_converted.csv
 frontend/tsconfig.tsbuildinfo
+mobile/

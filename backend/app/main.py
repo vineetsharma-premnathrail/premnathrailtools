@@ -61,6 +61,7 @@ from app.modules.p2p.models.p2p_request_approval import P2PRequestApproval
 from app.modules.p2p.models.p2p_request_po_approver import P2PRequestPOApprover  # noqa: F401
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
 from app.modules.p2p.models.rfq import RFQ
+from app.modules.p2p.models.rfq_item import RFQItem  # noqa: F401
 from app.modules.p2p.models.rfq_attachment import RFQAttachment
 from app.modules.p2p.models.rfq_invite import RFQVendorInvite
 from app.modules.p2p.models.vendor_quotation import VendorQuotation
@@ -307,6 +308,8 @@ from app.modules.erp.routes import settings as erp_settings_routes
 from app.modules.erp.routes import service_contracts as erp_service_contracts_routes
 from app.modules.p2p.routes import pr_transfer as p2p_pr_transfer_routes
 from app.modules.p2p.routes import p2p_requests as p2p_requests_routes
+from app.modules.p2p.routes import pr_lines as p2p_pr_lines_routes
+from app.modules.p2p.routes import my_lines as p2p_my_lines_routes
 from app.modules.p2p.routes import purchase_orders as p2p_purchase_orders_routes
 from app.modules.p2p.routes import rfq as p2p_rfq_routes
 from app.modules.p2p.routes import goods_receipts as p2p_goods_receipts_routes
@@ -613,6 +616,8 @@ app.include_router(erp_service_contracts_routes.router, prefix="/api/v1")
 app.include_router(erp_settings_routes.router, prefix="/api/v1")
 app.include_router(p2p_pr_transfer_routes.router, prefix="/api/v1")
 app.include_router(p2p_requests_routes.router, prefix="/api/v1")
+app.include_router(p2p_pr_lines_routes.router, prefix="/api/v1")
+app.include_router(p2p_my_lines_routes.router, prefix="/api/v1")
 app.include_router(p2p_purchase_orders_routes.router, prefix="/api/v1")
 app.include_router(p2p_rfq_routes.router, prefix="/api/v1")
 app.include_router(p2p_goods_receipts_routes.router, prefix="/api/v1")

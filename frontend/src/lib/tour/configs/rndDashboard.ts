@@ -38,7 +38,7 @@ const config: TourConfig = {
     {
       target: 'rnd-dash-stats',
       title: 'Requirements, Projects, Tasks',
-      purpose: 'Requirements: every requirement the business team sent to R&D that you can see; Awaiting review: how many wait for R&D to accept or return them. Ongoing projects: active projects not yet closed; On hold: paused projects. My open tasks: requirement and project tasks assigned to you; Overdue: those past their due date. Click a counter to open its list.',
+      purpose: 'Requirements: every requirement the business team sent to R&D that you can see; Awaiting review: how many wait for R&D to accept them. Ongoing projects: active projects not yet closed; On hold: paused projects. My open tasks: requirement and project tasks assigned to you; Overdue: those past their due date. Click a counter to open its list.',
       options: RND_STATUS_OPTIONS,
     },
     {

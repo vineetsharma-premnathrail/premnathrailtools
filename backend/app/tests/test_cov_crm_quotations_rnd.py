@@ -207,15 +207,11 @@ def test_quotation_routes_require_crm_app(client, db):
 def tor_env(monkeypatch, sp):
     sent = []
 
-    async def fake_upload(site_id, folder, filename, content_type, data):
-        return {"path": f"{folder}/{filename}", "webUrl": "https://sp/x", "size": len(data)}
-
     async def fake_email(db, **kwargs):
         sent.append(kwargs)
         return True, None
 
     monkeypatch.setattr(settings, "SHAREPOINT_SITE_ID", "test-site")
-    monkeypatch.setattr(inquiry_routes, "upload_bytes_to_sharepoint", fake_upload)
     monkeypatch.setattr(inquiry_routes, "send_technical_offer_request_email", fake_email)
     return sent
 
@@ -230,11 +226,8 @@ def people(db):
     }
 
 
-def send_tor(client, inq_id, user, due=None, draft=True, **extra):
-    """CRM creates the TOR Word draft first, then sends (to the whole R&D team)."""
-    if draft:
-        created = client.post(f"/api/v1/managed-documents/crm_tor_inquiry/{inq_id}", headers=auth(user))
-        assert created.status_code == 200, created.text
+def send_tor(client, inq_id, user, due=None, **extra):
+    """CRM sends the requirement to the whole R&D team (no Technical Offer document since 2026-10-30)."""
     due = due or (date.today() + timedelta(days=5))
     return client.post(
         f"{API}/inquiries/{inq_id}/technical-offer-request",
@@ -256,12 +249,9 @@ def test_tor_validation_runs_before_upload(client, db, people, tor_env):
     bd = people["bd"]
     resp = client.post(f"{API}/inquiries/{inq.id}/technical-offer-request", headers=auth(bd))
     assert resp.status_code == 400 and "Response Due Date" in resp.json()["detail"]
-    resp = send_tor(client, inq.id, bd, due=date.today() - timedelta(days=3), draft=False)
+    resp = send_tor(client, inq.id, bd, due=date.today() - timedelta(days=3))
     assert resp.status_code == 400 and "in the past" in resp.json()["detail"]
-    # The Word document must be created before sending.
-    resp = send_tor(client, inq.id, bd, draft=False)
-    assert resp.status_code == 400 and "Create the Technical Offer Word document first" in resp.json()["detail"]
-    # Nothing was uploaded or emailed for any of the rejected attempts.
+    # Nothing was emailed for any of the rejected attempts.
     assert tor_env == []
     assert db.query(CrmDocument).count() == 0
 
@@ -273,13 +263,14 @@ def test_tor_needs_someone_with_rnd_access(client, db, tor_env):
     assert resp.status_code == 400 and "Nobody could receive this request" in resp.json()["detail"]
 
 
-def test_tor_without_sharepoint_is_503(client, db, people, sp, monkeypatch):
-    inq = make_inquiry(db, people["bd"])
-    created = client.post(f"/api/v1/managed-documents/crm_tor_inquiry/{inq.id}", headers=auth(people["bd"]))
-    assert created.status_code == 200, created.text
+def test_tor_needs_no_word_document_or_sharepoint(client, db, people, tor_env, monkeypatch):
+    # No Technical Offer document: nothing is generated or uploaded, so SharePoint is not needed.
     monkeypatch.setattr(settings, "SHAREPOINT_SITE_ID", "")
-    resp = send_tor(client, inq.id, people["bd"], draft=False)
-    assert resp.status_code == 503
+    inq = make_inquiry(db, people["bd"])
+    resp = send_tor(client, inq.id, people["bd"])
+    assert resp.status_code == 200, resp.text
+    assert db.query(CrmDocument).count() == 0
+    assert "attachment_bytes" not in tor_env[0]
 
 
 def test_tor_email_failure_is_502_and_opens_no_request(client, db, people, tor_env, monkeypatch):
@@ -304,11 +295,11 @@ def test_tor_send_creates_shared_doc_movement_and_rnd_request(client, db, people
     resp = send_tor(client, inq.id, people["bd"], remarks="  urgent  ", document_ids=[ref.id, unrelated.id])
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["technical_offer_number"] == "TOR-20261007-0001" and body["technical_offer_sent_at"]
+    assert body["technical_offer_number"] == "RDR-2026-0001-R0" and body["technical_offer_sent_at"]
 
     email = tor_env[0]
-    assert email["offer_number"] == "TOR-20261007-0001" and email["attachment_filename"] == "TOR-20261007-0001.pdf"
-    assert email["attachment_bytes"].startswith(b"%PDF")
+    assert email["offer_number"] == "RDR-2026-0001-R0" and "attachment_bytes" not in email
+    assert email["documents_link"].endswith("/dashboard/rnd/requirements")
     # Only documents of this inquiry may be shared.
     assert [d["name"] for d in email["reference_documents"]] == ["spec.pdf"]
     db.expire_all()
@@ -317,12 +308,13 @@ def test_tor_send_creates_shared_doc_movement_and_rnd_request(client, db, people
 
     req = db.query(CrmRndRequest).one()
     # Whole R&D team queue: no named engineer, every R&D user is notified.
-    assert (req.status, req.assigned_to_id, req.crm_remarks, req.offer_number) == ("open", None, "urgent", "TOR-20261007-0001")
+    assert (req.status, req.assigned_to_id, req.crm_remarks, req.offer_number) == ("open", None, "urgent", "RDR-2026-0001-R0")
     notified = {n.user_id for n in db.query(Notification).filter(Notification.notification_type == "rnd_request_assigned").all()}
     assert notified == {people["rnd"].id, people["rnd2"].id}
 
     moves = client.get(f"{API}/inquiries/{inq.id}/requirement-movements", headers=auth(people["bd"])).json()
     assert len(moves) == 1 and moves[0]["sequence"] == 1 and moves[0]["changes"] == []
+    assert moves[0]["tor_document"] is None
     snap = {s["field"]: s["value"] for s in moves[0]["snapshot"]}
     assert snap["product"] == "USFD tester" and snap["quantity_display"] is None  # quantity is no longer sent to R&D
     assert moves[0]["rnd_request"]["assigned_to"] is None and moves[0]["rnd_request"]["status"] == "open"
@@ -409,5 +401,5 @@ def test_response_to_request_of_deleted_inquiry_is_404(client, db, people, tor_e
 
 
 def test_tor_on_deleted_or_missing_inquiry_is_404(client, db, people, tor_env):
-    assert send_tor(client, 4242, people["bd"], draft=False).status_code == 404
+    assert send_tor(client, 4242, people["bd"]).status_code == 404
     assert client.get(f"{API}/inquiries/4242/requirement-movements", headers=auth(people["bd"])).status_code == 404

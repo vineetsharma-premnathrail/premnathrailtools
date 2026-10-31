@@ -9,7 +9,14 @@ const config: TourConfig = {
       title: 'Purchase Requisition',
       purpose: 'The approved Purchase Requisition this RFQ is being raised for.',
       required: true,
-      whatToEnter: 'Search by PR number or category. Only approved requisitions without an existing RFQ are listed.',
+      whatToEnter: 'Search by PR number or category. Only requisitions that still have lines you buy, not yet on an RFQ, are listed.',
+    },
+    {
+      target: 'rfq-new-lines',
+      title: 'Lines for this RFQ',
+      purpose: 'The requisition lines this RFQ asks vendors to quote. Your own lines are ticked; lines of other buyers, lines waiting for the stock check or already on an RFQ are shown greyed with the reason.',
+      required: true,
+      why: 'One requisition can be bought by several buyers — each buyer raises an RFQ for their own lines, so vendors only see what they are asked for.',
     },
     {
       target: 'rfq-vendors',

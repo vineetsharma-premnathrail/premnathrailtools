@@ -530,8 +530,12 @@ def check_three_way_match(db: Session, *, purchase_order_id: int, invoice_qty: f
     pr = db.query(P2PRequest).filter(P2PRequest.id == po.p2p_request_id).first() if po.p2p_request_id else None
     if not pr:
         raise ValueError(f"PO '{po.po_number}' isn't linked to a purchase requisition, so it never went through PO approval — an invoice can't be booked against it.")
-    if pr.status not in _PO_APPROVED_PR_STATUSES or pr.pending_po_approval_roles:
-        raise ValueError(f"PO '{po.po_number}' hasn't completed its Purchase Head / Director / Partner approval yet (request status: {pr.status}) — an invoice can't be booked against it until it has.")
+    # Per PO, not per requisition: an approved PO can be invoiced while a sibling PO of the same
+    # requisition is still in approval (po_split.po_is_released reads this PO's own approval request,
+    # or the old Purchase Head / Director / Partner stamps for POs approved before the engine).
+    from app.modules.p2p.po_split import po_is_released
+    if not po_is_released(db, po):
+        raise ValueError(f"PO '{po.po_number}' hasn't completed its own approval yet (Purchase Head / Director / Partner) — an invoice can't be booked against it until it has. Other POs of the same requisition don't matter; wait for this PO's approval to finish.")
 
     qty_po, qty_gr, received_value = _po_grn_rollup(db, purchase_order_id)
     if qty_gr <= 0:

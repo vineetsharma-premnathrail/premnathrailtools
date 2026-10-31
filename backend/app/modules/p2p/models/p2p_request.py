@@ -22,15 +22,17 @@ if TYPE_CHECKING:
 #   po_approved -> partially_received -> received -> closed
 #            \-> rejected            \-> cancelled
 #
-# The RFQ tab (see models/rfq.py) is raised once a PR is "approved"; once
-# that RFQ is submitted/locked the PR moves to "vendor_quotations" — buyer
-# records structured VendorQuotation rows (see models/vendor_quotation.py)
-# against it. "technical_evaluation" is skipped straight to
-# "commercial_evaluation" when the RFQ's requires_technical_evaluation flag
-# is False. "po_drafted" is an editable draft P2PPurchaseOrder (status
-# 'draft') built from the selected vendor's quotation; finalizing it moves
-# the PR to "po_raised" and the PO to status 'issued' — unchanged from here
-# on (PO approval chain, GRN, Payment).
+# Before "approved" the status is the requester's / approver's workflow state
+# (draft, submitted, returned, rejected, cancelled). From "approved" onwards it
+# is only a ROLL-UP SUMMARY of the work underneath, written solely by
+# p2p/po_split.rollup_pr_status (2026-10-31, multi-buyer split): one
+# requisition has several lines, each line may have its own buyer, RFQ
+# (models/rfq.py + rfq_item.py), qty-split awards (vendor_quotation.py) and
+# several purchase orders. Per-line progress (ordered / received / short-closed)
+# is computed from PO + GRN lines, never stored. Nothing in procurement may gate
+# on this status except po_split.is_procurement_open(pr); the stages named in
+# the arrow chain above (vendor_quotations ... received) are labels of the
+# summary, not steps one document walks through.
 P2P_REQUEST_STATUSES = (
     "submitted", "approved",
     "vendor_quotations", "technical_evaluation", "commercial_evaluation",

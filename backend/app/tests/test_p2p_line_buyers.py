@@ -137,3 +137,58 @@ def test_settings_list_buyer_for_each_item_type(client, db):
     assert keys == {f"buyer_type_{t}" for t in ("material", "consumable", "tool_equipment", "service", "asset", "other")}
     assert "line_buyers" in [g["key"] for g in d["groups"]]
     assert all(k in d["values"] for k in keys)
+
+
+# ── Multi-buyer split (2026-10-31): every line has its own buyer once approved ──
+
+def test_approval_gives_lines_without_a_buyer_the_main_buyer(client, db):
+    from app.modules.p2p.models.p2p_request import P2PRequest
+
+    a, b, req, mat, svc = _setup(db, "t6")
+    approver = make_user(db, "lb.appr.t6@premnathrail.com", assigned_apps=("p2p",))
+    set_pr_workflow(db, [approver.id], req)
+    # A requisition with no category of its own and an item type that has no buyer: the line has none.
+    other = master_item(db, "LB tool t6", item_type="tool_equipment")
+    r = _create(client, req, [other])
+    assert r.status_code == 200, r.text
+    pr = r.json()
+    assert pr["items"][0]["buyer_id"] is None
+    row = db.get(P2PRequest, pr["id"])
+    row.assigned_buyer_id = b.id  # the main buyer (what the Purchase head picks)
+    db.commit()
+
+    r = client.post(f"{BASE}/{pr['id']}/approve", json={"comment": "ok"}, headers=auth_header(approver))
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "approved"
+    assert [i["buyer_id"] for i in r.json()["items"]] == [b.id]
+    assert [i["buyer_name"] for i in r.json()["items"]] == [b.name]
+    # New line fields exist and start empty.
+    item = r.json()["items"][0]
+    assert item["short_closed_qty"] == 0 and item["short_closed_reason"] is None and item["short_closed_by_name"] is None
+
+
+def test_assign_buyer_works_at_any_procurement_stage_and_fills_open_lines(client, db):
+    from app.modules.p2p.models.p2p_request import P2PRequest
+
+    a, b, req, mat, svc = _setup(db, "t7")
+    head = make_user(db, "lb.head.t7@premnathrail.com", assigned_apps=("purchase",))
+    approver = make_user(db, "lb.appr.t7@premnathrail.com", assigned_apps=("p2p",))
+    set_pr_workflow(db, [approver.id], req)
+    other = master_item(db, "LB tool t7", item_type="tool_equipment")
+    pr = _create(client, req, [other]).json()
+    assert client.post(f"{BASE}/{pr['id']}/approve", json={"comment": "ok"}, headers=auth_header(approver)).status_code == 200
+    # The RFQ of another buyer is already out: the requisition is at vendor_quotations.
+    row = db.get(P2PRequest, pr["id"])
+    row.status = "vendor_quotations"
+    db.commit()
+
+    r = client.post(f"{BASE}/{pr['id']}/assign-buyer", json={"assigned_buyer_id": a.id}, headers=auth_header(head))
+    assert r.status_code == 200, r.text
+    assert r.json()["assigned_buyer_id"] == a.id
+    assert [i["buyer_id"] for i in r.json()["items"]] == [a.id]  # the line had no buyer: it follows the main buyer
+    # Not with procurement (draft / closed): refused with the way forward.
+    row = db.get(P2PRequest, pr["id"])
+    row.status = "closed"
+    db.commit()
+    r = client.post(f"{BASE}/{pr['id']}/assign-buyer", json={"assigned_buyer_id": b.id}, headers=auth_header(head))
+    assert r.status_code == 409 and "with procurement" in r.json()["detail"] and "Move to another buyer" in r.json()["detail"]

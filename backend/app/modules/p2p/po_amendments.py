@@ -13,6 +13,12 @@ updated. Floors, checked on submit AND again at approval:
 - a line's price/tax can't change once Finance has invoiced against it (the
   difference is then a debit/credit note, not a PO change);
 - a line with any receipt, service entry or invoice can't be deleted.
+
+A quantity reduction needs no extra step: what a PO no longer orders is simply open to order again on
+its requisition line (open quantity is computed from the live PO lines). Anything that ADDS requisition
+quantity to a PO (a new line, a raised quantity) is checked against what is still open while holding the
+requisition lock (po_split.lock_pr), on submit and again on approval, so two buyers can't both take the
+same last units.
 """
 from __future__ import annotations
 
@@ -218,6 +224,20 @@ def _after_snapshot(po: P2PPurchaseOrder, changes: list[dict]) -> dict:
     return snap
 
 
+def _quantity_added(changes: list[dict], lines: dict[int, P2PPurchaseOrderItem]) -> dict[int, float]:
+    """pr_item_id -> extra quantity the changes would put on the PO (new lines and raised quantities)."""
+    wanted: dict[int, float] = {}
+    for c in changes:
+        if c["op"] == "add" and c["line"].get("pr_item_id"):
+            pid = c["line"]["pr_item_id"]
+            wanted[pid] = wanted.get(pid, 0) + (c["line"].get("quantity") or 0)
+        elif c["op"] == "change" and c["field"] == "quantity":
+            line = lines.get(c["po_item_id"])
+            if line is not None and line.pr_item_id and c["new"] > (line.quantity or 0) + 1e-9:
+                wanted[line.pr_item_id] = wanted.get(line.pr_item_id, 0) + (c["new"] - (line.quantity or 0))
+    return wanted
+
+
 # ── Apply on approval ────────────────────────────────────────────────────
 
 def apply_amendment(db: Session, am: P2PPOAmendment, actor: User) -> None:
@@ -230,6 +250,12 @@ def apply_amendment(db: Session, am: P2PPOAmendment, actor: User) -> None:
         raise HTTPException(status_code=409, detail="The PO was cancelled after this amendment was raised, so it can't be applied — reject it.")
     _check_floors(db, po, am.changes)  # receipts / invoices may have moved since submit
     lines = {i.id: i for i in po.items}
+    # Added / raised requisition quantity must still be open now (another PO may have taken it since submit).
+    wanted = _quantity_added(am.changes, lines)
+    if wanted and po.p2p_request_id:
+        from app.modules.p2p.po_split import ensure_qty_fits, lock_pr
+        ensure_qty_fits(db, lock_pr(db, po.p2p_request_id), wanted)
+        lines = {i.id: i for i in po.items}
     for c in am.changes:
         if c["op"] == "delete":
             line = lines.get(c["po_item_id"])
@@ -374,6 +400,10 @@ def submit(db: Session, po: P2PPurchaseOrder, pr: P2PRequest | None, payload, us
     reason = (payload.reason or "").strip()
     if len(reason) < 5:
         raise HTTPException(status_code=422, detail="Write why the PO is being amended (e.g. 'Vendor revised price per letter dt. 10-10-2026').")
+    if pr is not None and (payload.add_lines or any("quantity" in c.model_fields_set for c in payload.changes or [])):
+        # Take the requisition lock while the open-quantity check runs (committed with the amendment).
+        from app.modules.p2p.po_split import lock_pr
+        pr = lock_pr(db, pr.id)
     changes, after = build_changes(db, po, pr, payload)
     warnings = _check_floors(db, po, changes)
     adds = [c["line"]["store_item_id"] for c in changes if c["op"] == "add"]

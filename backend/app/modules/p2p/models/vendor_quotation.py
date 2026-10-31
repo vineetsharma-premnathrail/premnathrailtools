@@ -95,6 +95,9 @@ class VendorQuotationItem(Base, TimestampMixin):
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     is_awarded: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    # Qty awarded to this vendor on this line (several vendors can split one line).
+    # is_awarded is kept equal to (awarded_qty > 0). NULL = never awarded.
+    awarded_qty: Mapped[float | None] = mapped_column(Float, nullable=True)
     award_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     awarded_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     awarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

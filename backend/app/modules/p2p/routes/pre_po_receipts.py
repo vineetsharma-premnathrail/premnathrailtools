@@ -7,7 +7,13 @@ closed single-quotation RFQ, and the buyer then uploads the Tally PO on that
 requisition (rfq.upload_po), which links the receipt to the PO. The normal PO
 approval engine (approvers + a Partner) and the GRN gating apply unchanged.
 Requisition approval is skipped on purpose: the goods are already in, and the PO
-approval is the money control. Gate: Procurement tab `purchase_orders`."""
+approval is the money control. Gate: Procurement tab `purchase_orders`.
+
+Multi-buyer split (2026-10-31): the creator of the requisition is the buyer of all its lines and
+owns its RFQ (rfq.buyer_id), which has one RFQ line per requisition line. Upload PO on it needs no
+award step: the vendor is the receipt's vendor and the quantity is the receipt quantity. If Store
+cancels the receipt before any PO exists, `cancel_requisition_for_receipt` withdraws the RFQ lines
+and cancels the requisition (audited), so no dead requisition is left open."""
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
@@ -23,11 +29,13 @@ from app.core.permission_registry import can_perform, is_admin_user
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.p2p.item_link import item_snapshot
-from app.modules.p2p.models.p2p_request import LINE_CATEGORY, P2PRequest, resolve_line_buyer_id
+from app.modules.p2p.models.p2p_request import LINE_CATEGORY, P2PRequest
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.rfq import RFQ
+from app.modules.p2p.models.rfq_item import RFQItem
 from app.modules.p2p.models.vendor_quotation import VendorQuotation
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
+from app.modules.p2p import po_split
 from app.modules.p2p.pre_po import attachment_content_response, receipt_to_response, save_attachment
 from app.modules.p2p.pricing import mask_for
 from app.modules.p2p.routes.p2p_requests import BUYER_RULE_KEY, _write_audit as _write_pr_audit
@@ -111,18 +119,23 @@ async def create_requisition_for_pre_po_receipt(
             for field, value in item_snapshot(master).items():
                 setattr(row, field, value)
             row.make = master.make
-            row.buyer_id = resolve_line_buyer_id(db, master.item_type)
         else:
             row.store_item_id, row.item_name, row.unit = line.store_item_id, line.item_name, line.unit
+        # The creator buys every line of this requisition (the goods are already in, from this vendor).
+        row.buyer_id = user.id
         db.add(row)
+    db.flush()
 
     rfq = RFQ(
         rfq_number=generate_rfq_number(db), p2p_request_id=pr.id, status="locked", is_single_quotation=True,
         single_quotation_reason=f"Goods were received before the PO ({receipt.receipt_number}); the PO goes to the vendor who delivered them.",
-        created_by_id=user.id, locked_by_id=user.id, locked_at=datetime.now(timezone.utc), source="before_po",
+        created_by_id=user.id, buyer_id=user.id, locked_by_id=user.id, locked_at=datetime.now(timezone.utc), source="before_po",
     )
     db.add(rfq)
     db.flush()
+    # One RFQ line per requisition line (at the receipt quantity) - the PO is uploaded on exactly these.
+    for row in db.query(P2PRequestItem).filter(P2PRequestItem.p2p_request_id == pr.id).order_by(P2PRequestItem.id).all():
+        db.add(RFQItem(rfq_id=rfq.id, pr_item_id=row.id, store_item_id=row.store_item_id, quantity=row.quantity))
     db.add(VendorQuotation(
         rfq_id=rfq.id, p2p_request_id=pr.id, vendor_id=receipt.vendor_id, vendor_name=receipt.vendor_name,
         is_selected=True, technical_status="qualified", commercial_status="approved", submitted_at=receipt.received_date,
@@ -137,6 +150,33 @@ async def create_requisition_for_pre_po_receipt(
     db.commit()
     db.refresh(rfq)
     return {"rfq": mask_for(user, "rfq", _rfq_response(db, rfq))}
+
+
+def cancel_requisition_for_receipt(db: Session, receipt: StorePrePoReceipt, user: User, reason: str | None) -> P2PRequest | None:
+    """Store cancelled a Before-PO receipt that already has a requisition: if no live PO exists yet, the
+    requisition has no purpose any more, so withdraw its RFQ lines and cancel it with the reason (audited).
+    A requisition that already has a live PO is left alone - its PO is handled on its own. Flushes, never
+    commits (the caller commits with the receipt). Returns the cancelled requisition or None."""
+    if not receipt.p2p_request_id:
+        return None
+    pr = db.get(P2PRequest, receipt.p2p_request_id)
+    if pr is None or pr.status in ("closed", "rejected", "cancelled"):
+        return None
+    if po_split.live_pos(db, pr.id):
+        return None
+    why = f"Before-PO receipt {receipt.receipt_number} was cancelled by Store" + (f": {reason.strip()}" if reason and reason.strip() else ".")
+    now = datetime.now(timezone.utc)
+    for row in (db.query(RFQItem).join(RFQ, RFQ.id == RFQItem.rfq_id)
+                .filter(RFQ.p2p_request_id == pr.id, RFQItem.withdrawn_at.is_(None)).all()):
+        row.withdrawn_at, row.withdrawn_reason = now, why
+    old = pr.status
+    pr.status = "cancelled"
+    pr.cancelled_reason = why
+    _write_pr_audit(db, pr.id, "cancelled", user,
+                    summary=f"{user.name or user.email}: {pr.p2p_number} was cancelled automatically - {why}",
+                    old_status=old, new_status="cancelled")
+    db.flush()
+    return pr
 
 
 def _receipt_or_404(db: Session, receipt_id: int) -> StorePrePoReceipt:

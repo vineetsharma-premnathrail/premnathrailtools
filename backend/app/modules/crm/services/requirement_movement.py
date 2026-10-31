@@ -45,20 +45,21 @@ def _entity_type(module: str) -> str:
 
 
 def record_movement(
-    db: Session, *, module: str, record_id: int, user: User, offer_number: str,
-    ctx: dict, tor_doc: CrmDocument, reference_docs: list[CrmDocument],
+    db: Session, *, module: str, record_id: int, user: User, offer_number: str | None,
+    ctx: dict, tor_doc: CrmDocument | None, reference_docs: list[CrmDocument],
 ) -> AuditLog:
-    """Call after the TOR email went out successfully, before commit."""
+    """Call after the TOR email went out successfully, before commit. `tor_doc` is None
+    since 2026-10-30 (no Technical Offer document); older sends still carry one."""
     payload = {
         "offer_number": offer_number,
         "snapshot": {k: ctx.get(k) for k in SNAPSHOT_FIELDS},
-        "tor_document": {"id": tor_doc.id, "name": tor_doc.file_name, "file_size": tor_doc.file_size},
+        "tor_document": {"id": tor_doc.id, "name": tor_doc.file_name, "file_size": tor_doc.file_size} if tor_doc else None,
         "reference_documents": [{"id": d.id, "name": d.file_name, "file_size": d.file_size} for d in reference_docs],
     }
     log = AuditLog(
         entity_type=_entity_type(module), entity_id=record_id, action=ACTION,
         new_value=json.dumps(payload, default=str), module_key="crm",
-        summary=f"{user.name or user.email} sent Technical Offer Request {offer_number} to R&D.",
+        summary=f"{user.name or user.email} sent the requirement to R&D" + (f" as {offer_number}." if offer_number else "."),
         performed_by_id=user.id,
     )
     db.add(log)
@@ -167,7 +168,7 @@ def validate_request(db: Session, due_date: date | None) -> list[User]:
 
 
 def create_rnd_request(
-    db: Session, *, module: str, record, user: User, log: AuditLog, offer_number: str,
+    db: Session, *, module: str, record, user: User, log: AuditLog, offer_number: str | None,
     team: list[User], due_date: date, remarks: str | None,
 ) -> CrmRndRequest:
     """Opens the R&D ask for this send (to the R&D head(s)); any still-open ask on the same record is superseded.
@@ -189,6 +190,14 @@ def create_rnd_request(
     from app.modules.rnd.services import events as rnd_events
     from app.modules.rnd.services import requirements as rnd_requirements  # rnd imports crm models
     revision = rnd_requirements.on_bd_submit(db, source=module, record=record, user=user, crm_request=req, movement_log=log)
+    if not offer_number:
+        # No separate TOR number (owner, 2026-10-30): the send is known by its R&D revision code.
+        offer_number = revision.revision_code
+        req.offer_number = offer_number
+        data = json.loads(log.new_value) if log.new_value else {}
+        data["offer_number"] = offer_number
+        log.new_value = json.dumps(data, default=str)
+        log.summary = f"{user.name or user.email} sent the requirement to R&D as {offer_number}."
     told: set[int] = set()
     for member in team:
         if member.id == user.id or member.id in told:
@@ -197,8 +206,8 @@ def create_rnd_request(
         notify_user(
             db, member.id,
             title=f"New requirement {revision.revision_code} for R&D",
-            message=f"{user.name or user.email} sent {offer_number} ({revision.revision_code}) — response due {due_date.strftime('%d %b %Y')}. "
-                    "Accept it, or return it to BD with a reason."
+            message=f"{user.name or user.email} sent {revision.revision_code} — response due {due_date.strftime('%d %b %Y')}. "
+                    "Open it in R&D › Requirements and accept it."
                     + (f" Remark: {req.crm_remarks}" if req.crm_remarks else ""),
             notification_type="rnd_request_assigned", entity_type=f"rnd_req_{module}", entity_id=record.id,
         )
@@ -232,7 +241,18 @@ def serialize_requests(db: Session, reqs: list[CrmRndRequest]) -> dict[int, dict
         RndRequirementRevision.crm_rnd_request_id.in_([r.id for r in reqs])).all()}
     rd_numbers = {rq.id: rq.rd_number for rq in db.query(RndRequirement).filter(
         RndRequirement.id.in_({rv.requirement_id for rv in revs.values()})).all()} if revs else {}
-    reviewer_ids = {rv.reviewed_by_id for rv in revs.values() if rv.reviewed_by_id}
+    # R&D's "Ask BD for more details" questions (they leave the request open), oldest first.
+    queries: dict[int, list[dict]] = {}
+    req_ids = {r.id for r in reqs}
+    for lg in db.query(AuditLog).filter(
+        AuditLog.action == ASK_DETAILS_ACTION, AuditLog.entity_type.in_({r.source for r in reqs}),
+        AuditLog.entity_id.in_({r.record_id for r in reqs}),
+    ).order_by(AuditLog.performed_at.asc(), AuditLog.id.asc()).all():
+        data = json.loads(lg.new_value) if lg.new_value else {}
+        if data.get("request_id") in req_ids:
+            queries.setdefault(data["request_id"], []).append({"remarks": data.get("remarks"), "by_id": lg.performed_by_id, "at": _iso(lg.performed_at)})
+    asker_ids = {q["by_id"] for qs in queries.values() for q in qs if q["by_id"]}
+    reviewer_ids = {rv.reviewed_by_id for rv in revs.values() if rv.reviewed_by_id} | asker_ids
     names.update({u.id: (u.name or u.email or f"User #{u.id}") for u in db.query(User).filter(User.id.in_(reviewer_ids)).all()} if reviewer_ids else {})
 
     def intake(r: CrmRndRequest) -> dict:
@@ -260,6 +280,8 @@ def serialize_requests(db: Session, reqs: list[CrmRndRequest]) -> dict[int, dict
             "responded_at": _iso(r.responded_at),
             "is_late": is_late(r),
             "response_documents": docs.get(r.id, []),
+            "queries": [{"remarks": q["remarks"], "asked_by": names.get(q["by_id"]) if q["by_id"] else None, "asked_at": q["at"]}
+                        for q in queries.get(r.id, [])],
         }
         for r in reqs
     }
@@ -276,6 +298,38 @@ def latest_requests(db: Session, module: str, record_ids: list[int]) -> dict[int
         latest[r.record_id] = r
     ser = serialize_requests(db, list(latest.values()))
     return {rid: ser[r.id] for rid, r in latest.items()}
+
+
+ASK_DETAILS_ACTION = "rnd_asked_details"
+
+
+def ask_details(db: Session, *, req: CrmRndRequest, record, user: User, remarks: str | None) -> None:
+    """R&D asks BD for more details (owner, 2026-10-30). Unlike a response it does NOT close
+    the request: it stays open with its due date, BD is told, and BD answers by updating the
+    requirement and sending it again (a new revision). Caller commits."""
+    if req.status != "open":
+        raise HTTPException(status_code=409, detail="This request is no longer open — only an open request can get a question. Answer the latest request instead.")
+    from app.modules.rnd.services import requirements as rnd_requirements
+    rnd_requirements.require_accepted_for_request(db, req)
+    if req.assigned_to_id and user.role != "admin" and req.assigned_to_id != user.id:
+        raise HTTPException(status_code=403, detail="Only the engineer this request is assigned to can ask BD about it.")
+    remarks = (remarks or "").strip()
+    if len(remarks) < 10:
+        raise HTTPException(status_code=400, detail="Write which details R&D needs from BD (at least 10 characters) — e.g. \"Axle load and gauge are missing\".")
+    ref = getattr(record, "universal_id", None) or f"{req.source} #{req.record_id}"
+    db.add(AuditLog(
+        entity_type=req.source, entity_id=req.record_id, action=ASK_DETAILS_ACTION, module_key="crm",
+        new_value=json.dumps({"request_id": req.id, "remarks": remarks}),
+        summary=f"{user.name or user.email} (R&D) asked for more details on {req.offer_number or ref}: {remarks}",
+        performed_by_id=user.id,
+    ))
+    if req.requested_by_id:
+        notify_user(
+            db, req.requested_by_id,
+            title=f"R&D needs more details on {req.offer_number or ref}",
+            message=f"{user.name or user.email}: {remarks} — update the requirement on {ref} and send it to R&D again.",
+            notification_type="rnd_request_details_asked", entity_type=req.source, entity_id=req.record_id,
+        )
 
 
 def mark_responded(

@@ -24,8 +24,35 @@ class RFQAttachmentVendorUpdate(BaseModel):
 
 
 class RFQCreate(BaseModel):
+    """One RFQ = one requisition + one buyer + an explicit set of that buyer's lines.
+    pr_item_ids omitted = every line of the buyer that is ready for an RFQ; buyer_id omitted = the
+    caller (a user who may work all lines can raise it for another buyer)."""
     p2p_request_id: int
     requires_technical_evaluation: bool = False
+    pr_item_ids: list[int] | None = None
+    buyer_id: int | None = None
+
+
+class RFQLinesUpdate(BaseModel):
+    """Replace the line set of a DRAFT RFQ (same eligibility as create)."""
+    pr_item_ids: list[int] = Field(default_factory=list)
+
+
+class RFQItemResponse(BaseModel):
+    """One requisition line on an RFQ. open_qty = what is still to order on the line
+    right now (not on a PO, not short-closed); withdrawn_* set once the line left the RFQ."""
+    model_config = {"from_attributes": True}
+
+    id: int
+    pr_item_id: int
+    store_item_id: int | None = None
+    item_code: str | None = None
+    item_name: str | None = None
+    unit: str | None = None
+    quantity: float = 0
+    open_qty: float | None = None
+    withdrawn_at: datetime | None = None
+    withdrawn_reason: str | None = None
 
 
 class RFQUpdate(BaseModel):
@@ -121,12 +148,15 @@ class RFQResponse(BaseModel):
     created_by_id: int | None = None
     locked_by_id: int | None = None
     locked_at: datetime | None = None
+    # The buyer who owns this RFQ (None only on old RFQs whose buyer left).
+    buyer_id: int | None = None
 
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
     attachments: list[RFQAttachmentResponse] = Field(default_factory=list)
     vendor_quotations: list[VendorQuotationResponse] = Field(default_factory=list)
+    items: list[RFQItemResponse] = Field(default_factory=list)
 
     # Denormalized display fields, filled in by the route.
     p2p_number: str | None = None
@@ -134,6 +164,7 @@ class RFQResponse(BaseModel):
     p2p_created_at: datetime | None = None
     p2p_required_date: date | None = None
     created_by_name: str | None = None
+    buyer_name: str | None = None
     # Emailed RFQs: vendors invited, and PR lines awarded on the comparison
     # (awarded > 0 = ready for Purchase Orders › Create PO).
     invite_count: int = 0

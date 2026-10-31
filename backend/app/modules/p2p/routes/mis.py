@@ -200,11 +200,33 @@ def _gather(
         for role, flag in _PO_ROLE_FLAGS.items()
     }
     partners = db.query(User).filter(User.is_active == True, User.is_partner == True).all()  # noqa: E712
+    # A requisition can have several POs in approval at once (one per buyer / vendor): every pending
+    # PO request counts. Same rule as approvals.pending_po_requests, read for all requisitions in two queries.
+    pending_by_pr: dict[int, list] = {}
+    if pending_pos:
+        from app.modules.organization.models.approval import ApprovalRequest
+        from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
+        live = (db.query(P2PPurchaseOrder.id, P2PPurchaseOrder.p2p_request_id)
+                .filter(P2PPurchaseOrder.p2p_request_id.in_([pr.id for pr in pending_pos]), P2PPurchaseOrder.status != "cancelled").all())
+        pr_of_po = {po_id: pr_id for po_id, pr_id in live}
+        latest: dict[int, ApprovalRequest] = {}
+        for r in (db.query(ApprovalRequest)
+                  .filter(ApprovalRequest.entity_type == p2p_approvals.PO_ENTITY, ApprovalRequest.entity_id.in_(list(pr_of_po)))
+                  .order_by(ApprovalRequest.id).all() if pr_of_po else []):
+            latest[r.entity_id] = r  # ascending id: the latest request of a PO wins
+        for po_id, r in latest.items():
+            if r.status == "pending":
+                pending_by_pr.setdefault(pr_of_po[po_id], []).append(r)
     for pr in pending_pos:
-        _po, engine_req = p2p_approvals.po_request(db, pr.id)
-        if engine_req is not None and pr.approval_scheme == p2p_approvals.ENGINE_SCHEME:
-            _count_engine(engine_req)
-            continue
+        pending_reqs = pending_by_pr.get(pr.id, [])
+        if pr.approval_scheme == p2p_approvals.ENGINE_SCHEME:
+            if pending_reqs:
+                for engine_req in pending_reqs:
+                    _count_engine(engine_req)
+                continue
+            _po, engine_req = p2p_approvals.po_request(db, pr.id)  # nothing pending: only an older engine request, if any
+            if engine_req is not None:
+                continue
         pending_rows = [a for a in pr.po_approvers if a.approved_at is None]
         for a in pending_rows:
             key = (a.approver_id, P2P_ROLE_LABELS.get(a.role, a.role))

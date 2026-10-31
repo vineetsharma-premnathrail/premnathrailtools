@@ -9,7 +9,6 @@ import pytest
 
 from app.modules.crm.models.rnd_request import CrmRndRequest
 from app.modules.main.models.notification import Notification
-from app.modules.main.models.user import User
 from app.modules.rnd.models.requirement import RndRequirement, RndRequirementRevision
 from app.modules.rnd.routes import requirement_work as work_routes
 from app.modules.rnd.tasks import review_reminders
@@ -48,8 +47,13 @@ def _accept(client, inq, who, **body):
     return client.post(f"{RND}/requirements/inquiry/{inq.id}/accept", json=body, headers=auth(who))
 
 
-def _return(client, inq, who, reason=LONG_REASON, **body):
-    return client.post(f"{RND}/requirements/inquiry/{inq.id}/return", json={"reason": reason, **body}, headers=auth(who))
+def _return(db, inq, who, reason=LONG_REASON):
+    """Return to BD is no longer offered (owner, 2026-10-30); older requirements may still be in
+    that state, so tests put one there through the service to check how it is shown."""
+    from app.modules.rnd.services import requirements as intake
+    from app.modules.crm.models.inquiry import Inquiry
+    intake.return_to_bd(db, source="inquiry", record=db.get(Inquiry, inq.id), user=who, reason=reason, revision_no=None)
+    db.commit()
 
 
 def _task(client, inq, who, assignee, **extra):
@@ -103,14 +107,6 @@ def test_resend_creates_next_revision_and_supersedes_unanswered(client, db, tor_
     assert detail["my_access"]["can_review"] is True
 
 
-def test_resend_after_return_without_any_change_opens_a_revision(client, db, tor_env):
-    bd, head, member, inq = _setup(client, db)
-    assert _return(client, inq, head).status_code == 200
-    assert send_tor(client, inq.id, bd).status_code == 200
-    r0, r1 = _revs(db, inq)
-    assert (r0.status, r1.status) == ("returned", "submitted") and r1.changed_fields is None
-
-
 def test_resend_after_response_keeps_old_revision_responded(client, db, tor_env):
     bd, head, member, inq = _setup(client, db)
     assert _accept(client, inq, head).status_code == 200
@@ -156,7 +152,7 @@ def test_accept_by_head_notifies_bd_and_writes_audit(client, db, tor_env):
 
 def test_review_needs_head_or_review_grant(client, db, tor_env):
     bd, head, member, inq = _setup(client, db)
-    for fn in (lambda: _accept(client, inq, member), lambda: _return(client, inq, member)):
+    for fn in (lambda: _accept(client, inq, member),):
         resp = fn()
         assert resp.status_code == 403
         assert "R&D head" in resp.json()["detail"] and "Role & Permissions" in resp.json()["detail"]
@@ -169,44 +165,37 @@ def test_review_needs_head_or_review_grant(client, db, tor_env):
     reviewer.granular_permissions = ["rnd:requirements.review:approve"]
     db.commit()
     assert _accept(client, inq, reviewer).status_code == 200
-    assert _return(client, inq, reviewer).status_code == 403
 
 
-def test_return_needs_a_real_reason_and_tells_bd(client, db, tor_env):
-    bd, head, member, inq = _setup(client, db)
-    for reason in ("", "too short"):
-        resp = _return(client, inq, head, reason=reason)
-        assert resp.status_code == 422 and resp.json()["detail"] == "Enter the reason BD must fix (at least 10 characters)."
-    assert _revs(db, inq)[0].status == "submitted"
-    resp = _return(client, inq, head)
-    assert resp.status_code == 200
-    rev = _revs(db, inq)[0]
-    assert (rev.status, rev.return_reason) == ("returned", LONG_REASON) and _req(db, inq).status == "returned"
-    assert db.query(CrmRndRequest).one().status == "returned"
-    n = db.query(Notification).filter(Notification.notification_type == "rnd_requirement_returned").all()
-    assert {x.user_id for x in n} == {bd.id} and LONG_REASON in n[0].message
-    # BD sees "Returned by R&D" with the reason, and can always re-send.
-    bd_view = client.get(f"{CRM}/inquiries/{inq.id}/rnd-requirement", headers=auth(bd)).json()
-    assert bd_view["status"] == "returned" and bd_view["return_reason"] == LONG_REASON and bd_view["can_resend"] is True
-    assert bd_view["rd_number"] == _req(db, inq).rd_number and [r["revision_code"] for r in bd_view["revisions"]] == [rev.revision_code]
-    moves = client.get(f"{CRM}/inquiries/{inq.id}/requirement-movements", headers=auth(bd)).json()
-    assert moves[0]["rnd_request"]["review_status"] == "returned" and moves[0]["rnd_request"]["return_reason"] == LONG_REASON
-
-
-def test_return_allowed_from_accepted_but_not_after_response(client, db, tor_env):
+def test_ask_bd_for_details_keeps_the_request_open(client, db, tor_env):
+    # Owner, 2026-10-30: R&D can ask BD for more details without closing the requirement.
     bd, head, member, inq = _setup(client, db)
     assert _accept(client, inq, head).status_code == 200
-    assert _return(client, inq, head).status_code == 200            # AC-11: the only clarification channel
-    assert _revs(db, inq)[0].status == "returned"
-    assert _return(client, inq, head).status_code == 409           # already returned
+    req_id = db.query(CrmRndRequest).one().id
+    url = f"{RND}/requirements/requests/{req_id}/respond"
+    resp = client.post(url, data={"remarks": "short", "ask_details": "true"}, headers=auth(head))
+    assert resp.status_code == 400 and "at least 10 characters" in resp.json()["detail"]
+    resp = client.post(url, data={"remarks": "Axle load and gauge are missing", "ask_details": "true"}, headers=auth(head))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "open" and body["responded_at"] is None
+    assert [q["remarks"] for q in body["queries"]] == ["Axle load and gauge are missing"] and body["queries"][0]["asked_by"]
+    n = db.query(Notification).filter(Notification.notification_type == "rnd_request_details_asked").all()
+    assert {x.user_id for x in n} == {bd.id}
+    # BD sees the question on the movement card; R&D can still give the final response.
+    moves = client.get(f"{CRM}/inquiries/{inq.id}/requirement-movements", headers=auth(bd)).json()
+    assert moves[0]["rnd_request"]["queries"][0]["remarks"] == "Axle load and gauge are missing"
+    assert client.post(url, data={"remarks": "Feasible"}, headers=auth(head)).json()["status"] == "responded"
+    # Nothing to ask on a closed request.
+    assert client.post(url, data={"remarks": "One more question please", "ask_details": "true"}, headers=auth(head)).status_code == 409
 
-    inq2 = make_inquiry(db, bd, uid="INQ-20261007-0002")
-    assert send_tor(client, inq2.id, bd).status_code == 200
-    assert _accept(client, inq2, head).status_code == 200
-    req_id = db.query(CrmRndRequest).filter(CrmRndRequest.record_id == inq2.id).one().id
-    assert client.post(f"{RND}/requirements/requests/{req_id}/respond", data={"remarks": "ok"}, headers=auth(head)).status_code == 200
-    resp = _return(client, inq2, head)
-    assert resp.status_code == 409 and resp.json()["detail"] == "Already answered — ask BD to re-send if it must change."
+
+def test_return_to_bd_is_not_offered(client, db, tor_env):
+    # Owner, 2026-10-30: R&D only accepts; there is no Return to BD endpoint.
+    bd, head, member, inq = _setup(client, db)
+    resp = client.post(f"{RND}/requirements/inquiry/{inq.id}/return", json={"reason": LONG_REASON}, headers=auth(head))
+    assert resp.status_code in (404, 405)
+    assert _revs(db, inq)[0].status == "submitted"
 
 
 def test_old_revision_cannot_be_accepted(client, db, tor_env):
@@ -229,7 +218,7 @@ def test_tasks_offers_and_response_wait_for_accept(client, db, tor_env):
     ):
         assert resp.status_code == 409, (label, resp.text)
         assert resp.json()["detail"].startswith("Accept the requirement first (") and "-R0 is submitted" in resp.json()["detail"], label
-    _return(client, inq, head)
+    _return(db, inq, head)
     resp = _task(client, inq, head, member)
     assert resp.status_code == 409 and "is returned" in resp.json()["detail"]
     send_tor(client, inq.id, bd)
@@ -275,7 +264,7 @@ def test_rnd_side_sees_all_outsiders_only_their_tasks(client, db, tor_env):
     assert detail.status_code == 200
     acc = detail.json()["my_access"]
     assert (acc["view"], acc["download"], acc["upload"], acc["respond"], acc["can_review"]) == (True, True, False, False, False)
-    assert _accept(client, inq, designer).status_code == 403 and _return(client, inq, designer).status_code == 403
+    assert _accept(client, inq, designer).status_code == 403
     up = client.post(f"{WORK}/inquiry/{inq.id}/documents", data={"category": "drawing"},
                      files={"files": ("d.pdf", b"%PDF-1", "application/pdf")}, headers=auth(designer))
     assert up.status_code == 403 and "outside R&D" in up.json()["detail"]
@@ -356,7 +345,7 @@ def test_category_change_by_uploader_or_head_only(client, db, tor_env, doc_env):
 
 def test_timeline_lists_revisions_with_changes_and_review(client, db, tor_env):
     bd, head, member, inq = _setup(client, db)
-    _return(client, inq, head)
+    _return(db, inq, head)
     inq.product = "Rail cutter Mk2"
     db.commit()
     send_tor(client, inq.id, bd)

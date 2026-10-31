@@ -20,6 +20,7 @@ import { FormPage, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sh
 import { useCan } from '@/lib/permissions'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
+import { TIME_ZONES, isKnownTimeZone } from '@/lib/timezones'
 
 const { INK, BODY, MUTED, LINE, SOFT, BLUE } = SHEET
 
@@ -256,7 +257,13 @@ export default function EditPlantPage() {
                     {text('working_calendar', 'Working Calendar', { tour: 'org-plant-op-calendar', req: true, basis: 220, max: 300 })}
                     {text('working_days', 'Working Days', { tour: 'org-plant-op-working-days', ph: 'Mon–Fri', basis: 160, max: 220 })}
                     {text('working_hours', 'Working Hours', { tour: 'org-plant-op-working-hours', ph: '09:00–18:00', basis: 160, max: 220 })}
-                    {text('timezone', 'Time Zone', { tour: 'org-plant-op-timezone', ph: 'Asia/Kolkata', basis: 170, max: 240 })}
+                    <F label="Time Zone" basis={170} max={240}>
+                      <Select data-tour="org-plant-op-timezone" searchable style={sheetInput} value={form.timezone || ''} onChange={(e) => setField('timezone', e.target.value || null)}>
+                        <option value="">— Select —</option>
+                        {form.timezone && !isKnownTimeZone(form.timezone) && <option value={form.timezone}>{form.timezone} (not a valid time zone — pick one)</option>}
+                        {TIME_ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
+                      </Select>
+                    </F>
                   </div>
                 </SheetSection>
                 <SheetSection icon="gear" title="Defaults">

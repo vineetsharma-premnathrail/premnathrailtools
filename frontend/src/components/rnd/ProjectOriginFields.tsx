@@ -2,8 +2,8 @@
 
 // "Project Origin" fields for an R&D (Prototype / Research) project — WHY the
 // project exists. Two origins: Existing Projects (improve a project / machine we
-// already built) and New Project (a new product, process or technology, optionally
-// linked to the customer requirement behind it). Used by the New Project form and
+// already built) and New Project (a new product, process or technology; only
+// "who proposed it and why" + a proof attachment). Used by the New Project form and
 // the project's Edit page; the server (rnd/services/project_origin.py) applies the
 // same rules.
 
@@ -17,7 +17,6 @@ import type { RndProjectOriginV2 } from '@/types/rndIntake'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { Req, Optional, SHEET, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
-import { segmentBtnStyle } from '@/components/shared/ui'
 
 export interface OriginDraft {
   origin: RndProjectOriginV2 | ''
@@ -41,7 +40,7 @@ export const EMPTY_ORIGIN: OriginDraft = {
 
 export const ORIGINS: { value: RndProjectOriginV2; label: string; meaning: string; icon: PhosphorIcon }[] = [
   { value: 'existing_projects', label: 'Existing Projects', meaning: 'Fix or improve a project / machine we already built — complaint, NCR, service issue, cost or production.', icon: Wrench },
-  { value: 'new_project', label: 'New Project', meaning: 'A new product, process or technology — our own idea or a customer requirement that BD sent to R&D.', icon: Lightbulb },
+  { value: 'new_project', label: 'New Project', meaning: 'A new product, process or technology — say who proposed it and why.', icon: Lightbulb },
 ]
 export const ORIGIN_LABELS: Record<string, string> = Object.fromEntries(ORIGINS.map((o) => [o.value, o.label]))
 export const ORIGIN_HEX: Record<string, string> = { existing_projects: '#D97706', new_project: '#7C3AED' }
@@ -107,7 +106,7 @@ export function originPayload(d: OriginDraft): Record<string, unknown> {
   }
 }
 
-/** Searchable picker over /rnd/projects/source-options (server search, max 20). */
+/** Searchable picker over /rnd/projects/source-options (server search, max 20; machines uncapped). */
 function SourcePicker({ kind, value, label, onChange, placeholder }: {
   kind: RndProjectSourceKind | 'product' | 'machine'
   value: number | null
@@ -153,25 +152,9 @@ function SourcePicker({ kind, value, label, onChange, placeholder }: {
   )
 }
 
-function Toggle<T extends string>({ value, options, onChange }: { value: T | ''; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
-  return (
-    <div style={{ display: 'inline-flex', border: `1px solid ${SHEET.LINE}`, borderRadius: 10, overflow: 'hidden' }}>
-      {options.map((o) => {
-        const on = o.value === value
-        return (
-          <button key={o.value} type="button" onClick={() => onChange(o.value)}
-            style={{ ...segmentBtnStyle(on), border: 'none', borderRadius: 0, background: on ? SHEET.BLUE : '#fff', color: on ? '#fff' : SHEET.BODY }}>
-            {o.label}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
 const PROOF_HINT: Record<string, string> = {
   existing_projects: 'The project being improved and the reason are enough; add who proposed it if useful.',
-  new_project: 'Proof: attach the proposal or management note in Attachments. Linking a customer requirement keeps the project traceable to it.',
+  new_project: 'Proof: attach the proposal or management note in Attachments.',
 }
 
 export default function ProjectOriginFields({ value, onChange, creating }: {
@@ -193,7 +176,7 @@ export default function ProjectOriginFields({ value, onChange, creating }: {
           return (
             // ui-audit-ignore-next-line custom-button — origin option card (icon + title + description tile), not a pill button
             <button key={o.value} type="button" aria-pressed={on}
-              onClick={() => { if (!on) onChange({ ...EMPTY_ORIGIN, origin: o.value, note: d.note, sourceKind: o.value === 'new_project' ? 'inquiry' : '' }) }}
+              onClick={() => { if (!on) onChange({ ...EMPTY_ORIGIN, origin: o.value, note: d.note }) }}
               style={{
                 textAlign: 'left', padding: '12px 14px', borderRadius: 12, cursor: 'pointer', display: 'flex', gap: 10, alignItems: 'flex-start',
                 border: `1.5px solid ${on ? SHEET.BLUE : SHEET.LINE}`, background: on ? 'rgba(37,99,235,0.06)' : '#fff',
@@ -207,27 +190,6 @@ export default function ProjectOriginFields({ value, onChange, creating }: {
           )
         })}
       </div>
-
-      {d.origin === 'new_project' && (
-        <div data-tour="rnd-pf-origin-source" style={{ marginTop: 14 }}>
-          <label style={sheetLabel}>Customer requirement <Optional /></label>
-          <div style={{ marginBottom: 8 }}>
-            <Toggle value={d.sourceKind as 'inquiry' | 'tender' | ''} options={[{ value: 'inquiry', label: 'Inquiry' }, { value: 'tender', label: 'Tender' }]}
-              onChange={(k) => { if (k !== d.sourceKind) set({ sourceKind: k, sourceId: null, sourceLabel: '' }) }} />
-          </div>
-          {d.sourceKind && (
-            <SourcePicker key={d.sourceKind} kind={d.sourceKind} value={d.sourceId} label={d.sourceLabel}
-              onChange={(id, label) => set({ sourceId: id, sourceLabel: label })}
-              placeholder={`Search ${d.sourceKind === 'inquiry' ? 'inquiries' : 'tenders'} sent to R&D — R&D ID, customer, product…`} />
-          )}
-          <p style={sheetHint}>Only requirements sent to R&D that you can open are listed, by R&D ID. Leave empty for an internal idea.</p>
-          <div style={{ marginTop: 12 }}>
-            <label style={sheetLabel}>Product <Optional /></label>
-            <SourcePicker kind="product" value={d.productId} label={d.productLabel}
-              onChange={(id, label) => set({ productId: id, productLabel: label })} placeholder="Existing product this is based on, if any" />
-          </div>
-        </div>
-      )}
 
       {d.origin === 'existing_projects' && (
         <div data-tour="rnd-pf-origin-source" style={{ marginTop: 14 }}>

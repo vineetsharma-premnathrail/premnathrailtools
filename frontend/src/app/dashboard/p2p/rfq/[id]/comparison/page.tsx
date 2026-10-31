@@ -1,21 +1,21 @@
 'use client'
 
-// ME47 / ME49 / ME21N on one RFQ:
-// 1. Record each vendor's quote line by line (price, discount, GST, delivery days, make) plus freight / packing.
+// One RFQ (one buyer, an explicit set of requisition lines):
+// 1. Record each vendor's quote line by line (price, discount, GST, delivery days, make, quantity the vendor can supply) plus freight / packing.
 // 2. Comparison grid — landed unit cost per line (excl. GST), L1 per line and overall.
-// 3. Award each line to a vendor (reason when not L1).
-// 4. The PO is made in Tally and uploaded on the requisition (Upload PO) — POs aren't created in the portal.
+// 3. Award each line BY QUANTITY: a line can be split between vendors (reason when a vendor is not L1).
+// 4. The PO is made in Tally per vendor and uploaded on the requisition (Upload PO) — POs aren't created in the portal.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { p2pApi, rfqApi, vendorsApi } from '@/lib/api'
-import { Comparison, LineQuotation, RfqInvites, RfqQuoteFile, mmQuotationsApi, rfqInvitesApi } from '@/lib/mmPurchasingApi'
+import { CompareCell, CompareLine, Comparison, LineQuotation, RfqInvites, RfqQuoteFile, mmQuotationsApi, rfqInvitesApi } from '@/lib/mmPurchasingApi'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { P2PRequest, RFQ } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
-import { inputStyle, primaryBtnStyle, secondaryBtnStyle, RowCount } from '@/components/shared/ui'
+import { primaryBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, RowCount } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
@@ -25,7 +25,6 @@ import { formatDate } from '@/lib/format'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
-import Select from '@/components/shared/Select'
 
 const card: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -37,6 +36,8 @@ const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSi
 const td: React.CSSProperties = { padding: '7px 10px', fontSize: 12.5, borderTop: `1px solid ${BORDER.normal}`, verticalAlign: 'top' }
 const errBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
 const money = (v: number | null | undefined) => (v == null ? '—' : `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`)
+const fmtQty = (n: number | null | undefined) => (n == null ? '—' : Number(n.toFixed(3)).toLocaleString('en-IN'))
+const EPS = 1e-6
 
 type Opt = { value: string; label: string }
 const QUOTE_FILE_ACCEPT = '.pdf,image/*,.doc,.docx,.xls,.xlsx'
@@ -67,7 +68,8 @@ export default function QuotationComparisonPage() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState<LineQuotation | 'new' | null>(null)
-  const [picks, setPicks] = useState<Record<number, string>>({})
+  // Award draft, keyed by the quote line (vendor_quotation_item_id): quantity typed per vendor cell, and the reason for a non-L1 vendor.
+  const [qtys, setQtys] = useState<Record<number, string>>({})
   const [reasons, setReasons] = useState<Record<number, string>>({})
   // Emailed RFQs: who was invited, the vendor's quotation files per recorded quote.
   const [invites, setInvites] = useState<RfqInvites | null>(null)
@@ -77,6 +79,23 @@ export default function QuotationComparisonPage() {
   const searchParams = useSearchParams()
   const vendorParam = searchParams?.get('vendor') || ''
   const vendorParamHandled = useRef(false)
+
+  // Saved awards fill the quantity boxes. A line with no award yet gets its whole open quantity on L1 as a starting point
+  // (unsaved until "Save awards" is pressed); the buyer edits or splits it.
+  const seedAwards = (c: Comparison) => {
+    const q: Record<number, string> = {}
+    const r: Record<number, string> = {}
+    for (const l of c.lines) {
+      const saved = l.quotes.filter((x): x is CompareCell => !!x && (x.awarded_qty ?? 0) > EPS)
+      for (const x of saved) { q[x.vendor_quotation_item_id] = String(Number((x.awarded_qty ?? 0).toFixed(3))); if (x.award_reason) r[x.vendor_quotation_item_id] = x.award_reason }
+      if (!saved.length && l.l1_vendor_quotation_item_id && (l.open_qty ?? l.quantity) > EPS) {
+        const l1 = l.quotes.find((x) => x?.vendor_quotation_item_id === l.l1_vendor_quotation_item_id)
+        q[l.l1_vendor_quotation_item_id] = String(Number(Math.min(l1?.quote_quantity ?? l.quantity, l.open_qty ?? l.quantity).toFixed(3)))
+      }
+    }
+    setQtys(q)
+    setReasons((old) => ({ ...r, ...old }))
+  }
 
   const load = useCallback(async () => {
     if (!rfqId) return
@@ -98,10 +117,7 @@ export default function QuotationComparisonPage() {
         (err) => { problems.push(`${vq.vendor_name}: ${extractErrorMessages(err, 'could not load the quotation files.').join(' ')}`); return [vq.id, [] as RfqQuoteFile[]] as const },
       )))
       setQuoteFiles(Object.fromEntries(fileLists))
-      setPicks(Object.fromEntries(c.lines.map((l) => {
-        const awarded = l.quotes.find((x) => x?.is_awarded)
-        return [l.pr_item_id, String(awarded?.vendor_quotation_item_id ?? l.l1_vendor_quotation_item_id ?? '')]
-      })))
+      seedAwards(c)
       setError(problems.join(' '))
     } catch (err) { setError(extractErrorMessages(err, 'Could not load the quotations of this RFQ — go back to the RFQ and open it again.').join(' ')) }
   }, [rfqId, allowCmp])
@@ -126,10 +142,13 @@ export default function QuotationComparisonPage() {
   const canCreatePo = can('p2p', 'purchase_orders', 'create')
   const canAttachQuoteFile = canEdit && (canFeature('p2p', 'rfq', 'vendor_quotes', 'edit') || canFeature('p2p', 'rfq', 'vendor_quotes', 'create'))
   const inviteList = invites?.invites || []
-  // Saved awards (from the server) vs the award picks on screen — the PO request is the saved awards.
-  const savedAward = (l: Comparison['lines'][number]) => String(l.quotes.find((x) => x?.is_awarded)?.vendor_quotation_item_id ?? '')
-  const awardedLines = cmp ? cmp.lines.filter((l) => savedAward(l)).length : 0
-  const awardsUnsaved = !!cmp && cmp.lines.some((l) => (picks[l.pr_item_id] || '') !== savedAward(l))
+  // Saved awards (from the server) vs the quantities on screen — the PO follows the saved awards.
+  const cellsOf = (l: CompareLine) => l.quotes.filter((x): x is CompareCell => !!x)
+  const wantQty = (c: CompareCell) => Math.max(0, Number(qtys[c.vendor_quotation_item_id]) || 0)
+  const draftTotal = (l: CompareLine) => cellsOf(l).reduce((a, c) => a + wantQty(c), 0)
+  const lineChanged = (l: CompareLine) => cellsOf(l).some((c) => Math.abs(wantQty(c) - (c.awarded_qty ?? 0)) > EPS)
+  const awardedLines = cmp ? cmp.lines.filter((l) => (l.awarded_total ?? 0) > EPS).length : 0
+  const awardsUnsaved = !!cmp && cmp.lines.some(lineChanged)
   const invitedQuoted = inviteList.filter((i) => i.quote_status === 'quoted').length
   const stillWaiting = inviteList.filter((i) => i.quote_status !== 'quoted')
 
@@ -154,12 +173,19 @@ export default function QuotationComparisonPage() {
 
   const saveAwards = async () => {
     if (!cmp || !rfqId) return
-    const awards = cmp.lines.filter((l) => picks[l.pr_item_id]).map((l) => ({
-      pr_item_id: l.pr_item_id, vendor_quotation_item_id: Number(picks[l.pr_item_id]), reason: reasons[l.pr_item_id]?.trim() || undefined,
-    }))
-    if (!awards.length) { setError('Pick a vendor for at least one line.'); return }
+    // Per changed line: every vendor with a quantity (a split replaces the line's earlier split), and 0 for a vendor whose award is taken back.
+    const awards: { pr_item_id: number; vendor_quotation_item_id: number; quantity: number; reason?: string }[] = []
+    for (const l of cmp.lines.filter(lineChanged)) {
+      for (const c of cellsOf(l)) {
+        const want = wantQty(c)
+        const had = c.awarded_qty ?? 0
+        if (want > EPS) awards.push({ pr_item_id: l.pr_item_id, vendor_quotation_item_id: c.vendor_quotation_item_id, quantity: want, reason: reasons[c.vendor_quotation_item_id]?.trim() || undefined })
+        else if (had > EPS) awards.push({ pr_item_id: l.pr_item_id, vendor_quotation_item_id: c.vendor_quotation_item_id, quantity: 0 })
+      }
+    }
+    if (!awards.length) { setError('Nothing to save: enter a quantity for at least one vendor on a line, or change an award first.'); return }
     setBusy(true)
-    try { setCmp(await mmQuotationsApi.award(rfqId, awards)); setError('') } catch (err) {
+    try { const fresh = await mmQuotationsApi.award(rfqId, awards); setCmp(fresh); seedAwards(fresh); setError('') } catch (err) {
       setError(extractErrorMessages(err, 'Could not save the awards.').join(' '))
     } finally { setBusy(false) }
   }
@@ -182,7 +208,7 @@ export default function QuotationComparisonPage() {
         <div>
           <p style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45', margin: '0 0 4px' }}>{pr?.p2p_number}{rfq ? ` · ${rfq.rfq_number}` : ''}</p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Quotations &amp; Comparison</h1>
-          <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>Price every line per vendor, compare landed cost, award each line, then send the awards to Purchase Orders.</p>
+          <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>Price every line per vendor, compare landed cost, then award each line by quantity (a line can be split between vendors). The PO per vendor is uploaded on the requisition.</p>
         </div>
         <button type="button" style={secondaryBtnStyle} onClick={() => rfq && router.push(recordPath('/dashboard/p2p/rfq', rfq))}>← Back</button>
       </div>
@@ -252,24 +278,30 @@ export default function QuotationComparisonPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 + cmp.vendors.length * 160 }}>
                 <thead>
                   <tr>
-                    <th style={th}>Item <RowCount count={cmp.lines.length} /></th><th style={{ ...th, textAlign: 'right' }}>Qty</th><th style={{ ...th, textAlign: 'right' }}>Last PO</th>
+                    <th style={th}>Item <RowCount count={cmp.lines.length} /></th><th style={{ ...th, textAlign: 'right' }}>To buy</th><th style={{ ...th, textAlign: 'right' }}>Last PO</th>
                     {cmp.vendors.map((v) => (
                       <th key={v.vendor_quotation_id} style={{ ...th, textAlign: 'right' }}>
                         {v.vendor_name}{v.overall_rank ? ` (${v.overall_rank})` : ''}
                         {!v.eligible && <div style={{ color: '#b91c1c', textTransform: 'none' }}>{v.ineligible_reason}</div>}
                       </th>
                     ))}
-                    <th style={th}>Award to</th>
+                    <th style={th}>Awarded</th>
                   </tr>
                 </thead>
                 <tbody>
                   {cmp.lines.map((l) => {
-                    const picked = Number(picks[l.pr_item_id] || 0)
-                    const notL1 = picked && picked !== l.l1_vendor_quotation_item_id
+                    const total = draftTotal(l)
+                    const over = total - l.quantity > EPS
+                    const full = !over && Math.abs(total - l.quantity) <= EPS
+                    const counterHex = over ? '#b91c1c' : full ? '#166534' : '#92400e'
+                    const needReason = cellsOf(l).filter((c) => wantQty(c) > EPS && c.vendor_quotation_item_id !== l.l1_vendor_quotation_item_id)
                     return (
                       <tr key={l.pr_item_id}>
                         <td style={td}>{l.item_code ? `${l.item_code} · ` : ''}{l.item_name}</td>
-                        <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right' }}>{l.quantity.toLocaleString('en-IN')} {l.unit || ''}</td>
+                        <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right' }}>
+                          {fmtQty(l.quantity)} {l.unit || ''}
+                          {l.open_qty != null && l.open_qty + EPS < l.quantity && <div style={{ fontSize: 11, color: TEXT.muted }}>{fmtQty(l.open_qty)} not yet ordered</div>}
+                        </td>
                         <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right' }}>{l.last_po ? `${money(l.last_po.unit_price)} (${l.last_po.vendor_name})` : '—'}</td>
                         {l.quotes.map((c, i) => (
                           <td key={i} style={{ ...td, textAlign: 'right', background: c?.rank === 'L1' ? 'rgba(22,163,74,0.07)' : undefined }}>
@@ -277,17 +309,44 @@ export default function QuotationComparisonPage() {
                               <>
                                 <div><b>{money(c.landed_unit)}</b> landed {c.rank && <span style={{ fontSize: 11, fontWeight: 800, color: c.rank === 'L1' ? '#16a34a' : TEXT.muted }}>{c.rank}</span>}</div>
                                 <div style={{ fontSize: 11, color: TEXT.muted }}>rate {money(c.unit_price)}{c.discount_pct ? ` −${c.discount_pct}%` : ''} · GST {c.gst_rate ?? 0}%{c.delivery_days != null ? ` · ${c.delivery_days} d` : ''}</div>
-                                {c.is_awarded && <div style={{ fontSize: 11, color: '#2563eb', fontWeight: 700 }}>awarded</div>}
+                                {c.quote_quantity != null && c.quote_quantity + EPS < l.quantity && <div style={{ fontSize: 11, color: '#92400e' }}>can supply {fmtQty(c.quote_quantity)} of {fmtQty(l.quantity)}</div>}
+                                {(c.awarded_qty ?? 0) > EPS && <div style={{ fontSize: 11, color: '#2563eb', fontWeight: 700 }}>awarded {fmtQty(c.awarded_qty)}</div>}
+                                {canAward && c.eligible && (
+                                  <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', alignItems: 'center', marginTop: 6 }}>
+                                    <input type="number" min="0" step="any" inputMode="decimal" placeholder="0"
+                                      aria-label={`Quantity of ${l.item_name} to award to ${cmp.vendors[i].vendor_name}`}
+                                      value={qtys[c.vendor_quotation_item_id] ?? ''} onChange={(e) => setQtys((s) => ({ ...s, [c.vendor_quotation_item_id]: e.target.value }))}
+                                      style={{ ...cellInput, width: 84, textAlign: 'right' }} />
+                                    <button type="button" title={`Give the whole quantity to ${cmp.vendors[i].vendor_name} (up to what they can supply) and clear the other vendors on this line`}
+                                      onClick={() => setQtys((s) => {
+                                        const next = { ...s }
+                                        for (const o of cellsOf(l)) next[o.vendor_quotation_item_id] = ''
+                                        next[c.vendor_quotation_item_id] = String(Number(Math.min(c.quote_quantity ?? l.quantity, l.open_qty ?? l.quantity).toFixed(3)))
+                                        return next
+                                      })}
+                                      style={{ ...smallSecondaryBtnStyle, padding: '0 8px' }}>All</button>
+                                  </div>
+                                )}
                               </>
                             ) : <span style={{ color: TEXT.muted }}>not quoted</span>}
                           </td>
                         ))}
                         <td style={{ ...td, minWidth: 220 }}>
-                          <Select value={picks[l.pr_item_id] || ''} disabled={!canAward} onChange={(e) => setPicks((s) => ({ ...s, [l.pr_item_id]: e.target.value }))} style={{ ...inputStyle, padding: '6px 8px' }}>
-                            <option value="">—</option>
-                            {l.quotes.map((c, i) => c && c.eligible && <option key={i} value={c.vendor_quotation_item_id}>{cmp.vendors[i].vendor_name} ({c.rank})</option>)}
-                          </Select>
-                          {notL1 ? <input value={reasons[l.pr_item_id] || ''} onChange={(e) => setReasons((s) => ({ ...s, [l.pr_item_id]: e.target.value }))} placeholder="Why not L1? *" style={{ ...inputStyle, padding: '6px 8px', marginTop: 6 }} /> : null}
+                          <div data-tour="rfq-cmp-award-counter" style={{ fontWeight: 700, color: counterHex, whiteSpace: 'nowrap' }} aria-live="polite">
+                            Awarded {fmtQty(total)} / To buy {fmtQty(l.quantity)} {l.unit || ''}
+                          </div>
+                          {over && <div style={{ fontSize: 11.5, color: '#b91c1c' }}>{fmtQty(total - l.quantity)} too much: reduce an award.</div>}
+                          {!over && !full && total > EPS && <div style={{ fontSize: 11.5, color: '#92400e' }}>{fmtQty(l.quantity - total)} still without a vendor</div>}
+                          {lineChanged(l) && <div style={{ fontSize: 11.5, color: '#b45309' }}>not saved yet</div>}
+                          {canAward && needReason.map((c) => {
+                            const v = cmp.vendors.find((x) => x.vendor_quotation_id === c.vendor_quotation_id)
+                            return (
+                              <input key={c.vendor_quotation_item_id} value={reasons[c.vendor_quotation_item_id] || ''}
+                                onChange={(e) => setReasons((s) => ({ ...s, [c.vendor_quotation_item_id]: e.target.value }))}
+                                aria-label={`Why ${v?.vendor_name || 'this vendor'} and not L1`}
+                                placeholder={`Why ${v?.vendor_name || 'this vendor'} (${c.rank || 'not L1'}), not L1? *`} style={{ ...cellInput, marginTop: 6 }} />
+                            )
+                          })}
                         </td>
                       </tr>
                     )
@@ -300,19 +359,19 @@ export default function QuotationComparisonPage() {
                 </tbody>
               </table>
             </div>
-            {canAward && cmp.lines.length > 0 && <button type="button" disabled={busy} style={{ ...primaryBtnStyle, marginTop: 12, opacity: busy ? 0.6 : 1 }} onClick={saveAwards}>Save awards</button>}
+            {canAward && cmp.lines.length > 0 && <button type="button" data-tour="rfq-cmp-save-awards" disabled={busy || !awardsUnsaved} style={{ ...primaryBtnStyle, marginTop: 12, opacity: busy || !awardsUnsaved ? 0.6 : 1 }} onClick={saveAwards}>{busy ? 'Saving…' : 'Save awards'}</button>}
           </div>
 
           <div style={card}>
             <h2 style={h2}>3. Upload the PO</h2>
             {awardedLines === 0 ? (
-              <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Award the lines (L1 is pre-selected) and save — then make the PO in Tally and upload it on the requisition.</p>
+              <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Award the lines (L1 is filled in as a starting point) and save. Then make a PO in Tally for each awarded vendor and upload it on the requisition.</p>
             ) : (
               <>
                 <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 10px' }}>
-                  <b style={{ color: TEXT.heading }}>{awardedLines} line(s) awarded.</b> Make the PO in Tally for the awarded vendor, then upload it on the requisition (Upload PO) — it goes for approval from there.
+                  <b style={{ color: TEXT.heading }}>{awardedLines} line(s) awarded.</b> Make a PO in Tally for each awarded vendor, then upload each on the requisition (Upload PO). Each PO goes for approval on its own.
                 </p>
-                {awardsUnsaved && <p style={{ fontSize: 12.5, color: '#b45309', margin: '0 0 10px' }}>You have changed the award picks — click Save awards first, so the saved awards are what the PO follows.</p>}
+                {awardsUnsaved && <p style={{ fontSize: 12.5, color: '#b45309', margin: '0 0 10px' }}>You have changed the award quantities. Click Save awards first, so the saved awards are what the PO follows.</p>}
                 {canCreatePo && pr
                   ? <button type="button" data-tour="rfq-cmp-send-to-po" disabled={awardsUnsaved || busy} style={{ ...primaryBtnStyle, opacity: awardsUnsaved || busy ? 0.6 : 1 }}
                       onClick={() => router.push(recordPath('/dashboard/p2p', pr))}>Open requisition to upload PO →</button>
@@ -330,14 +389,20 @@ export default function QuotationComparisonPage() {
   )
 }
 
-type QLine = { unit_price: string; discount_pct: string; gst_rate: string; delivery_days: string; make_offered: string }
+type QLine = { unit_price: string; discount_pct: string; gst_rate: string; delivery_days: string; make_offered: string; can_supply: string }
+/** A requisition line this RFQ asks quotes for, with the quantity asked. */
+type AskLine = { id: number; item_code: string | null; item_name: string; unit: string | null; ask: number }
 
 function QuoteDialog({ rfq, pr, quote, presetVendorId, onClose, onSaved }: {
   rfq: RFQ; pr: P2PRequest; quote: LineQuotation | null; presetVendorId?: string; onClose: () => void
   /** warning = the quote saved but the vendor's file didn't upload. */
   onSaved: (warning?: string) => void
 }) {
-  const buyLines = (pr.items || []).filter((i) => i.fulfillment_status !== 'stock_issued')
+  // Only the lines this RFQ asks for (an RFQ belongs to one buyer and a chosen set of lines). An old RFQ without a line list quotes the whole requisition.
+  const rfqLines = (rfq.items || []).filter((i) => !i.withdrawn_at)
+  const buyLines: AskLine[] = rfqLines.length
+    ? rfqLines.map((i) => ({ id: i.pr_item_id, item_code: i.item_code, item_name: i.item_name || 'Item', unit: i.unit, ask: i.quantity }))
+    : (pr.items || []).filter((i) => i.fulfillment_status !== 'stock_issued').map((i) => ({ id: i.id, item_code: i.item_code ?? null, item_name: i.item_name, unit: i.unit ?? null, ask: i.quantity - (i.issued_qty || 0) }))
   const [vendors, setVendors] = useState<Opt[]>([])
   const [vendorId, setVendorId] = useState(quote?.vendor_id ? String(quote.vendor_id) : (presetVendorId || ''))
   const [files, setFiles] = useState<File[]>([])
@@ -349,7 +414,9 @@ function QuoteDialog({ rfq, pr, quote, presetVendorId, onClose, onSaved }: {
   const [lines, setLines] = useState<Record<number, QLine>>(() => Object.fromEntries(buyLines.map((i) => {
     const q = quote?.items.find((x) => x.pr_item_id === i.id)
     return [i.id, { unit_price: q ? String(q.unit_price) : '', discount_pct: q?.discount_pct != null ? String(q.discount_pct) : '',
-      gst_rate: q?.gst_rate != null ? String(q.gst_rate) : '18', delivery_days: q?.delivery_days != null ? String(q.delivery_days) : '', make_offered: q?.make_offered || '' }]
+      gst_rate: q?.gst_rate != null ? String(q.gst_rate) : '18', delivery_days: q?.delivery_days != null ? String(q.delivery_days) : '', make_offered: q?.make_offered || '',
+      // Shown only when the vendor can supply less than the RFQ asks.
+      can_supply: q?.quantity != null && q.quantity + EPS < i.ask ? String(Number(q.quantity.toFixed(3))) : '' }]
   })))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -363,8 +430,17 @@ function QuoteDialog({ rfq, pr, quote, presetVendorId, onClose, onSaved }: {
 
   const save = async () => {
     if (!vendorId) { setError('Pick the vendor from the vendor master.'); return }
+    for (const i of buyLines) {
+      const cs = lines[i.id]?.can_supply.trim()
+      if (Number(lines[i.id]?.unit_price) > 0 && cs) {
+        const n = Number(cs)
+        if (!Number.isFinite(n) || n <= 0) { setError(`${i.item_name}: "Can supply" must be more than 0. Leave it empty if the vendor quotes the full ${fmtQty(i.ask)} ${i.unit || ''}.`.replace('  ', ' ')); return }
+        if (n - i.ask > EPS) { setError(`${i.item_name}: this RFQ asks for ${fmtQty(i.ask)} ${i.unit || ''}, so "Can supply" can be at most that. Enter ${fmtQty(i.ask)} or less.`.replace('  ', ' ')); return }
+      }
+    }
     const items = buyLines.filter((i) => Number(lines[i.id]?.unit_price) > 0).map((i) => ({
       pr_item_id: i.id, unit_price: Number(lines[i.id].unit_price),
+      quantity: lines[i.id].can_supply.trim() ? Number(lines[i.id].can_supply) : null,
       discount_pct: lines[i.id].discount_pct === '' ? null : Number(lines[i.id].discount_pct),
       gst_rate: lines[i.id].gst_rate === '' ? null : Number(lines[i.id].gst_rate),
       delivery_days: lines[i.id].delivery_days === '' ? null : Number(lines[i.id].delivery_days),
@@ -412,13 +488,14 @@ function QuoteDialog({ rfq, pr, quote, presetVendorId, onClose, onSaved }: {
         </SheetSection>
         <SheetSection icon="list" title="Line prices">
           <div style={{ overflow: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 10 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-              <thead><tr>{['Item', 'Qty', 'Unit price', 'Disc. %', 'GST %', 'Delivery (days)', 'Make offered'].map((h, i) => <th key={h} style={{ ...th, position: 'static' }}>{h}{i === 0 && <RowCount count={buyLines.length} />}</th>)}</tr></thead>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
+              <thead><tr>{['Item', 'Asked', 'Can supply', 'Unit price', 'Disc. %', 'GST %', 'Delivery (days)', 'Make offered'].map((h, i) => <th key={h} style={{ ...th, position: 'static' }}>{h}{i === 0 && <RowCount count={buyLines.length} />}</th>)}</tr></thead>
               <tbody>
                 {buyLines.map((i) => (
                   <tr key={i.id}>
                     <td style={td}>{i.item_code ? `${i.item_code} · ` : ''}{i.item_name}</td>
-                    <td style={{ ...td, whiteSpace: 'nowrap' }}>{i.quantity - (i.issued_qty || 0)} {i.unit || ''}</td>
+                    <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtQty(i.ask)} {i.unit || ''}</td>
+                    <td style={{ ...td, width: 100 }}><input type="number" min="0" step="any" placeholder={fmtQty(i.ask)} aria-label={`Quantity the vendor can supply of ${i.item_name}`} value={lines[i.id].can_supply} onChange={(e) => set(i.id, { can_supply: e.target.value })} style={cellInput} /></td>
                     <td style={{ ...td, width: 120 }}><input type="number" min="0" step="0.01" value={lines[i.id].unit_price} onChange={(e) => set(i.id, { unit_price: e.target.value })} style={cellInput} /></td>
                     <td style={{ ...td, width: 80 }}><input type="number" min="0" max="99" value={lines[i.id].discount_pct} onChange={(e) => set(i.id, { discount_pct: e.target.value })} style={cellInput} /></td>
                     <td style={{ ...td, width: 80 }}><input type="number" min="0" max="100" value={lines[i.id].gst_rate} onChange={(e) => set(i.id, { gst_rate: e.target.value })} style={cellInput} /></td>
@@ -429,7 +506,7 @@ function QuoteDialog({ rfq, pr, quote, presetVendorId, onClose, onSaved }: {
               </tbody>
             </table>
           </div>
-          <p style={sheetHint}>Prices excl. GST. Landed cost on the comparison adds freight and packing, spread over the quoted lines.</p>
+          <p style={sheetHint}>Prices excl. GST. Landed cost on the comparison adds freight and packing, spread over the quoted lines. Leave &quot;Can supply&quot; empty when the vendor quotes the full quantity asked; enter less when they can only supply part (the rest can be awarded to another vendor).</p>
         </SheetSection>
         <SheetSection icon="clip" title="Vendor's quotation (PDF)">
           <input data-tour="rfq-cmp-quote-file" type="file" multiple accept={QUOTE_FILE_ACCEPT} disabled={busy}

@@ -48,11 +48,15 @@ export default function P2PRfqPage() {
     setLoading(true)
     setError('')
     try {
-      const [prData, rfqData] = await Promise.all([
-        p2pApi.list({ status: 'approved', limit: 1000 }),
+      // A requisition waits for an RFQ while it has lines this person buys that are on no RFQ yet
+      // (several buyers each raise their own RFQ on one requisition).
+      const [lineData, rfqData] = await Promise.all([
+        p2pApi.myLines({ state: 'to_quote', limit: 500 }),
         rfqApi.list({ limit: 1000 }),
       ])
-      setPrs(prData)
+      const readyIds = new Set(lineData.rows.map((r) => r.p2p_request_id))
+      const prData: P2PRequest[] = readyIds.size ? await p2pApi.list({ limit: 1000 }) : []
+      setPrs(prData.filter((pr) => readyIds.has(pr.id)))
       setRfqs(rfqData)
     } catch (err: any) {
       setError(extractErrorMessages(err, 'Failed to load RFQ data.'))
@@ -68,16 +72,9 @@ export default function P2PRfqPage() {
 
   if (isLoading || !isAuthorized) return null
 
-  const rfqPrIds = new Set(rfqs.map((r) => r.p2p_request_id))
-  // A PR is only ready for an RFQ once every line has been decided (nothing
-  // left 'pending' — those may still be issued from store stock) and at
-  // least one line was actually sent to procurement. The backend enforces
-  // the same rule on RFQ creation.
-  const prsAwaitingRfq = prs.filter((pr) =>
-    !rfqPrIds.has(pr.id)
-    && !pr.items.some((it) => it.fulfillment_status === 'pending')
-    && pr.items.some((it) => it.fulfillment_status === 'sent_to_procurement')
-  )
+  // Requisitions with at least one of this person's lines sent to procurement and on no RFQ yet
+  // (My Lines "to quote"); lines still waiting for the stock check don't block the others.
+  const prsAwaitingRfq = prs
   const startRfq = (pr: P2PRequest) => router.push(recordHref('/dashboard/p2p/rfq/new', pr, 'id', undefined, 'pr_id'))
 
   const q = search.trim().toLowerCase()

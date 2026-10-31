@@ -65,8 +65,9 @@ class PmProjectWithMachineCreate(BaseModel):
     sales_order_ref: str | None = None
     description: str | None = None
     project_manager_id: int | None = None
-    start_date: date
-    target_handover_date: date
+    # Not asked on the Add New Project form; planned later through milestones / Overview.
+    start_date: date | None = None
+    target_handover_date: date | None = None
     priority: str = DEFAULT_PRIORITY
     # Not accepted on create (422 from the route); see PmProjectCreate.
     internal_order_id: int | None = None

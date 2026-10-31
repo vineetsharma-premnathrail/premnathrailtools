@@ -7,7 +7,7 @@ import { lockHeaderFor, rememberLockVersion } from '@/lib/lockVersion'
 import { IDEMPOTENT_METHODS, keyFor, settle } from '@/lib/idempotency'
 import { isUserActive, notifyLocked } from '@/lib/appLockState'
 import { looksLikeTeams, teamsSilentSignIn } from '@/lib/teamsAuth'
-import type { P2PRequestLineItemInput, RequirementMovement, RndRequirement, RndRequirementDetail, PRCategoryMeta, StoreDocType, StoreDocTypeKind, StoreStockEntry, StoreDocTypePayload, StoreIssueFormStandard, StorePlantAccess, StorePlantAccessPayload, StoreItemMeta, StoreItemVendorSuggestion, RndRequest, RndRequestAssignment, RndAssignee } from '@/types'
+import type { P2PRequestLineItemInput, RequirementMovement, RndRequirement, RndRequirementDetail, PRCategoryMeta, StoreDocType, StoreDocTypeKind, StoreStockEntry, StoreDocTypePayload, StoreIssueFormStandard, StorePlantAccess, StorePlantAccessPayload, StoreItemMeta, StoreItemVendorSuggestion, RndRequest, RndRequestAssignment, RndAssignee, PrTracker, MyLinesResponse } from '@/types'
 
 // Files above this open through a direct SharePoint link rather than the API.
 const LARGE_DOWNLOAD_BYTES = 50 * 1024 * 1024
@@ -1228,13 +1228,35 @@ export const p2pApi = {
     return data
   },
 
-  approvePO: async (id: number, comment?: string) => {
-    const { data } = await apiClient.post(`/p2p/requests/${id}/approve-po`, { comment })
+  // poId: which PO to decide when several POs of the requisition wait for approval.
+  approvePO: async (id: number, comment?: string, poId?: number) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/approve-po`, { comment, po_id: poId })
     return data
   },
 
-  reject: async (id: number, reason?: string) => {
-    const { data } = await apiClient.post(`/p2p/requests/${id}/reject`, { reason })
+  reject: async (id: number, reason?: string, poId?: number) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/reject`, { reason, po_id: poId })
+    return data
+  },
+
+  /** Requester tracker: PR approval trail + per line buyer / RFQ / PO / PO approval / GRN / quantities (no prices). */
+  tracker: async (id: number): Promise<PrTracker> => {
+    const { data } = await apiClient.get(`/p2p/requests/${id}/tracker`)
+    return data
+  },
+  /** Purchase head: move one line's not-yet-ordered quantity to another buyer. */
+  reassignLineBuyer: async (id: number, itemId: number, payload: { buyer_id: number; reason: string }) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/lines/${itemId}/reassign-buyer`, payload)
+    return data
+  },
+  /** Write off a line's not-yet-ordered quantity (all of it when quantity is omitted). */
+  shortCloseLine: async (id: number, itemId: number, payload: { quantity?: number; reason: string }) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/lines/${itemId}/short-close`, payload)
+    return data
+  },
+  /** Buyer worklist. buyer_id=0 = unassigned lines (purchase head). */
+  myLines: async (params: { buyer_id?: number; all?: boolean; state?: string; search?: string; p2p_request_id?: number; urgent?: boolean; overdue?: boolean; skip?: number; limit?: number } = {}): Promise<MyLinesResponse> => {
+    const { data } = await apiClient.get('/p2p/my-lines', { params })
     return data
   },
 
@@ -1245,16 +1267,6 @@ export const p2pApi = {
 
   assignBuyer: async (id: number, assigned_buyer_id: number, assignment_date?: string) => {
     const { data } = await apiClient.post(`/p2p/requests/${id}/assign-buyer`, { assigned_buyer_id, assignment_date })
-    return data
-  },
-
-  requestQuotations: async (id: number, payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post(`/p2p/requests/${id}/request-quotations`, payload)
-    return data
-  },
-
-  selectVendor: async (id: number, selected_vendor: string) => {
-    const { data } = await apiClient.post(`/p2p/requests/${id}/select-vendor`, { selected_vendor })
     return data
   },
 
@@ -1701,8 +1713,15 @@ export const rfqApi = {
     return data
   },
 
-  create: async (p2pRequestId: number, requiresTechnicalEvaluation: boolean = false) => {
-    const { data } = await apiClient.post('/p2p/rfqs', { p2p_request_id: p2pRequestId, requires_technical_evaluation: requiresTechnicalEvaluation })
+  // One RFQ per requisition + buyer. pr_item_ids omitted = the buyer's lines that are ready.
+  create: async (p2pRequestId: number, requiresTechnicalEvaluation: boolean = false, opts: { pr_item_ids?: number[]; buyer_id?: number } = {}) => {
+    const { data } = await apiClient.post('/p2p/rfqs', { p2p_request_id: p2pRequestId, requires_technical_evaluation: requiresTechnicalEvaluation, ...opts })
+    return data
+  },
+
+  /** Replace the lines of a draft RFQ. */
+  setLines: async (id: number, prItemIds: number[]) => {
+    const { data } = await apiClient.patch(`/p2p/rfqs/${id}/lines`, { pr_item_ids: prItemIds })
     return data
   },
 
@@ -1752,50 +1771,14 @@ export const rfqApi = {
     return data
   },
 
-  // Vendor Quotations -> Quotation Comparison -> Technical Evaluation
-  // (optional) -> Commercial Evaluation -> Vendor Selection -> PO Draft
-  addVendorQuotation: async (rfqId: number, payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/vendor-quotations`, payload)
-    return data
-  },
-
+  // Header-level quote evaluation was replaced by line quotations + the comparison (award per line).
   listVendorQuotations: async (rfqId: number) => {
     const { data } = await apiClient.get(`/p2p/rfqs/${rfqId}/vendor-quotations`)
     return data
   },
 
-  updateVendorQuotation: async (rfqId: number, vqId: number, payload: Record<string, unknown>) => {
-    const { data } = await apiClient.patch(`/p2p/rfqs/${rfqId}/vendor-quotations/${vqId}`, payload)
-    return data
-  },
-
-  startTechnicalEvaluation: async (rfqId: number) => {
-    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/start-technical-evaluation`)
-    return data
-  },
-
-  evaluateTechnical: async (rfqId: number, vqId: number, status: string, remarks?: string) => {
-    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/vendor-quotations/${vqId}/technical-evaluation`, { status, remarks })
-    return data
-  },
-
-  startCommercialEvaluation: async (rfqId: number) => {
-    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/start-commercial-evaluation`)
-    return data
-  },
-
-  evaluateCommercial: async (rfqId: number, vqId: number, status: string, remarks?: string) => {
-    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/vendor-quotations/${vqId}/commercial-evaluation`, { status, remarks })
-    return data
-  },
-
-  selectVendorQuotation: async (rfqId: number, vendorQuotationId: number) => {
-    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/select-vendor-quotation`, { vendor_quotation_id: vendorQuotationId })
-    return data
-  },
-
-  /** Upload PO on the requisition (2026-10-30): the Tally PO number + PDF, the vendor quote, ship-to
-   *  store and each line's price. The server builds the PO from the PR lines and sends it for approval. */
+  /** Upload PO (2026-10-31): one PO per vendor — the Tally PO number + PDF, the vendor (awarded quote via
+   *  details.vendor_quotation_id), ship-to store and the lines with quantity + price. One RFQ can get several POs. */
   uploadPo: async (rfqId: number, tallyPoNo: string, details: Record<string, unknown>, file: File) => {
     const formData = new FormData()
     formData.append('tally_po_no', tallyPoNo)
@@ -1810,6 +1793,12 @@ export const rfqApi = {
 
   updatePoDraft: async (rfqId: number, poId: number, payload: Record<string, unknown>) => {
     const { data } = await apiClient.patch(`/p2p/rfqs/${rfqId}/po-draft/${poId}`, payload)
+    return data
+  },
+
+  /** Discard a draft PO (returned / withdrawn); its quantity goes back to open. Reason: 5+ characters. */
+  discardPoDraft: async (rfqId: number, poId: number, reason: string) => {
+    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/po-draft/${poId}/discard`, { reason })
     return data
   },
 
@@ -3276,7 +3265,6 @@ export const rndApi = {
     return data
   },
   acceptRequirement: async (source: string, id: number, remarks?: string) => { const { data } = await apiClient.post(`/rnd/requirements/${source}/${id}/accept`, { remarks }); return data },
-  returnRequirement: async (source: string, id: number, reason: string) => { const { data } = await apiClient.post(`/rnd/requirements/${source}/${id}/return`, { reason }); return data },
   setDocumentCategory: async (documentId: number, category: string) => { const { data } = await apiClient.patch(`/rnd/requirement-work/documents/${documentId}/category`, { category }); return data },
   uploadTechnicalOffer: async (source: string, id: number, p: { file: File; title: string; offer_date: string; notes?: string; revise_of_id?: number }): Promise<import('@/types/rndIntake').RndOfferV2> => {
     const form = new FormData(); form.append('file', p.file); form.append('title', p.title); form.append('offer_date', p.offer_date)
@@ -3299,9 +3287,11 @@ export const rndApi = {
     for (const f of p.files) form.append('files', f)
     const { data } = await apiClient.post('/rnd/tasks', form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Assigning' }); return data
   },
-  respondToRequest: async (requestId: number, payload: { remarks?: string; delay_reason?: string; files?: File[] }): Promise<RndRequest> => {
+  /** `ask_details`: a question to BD in `remarks` — the request stays open (no files / delay reason). */
+  respondToRequest: async (requestId: number, payload: { remarks?: string; delay_reason?: string; files?: File[]; ask_details?: boolean }): Promise<RndRequest> => {
     const form = new FormData()
     if (payload.remarks) form.append('remarks', payload.remarks)
+    if (payload.ask_details) form.append('ask_details', 'true')
     if (payload.delay_reason) form.append('delay_reason', payload.delay_reason)
     for (const f of payload.files || []) form.append('files', f)
     const { data } = await apiClient.post(`/rnd/requirements/requests/${requestId}/respond`, form, {

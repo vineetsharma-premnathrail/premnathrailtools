@@ -24,7 +24,7 @@ const config: TourConfig = {
     {
       target: 'rnd-nav-requirements',
       title: 'Requirements',
-      purpose: 'Inbox of customer requirements that the sales (BD) team has sent from CRM as Technical Offer Requests (TOR). Each has an R&D ID (RDR-year-number) and a revision per send.',
+      purpose: 'Inbox of customer requirements that the sales (BD) team has sent from CRM. Each has an R&D ID (RDR-year-number) and a revision per send.',
     },
     {
       target: 'rnd-req-header',
@@ -35,8 +35,8 @@ const config: TourConfig = {
     {
       target: 'rnd-req-search',
       title: 'Search',
-      purpose: 'Find by TOR number, inquiry / tender ID, product or customer name.',
-      validExample: 'RDR-2026-0007, TOR-0012 or Indian Railways',
+      purpose: 'Find by R&D ID, inquiry / tender ID, product or customer name.',
+      validExample: 'RDR-2026-0007 or Indian Railways',
     },
     {
       target: 'rnd-req-source',
@@ -52,14 +52,14 @@ const config: TourConfig = {
       title: 'Assigned filter',
       options: [
         { value: 'Everyone’s', meaning: 'All requirements sent to R&D.' },
-        { value: 'Waiting for my review', meaning: 'Revisions you may accept or return (R&D head or R&D › Requirements › Review) that are still awaiting review.' },
+        { value: 'Waiting for my review', meaning: 'Revisions you may accept (R&D head or R&D › Requirements › Review) that are still awaiting review.' },
         { value: 'Awaiting my response', meaning: 'Accepted requirements you may respond to (you are R&D head or hold the Respond right) plus older ones assigned to you by name.' },
       ],
     },
     {
       target: 'rnd-req-table',
       title: 'Requirement list',
-      purpose: 'R&D ID (with a blue "Review" tag when it waits for you), revision, review status, TOR No. (with an orange "Edited" tag if CRM changed it after sending), source, customer, product, quantity, priority (Standard / Urgent), R&D response with assignee and due date, BD owner and when it was last received. Requirements waiting for your review come first, then R&D ID ascending. Click a row to open it.',
+      purpose: 'R&D ID (with a blue "Review" tag when it waits for you), revision (open the requirement to see every revision and what BD changed; an orange "Edited" tag means CRM changed it after sending), review status, source, customer, product, priority (Standard / Urgent), R&D response with assignee and due date, BD owner and when it was last received. Requirements waiting for your review come first, then R&D ID ascending. Click a row to open it.',
       options: RND_REVIEW_OPTIONS,
     },
   ],

@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 
 class VendorQuotationItemPayload(BaseModel):
     pr_item_id: int
+    # What the vendor can supply (default: the quantity this RFQ asks for; lower is fine, higher is refused).
+    quantity: float | None = Field(default=None, gt=0)
     unit_price: float = Field(gt=0)
     discount_pct: float | None = Field(default=None, ge=0, lt=100)
     gst_rate: float | None = Field(default=None, ge=0, le=100)
@@ -32,6 +34,8 @@ class VendorQuotationItemResponse(BaseModel):
     make_offered: str | None = None
     remarks: str | None = None
     is_awarded: bool = False
+    # Quantity awarded to this vendor on the line (a line can be split across vendors).
+    awarded_qty: float | None = None
     award_reason: str | None = None
     awarded_at: datetime | None = None
 
@@ -75,6 +79,9 @@ class LineQuotationResponse(BaseModel):
 class QuotationAward(BaseModel):
     pr_item_id: int
     vendor_quotation_item_id: int
+    # null = the whole remaining quantity of the line to this vendor (any other award of the line on this
+    # RFQ is cleared); more than 0 = a split award for that quantity; 0 = take this vendor's award back.
+    quantity: float | None = Field(default=None, ge=0)
     # Required when the chosen quote is not the line's L1.
     reason: str | None = None
 

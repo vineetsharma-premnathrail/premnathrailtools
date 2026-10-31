@@ -23,10 +23,15 @@ def _qty(q: float) -> str:
     return f"{q:g}"
 
 
-def _items_html(pr: P2PRequest) -> str:
+def _items_html(pr: P2PRequest, rfq: RFQ) -> str:
+    """Only the lines THIS RFQ asks quotes for (one buyer's lines), never the whole requisition."""
     buy = buy_qty_by_pr_item(pr)
+    asked = {r.pr_item_id: r.quantity for r in rfq.items if r.withdrawn_at is None}
+    for pid in list(buy):
+        # What the RFQ was raised for, never more than is still to buy.
+        buy[pid] = min(asked.get(pid) or buy[pid], buy[pid])
     rows = []
-    for n, i in enumerate([i for i in pr.items if buy.get(i.id, 0) > 0], start=1):
+    for n, i in enumerate([i for i in pr.items if i.id in asked and buy.get(i.id, 0) > 0], start=1):
         make = " / ".join(x for x in (i.make, i.part_code) if x)
         rows.append(
             f'<tr style="background:{"#f8fafc" if n % 2 else "#fff"}">'
@@ -64,7 +69,7 @@ def build_rfq_email(rfq: RFQ, pr: P2PRequest, buyer: User | None, contact_name: 
     <p style="margin:0 0 10px;font-size:14px;color:#1e293b">Dear {escape(contact_name or "Sir / Madam")},</p>
     <p style="margin:0 0 18px;font-size:14px;color:#475569;line-height:1.6">{intro}</p>
     {note}
-    {_items_html(pr)}
+    {_items_html(pr, rfq)}
     <p style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#64748b;margin:18px 0 6px">Please include in your reply</p>
     <ol style="margin:0;padding-left:18px;font-size:13px;color:#1e293b;line-height:1.7">
       <li>Unit rate for each item (and any discount)</li>

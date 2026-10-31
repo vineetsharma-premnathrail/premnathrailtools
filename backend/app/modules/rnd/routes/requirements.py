@@ -2,7 +2,7 @@
 
 Inbox of every CRM Inquiry/Tender whose requirement has been sent to R&D, with
 its R&D ID (RDR-YYYY-NNNN), revisions (-R0, -R1 …) and the review state. R&D
-accepts a revision or returns it to BD with a reason (rnd/services/requirements.py).
+accepts a revision (rnd/services/requirements.py); Return to BD was removed 2026-10-30.
 The CRM record stays the single source of truth for the requirement itself — a
 re-send from CRM shows up here at once as a new revision.
 
@@ -333,11 +333,6 @@ class AcceptPayload(BaseModel):
     revision_no: int | None = None
 
 
-class ReturnPayload(BaseModel):
-    reason: str | None = None
-    revision_no: int | None = None
-
-
 def _review_out(db: Session, source: str, record_id: int, user: User) -> dict:
     req = intake.get(db, source, record_id)
     rev = intake.latest_revision(db, req) if req else None
@@ -359,17 +354,7 @@ async def accept_requirement(source: Source, record_id: int, payload: AcceptPayl
     return _review_out(db, source, record_id, user)
 
 
-@router.post("/{source}/{record_id}/return")
-async def return_requirement(source: Source, record_id: int, payload: ReturnPayload | None = None,
-                             db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Return the latest revision to BD with the reason they must fix (from Submitted, or from
-    Accepted until R&D responds). BD sees "Returned by R&D: <reason>" and re-sends."""
-    payload = payload or ReturnPayload()
-    record = _live_record(db, source, record_id)
-    ra.ensure(db, user, source, record_id, "view")
-    intake.return_to_bd(db, source=source, record=record, user=user, reason=payload.reason, revision_no=payload.revision_no)
-    db.commit()
-    return _review_out(db, source, record_id, user)
+# Return to BD was removed (owner, 2026-10-30): R&D only accepts a requirement.
 
 
 @router.post("/requests/{request_id}/respond")
@@ -377,11 +362,15 @@ async def respond_to_request(
     request_id: int,
     remarks: str | None = Form(None),
     delay_reason: str | None = Form(None),
+    ask_details: bool = Form(False),
     files: list[UploadFile] | None = File(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """R&D's answer to a CRM request: remarks and/or documents, plus a delay
+    """`ask_details=true`: R&D asks BD for more details in `remarks` — the request stays open
+    (requirement_movement.ask_details); no files or delay reason.
+
+    Otherwise R&D's answer to a CRM request: remarks and/or documents, plus a delay
     reason when answered after the due date. Only an accepted revision can be
     answered. Documents are filed with the CRM record (Documents tab) and
     flagged shared_via_tor so both sides can open them."""
@@ -397,6 +386,12 @@ async def respond_to_request(
     if ra.is_rnd_side(user):
         ensure_feature_action(user, "rnd", "requirements", "crm_request", "submit")
     files = [f for f in (files or []) if f and f.filename]
+    if ask_details:
+        if files:
+            raise HTTPException(status_code=400, detail="A question to BD carries no documents — remove the files, or attach them to the final response.")
+        requirement_movement.ask_details(db, req=req, record=record, user=user, remarks=remarks)
+        db.commit()
+        return requirement_movement.serialize_requests(db, [req])[req.id]
     requirement_movement.mark_responded(
         db, req=req, user=user, remarks=remarks, delay_reason=delay_reason, has_files=bool(files),
     )

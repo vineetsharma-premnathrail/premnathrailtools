@@ -33,7 +33,12 @@ register_features(
     _feature("fulfilment", "Stock check & issue from stock", "action", {"view": "view", "create": "view", "edit": "edit"},
              "See each line's store-stock check, issue lines from stock (only the PR's Store Manager or an admin can) and send lines to procurement (Purchase team)."),
     _feature("buyer", "Assign buyer", "action", {"edit": "edit", "view": "view"},
-             "Assign or change the Purchase-team buyer of an approved requisition."),
+             "Assign or change the Purchase-team buyer of an approved requisition, or move one line's not-yet-ordered quantity to another buyer."),
+    _feature("my_lines", "My Lines tab", "subtab", {"view": "view"},
+             "Requisition lines this person buys: to quote, ordered, waiting for goods."),
+    _feature("all_lines", "All buyers' lines (purchase head)", "action", {"view": None, "edit": None},
+             "See and work every buyer's lines: raise RFQs, award, upload POs and short-close lines bought by someone else. "
+             "Only ticking it on a role grants it."),
     _feature("attachments", "Attachments", "section", {"view": "view", "create": "view", "delete": "delete"},
              "See, upload and remove supporting files. Uploading still needs Create (own PR) or Edit; removing only your own files."),
     _feature("close", "Close / short-close", "action", {"view": "view", "edit": "edit"},

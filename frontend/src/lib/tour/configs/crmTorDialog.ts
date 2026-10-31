@@ -32,15 +32,7 @@ const config: TourConfig = {
       title: 'Reference client documents',
       required: false,
       purpose: 'Tick any Client Documents (customer RFQ, drawings, specifications) that R&D should receive with the request. Only files uploaded to this record\'s Documents tab under Client Documents are listed.',
-      after: 'Ticked files are attached alongside the generated Technical Offer Request PDF.',
-    },
-    {
-      target: 'tor-word-doc',
-      title: 'Technical Offer document (step 1: create)',
-      required: true,
-      purpose: '"Create in Word" builds the document from this record and opens it in Word Online so you can change wording, add tables or notes before R&D sees it. After that the "Word document ▾" button opens a menu: Edit in Word, Download .docx, history.',
-      why: 'R&D receives exactly the document you reviewed, not just the raw form fields. Send stays disabled until the document exists.',
-      after: 'On Send, the PDF of this Word file is emailed to R&D, stored on SharePoint and listed under Documents › Internal Documents. Each re-send needs a new document for that send ("Rebuild from current revision & edit" in the Word document menu).',
+      after: 'Ticked files are shared with R&D with the request (links in the email and in R&D › Requirements). No separate Technical Offer document is made.',
     },
     {
       target: 'tor-cancel-btn',
@@ -49,8 +41,8 @@ const config: TourConfig = {
     },
     {
       target: 'tor-send-btn',
-      title: 'Send (step 2)',
-      purpose: 'Enabled once the Word document is created. Makes the PDF of that Word file, saves it to SharePoint and Internal Documents, and sends it to the whole R&D team with your due date, remarks and the ticked documents.',
+      title: 'Send',
+      purpose: 'Sends the requirement to the whole R&D team with your due date, remarks and the ticked documents. R&D sees the full requirement under R&D › Requirements; no Word or PDF document is made.',
       after: 'The Info tab shows the new request card with status "Awaiting R&D", and an "Email Sent" entry is added to the Timeline. The Send button stays disabled until the requirement is edited again, so the same version is not sent twice.',
     },
   ],

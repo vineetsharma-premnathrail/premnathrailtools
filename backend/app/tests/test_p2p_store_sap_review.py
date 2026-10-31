@@ -99,11 +99,14 @@ def test_no_po_upload_to_a_blocked_vendor(client, db):
                     project_type="new", request_date=date.today(), requested_by_id=buyer.id, priority="standard")
     db.add(pr)
     db.flush()
-    db.add(P2PRequestItem(p2p_request_id=pr.id, item_name="O-ring", quantity=10, unit="Nos", project_inhouse="Project",
-                          fulfillment_status="sent_to_procurement"))
-    rfq = RFQ(rfq_number="RFQ-2026-9501", p2p_request_id=pr.id, status="locked")
+    line = P2PRequestItem(p2p_request_id=pr.id, item_name="O-ring", quantity=10, unit="Nos", project_inhouse="Project",
+                          fulfillment_status="sent_to_procurement", buyer_id=buyer.id)
+    db.add(line)
+    rfq = RFQ(rfq_number="RFQ-2026-9501", p2p_request_id=pr.id, status="locked", buyer_id=buyer.id, created_by_id=buyer.id)
     db.add(rfq)
     db.flush()
+    from app.modules.p2p.models.rfq_item import RFQItem
+    db.add(RFQItem(rfq_id=rfq.id, pr_item_id=line.id, quantity=10))  # the RFQ's own line
     db.add(RFQAttachment(rfq_id=rfq.id, vendor_tier="L1", vendor_name=v.name, vendor_id=v.id, filename="L1.pdf",
                          sharepoint_path="x/L1.pdf", created_by_id=buyer.id))
     db.commit()

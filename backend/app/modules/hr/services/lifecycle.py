@@ -36,6 +36,7 @@ from app.modules.organization.models.department import Department
 from app.modules.organization.services.department_heads import is_same_unit
 from app.modules.p2p.models.p2p_request import P2PRequest, P2P_CATEGORY_AUTO_BUYERS
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
+from app.modules.p2p.models.rfq import RFQ
 from app.utils.notifications import broadcast_notification, notify_user
 
 MODULE_KEY = "hr"
@@ -952,6 +953,18 @@ def complete_exit(db: Session, event: HrLifecycleEvent, payload, actor: User) ->
             )
             line.buyer_id = handover.id
             p2p_changes.append(f"{pr.p2p_number} line {line.item_name}: buyer → {user_label(handover)}")
+        # RFQs the leaver owns on open requisitions (multi-buyer split): the new buyer must be able to open,
+        # chase and award them, so the RFQ's buyer moves with the lines.
+        for rfq, pr in (db.query(RFQ, P2PRequest).join(P2PRequest, P2PRequest.id == RFQ.p2p_request_id)
+                        .filter(RFQ.buyer_id == user.id, RFQ.status != "cancelled",
+                                P2PRequest.status.notin_(P2P_CLOSED_STATUSES)).all()):
+            record_audit(
+                db, entity_type="p2p_request", entity_id=pr.id, action="update", module_key=MODULE_KEY,
+                summary=f"Buyer of RFQ {rfq.rfq_number} on {pr.p2p_number} reassigned from leaver {user_label(user)} to {user_label(handover)} ({event.event_no})",
+                old_value={"rfq_id": rfq.id, "buyer_id": user.id}, new_value={"rfq_id": rfq.id, "buyer_id": handover.id}, user_id=actor.id,
+            )
+            rfq.buyer_id = handover.id
+            p2p_changes.append(f"{pr.p2p_number} RFQ {rfq.rfq_number}: buyer → {user_label(handover)}")
     if p2p_changes:
         changes.append(f"{len(p2p_changes)} P2P approval/buyer assignment(s) reassigned")
     summary["p2p"] = p2p_changes

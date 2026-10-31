@@ -26,7 +26,7 @@ const inputStyle: React.CSSProperties = { ...sharedInputStyle, width: 'auto', ba
 const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
 
 // Inbox of CRM requirements sent to R&D via "Send Technical Requirement to R&D": every one has an R&D ID
-// (RDR-YYYY-NNNN), a revision per send, and a review state — R&D accepts it or returns it to BD.
+// (RDR-YYYY-NNNN), a revision per send, and a review state — R&D accepts it.
 // Needs-my-review first, then R&D ID ascending (the server sorts the same way).
 function sortRows(list: RndRequirementRow[]): RndRequirementRow[] {
   return [...list].sort((a, b) => Number(b.needs_my_review) - Number(a.needs_my_review) || (a.rd_number || '~').localeCompare(b.rd_number || '~', undefined, { numeric: true }))
@@ -70,7 +70,7 @@ export default function RndRequirementsPage() {
         <div>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Requirements</h1>
         <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>
-          Customer requirements sent from CRM, each with an R&amp;D ID and revisions — accept it or return it to BD.
+          Customer requirements sent from CRM, each with an R&amp;D ID and revisions — open one and accept it.
           {toReview > 0 && <> <strong style={{ color: '#2563EB' }}>{toReview}</strong> waiting for your review.</>}
           {awaitingMe.length > 0 && <> <strong style={{ color: '#2563EB' }}>{awaitingMe.length}</strong> awaiting your response{overdueMine > 0 && <> (<strong style={{ color: '#DC2626' }}>{overdueMine} overdue</strong>)</>}.</>}
           {pendingResend > 0 && <> <strong style={{ color: '#EA580C' }}>{pendingResend}</strong> edited in CRM since last sent.</>}
@@ -88,7 +88,7 @@ export default function RndRequirementsPage() {
         <input
           data-tour="rnd-req-search"
           style={{ ...inputStyle, flex: '1 1 260px', minWidth: 200 }}
-          placeholder="Search by R&D ID, TOR no., inquiry/tender ID, product or customer…"
+          placeholder="Search by R&D ID, inquiry/tender ID, product or customer…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -122,7 +122,7 @@ export default function RndRequirementsPage() {
         <table data-tour="rnd-req-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1280 }}>
           <thead>
             <tr>
-              {['R&D ID', 'Revision', 'Status', 'TOR No.', 'Source', 'Customer', 'Product / Tender', 'Qty', 'Priority', 'R&D Response', 'BD Owner', 'Last Received'].map((h, hi) => (
+              {['R&D ID', 'Revision', 'Status', 'Source', 'Customer', 'Product / Tender', 'Priority', 'R&D Response', 'BD Owner', 'Last Received'].map((h, hi) => (
                 // Header text wraps instead of being cut with "…" by TableFit.
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'normal', textOverflow: 'clip', verticalAlign: 'bottom' }}>
                   {h}{hi === 0 && <RowCount count={rows.length} />}
@@ -132,9 +132,9 @@ export default function RndRequirementsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={12} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={12} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 {search || source || mine ? 'No requirements match your filters.' : 'No requirements yet — they arrive here when the business team sends a Technical Offer Request from CRM.'}
               </td></tr>
             ) : (
@@ -145,21 +145,20 @@ export default function RndRequirementsPage() {
                     <td style={{ ...cellStyle, fontWeight: 700, color: TEXT.heading, whiteSpace: 'nowrap' }}>
                       {r.rd_number || '—'}
                       {r.needs_my_review && (
-                        <span title="Waiting for your accept / return" style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(37,99,235,0.12)', color: '#1d4ed8' }}>
+                        <span title="Waiting for you to accept it" style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(37,99,235,0.12)', color: '#1d4ed8' }}>
                           Review
                         </span>
                       )}
                     </td>
-                    <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.revision_code ? `R${r.revision_code.split('-R').pop()}` : '—'}</td>
-                    <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.status ? <Pill label={REVISION_STATUS_LABEL[r.status]} hex={REVISION_STATUS_HEX[r.status]} /> : '—'}</td>
-                    <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>
-                      {r.offer_number || '—'}
+                    <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
+                      {r.revision_code ? `R${r.revision_code.split('-R').pop()}` : '—'}
                       {r.edited_after_send && (
                         <span title="The requirement was edited in CRM after it was last sent to R&D — expect a re-send." style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(180,83,9,0.12)', color: '#B45309' }}>
                           Edited
                         </span>
                       )}
                     </td>
+                    <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.status ? <Pill label={REVISION_STATUS_LABEL[r.status]} hex={REVISION_STATUS_HEX[r.status]} /> : '—'}</td>
                     <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
                       <span style={{ fontSize: 11, fontWeight: 600, color: TEXT.muted }}>{r.source === 'inquiry' ? 'Inquiry' : 'Tender'}</span><br />
                       {r.universal_id}
@@ -169,7 +168,6 @@ export default function RndRequirementsPage() {
                       {r.product || '—'}
                       {r.category && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{r.category}</div>}
                     </td>
-                    <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.quantity || '—'}</td>
                     <td style={cellStyle}>
                       {r.priority ? (
                         <Pill label={priorityLabel(r.priority)} hex={priorityTone(r.priority).color} />

@@ -64,9 +64,26 @@ def _po_approval_block_reason(db: Session, po: P2PPurchaseOrder) -> str | None:
     Director / Partner stamps of POs approved before it),
     not just a status string, and refuses a PO with no parent PR at all —
     such a PO never went through any approval chain."""
-    from app.modules.p2p.po_split import EXTERNAL_PO_SOURCES
+    from app.modules.p2p.po_split import EXTERNAL_PO_SOURCES, po_approval_status, po_is_released
+    # A closed requisition is finished: what the vendor never supplied was written off when it was closed.
+    owner_pr = db.get(P2PRequest, po.p2p_request_id) if po.p2p_request_id else None
+    if owner_pr is not None and owner_pr.status == "closed":
+        closed_on = owner_pr.closed_at.date().isoformat() if owner_pr.closed_at else "an earlier date"
+        return (f"Requisition {owner_pr.p2p_number} was closed on {closed_on} — goods can't be received on it, and a closed "
+                "requisition can't be reopened. Raise a new requisition for what is still needed.")
     if po.source in EXTERNAL_PO_SOURCES:
         return None  # approved in Tally and uploaded — no portal approval to wait for
+    # A PO with its own approval request is judged on that request alone: one
+    # requisition can carry several POs, and a sibling PO still in approval
+    # (or the requisition's roll-up status) says nothing about this one.
+    approval = po_approval_status(db, po)
+    if approval is not None:
+        if po_is_released(db, po):
+            return None
+        state = {"pending": "is still waiting for its approvers", "rejected": "was rejected", "cancelled": "was cancelled"}.get(
+            approval, f"is not approved yet (approval status: {approval})")
+        return (f"PO '{po.po_number}' {state}. Goods can be received against it once its own approval is complete (its approvers "
+                "and a Partner) — other POs of the same requisition don't matter.")
     pr = db.query(P2PRequest).filter(P2PRequest.id == po.p2p_request_id).first() if po.p2p_request_id else None
     if not pr:
         return f"PO '{po.po_number}' isn't linked to a purchase requisition, so it never went through PO approval — goods can't be received against it."
@@ -298,30 +315,39 @@ def _sync_po_and_pr_status(db: Session, po: P2PPurchaseOrder, user_id: int) -> N
     latest_grn = max(completed_grns, key=_grn_ts, default=None)
     if latest_grn:
         pr.grn_number = latest_grn.grn_number
+    # The requisition's status is a roll-up of ALL its POs (po_split.rollup_pr_status below) — never set
+    # from this one PO, or a second PO's receipt would overwrite what the first one said.
     if accepted_total <= 0:
         pr.receipt_status = "pending"
-        # Everything received was reversed / returned — back to awaiting goods.
-        if pr.status in ("partially_received", "received"):
-            pr.status = "po_approved"
     elif ordered_total and accepted_total < ordered_total:
         pr.receipt_status = "partial"
-        # "received" too: a Return to Vendor / GRN reversal reopens it.
-        if pr.status in ("po_approved", "partially_received", "received"):
-            pr.status = "partially_received"
     else:
         pr.receipt_status = "received"
-        if pr.status in ("po_approved", "partially_received"):
-            pr.status = "received"
+    # One requisition can carry several POs from several buyers: its status, PO value and received
+    # quantity come from all its POs (forced — also for a single PO).
+    from app.modules.p2p.po_split import rollup_pr_status
+    rollup_pr_status(db, pr, user_id, force=True)
     if pr.status != old_status:
         db.add(AuditLog(
             entity_type="p2p_request", entity_id=pr.id, action="receipt_updated", performed_by_id=user_id,
-            summary=f"Receipt status updated to '{pr.receipt_status}' ({accepted_total}/{ordered_total} accepted) for {pr.p2p_number}.",
+            summary=f"Receipt status updated to '{pr.receipt_status}' ({pr.received_quantity or 0:g}/{pr.ordered_quantity or 0:g} accepted across its POs) for {pr.p2p_number}.",
             old_value=old_status, new_value=pr.status,
         ))
-    # ME21N split: with several POs (or lines still to order) the PR's
-    # status and quantities come from all its POs, not just this one.
-    from app.modules.p2p.po_split import rollup_pr_status
-    rollup_pr_status(db, pr, user_id)
+
+
+def _notify_requester_grn_completed(db: Session, po: P2PPurchaseOrder, grn: P2PGoodsReceipt) -> None:
+    """Bell (never Teams) to the requester once per completed GRN: which PR, which GRN, which PO."""
+    if not po.p2p_request_id:
+        return
+    pr = db.get(P2PRequest, po.p2p_request_id)
+    if pr is None or not pr.requested_by_id:
+        return
+    notify_user(
+        db, user_id=pr.requested_by_id,
+        title=f"Goods received on {pr.p2p_number}",
+        message=f"Goods received on {pr.p2p_number}: {grn.grn_number} on PO {po.po_number}.",
+        notification_type="p2p_grn_completed", entity_type="p2p_request", entity_id=pr.id,
+    )
 
 
 @router.get("", response_model=list[P2PGoodsReceiptResponse])
@@ -736,6 +762,7 @@ async def inspect_goods_receipt(
 
     po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.id == grn.purchase_order_id).first()
     _sync_po_and_pr_status(db, po, user.id)
+    _notify_requester_grn_completed(db, po, grn)
     stock_sync_notes = _post_grn_stock_or_409(db, grn, user.id, inspected_now)
 
     if po.p2p_request_id:
@@ -806,6 +833,7 @@ def apply_quality_decision(db: Session, *, grn_item_id: int, accepted: float, re
     db.flush()
     po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.id == grn.purchase_order_id).first()
     _sync_po_and_pr_status(db, po, user_id)
+    _notify_requester_grn_completed(db, po, grn)
     if po.p2p_request_id:
         db.add(AuditLog(entity_type="p2p_request", entity_id=po.p2p_request_id, action="grn_inspected", performed_by_id=user_id,
                         summary=f"Goods receipt '{grn.grn_number}' completed by Quality inspection lot decisions."))

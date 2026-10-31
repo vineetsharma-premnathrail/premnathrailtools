@@ -166,9 +166,13 @@ def test_po_reject_cancels_po_and_return_reopens_the_draft(client, db, team):
     pr2 = _approved(client, team)
     _po(client, team, pr2)
     r = client.post(f"{BASE}/{pr2['id']}/reject", json={"reason": "Wrong vendor"}, headers=_h(team["po1"]))
-    assert r.status_code == 200 and r.json()["status"] == "rejected"
+    # Each PO has its own approval (2026-10-31): rejecting the PO cancels only that PO. The
+    # requisition itself is never rejected by a PO decision — it goes back to procurement.
+    assert r.status_code == 200 and r.json()["status"] != "rejected" and r.json()["rejected_reason"] is None
     db.expire_all()
     assert {p.status for p in db.query(P2PPurchaseOrder).filter_by(p2p_request_id=pr2["id"])} == {"cancelled"}
+    assert db.get(P2PRequest, pr2["id"]).status in ("approved", "vendor_quotations")
+    assert po.id != db.query(P2PPurchaseOrder).filter_by(p2p_request_id=pr2["id"]).one().id
 
 
 # ── In-flight items keep the old path ───────────────────────────────────────

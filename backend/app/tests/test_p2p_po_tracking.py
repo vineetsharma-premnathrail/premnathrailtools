@@ -12,6 +12,7 @@ from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
 from app.modules.p2p.po_tracking import OPEN_STAGES, STAGES, stage_of
 from app.modules.p2p.routes.po_reports import open_items
 from app.tasks import po_overdue_reminders
+from app.tests.test_p2p_multi_buyer_receiving import split  # noqa: F401 — fixture: one requisition, two POs, two buyers
 from app.tests.test_mm_po_split_amend_quotes import (  # noqa: F401 — fixtures / helpers
     _decide_all, _quoted_and_awarded, _upload_po, setup,
 )
@@ -222,3 +223,14 @@ def test_uploaded_po_is_a_row_with_its_vendor_stage_and_value_and_only_a_release
     # Only the released PO is chased.
     assert [n.entity_id for n in _reminders(db)] == [p_a["id"]]
     assert {r["po_id"] for r in open_items(db)} == {p_a["id"]}
+
+
+# ── several buyers on one requisition (2026-10-31) ──────────────────────────
+
+def test_buyer_filter_follows_the_rfq_buyer_of_each_po(client, db, split):
+    """Two POs of one requisition, each from its own buyer's RFQ: the buyer filter and the row's buyer
+    name follow the RFQ, not the requisition's old single assigned buyer."""
+    only1 = _tracking(client, split["b0"], buyer_id=split["b1"].id)
+    assert [r["po_number"] for r in only1["rows"]] == [split["po1"].po_number]
+    assert only1["rows"][0]["buyer_name"] == split["b1"].name
+    assert [r["po_number"] for r in _tracking(client, split["b0"], buyer_id=split["b2"].id)["rows"]] == [split["po2"].po_number]

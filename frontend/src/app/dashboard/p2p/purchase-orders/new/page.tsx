@@ -15,6 +15,7 @@ import { useCan } from '@/lib/permissions'
 import { p2pApi, purchaseOrdersApi, rfqApi, managedDocumentsApi, organizationApi, storeApi } from '@/lib/api'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PrePoAttachments from '@/components/store/PrePoAttachments'
+import DiscardPoDraftDialog from '@/components/p2p/DiscardPoDraftDialog'
 import { prePoProcurementApi, PrePoReceipt } from '@/lib/prePoApi'
 import { P2PPurchaseOrder, P2PRequest, RFQ } from '@/types'
 import { mmQuotationsApi } from '@/lib/mmPurchasingApi'
@@ -81,6 +82,9 @@ export default function CreatePurchaseOrderPage() {
   // Quantity per line (a draft's quantity can be raised, never lowered below min_quantity).
   const [qtys, setQtys] = useState<Record<number, string>>({})
   const [confirmSend, setConfirmSend] = useState(false)
+  // Discard this draft PO (reason asked in a popup).
+  const [discarding, setDiscarding] = useState(false)
+  const [notice, setNotice] = useState('')
   const [expected, setExpected] = useState('')
   const [deliveryTerms, setDeliveryTerms] = useState('')
   // Cost centre the PO is charged to — Purchase picks it here (a department
@@ -160,6 +164,7 @@ export default function CreatePurchaseOrderPage() {
   const run = async (fn: () => Promise<unknown>, fallback: string) => {
     setBusy(true)
     setError('')
+    setNotice('')
     try { await fn(); await load() } catch (err) { setError(err instanceof LocalProblem ? err.message : extractErrorMessages(err, fallback).join(' ')) } finally { setBusy(false) }
   }
 
@@ -172,6 +177,9 @@ export default function CreatePurchaseOrderPage() {
   const total = (po?.items || []).reduce((s, i) => s + qtyOf(i) * (Number(prices[i.id]?.unitPrice) || 0) * (1 + (Number(prices[i.id]?.taxRate) || 0) / 100), 0)
 
   const canDownload = canFeature('p2p', 'purchase_orders', 'po_document', 'view')
+  // Discard: only a draft, by the RFQ's own buyer or the Purchase head (the server checks again and says who owns the RFQ).
+  const allLinesHead = user.role === 'admin' || canFeature('p2p', 'purchase_requisitions', 'all_lines', 'edit')
+  const canDiscard = editable && !!rfq && (rfq.buyer_id === user.id || allLinesHead)
   const showCostCenter = !!po && (pr?.purpose === 'department' || !!po.cost_center_id)
   const draftPayload = () => ({
     expected_delivery: expected || null,
@@ -260,6 +268,11 @@ export default function CreatePurchaseOrderPage() {
         {po && pr && !editable && (
           <button type="button" style={sheetBtn('secondary', SHEET.INK)} onClick={() => router.push(`${recordPath('/dashboard/p2p', pr)}?from=po-approval`)}>View approval status</button>
         )}
+        {po && canDiscard && (
+          <button type="button" disabled={busy} onClick={() => setDiscarding(true)} data-tour="po-new-discard-btn"
+            title="Throw this draft away: its quantity goes back to open and the Tally number can be used again"
+            style={{ ...sheetBtn('secondary', '#b91c1c', busy), marginRight: 'auto' }}><SheetIcon name="trash" size={16} />Discard draft PO</button>
+        )}
         <button type="button" style={sheetBtn('secondary', SHEET.INK, busy)} disabled={busy} onClick={() => router.push('/dashboard/p2p/purchase-orders')}>{editable ? 'Cancel' : 'Close'}</button>
         {po && editable && (
           <button type="button" disabled={busy} onClick={save} data-tour="po-new-save-btn" style={sheetBtn('secondary', SHEET.INK, busy)}><SheetIcon name="check" size={16} />{busy ? 'Working…' : 'Save'}</button>
@@ -273,8 +286,9 @@ export default function CreatePurchaseOrderPage() {
           <button type="button" disabled={busy} onClick={askSend} data-tour="po-new-send-btn" style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="send" size={16} />Send for approval</button>
         )}
       </>}>
-      {(error || loading) && (
+      {(error || loading || notice) && (
         <div style={{ padding: '16px 24px 0' }}>
+          {notice && !error && <div role="status" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.25)', color: '#166534', fontSize: 13 }}>{notice}</div>}
           {error && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{error}</div>}
           {loading && <p style={{ fontSize: 13, color: SHEET.MUTED, margin: '0 0 16px' }}>Loading…</p>}
         </div>
@@ -547,6 +561,9 @@ export default function CreatePurchaseOrderPage() {
         </div>
       )}
 
+      <DiscardPoDraftDialog target={discarding && rfq && po ? { rfqId: rfq.id, poId: po.id, poNumber: po.po_number, vendorName: po.vendor_name } : null}
+        onClose={() => setDiscarding(false)}
+        onDone={(poNumber) => { setDiscarding(false); setNotice(`Draft PO ${poNumber} discarded. Its quantity is open to order again and its Tally number can be used again.`); load() }} />
       <ConfirmDialog open={confirmSend} danger={false} confirmLabel="Send for approval" title="Send this PO for approval?"
         message="The draft is saved and goes to the PO approvers, then a Partner. Prices and quantities are locked while it is in approval."
         onConfirm={sendForApproval} onCancel={() => setConfirmSend(false)} />

@@ -248,18 +248,19 @@ def display(db: Session, project: RndProject) -> dict:
 
 
 def source_options(db: Session, user: User, kind: str, q: str | None) -> list[dict]:
-    """Up to 20 pickable records of `kind` matching `q` that the user may see.
+    """Up to 20 pickable records of `kind` matching `q` that the user may see (machines: all of them).
     kind="product" lists finished products (no Product Management access needed)."""
     q = (q or "").strip()
     like = f"%{q}%"
     if kind == "machine":
         # Existing projects / machines (PEW serials) — what an improvement project improves.
+        # Full list, not capped: users scroll the whole PEW series to find the machine.
         from app.modules.erp.models.project import Project as Machine
         query = db.query(Machine).filter(Machine.is_deleted == False)  # noqa: E712
         if q:
             query = query.filter(or_(Machine.serial_number.ilike(like), Machine.model_name.ilike(like), Machine.client_company.ilike(like)))
         return [{"id": m.id, "label": machine_label(m), "sub": m.site_name or None}
-                for m in query.order_by(Machine.serial_number.asc()).limit(OPTION_LIMIT).all()]
+                for m in query.order_by(Machine.serial_number.asc()).all()]
     if kind == "product":
         from app.modules.products.models.product import PRODUCT_STATUS_LABELS, FinishedProduct
         query = db.query(FinishedProduct).filter(FinishedProduct.status != "discontinued")

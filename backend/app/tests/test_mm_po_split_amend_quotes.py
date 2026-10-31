@@ -2,7 +2,7 @@
 with re-release, info records, source list and price history.
 
 The PO is not made in the portal any more (2026-10-30): the buyer uploads the
-Tally PO on the requisition (Upload PO), one PO per requisition, so the old
+Tally PO on the requisition (Upload PO), one PO per vendor (several per requisition), so the old
 split-into-POs-by-vendor route and its tests are gone."""
 import pytest
 
@@ -12,6 +12,7 @@ from app.modules.organization.services import approval_engine as engine
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
 from app.modules.p2p.models.rfq import RFQ
+from app.modules.p2p.models.rfq_item import RFQItem
 from app.tests.p2p_po_helpers import post_upload_po
 from app.tests.p2p_workflow_helpers import master_item, set_po_workflow
 from app.tests.test_p2p_item_master_link import _store
@@ -64,9 +65,13 @@ def setup(client, db):
     row = db.get(P2PRequest, pr["id"])
     for it in row.items:
         it.fulfillment_status = "sent_to_procurement"
+        it.buyer_id = buyer.id
     row.status = "vendor_quotations"
-    rfq = RFQ(rfq_number=f"RFQ-MM-{pr['id']}", p2p_request_id=pr["id"], status="locked")
+    rfq = RFQ(rfq_number=f"RFQ-MM-{pr['id']}", p2p_request_id=pr["id"], status="locked", buyer_id=buyer.id, created_by_id=buyer.id)
     db.add(rfq)
+    db.flush()
+    for it in row.items:  # an RFQ carries its own lines
+        db.add(RFQItem(rfq_id=rfq.id, pr_item_id=it.id, store_item_id=it.store_item_id, quantity=it.quantity))
     db.commit()
     v1, v2 = _vendor(db, "V-MM1", "Alpha Hydraulics"), _vendor(db, "V-MM2", "Beta Steels")
     lines = {i.store_item_id: i.id for i in row.items}
@@ -154,10 +159,10 @@ def test_upload_po_release_and_rollup_makes_info_records(client, db, setup):
     assert db.get(P2PRequest, s["pr"]["id"]).status == "po_raised"
     from app.modules.p2p.routes.goods_receipts import _po_approval_block_reason
     assert _po_approval_block_reason(db, db.get(P2PPurchaseOrder, p_a["id"])) is not None  # still in approval
-    # A second upload on the same requisition is refused: it already has its PO.
+    # Every line is on the PO, so a second upload has nothing left to order (it names the RFQ, not an old rule).
     again = post_upload_po(client, s["buyer"], s["rfq"].id, {"vendor_id": s["v1"].id, "ship_to_location_id": _loc.id,
                            "lines": [{"pr_item_id": s["line_a"], "unit_price": 1}]}, "TALLY-MM-DUP")
-    assert again.status_code == 409 and "already has PO" in again.json()["detail"]
+    assert again.status_code == 409 and "Nothing is left to order on RFQ" in again.json()["detail"]
 
     _decide_all(client, db, "p2p_purchase_order", p_a["id"], s["approvers"])
     db.expire_all()

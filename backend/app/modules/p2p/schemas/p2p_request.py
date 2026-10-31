@@ -72,6 +72,11 @@ class P2PRequestItemResponse(BaseModel):
     order_project_element_label: str | None = None
     order_project_display: str | None = None
     attachments: list[P2PRequestAttachmentResponse] = Field(default_factory=list)
+    # Quantity of this line the buyer decided not to buy (short-closed before it was ordered).
+    short_closed_qty: float = 0
+    short_closed_reason: str | None = None
+    short_closed_at: datetime | None = None
+    short_closed_by_name: str | None = None
 
     # Denormalized display fields, filled in by the route.
     issued_from_location_name: str | None = None
@@ -173,6 +178,8 @@ class P2PRequestUpdate(BaseModel):
 
 class P2PRequestActionPayload(BaseModel):
     reason: str | None = None
+    # Reject a PO: which of the requisition's POs (needed when several wait for approval).
+    po_id: int | None = None
 
 
 class P2PRequestApprovePayload(BaseModel):
@@ -180,23 +187,13 @@ class P2PRequestApprovePayload(BaseModel):
     # optional here so the route can give a human message instead of a bare
     # pydantic 422).
     comment: str | None = None
+    # Approve a PO: which of the requisition's POs (needed when several wait for approval).
+    po_id: int | None = None
 
 
 class P2PRequestAssignBuyerPayload(BaseModel):
     assigned_buyer_id: int
     assignment_date: date | None = None
-
-
-class P2PRequestQuotationPayload(BaseModel):
-    vendor: str | None = None
-    rfq_number: str | None = None
-    quotation: str | None = None
-    quotation_date: date | None = None
-    vendor_comparison: str | None = None
-
-
-class P2PRequestSelectVendorPayload(BaseModel):
-    selected_vendor: str
 
 
 class P2PRequestCreatePOItemPricing(BaseModel):

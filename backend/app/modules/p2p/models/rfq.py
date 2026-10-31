@@ -1,13 +1,14 @@
 from __future__ import annotations
 from datetime import date, datetime
 from typing import TYPE_CHECKING
-from sqlalchemy import String, Integer, Boolean, Text, Date, DateTime, ForeignKey
+from sqlalchemy import String, Integer, Boolean, Text, Date, DateTime, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from app.modules.p2p.models.rfq_attachment import RFQAttachment
+    from app.modules.p2p.models.rfq_item import RFQItem
     from app.modules.p2p.models.vendor_quotation import VendorQuotation
 
 # draft: still being filled in, editable by its creator/purchase team.
@@ -26,6 +27,7 @@ class RFQ(Base, TimestampMixin):
     pattern (see close_p2p_request in routes/p2p_requests.py)."""
 
     __tablename__ = "rfqs"
+    __table_args__ = (Index("ix_rfqs_p2p_request_id_buyer_id", "p2p_request_id", "buyer_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     rfq_number: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
@@ -57,6 +59,11 @@ class RFQ(Base, TimestampMixin):
     invite_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    # One RFQ = one purchase requisition + ONE buyer + an explicit set of lines (rfq_items).
+    # Several buyers can each raise their own RFQ on the same requisition. NULL only on RFQs
+    # the migration could not attribute (user deleted).
+    buyer_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     locked_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -65,4 +72,8 @@ class RFQ(Base, TimestampMixin):
     )
     vendor_quotations: Mapped[list["VendorQuotation"]] = relationship(
         "VendorQuotation", back_populates="rfq", cascade="all, delete-orphan"
+    )
+    # The PR lines this RFQ asks quotes for (active line = withdrawn_at IS NULL).
+    items: Mapped[list["RFQItem"]] = relationship(
+        "RFQItem", back_populates="rfq", cascade="all, delete-orphan", order_by="RFQItem.id"
     )

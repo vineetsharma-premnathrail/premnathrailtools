@@ -15,13 +15,14 @@ import RndProjectHistory from '@/components/rnd/RndProjectHistory'
 import RequirementDocumentsTab from '@/components/rnd/RequirementDocumentsTab'
 import RequirementTechnicalOffersTab from '@/components/rnd/RequirementTechnicalOffersTab'
 import RequirementReviewBar from '@/components/rnd/RequirementReviewBar'
-import { secondaryBtnStyle, primaryBtnStyle, pillStyle, Pill, DetailCard, DetailGroup, DetailRow } from '@/components/shared/ui'
+import RequirementRevisionList from '@/components/rnd/RequirementRevisionList'
+import { secondaryBtnStyle, primaryBtnStyle, pillStyle, DetailCard, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { SheetIcon } from '@/components/shared/FormSheet'
 import { rndRequestBadge } from '@/components/crm/RndRequestBlock'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { priorityLabel } from '@/lib/priority'
-import { REVISION_STATUS_HEX, REVISION_STATUS_LABEL, type RndRequirementDetailV2 } from '@/types/rndIntake'
+import { REVISION_STATUS_LABEL, type RndRequirementDetailV2 } from '@/types/rndIntake'
 
 // Requirement · Tasks · Technical Offers · Documents · Timeline (Timeline was History; its role grant key is still "history").
 const TABS = ['Requirement', 'Tasks', 'Technical Offers', 'Documents', 'Timeline'] as const
@@ -119,7 +120,8 @@ export default function RndRequirementDetailPage() {
         <div data-tour="rnd-reqd-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45' }}>{intake?.rd_number || data.offer_number}</span>
-            {intake && data.offer_number && (<><span style={{ fontSize: 11, color: '#d6d3d1' }}>·</span><span style={{ fontSize: 11, fontWeight: 600, color: TEXT.muted }}>{data.offer_number}</span></>)}
+            {/* Sends before 2026-10-30 carried a separate TOR number; newer ones are known by the R&D ID itself. */}
+            {intake && data.offer_number && !data.offer_number.startsWith(intake.rd_number) && (<><span style={{ fontSize: 11, color: '#d6d3d1' }}>·</span><span style={{ fontSize: 11, fontWeight: 600, color: TEXT.muted }}>{data.offer_number}</span></>)}
             <span style={{ fontSize: 11, color: '#d6d3d1' }}>·</span>
             <span style={{ fontSize: 11, fontWeight: 600, color: TEXT.muted }}>{data.source === 'inquiry' ? 'Inquiry' : 'Tender'} {data.universal_id}</span>
           </div>
@@ -260,19 +262,7 @@ export default function RndRequirementDetailPage() {
             </DetailGroup>
           </div>}
           {data.revisions.length > 0 && <div data-tour="rnd-reqd-revision-list">
-            <DetailGroup title="Revisions" last>
-              {[...data.revisions].sort((a, b) => a.revision_no - b.revision_no).map((r) => (
-                <DetailRow key={r.revision_no} label={r.revision_code}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <Pill label={REVISION_STATUS_LABEL[r.status]} hex={REVISION_STATUS_HEX[r.status]} />
-                    <span>Sent {r.submitted_at ? formatDateTime(r.submitted_at) : '—'}{r.submitted_by ? ` by ${r.submitted_by}` : ''}</span>
-                  </span>
-                  {r.reviewed_by && <div style={{ color: TEXT.muted, fontSize: 12.5 }}>{r.status === 'returned' ? 'Returned' : 'Reviewed'} by {r.reviewed_by}{r.reviewed_at ? ` · ${formatDateTime(r.reviewed_at)}` : ''}{r.review_remarks ? ` — ${r.review_remarks}` : ''}</div>}
-                  {r.return_reason && <div style={{ color: '#b91c1c', fontSize: 12.5 }}>Reason: {r.return_reason}</div>}
-                  {r.changed_fields && r.changed_fields.length > 0 && <div style={{ color: TEXT.muted, fontSize: 12.5 }}>Changed: {r.changed_fields.join(', ')}</div>}
-                </DetailRow>
-              ))}
-            </DetailGroup>
+            <RequirementRevisionList source={data.source} recordId={data.record_id} revisions={data.revisions} />
           </div>}
         </DetailCard>
       )}

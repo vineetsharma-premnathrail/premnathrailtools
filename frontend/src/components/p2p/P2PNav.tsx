@@ -4,15 +4,18 @@ import Link from 'next/link'
 import { navScrollRef } from '@/components/shared/navScroll'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
+import { canFeature } from '@/lib/permissions'
 import { filterTabsByAccess } from '@/lib/tabAccess'
 import NotificationBell from '@/components/erp/NotificationBell'
 import TourButton from '@/components/tour/TourButton'
 import { useP2PApproverFlags } from '@/components/p2p/useP2PApproverFlags'
 import NavSettingsGear from '@/components/shared/NavSettingsGear'
-import { ChartBar, CheckCircle, ClipboardText, FileText, Gear, Kanban, PaperPlaneTilt, Truck, User, type Icon } from '@phosphor-icons/react'
+import { ChartBar, CheckCircle, ClipboardText, FileText, Gear, Kanban, ListChecks, PaperPlaneTilt, Truck, User, type Icon } from '@phosphor-icons/react'
 
 const TABS = [
   { href: '/dashboard/p2p', label: 'Purchase Requisitions', icon: 'file', purchaseOnly: false, subtabKey: 'purchase_requisitions' },
+  // The buyer's worklist (requisition lines to quote, order, chase). Shown only with Purchase Requisitions › My Lines tab › View.
+  { href: '/dashboard/p2p/my-lines', label: 'My Lines', icon: 'list', purchaseOnly: true, subtabKey: 'purchase_requisitions' },
   // Vendors come before the RFQ: the RFQ picks its vendors from this master.
   { href: '/dashboard/p2p/vendors', label: 'Vendors', icon: 'users', purchaseOnly: true, subtabKey: 'vendors' },
   { href: '/dashboard/p2p/rfq', label: 'R.F.Q', icon: 'send', purchaseOnly: true, subtabKey: 'rfq' },
@@ -30,6 +33,7 @@ const TABS = [
 // tab's data-tour id, so keys stay as they are.
 const TAB_ICONS: Record<string, Icon> = {
   file: FileText,
+  list: ListChecks,
   check: CheckCircle,
   send: PaperPlaneTilt,
   clipboard: ClipboardText,
@@ -54,6 +58,7 @@ export default function P2PNav() {
   const allowedTabs = filterTabsByAccess('p2p', TABS.filter((tab) => {
     // Vendors: the purchase team or Finance (one shared vendor master).
     if (tab.href === '/dashboard/p2p/vendors') return isPurchaseTeam || !!user?.apps?.includes('accounts') || isAdmin
+    if (tab.href === '/dashboard/p2p/my-lines') return (isPurchaseTeam || isAdmin) && canFeature(user, 'p2p', 'purchase_requisitions', 'my_lines', 'view')
     if (tab.purchaseOnly && !isPurchaseTeam) return false
     // P.O Approval is a pure action queue for PO approvers / Partners (admin
     // sees it too) — old routing tables or the approval engine.

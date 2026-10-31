@@ -1,13 +1,11 @@
 """Technical Offer Request (TOR) document — shared by the Inquiry and Tender
 "Send Technical Requirement to R&D" flows.
 
-The TOR is a managed Word document (main/services/managed_documents.py): the
-BD owner must create it (and may edit it in Word Online) before sending. The
-draft's revision is the number of the upcoming send (previous sends + 1), so
-every send starts from a fresh draft and a sent draft is never re-used.
-
-On send the PDF that is emailed and stored is SharePoint's PDF of that Word
-file; sending without a draft for this send is refused.
+Owner, 2026-10-30: no Technical Offer document is created or sent any more;
+R&D works from the requirement itself (R&D › Requirements) and the client
+documents picked in the send dialog. This module keeps the offer number
+(TOR-...), the requirement snapshot (build_context) and the Word adapter for
+drafts made before the change.
 """
 from datetime import datetime, timezone
 
@@ -82,21 +80,6 @@ def build_context(db: Session, module: str, record, user: User, now: datetime | 
             "inspection_req": None, "product_spec": None, "requirement_desc": record.reason_no_participate,
         })
     return ctx, org
-
-
-async def send_pdf(db: Session, module: str, record, ctx: dict) -> tuple[bytes, bool]:
-    """(pdf bytes, edited_in_word) — the PDF of this send's Word draft. The
-    draft is mandatory: CRM creates (and optionally edits) the document first,
-    then sends, so R&D always gets exactly the document CRM reviewed."""
-    revision = send_revision(db, module, record.id)
-    draft = managed_documents.active_for_revision(db, ENTITY[module], record.id, revision)
-    if not draft:
-        raise HTTPException(
-            status_code=400,
-            detail="Create the Technical Offer Word document first (\"Create Word\" in this dialog), review or edit it, then press Send. "
-                   + ("This is a re-send, so it needs a fresh document for the current requirement." if revision > 1 else ""),
-        )
-    return await managed_documents.current_pdf(draft), True
 
 
 def _loader(module: str):

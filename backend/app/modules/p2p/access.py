@@ -3,8 +3,10 @@ of authorization. Imported by every p2p route module (and the goods-receipt
 routes) so the registrations exist before the first request.
 
     P2PRequest        own = requester · assigned = the buyer, or the buyer of any of its lines · department = the PR's department column
-    P2PPurchaseOrder  own = who drafted it · assigned = the buyer of its requisition
-    RFQ               own = who started it · assigned = the buyer of its requisition
+    P2PPurchaseOrder  own = who drafted it · assigned = the buyer of the RFQ it was ordered on (a PO with no RFQ, made before RFQs owned
+                      their POs: the requisition's header buyer)
+    RFQ               own = who started it · assigned = the RFQ's own buyer (the header buyer of the requisition no longer
+                      reads other buyers' RFQs, 2026-10-31)
     P2PGoodsReceipt   (Store › GRN) own = who received it · assigned = who inspected it
 
 None of these has a plant column, so plant / multi-plant scope is the owner's
@@ -43,12 +45,18 @@ register_scoped(
     P2PRequest, "p2p", entity_type=PR_ENTITY, owner=("requested_by_id",), assigned=("assigned_buyer_id", _line_buyer_of),
     department="department", label="purchase requisition",
 )
+def _rfqs_of_buyer(user):
+    """RFQs the user buys (one RFQ = one buyer, 2026-10-31)."""
+    return select(RFQ.id).where(RFQ.buyer_id == user.id)
+
+
 register_scoped(
     P2PPurchaseOrder, "p2p", entity_type=PO_ENTITY, owner=("created_by_id",),
-    assigned=(lambda user: P2PPurchaseOrder.p2p_request_id.in_(_bought_by(user)),), label="purchase order",
+    assigned=(lambda user: and_(P2PPurchaseOrder.rfq_id.is_(None), P2PPurchaseOrder.p2p_request_id.in_(_bought_by(user))),
+              lambda user: P2PPurchaseOrder.rfq_id.in_(_rfqs_of_buyer(user))), label="purchase order",
 )
 register_scoped(
-    RFQ, "p2p", owner=("created_by_id",), assigned=(lambda user: RFQ.p2p_request_id.in_(_bought_by(user)),), label="RFQ",
+    RFQ, "p2p", owner=("created_by_id",), assigned=("buyer_id",), label="RFQ",
 )
 # GRNs are worked from Store › GRN & Inspection (store:grn permissions), so the
 # Store data scope applies. Store's plant access (store/services/plant_access.py)
@@ -90,6 +98,16 @@ def pr_scope_expr(db: Session, user: User):
 def scope_prs(query: Query, db: Session, user: User) -> Query:
     expr = pr_scope_expr(db, user)
     return query if expr is None else query.filter(expr)
+
+
+def is_pr_approver_party(db: Session, user: User, pr: P2PRequest) -> bool:
+    """True when the user approves (or may act for an approver on) the requisition or one of its POs.
+    Such a user may open the documents of what they approve whoever bought it."""
+    if pr is None:
+        return False
+    if db.query(P2PRequest.id).filter(P2PRequest.id == pr.id, approver_expr(user)).first() is not None:
+        return True
+    return can_act_now(db, user, pr)
 
 
 def ensure_pr_in_scope(db: Session, user: User, pr: P2PRequest) -> None:

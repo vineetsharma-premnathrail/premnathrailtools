@@ -29,7 +29,9 @@ from app.modules.p2p.models.rfq_attachment import RFQAttachment
 from app.modules.p2p.models.rfq_invite import RFQVendorInvite
 from app.modules.p2p.models.vendor_quotation import VendorQuotation
 from app.modules.p2p.rfq_mail import send_invite
-from app.modules.p2p.routes.rfq import _assert_editable, _get_rfq_or_404, _purchase_tab, _write_audit
+from app.modules.p2p.routes.rfq import (
+    _assert_editable, _get_rfq_or_404, _purchase_tab, _write_audit, ensure_rfq_owner, ensure_rfq_readable,
+)
 from app.modules.p2p.schemas.rfq import RFQAttachmentResponse
 from app.utils.sharepoint import build_sharepoint_folder_path, upload_file_to_sharepoint
 
@@ -125,6 +127,7 @@ async def send_invites(db: Session, rfq: RFQ, invites: list[RFQVendorInvite], us
 @router.get("/{rfq_id}/invites")
 def list_invites(rfq_id: int, db: Session = Depends(get_db), user: User = Depends(_purchase_tab("rfq", "view"))):
     rfq = _get_rfq_or_404(db, rfq_id, user)
+    ensure_rfq_readable(db, rfq, user)
     return {"quote_due_date": rfq.quote_due_date, "invite_message": rfq.invite_message, "invites": _rows(db, rfq)}
 
 
@@ -154,6 +157,7 @@ def set_invites(rfq_id: int, payload: InviteSetPayload, db: Session = Depends(ge
 async def add_invites(rfq_id: int, payload: InviteAddPayload, db: Session = Depends(get_db), user: User = Depends(_purchase_tab("rfq", "edit"))):
     """After the RFQ went out: ask more vendors (they are emailed at once)."""
     rfq = _get_rfq_or_404(db, rfq_id, user)
+    ensure_rfq_owner(db, rfq, user, "invite vendors to")
     if rfq.status != "locked":
         raise HTTPException(status_code=409, detail="Pick vendors on the draft RFQ form — this one hasn't been sent yet.")
     have = {i.vendor_id for i in _invites(db, rfq.id)}
@@ -171,6 +175,7 @@ async def add_invites(rfq_id: int, payload: InviteAddPayload, db: Session = Depe
 @router.post("/{rfq_id}/invites/send")
 async def send_pending(rfq_id: int, db: Session = Depends(get_db), user: User = Depends(_purchase_tab("rfq", "edit"))):
     rfq = _get_rfq_or_404(db, rfq_id, user)
+    ensure_rfq_owner(db, rfq, user, "email the vendors of")
     if rfq.status != "locked":
         raise HTTPException(status_code=409, detail="Save the RFQ first — saving sends it to the vendors.")
     pending = [i for i in _invites(db, rfq.id) if i.email_status != "sent"]
@@ -183,6 +188,7 @@ async def send_pending(rfq_id: int, db: Session = Depends(get_db), user: User = 
 @router.post("/{rfq_id}/invites/{invite_id}/resend")
 async def resend_invite(rfq_id: int, invite_id: int, db: Session = Depends(get_db), user: User = Depends(_purchase_tab("rfq", "edit"))):
     rfq = _get_rfq_or_404(db, rfq_id, user)
+    ensure_rfq_owner(db, rfq, user, "email the vendors of")
     if rfq.status != "locked":
         raise HTTPException(status_code=409, detail="Save the RFQ first — saving sends it to the vendors.")
     inv = db.query(RFQVendorInvite).filter(RFQVendorInvite.id == invite_id, RFQVendorInvite.rfq_id == rfq.id).first()
@@ -195,6 +201,7 @@ async def resend_invite(rfq_id: int, invite_id: int, db: Session = Depends(get_d
 @router.post("/{rfq_id}/invites/remind")
 async def remind_invites(rfq_id: int, db: Session = Depends(get_db), user: User = Depends(_purchase_tab("rfq", "edit"))):
     rfq = _get_rfq_or_404(db, rfq_id, user)
+    ensure_rfq_owner(db, rfq, user, "remind the vendors of")
     quoted = _quoted(db, rfq.id)
     waiting = [i for i in _invites(db, rfq.id) if i.email_status == "sent" and i.vendor_id not in quoted]
     if not waiting:
@@ -213,6 +220,7 @@ def _vq_or_404(db: Session, rfq: RFQ, vq_id: int) -> VendorQuotation:
 @router.get("/{rfq_id}/line-quotations/{vq_id}/files", response_model=list[RFQAttachmentResponse])
 def list_quote_files(rfq_id: int, vq_id: int, db: Session = Depends(get_db), user: User = Depends(_purchase_tab("rfq", "view"))):
     rfq = _get_rfq_or_404(db, rfq_id, user)
+    ensure_rfq_readable(db, rfq, user)
     _vq_or_404(db, rfq, vq_id)
     return db.query(RFQAttachment).filter(RFQAttachment.rfq_id == rfq.id, RFQAttachment.vendor_quotation_id == vq_id).all()
 
@@ -223,6 +231,7 @@ async def upload_quote_files(rfq_id: int, vq_id: int, files: list[UploadFile] = 
     """The vendor's quotation (PDF from their email) on their recorded quote."""
     ensure_feature_action(user, "p2p", "rfq", "vendor_quotes", "create")
     rfq = _get_rfq_or_404(db, rfq_id, user)
+    ensure_rfq_owner(db, rfq, user, "attach quotation files to")
     vq = _vq_or_404(db, rfq, vq_id)
     files = [f for f in files if f and f.filename]
     if not files:

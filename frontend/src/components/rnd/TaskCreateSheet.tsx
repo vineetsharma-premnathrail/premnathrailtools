@@ -1,6 +1,6 @@
 'use client'
 
-// R&D › R&D Tasks › Create Task. Step 1 is the Type — Requirement or Prototype —
+// R&D › R&D Tasks › Create Task. Step 1 is the Type — Requirement (default) or Prototype —
 // and the matching form follows: a Requirement task is picked from requirements R&D
 // has ACCEPTED (shown by R&D ID); a Prototype task from a Prototype / Research
 // project. Title, details, assignee, start / due date, priority (Standard / Urgent),
@@ -32,7 +32,7 @@ type ReqPick = { source: RndReqSource; record_id: number }
 type ProjOption = { id: number; project_number: string; title: string }
 
 export default function TaskCreateSheet({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const [type, setType] = useState<RndTaskType | ''>('')
+  const [type, setType] = useState<RndTaskType | ''>('requirement')
   const [requirements, setRequirements] = useState<RndRequirementRow[] | null>(null)
   const [projects, setProjects] = useState<ProjOption[] | null>(null)
   const [reqKey, setReqKey] = useState('')
@@ -52,7 +52,7 @@ export default function TaskCreateSheet({ onClose, onCreated }: { onClose: () =>
 
   const draft = useFormDraft('rnd-task-create', { type, reqKey, projectId, title, remarks, assignee, start, due, priority, steps, files },
     (d) => {
-      setType(d.type || ''); setReqKey(d.reqKey || ''); setProjectId(d.projectId || ''); setTitle(d.title || ''); setRemarks(d.remarks || '')
+      setType(d.type || 'requirement'); setReqKey(d.reqKey || ''); setProjectId(d.projectId || ''); setTitle(d.title || ''); setRemarks(d.remarks || '')
       setAssignee(d.assignee || ''); setStart(d.start || ''); setDue(d.due || ''); setPriority(d.priority === 'urgent' ? 'urgent' : 'standard'); setSteps(Array.isArray(d.steps) ? d.steps : [])
     })
 
@@ -152,7 +152,6 @@ export default function TaskCreateSheet({ onClose, onCreated }: { onClose: () =>
               {typeBtn('requirement', 'Requirement')}
               {typeBtn('prototype', 'Prototype')}
             </div>
-            {!type && <p style={sheetHint}>Pick a type — the form for it appears below.</p>}
             {type === 'requirement' && (
               <div style={{ marginTop: 14 }} data-tour="rnd-tasks-requirement">
                 <label style={sheetLabel}>Requirement <Req /></label>

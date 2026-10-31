@@ -31,8 +31,9 @@ def generate_receipt_number(db: Session) -> str:
 
 def po_line_min_quantity(item: P2PPurchaseOrderItem, db: Session | None = None, lock: bool = False) -> float | None:
     """The least a PO line may be ordered for: what its requisition line still
-    asks for (quantity less what Store issued from stock) minus what the other
-    live POs already order of the same line, never below 0. A line that doesn't
+    asks for (quantity less what Store issued from stock and less what was
+    short-closed) minus what the other live POs already order of the same line,
+    never below 0 and never above this PO line's own quantity. A line that doesn't
     name its requisition line can't be raised from a known floor, so its current
     quantity is the floor."""
     db = db or object_session(item)
@@ -47,13 +48,35 @@ def po_line_min_quantity(item: P2PPurchaseOrderItem, db: Session | None = None, 
         pr_item = db.get(P2PRequestItem, item.pr_item_id)
     if pr_item is None:
         return item.quantity
-    still_to_buy = (pr_item.quantity or 0) - (pr_item.issued_qty or 0)
+    # What the line still asks for: quantity less stock issued and less what the buyer short-closed.
+    still_to_buy = (pr_item.quantity or 0) - (pr_item.issued_qty or 0) - (getattr(pr_item, "short_closed_qty", 0) or 0)
     others = (db.query(func.coalesce(func.sum(P2PPurchaseOrderItem.quantity), 0))
               .join(P2PPurchaseOrder, P2PPurchaseOrder.id == P2PPurchaseOrderItem.purchase_order_id)
               .filter(P2PPurchaseOrderItem.pr_item_id == item.pr_item_id,
                       P2PPurchaseOrder.status != "cancelled",
                       P2PPurchaseOrderItem.purchase_order_id != item.purchase_order_id).scalar() or 0)
-    return max(0.0, round(still_to_buy - others, 6))
+    # Never above this PO line's own quantity (a PO made for part of the line, e.g. one vendor's
+    # award, must stay editable) and never below 0 (the other POs may already cover the line).
+    return max(0.0, min(round(item.quantity or 0, 6), round(still_to_buy - others, 6)))
+
+
+def po_line_floor_reason(item: P2PPurchaseOrderItem, db: Session, floor: float) -> str:
+    """Why `floor` is the least a draft PO line may be ordered for, in words for the buyer: the
+    quantity awarded to the vendor and uploaded on this PO, or - when the other POs of the line already
+    cover part of it - what the requisition still asks for after them."""
+    from app.modules.p2p.models.vendor_quotation import VendorQuotationItem
+
+    own = round(item.quantity or 0, 6)
+    if floor < own - 1e-9:
+        return (f"the requisition line still asks for {floor:g} after the quantity already on the other POs of this line "
+                f"({own:g} is on this one)")
+    if item.vendor_quotation_item_id:
+        qi = db.get(VendorQuotationItem, item.vendor_quotation_item_id)
+        vendor = qi.vendor_quotation.vendor_name if qi is not None and qi.vendor_quotation is not None else None
+        awarded = f"{qi.awarded_qty:g}" if qi is not None and qi.awarded_qty else f"{own:g}"
+        return (f"that is the quantity uploaded on this PO from the {awarded} awarded to {vendor}" if vendor
+                else f"that is the quantity uploaded on this PO ({own:g} awarded)")
+    return f"that is the quantity already uploaded on this PO ({own:g}), which the requisition asks for"
 
 
 def close_receipt_if_po_received(db: Session, po: P2PPurchaseOrder) -> None:
@@ -113,7 +136,8 @@ def qty_raised_lines(db: Session, po: P2PPurchaseOrder) -> int:
         if not item.pr_item_id:
             continue
         pr_item = db.get(P2PRequestItem, item.pr_item_id)
-        if pr_item is not None and (item.quantity or 0) - ((pr_item.quantity or 0) - (pr_item.issued_qty or 0)) > 1e-9:
+        asks = (pr_item.quantity or 0) - (pr_item.issued_qty or 0) - (getattr(pr_item, "short_closed_qty", 0) or 0) if pr_item is not None else 0
+        if pr_item is not None and (item.quantity or 0) - asks > 1e-9:
             n += 1
     return n
 

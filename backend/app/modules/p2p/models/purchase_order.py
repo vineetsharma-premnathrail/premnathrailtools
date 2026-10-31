@@ -93,6 +93,9 @@ class P2PPurchaseOrder(Base, TimestampMixin):
     plant_branch_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("branches.id"), nullable=True)
     ship_to_location_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("store_locations.id"), nullable=True)
     vendor_quotation_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("p2p_vendor_quotations.id"), nullable=True)
+    # The RFQ (and so the buyer) this PO was uploaded from; one RFQ can carry several POs.
+    rfq_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("rfqs.id", ondelete="SET NULL"), nullable=True, index=True)
     amendment_no: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     # A PO made and approved outside the portal and uploaded here (2026-10-27:

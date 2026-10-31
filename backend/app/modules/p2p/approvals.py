@@ -51,6 +51,7 @@ from app.modules.p2p.models.p2p_request import (
     ENGINE_SCHEME, LINE_CATEGORY, P2P_CATEGORIES, P2P_PROJECT_TYPES, P2P_PURPOSES, P2P_REQUIREMENT_TYPES, P2PRequest,
 )
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
+from app.modules.p2p.po_split import live_pos
 
 logger = logging.getLogger(__name__)
 
@@ -196,70 +197,25 @@ def _pr_decided(db: Session, req: ApprovalRequest, outcome: str, actor: User) ->
 
 
 def _po_decided(db: Session, req: ApprovalRequest, outcome: str, actor: User) -> None:
-    from app.modules.p2p.routes.p2p_requests import _cancel_linked_pos, _write_audit
-
-    from app.modules.p2p import po_split
-    from app.modules.p2p.info_records import upsert_from_po
-
+    """A PO's own approval request finished. Each PO has its own approval and a
+    decision changes ONLY that PO (multi-buyer split, 2026-10-31): a rejection
+    cancels just that PO and frees its quantity, a return puts just that PO back
+    to draft, an approval releases just that PO. The requisition is never
+    rejected or returned by a PO decision; its header status is rolled up from
+    all its POs afterwards."""
     po = db.get(P2PPurchaseOrder, req.entity_id)
     pr = db.get(P2PRequest, po.p2p_request_id) if po is not None and po.p2p_request_id else None
     if po is None or pr is None:
         return
-    # ME21N split (2026-10-14): with several POs on one PR, each PO is decided
-    # on its own and the PR's status is rolled up from all of them.
-    if len(po_split.live_pos(db, pr.id)) > 1:
-        if po.status != "issued":
-            return
-        _split_po_decided(db, req, outcome, actor, pr, po)
-        return
-    if pr.status != "po_raised":
-        return
-    who = actor.name or actor.email
-    step = _deciding_step(req)
-    comment = step.comment if step else None
-    now = datetime.now(timezone.utc)
-    if outcome == "approved":
-        # ME11: the released price becomes the vendor + item info record price.
-        upsert_from_po(db, po)
-        pr.status = "po_approved"
-        pr.po_approved_at = now
-        pr.po_approved_by_id = actor.id
-        pr.po_approved_by_name = who
-        pr.po_approved_role = step.stage_name[:30] if step else None
-        pr.po_approval_comment = comment
-        _write_audit(db, pr.id, "po_fully_approved", actor,
-                     summary=f"PO '{po.po_number}' for {pr.p2p_number} got its final approval ({who}).",
-                     old_status="po_raised", new_status="po_approved")
-        _fire(db, "po_approved", "Purchase Order Approved",
-              f"The PO '{po.po_number}' for PR '{pr.p2p_number}' got its final approval from {who}.", pr, actor)
-    elif outcome == "rejected":
-        note = f" Reason: {comment}" if comment else ""
-        pr.status = "rejected"
-        pr.rejected_reason = comment
-        pr.rejected_by_role = (step.stage_name if step else "po_approver")[:30]
-        pr.rejected_by_name = who
-        _write_audit(db, pr.id, "rejected", actor, summary=f"{who} rejected the PO '{po.po_number}' of {pr.p2p_number}.{note}",
-                     old_status="po_raised", new_status="rejected")
-        # Rejecting at PO approval kills the PO too — otherwise it stays
-        # 'issued' in PO Tracking forever against a terminal PR (C-43).
-        _cancel_linked_pos(db, pr, actor, f"the PO was rejected at approval.{note}")
-        _fire(db, "pr_rejected", "Purchase Requisition Rejected",
-              f"PR '{pr.p2p_number}' was rejected by {who} at PO approval.{note}", pr, actor)
-    else:  # returned for changes / withdrawn: the PO goes back to an editable draft
-        po.status = "draft"
-        pr.status = "po_drafted"
-        what = "returned the PO for changes" if outcome == "returned" else "withdrew the PO from approval"
-        note = f" Comment: {comment}" if outcome == "returned" and comment else ""
-        _write_audit(db, pr.id, "po_returned", actor, summary=f"{who} {what} ('{po.po_number}', {pr.p2p_number}).{note}",
-                     old_status="po_raised", new_status="po_drafted")
-    from app.modules.p2p import notify as p2p_notify
-    p2p_notify.po_decided(db, _AfterDecisionTasks(), pr, po, actor, outcome, comment, req.requester_id)
+    if po.status != "issued":
+        return  # e.g. the PO itself is being cancelled or withdrawn — its route sets the status
+    _split_po_decided(db, req, outcome, actor, pr, po)
 
 
 def _split_po_decided(db: Session, req: ApprovalRequest, outcome: str, actor: User, pr: P2PRequest, po: P2PPurchaseOrder) -> None:
-    """One PO of a split requisition decided: only that PO changes (a
-    rejection cancels just it and frees its PR quantity for another PO); the
-    requisition's status is then rolled up from all its POs."""
+    """One PO decided: only that PO changes (a rejection cancels just it and
+    frees its PR quantity for another PO; the award stays so the buyer can
+    re-upload); the requisition's status is then rolled up from all its POs."""
     from app.modules.p2p import po_split
     from app.modules.p2p.info_records import upsert_from_po
     from app.modules.p2p.routes.p2p_requests import _write_audit
@@ -293,6 +249,31 @@ def _split_po_decided(db: Session, req: ApprovalRequest, outcome: str, actor: Us
     po_split.rollup_pr_status(db, pr, actor.id, force=True)
     from app.modules.p2p import notify as p2p_notify
     p2p_notify.po_decided(db, _AfterDecisionTasks(), pr, po, actor, outcome, comment, req.requester_id)
+    if outcome != "approved":
+        _tell_po_buyer_and_requester(db, pr, po, actor, outcome, comment)
+
+
+def _tell_po_buyer_and_requester(db: Session, pr: P2PRequest, po: P2PPurchaseOrder, actor: User,
+                                 outcome: str, comment: str | None) -> None:
+    """A PO rejected / returned: its buyer (the RFQ's buyer, else whoever uploaded it) and the
+    requester get a bell with the reason — the generic decision notice carries no reason and
+    skips the requester. Bell only, never Teams."""
+    from app.modules.p2p.models.rfq import RFQ
+    from app.utils.notifications import notify_user
+
+    rfq = db.get(RFQ, po.rfq_id) if po.rfq_id else None
+    buyer_id = (rfq.buyer_id if rfq else None) or po.created_by_id
+    who = actor.name or actor.email
+    if outcome == "rejected":
+        what, nxt = "rejected", "It is cancelled; its quantity is back with the buyer to upload a PO again or pick another vendor."
+    else:
+        what, nxt = "returned for changes", "It is back in draft with its buyer."
+    why = f" Reason: {comment}" if comment else ""
+    for uid in {buyer_id, pr.requested_by_id} - {None, actor.id}:
+        notify_user(db, uid, title=f"PO {po.po_number} {what}",
+                    message=f"{who} {what} PO {po.po_number} on {pr.p2p_number}.{why} {nxt}",
+                    notification_type="p2p_po_" + ("rejected" if outcome == "rejected" else "returned"),
+                    entity_type="p2p_request", entity_id=pr.id)
 
 
 register_transaction(TransactionType(
@@ -410,13 +391,14 @@ def submit_pr(db: Session, pr: P2PRequest, requester: User) -> ApprovalRequest:
 
 
 def submit_po(db: Session, pr: P2PRequest, po: P2PPurchaseOrder, submitter: User) -> ApprovalRequest:
-    """Send a PO into approval (PR → po_raised, PO → issued). Flushes, never commits."""
+    """Send a PO into approval (PO → issued; the requisition's header status is
+    rolled up from all its POs, so it shows po_raised while this one waits).
+    Each PO has its own approval request. Flushes, never commits."""
     from app.modules.p2p.purpose import check_po_charge
     check_po_charge(db, pr, po)
     seed_workflows(db)
     pr.approval_scheme = ENGINE_SCHEME
     po.status = "issued"
-    pr.status = "po_raised"
     db.flush()
     title = f"Purchase order {po.po_number}" + (f" — {po.vendor_name}" if po.vendor_name else "") + f" ({pr.p2p_number})"
     from app.modules.p2p.pre_po import qty_raised_lines
@@ -428,6 +410,11 @@ def submit_po(db: Session, pr: P2PRequest, po: P2PPurchaseOrder, submitter: User
         amount=po.total_value, context={**_pr_context(pr), "vendor_name": po.vendor_name, "qty_above_requisition": bool(raised)},
         branch_id=getattr(submitter, "branch_id", None),
     )
+    # Header status = roll-up of every PO (this one now waits for approval). Run after the
+    # request exists: a PO without a request would look "released" to the legacy rule.
+    from app.modules.p2p import po_split
+    db.flush()
+    po_split.rollup_pr_status(db, pr, submitter.id, force=True)
     from app.modules.p2p import notify as p2p_notify
     p2p_notify.po_submitted(db, _AfterDecisionTasks(), pr, po, submitter, req)
     return req
@@ -446,8 +433,28 @@ def latest_po(db: Session, pr_id: int, *, live_only: bool = True) -> P2PPurchase
     return q.order_by(P2PPurchaseOrder.id.desc()).first()
 
 
+def pending_po_requests(db: Session, pr_id: int) -> list[tuple[P2PPurchaseOrder, ApprovalRequest]]:
+    """(PO, its pending approval request) for every live PO of the requisition
+    that is waiting for a decision, oldest PO first. A requisition can have
+    several at once (one per buyer / vendor), each decided on its own."""
+    pos = live_pos(db, pr_id)
+    if not pos:
+        return []
+    by_po: dict[int, ApprovalRequest] = {}
+    reqs = (db.query(ApprovalRequest)
+            .filter(ApprovalRequest.entity_type == PO_ENTITY, ApprovalRequest.entity_id.in_([p.id for p in pos]))
+            .order_by(ApprovalRequest.id).all())
+    for r in reqs:  # ascending id: the latest request of a PO wins
+        by_po[r.entity_id] = r
+    return [(p, by_po[p.id]) for p in pos if p.id in by_po and by_po[p.id].status == "pending"]
+
+
 def po_request(db: Session, pr_id: int) -> tuple[P2PPurchaseOrder | None, ApprovalRequest | None]:
-    """The PR's most recent PO that went through the engine, and its latest request."""
+    """The PR's PO approval to show: a live PO waiting for approval (the newest),
+    else the most recent PO that went through the engine, with its latest request."""
+    pending = pending_po_requests(db, pr_id)
+    if pending:
+        return pending[-1]
     pos = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.p2p_request_id == pr_id).order_by(P2PPurchaseOrder.id.desc()).all()
     for po in pos:
         req = engine.latest_request(db, PO_ENTITY, po.id)
@@ -469,15 +476,25 @@ def pending_approvers(db: Session, req: ApprovalRequest | None) -> list[tuple[Us
 
 def approval_info(db: Session, pr: P2PRequest, user: User | None) -> dict | None:
     """The engine approval this requisition is at, for lists and the detail
-    page: the PR approval while it is submitted / returned, the PO approval
-    while the PO is out for approval, otherwise the latest of the two."""
+    page: the PR approval while it is submitted / returned; afterwards the PO
+    approval — with several POs waiting, the one the viewer can decide (else the
+    first waiting), otherwise the latest PO request, else the PR's."""
     pr_req = pr_request(db, pr.id)
-    po, po_req = po_request(db, pr.id)
+    pending_pos = pending_po_requests(db, pr.id)
+    po, po_req = None, None
     if pr.status in ("submitted", "returned"):
         req = pr_req
-    elif pr.status in ("po_raised", "po_drafted"):
-        req = po_req or pr_req
     else:
+        if pending_pos:
+            po, po_req = pending_pos[-1]
+            if user is not None:
+                for cand_po, cand_req in pending_pos:
+                    out = engine.request_out(db, cand_req, user)
+                    if out.get("can_decide"):
+                        po, po_req = cand_po, cand_req
+                        break
+        else:
+            po, po_req = po_request(db, pr.id)
         req = po_req or pr_req
     if req is None:
         return None
@@ -489,7 +506,9 @@ def approval_info(db: Session, pr: P2PRequest, user: User | None) -> dict | None
         "waiting_on": [u.name or u.email for u, _ in waiting],
         "can_decide": bool(out.get("can_decide")), "can_stand_in": bool(out.get("can_stand_in")),
         "pr_request_id": pr_req.id if pr_req else None,
-        "po_id": po.id if po_req is not None and po is not None else None,
+        "po_id": po.id if po_req is not None and po is not None and req is po_req else None,
+        # Every PO of the requisition waiting for approval, so the page can list them all.
+        "pending_po_ids": [p.id for p, _ in pending_pos],
     }
 
 
@@ -530,11 +549,11 @@ def pr_engine_party_pr_ids(user: User):
 
 
 def can_act_now(db: Session, user: User, pr: P2PRequest) -> bool:
-    """Delegate / escalation target / approver of the live PR or PO step."""
+    """Delegate / escalation target / approver of the live PR step or of any live
+    PO waiting for approval."""
     if engine.can_act_on_entity(db, user, PR_ENTITY, pr.id):
         return True
-    po, req = po_request(db, pr.id)
-    return bool(po is not None and req is not None and engine.can_act_on_entity(db, user, PO_ENTITY, po.id))
+    return any(engine.can_act_on_entity(db, user, PO_ENTITY, po.id) for po, _ in pending_po_requests(db, pr.id))
 
 
 def is_approver_user(db: Session, user: User) -> tuple[bool, bool]:

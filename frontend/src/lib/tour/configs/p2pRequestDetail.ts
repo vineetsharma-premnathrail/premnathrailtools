@@ -30,9 +30,37 @@ const config: TourConfig = {
       purpose: 'Department, requester, request/required dates, requirement type, priority, assigned buyer, and remarks — everything entered when this requisition was raised.',
     },
     {
+      target: 'pr-detail-tracker',
+      title: 'Procurement progress',
+      purpose: 'Where every line of this requisition is, for the requester and every buyer: who approved the requisition, then per line the buyer, the RFQ, the PO and who approved it and when, the goods received (GRN), and the quantities requested, ordered, received and still pending. Click the arrow on a line to see each PO of that line with its approval steps and goods received. A line shown "Over-ordered" has more on POs than the requisition needs.',
+      why: 'Requesters no longer have to ask the buyer where their material is. Prices are not shown here.',
+    },
+    {
+      target: 'pr-tracker-summary',
+      title: 'Summary',
+      purpose: 'One line that says how far the requisition has got, e.g. "3 of 5 lines ordered · 1 waiting for an RFQ · 1 PO in approval". The status next to it is where the requisition is at its furthest point.',
+    },
+    {
+      target: 'pr-tracker-approval',
+      title: 'Requisition approval',
+      purpose: 'Each approval stage of the requisition: the approver, whether it is approved, who decided (a delegate or stand-in is named) and when.',
+    },
+    {
+      target: 'pr-detail-rfqs',
+      title: 'RFQs',
+      purpose: 'Every RFQ raised on this requisition, one per buyer. Each shows its buyer, whether it is a draft, sent to vendors or cancelled, the lines it asks quotes for, and the vendors asked or awarded. Open takes you to the RFQ to record quotes and award lines.',
+      why: 'One requisition can have several buyers (by item type). Each buyer quotes and orders only their own lines, so one buyer never blocks another.',
+    },
+    {
+      target: 'pr-detail-raise-rfq',
+      title: 'Raise RFQ',
+      purpose: 'Opens the RFQ form for this requisition. You pick which of your own lines go on it (all ready lines are ticked); lines that wait for the stock check or belong to another buyer are not offered.',
+    },
+    {
       target: 'pr-detail-upload-po',
       title: 'Upload PO',
-      purpose: 'Once the quotations are in, the buyer makes the PO in Tally and uploads it here: Tally PO number + PDF, the vendor, the delivery store and each line’s price. The PO is built from this requisition’s lines and goes for approval.',
+      purpose: 'On an RFQ that has been sent to vendors, the buyer who owns it (or the Purchase head) uploads the PO made in Tally. One upload is one vendor: pick the vendor, tick the lines it supplies and lower a quantity if less is ordered, then enter the Tally PO number, the PDF, the delivery store and each line’s price. Each PO goes for its own approval. Repeat for the next vendor.',
+      why: 'Splitting by vendor and quantity lets one RFQ end in several POs, and the tracker follows each one.',
     },
     {
       target: 'pr-detail-po-info',
@@ -42,12 +70,12 @@ const config: TourConfig = {
     {
       target: 'pr-detail-vendor-quotations',
       title: 'Vendor Quotations',
-      purpose: 'The vendor quotation attachments collected on this requisition\'s RFQ, one per vendor tier (L1–L4).',
+      purpose: 'The vendor quotation attachments collected on an RFQ of this requisition, one per vendor tier (L1–L4). Each RFQ with files has its own block, named after the RFQ.',
     },
     {
       target: 'pr-detail-po-approval',
       title: 'PO Approval',
-      purpose: 'Shown once this requisition reaches the RFQ stage. Once the PO is sent for approval this panel lists each stage of the "Purchase order" workflow (Organization › Approval Workflows), who approved and their comment; if you are the current approver you Approve, Return or Reject right here. Older POs show their old approval chain.',
+      purpose: 'Shown once this requisition reaches the RFQ stage. Once a PO is sent for approval this panel lists each stage of the "Purchase order" workflow (Organization › Approval Workflows), who approved and their comment; if you are the current approver you Approve, Return or Reject right here. When several POs wait at once, each PO has its own panel with its own Approve and Reject: a decision on one PO never changes the others, and a rejected PO does not reject the requisition. Older POs show their old approval chain.',
     },
     {
       target: 'pr-detail-approval',

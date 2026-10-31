@@ -32,9 +32,9 @@ from app.modules.crm.reports.mom_docx import build_mom_docx, mom_rows_from_activ
 from app.modules.crm.reports.mom_pdf import build_mom_pdf
 from app.utils.notifications import broadcast_notification, notify_user
 from app.utils.email import send_technical_offer_request_email
-from app.utils.sharepoint import upload_bytes_to_sharepoint, build_sharepoint_folder_path
 from app.auth.jwt_handler import create_document_share_token
 from app.core.config import settings
+from app.core.record_ref import encode_ref
 from fastapi.responses import Response
 
 router = APIRouter(prefix="/crm/tenders", tags=["CRM - Tenders"])
@@ -420,33 +420,9 @@ async def create_technical_offer_request(
     raised_by = user.name or user.email
     now = datetime.now(timezone.utc)
     ctx, org = technical_offer.build_context(db, "tender", tender, user, now)
-    offer_number = ctx["offer_number"]
-    offer_filename = f"{offer_number}.pdf"
-    # The Word draft (edited by the BD owner before sending) when there is one for this send.
-    offer_bytes, _edited = await technical_offer.send_pdf(db, "tender", tender, ctx)
-
-    if not settings.SHAREPOINT_SITE_ID:
-        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
-    folder_path = build_sharepoint_folder_path(raised_by, org.name if org else "General", f"crm/tender/{tender.universal_id}/technical-offer", root_folder="CRM-media")
-    upload_result = await upload_bytes_to_sharepoint(
-        settings.SHAREPOINT_SITE_ID, folder_path, offer_filename,
-        "application/pdf", offer_bytes,
-    )
-    tor_doc = CrmDocument(
-        related_module="tender", related_id=tender.id, universal_id=tender.universal_id,
-        folder_type="internal", doc_category=technical_offer.DOC_CATEGORY,
-        file_name=offer_filename, file_path=upload_result["path"], sharepoint_path=upload_result["path"],
-        sharepoint_url=upload_result.get("webUrl"), file_size=upload_result.get("size"),
-        mime_type="application/pdf", uploaded_by_name=raised_by, org_id=org.id if org else None,
-        created_by_id=user.id, shared_via_tor=True,
-    )
-    db.add(tor_doc)
-    db.flush()
-    db.refresh(tor_doc)
-    # See the matching comment in inquiries.py — our own signed, time-limited,
-    # single-document token, not SharePoint's own sharing (tenant/site policy
-    # we don't control) and not the raw SharePoint webUrl.
-    tor_doc_link = f"{settings.APP_BASE_URL}/api/v1/crm/documents/{tor_doc.id}/shared-content?token={create_document_share_token('crm_document', tor_doc.id)}"
+    # No Technical Offer document (owner, 2026-10-30): R&D gets the requirement in R&D › Requirements
+    # and the email; only the client documents picked in the dialog are shared.
+    requirements_link = f"{settings.APP_BASE_URL}/dashboard/rnd/requirements"
 
     reference_documents = []
     selected_docs: list[CrmDocument] = []
@@ -463,27 +439,33 @@ async def create_technical_offer_request(
             for d in selected_docs
         ]
 
+    # The R&D ID is opened first so the email can name it (no separate TOR number since 2026-10-30);
+    # if the email fails, everything is rolled back and nothing is opened.
+    tender.technical_offer_sent_at = now
+    movement_log = requirement_movement.record_movement(
+        db, module="tender", record_id=tender.id, user=user, offer_number=None,
+        ctx=ctx, tor_doc=None, reference_docs=selected_docs,
+    )
+    rnd_req = requirement_movement.create_rnd_request(
+        db, module="tender", record=tender, user=user, log=movement_log, offer_number=None,
+        team=team, due_date=body.response_due_date, remarks=body.remarks,
+    )
+    offer_number = rnd_req.offer_number
+    tender.technical_offer_number = offer_number
+    db.flush()
+
     success, error = await send_technical_offer_request_email(
         db, entity_type="tender", entity_id=tender.id, offer_number=offer_number,
         universal_id=tender.universal_id, org_name=org.name if org else "", project_name=tender.tender_name or "",
-        documents_link=tor_doc_link, actor_id=user.id, actor_name=raised_by,
+        documents_link=requirements_link, actor_id=user.id, actor_name=raised_by,
         reference_documents=reference_documents, actor_email=user.email,
-        attachment_bytes=offer_bytes, attachment_filename=offer_filename,
+        response_due_date=body.response_due_date, remarks=(body.remarks or "").strip() or None,
+        open_link=f"{settings.APP_BASE_URL}/dashboard/rnd/requirements/tender/{encode_ref(tender.id)}",
     )
     if not success:
-        db.commit()
-        raise HTTPException(status_code=502, detail=f"Failed to send Technical Offer Request email. {error}")
+        db.rollback()
+        raise HTTPException(status_code=502, detail=f"Failed to email the requirement to R&D — nothing was sent or opened. {error} Check the R&D email setting (RND_EMAIL) and try again.")
 
-    tender.technical_offer_number = offer_number
-    tender.technical_offer_sent_at = now
-    movement_log = requirement_movement.record_movement(
-        db, module="tender", record_id=tender.id, user=user, offer_number=offer_number,
-        ctx=ctx, tor_doc=tor_doc, reference_docs=selected_docs,
-    )
-    requirement_movement.create_rnd_request(
-        db, module="tender", record=tender, user=user, log=movement_log, offer_number=offer_number,
-        team=team, due_date=body.response_due_date, remarks=body.remarks,
-    )
     db.commit()
     db.refresh(tender)
     return _out(tender, user)

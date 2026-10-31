@@ -8,7 +8,7 @@ const config: TourConfig = {
     {
       target: 'rnd-reqd-header',
       title: 'Requirement header',
-      purpose: 'R&D ID, TOR number, whether it came from an Inquiry or a Tender (with its ID), title, customer and when it was last sent.',
+      purpose: 'R&D ID (older requirements also show their TOR number), whether it came from an Inquiry or a Tender (with its ID), title, customer and when it was last sent.',
     },
     {
       target: 'rnd-reqd-back-btn',
@@ -28,13 +28,6 @@ const config: TourConfig = {
       after: 'Tasks, Technical Offer upload and Respond to CRM become available.',
     },
     {
-      target: 'rnd-reqd-return-btn',
-      title: 'Return to BD',
-      purpose: 'Sends the revision back to BD with a reason. Possible while it is awaiting review, and after Accept until R&D responds to CRM.',
-      whatToEnter: 'The reason BD must fix, at least 10 characters — e.g. "Axle load and gauge are missing".',
-      after: 'BD sees "Returned by R&D: <reason>" on the inquiry / tender with a Re-send to R&D button. Their re-send becomes the next revision.',
-    },
-    {
       target: 'rnd-req-assignment',
       title: 'Assignment',
       purpose: 'Who in R&D must respond ("R&D team" = any R&D user), by which date, who asked, and the current response status.',
@@ -44,6 +37,10 @@ const config: TourConfig = {
       target: 'rnd-reqd-respond-btn',
       title: 'Respond to CRM',
       purpose: 'Shown when the request is open and assigned to you or to the whole R&D team. Greyed out until the latest revision is accepted.',
+      options: [
+        { value: 'Final response', meaning: 'Your answer with remarks and / or documents. Closes the request; BD can prepare the quotation.' },
+        { value: 'Ask BD for more details', meaning: 'A question in remarks (at least 10 characters). The request stays open with its due date; BD is notified and answers by updating the requirement and sending it again.' },
+      ],
     },
     {
       target: 'rnd-reqd-edited',
@@ -75,7 +72,8 @@ const config: TourConfig = {
     {
       target: 'rnd-reqd-revision-list',
       title: 'Revisions',
-      purpose: 'One line per send: revision ID, status, who sent it and when, who accepted or returned it with the reason, and the fields BD changed.',
+      purpose: 'One line per send, newest first: revision ID, status, who sent it and when, who accepted it, and the fields BD changed.',
+      after: '"See changes" under a revision shows each changed field side by side: the previous revision (before) and this one (now).',
     },
     {
       target: 'rnd-req-tab-Tasks',

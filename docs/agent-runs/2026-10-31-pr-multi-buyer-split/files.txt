@@ -1,0 +1,69 @@
+# Files changed by this run (2026-10-31 PR multi-buyer split)
+backend/alembic/versions/e7a1c3d5b9f2_p2p_multi_buyer_rfq_lines.py
+backend/alembic/env.py  (one import line only)
+backend/app/main.py  (RFQItem import + pr_lines/my_lines routers only)
+backend/app/core/features/p2p.py
+backend/app/modules/p2p/models/rfq.py
+backend/app/modules/p2p/models/rfq_item.py
+backend/app/modules/p2p/models/p2p_request_item.py
+backend/app/modules/p2p/models/vendor_quotation.py
+backend/app/modules/p2p/models/purchase_order.py
+backend/app/modules/p2p/models/p2p_request.py
+backend/app/modules/p2p/po_split.py
+backend/app/modules/p2p/pre_po.py
+backend/app/modules/p2p/approvals.py
+backend/app/modules/p2p/access.py
+backend/app/modules/p2p/line_progress.py
+backend/app/modules/p2p/po_amendments.py
+backend/app/modules/p2p/po_tracking.py
+backend/app/modules/p2p/quotation_compare.py
+backend/app/modules/p2p/rfq_mail.py
+backend/app/modules/p2p/routes/rfq.py
+backend/app/modules/p2p/routes/mm_quotations.py
+backend/app/modules/p2p/routes/pre_po_receipts.py
+backend/app/modules/p2p/routes/p2p_requests.py
+backend/app/modules/p2p/routes/pr_lines.py
+backend/app/modules/p2p/routes/my_lines.py
+backend/app/modules/p2p/routes/goods_receipts.py
+backend/app/modules/p2p/routes/mis.py
+backend/app/modules/p2p/schemas/rfq.py
+backend/app/modules/p2p/schemas/mm_purchasing.py
+backend/app/modules/p2p/schemas/purchase_order.py
+backend/app/modules/p2p/schemas/p2p_request.py
+backend/app/modules/p2p/schemas/pr_lines.py
+backend/app/modules/accounts/service.py  (PR-status gate hunk only)
+backend/app/modules/store/services/reorder.py
+backend/app/modules/store/routes/pre_po_receipts.py
+backend/app/tasks/rfq_reminders.py
+backend/app/tasks/po_overdue_reminders.py
+backend/app/tests/p2p_po_helpers.py
+backend/app/tests/test_p2p_multi_buyer_core.py
+backend/app/tests/test_p2p_multi_buyer_rfq.py
+backend/app/tests/test_p2p_multi_buyer_receiving.py
+backend/app/tests/test_p2p_pr_lines.py
+backend/app/tests/test_p2p_central_approvals.py
+backend/app/tests/test_p2p_line_buyers.py
+backend/app/tests/test_p2p_upload_po.py
+backend/app/tests/test_mm_po_split_amend_quotes.py
+backend/app/tests/test_po_draft_quantity.py
+backend/app/tests/test_p2p_rfq_email.py
+backend/app/tests/test_p2p_po_tracking.py
+backend/app/tests/test_p2p_review_fixes.py
+backend/app/tests/test_p2p_settings_vendors.py
+backend/app/tests/test_p2p_store_sap_review.py
+frontend/src/lib/api.ts  (p2pApi/rfqApi hunks only; file has other sessions' changes)
+frontend/src/types/index.ts  (RFQ/RFQLine/Tracker/MyLines/short_closed/rfq_id/pending_po_ids hunks only)
+frontend/src/app/dashboard/p2p/[id]/page.tsx
+frontend/src/app/dashboard/p2p/my-lines/page.tsx
+frontend/src/app/dashboard/p2p/rfq/page.tsx
+frontend/src/app/dashboard/p2p/rfq/new/page.tsx
+frontend/src/app/dashboard/p2p/rfq/[id]/page.tsx
+frontend/src/app/dashboard/p2p/rfq/[id]/comparison/page.tsx
+frontend/src/components/p2p/PrTracker.tsx
+frontend/src/components/p2p/UploadPODialog.tsx
+frontend/src/components/p2p/ReassignLineDialog.tsx
+frontend/src/components/p2p/ShortCloseLineDialog.tsx
+frontend/src/components/p2p/P2PNav.tsx
+frontend/src/lib/mmPurchasingApi.ts
+frontend/src/lib/tour/configs/p2pRequestDetail.ts
+frontend/src/lib/tour/configs/p2pRfqForm.ts

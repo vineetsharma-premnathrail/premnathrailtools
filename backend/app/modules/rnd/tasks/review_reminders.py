@@ -52,8 +52,8 @@ def run_review_reminders(db: Session, now: datetime | None = None) -> int:
             continue
         days = (today - _aware(rev.submitted_at).astimezone(IST).date()).days
         title = f"Requirement {rev.revision_code} is waiting for review"
-        message = (f"{rev.revision_code} ({record.universal_id}) was sent by BD {days} day{'s' if days != 1 else ''} ago and is still not accepted "
-                   "or returned. Open R&D › Requirements to review it.")
+        message = (f"{rev.revision_code} ({record.universal_id}) was sent by BD {days} day{'s' if days != 1 else ''} ago and is still not accepted. "
+                   "Open R&D › Requirements to accept it.")
         head_ids = set(ra.head_ids(db))
         for uid in head_ids:
             notify_user(db, uid, title=title, message=message, notification_type=NOTIFICATION_TYPE,

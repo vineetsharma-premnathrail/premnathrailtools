@@ -27,9 +27,10 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, aliased, selectinload
 
 from app.modules.p2p.models.p2p_request import P2PRequest
+from app.modules.p2p.models.rfq import RFQ
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
 from app.modules.p2p.po_split import _LEGACY_RELEASED_PR_STATUSES, EXTERNAL_PO_SOURCES, PO_ENTITY
 from app.modules.store.models.item import StoreItem
@@ -208,6 +209,26 @@ def _purpose_label(code: str | None) -> str | None:
 SORTS = ("code", "urgency", "due", "date", "vendor", "stage", "value", "progress")
 
 
+def _join_buyer(q):
+    """Join the PO's RFQ and return (query, buyer expression). The buyer of a PO is whoever ran its RFQ
+    (RFQ.buyer_id via po.rfq_id), else who raised the PO, else the requisition's single assigned buyer —
+    with several buyers on one requisition the requisition's buyer says nothing about this PO."""
+    rfq = aliased(RFQ)
+    q = q.outerjoin(rfq, rfq.id == P2PPurchaseOrder.rfq_id)
+    return q, func.coalesce(rfq.buyer_id, P2PPurchaseOrder.created_by_id, P2PRequest.assigned_buyer_id)
+
+
+def _buyer_ids(db: Session, pos: list[P2PPurchaseOrder], infos: dict[int, PoInfo]) -> dict[int, int | None]:
+    """po.id -> buyer user id, same rule as `_join_buyer` for the rows on a page (one query for the RFQs)."""
+    rfq_ids = {po.rfq_id for po in pos if po.rfq_id}
+    rfq_buyer = {rid: bid for rid, bid in db.query(RFQ.id, RFQ.buyer_id).filter(RFQ.id.in_(rfq_ids)).all()} if rfq_ids else {}
+    out: dict[int, int | None] = {}
+    for po in pos:
+        pr = infos[po.id].pr
+        out[po.id] = (rfq_buyer.get(po.rfq_id) if po.rfq_id else None) or po.created_by_id or (pr.assigned_buyer_id if pr else None)
+    return out
+
+
 def tracking(db: Session, query, *, stage: str | None = None, search: str | None = None, vendor_id: int | None = None,
              buyer_id: int | None = None, overdue_only: bool = False, due_soon_only: bool = False,
              date_from: date | None = None, date_to: date | None = None, order_project_id: int | None = None,
@@ -221,7 +242,8 @@ def tracking(db: Session, query, *, stage: str | None = None, search: str | None
     if vendor_id is not None:
         q = q.filter(P2PPurchaseOrder.vendor_id == vendor_id)
     if buyer_id is not None:
-        q = q.filter(func.coalesce(P2PRequest.assigned_buyer_id, P2PPurchaseOrder.created_by_id) == buyer_id)
+        q, buyer_expr = _join_buyer(q)
+        q = q.filter(buyer_expr == buyer_id)
     if date_from:
         q = q.filter(P2PPurchaseOrder.po_date >= date_from)
     if date_to:
@@ -289,12 +311,13 @@ def tracking(db: Session, query, *, stage: str | None = None, search: str | None
 
     missing = {po.id: po for po in page if po.id not in progress}
     progress.update(_progress(db, list(missing.values()), today))
-    names = _names(db, {po.created_by_id for po in page} | {infos[po.id].pr.assigned_buyer_id for po in page if infos[po.id].pr})
+    buyers = _buyer_ids(db, page, infos)
+    names = _names(db, set(buyers.values()))
     rows = []
     for po in page:
         info, p = infos[po.id], progress.get(po.id)
         pr = info.pr
-        buyer_id_ = (pr.assigned_buyer_id if pr and pr.assigned_buyer_id else po.created_by_id)
+        buyer_id_ = buyers.get(po.id)
         d = days_to_due(po)
         activity = [x for x in (po.updated_at, datetime.combine(p["last_receipt_date"], datetime.min.time()) if p and p.get("last_receipt_date") else None) if x]
         activity = [a.replace(tzinfo=None) if a.tzinfo else a for a in activity]
@@ -329,7 +352,8 @@ def filter_options(db: Session, query) -> dict:
     sub = query.outerjoin(P2PRequest, P2PRequest.id == P2PPurchaseOrder.p2p_request_id)
     vendors = sub.with_entities(P2PPurchaseOrder.vendor_id, P2PPurchaseOrder.vendor_name).filter(
         P2PPurchaseOrder.vendor_name.is_not(None)).distinct().all()
-    buyer_ids = [b for (b,) in sub.with_entities(func.coalesce(P2PRequest.assigned_buyer_id, P2PPurchaseOrder.created_by_id)).distinct().all() if b]
+    sub, buyer_expr = _join_buyer(sub)
+    buyer_ids = [b for (b,) in sub.with_entities(buyer_expr).distinct().all() if b]
     users = {u.id: (u.name or u.email) for u in db.query(User).filter(User.id.in_(buyer_ids)).all()} if buyer_ids else {}
     by_vendor: dict = {}
     for vid, name in vendors:

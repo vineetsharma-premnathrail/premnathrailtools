@@ -2,16 +2,16 @@
 
 An item is due when its PROJECTED stock — free on-hand minus reserved, plus
 what is already on order — is at or below its reorder level (or below its
-minimum stock when no reorder level is set). "On order" counts open PR lines
-that have no PO yet and open PO lines not yet received, so the same shortage
+minimum stock when no reorder level is set). "On order" counts the part of open PR lines
+that is on no PO yet and open PO lines not yet received, so the same shortage
 is never ordered twice. Planning data comes from the material master plant
 views (services/plant_data.py): per plant, with that plant's stores' stock,
 or company-wide from the Item Master when the item has no plant rows."""
 from math import ceil
 from types import SimpleNamespace
 
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import case, func, select
+from sqlalchemy.orm import Session, aliased
 
 from app.modules.store.models.item import StoreItem
 from app.modules.store.models.stock_balance import StoreStockBalance
@@ -21,10 +21,24 @@ PRE_PO_PR_STATUSES = ("submitted", "returned", "approved", "vendor_quotations", 
                       "commercial_evaluation", "vendor_selected", "po_drafted")
 OPEN_PO_STATUSES = ("issued", "acknowledged", "partially_fulfilled")
 CLOSED_PR_STATUSES = ("closed", "cancelled", "rejected")
+# Requisitions whose lines are no demand: not yet submitted, or ended.
+NOT_OPEN_PR_STATUSES = ("draft", "rejected", "cancelled", "closed")
+
+
+def _positive(expr):
+    """max(expr, 0) that works on every database (no GREATEST on SQLite)."""
+    return case((expr > 0, expr), else_=0)
 
 
 def on_order(db: Session, item_ids: set[int]) -> tuple[dict[int, float], dict[int, list[str]]]:
-    """Quantity on order per item and the document numbers behind it."""
+    """Quantity on order per item and the document numbers behind it.
+
+    One requisition can have several POs from several buyers, so the PR's own status says nothing about
+    what is still to be ordered. Two set-based queries instead:
+      1. PR lines of every open requisition (not draft / rejected / cancelled / closed): the part of each
+         line that is on NO live PO yet = quantity - issued - short-closed - quantity on live POs.
+      2. PO lines of live POs: ordered - received (a line already on a PO is counted here, not in 1).
+    """
     from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
     from app.modules.p2p.models.p2p_request import P2PRequest
     from app.modules.p2p.models.p2p_request_item import P2PRequestItem
@@ -34,33 +48,55 @@ def on_order(db: Session, item_ids: set[int]) -> tuple[dict[int, float], dict[in
     docs: dict[int, list[str]] = {}
     if not item_ids:
         return qty, docs
-    for line, pr_no in (db.query(P2PRequestItem, P2PRequest.p2p_number).join(P2PRequest, P2PRequest.id == P2PRequestItem.p2p_request_id)
-                        .filter(P2PRequestItem.store_item_id.in_(item_ids), P2PRequest.status.in_(PRE_PO_PR_STATUSES),
-                                P2PRequestItem.fulfillment_status != "stock_issued").all()):
-        open_qty = (line.quantity or 0) - (line.issued_qty or 0)
-        if open_qty > 0:
-            qty[line.store_item_id] = qty.get(line.store_item_id, 0) + open_qty
-            docs.setdefault(line.store_item_id, []).append(pr_no)
+
+    # Quantity per PR line already on a live PO (any live status, a delivered one is no longer "to order").
+    live_po_qty = (select(P2PPurchaseOrderItem.pr_item_id.label("pr_item_id"), func.sum(P2PPurchaseOrderItem.quantity).label("qty"))
+                   .join(P2PPurchaseOrder, P2PPurchaseOrder.id == P2PPurchaseOrderItem.purchase_order_id)
+                   .where(P2PPurchaseOrder.status != "cancelled", P2PPurchaseOrderItem.pr_item_id.is_not(None))
+                   .group_by(P2PPurchaseOrderItem.pr_item_id).subquery())
+    # A PO raised before POs named their PR lines covers the whole PR: its lines carry no pr_item_id,
+    # so the PR lines must not be counted again next to it.
+    legacy_po = aliased(P2PPurchaseOrder)
+    legacy_line = aliased(P2PPurchaseOrderItem)
+    has_legacy_po = (select(legacy_po.id).join(legacy_line, legacy_line.purchase_order_id == legacy_po.id)
+                     .where(legacy_po.p2p_request_id == P2PRequest.id, legacy_po.status != "cancelled",
+                            legacy_line.pr_item_id.is_(None)).exists())
+    to_order = _positive(P2PRequestItem.quantity - func.coalesce(P2PRequestItem.issued_qty, 0)
+                         - func.coalesce(P2PRequestItem.short_closed_qty, 0) - func.coalesce(live_po_qty.c.qty, 0))
+    for item_id, pr_no, open_qty in (
+            db.query(P2PRequestItem.store_item_id, P2PRequest.p2p_number, func.sum(to_order))
+            .join(P2PRequest, P2PRequest.id == P2PRequestItem.p2p_request_id)
+            .outerjoin(live_po_qty, live_po_qty.c.pr_item_id == P2PRequestItem.id)
+            .filter(P2PRequestItem.store_item_id.in_(item_ids), P2PRequest.status.notin_(NOT_OPEN_PR_STATUSES),
+                    func.coalesce(P2PRequestItem.fulfillment_status, "") != "stock_issued", ~has_legacy_po)
+            .group_by(P2PRequestItem.store_item_id, P2PRequest.p2p_number)
+            .having(func.sum(to_order) > 1e-9).order_by(P2PRequest.p2p_number).all()):
+        qty[item_id] = qty.get(item_id, 0) + float(open_qty)
+        docs.setdefault(item_id, []).append(pr_no)
 
     # A PO whose requisition was short-closed (vendor won't supply the
     # balance) keeps status 'partially_fulfilled', but nothing more will be
-    # received on it — its balance is not on order any more.
-    po_lines = (db.query(P2PPurchaseOrderItem, P2PPurchaseOrder.po_number).join(P2PPurchaseOrder, P2PPurchaseOrder.id == P2PPurchaseOrderItem.purchase_order_id)
-                .outerjoin(P2PRequest, P2PRequest.id == P2PPurchaseOrder.p2p_request_id)
-                .filter(P2PPurchaseOrderItem.store_item_id.in_(item_ids), P2PPurchaseOrder.status.in_(OPEN_PO_STATUSES),
-                        P2PRequest.status.is_(None) | P2PRequest.status.notin_(CLOSED_PR_STATUSES)).all())
-    received: dict[int, float] = {}
-    if po_lines:
-        for gi, status in (db.query(P2PGoodsReceiptItem, P2PGoodsReceipt.status).join(P2PGoodsReceipt, P2PGoodsReceipt.id == P2PGoodsReceiptItem.goods_receipt_id)
-                           .filter(P2PGoodsReceiptItem.po_item_id.in_([l.id for l, _ in po_lines]), P2PGoodsReceipt.status != "reversed").all()):
-            decided = gi.quality_status in ("passed", "failed", "partial")
-            got = max((gi.accepted_quantity or 0) - (gi.returned_quantity or 0), 0) if decided else (gi.received_quantity or 0)
-            received[gi.po_item_id] = received.get(gi.po_item_id, 0) + got
-    for line, po_no in po_lines:
-        open_qty = (line.quantity or 0) - received.get(line.id, 0)
-        if open_qty > 1e-9:
-            qty[line.store_item_id] = qty.get(line.store_item_id, 0) + open_qty
-            docs.setdefault(line.store_item_id, []).append(po_no)
+    # received on it — its balance is not on order any more. A draft PO is
+    # still on order: its quantity has already left the PR line's "to order".
+    decided = ("passed", "failed", "partial")
+    got_expr = case((P2PGoodsReceiptItem.quality_status.in_(decided),
+                     _positive(func.coalesce(P2PGoodsReceiptItem.accepted_quantity, 0) - func.coalesce(P2PGoodsReceiptItem.returned_quantity, 0))),
+                    else_=func.coalesce(P2PGoodsReceiptItem.received_quantity, 0))
+    received = (select(P2PGoodsReceiptItem.po_item_id.label("po_item_id"), func.sum(got_expr).label("got"))
+                .join(P2PGoodsReceipt, P2PGoodsReceipt.id == P2PGoodsReceiptItem.goods_receipt_id)
+                .where(P2PGoodsReceipt.status != "reversed").group_by(P2PGoodsReceiptItem.po_item_id).subquery())
+    po_open = _positive(P2PPurchaseOrderItem.quantity - func.coalesce(received.c.got, 0))
+    for item_id, po_no, open_qty in (
+            db.query(P2PPurchaseOrderItem.store_item_id, P2PPurchaseOrder.po_number, func.sum(po_open))
+            .join(P2PPurchaseOrder, P2PPurchaseOrder.id == P2PPurchaseOrderItem.purchase_order_id)
+            .outerjoin(P2PRequest, P2PRequest.id == P2PPurchaseOrder.p2p_request_id)
+            .outerjoin(received, received.c.po_item_id == P2PPurchaseOrderItem.id)
+            .filter(P2PPurchaseOrderItem.store_item_id.in_(item_ids), P2PPurchaseOrder.status.in_(("draft",) + OPEN_PO_STATUSES),
+                    P2PRequest.status.is_(None) | P2PRequest.status.notin_(CLOSED_PR_STATUSES))
+            .group_by(P2PPurchaseOrderItem.store_item_id, P2PPurchaseOrder.po_number)
+            .having(func.sum(po_open) > 1e-9).order_by(P2PPurchaseOrder.po_number).all()):
+        qty[item_id] = qty.get(item_id, 0) + float(open_qty)
+        docs.setdefault(item_id, []).append(po_no)
     return qty, docs
 
 

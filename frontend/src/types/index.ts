@@ -819,6 +819,8 @@ export interface RndRequest {
   responded_at: string | null
   is_late: boolean
   response_documents: RequirementMovementDoc[]
+  /** R&D's "Ask BD for more details" questions, oldest first (the request stays open). */
+  queries?: { remarks: string | null; asked_by: string | null; asked_at: string | null }[]
 }
 
 export interface RndRequestAssignment {
@@ -1185,11 +1187,15 @@ export interface RndMilestoneInput {
 
 export interface RndProjectHistoryEntry {
   id: string
-  kind: 'milestone' | 'project' | 'task' | 'requirement'
+  kind: 'milestone' | 'project' | 'task' | 'requirement' | 'revision'
   action: string
   summary: string
   performed_by: string
   performed_at: string | null
+  /** kind 'revision' (requirement history): the revision and what BD changed against the previous one. */
+  revision_code?: string
+  status?: string
+  changes?: { field: string; label: string; old: string | null; new: string | null }[]
 }
 
 export interface RndTaskEditInput {
@@ -1469,6 +1475,11 @@ export interface P2PRequestLineItem extends P2POrderProjectLineLink {
   issued_from_location_name?: string | null
   issued_qty?: number | null
   material_issue_id?: number | null
+  /** Not-yet-ordered quantity written off (line short-close), with who / why / when. */
+  short_closed_qty?: number
+  short_closed_reason?: string | null
+  short_closed_at?: string | null
+  short_closed_by_name?: string | null
   attachments: P2PRequestAttachment[]
 }
 
@@ -1784,7 +1795,55 @@ export interface RFQ {
 
   attachments: RFQAttachment[]
   vendor_quotations: VendorQuotation[]
+  /** The buyer who owns this RFQ, and the requisition lines it asks for (2026-10-31). */
+  buyer_id?: number | null
+  buyer_name?: string | null
+  items?: RFQLine[]
 }
+
+/** One requisition line on an RFQ. withdrawn_at set = moved to another buyer / taken off. */
+export interface RFQLine {
+  id: number
+  pr_item_id: number
+  store_item_id: number | null
+  item_code: string | null
+  item_name: string | null
+  unit: string | null
+  quantity: number
+  open_qty: number | null
+  withdrawn_at: string | null
+  withdrawn_reason: string | null
+}
+
+// ── Requisition tracker + My Lines (2026-10-31) ──
+export interface TrackerApprovalStep { sequence: number; stage_name: string; approver_name: string | null; status: string; decided_by_name: string | null; decided_at: string | null; comment: string | null; via: string | null }
+export interface TrackerApproval { status: string; submitted_at: string | null; completed_at: string | null; steps: TrackerApprovalStep[] }
+export interface TrackerGrn { grn_id: number; grn_number: string; received_date: string | null; status: string; received_qty: number; accepted_qty: number; rejected_qty: number }
+/** vendor_name is null for people who don't see PO commercials. Cancelled / rejected POs are listed but not counted. */
+export interface TrackerPo { po_id: number; po_number: string; vendor_name: string | null; quantity: number; stage: string; stage_label: string; expected_delivery: string | null; approval: TrackerApproval | null; grns: TrackerGrn[] }
+export interface TrackerRfq { rfq_id: number; rfq_number: string; status: string; buyer_name: string | null; quote_count: number }
+export interface TrackerLine {
+  pr_item_id: number; item_code: string | null; item_name: string; unit: string | null; quantity: number; issued_qty: number
+  short_closed_qty: number; short_closed_reason: string | null; buyer_id: number | null; buyer_name: string | null; fulfillment_status: string
+  ordered_qty: number; accepted_qty: number; rejected_qty: number; pending_qty: number; state: string; state_label: string; over_ordered: boolean
+  /** The award waits for a PO again because its PO was rejected in approval. */
+  po_rejected?: boolean
+  rfqs: TrackerRfq[]; pos: TrackerPo[]
+}
+export interface PrTracker {
+  p2p_request_id: number; p2p_number: string; status: string; status_label: string
+  progress: { lines: number; lines_done: number; ordered_pct: number; received_pct: number }
+  pr_approval: TrackerApproval | null
+  lines: TrackerLine[]
+}
+export interface MyLineRow {
+  pr_item_id: number; p2p_request_id: number; p2p_number: string; pr_status: string; priority: string | null; required_date: string | null
+  requester_name: string | null; purpose_label: string | null; charged_to: string | null; item_code: string | null; item_name: string; unit: string | null
+  buy_qty: number; short_closed_qty: number; ordered_qty: number; released_qty: number; accepted_qty: number; open_to_order: number; pending_receipt: number
+  state: string; state_label: string; buyer_id: number | null; buyer_name: string | null; po_rejected?: boolean
+  rfqs: { id: number; rfq_number: string; status: string }[]; pos: { id: number; po_number: string; stage: string; stage_label: string }[]; last_activity: string | null
+}
+export interface MyLinesResponse { rows: MyLineRow[]; total: number; skip: number; limit: number; counts: Record<string, number> }
 
 export interface Item {
   id: number
@@ -3949,6 +4008,8 @@ export interface P2PPurchaseOrder {
   po_number: string
   p2p_request_id?: number
   p2p_request_number?: string
+  /** The RFQ this PO was uploaded on (one requisition can have POs on several RFQs). */
+  rfq_id?: number | null
   vendor_id?: number
   vendor_name?: string
   status: 'draft' | 'issued' | 'acknowledged' | 'partially_fulfilled' | 'fulfilled' | 'cancelled'
@@ -10284,6 +10345,8 @@ export interface P2PEngineApproval {
   can_stand_in: boolean
   pr_request_id?: number | null
   po_id?: number | null
+  /** Every PO of the requisition waiting for approval (several buyers → several POs). */
+  pending_po_ids?: number[]
 }
 
 // ── Product Management ──────────────────────────────────────────────

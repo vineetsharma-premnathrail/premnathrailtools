@@ -154,11 +154,11 @@ export default function ProjectForm({
   title,
   subtitle,
   nav,
-  projectTab,
+  projectName,
   serialOptional,
 }: {
-  /** Project mode (New Project): a first tab before Machine Identity, with its own validation. */
-  projectTab?: { label: string; render: () => React.ReactNode; validate: () => string[] }
+  /** Project mode (New Project): the project name, asked first on Machine Identity. `banner` = the page's draft banner. */
+  projectName?: { value: string; onChange: (v: string) => void; banner?: React.ReactNode }
   /** Serial number may be left blank (the server uses the project number). */
   serialOptional?: boolean
   initial?: Partial<Project>
@@ -173,9 +173,8 @@ export default function ProjectForm({
   nav?: React.ReactNode
 }) {
   const [tabIndex, setTabIndex] = useState(0)
-  const off = projectTab ? 1 : 0
-  const mi = tabIndex - off // index within the machine tabs
-  const tabLabels: string[] = projectTab ? [projectTab.label, ...TABS] : [...TABS]
+  const tabLabels: string[] = [...TABS]
+  const projectMode = !!projectName
   const [form, setForm] = useState<FormState>(() => toFormState(initial))
   const [isExport, setIsExport] = useState(!!initial?.is_export)
   const [extendedWarranty, setExtendedWarranty] = useState(!!initial?.extended_warranty)
@@ -222,57 +221,54 @@ export default function ProjectForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (projectTab) {
-      const missing = projectTab.validate()
-      if (missing.length) {
-        setError(missing)
-        setTabIndex(0)
-        return
-      }
+    if (projectName && !projectName.value.trim()) {
+      setError('Project name is required. Enter it on the Machine Identity tab.')
+      setTabIndex(0)
+      return
     }
     if (!serialOptional && !form.serial_number.trim()) {
       setError('Serial number is required.')
-      setTabIndex(off)
+      setTabIndex(0)
       return
     }
     if (form.machine_type === 'Other' && !machineTypeCustom.trim()) {
       setError('Please specify the custom machine classification.')
-      setTabIndex(off)
+      setTabIndex(0)
       return
     }
     if (form.application_type === 'Other' && !applicationTypeCustom.trim()) {
       setError('Please specify the custom application type.')
-      setTabIndex(off)
+      setTabIndex(0)
       return
     }
     if (!form.client_company.trim()) {
       setError('Client company is required. Enter it on the Client & Site tab.')
-      setTabIndex(off + 1)
+      setTabIndex(1)
       return
     }
-    if (projectTab && !form.po_number.trim()) {
+    if (projectMode && !form.po_number.trim()) {
       setError("Customer PO number is required. Enter the customer's purchase order number on the Timeline & Warranty tab.")
-      setTabIndex(off + 3)
+      setTabIndex(3)
       return
     }
     if (!isPhoneValid(form.client_phone) || !isPhoneValid(form.client_phone_alt) || !isPhoneValid(form.operator_phone)) {
       setError('Please enter a valid phone number before saving.')
-      setTabIndex(off + (!isPhoneValid(form.client_phone) || !isPhoneValid(form.client_phone_alt) ? 1 : 2))
+      setTabIndex(!isPhoneValid(form.client_phone) || !isPhoneValid(form.client_phone_alt) ? 1 : 2)
       return
     }
     if (!isFinancialYearValid(form.year_of_manufacture)) {
       setError('Please enter a valid financial year format (e.g. 2026-27).')
-      setTabIndex(off)
+      setTabIndex(0)
       return
     }
     if (!isValidEmail(form.client_email) || !isValidEmail(form.operator_email)) {
       setError(VALIDATION_MESSAGES.email)
-      setTabIndex(off + (!isValidEmail(form.client_email) ? 1 : 2))
+      setTabIndex(!isValidEmail(form.client_email) ? 1 : 2)
       return
     }
     if (!isValidGST(form.client_gst)) {
       setError(VALIDATION_MESSAGES.gst)
-      setTabIndex(off + 1)
+      setTabIndex(1)
       return
     }
     setSaving(true)
@@ -306,10 +302,10 @@ export default function ProjectForm({
       })
       draft.clear()
     } catch (err) {
-      const msgs = extractErrorMessages(err, projectTab ? 'Failed to create the project.' : 'Failed to save project.')
+      const msgs = extractErrorMessages(err, projectMode ? 'Failed to create the project.' : 'Failed to save project.')
       setError(msgs)
-      // Server complaints about the project's own fields: show the Project tab.
-      if (projectTab && /project (number|name|manager)|sales order|SO number|start date|closing date/i.test(Array.isArray(msgs) ? msgs.join(' ') : msgs)) setTabIndex(0)
+      // Server complaints about the project's own fields: show Machine Identity, where the project name is.
+      if (projectMode && /project (number|name|manager)/i.test(Array.isArray(msgs) ? msgs.join(' ') : msgs)) setTabIndex(0)
     } finally {
       setSaving(false)
     }
@@ -336,7 +332,7 @@ export default function ProjectForm({
           <button
             key={t}
             type="button"
-            data-tour={projectTab && i === 0 ? 'erp-pf-tab-project' : `erp-pf-tab-${i - off}`}
+            data-tour={`erp-pf-tab-${i}`}
             onClick={() => setTabIndex(i)}
             style={{
               padding: '12px 6px',
@@ -363,13 +359,18 @@ export default function ProjectForm({
         <DraftBanner draft={draft} />
         {errorText && (
           <div ref={errorRef} style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-            <b>{projectTab ? 'Cannot create the project:' : 'Cannot save the machine:'}</b> {errorText}
+            <b>{projectMode ? 'Cannot create the project:' : 'Cannot save the machine:'}</b> {errorText}
           </div>
         )}
-        {projectTab && tabIndex === 0 && projectTab.render()}
-        {mi === 0 && (
+        {projectName?.banner}
+        {tabIndex === 0 && (
           <SheetSection icon="truck" title="Machine Asset Identity">
             <Grid3>
+              {projectName && (
+                <Field label="Project Name" req>
+                  <input value={projectName.value} onChange={(e) => projectName.onChange(e.target.value)} placeholder="e.g. CAM Injection Car for IRCON MAHSR-T2" style={sheetInput} data-tour="pm-form-name" />
+                </Field>
+              )}
               <Field label="Serial Number" req={!serialOptional}>
                 <input value={form.serial_number} onChange={(e) => set('serial_number', e.target.value)} placeholder={serialOptional ? 'Blank = project number' : 'e.g. PNR-RR-2026-88'} style={sheetInput} data-tour="erp-pf-serial" />
                 {serialOptional && <p style={sheetHint}>Blank = project number, e.g. PEW-78.</p>}
@@ -415,7 +416,7 @@ export default function ProjectForm({
           </SheetSection>
         )}
 
-        {mi === 1 && (
+        {tabIndex === 1 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <SheetSection icon="building" title="Operational Site Location">
               <span data-tour="erp-pf-export" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: SHEET.BODY }}>
@@ -470,18 +471,10 @@ export default function ProjectForm({
               </Field>
             </SheetSection>
 
-            <SheetSection icon="user" title="Operator Details" extra={<Optional />}>
-              <Field label="Operator Name"><input value={form.operator_name} onChange={(e) => set('operator_name', e.target.value)} placeholder="Enter machine operator name" style={sheetInput} data-tour="erp-pf-operator" /></Field>
-              <Row>
-                <Field label="Phone"><PhoneField value={form.operator_phone} onChange={(v) => set('operator_phone', v)} style={sheetInput} /></Field>
-                <Field label="Email"><ValidatedInput type="email" value={form.operator_email} onChange={(v) => set('operator_email', v)} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="Enter email address" style={sheetInput} /></Field>
-              </Row>
-              <Field label="Qualification"><input value={form.operator_qualification} onChange={(e) => set('operator_qualification', e.target.value)} placeholder="e.g. Certified Loco Pilot" style={sheetInput} /></Field>
-            </SheetSection>
           </div>
         )}
 
-        {mi === 2 && (
+        {tabIndex === 2 && (
           <SheetSection icon="gear" title="Technical Specifications" extra={<Optional />}>
             <Field label="Specifications">
               <textarea value={form.specifications} onChange={(e) => set('specifications', e.target.value)} rows={3} placeholder="List model engine power, capacity, and key metrics..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-pf-specs" />
@@ -496,11 +489,11 @@ export default function ProjectForm({
           </SheetSection>
         )}
 
-        {mi === 3 && (
+        {tabIndex === 3 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <SheetSection icon="cart" title="Procurement & Delivery Information">
               <Grid3>
-                <Field label={projectTab ? 'Customer PO Number' : 'PO Number'} req={!!projectTab}><input value={form.po_number} onChange={(e) => set('po_number', e.target.value)} placeholder="Purchase Order Ref" style={sheetInput} data-tour="erp-pf-po" /></Field>
+                <Field label={projectMode ? 'Customer PO Number' : 'PO Number'} req={projectMode}><input value={form.po_number} onChange={(e) => set('po_number', e.target.value)} placeholder="Purchase Order Ref" style={sheetInput} data-tour="erp-pf-po" /></Field>
                 <Field label="PO Date"><DateField value={form.po_date} onChange={(v) => set('po_date', v)} /></Field>
                 <Field label="Dispatch Date"><div data-tour="erp-pf-dispatch-date"><DateField value={form.delivery_date} onChange={(v) => set('delivery_date', v)} /></div></Field>
                 <Field label="Commissioning Date"><div data-tour="erp-pf-commissioning-date"><DateField value={form.commissioning_date} onChange={(v) => set('commissioning_date', v)} /></div></Field>
@@ -544,7 +537,7 @@ export default function ProjectForm({
           </div>
         )}
 
-        {mi === 4 && (
+        {tabIndex === 4 && (
           <SheetSection icon="clip" title="Attachments & Documents">
             <p style={{ ...sheetHint, margin: '0 0 10px' }}>PDFs, Office files, images, and videos — max 10GB each</p>
             <div

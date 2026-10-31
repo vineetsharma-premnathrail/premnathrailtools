@@ -295,7 +295,7 @@ def _add_project(db: Session, user: User, payload) -> PmProject:
     priority = parse_priority(payload.priority)
     if getattr(payload, "internal_order_id", None) is not None:
         raise HTTPException(status_code=422, detail=BUDGET_ON_CREATE_MSG)
-    if payload.target_handover_date < payload.start_date:
+    if payload.start_date and payload.target_handover_date and payload.target_handover_date < payload.start_date:
         raise HTTPException(status_code=422, detail=f"Target handover date {payload.target_handover_date:%d-%m-%Y} is before the start date {payload.start_date:%d-%m-%Y}. Fix one of the dates.")
     pm_id = payload.project_manager_id or user.id
     _check_user(db, pm_id, "project manager")
@@ -341,7 +341,8 @@ async def create_project_with_machine(
         raise HTTPException(status_code=422, detail="Client company is required — enter it on the Client & Site tab.")
     try:
         po = _clean_ref(payload.customer_po_ref or m.po_number, "Customer PO number is required — enter it on the Timeline & Warranty tab (PO number).")
-        so = _clean_ref(payload.sales_order_ref, "Sales order (SO) number is required — enter it on the Project tab.")
+        # SO number is not asked on the Add New Project form; optional, added later on Overview.
+        so = (payload.sales_order_ref or "").strip()[:100] or None
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     pm_payload = PmProjectCreate.model_construct(

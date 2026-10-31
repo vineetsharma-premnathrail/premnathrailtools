@@ -13,7 +13,6 @@ import ProjectsNav from '@/components/projects/ProjectsNav'
 import { recordPath } from '@/lib/recordRef'
 import { ErrorBanner, PROJECT_HEX, PROJECT_LABELS, Pill, sectionStyle, tdStyle, thStyle, todayIso } from '@/components/projects/work/pmUi'
 import { RowCount, primaryBtnStyle } from '@/components/shared/ui'
-import CreateProjectChooser, { useProjectCreateRights } from '@/components/projects/CreateProjectChooser'
 
 // Management view: every live project and which handovers are due or late.
 // WBS elements are no longer used, so nothing here is WBS-based.
@@ -23,8 +22,6 @@ export default function ProjectsDashboardPage() {
   const [data, setData] = useState<PmDashboard | null>(null)
   const [error, setError] = useState<string | string[]>('')
   const [canCreate, setCanCreate] = useState(false)
-  const [chooserOpen, setChooserOpen] = useState(false)
-  const createRights = useProjectCreateRights(canCreate)
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -54,13 +51,12 @@ export default function ProjectsDashboardPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Projects Dashboard</h1>
           <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>Every open project, nearest closing date first.</p>
         </div>
-        {createRights.any && (
-          <button type="button" data-tour="pm-dash-new-btn" onClick={() => setChooserOpen(true)} style={primaryBtnStyle}>
+        {canCreate && (
+          <button type="button" data-tour="pm-dash-new-btn" onClick={() => router.push('/dashboard/projects/new')} style={primaryBtnStyle}>
             + Create Project
           </button>
         )}
       </div>
-      {chooserOpen && <CreateProjectChooser canProject={canCreate} onClose={() => setChooserOpen(false)} />}
       <ErrorBanner error={error} />
       {!data ? (!error && <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>) : (
         <>

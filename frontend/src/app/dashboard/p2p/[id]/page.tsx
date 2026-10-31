@@ -22,6 +22,8 @@ import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import ServiceEntriesPanel from '@/components/p2p/ServiceEntriesPanel'
 import PoDeliveryCostsPanel from '@/components/p2p/PoDeliveryCostsPanel'
 import UploadPODialog from '@/components/p2p/UploadPODialog'
+import DiscardPoDraftDialog, { DiscardPoDraftTarget } from '@/components/p2p/DiscardPoDraftDialog'
+import PrTracker from '@/components/p2p/PrTracker'
 import { useRecordId, recordHref, recordPath } from '@/lib/recordRef'
 import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -67,6 +69,19 @@ type P2PRequestDetail = Omit<P2PRequest, 'po_approval_panel'> & {
   po_approval_panel?: PoPanelEntry[]
 }
 type AuditEntry = { id: number; action: string; summary?: string | null; performed_by: string; performed_at?: string | null; document_name?: string | null }
+
+// Purchase orders of this requisition waiting for approval, each with its own approval request
+// (the single-PR GET carries them in engine_approval.pending_po_ids).
+type EngineWithPendingPos = { po_id?: number | null; pending_po_ids?: number[] } | null | undefined
+function pendingPoIdsOf(pr: { engine_approval?: unknown }): number[] {
+  const e = pr.engine_approval as EngineWithPendingPos
+  if (!e) return []
+  return e.pending_po_ids?.length ? e.pending_po_ids : e.po_id ? [e.po_id] : []
+}
+// Requisition statuses at which procurement (RFQ, awards, PO upload) is open.
+const PROCUREMENT_OPEN = ['approved', 'vendor_quotations', 'technical_evaluation', 'commercial_evaluation', 'vendor_selected', 'po_drafted', 'po_raised', 'po_approved', 'partially_received']
+const RFQ_STATUS_LABELS: Record<string, string> = { draft: 'Draft', locked: 'Sent to vendors', cancelled: 'Cancelled' }
+const RFQ_STATUS_HEX: Record<string, string> = { draft: '#64748b', locked: '#6366f1', cancelled: '#94a3b8' }
 
 const money = (v?: number | null) => (v == null ? '—' : `₹ ${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
 
@@ -142,7 +157,9 @@ export default function MyP2PRequestDetailPage() {
   const [promptText, setPromptText] = useState('')
   const [sheetError, setSheetError] = useState('')
 
-  const [rfq, setRfq] = useState<RFQ | null>(null)
+  // Every RFQ of this requisition: each buyer raises their own (2026-10-31).
+  const [rfqs, setRfqs] = useState<RFQ[]>([])
+  const [trackerKey, setTrackerKey] = useState(0)
   const [loadedPo, setPo] = useState<P2PPurchaseOrder | null>(null)
   // Every live PO of this requisition (a split requisition has several) — `po` is the one shown:
   // the one picked here, else the one the link names (?po=), else the newest.
@@ -159,7 +176,10 @@ export default function MyP2PRequestDetailPage() {
   const [confirmProcurementItemId, setConfirmProcurementItemId] = useState<number | null>(null)
   const [confirmClose, setConfirmClose] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
-  const [showUploadPo, setShowUploadPo] = useState(false)
+  const [uploadRfq, setUploadRfq] = useState<RFQ | null>(null)
+  // Draft PO being discarded (reason asked in a popup) and the notice shown after it.
+  const [discardPoTarget, setDiscardPoTarget] = useState<DiscardPoDraftTarget | null>(null)
+  const [poNotice, setPoNotice] = useState('')
   // The requisition's timeline; an uploaded Tally PO keeps its own PDF on its entry.
   const [history, setHistory] = useState<AuditEntry[]>([])
 
@@ -217,13 +237,15 @@ export default function MyP2PRequestDetailPage() {
         purchaseOrdersApi.list({ p2p_request_id: data.id }).catch(() => []),
         seeHistory ? p2pApi.getAuditTrail(data.id).catch(() => []) : Promise.resolve([]),
       ])
-      setRfq(rfqList[0] || null)
+      setRfqs([...(rfqList as RFQ[])].sort((a, b) => a.rfq_number.localeCompare(b.rfq_number, undefined, { numeric: true }) || a.id - b.id))
+      setTrackerKey((k) => k + 1)
       setHistory([...(audit as AuditEntry[])].reverse())
       // Approvers without the Purchase app get a 403 on the PO list — fall
       // back to the PO the PR itself carries so they see what they sign.
       const live = (poList as P2PPurchaseOrder[]).filter((x) => x.status !== 'cancelled')
       setAllPos(live)
-      setPo(poList[0] || data.purchase_order || null)
+      // The PO the viewer decides comes first (server picks it); else the newest live PO.
+      setPo(data.purchase_order || live[0] || (poList as P2PPurchaseOrder[])[0] || null)
     } catch (err) {
       setError(extractErrorMessages(err, 'Purchase requisition not found, or you do not have access to it.').join(' '))
     } finally {
@@ -235,6 +257,21 @@ export default function MyP2PRequestDetailPage() {
     if (isAuthorized && prId) load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, prId])
+
+  // Open an RFQ / PO file; a refusal (e.g. 403 "This RFQ belongs to X ...") is shown with the server's words.
+  // The file comes back as a blob, so its error body has to be read as text first.
+  const openFile = async (fetchBlob: () => Promise<Blob>, filename: string) => {
+    try {
+      await openAttachmentBlob(fetchBlob, filename)
+    } catch (err) {
+      const data = (err as { response?: { data?: unknown } })?.response?.data
+      let msg = ''
+      if (data instanceof Blob) {
+        try { const j = JSON.parse(await data.text()); if (typeof j?.detail === 'string') msg = j.detail } catch { /* not JSON */ }
+      }
+      setError(msg || extractErrorMessages(err, `Could not open ${filename}. Reload the page and try again; if it keeps failing, ask the buyer of that RFQ.`).join(' '))
+    }
+  }
 
 
 
@@ -276,9 +313,11 @@ export default function MyP2PRequestDetailPage() {
     const action = promptAction
     const done = () => { setPromptAction(''); setIssuePrompt(null) }
     if (action === 'cancel') runInSheet(() => p2pApi.cancel(prId, value || undefined), 'Could not cancel the requisition.', done)
-    if (action === 'reject') runInSheet(() => p2pApi.reject(prId, value || undefined), 'Could not reject.', done)
+    // Several POs of one requisition can wait for approval at once; the decision names the PO it is about.
+    const poArg = pr && pr.status === 'po_raised' && po && pendingPoIdsOf(pr).includes(po.id) ? po.id : undefined
+    if (action === 'reject') runInSheet(() => p2pApi.reject(prId, value || undefined, poArg), 'Could not reject.', done)
     if (action === 'approve') runInSheet(() => p2pApi.approve(prId, value || undefined), 'Could not approve the requisition.', done)
-    if (action === 'approve-po') runInSheet(() => p2pApi.approvePO(prId, value || undefined), 'Could not approve the PO.', done)
+    if (action === 'approve-po') runInSheet(() => p2pApi.approvePO(prId, value || undefined, poArg), 'Could not approve the PO.', done)
     if (action === 'short-close') runInSheet(() => p2pApi.close(prId, value), 'Could not short-close the requisition.', done)
     if (action === 'issue' && issuePrompt) {
       const p = issuePrompt
@@ -362,7 +401,7 @@ export default function MyP2PRequestDetailPage() {
   // stage (2026-09-30) — before that it's pure noise on a requisition that
   // may yet be fulfilled entirely from store stock and never need a PO.
   const poRaised = pr.status === 'po_raised' || pr.status === 'po_approved' || !!pr.po_number
-  const showPoApproval = !!rfq || poRaised
+  const showPoApproval = rfqs.length > 0 || poRaised
   // A rejection is shown on the rejecting role's own row — same shape as an
   // approval (pill + quoted note) — rather than as a separate banner.
   const rejectedByRole = pr.status === 'rejected' ? pr.rejected_by_role : null
@@ -444,9 +483,24 @@ export default function MyP2PRequestDetailPage() {
     runInSheet(() => purchaseOrdersApi.linkItem(po.id, lineId, Number(linkChoice)), 'Could not link the line to the Item Master.', () => setLinkingLineId(null))
   }
   // POs are made in Tally (2026-10-30): once the quotations are in, the buyer uploads the Tally PO here.
-  const canUploadPo = !!rfq && isPurchaseTeam && ['vendor_quotations', 'vendor_selected'].includes(pr.status)
+  // Several buyers work one requisition: each uploads POs on their own RFQ (the Purchase head on any).
+  // The server has the last word (403 names the owner); this only hides what would be refused.
+  const procurementOpen = PROCUREMENT_OPEN.includes(pr.status)
+  const allLines = isAdmin || canFeature('p2p', 'purchase_requisitions', 'all_lines', 'edit')
+  const canUploadPoRole = isPurchaseTeam && procurementOpen
     && can('p2p', 'purchase_orders', 'create') && can('p2p', 'purchase_orders', 'submit')
     && canFeature('p2p', 'purchase_orders', 'po_document', 'create')
+  const canUploadOnRfq = (r: RFQ) => canUploadPoRole && r.status === 'locked' && (allLines || r.buyer_id == null || r.buyer_id === user?.id)
+  const canRaiseRfq = isPurchaseTeam && procurementOpen && can('p2p', 'rfq', 'create')
+    && pr.items.some((it) => it.fulfillment_status === 'sent_to_procurement')
+  const canOpenRfq = isPurchaseTeam && can('p2p', 'rfq', 'view')
+  // An RFQ's quotes, comparison and files open for its own buyer (else whoever started it) and the Purchase head;
+  // for anyone else the server answers 403, so those buttons and files are not shown (number, status, lines only).
+  const rfqIsMine = (r: RFQ) => allLines || (r.buyer_id ?? r.created_by_id) == null || (r.buyer_id ?? r.created_by_id) === user?.id
+  const mayOpenRfq = (r: RFQ) => canOpenRfq && rfqIsMine(r)
+  // Discard a draft PO: the RFQ's own buyer or the Purchase head, with Edit on Purchase Orders (the server checks again).
+  const draftPoRfq = po && po.status === 'draft' && po.rfq_id ? rfqs.find((x) => x.id === po.rfq_id) || null : null
+  const canDiscardPo = !!draftPoRfq && isPurchaseTeam && can('p2p', 'purchase_orders', 'edit') && rfqIsMine(draftPoRfq) && procurementOpen
   const poLinesTotal = po?.total_value ??(poLines.length ? poLines.reduce((sum, l) => sum + (l.line_total || 0), 0) : pr.po_value ?? null)
 
   const promptMeta: Record<PromptKind, { icon: SheetIconName; color: string; title: string; label: string; placeholder: string; hint?: string; submit: string; busy: string; required: boolean }> = {
@@ -486,9 +540,6 @@ export default function MyP2PRequestDetailPage() {
           )}
           {(canRejectStill || canRejectPo) && (
             <button data-tour="pr-detail-reject" disabled={busy} onClick={reject} style={dangerBtn}>Reject</button>
-          )}
-          {canUploadPo && (
-            <button data-tour="pr-detail-upload-po" type="button" disabled={busy} onClick={() => setShowUploadPo(true)} style={primaryBtn}>Upload PO</button>
           )}
           {canResubmit && (
             <button data-tour="pr-detail-resubmit" type="button" disabled={busy} onClick={resubmit} style={primaryBtn}>Resubmit for Approval</button>
@@ -809,17 +860,101 @@ export default function MyP2PRequestDetailPage() {
 
 
 
-      {rfq && rfq.attachments.length > 0 && canFeature('p2p', 'rfq', 'vendor_quotes', 'view') && (
-        <div data-tour="pr-detail-vendor-quotations" style={sectionStyle}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Vendor Quotations</h2>
+      {!isDraft && (
+        <PrTracker prId={pr.id} refreshKey={trackerKey} rfqLinkable={canOpenRfq} meId={user?.id} allLines={allLines} onChanged={load}
+          canReassign={isPurchaseTeam && allLines && procurementOpen && canEditPr && canFeature('p2p', 'purchase_requisitions', 'buyer', 'edit')}
+          canShortClose={isPurchaseTeam && procurementOpen && canEditPr && canFeature('p2p', 'purchase_requisitions', 'close', 'edit')} />
+      )}
+
+      {(rfqs.length > 0 || canRaiseRfq) && (
+        <div data-tour="pr-detail-rfqs" style={sectionStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+            <div style={{ minWidth: 0 }}>
+              <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>RFQs</h2>
+              <p style={{ fontSize: 12, color: TEXT.muted, margin: '2px 0 0' }}>Every buyer raises their own RFQ for the lines they buy, and uploads the POs of that RFQ.</p>
+            </div>
+            {canRaiseRfq && (
+              <button data-tour="pr-detail-raise-rfq" type="button" disabled={busy} onClick={() => router.push(recordHref('/dashboard/p2p/rfq/new', pr, 'id', undefined, 'pr_id'))} style={primaryBtn}>Raise RFQ</button>
+            )}
+          </div>
+          {rfqs.length === 0 ? (
+            <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>No RFQ has been raised on this requisition yet. A buyer picks their lines and raises one with <b>Raise RFQ</b>.</p>
+          ) : (
+            <div style={{ overflow: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>RFQ<RowCount count={rfqs.length} /></th>
+                    <th style={thStyle}>Buyer</th>
+                    <th style={thStyle}>Status</th>
+                    <th style={thStyle}>Lines</th>
+                    <th style={thStyle}>Vendors</th>
+                    <th style={thStyle}><span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rfqs.map((r) => {
+                    const active = (r.items || []).filter((i) => !i.withdrawn_at)
+                    const moved = (r.items || []).length - active.length
+                    const mine = r.buyer_id != null && r.buyer_id === user?.id
+                    const readable = rfqIsMine(r)
+                    return (
+                      <tr key={r.id}>
+                        <td style={{ ...tdStyle, fontWeight: 700, color: TEXT.heading, whiteSpace: 'nowrap' }}>
+                          {r.rfq_number}
+                          {!readable && <div style={{ fontSize: 11.5, fontWeight: 400, color: TEXT.muted }}>RFQ of {r.buyer_name || r.created_by_name || 'another buyer'}</div>}
+                        </td>
+                        <td style={{ ...tdStyle, color: TEXT.secondary }}>{r.buyer_name || r.created_by_name || '—'}{mine ? <span style={{ color: TEXT.muted }}> (you)</span> : null}</td>
+                        <td style={tdStyle}><Pill label={RFQ_STATUS_LABELS[r.status] || r.status} hex={RFQ_STATUS_HEX[r.status] || '#64748b'} /></td>
+                        <td style={{ ...tdStyle, minWidth: 220 }}>
+                          {active.length === 0 ? <span style={{ color: TEXT.muted }}>{(r.items || []).length ? 'No lines left — moved to another buyer or withdrawn' : 'All lines of the requisition'}</span> : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12.5 }}>
+                              {active.map((i) => (
+                                <span key={i.id}>{i.item_code && <b>{i.item_code} — </b>}{i.item_name} <span style={{ color: TEXT.muted }}>× {i.quantity.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {i.unit || ''}</span></span>
+                              ))}
+                              {moved > 0 && <span style={{ color: TEXT.muted }}>{moved} line{moved === 1 ? '' : 's'} moved or withdrawn</span>}
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ ...tdStyle, fontSize: 12.5, color: TEXT.secondary }}>
+                          {!readable ? <span style={{ color: TEXT.muted }}>Quotes are kept by {r.buyer_name || r.created_by_name || 'that buyer'}</span> : <>
+                          {r.status === 'draft' ? 'Not sent yet'
+                            : r.invite_count ? `${r.invite_count} asked${r.awarded_line_count ? ` · ${r.awarded_line_count} line${r.awarded_line_count === 1 ? '' : 's'} awarded` : ''}`
+                            : (r.attachments || []).length ? `${(r.attachments || []).length} quotation file${(r.attachments || []).length === 1 ? '' : 's'}` : '—'}
+                          {(r.awarded_vendors || []).length > 0 && <div style={{ color: TEXT.muted }}>Awarded: {(r.awarded_vendors || []).join(', ')}</div>}
+                          </>}
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>
+                          <div style={{ display: 'inline-flex', gap: 8, flexWrap: 'nowrap' }}>
+                            {mayOpenRfq(r) && (
+                              <button type="button" onClick={() => router.push(recordPath('/dashboard/p2p/rfq', r))} style={smallSecondaryBtnStyle}>Open</button>
+                            )}
+                            {canUploadOnRfq(r) && (
+                              <button data-tour="pr-detail-upload-po" type="button" disabled={busy} onClick={() => setUploadRfq(r)} style={smallPrimaryBtnStyle}>Upload PO</button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {canFeature('p2p', 'rfq', 'vendor_quotes', 'view') && rfqs.filter((r) => (r.attachments || []).length > 0 && rfqIsMine(r)).map((r) => (
+        <div key={r.id} data-tour="pr-detail-vendor-quotations" style={sectionStyle}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Vendor Quotations{rfqs.length > 1 ? ` — ${r.rfq_number}` : ''}</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
-            {rfq.attachments.map((a) => (
+            {r.attachments.map((a) => (
               <div key={a.id} style={{ borderRadius: 12, border: `1px solid ${BORDER.normal}`, padding: 12 }}>
                 <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 6px' }}>{a.vendor_tier}</p>
                 <p style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 2px' }}>{a.vendor_name || '—'}</p>
                 <a
                   href="#"
-                  onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => rfqApi.getAttachmentBlob(rfq.id, a.id), a.filename) }}
+                  onClick={(e) => { e.preventDefault(); openFile(() => rfqApi.getAttachmentBlob(r.id, a.id), a.filename) }}
                   style={{ fontSize: 12.5, color: '#2563eb', textDecoration: 'none' }}
                 >
                   {a.filename}
@@ -828,7 +963,7 @@ export default function MyP2PRequestDetailPage() {
             ))}
           </div>
         </div>
-      )}
+      ))}
 
       {po && seePoBlock && (
         <DetailCard tour="pr-detail-po-info">
@@ -840,6 +975,14 @@ export default function MyP2PRequestDetailPage() {
                   {x.po_number}{x.vendor_name ? ` · ${x.vendor_name}` : ''}
                 </button>
               ))}
+            </div>
+          )}
+          {poNotice && <div role="status" style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.25)', color: '#166534', fontSize: 13 }}>{poNotice}</div>}
+          {canDiscardPo && draftPoRfq && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14, fontSize: 12.5, color: TEXT.secondary }}>
+              <span>This PO is a draft (not sent for approval). If it is no longer wanted, discard it and its quantity goes back to open.</span>
+              <button type="button" data-tour="pr-detail-discard-po-draft" disabled={busy} style={{ ...smallSecondaryBtnStyle, color: '#b91c1c' }}
+                onClick={() => { setPoNotice(''); setDiscardPoTarget({ rfqId: draftPoRfq.id, poId: po.id, poNumber: po.po_number, vendorName: po.vendor_name }) }}>Discard draft PO</button>
             </div>
           )}
           <DetailSummary
@@ -860,10 +1003,10 @@ export default function MyP2PRequestDetailPage() {
             )}
             {canFeature('p2p', 'purchase_orders', 'po_document', 'view') && (
               <DetailRow label="Tally PO (PDF)">
-                {po.document_filename && rfq ? (
+                {po.document_filename && (po.rfq_id ?? rfqs[0]?.id) ? (
                   <a
                     href="#"
-                    onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => rfqApi.getPoDocumentBlob(rfq.id, po.id), po.document_filename!) }}
+                    onClick={(e) => { e.preventDefault(); openFile(() => rfqApi.getPoDocumentBlob((po.rfq_id ?? rfqs[0]?.id) as number, po.id), po.document_filename!) }}
                     style={{ color: '#2563eb', textDecoration: 'none' }}
                   >
                     {po.document_filename}
@@ -926,8 +1069,27 @@ export default function MyP2PRequestDetailPage() {
       )}
 
       {poViaEngine && engine?.po_id ? (
+        // One approval card per PO waiting for a decision: each PO is approved or rejected on its own,
+        // by its own approvers, and one PO's decision never touches the others.
         <div data-tour="pr-detail-po-approval">
-          <ApprovalPanel entityType="p2p_purchase_order" entityId={engine.po_id} onChanged={load} title="PO Approval" />
+          {(() => {
+            const ids = pendingPoIdsOf(pr)
+            const shown = ids.length ? ids : [engine.po_id as number]
+            return shown.map((id, i) => {
+              const label = allPos.find((x) => x.id === id)?.po_number
+              return (
+                <Fragment key={id}>
+                  {shown.length > 1 && i === 0 && (
+                    <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: '0 0 8px' }}>
+                      {shown.length} purchase orders of this requisition are waiting for approval. Each one is decided on its own below.
+                    </p>
+                  )}
+                  <ApprovalPanel entityType="p2p_purchase_order" entityId={id} onChanged={load}
+                    title={shown.length > 1 ? `PO Approval — ${label || `PO ${i + 1} of ${shown.length}`}` : 'PO Approval'} />
+                </Fragment>
+              )
+            })
+          })()}
         </div>
       ) : showPoApproval && (pr.approval_scheme === 'engine' && !poRaised ? (
         <div data-tour="pr-detail-po-approval" style={sectionStyle}>
@@ -1065,9 +1227,11 @@ export default function MyP2PRequestDetailPage() {
         </div>
       )}
 
-      {showUploadPo && rfq && (
-        <UploadPODialog rfq={rfq} pr={pr as unknown as P2PRequest} onClose={() => setShowUploadPo(false)}
-          onUploaded={() => { setShowUploadPo(false); load() }} />
+      <DiscardPoDraftDialog target={discardPoTarget} onClose={() => setDiscardPoTarget(null)}
+        onDone={(poNumber) => { setDiscardPoTarget(null); setPoNotice(`Draft PO ${poNumber} discarded. Its quantity is open to order again and its Tally number can be used again.`); load() }} />
+      {uploadRfq && (
+        <UploadPODialog rfq={uploadRfq} pr={pr as unknown as P2PRequest} onClose={() => setUploadRfq(null)}
+          onUploaded={() => { setUploadRfq(null); load() }} />
       )}
 
       {promptAction && m && (

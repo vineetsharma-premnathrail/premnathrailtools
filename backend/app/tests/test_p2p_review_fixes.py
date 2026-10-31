@@ -132,7 +132,8 @@ def test_picked_po_approver_without_flag_can_reject_and_po_is_cancelled(client, 
     pr, po_appr, _, _ = _po_raised(client, db)
     r = client.post(f"{BASE}/{pr['id']}/reject", json={"reason": "Wrong vendor"}, headers=_h(po_appr["purchase_manager"]))
     assert r.status_code == 200, r.text
-    assert r.json()["status"] == "rejected"
+    # A PO rejection cancels only that PO; the requisition goes back to buying (2026-10-31).
+    assert r.json()["status"] not in ("rejected", "cancelled")
     db.expire_all()
     assert {po.status for po in db.query(P2PPurchaseOrder).filter_by(p2p_request_id=pr["id"]).all()} == {"cancelled"}
 

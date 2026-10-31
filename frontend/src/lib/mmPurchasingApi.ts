@@ -19,6 +19,8 @@ export interface QuoteItem {
   remarks: string | null
   is_awarded: boolean
   award_reason: string | null
+  /** Quantity awarded to this vendor on this line (split awards); null/0 = none. */
+  awarded_qty?: number | null
 }
 
 export interface LineQuotation {
@@ -57,6 +59,10 @@ export interface CompareCell {
   award_reason: string | null
   eligible: boolean
   rank: string | null
+  /** What this vendor can supply on the line (never above what the RFQ asks). */
+  quote_quantity?: number | null
+  /** Quantity awarded to this vendor on the line. */
+  awarded_qty?: number | null
 }
 
 export interface CompareVendor {
@@ -77,13 +83,25 @@ export interface CompareVendor {
   overall_rank: string | null
 }
 
+/** One saved award on a line: how much goes to which vendor's quote line. */
+export interface CompareAward {
+  vendor_quotation_id: number
+  vendor_quotation_item_id: number
+  quantity: number
+}
+
 export interface CompareLine {
   pr_item_id: number
   store_item_id: number | null
   item_code: string | null
   item_name: string
   unit: string | null
+  /** What this RFQ asks for on the line. */
   quantity: number
+  /** Saved awards (a line can be split across vendors), their total, and what is still not ordered. */
+  awards?: CompareAward[]
+  awarded_total?: number
+  open_qty?: number
   l1_vendor_quotation_id: number | null
   l1_vendor_quotation_item_id: number | null
   awarded_vendor_quotation_id: number | null
@@ -331,7 +349,8 @@ export const mmQuotationsApi = {
   replace: async (rfqId: number, vqId: number, payload: Record<string, unknown>): Promise<LineQuotation> => { const { data } = await apiClient.put(`/p2p/rfqs/${rfqId}/line-quotations/${vqId}`, payload); return data },
   comparison: async (rfqId: number): Promise<Comparison> => { const { data } = await apiClient.get(`/p2p/rfqs/${rfqId}/comparison`); return data },
   exportComparison: async (rfqId: number): Promise<Blob> => { const { data } = await apiClient.get(`/p2p/rfqs/${rfqId}/comparison/export`, { responseType: 'blob' }); return data },
-  award: async (rfqId: number, awards: { pr_item_id: number; vendor_quotation_item_id: number; reason?: string }[]): Promise<Comparison> => {
+  /** quantity: null/omitted = the whole remaining quantity to this vendor; more than 0 = a split award; 0 = take the award back. */
+  award: async (rfqId: number, awards: { pr_item_id: number; vendor_quotation_item_id: number; quantity?: number | null; reason?: string }[]): Promise<Comparison> => {
     const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/awards`, { awards }); return data
   },
   splitProposal: async (rfqId: number): Promise<SplitProposal> => { const { data } = await apiClient.get(`/p2p/rfqs/${rfqId}/split-proposal`); return data },

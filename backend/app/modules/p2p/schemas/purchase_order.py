@@ -76,6 +76,8 @@ class P2PPurchaseOrderCreate(BaseModel):
 
 class P2PUploadPOLine(BaseModel):
     pr_item_id: int
+    # Omitted = all that is awarded to the vendor (or all that is left to order, without awards).
+    quantity: float | None = Field(default=None, gt=0)
     unit_price: float = Field(gt=0)
     tax_rate: float | None = Field(default=None, ge=0, le=100)
 
@@ -83,6 +85,9 @@ class P2PUploadPOLine(BaseModel):
 class P2PUploadPOPayload(BaseModel):
     """Details sent with Upload PO on the requisition (the Tally PO PDF and
     number travel as their own form fields)."""
+    # The vendor's quote on this RFQ whose awarded lines this PO takes. Without it the PO is for the
+    # vendor of an L1-L4 quote file (vendor_tier) or, for an RFQ with no quotes, the vendor master (vendor_id).
+    vendor_quotation_id: int | None = None
     vendor_tier: str | None = None
     selection_reason: str | None = None
     # Only when the RFQ has no L1/L2 quote files (emailed RFQ): the vendor from the vendor master.
@@ -113,6 +118,12 @@ class P2PPurchaseOrderItemLinkPayload(BaseModel):
     """Links an older PO line (raised before lines carried the Item Master id)
     to its Item Master item, so goods can be received against it."""
     store_item_id: int
+
+
+class P2PPurchaseOrderDiscardPayload(BaseModel):
+    """Discard a draft PO (one returned for changes or withdrawn): why, 5+ characters (checked in the route
+    so the answer names the way forward)."""
+    reason: str = ""
 
 
 class P2PPurchaseOrderItemPricingPayload(BaseModel):
@@ -161,6 +172,8 @@ class P2PPurchaseOrderResponse(BaseModel):
     plant_branch_id: int | None = None
     ship_to_location_id: int | None = None
     vendor_quotation_id: int | None = None
+    # The RFQ this PO was uploaded on (several POs can come from one RFQ).
+    rfq_id: int | None = None
     amendment_no: int = 0
     # "tally" for a PO uploaded from Tally; external_ref = its Tally PO number.
     source: str | None = None

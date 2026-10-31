@@ -259,7 +259,7 @@ def ensure_can_review(db: Session, user: User, action: str) -> None:
     if not ok:
         raise HTTPException(
             status_code=403,
-            detail=f"Only the R&D head ({_head_names(db)}) or someone with R&D › Requirements › Review can accept or return a "
+            detail=f"Only the R&D head ({_head_names(db)}) or someone with R&D › Requirements › Review can accept a "
                    "requirement — an admin grants it in Organization › Role & Permissions.",
         )
 

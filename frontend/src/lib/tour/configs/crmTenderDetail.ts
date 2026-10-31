@@ -54,7 +54,7 @@ const steps: TourStep[] = [
   {
     target: 'tender-rnd-status',
     title: 'R&D ID, revision and status',
-    purpose: 'Appears once the requirement has been sent to R&D: its R&D ID (RDR-year-number), the current revision (R0, R1, …) and where R&D\'s review stands — Awaiting R&D review, Accepted, Returned to BD, Responded or Superseded. When R&D returns it, the card reads "Returned by R&D: <reason>".',
+    purpose: 'Appears once the requirement has been sent to R&D: its R&D ID (RDR-year-number), the current revision (R0, R1, …) and where R&D\'s review stands — Awaiting R&D review, Accepted, R&D asked for details (the question is shown on the card — update the requirement and send it again), Responded or Superseded (older requirements may also show Returned to BD).',
     why: 'Each send is a new revision with its own ID. There is no Discussion channel any more — the return reason is how R&D asks for corrections.',
   },
   {
@@ -132,9 +132,9 @@ const steps: TourStep[] = [
     // always be the one who decides to open it.
     target: 'tender-tor-btn',
     title: 'Send Technical Requirement to R&D',
-    purpose: 'Emails R&D a PDF summarizing the Customer Organization, Project, and Product Requirement details, and puts it in the R&D team queue with a Response Due Date and your remarks. The first send creates the R&D ID and revision R0; every later send is the next revision. Shown only to roles with Send Technical Requirement (TOR) to R&D.',
+    purpose: 'Sends R&D the Customer Organization, Project, and Product Requirement details, and puts it in the R&D team queue with a Response Due Date and your remarks. The first send creates the R&D ID and revision R0; every later send is the next revision. Shown only to roles with Send Technical Requirement (TOR) to R&D.',
     why: 'Disabled once already sent — you\'d need to edit the tender before sending again (or R&D to return it), to avoid firing off duplicate requests for the same version of the details.',
-    after: 'Click it yourself: first create the Technical Offer Word document, then set the due date, remarks and reference documents and send — the tour won\'t open it for you. If you open it now, press Next for a walkthrough of the dialog.',
+    after: 'Click it yourself: set the due date, remarks and reference documents and send — the tour won\'t open it for you. If you open it now, press Next for a walkthrough of the dialog.',
   },
   ...torDialogConfig.steps,
   {

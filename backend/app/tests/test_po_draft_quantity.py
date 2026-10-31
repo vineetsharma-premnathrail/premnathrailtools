@@ -3,6 +3,7 @@ a draft may be saved with unpriced lines; Send for approval still needs prices."
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.rfq import RFQ
+from app.modules.p2p.models.rfq_item import RFQItem
 from app.modules.p2p.routes.rfq import build_po_draft
 from app.modules.p2p.schemas.purchase_order import P2PPurchaseOrderCreate
 from app.tests.p2p_workflow_helpers import master_item
@@ -23,8 +24,12 @@ def _draft(client, db, tag, qty=10):
     for it in row.items:
         it.fulfillment_status = "sent_to_procurement"
     row.status = "vendor_quotations"
-    rfq = RFQ(rfq_number=f"RFQ-QD-{tag}", p2p_request_id=pr["id"], status="locked")
+    rfq = RFQ(rfq_number=f"RFQ-QD-{tag}", p2p_request_id=pr["id"], status="locked", buyer_id=buyer.id, created_by_id=buyer.id)
     db.add(rfq)
+    db.flush()
+    for it in row.items:  # the RFQ's own lines (a PO draft is built from them)
+        it.buyer_id = buyer.id
+        db.add(RFQItem(rfq_id=rfq.id, pr_item_id=it.id, store_item_id=it.store_item_id, quantity=it.quantity))
     db.commit()
     # A draft PO exists only when one was returned for changes (a PO is made by Upload PO on the
     # requisition now), so the draft is built in the database the way the app builds it.

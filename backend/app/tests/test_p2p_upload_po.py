@@ -96,20 +96,28 @@ def test_upload_po_reads_its_lines_back(client, db):
 
 # ── validation ────────────────────────────────────────────────────────────────
 
-def test_a_line_without_a_price_is_refused_with_the_item_name_and_the_stored_pdf_is_removed(client, db):
+def test_a_line_left_out_of_the_upload_stays_open_and_a_line_without_a_price_is_refused(client, db):
     pr, rfq, buyer = _ready(client, db, "B1", items=TWO_LINES)
+    bolt, nut = pr["items"]
+    # A line sent without its Tally price is refused, with the field named; nothing is stored.
     details = upload_po_details(db, pr["id"])
-    details["lines"] = details["lines"][:1]  # Nut has no price
+    details["lines"][1].pop("unit_price")
     r = post_upload_po(client, buyer, rfq.id, details, "TALLY-B1")
     assert r.status_code == 422, r.text
-    assert "Nut UPO" in r.json()["detail"] and "unit price" in r.json()["detail"]
-    calls = post_upload_po.calls
-    # The PDF went to SharePoint before the lock, so the failure removes it again (nothing points at it).
-    assert len(calls.uploaded) == 1 and calls.deleted == calls.uploaded
+    assert "unit_price" in r.json()["detail"] and "incomplete" in r.json()["detail"]
     db.expire_all()
     assert db.query(P2PPurchaseOrder).filter_by(p2p_request_id=pr["id"]).count() == 0
-    assert db.get(P2PRequest, pr["id"]).status == "vendor_quotations"
     assert db.query(AuditLog).filter_by(entity_type="p2p_request", entity_id=pr["id"], action="po_document_uploaded").count() == 0
+    # Leaving a line out is allowed now: the PO takes only the lines sent (one PO per vendor), the rest stays open.
+    details = upload_po_details(db, pr["id"])
+    details["lines"] = details["lines"][:1]
+    ok = post_upload_po(client, buyer, rfq.id, details, "TALLY-B1")
+    assert ok.status_code == 200, ok.text
+    assert [i["pr_item_id"] for i in ok.json()["items"]] == [bolt["id"]]
+    from app.modules.p2p import line_progress
+    db.expire_all()
+    progress = line_progress.line_progress(db, db.get(P2PRequest, pr["id"]))
+    assert progress[nut["id"]].open_to_order == 3 and progress[bolt["id"]].open_to_order == 0
 
 
 def test_zero_price_unknown_line_and_bad_details_are_422(client, db):
@@ -147,13 +155,13 @@ def test_a_file_that_is_not_a_pdf_is_415(client, db):
 def test_a_tally_number_already_on_a_live_po_is_409(client, db):
     pr1, rfq1, buyer = _ready(client, db, "D1")
     assert _upload(client, db, buyer, rfq1, pr1, tally="PO/DUP/1").status_code == 200
-    pr2, rfq2, _b = _ready(client, db, "D2")
-    r = _upload(client, db, buyer, rfq2, pr2, tally="po/dup/1")
+    pr2, rfq2, buyer2 = _ready(client, db, "D2")
+    r = _upload(client, db, buyer2, rfq2, pr2, tally="po/dup/1")
     assert r.status_code == 409 and "already on" in r.json()["detail"]
     assert db.query(P2PPurchaseOrder).filter_by(p2p_request_id=pr2["id"]).count() == 0
 
 
-def test_the_requisition_must_be_at_rfq_stage_and_have_no_po_yet(client, db):
+def test_the_requisition_must_be_at_rfq_stage_and_a_fully_ordered_rfq_takes_no_more(client, db):
     # Not approved yet: still 'submitted'.
     pr, _rfq, buyer = _ready(client, db, "E1", approve=False)
     rfq = RFQ(rfq_number="RFQ-UPO-E1", p2p_request_id=pr["id"], status="locked")
@@ -161,11 +169,11 @@ def test_the_requisition_must_be_at_rfq_stage_and_have_no_po_yet(client, db):
     db.commit()
     r = _upload(client, db, buyer, rfq, pr)
     assert r.status_code == 409 and "RFQ stage" in r.json()["detail"] and "submitted" in r.json()["detail"]
-    # One PO per requisition: a second upload says where the PO is.
+    # Every line is on the first PO: a second upload has nothing left to order and says so.
     pr2, rfq2, buyer2 = _ready(client, db, "E2")
     assert _upload(client, db, buyer2, rfq2, pr2, tally="TALLY-E2-A").status_code == 200
     again = _upload(client, db, buyer2, rfq2, pr2, tally="TALLY-E2-B")
-    assert again.status_code == 409 and "already has PO" in again.json()["detail"] and "amendment" in again.json()["detail"]
+    assert again.status_code == 409 and "Nothing is left to order on RFQ" in again.json()["detail"]
 
 
 def test_with_nobody_to_approve_the_po_nothing_is_stored(client, db):

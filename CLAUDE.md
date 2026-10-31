@@ -15,7 +15,7 @@ ERP for Premnath Rail Tools. Stack: Next.js 16 (App Router, React 19, TypeScript
 4. `alembic heads` must show exactly one head; one migration per change, linear chain. After deleting/renaming a model fix `alembic/env.py` and `main.py` imports.
 5. Local Python is 3.14, prod is 3.12: run `ruff check --select F821 --target-version py312 app alembic` and import every annotated type.
 6. If CRM UI changed, update `frontend/src/lib/tour/configs/crm*.ts` before any push.
-7. Never start, stop or restart dev servers (ports 3000/8000) and never run one in the background; diagnose read-only and ask the user.
+7. Dev servers (ports 3000/8000): when the user asks, start them yourself in the background (first check the ports so no duplicate binds). Never kill or restart a server the user started from their own terminal without asking.
 8. Shared registries (`main.py`, `alembic/env.py`, `permission_registry.py`, `notification_events.py`, `lib/api.ts`, `types/index.ts`, `useAuth.ts`, Sidebar) are edited by the Manager only, re-read first, small Edits.
 9. R&D calculator pages and their formulas are untouchable (`frontend/src/app/dashboard/rnd/` braking, qmax, tractive-effort, load-distribution, spline, vehicle-performance, hydraulic, history).
 

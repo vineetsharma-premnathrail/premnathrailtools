@@ -1,8 +1,8 @@
 """Daily reminder notifications for overdue Purchase Orders.
 
-Runs once a day (wired up in app/main.py) and notifies the buyer assigned to
+Runs once a day (wired up in app/main.py) and notifies the PO's buyer (its RFQ's buyer, else the buyer assigned to
 the PO's originating PR — falling back to the PO's own creator for an ad-hoc
-PO raised with no linked PR — for every PO whose vendor-promised
+PO raised with no linked PR) — for every PO whose vendor-promised
 expected_delivery has passed while goods are still to come.
 
 Only a PO that is released (final approval given), whose requisition is still
@@ -17,12 +17,13 @@ import logging
 from datetime import date
 
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.db.session import SessionLocal
 from app.modules.main.models.user import User
 from app.modules.main.models.notification import Notification
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
+from app.modules.p2p.models.rfq import RFQ
 from app.modules.p2p.po_tracking import reminder_pos
 from app.utils.notifications import notify_user
 from app.utils.email import send_po_overdue_email
@@ -33,6 +34,12 @@ OVERDUE = "po_overdue"
 
 
 def _resolve_buyer_id(po: P2PPurchaseOrder) -> int | None:
+    # The PO's own buyer is its RFQ's buyer (one requisition can have POs from several buyers).
+    if po.rfq_id:
+        session = object_session(po)
+        rfq = session.get(RFQ, po.rfq_id) if session else None
+        if rfq and rfq.buyer_id:
+            return rfq.buyer_id
     if po.p2p_request_id and po.p2p_request:
         return po.p2p_request.assigned_buyer_id or po.created_by_id
     return po.created_by_id

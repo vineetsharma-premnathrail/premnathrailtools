@@ -14,6 +14,7 @@ import { FormPage, SheetSection, SheetIcon, Req, Optional, SHEET, sheetBtn, shee
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { formatDate } from '@/lib/format'
+import { TIME_ZONES, isKnownTimeZone } from '@/lib/timezones'
 
 const { INK, BODY, MUTED, LINE, SOFT, BLUE } = SHEET
 
@@ -256,7 +257,13 @@ export default function EditOrganizationInfoPage() {
                     {text('country', 'Country', { tour: 'org-edit-country', req: true, basis: 200, max: 280 })}
                     {text('currency', 'Default Currency', { tour: 'org-edit-currency', req: true, ph: 'INR', basis: 140, max: 200 })}
                     {text('default_language', 'Default Language', { tour: 'org-edit-language', ph: 'English', basis: 160, max: 240 })}
-                    {text('timezone', 'Time Zone', { tour: 'org-edit-timezone', req: true, ph: 'Asia/Kolkata', basis: 180, max: 260 })}
+                    <F label="Time Zone" req basis={180} max={260}>
+                      <Select data-tour="org-edit-timezone" searchable style={sheetInput} value={form.timezone || ''} onChange={(e) => setField('timezone', e.target.value || null)}>
+                        <option value="">— Select —</option>
+                        {form.timezone && !isKnownTimeZone(form.timezone) && <option value={form.timezone}>{form.timezone} (not a valid time zone — pick one)</option>}
+                        {TIME_ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
+                      </Select>
+                    </F>
                   </div>
                 </SheetSection>
               </>

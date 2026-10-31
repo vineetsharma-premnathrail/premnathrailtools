@@ -16,6 +16,7 @@ from app.core.config import settings
 from app.modules.accounts.models.vendor import Vendor
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.rfq import RFQ
+from app.modules.p2p.models.rfq_item import RFQItem
 from app.modules.p2p.routes import p2p_requests as pr_routes
 from app.modules.p2p.routes import rfq as rfq_routes
 from app.modules.store.models.location import StoreLocation
@@ -90,8 +91,20 @@ def rfq_for_pr(db, pr_id, buyer_id=None):
         pr.status = "vendor_quotations"
     rfq = db.query(RFQ).filter(RFQ.p2p_request_id == pr_id).order_by(RFQ.id).first()
     if rfq is None:
-        rfq = RFQ(rfq_number=f"RFQ-UPO-{pr_id}", p2p_request_id=pr_id, status="locked", created_by_id=buyer_id)
+        rfq = RFQ(rfq_number=f"RFQ-UPO-{pr_id}", p2p_request_id=pr_id, status="locked", created_by_id=buyer_id, buyer_id=buyer_id)
         db.add(rfq)
+        db.flush()
+    # An RFQ carries its lines (multi-buyer split): every open buy line of the PR at its open quantity,
+    # bought by the RFQ's buyer.
+    have = {i.pr_item_id for i in db.query(RFQItem).filter(RFQItem.rfq_id == rfq.id).all()}
+    for it in pr.items:
+        if it.fulfillment_status == "stock_issued" or (it.quantity or 0) - (it.issued_qty or 0) <= 0:
+            continue
+        if it.buyer_id is None and not pr.assigned_buyer_id:
+            it.buyer_id = rfq.buyer_id or buyer_id
+        if it.id not in have:
+            db.add(RFQItem(rfq_id=rfq.id, pr_item_id=it.id, store_item_id=it.store_item_id,
+                           quantity=(it.quantity or 0) - (it.issued_qty or 0)))
     db.commit()
     db.refresh(rfq)
     return rfq

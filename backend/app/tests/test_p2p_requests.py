@@ -460,51 +460,16 @@ def test_assign_buyer_unknown_buyer_404s(client, db):
     assert response.status_code == 404
 
 
-def test_request_quotations_requires_approved_status(client, db):
+def test_old_request_quotations_and_select_vendor_routes_are_gone(client, db):
+    """Quotes and the vendor choice live on the RFQ (line quotations + award); the old header-level
+    request-quotations / select-vendor routes no longer exist."""
     requester = _requester(db, "reqv@premnathrail.com")
     pr = _create_pr(client, requester)
     buyer = _purchaser(db, "buyerv@premnathrail.com")
-
-    response = client.post(f"{BASE}/{pr['id']}/request-quotations", json={"vendor": "Acme"}, headers=auth_header(buyer))
-    assert response.status_code == 409
-
-
-def test_request_quotations_success(client, db):
-    requester = _requester(db, "reqw@premnathrail.com")
-    pr = _create_pr(client, requester)
-    buyer = _purchaser(db, "buyerw@premnathrail.com")
     _approve_pr(client, pr)
 
-    response = client.post(
-        f"{BASE}/{pr['id']}/request-quotations",
-        json={"vendor": "Acme Corp", "rfq_number": "RFQ-001", "quotation": "50000", "vendor_comparison": "Acme vs Beta"},
-        headers=auth_header(buyer),
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["vendor"] == "Acme Corp"
-    assert body["rfq_number"] == "RFQ-001"
-    assert body["vendor_comparison"] == "Acme vs Beta"
-
-
-def test_select_vendor_requires_approved_status(client, db):
-    requester = _requester(db, "reqx@premnathrail.com")
-    pr = _create_pr(client, requester)
-    buyer = _purchaser(db, "buyerx@premnathrail.com")
-
-    response = client.post(f"{BASE}/{pr['id']}/select-vendor", json={"selected_vendor": "Acme"}, headers=auth_header(buyer))
-    assert response.status_code == 409
-
-
-def test_select_vendor_success(client, db):
-    requester = _requester(db, "reqy@premnathrail.com")
-    pr = _create_pr(client, requester)
-    buyer = _purchaser(db, "buyery@premnathrail.com")
-    _approve_pr(client, pr)
-
-    response = client.post(f"{BASE}/{pr['id']}/select-vendor", json={"selected_vendor": "Acme Corp"}, headers=auth_header(buyer))
-    assert response.status_code == 200
-    assert response.json()["selected_vendor"] == "Acme Corp"
+    assert client.post(f"{BASE}/{pr['id']}/request-quotations", json={"vendor": "Acme"}, headers=auth_header(buyer)).status_code in (404, 405)
+    assert client.post(f"{BASE}/{pr['id']}/select-vendor", json={"selected_vendor": "Acme"}, headers=auth_header(buyer)).status_code in (404, 405)
 
 
 # ── PO creation ──────────────────────────────────────────────────────────────

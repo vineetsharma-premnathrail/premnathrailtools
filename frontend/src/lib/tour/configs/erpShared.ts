@@ -316,12 +316,6 @@ export function projectFormSteps(mode: 'create' | 'edit'): TourStep[] {
       purpose: 'Client\'s billing/corporate address.',
     },
     {
-      target: 'erp-pf-operator',
-      title: 'Operator Details',
-      purpose: 'The person who actually drives/runs the machine at site, with phone, email and qualification.',
-      why: 'Service engineers call the operator first to understand a fault.',
-    },
-    {
       target: 'erp-pf-tab-2',
       title: 'Technical Specs tab',
       autoActivate: true,

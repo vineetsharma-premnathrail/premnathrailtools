@@ -41,6 +41,18 @@ def partner(db):
     return make_user(db, "wm.partner@x.com", is_partner=True)
 
 
+def test_create_with_only_name(client, db, partner):
+    # The form asks only the project name: no SO, dates, number, manager or description.
+    body = {k: v for k, v in payload().items() if k not in ("start_date", "target_handover_date", "sales_order_ref")}
+    r = client.post(f"{API}/projects/with-machine", headers=auth(partner), json=body)
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["start_date"] is None and out["target_handover_date"] is None
+    assert out["sales_order_ref"] is None
+    assert out["project_code"].startswith("PEW-")
+    assert db.get(PmProject, out["id"]).project_manager_id == partner.id
+
+
 def test_create_registers_project_and_machine(client, db, partner):
     r = client.post(f"{API}/projects/with-machine", headers=auth(partner), json=payload())
     assert r.status_code == 200, r.text

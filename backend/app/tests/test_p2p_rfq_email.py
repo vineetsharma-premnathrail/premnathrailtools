@@ -47,10 +47,11 @@ def rfq(client, db):
     pr = _create_pr(client, requester, items=[{"store_item_id": a.id, "quantity": 6, "project_inhouse": "Project"}])
     _approve_pr(client, pr)
     row = db.get(P2PRequest, pr["id"])
+    buyer = _purchaser(db, "rfqmail.buyer@premnathrail.com")
     for it in row.items:
         it.fulfillment_status = "sent_to_procurement"
+        it.buyer_id = buyer.id  # an RFQ is raised by the buyer of the lines
     db.commit()
-    buyer = _purchaser(db, "rfqmail.buyer@premnathrail.com")
     r = client.post(RFQS, json={"p2p_request_id": pr["id"]}, headers=auth_header(buyer))
     assert r.status_code == 200, r.text
     vs = [_vendor(db, f"V-RM{n}", f"Vendor {n}", f"v{n}@vendor.test") for n in (1, 2, 3)]

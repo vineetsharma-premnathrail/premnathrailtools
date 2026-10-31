@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { p2pApi, rfqApi, vendorsApi } from '@/lib/api'
-import { P2PRequest, ProcurementVendor, VendorItemMatch } from '@/types'
+import { P2PRequest, MyLineRow, ProcurementVendor, VendorItemMatch } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import DateField from '@/components/erp/DateField'
@@ -36,7 +36,15 @@ export default function NewRfqPage() {
   const isPurchaseTeam = !!user?.apps?.includes('purchase')
   const canCreateRfq = can('p2p', 'rfq', 'create')
 
-  const [prs, setPrs] = useState<P2PRequest[]>([])
+  // Requisitions the buyer has lines to quote on (My Lines), the picked requisition in full, and the
+  // buyer's own lines of it. Each buyer raises their own RFQ for their own lines (2026-10-31).
+  const [prOptions, setPrOptions] = useState<{ id: number; p2p_number: string; purpose_label: string | null; lines: number }[]>([])
+  const [prListError, setPrListError] = useState('')
+  const [selectedPr, setSelectedPr] = useState<P2PRequest | null>(null)
+  const [lineRows, setLineRows] = useState<MyLineRow[] | null>(null)  // null = My Lines could not be read
+  const [loadingPr, setLoadingPr] = useState(false)
+  const [prLoadError, setPrLoadError] = useState('')
+  const [unticked, setUnticked] = useState<number[]>([])  // lines the buyer took off this RFQ (all ready lines start ticked)
   const [prId, setPrId] = useState('')
   useEffect(() => { if (linkedPrId) setPrId(String(linkedPrId)) }, [linkedPrId])
 
@@ -56,23 +64,33 @@ export default function NewRfqPage() {
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
-  // the created draft (the API object — its id_ref builds the RFQ link)
-  const [draftRfq, setDraftRfq] = useState<{ id: number } | null>(null)
 
   // Typed RFQ data survives a refresh / network failure (lib/formDraft.ts). Off for a PR-linked
   // form, and until the settings default quote date is in (else an untouched form looks changed).
   const [settingsReady, setSettingsReady] = useState(false)
   const draft = useFormDraft(initialPrId || !settingsReady ? null : 'p2p-rfq-new',
-    { prId, pickedIds, quoteDueDate, singleQuotationReason, lateDeliveryClause, inviteMessage },
+    { prId, pickedIds, unticked, quoteDueDate, singleQuotationReason, lateDeliveryClause, inviteMessage },
     (d) => {
       setPrId(d.prId || ''); setPickedIds(Array.isArray(d.pickedIds) ? d.pickedIds : [])
+      setUnticked(Array.isArray(d.unticked) ? d.unticked : [])
       if (d.quoteDueDate) { dueDateTouched.current = true; setQuoteDueDate(d.quoteDueDate) }
       setSingleQuotationReason(d.singleQuotationReason || ''); setLateDeliveryClause(d.lateDeliveryClause || ''); setInviteMessage(d.inviteMessage || '')
     })
 
   useEffect(() => {
     if (!isAuthorized) return
-    p2pApi.list({ status: 'approved', limit: 500 }).then(setPrs).catch(() => {})
+    // Requisitions with at least one of the buyer's lines still to order (not "status = approved":
+    // several buyers work one requisition, and it stays open while any line is open).
+    p2pApi.myLines({ limit: 500 }).then((res) => {
+      const byPr = new Map<number, { id: number; p2p_number: string; purpose_label: string | null; lines: number }>()
+      for (const r of res.rows) {
+        if (!(r.open_to_order > 0) || r.state !== 'to_quote') continue
+        const cur = byPr.get(r.p2p_request_id) || { id: r.p2p_request_id, p2p_number: r.p2p_number, purpose_label: r.purpose_label, lines: 0 }
+        cur.lines += 1
+        byPr.set(r.p2p_request_id, cur)
+      }
+      setPrOptions([...byPr.values()].sort((a, b) => a.p2p_number.localeCompare(b.p2p_number, undefined, { numeric: true })))
+    }).catch((err) => setPrListError(extractErrorMessages(err, 'Your requisitions with lines to quote could not be loaded. Reload the page; if it keeps failing, ask an admin to give your role Procurement › Requisitions › My Lines.').join(' ')))
     vendorsApi.list({ status: 'active' }).then(setVendorMaster).catch(() => {})
     p2pApi.getSettings().then((s) => {
       const days = Number(s.values?.rfq_quote_days)
@@ -82,11 +100,28 @@ export default function NewRfqPage() {
     }).catch(() => {}).finally(() => setSettingsReady(true))
   }, [isAuthorized])
 
+  // The picked requisition in full, and My Lines' view of it (open quantity and stage per line).
+  useEffect(() => {
+    if (!isAuthorized || !prId) { Promise.resolve().then(() => { setSelectedPr(null); setLineRows(null); setPrLoadError('') }); return }
+    let cancelled = false
+    Promise.resolve().then(() => { if (!cancelled) { setLoadingPr(true); setPrLoadError('') } })
+    Promise.all([
+      p2pApi.get(Number(prId)),
+      p2pApi.myLines({ p2p_request_id: Number(prId), limit: 500 }).then((r) => r.rows).catch(() => null),
+    ]).then(([pr, rows]) => {
+      if (cancelled) return
+      setSelectedPr(pr); setLineRows(rows)
+    }).catch((err) => {
+      if (!cancelled) { setSelectedPr(null); setLineRows(null); setPrLoadError(extractErrorMessages(err, 'The requisition could not be opened. Check that it still exists and that you have access to it.').join(' ')) }
+    }).finally(() => { if (!cancelled) setLoadingPr(false) })
+    return () => { cancelled = true }
+  }, [isAuthorized, prId])
+
   // Vendors whose catalog lists this PR's items — most items, then cheapest total first.
   useEffect(() => {
-    const pr = prs.find((p) => String(p.id) === prId)
+    const pr = selectedPr
     // Matched by Item Master id (info records), never by item name.
-    const buyLines = (pr?.items || []).filter((it) => it.fulfillment_status === 'sent_to_procurement' && it.store_item_id).slice(0, 8)
+    const buyLines = (pr?.items || []).filter((it) => it.fulfillment_status === 'sent_to_procurement' && it.store_item_id && (it.buyer_id ?? pr?.assigned_buyer_id) === user?.id).slice(0, 8)
     const names = buyLines.map((it) => it.item_name)
     if (!names.length) { Promise.resolve().then(() => setSuggestions([])); return }
     let cancelled = false
@@ -107,22 +142,33 @@ export default function NewRfqPage() {
       setSuggestions([...byVendor.values()].sort((a, b) => b.items.length - a.items.length || (a.total ?? Infinity) - (b.total ?? Infinity)))
     })
     return () => { cancelled = true }
-  }, [prId, prs])
+  }, [selectedPr, user?.id])
 
   if (isLoading || !isAuthorized) return null
   if (!isPurchaseTeam) return <p style={{ fontSize: 13, color: '#b91c1c' }}>Only the Purchase team can raise an RFQ.</p>
   if (linkError) return (<div><P2PNav /><InvalidRecordLink message={linkError} listHref="/dashboard/p2p/rfq" listLabel="Back to RFQs" /></div>)
   if (!canCreateRfq) return <p style={{ fontSize: 13, color: '#b91c1c' }}>You don&apos;t have &apos;Create&apos; permission on Procurement › R.F.Q. Ask an admin to add it to one of your roles in Organization › Role &amp; Permissions.</p>
 
-  // Same readiness rule as the RFQ queue and the backend: no line still
-  // awaiting its stock decision, and at least one line needs buying.
-  const readyPrs = prs.filter((pr) =>
-    !pr.items.some((it) => it.fulfillment_status === 'pending')
-    && pr.items.some((it) => it.fulfillment_status === 'sent_to_procurement'))
-  const selectedPr = prs.find((pr) => String(pr.id) === prId)
-  const procureLines = (selectedPr?.items || [])
-    .filter((it) => it.fulfillment_status === 'sent_to_procurement')
-    .map((it) => ({ ...it, buyQty: it.quantity - (it.issued_qty || 0) }))
+  // The requisition's lines for this RFQ: the buyer's own lines that were sent to procurement and still have
+  // quantity to order are ready (ticked by default). Other lines are listed with the reason they are not.
+  // A line waiting for the stock check never blocks the others (backend rule, 2026-10-31).
+  const rowById = new Map((lineRows || []).map((r) => [r.pr_item_id, r]))
+  const lineList = (selectedPr?.items || [])
+    .filter((it) => it.fulfillment_status !== 'stock_issued')
+    .map((it) => {
+      const row = rowById.get(it.id)
+      const buyerId = it.buyer_id ?? selectedPr?.assigned_buyer_id
+      const open = row ? row.open_to_order : Math.max(0, it.quantity - (it.issued_qty || 0) - (it.short_closed_qty || 0))
+      let why: string | null = null
+      if (it.fulfillment_status === 'pending') why = 'Waiting for the stock check'
+      else if (buyerId !== user?.id) why = buyerId ? `Bought by ${it.buyer_name || selectedPr?.assigned_buyer_name || 'another buyer'}` : 'No buyer yet - ask the Purchase head to assign one'
+      else if (!(open > 0)) why = 'Nothing left to order'
+      else if (row && row.state !== 'to_quote') why = row.state_label
+      return { it, open, why }
+    })
+  const readyLines = lineList.filter((l) => !l.why)
+  const chosenLines = readyLines.filter((l) => !unticked.includes(l.it.id))
+  const toggleLine = (id: number) => setUnticked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))
   const picked = pickedIds
     .map((id) => vendorMaster.find((v) => v.id === id))
     .filter((v): v is ProcurementVendor => !!v)
@@ -137,6 +183,9 @@ export default function NewRfqPage() {
 
   const validate = (): string | null => {
     if (!prId) return 'Select the Purchase Requisition this RFQ is for.'
+    if (loadingPr || !selectedPr) return 'The requisition is still loading. Wait a moment and send again.'
+    if (!readyLines.length) return 'None of your lines on this requisition is ready for an RFQ. See the reasons under Lines for this RFQ; lines still waiting for the stock check, or bought by another buyer, are not yours to quote.'
+    if (!chosenLines.length) return 'Tick at least one line for this RFQ.'
     if (!picked.length) return 'Pick at least one vendor to ask for a quotation (add new vendors in Procurement › Vendors).'
     if (missingEmail.length) return `No email in the vendor master for ${missingEmail.map((v) => v.name).join(', ')} — add it under Procurement › Vendors, or remove ${missingEmail.length === 1 ? 'that vendor' : 'those vendors'} from this RFQ.`
     if (!quoteDueDate) return 'Set the Quote by date — the last day vendors can send their quotation.'
@@ -153,10 +202,9 @@ export default function NewRfqPage() {
 
     setBusy(true)
     try {
-      // Reuse the draft from a prior failed attempt instead of minting a new
-      // RFQ row each retry (the backend also reuses an open draft for the PR).
-      const rfq = draftRfq ?? await rfqApi.create(Number(prId), requiresTechnicalEvaluation)
-      if (!draftRfq) setDraftRfq(rfq)
+      // The server reuses this buyer's open draft on the requisition (and replaces its lines with the
+      // ticked ones), so a retry after a failed send never leaves a second RFQ.
+      const rfq = await rfqApi.create(Number(prId), requiresTechnicalEvaluation, { pr_item_ids: chosenLines.map((l) => l.it.id) })
       const reason = limitedQuotation ? singleQuotationReason.trim() : ''
       await rfqApi.update(rfq.id, {
         single_quotation_reason: reason || null,
@@ -204,23 +252,39 @@ export default function NewRfqPage() {
                 <SearchableSelect
                   value={prId}
                   onChange={setPrId}
-                  options={readyPrs.map((pr) => ({ value: String(pr.id), label: `${pr.p2p_number} — ${pr.category_label || pr.category_code}` }))}
-                  placeholder="Search Purchase Requisitions ready for RFQ…"
+                  options={prOptions.map((pr) => ({ value: String(pr.id), label: `${pr.p2p_number}${pr.purpose_label ? ` — ${pr.purpose_label}` : ''} · ${pr.lines} line${pr.lines === 1 ? '' : 's'} to quote` }))}
+                  placeholder="Search requisitions with lines for you to quote…"
                 />
               )}
             </div>
+            {!initialPrId && prListError && <p style={{ ...sheetHint, color: '#b91c1c' }}>{prListError}</p>}
+            {!initialPrId && !prListError && prOptions.length === 0 && <p style={sheetHint}>None of your requisition lines is waiting for an RFQ. Lines appear here once an approved requisition is assigned to you and its stock check is done.</p>}
+            {prLoadError && <p style={{ ...sheetHint, color: '#b91c1c' }}>{prLoadError}</p>}
             {selectedPr && <p style={sheetHint}>{selectedPr.project_label || 'No project specified'}</p>}
-            {procureLines.length > 0 && (
-              <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, background: SHEET.SOFT, border: `1px solid ${SHEET.LINE}` }}>
-                <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: SHEET.MUTED, margin: '0 0 6px' }}>To Be Quoted</p>
-                {procureLines.map((it) => (
-                  <p key={it.id} style={{ fontSize: 13, color: SHEET.BODY, margin: '0 0 3px' }}>
-                    {it.item_name} — <strong>{it.buyQty} {it.unit || ''}</strong>
-                    {(it.issued_qty || 0) > 0 && <span style={{ color: SHEET.MUTED }}> (of {it.quantity}; {it.issued_qty} issued from stock)</span>}
+            {selectedPr && (
+              <div data-tour="rfq-new-lines" style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, background: SHEET.SOFT, border: `1px solid ${SHEET.LINE}` }}>
+                <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: SHEET.MUTED, margin: '0 0 6px' }}>Lines for this RFQ</p>
+                {lineList.length === 0 && <p style={{ fontSize: 13, color: SHEET.BODY, margin: 0 }}>This requisition has no lines to buy.</p>}
+                {readyLines.map(({ it, open }) => (
+                  <label key={it.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: SHEET.BODY, margin: '0 0 6px', cursor: busy ? 'default' : 'pointer' }}>
+                    <input type="checkbox" disabled={busy} checked={!unticked.includes(it.id)} onChange={() => toggleLine(it.id)} style={{ marginTop: 3 }} />
+                    <span>
+                      {it.item_code && <strong>{it.item_code} — </strong>}{it.item_name} — <strong>{open.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {it.unit || ''}</strong>
+                      {((it.issued_qty || 0) > 0 || (it.short_closed_qty || 0) > 0) && (
+                        <span style={{ color: SHEET.MUTED }}> (of {it.quantity}{(it.issued_qty || 0) > 0 ? `; ${it.issued_qty} issued from stock` : ''}{(it.short_closed_qty || 0) > 0 ? `; ${it.short_closed_qty} written off` : ''})</span>
+                      )}
+                    </span>
+                  </label>
+                ))}
+                {lineList.filter((l) => l.why).map(({ it, why }) => (
+                  <p key={it.id} style={{ fontSize: 12.5, color: SHEET.MUTED, margin: '0 0 4px', paddingLeft: 24 }}>
+                    {it.item_code && `${it.item_code} — `}{it.item_name}: {why}
                   </p>
                 ))}
+                {readyLines.length > 0 && <p style={{ ...sheetHint, margin: '6px 0 0' }}>Only the ticked lines go on this RFQ. Other buyers raise their own RFQ for their lines.</p>}
               </div>
             )}
+            {loadingPr && <p style={sheetHint}>Loading the requisition…</p>}
           </SheetSection>
           <SheetSection icon="users" title="2. Vendors to ask for a quotation">
             <div data-tour="rfq-vendors">
