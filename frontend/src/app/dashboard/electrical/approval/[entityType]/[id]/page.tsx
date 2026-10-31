@@ -31,14 +31,14 @@ export default function ElectricalApprovalLinkPage() {
   }, [isAuthorized, params.entityType, id, ref, router])
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><ElectricalNav /><InvalidRecordLink message={linkError} listHref="/dashboard/organization/approvals" listLabel="Back to approvals" /></div>)
+  if (linkError) return (<div><ElectricalNav /><InvalidRecordLink message={linkError} listHref="/dashboard/approvals" listLabel="Back to approvals" /></div>)
 
   return (
     <div>
       <ElectricalNav />
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Opening approval…</h1>
-        <button type="button" style={secondaryBtnStyle} onClick={() => router.push('/dashboard/organization/approvals')}>← Back</button>
+        <button type="button" style={secondaryBtnStyle} onClick={() => router.push('/dashboard/approvals')}>← Back</button>
       </div>
       <ErrorBanner error={error} />
     </div>

@@ -93,7 +93,7 @@ const ENTITY_LINK: Record<string, (ref: string) => string> = {
   accounts_journal_entry: () => '/dashboard/finance/ledger',
   accounts_vendor_invoice: () => '/dashboard/finance/purchase',
   accounts_ar_transaction: () => '/dashboard/finance/sales',
-  accounts_party_note: () => '/dashboard/organization/approvals',
+  accounts_party_note: () => '/dashboard/approvals',
   accounts_period_close: () => '/dashboard/finance/ledger',
   accounts_depreciation_run: () => '/dashboard/finance/assets',
   accounts_year_end_close: () => '/dashboard/finance/reports',
@@ -338,7 +338,7 @@ export default function NotificationBell() {
           ) : (
             notifications.map((n) => {
               const href = DELETED_TYPE_LINK[n.notification_type] ?? rndRequirementHref(n) ?? (n.entity_id ? NOTIFICATION_TYPE_LINK[n.notification_type]?.(refOf(n, 'entity_id')) : undefined) ?? (n.entity_type && n.entity_id ? ENTITY_LINK[n.entity_type]?.(refOf(n, 'entity_id')) : undefined) ?? hrNotificationHref(n)
-                ?? (n.notification_type === 'approval' ? '/dashboard/organization/approvals' : undefined)
+                ?? (n.notification_type === 'approval' ? '/dashboard/approvals' : undefined)
               const content = (
                 <div
                   onClick={() => handleClickNotification(n)}

@@ -264,7 +264,7 @@ def _portal_url(req: ApprovalRequest, tt) -> str:
     base = settings.FRONTEND_URL.rstrip("/")
     if tt and tt.url:
         return base + tt.url.format(id=encode_ref(req.entity_id))
-    return base + "/dashboard/organization/approvals"
+    return base + "/dashboard/approvals"
 
 
 # ── HTML ─────────────────────────────────────────────────────────────────

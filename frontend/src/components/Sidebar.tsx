@@ -84,7 +84,8 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
 
   const links = [
     { href: '/dashboard', label: 'Dashboard', icon: 'dashboard', visible: true },
-    // My Approvals and My Tasks are cards on the Dashboard home (2026-10-19), not menu entries.
+    // Every signed-in user has an approvals inbox (moved out of Organization 2026-10-31).
+    { href: '/dashboard/approvals', label: 'My Approvals', icon: 'approvals', visible: true },
     { href: '/dashboard/erp', label: 'Service Module', icon: 'erp', visible: !!user?.apps?.includes('erp') },
     { href: '/dashboard/rnd', label: 'R&D', icon: 'rnd', visible: !!user?.apps?.includes('rnd') },
     { href: '/dashboard/crm', label: 'CRM', icon: 'crm', visible: !!user?.apps?.includes('crm') },

@@ -17,7 +17,8 @@ The module sub-nav (OrganizationNav) sits at the top of every Organization page.
 | Delegations | /dashboard/organization/delegations | Everyone's approval hand-overs (out-of-office) |
 | Security & Sessions | /dashboard/organization/security | Session policy, live sessions with sign-out, sign-in activity |
 | Audit Logs | /dashboard/organization/audit-logs | Read-only record of who did what and when, across all modules |
-| My Approvals | /dashboard/organization/approvals | The signed-in user's approval inbox, submissions, decisions and own delegations |
+
+My Approvals is not an Organization tab: it has its own Sidebar entry (/dashboard/approvals, every signed-in user) with the user's approval inbox, submissions, decisions and own delegations. The old address /dashboard/organization/approvals redirects there.
 
 Related screen outside the sub-nav: **Users & Roles** at /dashboard/users (list) and /dashboard/users/[ref] (one user). This is where a user's roles, approval flags, extra permissions, data access, plant assignments and documents are managed. It is reached by clicking a user's name on a role's Users tab, or directly by URL; its Back button returns to /dashboard/users. It uses the same "Users" tab permission.
 
@@ -750,7 +751,7 @@ Filters: Module (All Modules, Organization, Service Module, CRM Module, Procurem
 
 Each entry card shows: #id, action, module badge, record type and id, date/time, summary and "by <user>", a **Changes** section (field, before, after — open by default when 3 or fewer fields changed; for a delete, "Record as it was before deletion"), and IP Address, Device / Browser, Session ID, and API / Application Source (Web App, or API Client (Bearer Token)).
 
-### My Approvals — /dashboard/organization/approvals
+### My Approvals — /dashboard/approvals
 
 Open to every signed-in user. Four tab buttons:
 

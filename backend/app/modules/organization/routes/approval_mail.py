@@ -74,7 +74,7 @@ def _notice(title: str, message: str, portal_url: str | None = None, status: int
 
 def _inbox_url() -> str:
     from app.core.config import settings
-    return settings.FRONTEND_URL.rstrip("/") + "/dashboard/organization/approvals"
+    return settings.FRONTEND_URL.rstrip("/") + "/dashboard/approvals"
 
 
 def _resolve(db: Session, token: str) -> tuple[ApprovalRequestStep | None, User | None, HTMLResponse | None]:

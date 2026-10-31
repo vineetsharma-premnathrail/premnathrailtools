@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowsLeftRight, Buildings, CheckSquare, ClockCounterClockwise, FlowArrow, Gauge, GridFour, Lock, MapTrifold, Pulse, SealCheck, ShieldCheck, Users, Warning } from '@phosphor-icons/react'
+import { ArrowsLeftRight, Buildings, CheckSquare, ClockCounterClockwise, FlowArrow, Gauge, GridFour, Lock, MapTrifold, Pulse, ShieldCheck, Users, Warning } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
 import Link from 'next/link'
 import { navScrollRef } from '@/components/shared/navScroll'
@@ -24,8 +24,7 @@ const TABS = [
   { href: '/dashboard/organization/access-risk', label: 'Access Risk (SoD)', icon: 'alert', subtabKey: 'grc' },
   { href: '/dashboard/organization/monitor', label: 'System Monitor', icon: 'activity', subtabKey: 'monitor' },
   { href: '/dashboard/organization/cockpit', label: 'Cockpit', icon: 'chart', subtabKey: 'cockpit' },
-  // No subtabKey: every signed-in user has an approvals inbox.
-  { href: '/dashboard/organization/approvals', label: 'My Approvals', icon: 'inbox' },
+  // My Approvals is its own Sidebar entry (/dashboard/approvals), not a tab here.
 ] as const
 
 const TAB_ICONS: Record<string, Icon> = {
@@ -42,7 +41,6 @@ const TAB_ICONS: Record<string, Icon> = {
   alert: Warning,
   activity: Pulse,
   chart: Gauge,
-  inbox: SealCheck,
 }
 
 function TabIcon({ name }: { name: string }) {

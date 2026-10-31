@@ -173,7 +173,7 @@ db.commit()
 
 ## 4. My Approvals / delegation / security
 
-- **My Approvals** (`/dashboard/organization/approvals`, every user): inbox across modules, my requests,
+- **My Approvals** (`/dashboard/approvals`, every user): inbox across modules, my requests,
   decided by me, and my delegations ("while I'm away, X approves for me").
 - **Delegations**: from/to/dates, all modules or one module/one transaction type. The delegate can decide any
   step addressed to the delegator in that window; the step records "decided by X as delegate".

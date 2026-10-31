@@ -36,7 +36,7 @@ export default function HrApprovalsPage() {
         </p>
         <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '6px 0 0' }}>
           Who approves is set in Organization › Approval Workflows (default: the employee&apos;s reporting manager, plus HR approvers). Delegations and the approval trail of every module are in{' '}
-          <Link href="/dashboard/organization/approvals" style={{ color: '#FF6A2A', fontWeight: 600 }}>My Approvals</Link>.
+          <Link href="/dashboard/approvals" style={{ color: '#FF6A2A', fontWeight: 600 }}>My Approvals</Link>.
         </p>
       </div>
 
