@@ -41,7 +41,7 @@ function LostReasonSheet({ title, onConfirm, onCancel, initial }: Props) {
 
   return (
     <FormSheet tour="inq-lost-dialog" width={560} icon="flag" iconColor="#dc2626" title={title || 'Close inquiry as not ordered'}
-      subtitle="Why was it lost? This feeds the CRM win / loss report. Status only moves forward — this can't be undone."
+      subtitle="Why was it lost? This feeds the CRM win / loss report. If it was set by mistake, the status can be changed back later."
       onClose={onCancel} busy={false}
       footer={<>
         <button type="button" onClick={onCancel} style={sheetBtn('secondary', SHEET.INK)}>Cancel</button>

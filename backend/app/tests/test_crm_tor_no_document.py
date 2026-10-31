@@ -44,7 +44,11 @@ def test_send_needs_no_word_draft_and_files_no_document(client, db, monkeypatch)
     assert emails[-1]["response_due_date"] == date.today() + timedelta(days=5)
     assert f"/dashboard/rnd/requirements/inquiry/{encode_ref(inq.id)}" in emails[-1]["open_link"]
     assert db.query(CrmDocument).filter(CrmDocument.related_id == inq.id).count() == 0
-    # A re-send works the same way, again without a document.
+    # Re-send only after the Customer Requirement changed (owner, 2026-10-31).
+    again = _send(client, inq.id, bd)
+    assert again.status_code == 409 and "already has this Customer Requirement" in again.json()["detail"]
+    inq.product_spec = "BG 1676, hydraulic braking"
+    db.commit()
     assert _send(client, inq.id, bd).status_code == 200
 
 

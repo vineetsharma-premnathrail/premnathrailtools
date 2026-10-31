@@ -9,7 +9,7 @@ const steps: TourStep[] = [
     target: 'tender-stage-progress',
     title: 'Stage progress',
     purpose: 'Shows where this tender sits in the bidding pipeline — click to expand the full stage list and move it to a later stage. Moving a stage needs the Move pipeline stage permission in your role.',
-    why: 'Stages only move forward, with a confirmation, and each move is recorded on the Timeline. Only an admin can move a stage back, and must give a reason.',
+    why: 'Each stage move needs a confirmation and is recorded on the Timeline. A stage can also be moved back; that needs a reason, which is kept on the Timeline.',
     options: [{ value: 'Green circle', meaning: 'Completed stage' }, { value: 'Orange circle', meaning: 'Current stage' }, { value: 'Grey circle', meaning: 'Upcoming stage' }],
   },
   {

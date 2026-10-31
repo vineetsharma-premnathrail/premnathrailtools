@@ -89,22 +89,6 @@ def _check_choice(updates: dict, record, field: str, allowed: list[str], label: 
     )
 
 
-def _check_status_forward(updates: dict, record) -> None:
-    """Inquiry status only moves forward - no undo, admins included (owner, 2026-10-28).
-    A closed inquiry keeps its status; a legacy status outside the list may move anywhere."""
-    new, old = updates.get("status"), record.status
-    if not new or new == old or old not in INQ_STATUSES:
-        return
-    if old.startswith("Closed"):
-        raise HTTPException(status_code=422, detail=(
-            f"This inquiry is closed as '{old}' and its status can't be changed. "
-            "For a new requirement from this customer, create a new inquiry."))
-    if INQ_STATUSES.index(new) < INQ_STATUSES.index(old):
-        raise HTTPException(status_code=422, detail=(
-            f"Status can't go back from '{old}' to '{new}' - an inquiry status only moves forward. "
-            f"Pick '{old}' or a later status."))
-
-
 def _check_probability(value) -> None:
     if value is not None and not (0 <= int(value) <= 100):
         raise HTTPException(status_code=422, detail=f"Probability is {value}% — enter a win probability between 0 and 100%.")
@@ -346,7 +330,6 @@ async def update_inquiry(
     updates.pop("bd_owner_id", None)
     _check_choice(updates, inquiry, "current_stage", INQ_STAGES, "inquiry stage")
     _check_choice(updates, inquiry, "status", INQ_STATUSES, "inquiry status")
-    _check_status_forward(updates, inquiry)
     drop_money_updates(user, updates, INQUIRY_MONEY_FIELDS)
     if "current_stage" in updates and updates["current_stage"] != inquiry.current_stage:
         ensure_feature_action(user, "crm", "inquiries_tenders", "stage", "edit")
@@ -363,8 +346,8 @@ async def update_inquiry(
         "org_contact_id" in updates and updates["org_contact_id"] != inquiry.org_contact_id
     ):
         _check_org_and_contact(db, updates.get("org_id") or inquiry.org_id, updates.get("org_contact_id", inquiry.org_contact_id), "inquiry")
-    # The stage follows the status (STATUS_STAGE); the forward-only stage check
-    # for a status change is done by check_stage_move / _check_status_forward above.
+    # The stage follows the status (STATUS_STAGE). Status may move back or reopen
+    # a closed inquiry (owner, 2026-10-31); every change lands on the timeline.
     if ("status" in updates and "current_stage" not in updates
             and STATUS_STAGE.get(updates["status"], inquiry.current_stage) != inquiry.current_stage):
         updates["current_stage"] = STATUS_STAGE[updates["status"]]
@@ -489,6 +472,7 @@ async def create_technical_offer_request(
     raised_by = user.name or user.email
     now = datetime.now(timezone.utc)
     ctx, org = technical_offer.build_context(db, "inquiry", inquiry, user, now)
+    requirement_movement.ensure_requirement_changed(db, module="inquiry", record=inquiry, ctx=ctx)
     # No Technical Offer document (owner, 2026-10-30): R&D gets the requirement in R&D › Requirements
     # and the email; only the client documents picked in the dialog are shared.
     requirements_link = f"{settings.APP_BASE_URL}/dashboard/rnd/requirements"

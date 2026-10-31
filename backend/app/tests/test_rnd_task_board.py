@@ -88,6 +88,7 @@ def test_requirement_task_needs_accepted_requirement_project_task_needs_a_lead(c
     # A requirement that is not accepted any more (BD re-sent) can't get tasks.
     from app.tests.test_cov_crm_quotations_rnd import send_tor
     inq.product = "Changed"
+    inq.product_spec = "BG 1676, revised"  # a re-send needs a changed Customer Requirement
     db.commit()
     send_tor(client, inq.id, bd)
     resp = _req_task(client, inq, head, member)

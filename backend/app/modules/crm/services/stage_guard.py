@@ -1,7 +1,7 @@
 """Pipeline stage rules for inquiries and tenders (standard CRM opportunity flow).
 
-* Stages only move forward. Going back is a correction, not a normal step:
-  only an admin may do it, and only with a written reason (kept on the timeline).
+* Stages may move back (owner, 2026-10-31): anyone allowed to change the stage
+  may do it, with a written reason (kept on the timeline).
 * Sales Orders were retired on 2026-10-30, so a historic sales order no longer
   freezes the record (owner decision). It still blocks deleting the record.
 """
@@ -95,10 +95,6 @@ def check_stage_move(
         return False  # legacy stage value — no order to compare against
     if stages.index(new) > stages.index(old):
         return False
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail=(
-            f"Stages only move forward — this {label} is already at '{old}', so it cannot go back to '{new}'. "
-            f"If the stage was set by mistake, ask an admin to move it back (they must give a reason)."))
     if not (reason or "").strip():
         raise HTTPException(status_code=422, detail=(
             f"Moving this {label} back from '{old}' to '{new}' needs a reason — enter why the stage is being reversed."))

@@ -324,6 +324,7 @@ def test_resend_supersedes_open_request_and_diffs_snapshot(client, db, people, t
     inq = make_inquiry(db, people["bd"], product="Rail cutter")
     assert send_tor(client, inq.id, people["bd"]).status_code == 200
     inq.product = "Rail cutter Mk2"
+    inq.product_spec = "BG 1676, revised"  # a re-send needs a changed Customer Requirement
     db.commit()
     assert send_tor(client, inq.id, people["bd"]).status_code == 200
 
@@ -331,7 +332,7 @@ def test_resend_supersedes_open_request_and_diffs_snapshot(client, db, people, t
     assert [r.status for r in reqs] == ["superseded", "open"]
     moves = client.get(f"{API}/inquiries/{inq.id}/requirement-movements", headers=auth(people["bd"])).json()
     assert [m["sequence"] for m in moves] == [1, 2]
-    assert moves[1]["changes"] == [{"field": "product", "label": "Product", "old": "Rail cutter", "new": "Rail cutter Mk2"}]
+    assert moves[1]["changes"] == [{"field": "product", "label": "Product", "old": "Rail cutter", "new": "Rail cutter Mk2"}, {"field": "product_spec", "label": "Specification", "old": "BG 1676", "new": "BG 1676, revised"}]
 
     # R&D cannot answer the outdated request.
     resp = client.post(f"/api/v1/rnd/requirements/requests/{reqs[0].id}/respond", data={"remarks": "done"}, headers=auth(people["rnd"]))

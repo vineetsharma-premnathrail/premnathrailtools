@@ -136,14 +136,11 @@ export const INQUIRY_STATUSES = [
 
 // Older inquiries may still carry a retired status (e.g. 'Negotiation') — keep it
 // selectable so opening such a record doesn't silently show/save a different one.
-// `saved` = the status already saved on the inquiry: status only moves forward from it,
-// and a closed inquiry keeps its status (owner, 2026-10-28; the server checks the same).
-export const inquiryStatusOptions = (current?: string | null, saved?: string | null) => {
-  const all = current && !INQUIRY_STATUSES.includes(current) ? [...INQUIRY_STATUSES, current] : INQUIRY_STATUSES
-  if (!saved || !INQUIRY_STATUSES.includes(saved)) return all
-  if (saved.startsWith('Closed')) return [saved]
-  return INQUIRY_STATUSES.slice(INQUIRY_STATUSES.indexOf(saved))
-}
+// Status may move back, and a closed inquiry may be reopened (owner, 2026-10-31).
+// `saved` is kept for existing callers.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export const inquiryStatusOptions = (current?: string | null, saved?: string | null) =>
+  current && !INQUIRY_STATUSES.includes(current) ? [...INQUIRY_STATUSES, current] : INQUIRY_STATUSES
 
 export const INQUIRY_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   Lead: { bg: 'rgba(100,116,139,0.12)', text: '#475569' },

@@ -212,6 +212,7 @@ def test_offer_marks_earlier_revision_after_a_resend(client, db, tor_env, store)
     offer = _upload(client, inq, uploader).json()
     client.post(f"{RND}/technical-offers/{offer['id']}/release", headers=auth(head))
     inq.product = "Rail cutter Mk2"
+    inq.product_spec = "BG 1676, revised"  # a re-send needs a changed Customer Requirement
     db.commit()
     send_tor(client, inq.id, bd)
     rows = client.get(f"{RND}/inquiry/{inq.id}/technical-offers", headers=auth(head)).json()

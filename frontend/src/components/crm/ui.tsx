@@ -184,8 +184,7 @@ export function StageProgress({ stage, stages, canModify, allowBackward = false,
   stage: string
   stages: string[]
   canModify: boolean
-  /** Stages only move forward; earlier stages are clickable only for an admin
-   * correcting a mistake (the caller then asks for a reason). */
+  /** Earlier stages are clickable too (moving back); the caller then asks for a reason. */
   allowBackward?: boolean
   onRequestChange: (s: string) => void
   tourId?: string
@@ -251,7 +250,7 @@ export function StageProgress({ stage, stages, canModify, allowBackward = false,
               <div
                 key={s}
                 onClick={clickable ? () => { onRequestChange(s); setOpen(false) } : undefined}
-                title={done && !clickable && canModify ? 'Stages only move forward — an earlier stage can be restored only by an admin, with a reason.' : undefined}
+                title={done && !clickable && canModify ? 'You don’t have permission to move this stage back.' : undefined}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, cursor: clickable ? 'pointer' : 'default', background: active ? BRAND.primarySoft : 'transparent' }}
                 onMouseEnter={(e) => { if (clickable) e.currentTarget.style.background = 'rgba(0,0,0,0.04)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = active ? BRAND.primarySoft : 'transparent' }}

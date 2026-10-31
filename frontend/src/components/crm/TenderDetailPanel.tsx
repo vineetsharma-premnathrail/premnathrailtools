@@ -192,7 +192,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
       <MessageDialog open={!!error} variant="error" title="Tender Action Failed" message={error} onClose={() => setError('')} />
 
       {editing && (
-        <StageProgress stage={tender.current_stage} stages={TND_STAGES} canModify={canModify && canFeature('crm', 'inquiries_tenders', 'stage', 'edit')} allowBackward={isAdmin} onRequestChange={setPendingStage} tourId="tender-stage-progress" />
+        <StageProgress stage={tender.current_stage} stages={TND_STAGES} canModify={canModify && canFeature('crm', 'inquiries_tenders', 'stage', 'edit')} allowBackward onRequestChange={setPendingStage} tourId="tender-stage-progress" />
       )}
       {!editing && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
@@ -200,7 +200,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
             stage={tender.current_stage}
             stages={TND_STAGES}
             canModify={canModify && canFeature('crm', 'inquiries_tenders', 'stage', 'edit')}
-            allowBackward={isAdmin}
+            allowBackward
             onRequestChange={setPendingStage}
             tourId="tender-stage-progress"
             style={{ marginBottom: 0, flex: '1 1 280px', minWidth: 240 }}
@@ -293,13 +293,13 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
         onCancel={() => setShowDeleteConfirm(false)}
       />
 
-      {/* Stages only move forward; going back is an admin correction and needs a reason. */}
+      {/* Moving a stage back is allowed (2026-10-31) and needs a reason. */}
       <ConfirmDialog
         open={!!pendingStage && !movingBack}
         title="Update Stage"
         danger={false}
         confirmLabel="Update Stage"
-        message={pendingStage ? `Move this tender from "${tender.current_stage}" to "${pendingStage}"? Stages only move forward — once moved, it cannot be undone except by an admin.` : ''}
+        message={pendingStage ? `Move this tender from "${tender.current_stage}" to "${pendingStage}"? The move is recorded on the timeline.` : ''}
         onConfirm={() => { const s = pendingStage; setPendingStage(null); if (s) patch({ current_stage: s }) }}
         onCancel={() => setPendingStage(null)}
       />
@@ -309,7 +309,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
         message={pendingStage ? `Move this tender back from "${tender.current_stage}" to "${pendingStage}"? This reverses the pipeline — the reason is kept on the timeline.` : ''}
         placeholder="e.g. LOA cancelled by the railway — tender re-opened"
         label="Reason for moving the stage back"
-        hint="Admin correction — the reason is kept on the tender's timeline."
+        hint="The reason is kept on the tender's timeline."
         confirmLabel="Move Back"
         requireValue
         requiredMessage="Enter the reason for moving the stage back — it is required and is kept on the record."

@@ -95,15 +95,16 @@ def test_two_requirements_get_distinct_ascending_ids(client, db, tor_env):
 def test_resend_creates_next_revision_and_supersedes_unanswered(client, db, tor_env):
     bd, head, member, inq = _setup(client, db)
     inq.product = "Rail cutter Mk2"
+    inq.product_spec = "BG 1676, revised"  # a re-send needs a changed Customer Requirement
     db.commit()
     assert send_tor(client, inq.id, bd).status_code == 200
     r0, r1 = _revs(db, inq)
     assert (r0.status, r1.status, r1.revision_code.endswith("-R1")) == ("superseded", "submitted", True)
-    assert r1.changed_fields == ["Product"] and _req(db, inq).current_revision == 1 and _req(db, inq).status == "submitted"
+    assert r1.changed_fields == ["Product", "Specification"] and _req(db, inq).current_revision == 1 and _req(db, inq).status == "submitted"
     detail = client.get(f"{RND}/requirements/inquiry/{inq.id}", headers=auth(head)).json()
     assert detail["intake"]["rd_number"] == _req(db, inq).rd_number and detail["intake"]["revision_code"] == r1.revision_code
     assert [r["revision_no"] for r in detail["revisions"]] == [1, 0]
-    assert detail["revisions"][0]["changes"] == [{"field": "product", "label": "Product", "old": "RRV", "new": "Rail cutter Mk2"}]
+    assert detail["revisions"][0]["changes"] == [{"field": "product", "label": "Product", "old": "RRV", "new": "Rail cutter Mk2"}, {"field": "product_spec", "label": "Specification", "old": "BG 1676", "new": "BG 1676, revised"}]
     assert detail["my_access"]["can_review"] is True
 
 
@@ -114,6 +115,8 @@ def test_resend_after_response_keeps_old_revision_responded(client, db, tor_env)
     resp = client.post(f"{RND}/requirements/requests/{req_id}/respond", data={"remarks": "Feasible"}, headers=auth(head))
     assert resp.status_code == 200, resp.text
     assert [r.status for r in _revs(db, inq)] == ["responded"] and _req(db, inq).status == "responded"
+    inq.product_spec = "BG 1676, revised"
+    db.commit()
     assert send_tor(client, inq.id, bd).status_code == 200
     assert [r.status for r in _revs(db, inq)] == ["responded", "submitted"]
 
@@ -200,6 +203,8 @@ def test_return_to_bd_is_not_offered(client, db, tor_env):
 
 def test_old_revision_cannot_be_accepted(client, db, tor_env):
     bd, head, member, inq = _setup(client, db)
+    inq.product_spec = "BG 1676, revised"
+    db.commit()
     assert send_tor(client, inq.id, bd).status_code == 200
     resp = _accept(client, inq, head, revision_no=0)
     assert resp.status_code == 409 and resp.json()["detail"].startswith("R1 is newer")
@@ -221,6 +226,8 @@ def test_tasks_offers_and_response_wait_for_accept(client, db, tor_env):
     _return(db, inq, head)
     resp = _task(client, inq, head, member)
     assert resp.status_code == 409 and "is returned" in resp.json()["detail"]
+    inq.product_spec = "BG 1676, revised"
+    db.commit()
     send_tor(client, inq.id, bd)
     assert _accept(client, inq, head).status_code == 200
     resp = _task(client, inq, head, member)
@@ -347,6 +354,7 @@ def test_timeline_lists_revisions_with_changes_and_review(client, db, tor_env):
     bd, head, member, inq = _setup(client, db)
     _return(db, inq, head)
     inq.product = "Rail cutter Mk2"
+    inq.product_spec = "BG 1676, revised"  # a re-send needs a changed Customer Requirement
     db.commit()
     send_tor(client, inq.id, bd)
     _accept(client, inq, head)
@@ -354,7 +362,7 @@ def test_timeline_lists_revisions_with_changes_and_review(client, db, tor_env):
     kinds = [r["action"] for r in rows]
     assert kinds.count("requirement_submitted") == 2 and "requirement_returned" in kinds and "requirement_accepted" in kinds
     r1 = next(r for r in rows if r["kind"] == "revision" and r["revision_code"].endswith("-R1"))
-    assert r1["changes"] == [{"field": "product", "label": "Product", "old": "RRV", "new": "Rail cutter Mk2"}]
+    assert r1["changes"] == [{"field": "product", "label": "Product", "old": "RRV", "new": "Rail cutter Mk2"}, {"field": "product_spec", "label": "Specification", "old": "BG 1676", "new": "BG 1676, revised"}]
     assert any(LONG_REASON in r["summary"] for r in rows)
     # Newest first.
     assert [r["performed_at"] for r in rows] == sorted((r["performed_at"] for r in rows), reverse=True)
@@ -364,6 +372,7 @@ def test_timeline_lists_revisions_with_changes_and_review(client, db, tor_env):
 def test_hidden_customer_block_also_hides_snapshot_diff(client, db, tor_env):
     bd, head, member, inq = _setup(client, db)
     inq.product = "Rail cutter Mk2"
+    inq.product_spec = "BG 1676, revised"  # a re-send needs a changed Customer Requirement
     db.commit()
     send_tor(client, inq.id, bd)
     limited = make_user(db, "i.limited@premnathrail.com", apps=())

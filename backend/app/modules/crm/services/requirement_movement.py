@@ -53,6 +53,7 @@ def record_movement(
     payload = {
         "offer_number": offer_number,
         "snapshot": {k: ctx.get(k) for k in SNAPSHOT_FIELDS},
+        "requirements": customer_requirements(ctx),
         "tor_document": {"id": tor_doc.id, "name": tor_doc.file_name, "file_size": tor_doc.file_size} if tor_doc else None,
         "reference_documents": [{"id": d.id, "name": d.file_name, "file_size": d.file_size} for d in reference_docs],
     }
@@ -65,6 +66,38 @@ def record_movement(
     db.add(log)
     db.flush()
     return log
+
+
+def customer_requirements(ctx: dict) -> list[str]:
+    """Every Customer Requirement text on the record (first product + each '+' product),
+    whitespace-normalised, so a re-send can be compared with the last one."""
+    texts = [ctx.get("product_spec"), *((it or {}).get("product_spec") for it in ctx.get("additional_items") or [])]
+    return [" ".join(str(t).split()) for t in texts if t and str(t).strip()]
+
+
+def ensure_requirement_changed(db: Session, *, module: str, record, ctx: dict) -> None:
+    """A requirement goes to R&D again only when its Customer Requirement changed
+    since the last send (owner, 2026-10-31) — nothing else re-opens it for R&D."""
+    last = db.query(AuditLog).filter(
+        AuditLog.entity_type == _entity_type(module), AuditLog.entity_id == record.id, AuditLog.action == ACTION,
+    ).order_by(AuditLog.performed_at.desc(), AuditLog.id.desc()).first()
+    if not last:
+        return
+    data = json.loads(last.new_value) if last.new_value else {}
+    # Sends before 2026-10-31 stored only the first product's requirement.
+    prev = data.get("requirements")
+    if prev is None:
+        spec = (data.get("snapshot") or {}).get("product_spec")
+        prev, now = ([" ".join(str(spec).split())] if spec else []), customer_requirements(ctx)[:1]
+    else:
+        now = customer_requirements(ctx)
+    if prev == now:
+        sent = last.performed_at.astimezone(IST).strftime("%d %b %Y") if last.performed_at else "earlier"
+        ref = data.get("offer_number")
+        raise HTTPException(status_code=409, detail=(
+            f"R&D already has this Customer Requirement (sent{f' as {ref}' if ref else ''} on {sent}). "
+            f"Send it again only after the customer's requirement changes: click Edit, update Customer Requirement, save, then send. "
+            f"Other changes (dates, documents, remarks, status) don't need a new send to R&D."))
 
 
 def diff_snapshots(prev: dict, snap: dict) -> list[dict]:
