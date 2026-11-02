@@ -70,7 +70,7 @@ def _entry(client, env, user, **body):
     }, headers=_h(user))
 
 
-# ── C-09 manual entry: removed (2026-10-12); opening stock is admin-only ──
+# ── C-09 manual entry: removed (2026-10-12); opening stock needs Adjustments › Create ──
 
 def test_manual_entry_is_gone_even_for_store_manager_or_admin(client, env):
     for who in ("keeper", "manager", "admin"):
@@ -82,12 +82,12 @@ def _import(client, user, csv):
     return client.post(f"{API}/stock/import", files={"file": ("s.csv", csv, "text/csv")}, headers=_h(user))
 
 
-def test_opening_stock_import_is_admin_only(client, env):
+def test_opening_stock_import_for_store_users_not_outsiders(client, env, db):
+    # 2026-11-02: gate is Store › Adjustments › Create, not the admin role.
     csv = "item_code,warehouse,quantity,reference_number,remarks\nMT-GEN-0501,U1-MS,5,OPENING-STOCK,Opening stock\n"
-    for who in ("keeper", "manager"):
-        r = _import(client, env[who], csv)
-        assert r.status_code == 403 and "admin only" in r.json()["detail"], who
-    ok = _import(client, env["admin"], csv)
+    outsider = _user(db, "ac.nostore@premnathrail.com", apps=("crm",))
+    assert _import(client, outsider, csv).status_code == 403
+    ok = _import(client, env["keeper"], csv)
     assert ok.status_code == 200 and ok.json()["errors"] == [] and len(ok.json()["posted"]) == 1
 
 

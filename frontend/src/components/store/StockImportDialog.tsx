@@ -66,7 +66,7 @@ export default function StockImportDialog({ open, onClose, onImported }: { open:
 
   return (
     <FormSheet width={result ? 760 : 580} icon="upload" title="Opening Stock Import"
-      subtitle="Stock already on the shelves at go-live (or when a new store opens) — admin only." onClose={close} busy={busy}
+      subtitle="Stock already on the shelves at go-live (or when a new store opens)." onClose={close} busy={busy}
       footer={!result ? <>
         <button type="button" style={sheetBtn('secondary', SHEET.INK, busy)} onClick={close} disabled={busy}>Cancel</button>
         <button type="button" style={sheetBtn('primary', SHEET.BLUE, busy)} onClick={upload} disabled={busy}><SheetIcon name="upload" size={16} />{busy ? 'Importing…' : 'Import'}</button>

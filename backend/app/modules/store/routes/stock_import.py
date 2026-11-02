@@ -30,7 +30,9 @@ router = APIRouter(prefix="/store/stock", tags=["Store"])
 
 # Opening Stock Import (SAP movement 561): loads the stock already on the
 # shelves on the day the ERP starts, or when a new store / plant is added.
-# Admin only, stock-in only, every row with the reference sheet and reason.
+# Needs Store › Adjustments › Create (2026-11-02: no longer admin only — the
+# store team loads it themselves). Stock-in only, every row with the
+# reference sheet and reason.
 # Every other movement has its own document (stock.MANUAL_ENTRY_REMOVED).
 
 COLUMNS = ["item_code", "warehouse", "quantity", "rate", "batch_number", "reference_number", "transaction_date", "remarks"]
@@ -57,15 +59,15 @@ def _parse_date(raw: str) -> date | None:
     raise ValueError(f"Date '{raw}' isn't readable — use YYYY-MM-DD (e.g. {date.today().isoformat()}) or DD-MM-YYYY.")
 
 
-def _require_admin(user: User = Depends(require_tab_action("store", "adjustments", "create"))) -> User:
-    if not (user.role == "admin" or getattr(user, "is_azure_admin", False)):
-        raise HTTPException(status_code=403, detail="Opening Stock Import is for an admin only — it loads the stock already on the "
-                                                    "shelves when the ERP starts. Day-to-day stock comes in through GRN, Returns and Transfers.")
+def _require_import(user: User = Depends(require_tab_action("store", "adjustments", "create"))) -> User:
+    # Store › Adjustments › Create is the gate: the same people who may correct
+    # stock may load the opening stock. Day-to-day stock still comes in only
+    # through GRN, Returns and Transfers.
     return user
 
 
 @router.get("/import/template")
-async def import_template(db: Session = Depends(get_db), _user: User = Depends(_require_admin)):
+async def import_template(db: Session = Depends(get_db), _user: User = Depends(_require_import)):
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(COLUMNS)
@@ -78,7 +80,7 @@ async def import_template(db: Session = Depends(get_db), _user: User = Depends(_
 
 
 @router.post("/import")
-async def import_stock(file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(_require_admin)):
+async def import_stock(file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(_require_import)):
     rows = _read_rows(file.filename, await file.read())
     rows = [r for r in rows if any(r.values())]
     if not rows:

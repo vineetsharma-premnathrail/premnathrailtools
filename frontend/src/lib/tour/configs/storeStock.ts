@@ -16,7 +16,7 @@ const config: TourConfig = {
     },
     {
       target: 'stock-import-btn',
-      title: 'Opening Stock Import (admin only)',
+      title: 'Opening Stock Import',
       purpose: 'Loads the stock already on the shelves when the ERP starts, or when a new store opens — the only way to put stock in without a document.',
       whatToEnter: 'Download the template, fill item code, store, quantity, rate (book value), the count-sheet reference and a remark per row, then upload.',
       after: 'Every valid row is posted as opening stock; if any row has a problem nothing is posted and each problem is listed with the reason.',

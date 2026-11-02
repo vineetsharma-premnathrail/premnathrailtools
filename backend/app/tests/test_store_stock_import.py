@@ -1,4 +1,4 @@
-"""Opening Stock Import (admin only, stock-in only, all-or-nothing) and the
+"""Opening Stock Import (Store › Adjustments › Create, stock-in only, all-or-nothing) and the
 Stock page Excel export. Free-form Receipt / Issue / Damage rows were
 removed with manual stock entry on 2026-10-12 (SAP standard)."""
 import io
@@ -99,10 +99,21 @@ def test_rate_becomes_unit_cost_when_valuation_is_on(client, h, db):
 
 
 @pytest.mark.parametrize("who", ["keeper", "manager"])
-def test_import_and_template_are_admin_only(client, users, db, who):
+def test_store_users_can_import_opening_stock(client, users, db, who):
+    # 2026-11-02: no longer admin only — anyone with Store › Adjustments › Create.
     r = upload(client, users[who], "item_code,warehouse,quantity,reference_number,remarks\nMT-GEN-0001,MAIN,10,OPEN-1,Opening stock\n")
-    assert r.status_code == 403 and "admin only" in r.json()["detail"]
-    assert client.get(f"{API}/import/template", headers=users[who]).status_code == 403
+    assert r.status_code == 200 and r.json()["errors"] == [] and len(r.json()["posted"]) == 1
+    assert client.get(f"{API}/import/template", headers=users[who]).status_code == 200
+    assert db.query(StoreStockTransaction).count() == 1
+
+
+def test_import_refused_without_store_access(client, users, db):
+    outsider = User(email="store.none@premnathrail.com", name="store.none", role="user", is_active=True, assigned_apps=["crm"])
+    db.add(outsider)
+    db.commit()
+    r = upload(client, _headers(outsider), "item_code,warehouse,quantity,reference_number,remarks\nMT-GEN-0001,MAIN,10,OPEN-1,Opening stock\n")
+    assert r.status_code == 403
+    assert client.get(f"{API}/import/template", headers=_headers(outsider)).status_code == 403
     assert db.query(StoreStockTransaction).count() == 0
 
 

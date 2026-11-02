@@ -18,8 +18,8 @@ import Select from '@/components/shared/Select'
 
 // No hand-made stock posting here (2026-10-12, SAP standard): every movement
 // has its own document — GRN, Issues, Returns, Transfers, Adjustments,
-// Physical Count. Opening stock at go-live is the admin-only Opening Stock
-// Import. Blocked stock is still disposed of with Clear Quarantine.
+// Physical Count. Opening stock at go-live is the Opening Stock Import
+// (Store › Adjustments › Create). Blocked stock is still disposed of with Clear Quarantine.
 
 const QUARANTINE_DISPOSITIONS = [
   { value: 'scrap', label: 'Scrap — write it off' },
@@ -30,9 +30,10 @@ const QUARANTINE_DISPOSITIONS = [
 
 export default function StoreStockPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('store')
-  // Opening Stock Import (stock already on the shelves at go-live) is admin only.
-  const isAdmin = user?.role === 'admin'
   const { can, canFeature } = useCan()
+  // Opening Stock Import (stock already on the shelves at go-live): anyone
+  // with Store › Adjustments › Create (2026-11-02, was admin only).
+  const canImport = can('store', 'adjustments', 'create')
   // Stock is view / export only in the Permission Matrix — clearing blocked
   // stock is Adjustments › Clear blocked stock › Create.
   const canPost = canFeature('store', 'adjustments', 'quarantine_clear', 'create')
@@ -248,7 +249,7 @@ export default function StoreStockPage() {
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {can('store', 'stock', 'export') && <button data-tour="stock-export-btn" onClick={exportExcel} disabled={exporting} style={{ ...secondaryBtnStyle, opacity: exporting ? 0.7 : 1 }}>{exporting ? 'Exporting…' : 'Export'}</button>}
-          {isAdmin && <button data-tour="stock-import-btn" onClick={() => setShowImport(true)} style={{ background: 'none', border: 'none', padding: '0 4px', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#475569', textDecoration: 'underline' }}>Opening Stock Import</button>}
+          {canImport && <button data-tour="stock-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Opening Stock Import</button>}
         </div>
       </div>
 
@@ -351,7 +352,7 @@ export default function StoreStockPage() {
               <tbody>
                 {loading && <tr><td colSpan={summaryCols} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
                 {!loading && storeSummary.length === 0 && (
-                  <tr><td colSpan={summaryCols} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No stock matches the filters.' : 'No stock recorded yet — stock arrives through a GRN (or the admin Opening Stock Import at go-live).'}</td></tr>
+                  <tr><td colSpan={summaryCols} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No stock matches the filters.' : 'No stock recorded yet — stock arrives through a GRN (or the Opening Stock Import at go-live).'}</td></tr>
                 )}
                 {!loading && storeSummary.map((s) => (
                   <tr key={s.id} title="Show this store's balances" onClick={() => { setFilterLocation(String(s.id)); setView('balances') }} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
@@ -383,7 +384,7 @@ export default function StoreStockPage() {
             <tbody>
               {loading && <tr><td colSpan={matrixStores.length + 2} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
               {!loading && matrixRows.length === 0 && (
-                <tr><td colSpan={matrixStores.length + 2} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No stock matches the filters.' : 'No stock recorded yet — stock arrives through a GRN (or the admin Opening Stock Import at go-live).'}</td></tr>
+                <tr><td colSpan={matrixStores.length + 2} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No stock matches the filters.' : 'No stock recorded yet — stock arrives through a GRN (or the Opening Stock Import at go-live).'}</td></tr>
               )}
               {!loading && matrixRows.map((r) => (
                 <tr key={r.item_id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
@@ -414,7 +415,7 @@ export default function StoreStockPage() {
           <tbody>
             {loading && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && filteredBalances.length === 0 && (
-              <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No balances match the filters.' : 'No stock recorded yet — stock arrives through a GRN (or the admin Opening Stock Import at go-live).'}</td></tr>
+              <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No balances match the filters.' : 'No stock recorded yet — stock arrives through a GRN (or the Opening Stock Import at go-live).'}</td></tr>
             )}
             {!loading && filteredBalances.map((b) => (
               <tr key={b.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
