@@ -78,9 +78,15 @@ function measure(table: HTMLTableElement, avail: number): number[] | null {
   const range = document.createRange()
   // Header text width per column (one-line headers must stay whole, so a cut column never gets narrower than its header).
   const headMax = head.length ? head.map((h) => {
+    // The screen-reader-only row count (<RowCount>, a long sentence clipped to 1px) must not
+    // count as header text, or the first column gets a floor as wide as that sentence.
+    const hidden = Array.from(h.querySelectorAll<HTMLElement>('[data-row-count]'))
+    hidden.forEach((el) => { el.style.display = 'none' })
     range.selectNodeContents(h)
     const cs = getComputedStyle(h)
-    return Math.ceil(range.getBoundingClientRect().width + (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0)) + 2
+    const w = Math.ceil(range.getBoundingClientRect().width + (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0)) + 2
+    hidden.forEach((el) => { el.style.display = '' })
+    return w
   }) : natural.map(() => 0)
   for (const cells of rows) {
     cells.forEach((c, i) => {
