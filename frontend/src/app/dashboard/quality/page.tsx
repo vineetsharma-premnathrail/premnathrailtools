@@ -8,6 +8,7 @@ import { QualityDashboardKpis } from '@/types'
 import { TEXT, GLASS, SHADOWS, DANGER, WARNING } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 
 type KpiTone = 'bad' | 'warn' | 'neutral'
 
@@ -40,19 +41,22 @@ function cardTone(tone: KpiTone) {
 export default function QualityDashboardPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('quality')
   const router = useRouter()
+  // Quality › Dashboard is its own matrix tab (the KPI API checks it too).
+  const { can } = useCan()
+  const seeDashboard = can('quality', 'dashboard', 'view')
 
   const [kpis, setKpis] = useState<QualityDashboardKpis | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || !seeDashboard) return
     setLoading(true)
     qualityApi.getDashboard()
       .then((data) => setKpis(data?.kpis || null))
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load Quality dashboard.')))
       .finally(() => setLoading(false))
-  }, [isAuthorized])
+  }, [isAuthorized, seeDashboard])
 
   if (isLoading || !isAuthorized) return null
 
@@ -74,7 +78,13 @@ export default function QualityDashboardPage() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 14 }}>
+      {!seeDashboard && (
+        <p style={{ fontSize: 13, color: TEXT.muted, margin: '0 0 16px' }}>
+          The Quality dashboard needs &apos;View&apos; on Quality › Dashboard — ask an admin to add it to one of your roles in Organization › Role &amp; Permissions. Your other Quality tabs are in the bar above.
+        </p>
+      )}
+
+      {seeDashboard && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 14 }}>
         {KPI_CARDS.map((c) => {
           const tone = cardTone(c.tone)
           const value = kpis ? kpis[c.key] : null
@@ -97,7 +107,7 @@ export default function QualityDashboardPage() {
             </div>
           )
         })}
-      </div>
+      </div>}
     </div>
   )
 }

@@ -15,9 +15,12 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { segmentBtnStyle } from '@/components/shared/ui'
 import { orgTypesFor, ORG_TYPE_LABELS, RAILWAY_ZONES, COUNTRIES, INDIA_STATES, CONTACT_DESIGNATIONS, CONTACT_DEPARTMENTS, orgTypeHasRailwayFields, dialCodeFor, phoneOrBlank } from './constants'
 import { AddMoreButton, RemoveValueButton, ValueRow, canAddMore } from '@/components/shared/MoreValuesButtons'
-import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
+import { FormPage, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
+import { useVisibility } from '@/lib/visibility'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
 
 type Scope = 'domestic' | 'international' | ''
+const SCOPE_CHOICES: (readonly [Scope, string])[] = [['domestic', 'Domestic'], ['international', 'International']]
 
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const TAX_ID_RE = /^[A-Za-z0-9 ./-]{2,50}$/
@@ -188,7 +191,23 @@ export default function OrganizationForm({
   onSubmit: (payload: Record<string, unknown>) => Promise<Organization>
   onSaved: (org: Organization) => void
 }) {
-  const [form, setForm] = useState<FormState>(() => toFormState(initial))
+  // Role-wise visibility (Organization › Role & Permissions › CRM › Customer Organizations › Visibility):
+  // only the scopes the role offers are shown; a saved record keeps its own scope; a new form with a
+  // single allowed scope starts on it (the server refuses a disallowed scope as well).
+  const vis = useVisibility('crm:organizations')
+  const allowedScopes = vis.options('org_scope', SCOPE_CHOICES, ([v]) => v)
+  const scopeChoices = initial?.org_scope && !allowedScopes.some(([v]) => v === initial.org_scope)
+    ? [...allowedScopes, ...SCOPE_CHOICES.filter(([v]) => v === initial.org_scope)]
+    : allowedScopes
+  const onlyScope: Scope = !initial && allowedScopes.length === 1 ? allowedScopes[0][0] : ''
+  // Layout only: the left column's divider belongs there while the right column shows (the preview draws every section).
+  const showContactPersons = vis.preview || vis.showSection('contact_persons')
+  const [form, setForm] = useState<FormState>(() => {
+    const f = toFormState(initial)
+    // Domestic = India (fixed); International = a country the requester picks.
+    if (onlyScope) { f.org_scope = onlyScope; f.country = onlyScope === 'domestic' ? 'India' : '' }
+    return f
+  })
   const [orgTypeCustom, setOrgTypeCustom] = useState(
     initial?.org_type && !typeInScope(initial) ? initial.org_type : ''
   )
@@ -213,7 +232,7 @@ export default function OrganizationForm({
   const [error, setError] = useState<string | string[]>('')
   const errorRef = useRef<HTMLDivElement>(null)
   // A new organization's typed data survives a refresh / network failure (lib/formDraft.ts).
-  const draft = useFormDraft(initial ? null : 'crm-organization-new',
+  const draft = useFormDraft(initial || vis.preview ? null : 'crm-organization-new',
     { form, orgTypeCustom, railwayZoneCustom, countryCustom, extraPhones, extraEmails, contacts },
     (d) => {
       setForm(d.form); setOrgTypeCustom(d.orgTypeCustom); setRailwayZoneCustom(d.railwayZoneCustom); setCountryCustom(d.countryCustom)
@@ -407,35 +426,38 @@ export default function OrganizationForm({
       return
     }
     setFieldErrors({})
-    if (!isPhoneValid(phoneOrBlank(form.official_phone))) {
+    // A section the role cannot see is not checked: no error may name a field the user never sees.
+    const checkRegistration = vis.showSection('contact_registration')
+    const checkContacts = vis.showSection('contact_persons')
+    if (checkRegistration && !isPhoneValid(phoneOrBlank(form.official_phone))) {
       fail('Please enter a valid phone number before saving.')
       return
     }
-    if (!isValidWebsite(form.website)) {
+    if (checkRegistration && !isValidWebsite(form.website)) {
       fail('Please enter a valid website address before saving.')
       return
     }
-    if (!isValidEmail(form.official_email)) {
+    if (checkRegistration && !isValidEmail(form.official_email)) {
       fail('Please enter a valid official email before saving.')
       return
     }
-    if (extraPhones.some((p) => phoneOrBlank(p) && !isPhoneValid(phoneOrBlank(p)))) {
+    if (checkRegistration && extraPhones.some((p) => phoneOrBlank(p) && !isPhoneValid(phoneOrBlank(p)))) {
       fail('Please enter a valid additional phone number before saving.')
       return
     }
-    if (extraEmails.some((e) => e && !isValidEmail(e))) {
+    if (checkRegistration && extraEmails.some((e) => e && !isValidEmail(e))) {
       fail('Please enter a valid additional email before saving.')
       return
     }
-    if (contacts.some((c) => c.email && !isValidEmail(c.email))) {
+    if (checkContacts && contacts.some((c) => c.email && !isValidEmail(c.email))) {
       fail('Please enter a valid email for each contact before saving.')
       return
     }
-    if (contacts.some((c) => c.additionalEmails.some((e) => e && !isValidEmail(e)))) {
+    if (checkContacts && contacts.some((c) => c.additionalEmails.some((e) => e && !isValidEmail(e)))) {
       fail('Please enter a valid email for each contact before saving.')
       return
     }
-    if (contacts.some((c) => c.additionalMobiles.some((m) => phoneOrBlank(m) && !isPhoneValid(phoneOrBlank(m))))) {
+    if (checkContacts && contacts.some((c) => c.additionalMobiles.some((m) => phoneOrBlank(m) && !isPhoneValid(phoneOrBlank(m))))) {
       fail('Please enter a valid phone number for each contact before saving.')
       return
     }
@@ -541,12 +563,12 @@ export default function OrganizationForm({
   const busy = saving || contactsLoading
   return (
     <FormPage
-      nav={<>{nav}<p style={{ fontSize: 11.5, fontWeight: 600, color: SHEET.MUTED, margin: '0 0 10px' }}>{breadcrumb}</p></>}
-      onBack={onCancel} backTour="org-form-back-btn" tour="org-form" icon={initial ? 'edit' : 'building'} title={title}
+      nav={vis.preview ? undefined : <>{nav}<p style={{ fontSize: 11.5, fontWeight: 600, color: SHEET.MUTED, margin: '0 0 10px' }}>{breadcrumb}</p></>}
+      onBack={vis.preview ? undefined : onCancel} backTour="org-form-back-btn" tour="org-form" icon={initial ? 'edit' : 'building'} title={title}
       subtitle={initial ? 'Change the customer record and its contact persons.' : 'A customer, railway unit or partner we deal with, with its contact persons.'}
       footer={<>
         <button type="button" onClick={onCancel} data-tour="org-form-cancel-btn" disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
-        <button type="submit" form={formId} data-tour="org-save" disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)}>
+        <button type="submit" form={formId} data-tour="org-save" disabled={busy || vis.preview} style={sheetBtn('primary', SHEET.BLUE, busy || vis.preview)}>
           <SheetIcon name={initial ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : submitLabel}
         </button>
       </>}>
@@ -571,21 +593,22 @@ export default function OrganizationForm({
       />
       <div ref={errorRef} style={{ padding: error && (!Array.isArray(error) || error.length) ? '16px 24px 0' : 0 }}><SheetError error={error} /></div>
       {draft.restored && <div style={{ padding: '16px 24px 0' }}><DraftBanner draft={draft} style={{ marginBottom: 0 }} /></div>}
-      <SheetColumns
-        left={<>
-        <SheetSection icon="building" title="Customer Organization Details">
+      <div className="sheet-columns" style={{ display: 'flex', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 440px', minWidth: 0, padding: '20px 24px', borderRight: showContactPersons ? `1px solid ${SHEET.LINE}` : undefined }}>
+        <VisSection vis={vis} k="details"><SheetSection icon="building" title="Customer Organization Details">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Field label={<>Organization Scope <Req /></>} tourId="org-scope">
             <div role="radiogroup" aria-label="Organization Scope" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {([['domestic', 'Domestic'], ['international', 'International']] as const).map(([v, label]) => (
+              {scopeChoices.map(([v, label]) => (
                 <button key={v} type="button" role="radio" aria-checked={form.org_scope === v} onClick={() => chooseScope(v)}
                   style={{ ...segmentBtnStyle(form.org_scope === v), flex: '1 1 140px', minWidth: 120, ...(fieldErrors.org_scope ? errBorder : {}) }}>{label}</button>
               ))}
             </div>
             {!scopeChosen && <p style={sheetHint}>Choose Domestic or International first. The fields below unlock once you do.</p>}
             {err('org_scope')}
+            <VisOptionValues vis={vis} dropdown="org_scope" />
           </Field>
-          <Gate open={scopeChosen}>
+          <Gate open={scopeChosen || vis.preview}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ flex: '1 1 190px', minWidth: 170 }}>
@@ -667,9 +690,9 @@ export default function OrganizationForm({
           </div>
           </Gate>
           </div>
-        </SheetSection>
-        <Gate open={scopeChosen}>
-        <SheetSection icon="location" title="Address">
+        </SheetSection></VisSection>
+        <Gate open={scopeChosen || vis.preview}>
+        <VisSection vis={vis} k="address"><SheetSection icon="location" title="Address">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Field label="Address" tourId="org-address"><textarea value={form.address} onChange={(e) => set('address', e.target.value)} rows={2} placeholder="Street / locality" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
@@ -713,8 +736,8 @@ export default function OrganizationForm({
             </div>
           </div>
           </div>
-        </SheetSection>
-        <SheetSection icon="idcard" title="Contact & Registration">
+        </SheetSection></VisSection>
+        <VisSection vis={vis} k="contact_registration"><SheetSection icon="idcard" title="Contact & Registration">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ flex: '1 1 200px', minWidth: 180 }}>
               <Field label="Official Phone" tourId="org-phone">
@@ -783,10 +806,10 @@ export default function OrganizationForm({
               </Field>
             </div>
           </div>
-        </SheetSection>
+        </SheetSection></VisSection>
         </Gate>
-        </>}
-        right={
+        </div>
+        <VisSection vis={vis} k="contact_persons" frame={{ flex: '1 1 300px', minWidth: 0, padding: '20px 24px', background: '#fcfcfd', borderBottomRightRadius: 18 }}>
         <SheetSection icon="users" title="Contact Persons">
           {contactsLoading ? (
             <p style={{ fontSize: 13, color: '#a8a29e', margin: 0 }}>Loading contacts…</p>
@@ -882,8 +905,8 @@ export default function OrganizationForm({
             </>
           )}
         </SheetSection>
-        }
-      />
+        </VisSection>
+      </div>
     </form>
     </FormPage>
   )

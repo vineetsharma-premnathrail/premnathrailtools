@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core import assignee_rules
+from app.core import assignee_rules, visibility
 from app.core.priority import parse_priority
 from app.core.permissions import ensure_can_delete, require_app_access, require_tab_access, require_tab_action
 from app.db.session import get_db
@@ -46,6 +46,19 @@ _CAN_DELETE = require_tab_action("rnd", "projects", "delete")
 # Approve is checked inline (not as a route dependency) because it only applies
 # to some calls: stage moves into Handover/Closed and Go/No-Go recommendation changes.
 _CAN_APPROVE = require_tab_action("rnd", "projects", "approve")
+# Role-wise visibility (core/features/rnd.py): origin / reason / priority values a role may pick.
+VIS_KEY = "rnd:projects"
+
+
+def _ensure_vis(user: User, values: dict, current: RndProject | None = None) -> None:
+    """Coded values must be ones the user's roles offer; on an existing project only a
+    CHANGED value is checked, so an older project stays editable."""
+    for field in ("origin", "improvement_reason", "priority"):
+        value = values.get(field)
+        if field == "priority" and (value or current is None):
+            value = parse_priority(value)  # normalised first (any case; blank on create = Standard), then checked
+        if field in values and (current is None or value != getattr(current, field)):
+            visibility.ensure_option_allowed(user, VIS_KEY, field, value)
 
 # Columns that are NOT NULL on rnd_projects — an explicit null in a PATCH would
 # otherwise reach the DB and come back as a raw IntegrityError 500.
@@ -248,6 +261,8 @@ async def create_project(
     if not payload.objective.strip():
         raise HTTPException(status_code=400, detail="Project objective is required — describe what this R&D project should achieve.")
     _validate_choices(payload.project_type, payload.priority, None)
+    visibility.ensure_option_given(user, VIS_KEY, "origin", payload.origin)
+    _ensure_vis(user, payload.model_dump(include={"origin", "improvement_reason", "priority"}))
     lead_ids = list(dict.fromkeys(i for i in (payload.lead_ids if payload.lead_ids is not None else [payload.lead_id]) if i))
     _validate_users(db, lead_ids, payload.team_member_ids)
     _ensure_team_pickable(db, user, [*lead_ids, *payload.team_member_ids])
@@ -340,6 +355,7 @@ async def update_project(project_id: int, payload: RndProjectUpdate, db: Session
     if "objective" in updates and not (updates["objective"] or "").strip():
         raise HTTPException(status_code=400, detail="Project objective can't be empty.")
     _validate_choices(updates.get("project_type"), updates.get("priority"), updates.get("status"))
+    _ensure_vis(user, {k: v for k, v in updates.items() if k in ("origin", "improvement_reason", "priority")}, project)
     if updates.get("priority"):
         updates["priority"] = parse_priority(updates["priority"])
     if "lead_ids" in updates:

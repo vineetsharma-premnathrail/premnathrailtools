@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
-import { useRequireApp } from '@/hooks/useAuth'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
+import { VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
+import { useQualityScreen } from '@/components/quality/useQualityScreen'
+import { sampleLot } from '@/lib/qualityPreviewSamples'
 import { qualityApi } from '@/lib/api'
 import { qualityGaugeApi } from '@/lib/productionEngineeringApi'
 import type { QualityGauge } from '@/types'
@@ -38,6 +40,9 @@ const SOURCE_LABELS: Record<string, string> = {
 }
 
 const head: React.CSSProperties = { ...cell, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: SHEET.MUTED, borderTop: 'none', whiteSpace: 'nowrap' }
+// Results grid: [label, column key a role may hide] (characteristic, values, defects, defect code and result always show).
+const RESULT_COLS: [string, string | null][] = [['Characteristic', null], ['Class', 'classification'], ['Spec', 'spec'], ['Sample n / Ac / Re', 'sample'],
+  ['Measured values', null], ['Defective', null], ['Defect code', null], ['Gauge', 'gauge'], ['Remarks', 'remarks'], ['Result', null]]
 
 function limits(r: QualityLotResult) {
   if (r.char_type !== 'variable') return 'Pass / fail'
@@ -47,12 +52,16 @@ function limits(r: QualityLotResult) {
 }
 
 export default function LotDetailPage() {
-  const { isAuthorized, isLoading } = useRequireApp('quality')
+  // What the user's roles let them see here. In the Role editor's preview the page shows a sample lot,
+  // resolves no link, loads nothing and offers no action.
+  const { vis, isAuthorized, isLoading } = useQualityScreen('quality:inspection_lots')
+  const preview = vis.preview
   const router = useRouter()
-  const { id: recordId, error: linkError } = useRecordId(useParams().id as string)
+  const routeRef = useParams().id as string
+  const { id: recordId, error: linkError } = useRecordId(preview ? null : routeRef)
   const lotId = recordId ?? 0
 
-  const [lot, setLot] = useState<QualityInspectionLot | null>(null)
+  const [lot, setLot] = useState<QualityInspectionLot | null>(preview ? sampleLot : null)
   const [codes, setCodes] = useState<QualityDefectCode[]>([])
   const [users, setUsers] = useState<{ id: number; name: string }[]>([])
   // Role assign-to rule (core/features/quality.py) — the server enforces it on save too.
@@ -67,11 +76,12 @@ export default function LotDetailPage() {
   const { can, canFeature } = useCan()
   // Mirrors the backend: working a lot needs quality:inspection_lots:edit; the usage decision needs
   // quality:inspection_lots:approve, and accept-with-deviation a Quality head (quality:ncr:approve).
-  const canEdit = can('quality', 'inspection_lots', 'edit')
+  // The preview offers no action at all (nothing can be saved there).
+  const canEdit = !preview && can('quality', 'inspection_lots', 'edit')
   // Inspection Lots features (core/features/quality.py) on top of the tab actions.
-  const canDecide = can('quality', 'inspection_lots', 'approve') && canFeature('quality', 'inspection_lots', 'usage_decision', 'approve')
-  const canRecord = canFeature('quality', 'inspection_lots', 'results', 'edit')
-  const canSubmitResults = canFeature('quality', 'inspection_lots', 'results', 'submit')
+  const canDecide = !preview && can('quality', 'inspection_lots', 'approve') && canFeature('quality', 'inspection_lots', 'usage_decision', 'approve')
+  const canRecord = !preview && canFeature('quality', 'inspection_lots', 'results', 'edit')
+  const canSubmitResults = !preview && canFeature('quality', 'inspection_lots', 'results', 'submit')
   // A lot opens for every Quality user in scope; the photos switch binds roles holding the tab.
   const seePhotos = !can('quality', 'inspection_lots', 'view') || canFeature('quality', 'inspection_lots', 'photos', 'view')
   const isHead = can('quality', 'ncr', 'approve')
@@ -93,13 +103,13 @@ export default function LotDetailPage() {
   }
 
   useEffect(() => {
-    if (!isAuthorized || !lotId) return
+    if (!isAuthorized || !lotId || preview) return
     qualityApi.getLot(lotId).then(apply).catch((e) => setError(extractErrorMessages(e, 'Failed to load this inspection lot.')))
     qualityApi.listMaster('defect-codes').then(setCodes).catch(() => setCodes([]))
     // Only in-calibration instruments can be used (QM-IM); the backend re-checks.
     qualityGaugeApi.list({ usable_only: true }).then(setGauges).catch(() => setGauges([]))
     qualityApi.listQualityRoles().then((r) => setUsers(r.users || [])).catch(() => setUsers([]))
-  }, [isAuthorized, lotId])
+  }, [isAuthorized, lotId, preview])
 
   const openSheet = (s: typeof sheet) => { setError(''); setSheet(s) }
   const closeSheet = () => { if (!busy) { setSheet(''); setError('') } }
@@ -118,7 +128,7 @@ export default function LotDetailPage() {
   }
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/lots" listLabel="Back to inspection lots" /></div>)
+  if (linkError && !preview) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/lots" listLabel="Back to inspection lots" /></div>)
   if (!lot) {
     return (
       <div>
@@ -180,19 +190,22 @@ export default function LotDetailPage() {
     }
   }
 
+  const previewNote = (text: string) => <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{text}</p>
+
   return (
     <div>
-      <QualityNav />
+      {!preview && <QualityNav />}
       <PromptDialog open={cancelOpen} title="Cancel this lot?" message="Only a manual lot without stock can be cancelled. Give the reason." requireValue
         confirmLabel="Cancel lot" danger onCancel={() => setCancelOpen(false)}
         onConfirm={(reason) => { setCancelOpen(false); run(() => qualityApi.cancelLot(lot.id, reason), 'Failed to cancel the lot.') }} />
 
       <PageHeader title={lot.lot_number} subtitle={`Quality · ${INSPECTION_TYPE_LABELS[lot.inspection_type] || lot.inspection_type} lot`}>
-        <button type="button" onClick={() => router.push('/dashboard/quality/lots')} style={secondaryBtnStyle}>← Back</button>
+        {!preview && <button type="button" onClick={() => router.push('/dashboard/quality/lots')} style={secondaryBtnStyle}>← Back</button>}
       </PageHeader>
       {!sheet && <ErrorBanner error={error} />}
 
       <DetailCard>
+        <VisSection vis={vis} k="detail_summary">
         <DetailSummary
           title={`${lot.item_code ? `${lot.item_code} — ` : ''}${lot.item_name}`}
           text={`${fmtQty(lot.quantity, lot.uom)} to inspect — ${INSPECTION_TYPE_LABELS[lot.inspection_type] || lot.inspection_type} inspection from ${SOURCE_LABELS[lot.source_type] || lot.source_type}${lot.source_reference ? ` ${lot.source_reference}` : ''}.`}
@@ -200,16 +213,20 @@ export default function LotDetailPage() {
             <Pill text={LOT_STATUS_LABELS[lot.status] || lot.status} hex={LOT_STATUS_HEX[lot.status]} />
             {lot.op_number && (
               <OrderProjectChip opNumber={lot.op_number} elementNo={lot.element_no} label={lot.element_label}
-                onClick={can('projects', 'all_projects', 'view') ? () => router.push(recordPath('/dashboard/projects', lot, 'order_project_id')) : undefined} />
+                onClick={!preview && can('projects', 'all_projects', 'view') ? () => router.push(recordPath('/dashboard/projects', lot, 'order_project_id')) : undefined} />
             )}
             <span>·</span><span>Lot date {fmtDate(lot.lot_date)} ({lot.age_days} days old)</span>
           </>}
         />
+        </VisSection>
+        <VisSection vis={vis} k="detail_material">
         <DetailGroup title="Material">
           <DetailRow label="Vendor">{lot.vendor_name}</DetailRow>
           <DetailRow label="Batch / serial">{lot.batch_number}</DetailRow>
           <DetailRow label="Stock">{lot.stock_in_quality ? `Held in Quality stock at ${lot.location_name || 'store'}` : 'No stock behind this lot'}</DetailRow>
         </DetailGroup>
+        </VisSection>
+        <VisSection vis={vis} k="detail_inspection">
         <DetailGroup title="Inspection">
           <DetailRow label="Inspection plan">{lot.plan_number ? `${lot.plan_number} rev ${lot.plan_revision}` : 'No approved plan yet'}</DetailRow>
           <DetailRow label="Sample size (max)">{lot.sample_size != null ? String(lot.sample_size) : null}</DetailRow>
@@ -231,6 +248,8 @@ export default function LotDetailPage() {
             </DetailRow>
           )}
         </DetailGroup>
+        </VisSection>
+        <VisSection vis={vis} k="detail_controls">
         <div style={{ paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
           <div style={{ flex: '0 1 200px', minWidth: 170 }}>
@@ -276,8 +295,10 @@ export default function LotDetailPage() {
           )}
         </div>
         </div>
+        </VisSection>
       </DetailCard>
 
+      <VisSection vis={vis} k="detail_results">
       <SheetBlock icon="list" title={`Results (${lot.results.length} characteristics)`}
         extra={resultsEditable && (lot.results.length > 0 || (lot.skip_lot && !!lot.plan_id)) ? <>
           <button type="button" disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)} onClick={saveResults}><SheetIcon name="check" size={14} />{busy ? 'Saving…' : 'Save results'}</button>
@@ -299,7 +320,10 @@ export default function LotDetailPage() {
           <div style={{ overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
               <thead><tr>
-                {['Characteristic', 'Class', 'Spec', 'Sample n / Ac / Re', 'Measured values', 'Defective', 'Defect code', 'Gauge', 'Remarks', 'Result'].map((h, i) => <th key={h} style={head}>{h}{i === 0 && <RowCount count={lot.results.length} />}</th>)}
+                {RESULT_COLS.map(([h, k], i) => {
+                  const label = <>{h}{i === 0 && <RowCount count={lot.results.length} />}</>
+                  return k ? <VisTh key={h} vis={vis} table="detail_results" k={k} style={head}>{label}</VisTh> : <th key={h} style={head}>{label}</th>
+                })}
               </tr></thead>
               <tbody>
                 {lot.results.map((r) => {
@@ -307,9 +331,9 @@ export default function LotDetailPage() {
                   return (
                     <tr key={r.id}>
                       <td style={{ ...cell, fontWeight: 600 }}>{r.characteristic_name}<div style={{ fontWeight: 400, color: TEXT.muted, fontSize: 11.5 }}>{r.method || ''}</div></td>
-                      <td style={cell}><Pill text={r.classification} hex={SEVERITY_HEX[r.classification]} /></td>
-                      <td style={{ ...cell, whiteSpace: 'nowrap' }}>{limits(r)}</td>
-                      <td style={{ ...cell, whiteSpace: 'nowrap' }}>{r.sample_size} / {r.accept_number} / {r.reject_number}{r.aql != null ? <div style={{ color: TEXT.muted, fontSize: 11 }}>AQL {r.aql}</div> : null}</td>
+                      <VisTd vis={vis} table="detail_results" k="classification" style={cell}><Pill text={r.classification} hex={SEVERITY_HEX[r.classification]} /></VisTd>
+                      <VisTd vis={vis} table="detail_results" k="spec" style={{ ...cell, whiteSpace: 'nowrap' }}>{limits(r)}</VisTd>
+                      <VisTd vis={vis} table="detail_results" k="sample" style={{ ...cell, whiteSpace: 'nowrap' }}>{r.sample_size} / {r.accept_number} / {r.reject_number}{r.aql != null ? <div style={{ color: TEXT.muted, fontSize: 11 }}>AQL {r.aql}</div> : null}</VisTd>
                       <td style={cell}>
                         {r.char_type === 'variable' ? (resultsEditable ? (
                           <input style={{ ...gridInput, width: 200 }} value={d.values} placeholder="e.g. 50.01, 49.98" onChange={(e) => setDraft(r.id, { values: e.target.value })} />
@@ -330,7 +354,7 @@ export default function LotDetailPage() {
                           </Select>
                         ) : (r.defect_code_label || '—')}
                       </td>
-                      <td style={cell}>
+                      <VisTd vis={vis} table="detail_results" k="gauge" style={cell}>
                         {resultsEditable ? (
                           <Select style={{ ...gridInput, width: 150 }} value={d.gauge_id} onChange={(e) => {
                             const g = gauges.find((x) => String(x.id) === e.target.value)
@@ -340,10 +364,10 @@ export default function LotDetailPage() {
                             {gauges.map((g) => <option key={g.id} value={g.id}>{g.code} — {g.name}</option>)}
                           </Select>
                         ) : (r.gauge_reference || '—')}
-                      </td>
-                      <td style={cell}>
+                      </VisTd>
+                      <VisTd vis={vis} table="detail_results" k="remarks" style={cell}>
                         {resultsEditable ? <input style={{ ...gridInput, width: 150 }} value={d.remarks} onChange={(e) => setDraft(r.id, { remarks: e.target.value })} /> : (r.remarks || '—')}
-                      </td>
+                      </VisTd>
                       <td style={cell}>
                         {r.result ? <Pill text={r.result === 'pass' ? 'Pass' : 'Fail'} hex={r.result === 'pass' ? '#16A34A' : '#DC2626'} /> : <span style={{ color: TEXT.muted }}>Pending</span>}
                         {r.recorded_by_name && <div style={{ fontSize: 11, color: TEXT.muted, marginTop: 4 }}>{r.recorded_by_name}</div>}
@@ -359,14 +383,18 @@ export default function LotDetailPage() {
         {lot.skip_lot || lot.results.length === 0 ? null : resultsEditable && <p style={{ ...sheetHint, margin: '10px 0 0' }}>Measured values: separate several readings with commas or spaces. “Save results” keeps them; “Submit results for decision” sends the lot to the usage decision.</p>}
         <div style={{ height: 18 }} />
       </SheetBlock>
+      </VisSection>
 
       {seePhotos && (
+        <VisSection vis={vis} k="detail_photos">
         <Section title={`Photos (${(lot.photos || []).length})`} style={{ marginBottom: 20 }}>
-          <LotPhotos lot={lot} onChange={apply} />
+          {preview ? previewNote('Photo evidence of the lot (add / remove follows the Photos feature).') : <LotPhotos lot={lot} onChange={apply} />}
         </Section>
+        </VisSection>
       )}
 
-      {lot.status === 'results_recorded' && (
+      {(preview || lot.status === 'results_recorded') && (
+        <VisSection vis={vis} k="detail_usage_decision">
         <Section title="Usage decision" style={{ marginBottom: 20 }}>
           {lot.failed_count > 0 && (
             <p style={{ fontSize: 13, color: '#b91c1c', margin: 0 }}>
@@ -377,9 +405,11 @@ export default function LotDetailPage() {
             ? <div><button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => openSheet('decision')}>Record usage decision</button></div>
             : <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Results are in — waiting for a Quality engineer / head to record the usage decision.</p>}
         </Section>
+        </VisSection>
       )}
 
       {lot.decision && (
+        <VisSection vis={vis} k="detail_decision">
         <Section title="Decision" style={{ marginBottom: 20 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
             <InfoRow label="Decision" value={DECISION_LABELS[lot.decision]} />
@@ -393,7 +423,7 @@ export default function LotDetailPage() {
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
               <span style={{ fontSize: 12, color: TEXT.muted }}>NCRs:</span>
               {lot.ncrs.map((n) => (
-                <span key={n.id} onClick={() => router.push(recordPath('/dashboard/quality/ncr', n))} style={{ cursor: 'pointer', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                <span key={n.id} onClick={preview ? undefined : () => router.push(recordPath('/dashboard/quality/ncr', n))} style={{ cursor: 'pointer', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                   <strong style={{ fontSize: 13, color: '#FF6A2A' }}>{n.ncr_number}</strong>
                   <Pill text={n.severity} hex={SEVERITY_HEX[n.severity]} />
                   <Pill text={NCR_STATUS_LABELS[n.status] || n.status} hex={NCR_STATUS_HEX[n.status]} />
@@ -402,10 +432,13 @@ export default function LotDetailPage() {
             </div>
           )}
         </Section>
+        </VisSection>
       )}
 
       {lot.decision && (
+        <VisSection vis={vis} k="detail_documents">
         <Section title="Documents" style={{ marginBottom: 20 }}>
+          {preview ? previewNote('The inspection report and the test certificate, on the company letterhead.') : <>
           <QualityRecordDoc title="Inspection report" hint="Results per characteristic, usage decision and NCRs, on the company letterhead."
             entityType="quality_inspection_report" entityId={lot.id} pdfKind="inspection-report" canModify={canEdit}
             downloadName={`Inspection-Report-${lot.lot_number}`} />
@@ -414,7 +447,9 @@ export default function LotDetailPage() {
               entityType="quality_test_certificate" entityId={lot.id} pdfKind="test-certificate" canModify={canEdit}
               downloadName={`Test-Certificate-${lot.lot_number}`} />
           )}
+          </>}
         </Section>
+        </VisSection>
       )}
       {sheet === 'cert' && (
         <ActionSheet icon="doc" title="Test certificate / MTC" subtitle={`${lot.lot_number} · ${lot.item_name}`} onClose={closeSheet} busy={busy} error={error}

@@ -13,7 +13,7 @@ export default function MyInspectionsPage() {
       <QualityNav />
       <PageHeader title="My Inspections" />
       <p style={{ fontSize: 13, color: '#78716c', margin: '-10px 0 16px' }}>
-        Open inspection lots assigned to you, plus unassigned lots anyone can pick up. Lots are created automatically from GRNs and production output for items flagged &ldquo;inspection on receipt&rdquo;.
+        Open inspection lots assigned to you, plus unassigned lots anyone can pick up. Lots are created automatically from GRNs and production output for items flagged &ldquo;Quality check on receipt&rdquo;.
       </p>
       <LotList mine />
     </div>

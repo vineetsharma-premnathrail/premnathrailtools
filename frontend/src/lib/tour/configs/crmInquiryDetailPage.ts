@@ -47,7 +47,7 @@ const steps: TourStep[] = [
   {
     target: 'inq-rnd-status',
     title: 'R&D ID, revision and status',
-    purpose: 'Appears once the requirement has been sent to R&D: its R&D ID (RDR-year-number), the current revision (R0, R1, …) and where R&D\'s review stands — Awaiting R&D review, Accepted, R&D asked for details (the question is shown on the card — update the requirement and send it again), Responded or Superseded (older requirements may also show Returned to BD).',
+    purpose: 'Appears once the requirement has been sent to R&D: its R&D ID (RDR-year-number), the current revision (R0, R1, …) and where R&D\'s review stands — Awaiting R&D review, Accepted, R&D asked for details (the question is shown on the card — update the requirement and send it again), Responded, Closed by R&D (R&D had nothing to share — the reason is on the request card in the Requirement Movement tab; re-send if R&D work is needed later) or Superseded (older requirements may also show Returned to BD).',
     why: 'Each send is a new revision with its own ID, so you and R&D always talk about the same version.',
   },
   {

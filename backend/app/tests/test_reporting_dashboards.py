@@ -229,7 +229,7 @@ def test_export_dashboard_workbook(db, api, dash):
     c = api(u)
     r = c.get(f"{URL}/dashboard/overview/export", params={**OCT, "f_priority": "urgent,standard", "compare": "previous_period"})
     assert r.status_code == 200
-    assert 'filename="Service_Overview_2026-10-01_to_2026-10-31.xlsx"' in r.headers["content-disposition"]
+    assert 'filename="Service_Module_Overview_2026-10-01_to_2026-10-31.xlsx"' in r.headers["content-disposition"]
     wb = load_workbook(BytesIO(r.content))
     assert wb.sheetnames[0] == "Summary" and wb.sheetnames[-1] == "Definitions" and "Records" in wb.sheetnames
     assert {"By priority", "By month", "Priority table", "Longest jobs", "Billed by month"} <= set(wb.sheetnames)

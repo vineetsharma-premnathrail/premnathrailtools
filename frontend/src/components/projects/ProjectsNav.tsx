@@ -10,15 +10,17 @@ import TourButton from '@/components/tour/TourButton'
 import { useMarkPmOrigin } from '@/components/projects/work/pmOrigin'
 import { ChartBar, CheckSquare, FolderOpen, Folders, SquaresFour, User, UsersThree, type Icon } from '@phosphor-icons/react'
 
-// Dashboard and All Projects need the Project Management app. Department
-// heads, milestone leads and assistants work from the Ongoing Projects tab
-// inside their own module (Design, Electrical, Hydraulic, R&D, ...); My Tasks
-// is everyone's cross-module list of tasks assigned to them.
+// Dashboard, All Projects and Department Board need the Project Management app.
+// Department Work (milestone heads) and My Tasks are matrix tabs of their own
+// (the department "Ongoing Projects" rows were removed 2026-11-03 and their
+// grants alias to them), so people outside Project Management see them too.
 const TABS = [
   { href: '/dashboard/projects', label: 'Dashboard', icon: 'dashboard', subtabKey: 'dashboard', pmOnly: true },
-  { href: '/dashboard/projects/all', label: 'All Projects', icon: 'grid', subtabKeys: ['all_projects', 'service_projects'], pmOnly: true },
-  // Everyone's own work — no app or tab grant needed (also a card on the Dashboard home).
-  { href: '/dashboard/projects/my-tasks', label: 'My Tasks', icon: 'check', pmOnly: false },
+  { href: '/dashboard/projects/all', label: 'All Projects', icon: 'grid', subtabKeys: ['all_projects'], pmOnly: true },
+  { href: '/dashboard/projects/board', label: 'Department Board', icon: 'chart', subtabKey: 'department_board', pmOnly: true },
+  { href: '/dashboard/projects/department', label: 'Department Work', icon: 'team', subtabKey: 'department_work', pmOnly: false },
+  // My Tasks' API (projects/routes/work.py) accepts My Tasks or Department Work, so either shows it.
+  { href: '/dashboard/projects/my-tasks', label: 'My Tasks', icon: 'check', subtabKeys: ['my_tasks', 'department_work'], pmOnly: false },
 ] as const
 
 // Tab icon key -> Phosphor icon (Regular weight). The key also feeds the

@@ -59,7 +59,7 @@ const config: TourConfig = {
     {
       target: 'rnd-req-table',
       title: 'Requirement list',
-      purpose: 'R&D ID (with a blue "Review" tag when it waits for you), revision (open the requirement to see every revision and what BD changed; an orange "Edited" tag means CRM changed it after sending), review status, source, customer, product, priority (Standard / Urgent), R&D response with assignee and due date, BD owner and when it was last received. Requirements waiting for your review come first, then R&D ID ascending. Click a row to open it.',
+      purpose: 'R&D ID (with a blue "Review" tag when it waits for you), revision (open the requirement to see every revision and what BD changed), review status, source, customer, product, R&D response with assignee and due date, BD owner and when it was last received. R&D response is short and coloured: red "5d late", orange "Due today" / 2 days or less left / done late, blue "3d left", green "Done on time", purple "Query raised", grey closed; the assignee and due date sit below. An Urgent requirement has its whole row tinted light red. Requirements waiting for your review come first, then R&D ID ascending. Click a row to open it.',
       options: RND_REVIEW_OPTIONS,
     },
   ],

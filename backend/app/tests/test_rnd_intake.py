@@ -72,11 +72,11 @@ def test_first_send_creates_rd_id_and_revision_r0(client, db, tor_env, monkeypat
     assert req.rd_number == f"RDR-{date.today().year}-0001" and req.status == "submitted" and req.current_revision == 0
     (rev,) = _revs(db, inq)
     assert rev.revision_code == f"{req.rd_number}-R0" and rev.status == "submitted" and rev.submitted_by_id == bd.id
-    # Bell to the head with the R&D ID and the due date; the sender is not told; no Teams message (AC-17).
+    # Bell + Teams to the head with the R&D ID and the due date (assignments go to Teams since 2026-11-03); the sender is not told.
     bells = db.query(Notification).filter(Notification.notification_type == "rnd_request_assigned").all()
     assert {n.user_id for n in bells} == {head.id}
     assert all(rev.revision_code in n.message and "response due" in n.message for n in bells)
-    assert bd.id not in {n.user_id for n in bells} and teams == []
+    assert bd.id not in {n.user_id for n in bells} and teams == [head.id]
 
 
 def test_two_requirements_get_distinct_ascending_ids(client, db, tor_env):
@@ -391,6 +391,7 @@ def test_review_reminder_after_two_working_days_then_every_three(client, db, tor
     teams = []
     monkeypatch.setattr("app.utils.notifications._notify_teams", lambda user, title, message: teams.append(user.id))
     bd, head, member, inq = _setup(client, db)
+    teams.clear()  # the send itself told the head on Teams; count only the reminder
     rev = _revs(db, inq)[0]
     # Pin the send to a Monday so "2 working days" is Wednesday.
     monday = datetime(2026, 11, 2, 5, 0, tzinfo=timezone.utc)
@@ -418,3 +419,136 @@ def test_weekend_does_not_count(client, db, tor_env):
     db.commit()
     assert review_reminders.run_review_reminders(db, friday + timedelta(days=2)) == 0   # Sunday: still 0 working days
     assert review_reminders.run_review_reminders(db, friday + timedelta(days=4)) == 1   # Tuesday: Mon + Tue
+
+
+# ── close without a response (owner, 2026-11-02) ──────────────────────────
+
+CLOSE_REASON = "Standard product, no R&D input needed"
+
+
+def _close(client, req_id, who, reason=CLOSE_REASON):
+    return client.post(f"{RND}/requirements/requests/{req_id}/close", json={"reason": reason}, headers=auth(who))
+
+
+def _grant_respond(db, inq, who):
+    from app.modules.rnd.models.requirement_work import RndRequirementAccess
+    db.add(RndRequirementAccess(source="inquiry", record_id=inq.id, user_id=who.id, can_view=True, can_respond=True))
+    db.commit()
+
+
+def test_head_closes_accepted_request_without_response(client, db, tor_env):
+    bd, head, member, inq = _setup(client, db)
+    assert _accept(client, inq, head).status_code == 200
+    req_id = db.query(CrmRndRequest).one().id
+    resp = _close(client, req_id, head, "  Standard product, no R&D input  ")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "closed" and body["response_remarks"] == "Standard product, no R&D input"
+    assert body["responded_by"] and body["responded_at"] and body["is_late"] is False and body["review_status"] == "closed"
+    rev = _revs(db, inq)[0]
+    assert rev.status == "closed" and rev.responded_at and _req(db, inq).status == "closed"
+    from app.modules.main.models.audit_log import AuditLog
+    assert db.query(AuditLog).filter(AuditLog.action == "requirement_closed", AuditLog.entity_id == inq.id).count() == 1
+    assert db.query(AuditLog).filter(AuditLog.action == "rnd_closed", AuditLog.entity_id == inq.id).count() == 1
+    n = db.query(Notification).filter(Notification.notification_type == "rnd_request_closed").all()
+    assert {x.user_id for x in n} == {bd.id} and "without a response" in n[0].title
+    # The list filter knows the new status; an unknown one is still refused.
+    ok = client.get(f"{RND}/requirements", params={"status": "closed"}, headers=auth(head))
+    assert ok.status_code == 200 and len(ok.json()) == 1
+    assert client.get(f"{RND}/requirements", params={"status": "nope"}, headers=auth(head)).status_code == 422
+    detail = client.get(f"{RND}/requirements/inquiry/{inq.id}", headers=auth(head)).json()
+    assert detail["intake"]["status"] == "closed" and detail["intake"]["status_label"] == "Closed by R&D — no response needed"
+    assert detail["revisions"][0]["status_label"] == "Closed by R&D"
+    # BD sees it on the Requirement Movement card.
+    moves = client.get(f"{CRM}/inquiries/{inq.id}/requirement-movements", headers=auth(bd)).json()
+    rq = moves[0]["rnd_request"]
+    assert rq["status"] == "closed" and rq["response_remarks"] == "Standard product, no R&D input" and rq["responded_by"]
+
+
+def test_close_needs_a_real_reason(client, db, tor_env):
+    bd, head, member, inq = _setup(client, db)
+    assert _accept(client, inq, head).status_code == 200
+    req_id = db.query(CrmRndRequest).one().id
+    for reason in ("short", "          ", ""):
+        resp = _close(client, req_id, head, reason)
+        assert resp.status_code == 422, reason
+        assert "at least 10 characters" in resp.json()["detail"] and "Standard product" in resp.json()["detail"]
+    assert client.post(f"{RND}/requirements/requests/{req_id}/close", json={}, headers=auth(head)).status_code == 422
+    assert db.query(CrmRndRequest).one().status == "open"
+
+
+def test_close_permissions_and_reviewer_only_before_accept(client, db, tor_env):
+    bd, head, member, inq = _setup(client, db)
+    req_id = db.query(CrmRndRequest).one().id
+    # BD and an R&D member with no respond right are refused.
+    assert _close(client, req_id, bd).status_code == 403
+    resp = _close(client, req_id, member)
+    assert resp.status_code == 403 and "R&D head" in resp.json()["detail"]
+    # A member who may respond still can't close a revision that waits for review.
+    _grant_respond(db, inq, member)
+    resp = _close(client, req_id, member)
+    assert resp.status_code == 403, resp.text
+    assert "waiting for R&D review" in resp.json()["detail"] and "R&D head" in resp.json()["detail"]
+    assert db.query(CrmRndRequest).one().status == "open"
+    # The head may close it before accepting.
+    resp = _close(client, req_id, head)
+    assert resp.status_code == 200 and resp.json()["status"] == "closed"
+    assert _revs(db, inq)[0].status == "closed"
+
+
+def test_member_with_respond_right_closes_an_accepted_request(client, db, tor_env):
+    bd, head, member, inq = _setup(client, db)
+    assert _accept(client, inq, head).status_code == 200
+    _grant_respond(db, inq, member)
+    req_id = db.query(CrmRndRequest).one().id
+    assert _close(client, req_id, member).status_code == 200
+
+
+def test_close_is_a_409_once_answered(client, db, tor_env):
+    bd, head, member, inq = _setup(client, db)
+    assert _accept(client, inq, head).status_code == 200
+    req_id = db.query(CrmRndRequest).one().id
+    assert client.post(f"{RND}/requirements/requests/{req_id}/respond", data={"remarks": "Feasible"}, headers=auth(head)).status_code == 200
+    resp = _close(client, req_id, head)
+    assert resp.status_code == 409 and "already answered" in resp.json()["detail"]
+    assert db.query(CrmRndRequest).one().status == "responded"
+
+
+def test_close_is_a_409_on_a_superseded_request(client, db, tor_env):
+    bd, head, member, inq = _setup(client, db)
+    first = db.query(CrmRndRequest).one().id
+    inq.product_spec = "BG 1676, revised"
+    db.commit()
+    assert send_tor(client, inq.id, bd).status_code == 200
+    resp = _close(client, first, head)
+    assert resp.status_code == 409 and "re-sent this requirement" in resp.json()["detail"]
+    assert db.query(CrmRndRequest).filter(CrmRndRequest.id == first).one().status == "superseded"
+
+
+def test_after_close_respond_tasks_and_accept_are_409_and_resend_opens_r1(client, db, tor_env):
+    bd, head, member, inq = _setup(client, db)
+    assert _accept(client, inq, head).status_code == 200
+    req_id = db.query(CrmRndRequest).one().id
+    assert _close(client, req_id, head).status_code == 200
+    again = _close(client, req_id, head)
+    assert again.status_code == 409 and "already closed" in again.json()["detail"]
+    resp = client.post(f"{RND}/requirements/requests/{req_id}/respond", data={"remarks": "late answer"}, headers=auth(head))
+    assert resp.status_code == 409 and "closed this request without a response" in resp.json()["detail"]
+    resp = client.post(f"{RND}/requirements/requests/{req_id}/respond", data={"remarks": "Axle load missing", "ask_details": "true"}, headers=auth(head))
+    assert resp.status_code == 409 and "no longer open" in resp.json()["detail"]
+    resp = _task(client, inq, head, member)
+    assert resp.status_code == 409 and "is closed by r&d" in resp.json()["detail"] and "ask BD to send it again" in resp.json()["detail"]
+    resp = _accept(client, inq, head)
+    assert resp.status_code == 409 and "closed" in resp.json()["detail"]
+    # The closed request is never late, even long after its due date.
+    from app.modules.crm.services import requirement_movement
+    closed = db.query(CrmRndRequest).filter(CrmRndRequest.id == req_id).one()
+    closed.due_date = date.today() - timedelta(days=5)
+    assert closed.responded_at is not None and requirement_movement.is_late(closed) is False
+    db.rollback()
+    # BD re-sends the SAME requirement (no Customer Requirement change): allowed after a close,
+    # because "nothing to share" may turn into "R&D work needed" later. R1 is submitted, R0 stays closed.
+    assert send_tor(client, inq.id, bd).status_code == 200
+    assert [r.status for r in _revs(db, inq)] == ["closed", "submitted"]
+    assert _req(db, inq).status == "submitted"
+    assert db.query(CrmRndRequest).filter(CrmRndRequest.id == req_id).one().status == "closed"

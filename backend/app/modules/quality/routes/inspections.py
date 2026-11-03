@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.permission_registry import can_view_tab
 from app.core.permissions import ensure_can_delete, ensure_tab_action, require_app_access
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -59,7 +60,12 @@ async def list_inspections(
         selectinload(QualityInspection.attachments),
     ).filter(QualityInspection.is_deleted == False), user, QualityInspection)  # noqa: E712
     if inspection_type:
+        # In-process / RRV Final Inspections pages: 'View' on that tab (matrix cleanup 2026-11-03).
+        ensure_tab_action(user, "quality", _LEGACY_INSPECTION_TAB.get(inspection_type, "inspection_lots"), "view")
         query = query.filter(QualityInspection.inspection_type == inspection_type)
+    else:
+        query = query.filter(QualityInspection.inspection_type.in_(
+            [t for t, tab in _LEGACY_INSPECTION_TAB.items() if can_view_tab(user, "quality", tab)]))
     if status_filter:
         query = query.filter(QualityInspection.status == status_filter)
     if search:
@@ -138,6 +144,7 @@ async def create_inspection(
 @router.get("/{inspection_id}", response_model=QualityInspectionResponse)
 async def get_inspection(inspection_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
     inspection = _get_or_404(db, inspection_id, user)
+    ensure_tab_action(user, "quality", _LEGACY_INSPECTION_TAB.get(inspection.inspection_type, "inspection_lots"), "view")
     return _to_response(db, inspection)
 
 

@@ -18,10 +18,14 @@ import StoreNav from '@/components/store/StoreNav'
 import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { useVisibility } from '@/lib/visibility'
+import { VisOptionValues, VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
 
 export default function NewStoreItemPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
   const router = useRouter()
+  // Role visibility (Organization › Role & Permissions › Store › Items › Visibility): hidden sections, allowed item types.
+  const vis = useVisibility('store:items')
 
   const [categories, setCategories] = useState<StoreItemCategory[]>([])
   const [codePreview, setCodePreview] = useState('')
@@ -43,7 +47,8 @@ export default function NewStoreItemPage() {
 
   const [busy, setBusy] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
-  const draft = useFormDraft('store-item-new',
+  // Role editor preview: nothing is saved, no draft, module nav / Back left out.
+  const draft = useFormDraft(vis.preview ? null : 'store-item-new',
     { itemName, itemType, category, subcategory, description, partCode, leadTime, legacyCode, uom, erp },
     (d) => {
       setItemName(d.itemName ?? ''); setItemType(d.itemType || 'material'); setCategory(d.category ?? ''); setSubcategory(d.subcategory ?? '')
@@ -54,7 +59,13 @@ export default function NewStoreItemPage() {
   useEffect(() => {
     if (!isAuthorized) return
     storeApi.listCategories().then(setCategories).catch(() => setCategories([]))
-    storeApi.getItemMeta().then((m) => { setMeta(m); setUoms(m.uoms); setItemTypes(m.item_types) }).catch(() => setUoms([]))
+    storeApi.getItemMeta().then((m) => {
+      setMeta(m); setUoms(m.uoms); setItemTypes(m.item_types)
+      // Item types this user's roles allow come flagged `allowed`; when the current (default / drafted) type
+      // is not allowed, the first allowed one is picked for them.
+      const allowed = (m.item_types as ItemTypeOption[]).filter((t) => t.allowed !== false)  // `allowed` = types/index.ts StoreItemMeta addition pending
+      if (allowed.length) setItemType((cur) => (allowed.some((t) => t.value === cur) ? cur : allowed[0].value))
+    }).catch(() => setUoms([]))
   }, [isAuthorized])
 
   // Item code is the next global running number (01, 02 … 100 …) from the
@@ -67,6 +78,9 @@ export default function NewStoreItemPage() {
       .catch(() => { if (!cancelled) setCodePreview('') })
     return () => { cancelled = true }
   }, [isAuthorized])
+
+  // Item types this user's roles allow (the server marks each type `allowed`).
+  const typeChoices = itemTypes.filter((t) => t.allowed !== false)
 
   // Only the standard categories for the picked item type.
   const topLevelCategories = categories.filter((c) => !c.parent_id && c.item_type === itemType)
@@ -116,11 +130,11 @@ export default function NewStoreItemPage() {
   if (isLoading || !isAuthorized) return null
 
   return (
-    <FormPage nav={<StoreNav />} icon="box" title="Add Item" subtitle="A new Item Master record — the code is assigned on save from type + category."
-      onBack={() => router.push('/dashboard/store')} backTour="item-back-btn"
+    <FormPage nav={vis.preview ? undefined : <StoreNav />} icon="box" title="Add Item" subtitle="A new Item Master record — the code is assigned on save from type + category."
+      onBack={vis.preview ? undefined : () => router.push('/dashboard/store')} backTour="item-back-btn"
       footer={<>
-        <button data-tour="item-cancel-btn" type="button" disabled={busy} onClick={() => router.push('/dashboard/store')} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
-        <button data-tour="item-save-btn" type="button" disabled={busy} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="plus" size={16} />{busy ? 'Saving…' : 'Save Item'}</button>
+        <button data-tour="item-cancel-btn" type="button" disabled={busy || vis.preview} onClick={() => router.push('/dashboard/store')} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+        <button data-tour="item-save-btn" type="button" disabled={busy || vis.preview} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="plus" size={16} />{busy ? 'Saving…' : 'Save Item'}</button>
       </>}>
       <DraftBanner draft={draft} />
       <MessageDialog open={errors.length > 0} variant="error" title="Cannot Save Item" message={errors} onClose={() => setErrors([])} />
@@ -129,12 +143,13 @@ export default function NewStoreItemPage() {
 
       <SheetColumns
         left={<>
-          <SheetSection icon="list" title="Item Details">
+          <VisSection vis={vis} k="item_details"><SheetSection icon="list" title="Item Details">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 14 }}>
               <div style={{ flex: '1 1 180px' }}>
                 <label style={sheetLabel}>Item Type</label>
                 <div data-tour="item-type">
-                  <ItemTypeSelect value={itemType} onChange={(v) => { if (v !== itemType) { setItemType(v); setCategory(''); setSubcategory('') } }} types={itemTypes} />
+                  <ItemTypeSelect value={itemType} onChange={(v) => { if (v !== itemType) { setItemType(v); setCategory(''); setSubcategory('') } }} types={vis.preview ? itemTypes : typeChoices} />
+                  <VisOptionValues vis={vis} dropdown="item_type" />
                 </div>
               </div>
               <div style={{ flex: '1 1 180px' }}>
@@ -163,9 +178,9 @@ export default function NewStoreItemPage() {
             </div>
             <label style={{ ...sheetLabel, marginTop: 14 }}>Technical Specification <Optional /></label>
             <textarea data-tour="item-description" style={{ ...sheetInput, minHeight: 70, resize: 'vertical' }} value={description} onChange={(e) => setDescription(e.target.value)} />
-          </SheetSection>
+          </SheetSection></VisSection>
 
-          <SheetSection icon="calendar" title="Planning">
+          <VisSection vis={vis} k="planning"><SheetSection icon="calendar" title="Planning">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
               <div style={{ flex: '0 1 220px', minWidth: 180 }}>
                 <label style={sheetLabel}>Purchase lead time (days) <Optional /></label>
@@ -179,7 +194,7 @@ export default function NewStoreItemPage() {
               </div>
             </div>
             <p style={sheetHint}>Lead time = calendar days from PO to goods in store. Used by MRP and the Engineering long-lead list.</p>
-          </SheetSection>
+          </SheetSection></VisSection>
 
           <ItemErpForm values={erp} onChange={(patch) => setErp({ ...erp, ...patch })} meta={meta} itemType={itemType} uom={uom}
             partCode={partCode} onPartCode={setPartCode} partCodeTour="item-part-code" />
@@ -190,11 +205,11 @@ export default function NewStoreItemPage() {
               placeholder="Next running number" title="Assigned automatically when you save — the next running number (01, 02 … 100 …)" />
             <p style={sheetHint}>Assigned automatically when you save — the next running number. Numbers are never reused.</p>
           </SheetSection>
-          <SheetSection icon="clip" title="Photo" extra={<Optional />}>
+          <VisSection vis={vis} k="photo"><SheetSection icon="clip" title="Photo" extra={<Optional />}>
             <div data-tour="item-photo">
               <ItemPhoto pending={photo} onPendingChange={setPhoto} />
             </div>
-          </SheetSection>
+          </SheetSection></VisSection>
         </>}
       />
     </FormPage>

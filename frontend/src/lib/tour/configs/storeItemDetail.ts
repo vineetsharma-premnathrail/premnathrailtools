@@ -58,7 +58,7 @@ const config: TourConfig = {
       target: 'item-detail-quality',
       title: 'Quality settings',
       purpose: 'Shows whether incoming stock of this item is checked by Quality before it can be used.',
-      why: 'Inspection on receipt sends GRN quantity into "Quality" stock with an inspection lot instead of straight to Free stock — so nothing un-checked reaches the shop floor. "Test certificate required" means a lot cannot be accepted until the supplier\'s MTC (mill test certificate) is marked received.',
+      why: 'Quality check on receipt sends GRN quantity into "Quality" stock with an inspection lot instead of straight to Free stock — so nothing un-checked reaches the shop floor. Items without it go straight into Free stock on the GRN. "Test certificate required" means a lot cannot be accepted until the supplier\'s MTC (mill test certificate) is marked received.',
     },
   ],
 }

@@ -17,6 +17,9 @@ import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { FileDropZone, FormSheet, Optional, Req, SHEET, SheetColumns, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import { chipBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import { useFormDraft } from '@/lib/formDraft'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection } from '@/lib/visibilityComponents'
+import { VisColumns } from '@/components/quality/VisColumns'
 import DraftBanner from '@/components/shared/DraftBanner'
 
 /* ── Look ─────────────────────────────────────────────────────────────── */
@@ -222,6 +225,13 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
   const [busy, setBusy] = useState(false)
   const [msForm, setMsForm] = useState<MsForm | null>(null)
   const [taskForm, setTaskForm] = useState<TaskForm | null>(null)
+  // Role Visibility (core/features/projects.py): optional sections of the task form and the Priority
+  // values offered (the server refuses the rest). A saved task keeps its own priority in the list.
+  const vis = useVisibility('projects:overview.tasks')
+  const allowedPriorities = vis.options('priority', Object.keys(PRIORITY), (k) => k)
+  const priorityChoices = Object.entries(PRIORITY).filter(([k]) => allowedPriorities.includes(k) || (!!taskForm?.id && taskForm.priority === k))
+  // A new task starts on Standard when the role allows it, else on the first allowed value.
+  const defaultPriority = allowedPriorities.includes('standard') ? 'standard' : allowedPriorities[0]
   const [formError, setFormError] = useState<string | string[]>('')
   // New milestone / new task (or sub-task) forms survive a refresh; they are filled back in when the Add button is pressed again.
   const msDraft = useFormDraft(msForm && !msForm.id ? `projects-plan-milestone-new-${project?.id ?? 0}` : null, msForm,
@@ -347,7 +357,7 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
     setTaskForm({
       msId: m.id, id: t?.id, parentId: opts.parent?.id ?? t?.parent_id ?? null, title: t?.title || '', description: t?.description || '',
       assignee_id: t?.assignee_id ? String(t.assignee_id) : '', collaborator_ids: (t?.collaborator_ids || []).map(String),
-      start_date: t?.start_date || '', due_date: t?.due_date || '', priority: normalizePriority(t?.priority), status: t?.status || 'todo',
+      start_date: t?.start_date || '', due_date: t?.due_date || '', priority: t ? normalizePriority(t.priority) : defaultPriority, status: t?.status || 'todo',
       labels: t?.labels || [], checklist: [''], files: [],
     })
     needPeople()
@@ -693,10 +703,10 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
           <button type="button" onClick={saveTask} disabled={busy} style={sheetBtn('primary', BLUE, busy)}><SheetIcon name={taskForm.id ? 'check' : 'plus'} size={16} />{busy ? 'Saving…' : taskForm.id ? 'Save' : taskForm.parentId ? 'Add Sub-task' : 'Create Task'}</button>
         </>}>
         {formMs && (
-          <SheetColumns left={<>
+          <VisColumns vis={vis} rightKeys={['labels', ...(!taskForm.id && !taskForm.parentId ? ['checklist'] : []), ...(!taskForm.id ? ['attachments'] : [])]} left={<>
               <DraftBanner draft={taskDraft} />
               <ErrorBanner error={formError} />
-              <SheetSection icon="list" title="Basic Information">
+              <VisSection vis={vis} k="basic_information"><SheetSection icon="list" title="Basic Information">
                 <label style={sheetLabel}>{taskForm.parentId ? 'Sub-task' : 'Task'} Name <Req /></label>
                 <input style={sheetInput} value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} placeholder="Enter task name (e.g. Frame GA drawing)" autoFocus />
                 <label style={{ ...sheetLabel, marginTop: 14 }}>Description</label>
@@ -706,8 +716,8 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
                   <div style={{ flex: '1 1 180px' }}><label style={sheetLabel}>Milestone</label><div style={{ ...sheetInput, background: SOFT, display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ width: 10, height: 10, transform: 'rotate(45deg)', borderRadius: 2, background: colOf(formMs, ms.findIndex((x) => x.id === formMs.id)).c }} />{formMs.title}</div></div>
                 </div>
                 {formParent && <p style={{ fontSize: 12.5, color: MUTED, margin: '8px 0 0' }}>Parent task: <b style={{ color: INK }}>{formParent.title}</b></p>}
-              </SheetSection>
-              <SheetSection icon="user" title="Assignment">
+              </SheetSection></VisSection>
+              <VisSection vis={vis} k="assignment"><SheetSection icon="user" title="Assignment">
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ flex: '1 1 220px' }}>
                     <label style={sheetLabel}>Assignee <Req /></label>
@@ -720,8 +730,8 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
                   </div>
                 </div>
                 <p style={sheetHint}>The assignee owns it. Collaborators are notified, see it in My Tasks and can add comments and files.</p>
-              </SheetSection>
-              <SheetSection icon="calendar" title="Schedule & Status">
+              </SheetSection></VisSection>
+              <VisSection vis={vis} k="schedule_status"><SheetSection icon="calendar" title="Schedule & Status">
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ flex: '1 1 150px' }}><label style={sheetLabel}>Start Date</label><DateField value={taskForm.start_date} onChange={(v) => setTaskForm({ ...taskForm, start_date: v })} /></div>
                   <div style={{ flex: '1 1 150px' }}><label style={sheetLabel}>Due Date <Req /></label><DateField value={taskForm.due_date} onChange={(v) => setTaskForm({ ...taskForm, due_date: v })} /></div>
@@ -731,7 +741,7 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
                   <div style={{ flex: '1 1 130px' }}>
                     <label style={sheetLabel}>Priority</label>
                     <Select style={sheetInput} value={taskForm.priority} onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })}>
-                      {Object.entries(PRIORITY).map(([k, v]) => <option key={k} value={k}>{v.text}</option>)}
+                      {priorityChoices.map(([k, v]) => <option key={k} value={k}>{v.text}</option>)}
                     </Select>
                   </div>
                   <div style={{ flex: '1 1 140px' }}>
@@ -741,12 +751,15 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
                     </Select>
                   </div>
                 </div>
-              </SheetSection>
+              </SheetSection></VisSection>
             </>} right={<>
+              <VisSection vis={vis} k="labels">
               <SheetSection icon="tag" title="Labels / Tags" extra={<Optional />}>
                 <LabelInput labels={taskForm.labels} onChange={(labels) => setTaskForm({ ...taskForm, labels })} />
               </SheetSection>
+              </VisSection>
               {!taskForm.id && !taskForm.parentId && (
+                <VisSection vis={vis} k="checklist">
                 <SheetSection icon="list" title="Checklist" extra={<Optional />}>
                   {taskForm.checklist.map((c, i) => (
                     <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
@@ -759,11 +772,14 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
                   <button type="button" onClick={() => setTaskForm({ ...taskForm, checklist: [...taskForm.checklist, ''] })} style={btn('secondary')}><Icon name="plus" size={14} /> Add item</button>
                   <p style={{ fontSize: 11.5, color: MUTED, margin: '6px 0 0' }}>Steps to tick off — they belong to this task&apos;s assignee and due date.</p>
                 </SheetSection>
+                </VisSection>
               )}
               {!taskForm.id && (
+                <VisSection vis={vis} k="attachments">
                 <SheetSection icon="clip" title="Attachments" extra={<Optional />}>
                   <FileDropZone files={taskForm.files} onChange={(files) => setTaskForm({ ...taskForm, files })} />
                 </SheetSection>
+                </VisSection>
               )}
             </>} />
         )}

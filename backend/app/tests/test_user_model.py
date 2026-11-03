@@ -11,8 +11,10 @@ def test_get_apps_admin_gets_everything_regardless_of_assignment():
 
 
 def test_get_apps_regular_user_gets_only_assigned():
+    # R&D is a department module: its users also get Project Management (My Tasks / Department Work).
+    # The removed Ongoing Projects row, 2026-11-03.
     user = User(email="a@x.com", name="A", role="user", assigned_apps=["crm", "rnd"])
-    assert user.get_apps() == ["crm", "rnd"]
+    assert user.get_apps() == ["crm", "projects", "rnd"]
 
 
 def test_get_apps_regular_user_with_no_assignment_gets_none():

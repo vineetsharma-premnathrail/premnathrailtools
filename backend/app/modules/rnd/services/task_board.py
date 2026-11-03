@@ -1,8 +1,10 @@
 """R&D Tasks board: one list + analytics over the two task tables
-(requirement tasks and Prototype / Research project tasks).
+(requirement tasks and project tasks).
 
-There is no task "type" column — type is which table a task lives in
-("requirement" or "prototype"). A row is built once (`collect`) and the list,
+There is no task "type" column — type is which table a task lives in and, for
+a project task, which parent it has: "requirement", "prototype" (a Prototype /
+Research project) or "project" (a Project Management "All Projects" project,
+rnd_project_tasks.pm_project_id — since 2026-11-03). A row is built once (`collect`) and the list,
 the summary tiles, the per-person and the per-project views all read the same
 filtered rows, so they always agree (AC-54).
 
@@ -31,6 +33,7 @@ from app.modules.crm.models.inquiry import Inquiry
 from app.modules.crm.models.tender import Tender
 from app.modules.crm.services.requirement_movement import today_ist
 from app.modules.main.models.user import User
+from app.modules.projects.models.project import PmProject
 from app.modules.rnd.models.project import RndProject
 from app.modules.rnd.models.project_task import RndProjectTask
 from app.modules.rnd.models.requirement import RndRequirement
@@ -40,7 +43,7 @@ from app.modules.rnd.services import requirements as intake
 from app.core.priority import map_legacy_priority
 from app.core.record_ref import encode_ref
 
-TYPES = ("requirement", "prototype")
+TYPES = ("requirement", "prototype", "project")
 STATUS_FILTERS = ("open", "submitted", "closed", "cancelled", "overdue", "pending")
 PROGRESS_BANDS = ("0", "1-49", "50-99", "100")
 MAX_PAGE_SIZE = 200
@@ -111,10 +114,8 @@ def collect(db: Session, user: User, filters: dict[str, Any]) -> list[dict]:
     (parent reference ascending, then task id ascending)."""
     today = today_ist()
     wanted_type = filters.get("type")
-    if wanted_type == "project":
-        wanted_type = "prototype"
     if wanted_type and wanted_type not in TYPES:
-        raise HTTPException(status_code=422, detail=f"Type '{wanted_type}' isn't valid — pick Requirement or Prototype.")
+        raise HTTPException(status_code=422, detail=f"Type '{wanted_type}' isn't valid — pick Requirement, Prototype or Project.")
     status = filters.get("status")
     if status and status not in STATUS_FILTERS:
         raise HTTPException(status_code=422, detail=f"Status '{status}' isn't valid — pick one of {', '.join(STATUS_FILTERS)}.")
@@ -146,23 +147,32 @@ def collect(db: Session, user: User, filters: dict[str, Any]) -> list[dict]:
         return q
 
     req_tasks: list[RndRequirementTask] = []
-    if wanted_type in (None, "requirement") and not filters.get("rnd_project_id"):
+    if wanted_type in (None, "requirement") and not filters.get("rnd_project_id") and not filters.get("pm_project_id"):
         q = base(RndRequirementTask)
         if filters.get("requirement_id"):
             rq = db.get(RndRequirement, filters["requirement_id"])
             q = q.filter(RndRequirementTask.source == (rq.source if rq else ""), RndRequirementTask.record_id == (rq.record_id if rq else -1))
         req_tasks = q.all()
     proj_tasks: list[RndProjectTask] = []
-    if wanted_type in (None, "prototype") and not filters.get("requirement_id"):
+    if wanted_type in (None, "prototype", "project") and not filters.get("requirement_id"):
         q = base(RndProjectTask)
         if filters.get("rnd_project_id"):
             q = q.filter(RndProjectTask.project_id == filters["rnd_project_id"])
+        elif filters.get("pm_project_id"):
+            q = q.filter(RndProjectTask.pm_project_id == filters["pm_project_id"])
+        elif wanted_type == "prototype":
+            q = q.filter(RndProjectTask.project_id.isnot(None))
+        elif wanted_type == "project":
+            q = q.filter(RndProjectTask.pm_project_id.isnot(None))
         proj_tasks = q.all()
 
     uids = {t.assigned_to_id for t in req_tasks + proj_tasks} | {t.created_by_id for t in req_tasks + proj_tasks}
     users = {u.id: u for u in db.query(User).filter(User.id.in_(uids)).all()} if uids else {}
     parents_req = _requirement_parents(db, req_tasks)
-    projects = {p.id: p for p in db.query(RndProject).filter(RndProject.id.in_({t.project_id for t in proj_tasks})).all()} if proj_tasks else {}
+    rnd_ids = {t.project_id for t in proj_tasks if t.project_id}
+    pm_ids = {t.pm_project_id for t in proj_tasks if t.pm_project_id}
+    projects = {p.id: p for p in db.query(RndProject).filter(RndProject.id.in_(rnd_ids)).all()} if rnd_ids else {}
+    pm_projects = {p.id: p for p in db.query(PmProject).filter(PmProject.id.in_(pm_ids)).all()} if pm_ids else {}
     changed = intake.changed_flags(db, req_tasks)
 
     def row(kind: str, t, parent: dict, changed_flag: bool) -> dict:
@@ -185,6 +195,11 @@ def collect(db: Session, user: User, filters: dict[str, Any]) -> list[dict]:
             "kind": "requirement", "id": None, "source": t.source, "record_id": t.record_id, "ref": f"{t.source} #{t.record_id}", "title": None}
         rows.append(row("requirement", t, with_refs(parent), changed.get(t.id, False)))
     for t in proj_tasks:
+        if t.pm_project_id:
+            pm = pm_projects.get(t.pm_project_id)
+            parent = {"kind": "pm_project", "id": t.pm_project_id, "ref": pm.project_code if pm else f"Project #{t.pm_project_id}", "title": pm.name if pm else None}
+            rows.append(row("project", t, with_refs(parent), False))
+            continue
         p = projects.get(t.project_id)
         parent = {"kind": "project", "id": t.project_id, "ref": p.project_number if p else f"RND #{t.project_id}", "title": p.title if p else None}
         rows.append(row("prototype", t, with_refs(parent), False))

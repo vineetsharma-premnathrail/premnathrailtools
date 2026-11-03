@@ -224,3 +224,83 @@ def test_department_comes_from_the_assignees_user_record(client, db, tor_env):
     _proj_task(client, project, head, other)
     rows = client.get(BOARD, params={"department": "design"}, headers=auth(head)).json()["items"]
     assert [r["assignee"]["department"] for r in rows] == ["Design"]
+
+
+# ── Tasks on a Project Management (All Projects) project — 2026-11-03 ─────────────
+
+def _pm_env(client, db):
+    from app.modules.projects.models.project import PmProject
+    bd, head, member, other, inq, project = _env(client, db)
+    pm = PmProject(project_code="PEW-951", name="Crane for NR", client_name="NR", status="active")
+    closed = PmProject(project_code="PEW-950", name="Old", status="closed")
+    db.add_all([pm, closed])
+    db.commit()
+    return head, member, other, pm, closed
+
+
+def _pm_task(client, pm, who, assignee, **extra):
+    return _create(client, who, type="project", pm_project_id=str(pm.id), assignee=assignee, **extra)
+
+
+def test_pm_project_picker_and_assignees(client, db, tor_env):
+    head, member, other, pm, closed = _pm_env(client, db)
+    codes = [p["project_code"] for p in client.get(f"{BOARD}/pm-project-options", headers=auth(head)).json()]
+    assert codes == ["PEW-951"]            # closed projects are not offered; sorted by code
+    assert client.get(f"{BOARD}/pm-project-options", headers=auth(member)).json() == []   # not a head, not the manager
+    people = client.get(f"{BOARD}/assignees", params={"type": "project", "pm_project_id": pm.id}, headers=auth(head)).json()
+    assert {p["id"] for p in people} >= {member.id, other.id} and head.id in {p["id"] for p in people}
+    r = client.get(f"{BOARD}/assignees", params={"type": "project"}, headers=auth(head))
+    assert r.status_code == 422 and "Pick the project first" in r.json()["detail"]
+
+
+def test_create_task_on_pm_project_and_board(client, db, tor_env):
+    head, member, other, pm, closed = _pm_env(client, db)
+    r = _pm_task(client, pm, member, other)
+    assert r.status_code == 404 and "no R&D task on it" in r.json()["detail"]   # not a head / manager, not involved
+    r = _pm_task(client, closed, head, member)
+    assert r.status_code == 422 and "running project" in r.json()["detail"]
+    r = _pm_task(client, pm, head, member, remarks="Validate the slew ring load", checklist='["FEA", "Report"]')
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["type"] == "project" and body["source"] == "pm_project" and body["record_id"] == pm.id
+    t = db.query(RndProjectTask).one()
+    assert t.pm_project_id == pm.id and t.project_id is None
+    # The board: one row of type "project" with the PEW code as parent reference, signed ref included.
+    rows = client.get(BOARD, headers=auth(head)).json()["items"]
+    assert len(rows) == 1 and rows[0]["type"] == "project"
+    assert rows[0]["parent"]["kind"] == "pm_project" and rows[0]["parent"]["ref"] == "PEW-951" and rows[0]["parent"]["id_ref"]
+    assert client.get(BOARD, params={"type": "project"}, headers=auth(head)).json()["total"] == 1
+    assert client.get(BOARD, params={"type": "prototype"}, headers=auth(head)).json()["total"] == 0
+    assert client.get(BOARD, params={"pm_project_id": pm.id}, headers=auth(head)).json()["total"] == 1
+    groups = client.get(f"{BOARD}/analytics", headers=auth(head)).json()["by_project"]
+    assert groups[0]["kind"] == "pm_project" and groups[0]["ref"] == "PEW-951"
+    r = client.get(BOARD, params={"type": "wrong"}, headers=auth(head))
+    assert r.status_code == 422 and "Project" in r.json()["detail"]
+
+
+def test_pm_project_page_list_access_and_work(client, db, tor_env):
+    head, member, other, pm, closed = _pm_env(client, db)
+    assert _pm_task(client, pm, head, member, checklist='["FEA"]').status_code == 200
+    access = client.get(f"{RND}/pm-projects/{pm.id}/task-access", headers=auth(head)).json()
+    assert access["can_manage"] is True and access["project"]["project_code"] == "PEW-951"
+    # An uninvolved R&D person can't even tell the project exists (404, not 403); the assignee can open it but not manage.
+    for path in (f"{RND}/pm-projects/{pm.id}/task-access", f"{RND}/pm-projects/{pm.id}/tasks"):
+        r = client.get(path, headers=auth(other))
+        assert r.status_code == 404 and "no R&D task on it" in r.json()["detail"]
+    assert client.get(f"{RND}/pm-projects/{pm.id}/task-access", headers=auth(member)).json()["can_manage"] is False
+    # The head sees every task; the assignee sees theirs.
+    assert len(client.get(f"{RND}/pm-projects/{pm.id}/tasks", headers=auth(head)).json()) == 1
+    mine = client.get(f"{RND}/pm-projects/{pm.id}/tasks", headers=auth(member)).json()
+    assert len(mine) == 1 and mine[0]["source"] == "pm_project"
+    assert client.get(f"{RND}/pm-projects/999999/tasks", headers=auth(head)).status_code == 404
+    # The assignee works it with the shared task actions; the project page sees it read-only.
+    task_id = mine[0]["id"]
+    step = mine[0]["checklist"][0]["id"]
+    r = client.post(f"{RND}/project-tasks/{task_id}/progress", json={"item_id": step, "done": True}, headers=auth(member))
+    assert r.status_code == 200 and r.json()["progress_percent"] == 100
+    r = client.post(f"{RND}/project-tasks/{task_id}/complete", data={"remarks": "Done"}, headers=auth(member))
+    assert r.status_code == 200 and r.json()["status"] == "closed"
+    r = client.post(f"{RND}/project-tasks/{task_id}/reopen", json={"remarks": "Redo", "new_due_date": _due(3)}, headers=auth(other))
+    assert r.status_code == 404          # not involved on the project: it doesn't exist for them
+    r = client.post(f"{RND}/project-tasks/{task_id}/reopen", json={"remarks": "Redo", "new_due_date": _due(3)}, headers=auth(head))
+    assert r.status_code == 200 and r.json()["status"] == "open"

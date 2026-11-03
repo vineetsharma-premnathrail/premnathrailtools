@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.permissions import ensure_can_delete, require_app_access, require_feature_action, require_tab_access, require_tab_action
 from app.core.permission_registry import can_feature, can_view_tab
 from app.db.session import get_db
@@ -35,6 +36,49 @@ from app.modules.store.models.item import StoreItem
 _CAN_CREATE = require_tab_action("production", "bom", "create")
 _CAN_EDIT = require_tab_action("production", "bom", "edit")
 _CAN_DELETE = require_tab_action("production", "bom", "delete")
+BOM_VISIBILITY_KEY = "production:bom"  # core/features/production.py register_visibility
+
+
+def _item_identity(component_item_id, document_id, line_text) -> tuple:
+    return (component_item_id or None, document_id or None, (line_text or "").strip() or None)
+
+
+def _stock_allowed(user: User) -> bool:
+    allowed = visibility.allowed_values(user, BOM_VISIBILITY_KEY, "item_category")
+    return allowed is None or "stock" in allowed
+
+
+def _ensure_stock_allowed(user: User, what: str, action: str) -> None:
+    """422 when the role's Component category leaves out Stock but `what` adds Stock lines."""
+    if _stock_allowed(user):
+        return
+    allowed = visibility.allowed_values(user, BOM_VISIBILITY_KEY, "item_category") or set()
+    labels = ", ".join(v for k, v in visibility.VISIBILITY[BOM_VISIBILITY_KEY]["options"]["item_category"]["values"].items() if k in allowed)
+    raise HTTPException(status_code=422, detail=(
+        f"{what}, and your role's Component category allows only: {labels or 'none'}. "
+        "Ask an admin to allow Stock in Organization › Role & Permissions › Production › BOM & Routing › Visibility, "
+        f"or ask a colleague whose role allows it to {action}."))
+
+
+def _check_line_options(user: User, items: list[ProductionBomItemPayload], operations: list[ProductionBomOperationPayload],
+                        current: ProductionBom | None = None) -> None:
+    """Role visibility (Role & Permissions › Production › BOM & Routing › Visibility): the coded
+    values on the lines — component category, control key, confirmation — must be ones the
+    role may pick. On an edit only NEW lines and lines whose value CHANGED are checked, so a
+    draft that already holds a value outside the role can still be saved."""
+    kept_items = {_item_identity(i.component_item_id, i.document_id, i.line_text): (i.item_category or "stock")
+                  for i in (current.items if current else [])}
+    for line in items:
+        category = line.item_category or "stock"
+        if kept_items.get(_item_identity(line.component_item_id, line.document_id, line.line_text)) != category:
+            visibility.ensure_option_allowed(user, BOM_VISIBILITY_KEY, "item_category", category)
+    kept_ops = {o.sequence: (o.control_key or "internal", o.confirmation or "optional") for o in (current.operations if current else [])}
+    for op in operations:
+        before = kept_ops.get(op.sequence, (None, None))
+        if before[0] != op.control_key:
+            visibility.ensure_option_allowed(user, BOM_VISIBILITY_KEY, "control_key", op.control_key)
+        if before[1] != op.confirmation:
+            visibility.ensure_option_allowed(user, BOM_VISIBILITY_KEY, "confirmation", op.confirmation)
 
 
 router = APIRouter(
@@ -339,6 +383,7 @@ async def create_bom(
             detail=f"{existing_draft.bom_number} (v{existing_draft.version}) is already an open draft for this product. "
                    "Edit or activate that draft instead of starting another one.",
         )
+    _check_line_options(user, payload.items, payload.operations)
     _validate_lines(db, payload.product_item_id, payload.items, payload.operations)
     _check_window(payload.valid_from, payload.valid_to)
 
@@ -450,6 +495,9 @@ async def transfer_from_design(
     started with the routing of the current active version. The draft then
     goes through the usual activation approval."""
     design, rev = _load_released_revision(db, payload.design_bom_revision_id)
+    # Design's components arrive as Stock lines: a role that may not pick Stock is refused
+    # (role visibility) instead of the transfer adding lines it could not key in itself.
+    _ensure_stock_allowed(user, "Transfer from Design adds its components as Stock lines", "run the transfer")
     bom = transfer_revision(db, design, rev, user)
     db.commit()
     db.refresh(bom)
@@ -608,6 +656,8 @@ async def merge_discipline_bom(
     its source. Merging the same source again replaces its earlier quantities."""
     bom = _get_or_404(db, bom_id)
     _require_draft(bom, "changed", db)
+    # The merged electrical / hydraulic lines arrive as Stock lines: same role rule as the Design transfer.
+    _ensure_stock_allowed(user, "Merging an electrical / hydraulic BOM adds its components as Stock lines", "run the merge")
     try:
         discipline.merge_into(db, bom, payload.source_type, payload.source_id, payload.multiplier, user.id)
     except discipline.DisciplineError as e:
@@ -687,6 +737,7 @@ async def update_bom(bom_id: int, payload: ProductionBomUpdate, db: Session = De
     _require_draft(bom, "edited", db)
     updates = payload.model_dump(exclude_unset=True, exclude={"items", "operations"})
     _check_window(updates.get("valid_from", bom.valid_from), updates.get("valid_to", bom.valid_to))
+    _check_line_options(_perm, payload.items or [], payload.operations or [], current=bom)
     if "change_number" in updates:
         updates["change_number"] = (updates["change_number"] or "").strip() or None
     _validate_lines(

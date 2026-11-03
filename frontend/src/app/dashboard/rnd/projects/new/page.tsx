@@ -18,6 +18,8 @@ import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
 import RndBudgetFields, { EMPTY_RND_BUDGET, RndBudgetDraft, rndBudgetError, rndBudgetPayload } from '@/components/rnd/RndBudgetFields'
 import ProjectOriginFields, { EMPTY_ORIGIN, OriginDraft, originError, originPayload, originProofRequired } from '@/components/rnd/ProjectOriginFields'
+import { useVisibility } from '@/lib/visibility'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
 
 const inputStyle = sheetInput
 const labelStyle = sheetLabel
@@ -37,6 +39,9 @@ function NewRndProject() {
   const router = useRouter()
   const fromPm = useSearchParams().get('from') === 'pm'
   const backHref = fromPm ? '/dashboard/projects/all' : '/dashboard/rnd/projects'
+  // What the user's roles let them see here (Role editor > R&D > Prototype / Research > Visibility).
+  // In the Role editor's "Preview & choose" nothing is saved or kept as a draft.
+  const vis = useVisibility('rnd:projects')
 
   const [users, setUsers] = useState<DirectoryUser[]>([])
 
@@ -62,7 +67,7 @@ function NewRndProject() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | string[]>('')
   // A new R&D project's typed data survives a refresh / network failure (lib/formDraft.ts).
-  const draft = useFormDraft('rnd-project-new',
+  const draft = useFormDraft(vis.preview ? null : 'rnd-project-new',
     { title, priority, objective, scope, leadChoice, teamIds, startDate, targetEndDate, remarks, files, origin, budget },
     (d) => {
       setTitle(d.title || ''); setPriority(normalizePriority(d.priority)); setObjective(d.objective || ''); setScope(d.scope || '')
@@ -77,12 +82,21 @@ function NewRndProject() {
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load the user list for Project Lead / Team.')))
   }, [isAuthorized])
 
+  // Priority values the role offers; a default the role doesn't offer moves to the first one it does.
+  const priorityChoices = vis.options('priority', PRIORITY_OPTIONS, (o) => o.value)
+  const priorityKey = priorityChoices.map((o) => o.value).join(',')
+  useEffect(() => {
+    const allowed = priorityKey.split(',').filter(Boolean) as Priority[]
+    if (allowed.length && !allowed.includes(priority)) setPriority(allowed[0])
+  }, [priorityKey, priority])
+
   const leadIds = leadChoice ?? (user?.id ? [user.id] : [])
   // The role's assign-to rule for lead / team; yourself and anyone already picked stay listed.
   const allowTeam = useAssigneeFilter('rnd:projects.team')
   const pickable = users.filter((u) => allowTeam(u.id) || u.id === user?.id || leadIds.includes(u.id) || teamIds.includes(u.id))
 
   const handleSubmit = async () => {
+    if (vis.preview) return
     setError('')
     const originMsg = originError(origin, files.length)
     if (originMsg) { setError(originMsg); return }
@@ -148,16 +162,16 @@ function NewRndProject() {
     <div style={{ width: '100%' }}>
       <FormPage
         tour="rnd-pf-form"
-        nav={<RndNav />}
+        nav={vis.preview ? undefined : <RndNav />}
         icon="flag"
         title="New Prototype / Research Project"
         subtitle="Start a prototype / research project — what it should achieve and who works on it."
-        onBack={() => router.push(backHref)} backTour="rnd-pf-back-btn"
+        onBack={vis.preview ? undefined : () => router.push(backHref)} backTour="rnd-pf-back-btn"
         footer={<>
-          <button data-tour="rnd-pf-cancel-btn" onClick={() => router.push(backHref)} disabled={submitting} type="button" style={sheetBtn('secondary', SHEET.INK, submitting)}>
+          <button data-tour="rnd-pf-cancel-btn" onClick={() => router.push(backHref)} disabled={submitting || vis.preview} type="button" style={sheetBtn('secondary', SHEET.INK, submitting)}>
             Cancel
           </button>
-          <button data-tour="rnd-pf-submit-btn" onClick={handleSubmit} disabled={submitting || !!createdProject} type="button" style={sheetBtn('primary', SHEET.BLUE, submitting || !!createdProject)}>
+          <button data-tour="rnd-pf-submit-btn" onClick={handleSubmit} disabled={submitting || !!createdProject || vis.preview} type="button" style={sheetBtn('primary', SHEET.BLUE, submitting || !!createdProject)}>
             <SheetIcon name="plus" size={16} />{submitting ? (files.length ? 'Creating & uploading…' : 'Creating…') : 'Create Project'}
           </button>
         </>}
@@ -178,11 +192,14 @@ function NewRndProject() {
 
         <SheetColumns
           left={<>
+            <VisSection vis={vis} k="origin">
             <div data-tour="rnd-pf-origin-section">
               <SheetSection icon="flag" title="Project Origin" extra={<span style={{ fontSize: 12, color: SHEET.MUTED }}>Why does this project exist? <Req /></span>}>
-                <ProjectOriginFields value={origin} onChange={setOrigin} creating />
+                <ProjectOriginFields value={origin} onChange={setOrigin} creating vis={vis} />
               </SheetSection>
             </div>
+            </VisSection>
+            <VisSection vis={vis} k="initiation">
             <SheetSection icon="list" title="Project Initiation">
               <div data-tour="rnd-pf-title">
                 <label style={labelStyle}>Project Title <Req /></label>
@@ -197,13 +214,16 @@ function NewRndProject() {
                 <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: 70 }} value={scope} onChange={(e) => setScope(e.target.value)} placeholder="In scope / out of scope, key deliverables" />
               </div>
             </SheetSection>
+            </VisSection>
+            <VisSection vis={vis} k="priority_schedule">
             <SheetSection icon="calendar" title="Priority & Schedule">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div data-tour="rnd-pf-priority" style={{ flex: '1 1 240px', minWidth: 220, maxWidth: 300 }}>
                   <label style={labelStyle}>Priority</label>
                   <Select style={inputStyle} value={priority} onChange={(e) => setPriority(e.target.value as Priority)}>
-                    {PRIORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    {priorityChoices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </Select>
+                  <VisOptionValues vis={vis} dropdown="priority" />
                 </div>
                 <div data-tour="rnd-pf-start" style={{ flex: '0 1 160px', minWidth: 150 }}>
                   <label style={labelStyle}>Start Date</label>
@@ -215,9 +235,11 @@ function NewRndProject() {
                 </div>
               </div>
             </SheetSection>
-            <RndBudgetFields value={budget} onChange={setBudget} />
+            </VisSection>
+            <VisSection vis={vis} k="budget"><RndBudgetFields value={budget} onChange={setBudget} /></VisSection>
           </>}
           right={<>
+            <VisSection vis={vis} k="members">
             <SheetSection icon="users" title="Project Members">
               <div data-tour="rnd-pf-lead">
                 <label style={labelStyle}>Project Leads</label>
@@ -228,11 +250,15 @@ function NewRndProject() {
                 <TeamMemberPicker users={pickable} value={teamIds} onChange={setTeamIds} excludeIds={leadIds} />
               </div>
             </SheetSection>
+            </VisSection>
+            <VisSection vis={vis} k="remarks">
             <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
               <div data-tour="rnd-pf-remarks">
                 <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: 60 }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
               </div>
             </SheetSection>
+            </VisSection>
+            <VisSection vis={vis} k="attachments">
             <SheetSection icon="clip" title="Attachments" extra={proofRequired
               ? <span style={{ fontSize: 12, color: '#b91c1c', fontWeight: 600 }}>Proof required <Req /></span>
               : <Optional />}>
@@ -248,6 +274,7 @@ function NewRndProject() {
                 </p>
               </div>
             </SheetSection>
+            </VisSection>
           </>}
         />
       </FormPage>

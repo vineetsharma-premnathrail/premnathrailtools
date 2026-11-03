@@ -7,13 +7,14 @@ from app.modules.crm.services.notify import broadcast_except
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.core import visibility
 from app.core.permissions import ensure_can_delete, ensure_feature_action, require_feature_action, require_tab_access, require_tab_action
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.modules.crm.access import TENDER_MONEY_FIELDS, blank, can_open_record, drop_money_updates, ensure_parent_in_scope, mask_revision_changes, sees_prices
 from app.core.sequential_id import next_sequential_id
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
-from app.modules.crm.models.tender import Tender
+from app.modules.crm.models.tender import TND_STATUSES, Tender
 from app.modules.crm.services.cascade import cascade_delete_children
 from app.modules.crm.services import requirement_movement, technical_offer
 from app.modules.crm.services.stage_guard import check_stage_move, ensure_deletable
@@ -52,12 +53,9 @@ TND_STAGES = [
     "Management Approval", "Bid Submitted", "Technical Qualified", "Financial Opened", "Awarded / Lost",
 ]
 
-# Mirrors TENDER_STATUSES in frontend/src/components/crm/constants.ts.
-TND_STATUSES = [
-    "Waiting for Future Tender", "Tender Published", "Tender Participation", "Tender Submitted",
-    "LOA / Order Received",
-    "Closed – Ordered", "Closed – Not Ordered", "Tender Cancelled",
-]
+# TND_STATUSES lives on the model (models/tender.py) — shared with the visibility catalogue.
+# Role-wise visibility key of this screen (core/features/crm.py).
+VIS_KEY = "crm:inquiries_tenders"
 
 
 def _write_audit(db: Session, tender_id: int, action: str, user: User, summary: str | None = None):
@@ -193,6 +191,9 @@ async def create_tender(
     universal_id = _generate_universal_id(db)
     data = payload.model_dump()
     data["priority"] = parse_priority(data.get("priority"))
+    # Role-wise visibility: a Priority / Status the role doesn't offer is refused with the real reason.
+    visibility.ensure_option_allowed(user, VIS_KEY, "tender_priority", data["priority"])
+    visibility.ensure_option_allowed(user, VIS_KEY, "tender_status", data.get("status"))
     data["tender_date"] = data.get("tender_date") or date.today()
     _check_doc_date(data["tender_date"])
     # The BD owner is always the person who logs the tender — not picked on the form.
@@ -287,6 +288,11 @@ async def update_tender(
     updates.pop("bd_owner", None)
     _check_choice(updates, tender, "current_stage", TND_STAGES, "tender stage")
     _check_choice(updates, tender, "status", TND_STATUSES, "tender status")
+    # Role-wise visibility checks only a CHANGED value (an old record keeps its own).
+    if updates.get("priority") is not None and updates["priority"] != tender.priority:
+        visibility.ensure_option_allowed(user, VIS_KEY, "tender_priority", updates["priority"])
+    if updates.get("status") is not None and updates["status"] != tender.status:
+        visibility.ensure_option_allowed(user, VIS_KEY, "tender_status", updates["status"])
     # Checked when the status moves or one of the required details is cleared, so an older
     # tender with gaps can still be edited for other fields.
     if ("status" in updates and updates["status"] != tender.status) or any(
@@ -318,6 +324,10 @@ async def update_tender(
                 f"Tender number {number} is already used by tender {clash.universal_id} in {zone or 'no zone'} / {division or 'no division'} — "
                 f"check the number, or edit that tender instead."))
     stage_changed = "current_stage" in updates and updates["current_stage"] != tender.current_stage
+    # A stage going back while R&D still holds the requirement takes it back from R&D —
+    # refused once R&D has started (tasks / documents / offer). Owner, 2026-11-03.
+    taken_back = requirement_movement.take_back_on_move_back(
+        db, module="tender", record=tender, user=user, reason=payload.stage_reason, label="tender") if moved_back else None
     changed = [f for f, v in updates.items() if str(getattr(tender, f, None)) != str(v)]
     spec_old = {f: getattr(tender, f, None) for f in changed if f not in TENDER_SPEC_EXCLUDE}
     spec_new = {f: updates[f] for f in changed if f not in TENDER_SPEC_EXCLUDE}
@@ -326,6 +336,8 @@ async def update_tender(
 
     if spec_new:
         _write_spec_revision(db, tender.id, user, spec_old, spec_new)
+    if taken_back:
+        _log_stage(db, tender.id, tender.universal_id, "Taken back from R&D", user, notes=taken_back)
     if stage_changed:
         _log_stage(db, tender.id, tender.universal_id, "Stage moved back" if moved_back else "Stage updated", user,
                    notes=f"Moved back to {tender.current_stage} — reason: {payload.stage_reason.strip()}" if moved_back else f"Moved to {tender.current_stage}")
@@ -547,8 +559,12 @@ async def add_tender_stage(
         raise HTTPException(status_code=403, detail="Only the creator or an admin can change this tender's stage.")
     if payload.stage not in TND_STAGES:
         raise HTTPException(status_code=422, detail=f"Invalid stage. Must be one of: {', '.join(TND_STAGES)}")
-    check_stage_move(db, stages=TND_STAGES, old=tender.current_stage, new=payload.stage, user=user,
-                     reason=payload.notes, label="tender", tender_id=tender.id)
+    if check_stage_move(db, stages=TND_STAGES, old=tender.current_stage, new=payload.stage, user=user,
+                        reason=payload.notes, label="tender", tender_id=tender.id):
+        taken_back = requirement_movement.take_back_on_move_back(
+            db, module="tender", record=tender, user=user, reason=payload.notes, label="tender")
+        if taken_back:
+            _log_stage(db, tender.id, tender.universal_id, "Taken back from R&D", user, notes=taken_back)
     entry = CrmStageLog(
         related_module="tender", related_id=tender_id, universal_id=tender.universal_id, stage=payload.stage,
         entered_by_id=user.id, entered_by_name=user.name or user.email, notes=payload.notes,

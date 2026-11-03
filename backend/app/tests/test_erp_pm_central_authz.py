@@ -53,7 +53,8 @@ def _enable_machine_approval(client, admin, approver_ids):
 def test_machine_approval_through_central_endpoint(client, db):
     admin = _user(db, "erp.admin@premnathrail.com", role="admin")
     approver = _user(db, "erp.appr@premnathrail.com", assigned_apps=["erp"])
-    creator = _user(db, "erp.maker@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create", "project_edit"])
+    creator = _user(db, "erp.maker@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create", "project_edit"],
+                    granular_permissions=["projects:all_projects:create"])  # authority grant since 2026-11-02
     _enable_machine_approval(client, admin, [approver.id])
 
     m = client.post(f"{API}/erp/projects", json={"serial_number": "CA-1"}, headers=h(creator)).json()
@@ -72,7 +73,8 @@ def test_machine_approval_through_central_endpoint(client, db):
 def test_machine_rejected_then_resubmitted_by_editing(client, db):
     admin = _user(db, "erp.admin2@premnathrail.com", role="admin")
     approver = _user(db, "erp.appr2@premnathrail.com", assigned_apps=["erp"])
-    creator = _user(db, "erp.maker2@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create", "project_edit"])
+    creator = _user(db, "erp.maker2@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create", "project_edit"],
+                    granular_permissions=["projects:all_projects:create"])  # authority grant since 2026-11-02
     _enable_machine_approval(client, admin, [approver.id])
     m = client.post(f"{API}/erp/projects", json={"serial_number": "CA-2"}, headers=h(creator)).json()
     req = engine.latest_request(db, "erp_machine", m["id"])
@@ -141,8 +143,12 @@ def test_service_request_scope_own(client, db):
 def _pm_setup(client, db):
     partner = _user(db, "pm.partner@x.com", assigned_apps=["projects"], is_partner=True)
     pm = _user(db, "pm.pm@x.com", assigned_apps=["projects"])
-    head = _user(db, "pm.head@x.com", assigned_apps=["design"], department="Design")
-    member = _user(db, "pm.member@x.com", assigned_apps=["design"], department="Design")
+    # Design's "Ongoing Projects" row was removed (matrix cleanup 2026-11-03); the task screens are
+    # Project Management > Department Work (head) / My Tasks (assignee), granted explicitly.
+    head = _user(db, "pm.head@x.com", assigned_apps=["design"], department="Design",
+                 granular_permissions=["projects:department_work:edit", "projects:my_tasks:edit"])
+    member = _user(db, "pm.member@x.com", assigned_apps=["design"], department="Design",
+                   granular_permissions=["projects:my_tasks:edit"])
     dept = Department(name="Design", code="DES", head_user_id=head.id)
     db.add(dept)
     db.commit()

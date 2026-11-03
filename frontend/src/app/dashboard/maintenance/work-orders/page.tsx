@@ -15,6 +15,9 @@ import { useCan } from '@/lib/permissions'
 import { formatDate } from '@/lib/format'
 import { PRIORITY_LABELS, WO_STATUS_LABELS, WO_TYPE_LABELS, formatINR, formatMinutes } from '@/components/maintenance/labels'
 import Select from '@/components/shared/Select'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleWorkOrders } from '@/lib/maintenancePreviewSamples'
 
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', assigned: '#2563EB', in_progress: '#F59E0B', on_hold: '#9333EA', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
 const PRIORITY_HEX: Record<string, string> = { standard: '#475569', urgent: '#DC2626' }
@@ -24,12 +27,19 @@ const inputStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
 }
 const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }
+const COLUMNS = ['Number', 'Asset', 'Title', 'Type', 'Priority', 'Technician', 'Planned', 'Downtime', 'Cost', 'Status']
+// Columns a role may hide (Role editor > Maintenance > Work Orders > Visibility). Number, Cost and Status always show.
+const HIDEABLE: Record<string, string> = {
+  Asset: 'asset', Title: 'title', Type: 'type', Priority: 'priority', Technician: 'technician', Planned: 'planned', Downtime: 'downtime',
+}
 
 export default function MaintenanceWorkOrdersPage() {
   const { isAuthorized, isLoading } = useRequireApp('maintenance')
   const { can } = useCan()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const vis = useVisibility('maintenance:work_orders')
 
   const [orders, setOrders] = useState<MaintenanceWorkOrder[]>([])
   const [loading, setLoading] = useState(true)
@@ -44,12 +54,14 @@ export default function MaintenanceWorkOrdersPage() {
   const [lookups, setLookups] = useState<MaintenanceLookups | null>(null)
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     maintenanceApi.getLookups().then(setLookups).catch(() => { /* plant filter is optional */ })
-  }, [isAuthorized])
+  }, [isAuthorized, vis.preview])
 
   useEffect(() => {
     if (!isAuthorized) return
+    // Role editor preview: made-up rows, nothing is loaded.
+    if (vis.preview) { setOrders(sampleWorkOrders); setLoading(false); return }
     const params: Record<string, unknown> = {}
     if (statusFilter) params.status = statusFilter
     else if (openOnly) params.open_only = true
@@ -66,13 +78,15 @@ export default function MaintenanceWorkOrdersPage() {
         .finally(() => { if (!ignore) setLoading(false) })
     }, 250)
     return () => { ignore = true; clearTimeout(t) }
-  }, [isAuthorized, statusFilter, typeFilter, mine, openOnly, branchFilter, search])
+  }, [isAuthorized, statusFilter, typeFilter, mine, openOnly, branchFilter, search, vis.preview])
 
   if (isLoading || !isAuthorized) return null
+  // The preview draws every column (hidden ones dimmed, with a toggle); normal use drops the hidden ones.
+  const columns = COLUMNS.filter((h) => !HIDEABLE[h] || vis.preview || vis.showColumn('work_orders', HIDEABLE[h]))
 
   return (
     <div>
-      <MaintenanceNav />
+      {!vis.preview && <MaintenanceNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
@@ -84,6 +98,7 @@ export default function MaintenanceWorkOrdersPage() {
         {can('maintenance', 'work_orders', 'create') && <button
           data-tour="maint-wo-new-btn"
           onClick={() => router.push('/dashboard/maintenance/work-orders/new')}
+          disabled={vis.preview}
           style={primaryBtnStyle}
         >
           + New Work Order
@@ -129,37 +144,35 @@ export default function MaintenanceWorkOrdersPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1150 }}>
           <thead>
             <tr>
-              {['Number', 'Asset', 'Title', 'Type', 'Priority', 'Technician', 'Planned', 'Downtime', 'Cost', 'Status'].map((h, hi) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}{hi === 0 && <RowCount count={orders.length} />}
-                </th>
-              ))}
+              {columns.map((h, hi) => HIDEABLE[h]
+                ? <VisTh key={h} vis={vis} table="work_orders" k={HIDEABLE[h]} style={thStyle}>{h}</VisTh>
+                : <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={orders.length} />}</th>)}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={columns.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : orders.length === 0 ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={columns.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 {search || statusFilter || typeFilter || mine || branchFilter ? 'No work orders match these filters.' : 'No open work orders. Breakdown requests become work orders once maintenance picks them up.'}
               </td></tr>
             ) : (
               orders.map((w) => {
                 const downtime = w.downtime_minutes ?? w.live_downtime_minutes
                 return (
-                  <tr key={w.id} onClick={() => router.push(recordPath('/dashboard/maintenance/work-orders', w))} style={{ cursor: 'pointer' }}>
+                  <tr key={w.id} onClick={vis.preview ? undefined : () => router.push(recordPath('/dashboard/maintenance/work-orders', w))} style={{ cursor: 'pointer' }}>
                     <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{w.wo_number}</td>
-                    <td style={cellStyle}><span style={{ fontWeight: 600 }}>{w.asset_code}</span> <span style={{ color: TEXT.muted }}>{w.asset_name}</span></td>
-                    <td style={{ ...cellStyle, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={w.title}>{w.title}</td>
-                    <td style={cellStyle}>{WO_TYPE_LABELS[w.wo_type] || w.wo_type}</td>
-                    <td style={cellStyle}>
+                    <VisTd vis={vis} table="work_orders" k="asset" style={cellStyle}><span style={{ fontWeight: 600 }}>{w.asset_code}</span> <span style={{ color: TEXT.muted }}>{w.asset_name}</span></VisTd>
+                    <VisTd vis={vis} table="work_orders" k="title" style={{ ...cellStyle, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={w.title}>{w.title}</VisTd>
+                    <VisTd vis={vis} table="work_orders" k="type" style={cellStyle}>{WO_TYPE_LABELS[w.wo_type] || w.wo_type}</VisTd>
+                    <VisTd vis={vis} table="work_orders" k="priority" style={cellStyle}>
                       <Pill label={priorityLabel(w.priority)} hex={PRIORITY_HEX[normalizePriority(w.priority)]} />
-                    </td>
-                    <td style={cellStyle}>{w.assigned_to_name || <span style={{ color: '#b45309' }}>Unassigned</span>}</td>
-                    <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{formatDate(w.planned_start)}</td>
-                    <td style={{ ...cellStyle, whiteSpace: 'nowrap', color: w.machine_down && w.downtime_minutes == null ? '#DC2626' : TEXT.body }}>
+                    </VisTd>
+                    <VisTd vis={vis} table="work_orders" k="technician" style={cellStyle}>{w.assigned_to_name || <span style={{ color: '#b45309' }}>Unassigned</span>}</VisTd>
+                    <VisTd vis={vis} table="work_orders" k="planned" style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{formatDate(w.planned_start)}</VisTd>
+                    <VisTd vis={vis} table="work_orders" k="downtime" style={{ ...cellStyle, whiteSpace: 'nowrap', color: w.machine_down && w.downtime_minutes == null ? '#DC2626' : TEXT.body }}>
                       {w.machine_down ? formatMinutes(downtime) : '—'}
-                    </td>
+                    </VisTd>
                     <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{w.total_cost ? formatINR(w.total_cost) : '—'}</td>
                     <td style={cellStyle}>
                       <Pill label={WO_STATUS_LABELS[w.status] || w.status} hex={STATUS_HEX[w.status]} />

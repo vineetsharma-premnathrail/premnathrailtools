@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import get_db
+from app.core import visibility
 from app.core.permissions import (
     ensure_can_delete, require_any_app_access, require_app_access, require_feature_action, require_tab_access, require_tab_action,
 )
@@ -28,6 +29,9 @@ from app.modules.crm.schemas.organization import (
 from app.utils.notifications import broadcast_notification, notify_user
 
 router = APIRouter(prefix="/crm/organizations", tags=["CRM - Organizations"])
+
+# Role-wise visibility key of this screen (core/features/crm.py).
+VIS_KEY = "crm:organizations"
 
 
 def _write_audit(db: Session, org_id: int, action: str, user: User, summary: str | None = None):
@@ -233,6 +237,8 @@ async def create_organization(
     ).first()
     if name_clash:
         raise HTTPException(status_code=409, detail="A customer organization with this name already exists")
+    # Role-wise visibility: a scope the role doesn't offer (e.g. International) is refused with the real reason.
+    visibility.ensure_option_allowed(user, VIS_KEY, "org_scope", payload.org_scope)
     if payload.org_scope == "domestic" and payload.gst_number:
         _check_gst_free(db, payload.gst_number, None)
     if payload.org_scope == "international" and payload.tax_vat_id:
@@ -339,6 +345,8 @@ async def update_organization(
         raise HTTPException(status_code=422, detail="Organization Scope can't be empty. Choose Domestic or International, or leave it unchanged.")
     new_scope = updates.get("org_scope") or org.org_scope
     scope_changed = new_scope != org.org_scope
+    if scope_changed:  # visibility checks only a CHANGED scope — an old record keeps its own
+        visibility.ensure_option_allowed(user, VIS_KEY, "org_scope", new_scope)
     msg = wrong_scope_message(new_scope, **{k: v for k, v in updates.items() if k != "org_scope"})
     if msg:
         raise HTTPException(status_code=422, detail=msg)

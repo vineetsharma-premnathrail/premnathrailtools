@@ -26,6 +26,9 @@ import { PINNED_INQUIRY_TENDER_KEY } from '@/lib/crmShortcuts'
 import { recordHref, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { priorityLabel } from '@/lib/priority'
+import { useVisibility, type VisibilityApi } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleInquiries, sampleOrganizations, sampleTenders } from '@/lib/crmPreviewSamples'
 
 const PINNED_KEY = PINNED_INQUIRY_TENDER_KEY
 
@@ -86,17 +89,26 @@ function matchesStat(r: { kind: Kind; status: string }, key: StatKey): boolean {
   }
 }
 
+/** A list header cell: the ID column is always there; every other one carries the role-wise toggle. */
+function ColTh({ vis, k, ...rest }: { vis: VisibilityApi; k: string } & React.ThHTMLAttributes<HTMLTableCellElement>) {
+  return k === 'universal_id' ? <th {...rest} /> : <VisTh vis={vis} table="inquiries_tenders" k={k} {...rest} />
+}
+
 export default function InquiriesPage() {
   const { user, isAuthorized, isLoading } = useRequireApp('crm')
+  // Role-wise visibility: columns a role hides (header AND cells from the same check; the ID column always shows).
+  // In the Role editor's preview (vis.preview) the list draws sample rows and loads nothing.
+  const vis = useVisibility('crm:inquiries_tenders')
+  const showCol = (key: string) => key === 'universal_id' || vis.showColumn('inquiries_tenders', key)
   const { can } = useCan()
   const [showExport, setShowExport] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [inquiries, setInquiries] = useState<Inquiry[]>([])
-  const [tenders, setTenders] = useState<Tender[]>([])
-  const [organizations, setOrganizations] = useState<Organization[]>([])
-  const [loading, setLoading] = useState(true)
+  const [inquiries, setInquiries] = useState<Inquiry[]>(vis.preview ? sampleInquiries : [])
+  const [tenders, setTenders] = useState<Tender[]>(vis.preview ? sampleTenders : [])
+  const [organizations, setOrganizations] = useState<Organization[]>(vis.preview ? sampleOrganizations : [])
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState('')
 
   const [search, setSearch] = useState('')
@@ -163,12 +175,12 @@ export default function InquiriesPage() {
   }
 
   useEffect(() => {
-    if (isAuthorized) load()
+    if (isAuthorized && !vis.preview) load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized])
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     const t = setTimeout(load, 300)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -265,13 +277,16 @@ export default function InquiriesPage() {
     }
   }
 
-  const columns: { label: string; key: SortKey | ColFilterKey | 'kind' | 'org_name' | 'secondary' | 'product'; type: 'sort' | 'filter' | 'none'; sortLabels?: [string, string] }[] = [
+  const allColumns: { label: string; key: SortKey | ColFilterKey | 'kind' | 'org_name' | 'secondary' | 'product'; type: 'sort' | 'filter' | 'none'; sortLabels?: [string, string] }[] = [
     { label: 'ID', key: 'universal_id', type: 'sort' },
     { label: 'Customer Organization', key: 'org_name', type: 'none' },
     { label: 'Product', key: 'product', type: 'none' },
     { label: 'Created Date', key: 'created_at', type: 'sort', sortLabels: ['Old', 'Latest'] },
     { label: 'Created By', key: 'created_by_name', type: 'filter' },
   ]
+  const columns = allColumns.filter((col) => vis.preview || showCol(col.key))
+  // Fixed widths so headers don't shift when the Inquiry/Tender filter changes the rows (the trailing col is kept as it was).
+  const colWidths: Record<string, number | string> = { universal_id: 190, org_name: '21%', product: '16%', created_at: '22%', created_by_name: '13%' }
 
   const sortedRows = useMemo(() => {
     const cmp = (a: CombinedRow, b: CombinedRow) => {
@@ -397,13 +412,8 @@ export default function InquiriesPage() {
       <div style={{ ...panelOuterStyle, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100, tableLayout: 'fixed' }}>
-          {/* Fixed widths so headers don't shift when the Inquiry/Tender filter changes the rows. */}
           <colgroup>
-            <col style={{ width: 190 }} />
-            <col style={{ width: '21%' }} />
-            <col style={{ width: '16%' }} />
-            <col style={{ width: '22%' }} />
-            <col style={{ width: '13%' }} />
+            {columns.map((col) => <col key={col.key} style={{ width: colWidths[col.key] }} />)}
             <col style={{ width: '13%' }} />
           </colgroup>
           <thead>
@@ -412,7 +422,7 @@ export default function InquiriesPage() {
                 if (col.type === 'filter') {
                   const key = col.key as ColFilterKey
                   return (
-                    <th key={col.key} data-tour={`iq-col-${key}`} style={{ textAlign: 'left', padding: '5px 10px', fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: colFilters[key] ? '#c2410c' : '#57534e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                    <ColTh vis={vis} k={col.key} key={col.key} data-tour={`iq-col-${key}`} style={{ textAlign: 'left', padding: '5px 10px', fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: colFilters[key] ? '#c2410c' : '#57534e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                       <Select
                         value={colFilters[key]}
                         onChange={(e) => setColFilter(key, e.target.value)}
@@ -423,18 +433,18 @@ export default function InquiriesPage() {
                           <option key={v} value={v} style={{ textTransform: 'none', color: '#1f1108' }}>{v}</option>
                         ))}
                       </Select>
-                    </th>
+                    </ColTh>
                   )
                 }
                 if (col.type === 'none') {
                   return (
-                    <th key={col.key} data-tour={`iq-col-${col.key}`} style={{ textAlign: 'left', padding: '7px 16px', fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#57534e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                    <ColTh vis={vis} k={col.key} key={col.key} data-tour={`iq-col-${col.key}`} style={{ textAlign: 'left', padding: '7px 16px', fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#57534e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                       {col.label}
-                    </th>
+                    </ColTh>
                   )
                 }
                 return (
-                  <th
+                  <ColTh vis={vis} k={col.key}
                     key={col.key}
                     onClick={() => toggleSort(col.key as SortKey)}
                     data-tour={`iq-col-${col.key}`}
@@ -451,14 +461,14 @@ export default function InquiriesPage() {
                         style={{ opacity: sortKey === col.key ? 1 : 0.35, transform: sortKey === col.key && sortDir === 'desc' ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
                     </span>
                     {col.key === 'universal_id' && <RowCount count={sortedRows.length} />}
-                  </th>
+                  </ColTh>
                 )
               })}
             </tr>
           </thead>
           <tbody data-tour="iq-table-rows">
-            {loading && <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && paged.length === 0 && <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No records found.</td></tr>}
+            {loading && <tr><td colSpan={columns.length} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
+            {!loading && paged.length === 0 && <tr><td colSpan={columns.length} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No records found.</td></tr>}
             {paged.map((r, idx) => {
               const pinned = pinnedKeys.includes(r.key)
               return (
@@ -478,10 +488,10 @@ export default function InquiriesPage() {
                     </span>
                   </div>
                 </td>
-                <td style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: '#1f1108', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.35 }}>{orgById.get(r.org_id)?.name || 'Not provided'}</td>
-                <td title={r.product} style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.product}</td>
-                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.created_at === 'Not provided' ? r.created_at : formatDate(r.created_at)}</td>
-                <td title={r.created_by_name} style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.created_by_name}</td>
+                <VisTd vis={vis} table="inquiries_tenders" k="org_name" style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: '#1f1108', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.35 }}>{orgById.get(r.org_id)?.name || 'Not provided'}</VisTd>
+                <VisTd vis={vis} table="inquiries_tenders" k="product" title={r.product} style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.product}</VisTd>
+                <VisTd vis={vis} table="inquiries_tenders" k="created_at" style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.created_at === 'Not provided' ? r.created_at : formatDate(r.created_at)}</VisTd>
+                <VisTd vis={vis} table="inquiries_tenders" k="created_by_name" title={r.created_by_name} style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.created_by_name}</VisTd>
               </tr>
               )
             })}
@@ -496,7 +506,7 @@ export default function InquiriesPage() {
   if (!selectedRef) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-        <CrmNav />
+        {!vis.preview && <CrmNav />}
         {header}
         {fullTable}
       </div>

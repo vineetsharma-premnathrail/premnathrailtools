@@ -11,6 +11,7 @@ from app.modules.accounts.models.vendor import Vendor
 from app.modules.accounts.models.vendor_invoice import VendorInvoice
 from app.modules.main.models.module_setting import ModuleSetting
 from app.modules.p2p.models.goods_receipt import P2PGoodsReceiptItem
+from app.modules.p2p.models.purchase_order import P2PPurchaseOrderItem
 from app.modules.store.models.stock_balance import StoreStockBalance
 from app.modules.store.models.stock_transaction import StoreStockTransaction
 from app.tests.p2p_workflow_helpers import master_item
@@ -24,7 +25,8 @@ RTV = "/api/v1/p2p/vendor-returns"
 
 
 def _received(client, db, tag, qty=5):
-    """PR → approved PO (100 / unit) → GRN of `qty` accepted into a store."""
+    """PR → approved PO (100 / unit) → GRN of `qty` accepted into a store (the item has no Quality-check flag, so the
+    GRN posts into Free stock and completes when it is recorded)."""
     db.add(ModuleSetting(module_key="store", key="valuation_enabled", value=True))
     db.commit()
     item = master_item(db, f"Item {tag}", code=f"RM-{tag}", uom="NOS")
@@ -36,9 +38,8 @@ def _received(client, db, tag, qty=5):
     po = _po_for(client, buyer, pr["id"])
     grn = _grn(client, buyer, po, loc, qty)
     assert grn.status_code == 200, grn.text
-    done = _inspect_all(client, buyer, grn.json())
-    assert done.status_code == 200, done.text
-    return item, loc, buyer, po, done.json()
+    assert grn.json()["status"] == "completed"
+    return item, loc, buyer, po, grn.json()
 
 
 def _on_hand(db, item, loc):
@@ -119,7 +120,7 @@ def test_return_accepted_goods_reduces_stock_and_reopens_po_for_replacement(clie
     assert [x["rtv_number"] for x in listed] == [rtv["rtv_number"]]
 
 
-def test_return_of_rejected_goods_is_recorded_without_stock(client, db):
+def test_return_of_rejected_asset_goods_is_recorded_without_stock(client, db):
     db.add(ModuleSetting(module_key="store", key="valuation_enabled", value=True))
     db.commit()
     item = master_item(db, "Item RTV2", code="RM-RTV2", uom="NOS")
@@ -129,18 +130,23 @@ def test_return_of_rejected_goods_is_recorded_without_stock(client, db):
     buyer = _purchaser(db, "buyer.rtv2@premnathrail.com")
     _approve_and_raise_po(client, db, pr, buyer)
     po = _po_for(client, buyer, pr["id"])
+    # Rejected goods are never in store stock only on an asset line (accepted / rejected on the GRN, capitalised by
+    # Finance); a Quality-flagged item's rejects sit in Blocked stock and go back through the NCR.
+    db.query(P2PPurchaseOrderItem).filter_by(id=po["items"][0]["id"]).update({"item_category": "asset"})
+    db.commit()
     grn = _grn(client, buyer, po, loc, 5).json()
+    assert grn["items"][0]["quality_status"] == "pending"
     done = client.post(f"{GRN}/{grn['id']}/inspect", json={"items": [{
         "item_id": grn["items"][0]["id"], "accepted_quantity": 3, "rejected_quantity": 2, "quality_status": "partial",
         "rejection_reason": "Dimension out of tolerance"}]}, headers=auth_header(buyer))
     assert done.status_code == 200, done.text
-    assert _on_hand(db, item, loc) == 3
+    assert _on_hand(db, item, loc) == 0  # an asset line never touches store stock
 
     r = client.post(RTV, json={"goods_receipt_id": grn["id"], "reason": "quality_rejection",
                                "items": [{"grn_item_id": grn["items"][0]["id"], "source": "rejected", "quantity": 2}]},
                     headers=auth_header(buyer))
     assert r.status_code == 201, r.text
-    assert _on_hand(db, item, loc) == 3  # rejected goods were never in stock
+    assert _on_hand(db, item, loc) == 0  # rejected goods were never in stock
     assert db.get(P2PGoodsReceiptItem, grn["items"][0]["id"]).rejected_returned_quantity == 2
     more = client.post(RTV, json={"goods_receipt_id": grn["id"], "reason": "quality_rejection",
                                   "items": [{"grn_item_id": grn["items"][0]["id"], "source": "rejected", "quantity": 1}]},
@@ -178,4 +184,5 @@ def test_store_keeper_of_another_plant_cannot_return_or_inspect(client, db):
     replacement = _grn(client, buyer, po_now, loc, 2).json()
     r = _inspect_all(client, keeper, replacement)
     assert r.status_code == 403 and "outside your" in r.json()["detail"], r.text
-    assert _inspect_all(client, buyer, replacement).status_code == 200
+    done = _inspect_all(client, buyer, replacement)  # nothing left to inspect: the replacement completed on receipt
+    assert done.status_code == 409 and "already been completed" in done.json()["detail"]

@@ -13,10 +13,16 @@ import { productionEngineeringLookups } from '@/lib/productionEngineeringApi'
 import { useCan } from '@/lib/permissions'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import Select from '@/components/shared/Select'
+import { useVisibility } from '@/lib/visibility'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
+import { sampleBom } from '@/lib/productionPreviewSamples'
 
 // SAP item categories (CS01): stock = reserved + issued from Store;
 // non-stock = bought directly for the order; text / document = information lines.
 const CATEGORY_LABELS: Record<string, string> = { stock: 'Stock', non_stock: 'Non-stock', text: 'Text', document: 'Document' }
+const CONTROL_KEY_LABELS: Record<string, string> = { internal: 'Internal', external: 'External (job work)' }
+const CONFIRM_LABELS: Record<string, string> = { optional: 'Optional', required: 'Required', none: 'None (milestone)' }
+const keysOf = (labels: Record<string, string>) => Object.keys(labels)
 
 const inputStyle = sheetInput
 const labelStyle = sheetLabel
@@ -43,6 +49,11 @@ const blankItem = (): ItemRow => ({
 let rowKey = 0
 const nextKey = () => ++rowKey
 
+/** Two form columns; when the role hides every section of the right one, the left one takes the full width. */
+function Columns({ showRight, left, right }: { showRight: boolean; left: React.ReactNode; right: React.ReactNode }) {
+  return showRight ? <SheetColumns left={left} right={right} /> : <div style={{ padding: '20px 24px' }}>{left}</div>
+}
+
 export default function BomForm({
   initial,
   submitLabel,
@@ -66,6 +77,18 @@ export default function BomForm({
 }) {
   // Job-work charges are cost data (Production › BOM › costs switch).
   const seeCosts = useCan().canFeature('production', 'bom', 'costs', 'view')
+  // What the user's roles let them see here (Role & Permissions › Production › BOM & Routing › Visibility). In the
+  // Role editor's "Preview & choose" the form shows sample lines: nothing loads, nothing saves, no nav / Back.
+  const vis = useVisibility('production:bom')
+  const seed = initial ?? (vis.preview ? sampleBom : null)
+  // Coded values the role may pick; a saved BOM keeps the values its lines already hold (the server checks changes only).
+  const allowedCats = vis.options('item_category', keysOf(CATEGORY_LABELS), (v) => v)
+  const allowedKeys = vis.options('control_key', keysOf(CONTROL_KEY_LABELS), (v) => v)
+  const allowedConfirms = vis.options('confirmation', keysOf(CONFIRM_LABELS), (v) => v)
+  const pickDefault = (allowed: string[], preferred: string) => (allowed.includes(preferred) ? preferred : allowed[0] || preferred)
+  const choicesFor = (allowed: string[], labels: Record<string, string>, current: string, held: boolean) =>
+    Object.entries(labels).filter(([v]) => allowed.includes(v) || (held && v === current))
+  const newItem = (): ItemRow => ({ ...blankItem(), item_category: pickDefault(allowedCats, 'stock') })
   const [productId, setProductId] = useState(initial ? String(initial.product_item_id) : '')
   const [baseQty, setBaseQty] = useState(String(initial?.base_quantity ?? 1))
   const [description, setDescription] = useState(initial?.description || '')
@@ -74,16 +97,16 @@ export default function BomForm({
   const [validTo, setValidTo] = useState(initial?.valid_to || '')
   const [changeNumber, setChangeNumber] = useState(initial?.change_number || '')
   const [items, setItems] = useState<ItemRow[]>(
-    initial?.items.map((i) => ({
+    seed?.items.map((i) => ({
       key: nextKey(), component_item_id: i.component_item_id ? String(i.component_item_id) : '', quantity: String(i.quantity),
       scrap_percent: String(i.scrap_percent), remarks: i.remarks || '', item_category: i.item_category || 'stock',
       line_text: i.line_text || '', document_id: i.document_id ? String(i.document_id) : '', make_buy: i.make_buy || null,
       source_tag: i.source_tag || null,
     }))
-    || [blankItem()],
+    || [newItem()],
   )
   const [ops, setOps] = useState<OpRow[]>(
-    initial?.operations.map((o) => ({
+    seed?.operations.map((o) => ({
       key: nextKey(), sequence: String(o.sequence), operation_name: o.operation_name, workstation_id: o.workstation_id ? String(o.workstation_id) : '',
       setup_hours: String(o.setup_hours), run_hours_per_unit: String(o.run_hours_per_unit), requires_inspection: o.requires_inspection, instructions: o.instructions || '',
       control_key: o.control_key || 'internal', confirmation: o.confirmation || 'optional', print_on_job_card: o.print_on_job_card !== false,
@@ -97,21 +120,22 @@ export default function BomForm({
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
 
-  const draft = useFormDraft(initial ? null : 'production-bom-new',
+  const draft = useFormDraft(initial || vis.preview ? null : 'production-bom-new',
     { productId, baseQty, description, remarks, validFrom, validTo, changeNumber, items, ops },
     (d) => {
       setProductId(d.productId ?? ''); setBaseQty(d.baseQty ?? '1'); setDescription(d.description ?? ''); setRemarks(d.remarks ?? '')
       setValidFrom(d.validFrom ?? ''); setValidTo(d.validTo ?? ''); setChangeNumber(d.changeNumber ?? '')
-      setItems(d.items?.length ? d.items.map((r) => ({ ...r, key: nextKey() })) : [blankItem()])
+      setItems(d.items?.length ? d.items.map((r) => ({ ...r, key: nextKey() })) : [newItem()])
       setOps((d.ops ?? []).map((o) => ({ ...o, key: nextKey() })))
     })
 
   useEffect(() => {
+    if (vis.preview) return
     productionApi.lookupItems({ limit: 5000 }).then(setItemOptions).catch((err) => setError(extractErrorMessages(err, 'Failed to load Store items.')))
     productionApi.lookupWorkstations().then(setWorkstations).catch((err) => setError(extractErrorMessages(err, 'Failed to load workstations.')))
     productionEngineeringLookups.vendors().then(setVendors).catch((err) => setError(extractErrorMessages(err, 'Failed to load job-work vendors.')))
     productionEngineeringLookups.designDocuments().then(setDocuments).catch(() => setDocuments([]))
-  }, [])
+  }, [vis.preview])
 
   const itemSelectOptions = useMemo(() => itemOptions.map((i) => ({ value: String(i.id), label: i.label })), [itemOptions])
   const uomOf = (id: string) => itemOptions.find((i) => String(i.id) === id)?.extra || ''
@@ -122,12 +146,14 @@ export default function BomForm({
     const maxSeq = ops.reduce((m, o) => Math.max(m, Number(o.sequence) || 0), 0)
     setOps([...ops, {
       key: nextKey(), sequence: String(maxSeq + 10), operation_name: '', workstation_id: '', setup_hours: '0', run_hours_per_unit: '0',
-      requires_inspection: false, instructions: '', control_key: 'internal', confirmation: 'optional', print_on_job_card: true, vendor_id: '', external_cost: '',
+      requires_inspection: false, instructions: '', control_key: pickDefault(allowedKeys, 'internal'), confirmation: pickDefault(allowedConfirms, 'optional'),
+      print_on_job_card: true, vendor_id: '', external_cost: '',
     }])
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (vis.preview) return
     setError('')
     if (!productId) { setError('Pick the product this BOM builds.'); return }
     const base = Number(baseQty)
@@ -177,17 +203,22 @@ export default function BomForm({
   }
 
   const filledCount = items.filter((r) => r.component_item_id || r.line_text || r.document_id).length
+  // Values a saved BOM's lines already hold stay offered on that BOM.
+  const heldCat = (v: string) => !!initial && initial.items.some((i) => (i.item_category || 'stock') === v)
+  const heldKey = (v: string) => !!initial && initial.operations.some((o) => (o.control_key || 'internal') === v)
+  const heldConfirm = (v: string) => !!initial && initial.operations.some((o) => (o.confirmation || 'optional') === v)
+  const notesShown = vis.anySection(['notes'])
 
   return (
     <form onSubmit={handleSubmit}>
-      <FormPage icon={initial ? 'edit' : 'box'} title={title} subtitle={subtitle} onBack={onBack} backTour={backTour} nav={nav}
+      <FormPage icon={initial ? 'edit' : 'box'} title={title} subtitle={subtitle} onBack={vis.preview ? undefined : onBack} backTour={backTour} nav={vis.preview ? undefined : nav}
         footer={<>
           <button type="button" onClick={onBack} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
-          <button data-tour="production-bom-form-submit-btn" type="submit" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+          <button data-tour="production-bom-form-submit-btn" type="submit" disabled={saving || vis.preview} style={sheetBtn('primary', SHEET.BLUE, saving)}>
             <SheetIcon name={initial ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : submitLabel}
           </button>
         </>}>
-        <SheetColumns
+        <Columns showRight={notesShown}
           left={<>
             <DraftBanner draft={draft} />
             {error && (
@@ -195,6 +226,7 @@ export default function BomForm({
                 {Array.isArray(error) ? error.join(' ') : error}
               </div>
             )}
+            <VisSection vis={vis} k="product">
             <SheetSection icon="box" title="Product">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div data-tour="production-bom-form-product" style={{ flex: '1 1 300px', maxWidth: 480 }}>
@@ -214,6 +246,8 @@ export default function BomForm({
                 Component quantities below are per {baseQty || '1'} unit(s) of the product. The product must exist in the Store item master.
               </p>
             </SheetSection>
+            </VisSection>
+            <VisSection vis={vis} k="validity_change">
             <SheetSection icon="calendar" title="Validity & Change" extra={<Optional />}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ flex: '0 1 170px', minWidth: 150 }}>
@@ -233,8 +267,10 @@ export default function BomForm({
                 Work orders can only use this version when their planned start falls inside its validity. A future &quot;Valid From&quot; keeps the current version in force until the day before.
               </p>
             </SheetSection>
+            </VisSection>
           </>}
           right={
+            <VisSection vis={vis} k="notes">
             <SheetSection icon="chat" title="Notes" extra={<Optional />}>
               <div data-tour="production-bom-form-description">
                 <label style={labelStyle}>Description</label>
@@ -245,13 +281,15 @@ export default function BomForm({
                 <textarea style={{ ...inputStyle, minHeight: 72, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
               </div>
             </SheetSection>
+            </VisSection>
           }
         />
 
         <div style={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
+          <VisSection vis={vis} k="components">
           <SheetSection icon="list" title={`Components (${filledCount})`}
             extra={<button data-tour="production-bom-form-add-component-btn" type="button" style={{ ...sheetBtn('secondary'), marginLeft: 'auto' }}
-              onClick={() => setItems([...items, blankItem()])}>
+              onClick={() => setItems([...items, newItem()])}>
               <SheetIcon name="plus" size={14} />Add Component
             </button>}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -260,7 +298,7 @@ export default function BomForm({
                   <div style={{ flex: '0 1 130px', minWidth: 120 }}>
                     <label style={labelStyle}>Category</label>
                     <Select style={inputStyle} value={r.item_category} onChange={(e) => updateItem(r.key, { item_category: e.target.value })}>
-                      {Object.entries(CATEGORY_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      {choicesFor(allowedCats, CATEGORY_LABELS, r.item_category, heldCat(r.item_category)).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </Select>
                   </div>
                   {r.item_category === 'text' ? (
@@ -297,8 +335,11 @@ export default function BomForm({
               ))}
               {items.length === 0 && <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>No components yet — a BOM needs at least one before it can be activated.</p>}
             </div>
+            <VisOptionValues vis={vis} dropdown="item_category" />
           </SheetSection>
+          </VisSection>
 
+          <VisSection vis={vis} k="routing">
           <SheetSection icon="gear" title={`Routing Operations (${ops.length})`}
             extra={<button data-tour="production-bom-form-add-op-btn" type="button" style={{ ...sheetBtn('secondary'), marginLeft: 'auto' }} onClick={addOp}><SheetIcon name="plus" size={14} />Add Operation</button>}>
             <p style={{ ...sheetHint, margin: '0 0 12px' }}>
@@ -337,16 +378,13 @@ export default function BomForm({
                   <div style={{ flex: '0 1 130px', minWidth: 120 }}>
                     <label style={labelStyle}>Control key</label>
                     <Select style={inputStyle} value={o.control_key} onChange={(e) => updateOp(o.key, { control_key: e.target.value })}>
-                      <option value="internal">Internal</option>
-                      <option value="external">External (job work)</option>
+                      {choicesFor(allowedKeys, CONTROL_KEY_LABELS, o.control_key, heldKey(o.control_key)).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </Select>
                   </div>
                   <div style={{ flex: '0 1 140px', minWidth: 130 }}>
                     <label style={labelStyle}>Confirmation</label>
                     <Select style={inputStyle} value={o.confirmation} onChange={(e) => updateOp(o.key, { confirmation: e.target.value })}>
-                      <option value="optional">Optional</option>
-                      <option value="required">Required</option>
-                      <option value="none">None (milestone)</option>
+                      {choicesFor(allowedConfirms, CONFIRM_LABELS, o.confirmation, heldConfirm(o.confirmation)).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </Select>
                   </div>
                   <div style={{ flex: '0 1 100px', minWidth: 90, display: 'flex', flexDirection: 'column' }}>
@@ -379,7 +417,10 @@ export default function BomForm({
               ))}
               {ops.length === 0 && <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>No operations yet. A work order needs at least one operation before it can be released.</p>}
             </div>
+            <VisOptionValues vis={vis} dropdown="control_key" />
+            <VisOptionValues vis={vis} dropdown="confirmation" />
           </SheetSection>
+          </VisSection>
         </div>
       </FormPage>
     </form>

@@ -102,8 +102,10 @@ def test_legacy_access_translation():
     keep, standard = legacy_access(["store", "erp", "quality"], ["project_create"], ["quality:ncr:view", "crm:dashboard:view"])
     assert standard == ["store"]                       # untouched module -> Standard (migrated) role
     assert "quality:ncr:view" in keep and not any(g.startswith("crm:") for g in keep)  # unassigned module dropped
-    # Machines (moved to Project Management 2026-10-26) come out under their new id.
-    assert "projects:service_projects:create" in keep and "projects:service_projects:delete" not in keep  # from legacy ids
+    # Machines (moved to Project Management 2026-10-26, merged into All Projects 2026-11-02) come out under their
+    # new id; create is an authority grant there (it also creates PM projects), so it is left for an admin to give.
+    assert "projects:all_projects:view" in keep and "projects:all_projects:edit" not in keep
+    assert "projects:all_projects:create" not in keep and "projects:all_projects:delete" not in keep
     assert "store:settings:edit" not in standard_module_grants("store")               # authority left out
 
 

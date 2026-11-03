@@ -4,8 +4,12 @@ import { pillStyle } from '@/components/shared/ui'
 import Select from '@/components/shared/Select'
 import { useEffect, useRef, useState } from 'react'
 import { hrApi } from '@/lib/api'
+import { useVisibility } from '@/lib/visibility'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
+import PreviewSafeSheet from '@/lib/visibilityPreviews/PreviewSafeSheet'
+import { sampleLeavePreview } from '@/lib/hrPreviewSamples'
 import { HrLeavePreview, HrLeaveType } from '@/types'
-import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import { SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
 import { useFormDraft } from '@/lib/formDraft'
@@ -19,6 +23,10 @@ function fmtDays(v: string | number | null | undefined) {
 function ddmmyyyy(iso: string) {
   return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : ''
 }
+
+// Coded half-day sessions (backend hr/models/leave.py LEAVE_SESSIONS); a role may narrow them
+// (Organization › Role & Permissions › HR › Leave › Visibility) and the server refuses the rest.
+const SESSIONS = ['full', 'first_half', 'second_half'] as const
 
 // Apply-for-leave form with a live day count from the server (weekly offs and
 // plant holidays excluded, half days, balance and every policy check). Used by
@@ -45,7 +53,7 @@ export default function LeaveApplyForm({
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [pickedFromSession, setFromSession] = useState('full')
-  const [toSession, setToSession] = useState('full')
+  const [pickedToSession, setToSession] = useState('full')
   const [reason, setReason] = useState('')
   const [contact, setContact] = useState('')
   const [file, setFile] = useState<File | null>(null)
@@ -54,18 +62,26 @@ export default function LeaveApplyForm({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
+  const vis = useVisibility('hr:leave')
+  const allowedSessions = vis.options('session', [...SESSIONS], (s) => s)
+  const sessionAllowed = (s: string) => allowedSessions.includes(s as typeof SESSIONS[number])
 
   // Derived instead of synced in effects: default to the first leave type, and
-  // a multi-day leave can't start with only the first half.
+  // a multi-day leave can't start with only the first half. A session the role
+  // may not pick falls back to the first allowed one.
   const leaveTypeId = pickedTypeId || (types[0] ? String(types[0].id) : '')
   const lt = types.find((t) => String(t.id) === leaveTypeId)
   const single = !!fromDate && (!toDate || toDate === fromDate)
-  const fromSession = !single && pickedFromSession === 'first_half' ? 'full' : pickedFromSession
-  const preview = leaveTypeId && fromDate ? rawPreview : null
+  const fallbackSession = allowedSessions[0] || 'full'
+  const fromSession0 = sessionAllowed(pickedFromSession) ? pickedFromSession : fallbackSession
+  const fromSession = !single && fromSession0 === 'first_half' ? (sessionAllowed('full') ? 'full' : fallbackSession) : fromSession0
+  const toSession = sessionAllowed(pickedToSession) ? pickedToSession : fallbackSession
+  // Role editor "Preview & choose" (vis.preview): a made-up day count, nothing is sent, no draft.
+  const preview = vis.preview ? sampleLeavePreview : leaveTypeId && fromDate ? rawPreview : null
 
   const draft = useFormDraft(
-    `hr-leave-apply-${userId ?? 'self'}`,
-    { pickedTypeId, fromDate, toDate, pickedFromSession, toSession, reason, contact },
+    vis.preview ? null : `hr-leave-apply-${userId ?? 'self'}`,
+    { pickedTypeId, fromDate, toDate, pickedFromSession, toSession: pickedToSession, reason, contact },
     (d: { pickedTypeId?: string; fromDate?: string; toDate?: string; pickedFromSession?: string; toSession?: string; reason?: string; contact?: string }) => {
       setLeaveTypeId(d.pickedTypeId || ''); setFromDate(d.fromDate || ''); setToDate(d.toDate || '')
       setFromSession(d.pickedFromSession || 'full'); setToSession(d.toSession || 'full')
@@ -74,7 +90,7 @@ export default function LeaveApplyForm({
   )
 
   useEffect(() => {
-    if (!leaveTypeId || !fromDate) return
+    if (!leaveTypeId || !fromDate || vis.preview) return
     const to = toDate || fromDate
     const handle = setTimeout(() => {
       setPreviewing(true)
@@ -88,7 +104,7 @@ export default function LeaveApplyForm({
         .finally(() => setPreviewing(false))
     }, 350)
     return () => clearTimeout(handle)
-  }, [leaveTypeId, fromDate, toDate, fromSession, toSession, file, userId])
+  }, [leaveTypeId, fromDate, toDate, fromSession, toSession, file, userId, vis.preview])
 
   const submit = async () => {
     setError([])
@@ -118,15 +134,15 @@ export default function LeaveApplyForm({
 
   // Offs/holidays charged by the sandwich rule (portion > 0) are counted, so not listed here.
   const skipped = preview?.breakdown.filter((d) => d.kind !== 'working' && !Number(d.portion)) || []
-  const canSubmit = !!preview && preview.errors.length === 0 && !submitting && !previewing && !!reason.trim()
+  const canSubmit = !vis.preview && !!preview && preview.errors.length === 0 && !submitting && !previewing && !!reason.trim()
 
   const close = onCancel ?? (() => {})
   return (
-    <FormSheet tour="hr-leave-form-sheet" icon="calendar" title={title || 'Apply for leave'}
+    <PreviewSafeSheet inline={vis.preview} tour="hr-leave-form-sheet" icon="calendar" title={title || 'Apply for leave'}
       subtitle={subtitle || 'Weekly offs and plant holidays are not counted. The request goes to the approver shown on the right.'}
       onClose={close} busy={submitting}
       footer={<>
-        {onCancel && <button type="button" style={sheetBtn('secondary', SHEET.INK, submitting)} disabled={submitting} onClick={onCancel}>Cancel</button>}
+        {onCancel && <button type="button" style={sheetBtn('secondary', SHEET.INK, submitting)} disabled={submitting || vis.preview} onClick={onCancel}>Cancel</button>}
         <button type="button" data-tour="hr-leave-form-submit" disabled={!canSubmit} onClick={submit} style={sheetBtn('primary', SHEET.BLUE, !canSubmit)}>
           <SheetIcon name="send" size={16} />{submitting ? 'Submitting…' : 'Submit request'}
         </button>
@@ -139,7 +155,14 @@ export default function LeaveApplyForm({
               {error.join(' ')}
             </div>
           )}
-          {employeePicker && <SheetSection icon="user" title="Employee">{employeePicker}</SheetSection>}
+          {/* With the Days & Balance box hidden for this role, the policy checks still have to be seen. */}
+          {!vis.preview && !vis.showSection('days_balance') && preview && preview.errors.length > 0 && (
+            <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+              {preview.errors.join(' ')}
+            </div>
+          )}
+          {employeePicker && <VisSection vis={vis} k="employee"><SheetSection icon="user" title="Employee">{employeePicker}</SheetSection></VisSection>}
+          <VisSection vis={vis} k="leave">
           <SheetSection icon="calendar" title="Leave">
             <div style={{ maxWidth: 320, marginBottom: 12 }}>
               <label style={sheetLabel}>Leave type <Req /></label>
@@ -155,10 +178,11 @@ export default function LeaveApplyForm({
               <div style={{ flex: '0 1 150px', minWidth: 140 }}>
                 <label style={sheetLabel}>{single ? 'Session' : 'Start session'}</label>
                 <Select data-tour="hr-leave-form-from-session" style={sheetInput} value={fromSession} onChange={(e) => setFromSession(e.target.value)}>
-                  <option value="full">Full day</option>
-                  {lt?.allow_half_day !== false && (single ? <option value="first_half">First half</option> : null)}
-                  {lt?.allow_half_day !== false && <option value="second_half">{single ? 'Second half' : 'From second half'}</option>}
+                  {sessionAllowed('full') && <option value="full">Full day</option>}
+                  {lt?.allow_half_day !== false && sessionAllowed('first_half') && (single ? <option value="first_half">First half</option> : null)}
+                  {lt?.allow_half_day !== false && sessionAllowed('second_half') && <option value="second_half">{single ? 'Second half' : 'From second half'}</option>}
                 </Select>
+                <VisOptionValues vis={vis} dropdown="session" />
               </div>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
@@ -170,24 +194,27 @@ export default function LeaveApplyForm({
                 <div style={{ flex: '0 1 150px', minWidth: 140 }}>
                   <label style={sheetLabel}>End session</label>
                   <Select data-tour="hr-leave-form-to-session" style={sheetInput} value={toSession} onChange={(e) => setToSession(e.target.value)}>
-                    <option value="full">Full day</option>
-                    {lt?.allow_half_day !== false && <option value="first_half">Till first half</option>}
+                    {sessionAllowed('full') && <option value="full">Full day</option>}
+                    {lt?.allow_half_day !== false && sessionAllowed('first_half') && <option value="first_half">Till first half</option>}
                   </Select>
                 </div>
               )}
             </div>
           </SheetSection>
+          </VisSection>
+          <VisSection vis={vis} k="details">
           <SheetSection icon="chat" title="Details">
             <label style={sheetLabel}>Reason <Req /></label>
             <textarea data-tour="hr-leave-form-reason" style={{ ...sheetInput, minHeight: 64, resize: 'vertical' }} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Family function in hometown" />
             <label style={{ ...sheetLabel, marginTop: 14 }}>Contact during leave <Optional /></label>
             <input data-tour="hr-leave-form-contact" style={sheetInput} value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Phone / email" />
           </SheetSection>
+          </VisSection>
         </>}
         right={<>
-          <SheetSection icon="clock" title="Days & Balance">
+          <VisSection vis={vis} k="days_balance"><SheetSection icon="clock" title="Days & Balance">
             <div data-tour="hr-leave-form-preview" style={{ padding: '12px 14px', borderRadius: 12, background: '#fff', border: `1px solid ${SHEET.LINE}` }}>
-              {!fromDate ? (
+              {!fromDate && !vis.preview ? (
                 <span style={{ fontSize: 13, color: SHEET.MUTED }}>Pick the dates to see the day count, the balance and the approver.</span>
               ) : previewing && !preview ? (
                 <span style={{ fontSize: 13, color: SHEET.MUTED }}>Working out the days…</span>
@@ -220,15 +247,17 @@ export default function LeaveApplyForm({
                 </>
               ) : null}
             </div>
-          </SheetSection>
+          </SheetSection></VisSection>
+          <VisSection vis={vis} k="document">
           <SheetSection icon="clip" title="Supporting Document" extra={preview?.document_required ? <Req /> : <Optional />}>
             <input ref={fileRef} data-tour="hr-leave-form-document" type="file" accept="image/*,.pdf,.doc,.docx" onChange={(e) => setFile(e.target.files?.[0] || null)} style={sheetInput} />
             {lt?.requires_document_after_days != null && (
               <p style={sheetHint}>Required for {lt.name} longer than {fmtDays(lt.requires_document_after_days)} (e.g. a medical certificate).</p>
             )}
           </SheetSection>
+          </VisSection>
         </>}
       />
-    </FormSheet>
+    </PreviewSafeSheet>
   )
 }

@@ -8,6 +8,7 @@ import { TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import { useCan } from '@/lib/permissions'
+import { useVisibility } from '@/lib/visibility'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 import { extractErrorMessages } from '@/lib/validation'
@@ -19,15 +20,20 @@ import DocumentsTab from './tabs/DocumentsTab'
 import TasksTab from './tabs/TasksTab'
 import ProjectHistoryTab from './tabs/ProjectHistoryTab'
 import UnitsTab from './tabs/UnitsTab'
+import { PurchasesHistory, StoreIssuesHistory, TaskHistory, projectHistoryApi } from '@/components/projects/ProjectHistoryTables'
 
 // WBS, Discussions and Activity Log were removed from the UI: a project is
 // its details, its milestones, documents and history. Old ?tab= links open
-// Overview; ?tab=Tasks (before the rename) opens Milestones.
+// Overview. ?tab=Tasks opens the Tasks history tab (before the Milestones rename it opened Milestones).
 // Units = department 360 view: per vehicle / lot on old sales-order projects, one "Whole project" row otherwise.
-const TABS = ['Overview', 'Milestones', 'Units', 'Documents', 'History'] as const
+// Store Issues / Purchases / Tasks = what was issued, bought and done for the project (features of History:
+// projects:project_history.store_issues / purchases / task_history).
+const TABS = ['Overview', 'Milestones', 'Units', 'Store Issues', 'Purchases', 'Tasks', 'Documents', 'History'] as const
 const TAB_KEYS: Record<typeof TABS[number], string> = {
-  Overview: 'overview', Milestones: 'overview', Units: 'overview', Documents: 'documents', History: 'project_history',
+  Overview: 'overview', Milestones: 'overview', Units: 'overview', 'Store Issues': 'project_history', Purchases: 'project_history', Tasks: 'project_history',
+  Documents: 'documents', History: 'project_history',
 }
+const HISTORY_FEATURES: Partial<Record<typeof TABS[number], string>> = { 'Store Issues': 'store_issues', Purchases: 'purchases', Tasks: 'task_history' }
 
 // Lifecycle buttons per status — management / the project manager only.
 // Projects close from the closure panel on Overview. Resume / Release stay
@@ -47,10 +53,12 @@ export default function ProjectWorkspace({ project, onProjectUpdate, onDeleted }
   const router = useRouter()
   const params = useSearchParams()
   const asked = params.get('tab')
-  const initial = ((asked === 'Tasks' ? 'Milestones' : asked) as typeof TABS[number]) || 'Overview'
+  const initial = (asked as typeof TABS[number]) || 'Overview'
   const { can, canDelete, canFeature } = useCan()
+  // Role editor "Preview & choose" (lib/visibility.ts): a sample project, Overview tab only, no Back / actions.
+  const vis = useVisibility('projects:all_projects')
   // Milestones is a feature of Overview (core/features/projects.py: projects:overview.milestones).
-  const visibleTabs = TABS.filter((t) => t === 'Units' ? can('projects', 'overview', 'view') : (t === 'Milestones' ? canFeature('projects', 'overview', 'milestones', 'view') : can('projects', TAB_KEYS[t], 'view')))
+  const visibleTabs = vis.preview ? (['Overview'] as typeof TABS[number][]) : TABS.filter((t) => HISTORY_FEATURES[t] ? canFeature('projects', TAB_KEYS[t], HISTORY_FEATURES[t]!, 'view') : t === 'Units' ? canFeature('projects', 'overview', 'units', 'view') : (t === 'Milestones' ? canFeature('projects', 'overview', 'milestones', 'view') : can('projects', TAB_KEYS[t], 'view')))
   const [chosen, setTab] = useState<typeof TABS[number]>(TABS.includes(initial) ? initial : 'Overview')
   const tab = visibleTabs.includes(chosen) ? chosen : visibleTabs[0]
   const [pending, setPending] = useState<ActionDef | null>(null)
@@ -114,9 +122,9 @@ export default function ProjectWorkspace({ project, onProjectUpdate, onDeleted }
               </p>
             )}
           </div>
-          <button data-tour="pm-proj-back" type="button" onClick={() => router.push('/dashboard/projects/all')} style={secondaryBtnStyle}>← Back</button>
+          {!vis.preview && <button data-tour="pm-proj-back" type="button" onClick={() => router.push('/dashboard/projects/all')} style={secondaryBtnStyle}>← Back</button>}
         </div>
-        {(actions.length > 0 || showDelete) && (
+        {(actions.length > 0 || showDelete) && !vis.preview && (
           <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {actions.map((a) => (
               <button key={a.action} data-tour={`pm-proj-action-${a.action}`} type="button" disabled={busy} onClick={() => setPending(a)} style={actionBtn(a.kind, busy)}>{a.label}</button>
@@ -151,9 +159,12 @@ export default function ProjectWorkspace({ project, onProjectUpdate, onDeleted }
       {tab === 'Overview' && <OverviewTab project={project} onProjectUpdate={onProjectUpdate} />}
       {tab === 'Milestones' && <TasksTab project={project} />}
       {tab === 'Units' && <UnitsTab project={project} />}
+      {tab === 'Store Issues' && <StoreIssuesHistory reloadKey={project.id} load={() => projectHistoryApi.storeIssues('project', project.id)} />}
+      {tab === 'Purchases' && <PurchasesHistory reloadKey={project.id} load={() => projectHistoryApi.purchases('project', project.id)} />}
+      {tab === 'Tasks' && <TaskHistory reloadKey={project.id} load={() => projectHistoryApi.tasks('project', project.id)} />}
       {tab === 'Documents' && <DocumentsTab project={project} />}
       {tab === 'History' && <ProjectHistoryTab projectId={project.id} />}
-      {!tab && <Notice tone="warn">You can see this project&apos;s header, but none of its tabs (Overview, Milestones, Units, Documents, History). Ask an admin to add &apos;View&apos; on them to one of your roles in Organization › Role &amp; Permissions.</Notice>}
+      {!tab && <Notice tone="warn">You can see this project&apos;s header, but none of its tabs (Overview, Milestones, Units, Store Issues, Purchases, Tasks, Documents, History). Ask an admin to add &apos;View&apos; on them to one of your roles in Organization › Role &amp; Permissions.</Notice>}
 
       <ConfirmDialog
         open={!!pending && !pending.prompt}

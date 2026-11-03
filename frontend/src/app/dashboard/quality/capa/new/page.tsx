@@ -5,14 +5,16 @@ import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
-import { useRequireApp } from '@/hooks/useAuth'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
+import { useQualityScreen } from '@/components/quality/useQualityScreen'
+import { VisColumns } from '@/components/quality/VisColumns'
 import { qualityApi } from '@/lib/api'
 import { QualityDefectCode, QualityNcr } from '@/types'
 import QualityNav from '@/components/quality/QualityNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
+import { FormPage, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 import { ErrorBanner } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
@@ -21,13 +23,20 @@ import DraftBanner from '@/components/shared/DraftBanner'
 
 interface ItemOpt { id: number; item_code: string; item_name: string }
 
+// Coded values (backend QUALITY_CAPA_ACTION_TYPES / severities); a role may offer only some
+// (Role & Permissions › Quality › CAPA › Visibility) — the server refuses the others too.
+const TYPE_OPTIONS = [{ value: 'corrective', label: 'Corrective' }, { value: 'preventive', label: 'Preventive' }]
+const SEVERITY_OPTIONS = [{ value: 'minor', label: 'Minor' }, { value: 'major', label: 'Major' }, { value: 'critical', label: 'Critical' }]
+
 const row: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14 }
 function F({ label, flex = '1 1 200px', children }: { label: React.ReactNode; flex?: string; children: React.ReactNode }) {
   return <div style={{ flex, minWidth: 0 }}><label style={sheetLabel}>{label}</label>{children}</div>
 }
 
 export default function NewCapaPage() {
-  const { isAuthorized, isLoading } = useRequireApp('quality')
+  // What the user's roles let them see here; in the Role editor's preview nothing is loaded or saved.
+  const { vis, isAuthorized, isLoading } = useQualityScreen('quality:capa')
+  const preview = vis.preview
   const router = useRouter()
   const params = useSearchParams()
   const [items, setItems] = useState<ItemOpt[]>([])
@@ -40,10 +49,15 @@ export default function NewCapaPage() {
     title: '', action_type: 'corrective', severity: 'major', item_id: '', vendor_name: '', defect_code_id: '',
     problem_statement: '', responsible_user_id: '', due_date: '', audit_reference: '',
   })
-  const { id: linkedNcrId, error: linkError } = useRecordId(params.get('ncr'))
+  const { id: linkedNcrId, error: linkError } = useRecordId(preview ? null : params.get('ncr'))
   const [ncrIds, setNcrIds] = useState<number[]>([])
   const [ncrSearch, setNcrSearch] = useState('')
-  const draft = useFormDraft('quality-capa-new', { form, ncrIds, ncrSearch }, (d) => {
+  const typeChoices = vis.options('action_type', TYPE_OPTIONS, (o) => o.value)
+  const severityChoices = vis.options('severity', SEVERITY_OPTIONS, (o) => o.value)
+  // When the role doesn't offer a default value, the form shows (and sends) the first value it does offer.
+  const actionType = typeChoices.some((o) => o.value === form.action_type) ? form.action_type : (typeChoices[0]?.value || form.action_type)
+  const severity = severityChoices.some((o) => o.value === form.severity) ? form.severity : (severityChoices[0]?.value || form.severity)
+  const draft = useFormDraft(preview ? null : 'quality-capa-new', { form, ncrIds, ncrSearch }, (d) => {
     if (d.form) setForm((f) => ({ ...f, ...d.form }))
     if (d.ncrIds?.length) setNcrIds(d.ncrIds)
     setNcrSearch(d.ncrSearch || '')
@@ -56,12 +70,12 @@ export default function NewCapaPage() {
   }, [linkedNcrId])
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || preview) return
     qualityApi.lookupItems('').then(setItems).catch(() => setItems([]))
     qualityApi.lookupUsers().then(setUsers).catch(() => setUsers([]))
     qualityApi.listMaster('defect-codes').then(setCodes).catch(() => setCodes([]))
     qualityApi.listNcrs({ open_only: true }).then((d) => setNcrs(Array.isArray(d) ? d : [])).catch(() => setNcrs([]))
-  }, [isAuthorized])
+  }, [isAuthorized, preview])
 
   const submit = async () => {
     setError('')
@@ -69,7 +83,7 @@ export default function NewCapaPage() {
     setBusy(true)
     try {
       const capa = await qualityApi.createCapa({
-        title: form.title.trim(), action_type: form.action_type, severity: form.severity, ncr_ids: ncrIds,
+        title: form.title.trim(), action_type: actionType, severity, ncr_ids: ncrIds,
         item_id: form.item_id ? Number(form.item_id) : null, vendor_name: form.vendor_name.trim() || null,
         defect_code_id: form.defect_code_id ? Number(form.defect_code_id) : null,
         problem_statement: form.problem_statement.trim() || null, audit_reference: form.audit_reference.trim() || null,
@@ -85,35 +99,38 @@ export default function NewCapaPage() {
   }
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/capa" listLabel="Back to CAPAs" /></div>)
+  if (linkError && !preview) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/capa" listLabel="Back to CAPAs" /></div>)
   const ncrMatches = ncrSearch.trim()
     ? ncrs.filter((n) => !ncrIds.includes(n.id) && `${n.ncr_number} ${n.item_name}`.toLowerCase().includes(ncrSearch.trim().toLowerCase())).slice(0, 8)
     : []
   const back = () => router.push('/dashboard/quality/capa')
 
   return (
-    <FormPage nav={<QualityNav />} icon="shield" title="New CAPA" subtitle="Quality · CAPA (8D) — the 8D steps (team, containment, root cause, actions) are filled in on the CAPA itself." onBack={back} backTour="qa-capa-new-back"
+    <FormPage nav={preview ? undefined : <QualityNav />} icon="shield" title="New CAPA" subtitle="Quality · CAPA (8D) — the 8D steps (team, containment, root cause, actions) are filled in on the CAPA itself." onBack={preview ? undefined : back} backTour="qa-capa-new-back"
       footer={<>
-        <button type="button" onClick={back} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
-        <button type="button" onClick={submit} disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="plus" size={16} />{busy ? 'Saving…' : 'Raise CAPA'}</button>
+        <button type="button" onClick={back} disabled={busy || preview} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+        <button type="button" onClick={submit} disabled={busy || preview} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="plus" size={16} />{busy ? 'Saving…' : 'Raise CAPA'}</button>
       </>}>
-      <SheetColumns
+      <VisColumns vis={vis} rightKeys={['owner', 'linked_ncrs']}
         left={<>
           <ErrorBanner error={error} />
           <DraftBanner draft={draft} />
+          <VisSection vis={vis} k="problem">
           <SheetSection icon="alert" title="Problem">
             <label style={sheetLabel}>Title <Req /></label>
             <input style={{ ...sheetInput, marginBottom: 14 }} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="The problem in one line" autoFocus />
             <div style={row}>
               <F label="Type">
-                <Select style={sheetInput} value={form.action_type} onChange={(e) => setForm({ ...form, action_type: e.target.value })}>
-                  <option value="corrective">Corrective</option><option value="preventive">Preventive</option>
+                <Select style={sheetInput} value={actionType} onChange={(e) => setForm({ ...form, action_type: e.target.value })}>
+                  {typeChoices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </Select>
+                <VisOptionValues vis={vis} dropdown="action_type" />
               </F>
               <F label="Severity">
-                <Select style={sheetInput} value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value })}>
-                  <option value="minor">Minor</option><option value="major">Major</option><option value="critical">Critical</option>
+                <Select style={sheetInput} value={severity} onChange={(e) => setForm({ ...form, severity: e.target.value })}>
+                  {severityChoices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </Select>
+                <VisOptionValues vis={vis} dropdown="severity" />
               </F>
             </div>
             <div style={row}>
@@ -136,8 +153,10 @@ export default function NewCapaPage() {
             <textarea style={{ ...sheetInput, minHeight: 90, resize: 'vertical' }} value={form.problem_statement} onChange={(e) => setForm({ ...form, problem_statement: e.target.value })}
               placeholder="What, where, when, how many, how found" />
           </SheetSection>
+          </VisSection>
         </>}
         right={<>
+          <VisSection vis={vis} k="owner">
           <SheetSection icon="user" title="D1 — Owner">
             <label style={sheetLabel}>CAPA owner (champion)</label>
             <SearchableSelect value={form.responsible_user_id} onChange={(v) => setForm({ ...form, responsible_user_id: v })} placeholder="Select owner"
@@ -145,6 +164,8 @@ export default function NewCapaPage() {
             <label style={{ ...sheetLabel, marginTop: 14 }}>Target date</label>
             <DateField value={form.due_date} onChange={(v) => setForm({ ...form, due_date: v })} />
           </SheetSection>
+          </VisSection>
+          <VisSection vis={vis} k="linked_ncrs">
           <SheetSection icon="link" title="Linked NCRs" extra={<Optional />}>
             {ncrIds.length > 0 && (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
@@ -173,6 +194,7 @@ export default function NewCapaPage() {
               Major / Critical NCRs, repeat defects, customer complaints, vendor rating drops and audit findings raise CAPAs automatically — raise one here for anything else.
             </p>
           </SheetSection>
+          </VisSection>
         </>}
       />
     </FormPage>

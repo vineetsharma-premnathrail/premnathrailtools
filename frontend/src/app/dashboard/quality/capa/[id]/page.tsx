@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
-import { useRequireApp } from '@/hooks/useAuth'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
+import { VisSection } from '@/lib/visibilityComponents'
+import { useQualityScreen } from '@/components/quality/useQualityScreen'
+import { sampleCapa } from '@/lib/qualityPreviewSamples'
 import { qualityApi } from '@/lib/api'
 import { QualityCapa, QualityCapaMeta, QualityNcr } from '@/types'
 import { TEXT } from '@/lib/theme'
@@ -35,12 +37,28 @@ const linkStyle: React.CSSProperties = { color: '#FF6A2A', fontWeight: 600, curs
 const linkBtn: React.CSSProperties = { ...linkStyle, padding: 0, border: 'none', background: 'none', fontSize: 13.5, textAlign: 'left' }
 const smallBtn: React.CSSProperties = smallSecondaryBtnStyle
 
+/** The editable 8D fields of a CAPA (empty for none). */
+function draftOf(c: QualityCapa | null) {
+  const why = c?.why_analysis && c.why_analysis.length ? [...c.why_analysis] : ['', '', '']
+  const fishbone: Record<string, string> = {}
+  Object.entries(c?.fishbone || {}).forEach(([k, v]) => { fishbone[k] = (v || []).join('\n') })
+  return {
+    problem_statement: c?.problem_statement || '', containment_actions: c?.containment_actions || '',
+    root_cause_method: c?.root_cause_method || '', root_cause: c?.root_cause || '', why, fishbone,
+    implementation_summary: c?.implementation_summary || '', prevention_not_needed_reason: c?.prevention_not_needed_reason || '',
+  }
+}
+
 export default function CapaDetailPage() {
-  const { isAuthorized, isLoading } = useRequireApp('quality')
+  // What the user's roles let them see here. In the Role editor's preview the page shows a sample CAPA,
+  // resolves no link, loads nothing and offers no action.
+  const { vis, isAuthorized, isLoading } = useQualityScreen('quality:capa')
+  const preview = vis.preview
   const router = useRouter()
-  const { id: recordId, error: linkError } = useRecordId(useParams().id as string)
+  const routeRef = useParams().id as string
+  const { id: recordId, error: linkError } = useRecordId(preview ? null : routeRef)
   const capaId = recordId ?? 0
-  const [capa, setCapa] = useState<QualityCapa | null>(null)
+  const [capa, setCapa] = useState<QualityCapa | null>(preview ? sampleCapa : null)
   const [meta, setMeta] = useState<QualityCapaMeta | null>(null)
   const [users, setUsers] = useState<{ id: number; name: string }[]>([])
   // Role assign-to rules (core/features/quality.py) — the server enforces them on save too.
@@ -50,10 +68,7 @@ export default function CapaDetailPage() {
   const [ncrs, setNcrs] = useState<QualityNcr[]>([])
   const [error, setError] = useState<string | string[]>('')
   const [busy, setBusy] = useState(false)
-  const [d, setD] = useState({
-    problem_statement: '', containment_actions: '', root_cause_method: '', root_cause: '', why: ['', '', ''] as string[],
-    fishbone: {} as Record<string, string>, implementation_summary: '', prevention_not_needed_reason: '',
-  })
+  const [d, setD] = useState(() => draftOf(preview ? sampleCapa : null))
   const [teamAdd, setTeamAdd] = useState({ user_id: '', role: 'member', department: '' })
   const [action, setAction] = useState({ kind: 'corrective', prevention_type: '', description: '', owner_id: '', due_date: '' })
   const [doneFor, setDoneFor] = useState<number | null>(null)
@@ -69,36 +84,30 @@ export default function CapaDetailPage() {
   // Mirrors the backend: 8D edits need quality:capa:edit; the D8 verdict and reopen need quality:capa:approve;
   // an action's owner (or a Quality engineer / head) may mark it done. CAPA features
   // (core/features/quality.py) layer on top; action owners outside the CAPA tab still see their actions.
-  const canEdit = can('quality', 'capa', 'edit')
-  const canApprove = can('quality', 'capa', 'approve')
+  // The preview offers no action at all (nothing can be saved there).
+  const canEdit = !preview && can('quality', 'capa', 'edit')
+  const canApprove = !preview && can('quality', 'capa', 'approve')
   const cf = (feature: string, action: Parameters<typeof canFeature>[3]) => canFeature('quality', 'capa', feature, action)
   const holdsTab = can('quality', 'capa', 'view')
   const seeTeam = !holdsTab || cf('team', 'view')
-  const canTeam = cf('team', 'edit')
+  const canTeam = !preview && cf('team', 'edit')
   const seeActions = !holdsTab || cf('actions', 'view')
-  const canAddAction = cf('actions', 'create')
-  const canCancelAction = cf('actions', 'cancel')
+  const canAddAction = !preview && cf('actions', 'create')
+  const canCancelAction = !preview && cf('actions', 'cancel')
   const canVerdict = canApprove && cf('effectiveness', 'approve')
 
   const load = (c: QualityCapa) => {
     setCapa(c)
-    const why = c.why_analysis && c.why_analysis.length ? [...c.why_analysis] : ['', '', '']
-    const fb: Record<string, string> = {}
-    Object.entries(c.fishbone || {}).forEach(([k, v]) => { fb[k] = (v || []).join('\n') })
-    setD({
-      problem_statement: c.problem_statement || '', containment_actions: c.containment_actions || '',
-      root_cause_method: c.root_cause_method || '', root_cause: c.root_cause || '', why, fishbone: fb,
-      implementation_summary: c.implementation_summary || '', prevention_not_needed_reason: c.prevention_not_needed_reason || '',
-    })
+    setD(draftOf(c))
   }
 
   useEffect(() => {
-    if (!isAuthorized || !capaId) return
+    if (!isAuthorized || !capaId || preview) return
     qualityApi.getCapa(capaId).then(load).catch((e) => setError(extractErrorMessages(e, 'Failed to load this CAPA.')))
     qualityApi.getCapaMeta().then(setMeta).catch(() => setMeta(null))
     qualityApi.lookupUsers().then(setUsers).catch(() => setUsers([]))
     qualityApi.listNcrs({}).then((r) => setNcrs(Array.isArray(r) ? r : [])).catch(() => setNcrs([]))
-  }, [isAuthorized, capaId])
+  }, [isAuthorized, capaId, preview])
 
   const openSheet = (s: typeof sheet) => { setError(''); setSheet(s) }
   const closeSheet = () => { if (!busy) { setSheet(''); setError('') } }
@@ -116,7 +125,7 @@ export default function CapaDetailPage() {
   }
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/capa" listLabel="Back to CAPAs" /></div>)
+  if (linkError && !preview) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/capa" listLabel="Back to CAPAs" /></div>)
   if (!capa) {
     return (
       <div>
@@ -153,10 +162,11 @@ export default function CapaDetailPage() {
   const setTeam = (members: { user_id: number; role: string; department?: string | null }[]) =>
     run(() => qualityApi.setCapaTeam(capa.id, members), 'Failed to update the team.', () => { setTeamAdd({ user_id: '', role: 'member', department: '' }); setSheet('') })
   const doneAction = capa.actions.find((a) => a.id === doneFor)
+  const previewNote = (text: string) => <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{text}</p>
 
   return (
     <div>
-      <QualityNav />
+      {!preview && <QualityNav />}
       <PromptDialog open={cancelFor !== null} title="Cancel this action?" message="Give the reason the action is no longer needed." requireValue
         confirmLabel="Cancel action" onCancel={() => setCancelFor(null)}
         onConfirm={(reason) => { const id = cancelFor as number; setCancelFor(null); run(() => qualityApi.capaActionCancel(capa.id, id, reason), 'Failed to cancel the action.') }} />
@@ -168,13 +178,20 @@ export default function CapaDetailPage() {
         onConfirm={(reason) => { setReopenOpen(false); run(() => qualityApi.reopenCapa(capa.id, reason), 'Failed to reopen the CAPA.') }} />
 
       <PageHeader title={capa.capa_number} subtitle={`Quality · CAPA (8D) · ${CAPA_TRIGGER_LABELS[capa.trigger] || capa.trigger}`}>
-        <button type="button" onClick={() => router.push('/dashboard/quality/capa')} style={secondaryBtnStyle}>← Back</button>
+        {!preview && <button type="button" onClick={() => router.push('/dashboard/quality/capa')} style={secondaryBtnStyle}>← Back</button>}
       </PageHeader>
       {!sheet && <ErrorBanner error={error} />}
       {/* D8 verdicts are recorded in Organization › Approval Workflows › CAPA effectiveness (D8). */}
-      <ApprovalPanel key={capa.status} entityType="quality_capa" entityId={capa.id} title="D8 approval"
-        onChanged={() => { qualityApi.getCapa(capa.id).then(load).catch((e) => setError(extractErrorMessages(e, 'Failed to reload this CAPA.'))) }} />
+      <VisSection vis={vis} k="detail_approval">
+      {preview ? (
+        <Section title="D8 approval" style={{ marginBottom: 20 }}>{previewNote('Who has to approve the D8 effectiveness verdict and who already did.')}</Section>
+      ) : (
+        <ApprovalPanel key={capa.status} entityType="quality_capa" entityId={capa.id} title="D8 approval"
+          onChanged={() => { qualityApi.getCapa(capa.id).then(load).catch((e) => setError(extractErrorMessages(e, 'Failed to reload this CAPA.'))) }} />
+      )}
+      </VisSection>
 
+      <VisSection vis={vis} k="detail_summary">
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
         {STEPS.map((s, i) => {
           const reached = stepIndex >= i
@@ -182,8 +199,10 @@ export default function CapaDetailPage() {
         })}
         {capa.reopen_count > 0 && <span style={{ fontSize: 11.5, color: '#b91c1c', alignSelf: 'center' }}>Reopened {capa.reopen_count}×</span>}
       </div>
+      </VisSection>
 
       <DetailCard>
+        <VisSection vis={vis} k="detail_summary">
         <DetailSummary
           title={capa.title}
           text={`${capa.action_type === 'preventive' ? 'Preventive' : 'Corrective'} action raised for: ${CAPA_TRIGGER_LABELS[capa.trigger] || capa.trigger}.`}
@@ -196,6 +215,8 @@ export default function CapaDetailPage() {
             <span>·</span><span>Target {fmtDate(capa.due_date)}</span>
           </>}
         />
+        </VisSection>
+        <VisSection vis={vis} k="detail_concerns">
         <DetailGroup title="What it concerns" last>
           <DetailRow label="Item">{capa.item_name}</DetailRow>
           <DetailRow label="Vendor">{capa.vendor_name}</DetailRow>
@@ -203,13 +224,14 @@ export default function CapaDetailPage() {
           {capa.audit_reference && <DetailRow label="Audit reference">{capa.audit_reference}</DetailRow>}
           {capa.complaint_id && (
             <DetailRow label="Customer complaint">
-              <button type="button" style={linkBtn} onClick={() => router.push(recordPath('/dashboard/quality/complaints', capa, 'complaint_id'))}>{capa.complaint_number}</button>
+              <button type="button" style={linkBtn} disabled={preview} onClick={() => router.push(recordPath('/dashboard/quality/complaints', capa, 'complaint_id'))}>{capa.complaint_number}</button>
             </DetailRow>
           )}
         </DetailGroup>
+        </VisSection>
       </DetailCard>
 
-      {seeTeam && <Section title="D1 — Team" style={{ marginBottom: 20 }}>
+      {seeTeam && <VisSection vis={vis} k="detail_team"><Section title="D1 — Team" style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
           <div style={{ flex: '1 1 240px', maxWidth: 320 }}>
             <Field label="CAPA owner (champion)">
@@ -235,8 +257,9 @@ export default function CapaDetailPage() {
           <div><button type="button" disabled={busy} style={secondaryBtnStyle}
             onClick={() => { setTeamAdd({ user_id: '', role: 'member', department: '' }); openSheet('team') }}>+ Add team member</button></div>
         )}
-      </Section>}
+      </Section></VisSection>}
 
+      <VisSection vis={vis} k="detail_problem">
       <Section title="D2 — Problem & linked NCRs" style={{ marginBottom: 20 }}>
         <Field label="Problem description (what, where, when, how many, how found)">
           <textarea style={{ ...inputStyle, minHeight: 80 }} disabled={!analysisEditable || !canEdit} value={d.problem_statement} onChange={(e) => setD({ ...d, problem_statement: e.target.value })} />
@@ -245,7 +268,7 @@ export default function CapaDetailPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {capa.ncrs.map((n) => (
               <span key={n.id} style={{ fontSize: 13 }}>
-                <span style={linkStyle} onClick={() => router.push(recordPath('/dashboard/quality/ncr', n))}>{n.ncr_number}</span>
+                <span style={linkStyle} onClick={preview ? undefined : () => router.push(recordPath('/dashboard/quality/ncr', n))}>{n.ncr_number}</span>
                 {' '}· {fmtDate(n.ncr_date)} · {n.item_name} · {fmtQty(n.quantity, n.uom)} · <Pill text={n.severity} hex={SEVERITY_HEX[n.severity]} /> {NCR_STATUS_LABELS[n.status] || n.status}
               </span>
             ))}
@@ -255,14 +278,18 @@ export default function CapaDetailPage() {
           <div><button type="button" disabled={busy} style={secondaryBtnStyle} onClick={() => { setNcrPick(''); openSheet('ncr') }}>+ Link another NCR</button></div>
         )}
       </Section>
+      </VisSection>
 
+      <VisSection vis={vis} k="detail_containment">
       <Section title="D3 — Containment" style={{ marginBottom: 20 }}>
         <Field label="Containment actions (sort stock, hold dispatch, inform customer, check units in the field)">
           <textarea style={{ ...inputStyle, minHeight: 70 }} disabled={closed || capa.status === 'effectiveness_check' || !canEdit} value={d.containment_actions}
             onChange={(e) => setD({ ...d, containment_actions: e.target.value })} />
         </Field>
       </Section>
+      </VisSection>
 
+      <VisSection vis={vis} k="detail_root_cause">
       <Section title="D4 — Root cause" style={{ marginBottom: 20 }}>
         <div style={{ flex: '0 1 220px', maxWidth: 260 }}>
           <Field label="Method">
@@ -316,7 +343,9 @@ export default function CapaDetailPage() {
           </div>
         )}
       </Section>
+      </VisSection>
 
+      <VisSection vis={vis} k="detail_actions">
       <Section title="D5 / D7 — Actions (owner + due date) and D6 evidence" style={{ marginBottom: 20 }}>
         {!seeActions ? null : activeActions.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No actions yet.</p> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -337,7 +366,7 @@ export default function CapaDetailPage() {
                   {a.cancel_reason ? ` · cancelled: ${a.cancel_reason}` : ''}
                 </p>
                 {a.evidence && <p style={{ fontSize: 12.5, margin: '4px 0 0' }}>Evidence: {a.evidence}{a.evidence_reference ? ` [${a.evidence_reference}]` : ''}</p>}
-                {a.status === 'open' && !closed && (canEdit || canApprove || a.owner_id === user?.id) && (
+                {a.status === 'open' && !closed && !preview && (canEdit || canApprove || a.owner_id === user?.id) && (
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                     <button type="button" style={smallBtn} onClick={() => { setDoneFor(a.id); setEvidence({ evidence: '', evidence_reference: '' }); openSheet('done') }}>Record evidence & mark done</button>
                     {canCancelAction && <button type="button" style={smallDangerBtnStyle} onClick={() => setCancelFor(a.id)}>Cancel action</button>}
@@ -380,8 +409,10 @@ export default function CapaDetailPage() {
           </details>
         )}
       </Section>
+      </VisSection>
 
       {(capa.status === 'effectiveness_check' || closed || capa.effectiveness_result) && (
+        <VisSection vis={vis} k="detail_effectiveness">
         <Section title="D8 — Effectiveness & closure" style={{ marginBottom: 20 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
             <InfoRow label="Actions completed" value={fmtDate(capa.actions_completed_at)} />
@@ -405,14 +436,19 @@ export default function CapaDetailPage() {
             <div><button type="button" disabled={busy} style={dangerBtnStyle} onClick={() => setReopenOpen(true)}>Reopen CAPA</button></div>
           )}
         </Section>
+        </VisSection>
       )}
 
       {!['open', 'reopened'].includes(capa.status) && (
+        <VisSection vis={vis} k="detail_report">
         <Section title="8D report" style={{ marginBottom: 20 }}>
-          <QualityRecordDoc title="8D report" hint="The full 8D on the company letterhead — also the customer response for a complaint CAPA."
-            entityType="quality_8d_report" entityId={capa.id} pdfKind="8d-report" canModify={canEdit} revision={capa.report_revision}
-            downloadName={`8D-Report-${capa.capa_number}${capa.report_revision ? `-R${capa.report_revision}` : ''}`} />
+          {preview ? previewNote('The full 8D on the company letterhead — also the customer response for a complaint CAPA.') : (
+            <QualityRecordDoc title="8D report" hint="The full 8D on the company letterhead — also the customer response for a complaint CAPA."
+              entityType="quality_8d_report" entityId={capa.id} pdfKind="8d-report" canModify={canEdit} revision={capa.report_revision}
+              downloadName={`8D-Report-${capa.capa_number}${capa.report_revision ? `-R${capa.report_revision}` : ''}`} />
+          )}
         </Section>
+        </VisSection>
       )}
 
       {sheet === 'team' && (

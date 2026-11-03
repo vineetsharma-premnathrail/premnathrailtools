@@ -20,6 +20,9 @@ import {
   SYSTEM_TYPE_LABELS, SYSTEM_TYPE_HEX, SYSTEM_STATUS_LABELS, TEST_TYPE_LABELS, SERVICE_TYPE_LABELS, flowUnit, useHydCosts, withUnit,
 } from '@/components/hydraulic/labels'
 import { useCan } from '@/lib/permissions'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection } from '@/lib/visibilityComponents'
+import { sampleSystems } from '@/lib/hydraulicPreviewSamples'
 
 const STATUS_HEX: Record<string, string> = {
   design: '#78716c', under_build: '#2563EB', testing: '#7C3AED', commissioned: '#0f766e',
@@ -103,13 +106,18 @@ export default function HydSystemDetailPage() {
   const router = useRouter()
   const params = useParams()
   const ref = params.id as string
-  const { id: resolvedId, error: linkError } = useRecordId(ref)
+  // Role visibility (Role & Permissions › Hydraulic & Pneumatic › Systems › Visibility). In the Role editor's
+  // "Preview & choose" the page draws a made-up system and loads / saves nothing.
+  const vis = useVisibility('hydraulic:systems')
+  const preview = vis.preview
+  const { id: resolvedId, error: linkError } = useRecordId(preview ? null : ref)
   const systemId = resolvedId ?? 0
+  const previewRelated = { rows: [], loaded: true }
 
-  const [system, setSystem] = useState<HydSystem | null>(null)
-  const [circuits, setCircuits] = useState<Related<HydCircuit>>(emptyRelated)
-  const [boms, setBoms] = useState<Related<HydBom>>(emptyRelated)
-  const [tests, setTests] = useState<Related<HydTest>>(emptyRelated)
+  const [system, setSystem] = useState<HydSystem | null>(preview ? sampleSystems[0] : null)
+  const [circuits, setCircuits] = useState<Related<HydCircuit>>(preview ? previewRelated : emptyRelated)
+  const [boms, setBoms] = useState<Related<HydBom>>(preview ? previewRelated : emptyRelated)
+  const [tests, setTests] = useState<Related<HydTest>>(preview ? previewRelated : emptyRelated)
   // Service records are retired (rule R5); only open legacy jobs are surfaced so they can be cancelled.
   const [openServices, setOpenServices] = useState<HydServiceRecord[]>([])
   const [error, setError] = useState<string | string[]>('')
@@ -117,7 +125,7 @@ export default function HydSystemDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => {
-    if (!isAuthorized || !systemId) return
+    if (!isAuthorized || !systemId || preview) return
     hydraulicApi.getSystem(systemId)
       .then(setSystem)
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load system.')))
@@ -128,7 +136,7 @@ export default function HydSystemDetailPage() {
     hydraulicApi.listServiceRecords(q)
       .then((rows: HydServiceRecord[]) => setOpenServices((Array.isArray(rows) ? rows : []).filter((r) => r.status === 'open' || r.status === 'in_progress')))
       .catch(() => setOpenServices([]))
-  }, [isAuthorized, systemId])
+  }, [isAuthorized, systemId, preview])
 
   const handleDelete = async () => {
     setConfirmDelete(false)
@@ -141,8 +149,8 @@ export default function HydSystemDetailPage() {
   }
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><HydraulicNav /><InvalidRecordLink message={linkError} listHref="/dashboard/hydraulic/systems" listLabel="Back to systems" /></div>)
-  if (!resolvedId) return <div><HydraulicNav /></div>
+  if (linkError && !preview) return (<div><HydraulicNav /><InvalidRecordLink message={linkError} listHref="/dashboard/hydraulic/systems" listLabel="Back to systems" /></div>)
+  if (!resolvedId && !preview) return <div><HydraulicNav /></div>
 
   const go = (path: string) => () => router.push(`/dashboard/hydraulic/${path}`)
   const newFor = (entity: string) => go(`${entity}/new?system_id=${ref}`)
@@ -150,7 +158,7 @@ export default function HydSystemDetailPage() {
 
   return (
     <div>
-      <HydraulicNav />
+      {!preview && <HydraulicNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
@@ -161,12 +169,12 @@ export default function HydSystemDetailPage() {
             <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{system ? system.system_number : 'System'}</h1>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        {!preview && <div style={{ display: 'flex', gap: 8 }}>
           {system && canDelete('hydraulic', 'systems', (system as { created_by_id?: number | null } | null)?.created_by_id ?? null) && (
             <button data-tour="hyd-sysd-delete-btn" type="button" onClick={() => setConfirmDelete(true)} style={{ ...secondaryBtnStyle, color: DANGER.primary, borderColor: DANGER.border }}>Delete</button>
           )}
           <button data-tour="hyd-sysd-back-btn" onClick={() => router.push('/dashboard/hydraulic/systems')} type="button" style={secondaryBtnStyle}>← Back</button>
-        </div>
+        </div>}
       </div>
 
       {error && (
@@ -203,6 +211,7 @@ export default function HydSystemDetailPage() {
           )}
 
           <DetailCard tour="hyd-sysd-info">
+            <VisSection vis={vis} k="detail_summary">
             <DetailSummary
               title={system.name}
               text={system.description || `${SYSTEM_TYPE_LABELS[system.system_type] || system.system_type} system${system.application ? ` for ${system.application}` : ''}.`}
@@ -213,8 +222,10 @@ export default function HydSystemDetailPage() {
                   {system.owner_name && <span>· Owner {system.owner_name}</span>}
                 </span>
               )}
-              actions={canEditSystem ? <button data-tour="hyd-sysd-edit-btn" type="button" style={secondaryBtnStyle} onClick={() => { setSaved(false); setEditOpen(true) }}>Edit</button> : undefined}
+              actions={canEditSystem && !preview ? <button data-tour="hyd-sysd-edit-btn" type="button" style={secondaryBtnStyle} onClick={() => { setSaved(false); setEditOpen(true) }}>Edit</button> : undefined}
             />
+            </VisSection>
+            <VisSection vis={vis} k="detail_where_used">
             <DetailGroup title="Where it is used">
               <DetailRow label="Application">{system.application}</DetailRow>
               {system.order_project_number && (
@@ -227,7 +238,9 @@ export default function HydSystemDetailPage() {
               <DetailRow label="Plant">{system.branch_name}</DetailRow>
               <DetailRow label="Loco / machine serial">{system.equipment_ref}</DetailRow>
             </DetailGroup>
-            <DetailGroup title="Design parameters" last={!system.remarks}>
+            </VisSection>
+            <VisSection vis={vis} k="detail_parameters">
+            <DetailGroup title="Design parameters" last={!system.remarks || !vis.showSection('detail_remarks')}>
               <DetailRow label="Working pressure">{dash(withUnit(system.working_pressure_bar, 'bar'))}</DetailRow>
               <DetailRow label="Max pressure">{dash(withUnit(system.max_pressure_bar, 'bar'))}</DetailRow>
               <DetailRow label="Flow rate">{dash(withUnit(system.flow_rate, flowUnit(system.system_type)))}</DetailRow>
@@ -240,10 +253,13 @@ export default function HydSystemDetailPage() {
                 {system.operating_temp_min_c != null || system.operating_temp_max_c != null ? `${numText(system.operating_temp_min_c)} to ${numText(system.operating_temp_max_c)} °C` : null}
               </DetailRow>
             </DetailGroup>
+            </VisSection>
             {system.remarks && (
+              <VisSection vis={vis} k="detail_remarks">
               <DetailGroup last>
                 <DetailRow label="Remarks">{system.remarks}</DetailRow>
               </DetailGroup>
+              </VisSection>
             )}
           </DetailCard>
           {editOpen && (
@@ -265,9 +281,10 @@ export default function HydSystemDetailPage() {
           )}
 
           <div style={{ marginTop: 20 }}>
+            <VisSection vis={vis} k="detail_circuits">
             <RelatedCard<HydCircuit>
               tourId="hyd-sysd-circuits"
-              title="Circuits" related={circuits} newLabel="+ New circuit" onNew={newFor('circuits')} canNew={can('hydraulic', 'circuits', 'create')}
+              title="Circuits" related={circuits} newLabel="+ New circuit" onNew={newFor('circuits')} canNew={!preview && can('hydraulic', 'circuits', 'create')}
               empty="No circuit drawings yet — add the circuit diagram so it can go through review and approval."
               render={(c) => (
                 <div key={c.id} onClick={go(recordPath('circuits', c))} style={rowStyle}>
@@ -278,10 +295,12 @@ export default function HydSystemDetailPage() {
                 </div>
               )}
             />
+            </VisSection>
 
+            <VisSection vis={vis} k="detail_boms">
             <RelatedCard<HydBom>
               tourId="hyd-sysd-boms"
-              title="Bills of Material" related={boms} newLabel="+ New BOM" onNew={newFor('bom')} canNew={can('hydraulic', 'bom', 'create')}
+              title="Bills of Material" related={boms} newLabel="+ New BOM" onNew={newFor('bom')} canNew={!preview && can('hydraulic', 'bom', 'create')}
               empty="No BOM yet — build one from the component master to get a cost roll-up for this system."
               render={(b) => (
                 <div key={b.id} onClick={go(recordPath('bom', b))} style={rowStyle}>
@@ -292,10 +311,12 @@ export default function HydSystemDetailPage() {
                 </div>
               )}
             />
+            </VisSection>
 
+            <VisSection vis={vis} k="detail_tests">
             <RelatedCard<HydTest>
               tourId="hyd-sysd-tests"
-              title="Tests" related={tests} newLabel="+ New test" onNew={newFor('testing')} canNew={can('hydraulic', 'testing', 'create')}
+              title="Tests" related={tests} newLabel="+ New test" onNew={newFor('testing')} canNew={!preview && can('hydraulic', 'testing', 'create')}
               empty="No tests recorded — plan a pressure, leak or functional test before commissioning."
               render={(t) => (
                 <div key={t.id} onClick={go(recordPath('testing', t))} style={rowStyle}>
@@ -308,11 +329,21 @@ export default function HydSystemDetailPage() {
                 </div>
               )}
             />
+            </VisSection>
 
           </div>
 
-          <HydDocumentsPanel entityType="system" entityId={system.id} title="System Documents" defaultDocType="ga_drawing"
-            currentUserId={user?.id} isAdmin={user?.role === 'admin'} />
+          <VisSection vis={vis} k="detail_documents">
+            {preview ? (
+              <div style={cardStyle}>
+                <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>System Documents</h2>
+                <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>The system&apos;s GA drawings, datasheets and manuals show here.</p>
+              </div>
+            ) : (
+              <HydDocumentsPanel entityType="system" entityId={system.id} title="System Documents" defaultDocType="ga_drawing"
+                currentUserId={user?.id} isAdmin={user?.role === 'admin'} />
+            )}
+          </VisSection>
         </>
       )}
 

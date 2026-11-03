@@ -19,6 +19,7 @@ from datetime import date, datetime, timezone
 
 from fastapi import HTTPException
 
+from app.core import visibility
 from app.core.priority import PRIORITY_LABELS, map_legacy_priority
 from app.core.priority import parse_priority as _parse_priority
 
@@ -26,6 +27,9 @@ PRIORITIES = dict(PRIORITY_LABELS)
 WORK_STATUSES = {"not_started": "Not started", "in_progress": "In progress", "on_hold": "On hold"}
 MAX_CHECKLIST_ITEMS = 50
 MAX_ITEM_LEN = 300
+# Role-wise visibility entry of R&D Tasks > Create Task (core/features/rnd.py): the priority a role may pick.
+# Checked here so every route that makes or edits a task (requirement, prototype, project, sub-task) shares it.
+TASKS_VISIBILITY_KEY = "rnd:tasks"
 
 
 def parse_priority(value: str | None) -> str:
@@ -170,20 +174,23 @@ def fields_out(task) -> dict:
     }
 
 
-def apply_create(task, *, priority: str | None, start_date: str | None, work_status: str | None, checklist: str | None) -> None:
+def apply_create(task, *, priority: str | None, start_date: str | None, work_status: str | None, checklist: str | None,
+                 user) -> None:
     task.priority = parse_priority(priority)
+    visibility.ensure_option_allowed(user, TASKS_VISIBILITY_KEY, "priority", task.priority)
     task.start_date = parse_start_date(start_date, task.due_date)
     task.work_status = parse_work_status(work_status)
     task.checklist = parse_checklist_form(checklist)
     task.progress_percent = checklist_progress(task) or 0
 
 
-def apply_edit(task, data: dict, actor_name: str) -> list[str]:
+def apply_edit(task, data: dict, actor_name: str, user) -> list[str]:
     """Edit-form changes to the planning fields; returns lines for the activity log."""
     changes: list[str] = []
     if "priority" in data and data["priority"] is not None:
         p = parse_priority(data["priority"])
         if p != map_legacy_priority(task.priority):
+            visibility.ensure_option_allowed(user, TASKS_VISIBILITY_KEY, "priority", p)  # only a CHANGED value
             changes.append(f"Priority: {priority_label(task.priority)} → {PRIORITIES[p]}")
             task.priority = p
     if "start_date" in data:

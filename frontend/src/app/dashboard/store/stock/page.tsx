@@ -328,7 +328,7 @@ export default function StoreStockPage() {
               ...(seeValues ? [{ label: 'Stock Value', value: loading ? '…' : inr(totals.value), hint: totals.unpriced ? <Link href="/dashboard/store" style={{ color: '#c2410c', fontWeight: 600 }}>{totals.unpriced} line{totals.unpriced === 1 ? '' : 's'} with no rate — set cost</Link> : 'At moving average / standard cost', color: TEXT.heading }] : []),
               { label: 'Stores Holding Stock', value: loading ? '…' : storeSummary.length.toLocaleString('en-IN'), hint: `${distinctItems.toLocaleString('en-IN')} distinct item${distinctItems === 1 ? '' : 's'}`, color: TEXT.heading },
               { label: 'At / Below Reorder', value: loading ? '…' : totals.low ? String(totals.low) : 'None', hint: 'Available ≤ item reorder level', color: totals.low ? '#dc2626' : TEXT.muted },
-              { label: 'In Quality', value: loading ? '…' : totals.quality ? String(totals.quality) : 'None', hint: 'Waiting for inspection decision', color: totals.quality ? '#2563EB' : TEXT.muted },
+              { label: 'In Quality', value: loading ? '…' : totals.quality ? String(totals.quality) : 'None', hint: 'Waiting for the quality check decision', color: totals.quality ? '#2563EB' : TEXT.muted },
               { label: 'Blocked', value: loading ? '…' : totals.blocked ? String(totals.blocked) : 'None', hint: 'Quarantined — cannot be issued', color: totals.blocked ? '#b45309' : TEXT.muted },
               ...(inTransit != null ? [{ label: 'Transfers In Transit', value: inTransit ? String(inTransit) : 'None', hint: "Dispatched, not yet received — on neither store's balance", color: inTransit ? '#7c3aed' : TEXT.muted }] : []),
             ].map((k) => (

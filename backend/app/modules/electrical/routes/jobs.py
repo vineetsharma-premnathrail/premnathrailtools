@@ -3,7 +3,7 @@ from datetime import date, datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
-from app.core import assignee_rules
+from app.core import assignee_rules, visibility
 from app.core.priority import parse_priority
 from app.core.permission_registry import can_feature
 from app.core.permissions import (
@@ -52,6 +52,8 @@ _CAN_CANCEL = require_feature_action("electrical", "jobs", "job_status", "cancel
 _CAN_REQUEST_QC = require_feature_action("electrical", "jobs", "handover", "submit")
 # "Assign to" rules (core/features/electrical.py).
 LEAD_RULE = "electrical:jobs.lead_engineer"
+# Role visibility catalogue entry (core/features/electrical.py): job priority values per role.
+VISIBILITY_KEY = "electrical:jobs"
 STAGE_RULE = "electrical:jobs.stages"
 
 # Job fields that belong to a feature block of the job page.
@@ -235,6 +237,9 @@ async def create_job(
     data = payload.model_dump()
     data["title"] = data["title"].strip()
     _validate(db, data)
+    # Role visibility (Role & Permissions › Electrical › RRV Electrical Jobs › Visibility): a priority the role does
+    # not offer is refused with the reason (the form's default Standard is checked too).
+    visibility.ensure_option_allowed(user, VISIBILITY_KEY, "priority", parse_priority(data.get("priority")))  # blank = Standard
     _ensure_assignee_rule(db, user, LEAD_RULE, data.get("lead_engineer_id"))
     clean_op_link(db, data)
     if data.get("order_project_id"):
@@ -311,6 +316,9 @@ async def update_job(
             updates["priority"] = parse_priority(updates["priority"])
         else:
             updates.pop("priority")
+    if updates.get("priority") and updates["priority"] != job.priority:
+        # Only a CHANGED priority is checked: a job already at one this role may not pick keeps it.
+        visibility.ensure_option_allowed(user, VISIBILITY_KEY, "priority", updates["priority"])
     _guard_feature_fields(user, job, updates)
     if "title" in updates and updates["title"]:
         updates["title"] = updates["title"].strip()

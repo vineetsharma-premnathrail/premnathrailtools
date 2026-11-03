@@ -1,8 +1,9 @@
 'use client'
 
 // R&D › R&D Tasks (renamed from My Tasks) — every R&D task on one page: Requirement
-// tasks (given on a requirement R&D has accepted) and Prototype tasks (given on a
-// Prototype / Research project). "Create Task" asks for the Type first; the tiles,
+// tasks (given on a requirement R&D has accepted), Prototype tasks (given on a
+// Prototype / Research project) and Project tasks (given on a Project Management
+// › All Projects project). "Create Task" asks for the Type first; the tiles,
 // the table and the grouped views all follow the same filters. PM tasks stay in
 // Project Management › My Tasks. People without the "All R&D tasks & analytics"
 // feature (and who are not heads) see only the tasks assigned to or created by them.
@@ -47,15 +48,16 @@ const inputStyle: React.CSSProperties = { ...sharedInputStyle, width: 'auto', ba
 type Draft = { parent: string; user: string; department: string; type: string; status: string; priority: string; from: string; to: string; band: string }
 const EMPTY: Draft = { parent: '', user: '', department: '', type: '', status: '', priority: '', from: '', to: '', band: '' }
 
-/** Draft → the API filters. parent = "requirement:<id>" or "project:<id>". */
+/** Draft → the API filters. parent = "requirement:<id>", "project:<id>" or "pm_project:<id>". */
 function toFilters(d: Draft, q: string): RndTaskFilters {
   const f: RndTaskFilters = {}
   const [kind, id] = d.parent.split(':')
   if (kind === 'requirement' && id) f.requirement_id = Number(id)
   if (kind === 'project' && id) f.rnd_project_id = Number(id)
+  if (kind === 'pm_project' && id) f.pm_project_id = Number(id)
   if (d.user) f.assigned_to_id = Number(d.user)
   if (d.department) f.department = d.department
-  if (d.type === 'requirement' || d.type === 'prototype') f.type = d.type
+  if (d.type === 'requirement' || d.type === 'prototype' || d.type === 'project') f.type = d.type
   if (d.status) f.status = d.status
   if (d.priority === 'standard' || d.priority === 'urgent') f.priority = d.priority as Priority
   if (d.from) f.due_from = d.from
@@ -87,6 +89,7 @@ export default function RndTasksPage() {
   const [users, setUsers] = useState<DirectoryUser[]>([])
   const [reqs, setReqs] = useState<{ value: string; label: string }[]>([])
   const [projs, setProjs] = useState<{ value: string; label: string }[]>([])
+  const [pmProjs, setPmProjs] = useState<{ value: string; label: string }[]>([])
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -95,6 +98,8 @@ export default function RndTasksPage() {
       .map((r) => ({ value: `requirement:${r.requirement_id}`, label: r.rd_number || r.universal_id })))).catch(() => setReqs([]))
     rndApi.listProjects().then((rows: { id: number; project_number: string; title: string }[]) => setProjs((Array.isArray(rows) ? rows : [])
       .sort((a, b) => a.project_number.localeCompare(b.project_number, undefined, { numeric: true })).map((p) => ({ value: `project:${p.id}`, label: `${p.project_number} — ${p.title}` })))).catch(() => setProjs([]))
+    rndApi.pmProjectOptions().then((rows) => setPmProjs((Array.isArray(rows) ? rows : []).slice().sort((a, b) => a.project_code.localeCompare(b.project_code, undefined, { numeric: true }))
+      .map((p) => ({ value: `pm_project:${p.id}`, label: p.label || `${p.project_code} — ${p.name}` })))).catch(() => setPmProjs([]))
   }, [isAuthorized])
 
   const filters = useMemo(() => toFilters(applied, search), [applied, search])
@@ -136,14 +141,16 @@ export default function RndTasksPage() {
     try {
       router.push(p.kind === 'requirement'
         ? `${recordPath(`/dashboard/rnd/requirements/${p.source || 'inquiry'}`, p, 'record_id')}?tab=tasks`
-        : `${recordPath('/dashboard/rnd/projects', p)}?tab=tasks`)
+        : p.kind === 'pm_project'
+          ? recordPath('/dashboard/rnd/project-tasks', p)
+          : `${recordPath('/dashboard/rnd/projects', p)}?tab=tasks`)
     } catch (err) {
       setError(extractErrorMessages(err, 'Could not open this task — reload the page and try again.'))
     }
   }
   const openGroup = (g: RndTaskGroup) => {
     try {
-      router.push(g.kind === 'requirement' ? recordPath(`/dashboard/rnd/requirements/${g.source || 'inquiry'}`, g, 'record_id') : recordPath('/dashboard/rnd/projects', g))
+      router.push(g.kind === 'requirement' ? recordPath(`/dashboard/rnd/requirements/${g.source || 'inquiry'}`, g, 'record_id') : recordPath(g.kind === 'pm_project' ? '/dashboard/rnd/project-tasks' : '/dashboard/rnd/projects', g))
     } catch (err) {
       setError(extractErrorMessages(err, 'Could not open this record — reload the page and try again.'))
     }
@@ -156,7 +163,7 @@ export default function RndTasksPage() {
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>R&amp;D Tasks</h1>
           <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>
-            Tasks on requirements and on prototype / research projects — create, track and see progress.
+            Tasks on requirements, on prototype / research projects and on projects from Project Management — create, track and see progress.
             {!seesAll && ' You see the tasks assigned to you or created by you; R&D heads and people with “All R&D tasks & analytics” see every task.'}
           </p>
         </div>
@@ -186,6 +193,7 @@ export default function RndTasksPage() {
             <Select data-tour="rnd-tasks-f-parent" style={sheetInput} value={draft.parent} onChange={(e) => set({ parent: e.target.value })}>
               <option value="">All projects and requirements</option>
               {projs.length > 0 && <optgroup label="Prototype / Research">{projs.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>}
+              {pmProjs.length > 0 && <optgroup label="All Projects">{pmProjs.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>}
               {reqs.length > 0 && <optgroup label="Requirements (R&D ID)">{reqs.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</optgroup>}
             </Select>
           </div>
@@ -207,9 +215,10 @@ export default function RndTasksPage() {
             <div style={{ flex: '1 1 160px' }}>
               <label style={sheetLabel}>Type</label>
               <Select data-tour="rnd-tasks-f-type" style={sheetInput} value={draft.type} onChange={(e) => set({ type: e.target.value })}>
-                <option value="">Requirement and Prototype</option>
+                <option value="">Requirement, Prototype and Project</option>
                 <option value="requirement">Requirement</option>
                 <option value="prototype">Prototype</option>
+                <option value="project">Project</option>
               </Select>
             </div>
             <div style={{ flex: '1 1 160px' }}>

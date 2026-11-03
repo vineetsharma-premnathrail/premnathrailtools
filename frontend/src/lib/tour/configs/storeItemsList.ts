@@ -33,7 +33,7 @@ const config: TourConfig = {
     {
       target: 'store-nav-inward',
       title: 'Inward',
-      purpose: 'Everything coming into a store: GRN & Inspection (material from suppliers against a Purchase Order) and Returns (unused material sent back by departments).',
+      purpose: 'Everything coming into a store: GRN & Quality check (material from suppliers against a Purchase Order) and Returns (unused material sent back by departments).',
       why: 'Stock only increases once an inward document is posted, so the books always match what physically reached the store.',
     },
     {

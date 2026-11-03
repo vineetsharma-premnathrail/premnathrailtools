@@ -5,6 +5,7 @@ import { navScrollRef } from '@/components/shared/navScroll'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { filterTabsByAccess } from '@/lib/tabAccess'
+import { canFeature } from '@/lib/permissions'
 import NotificationBell from '@/components/erp/NotificationBell'
 import NavSettingsGear from '@/components/shared/NavSettingsGear'
 import TourButton from '@/components/tour/TourButton'
@@ -17,7 +18,8 @@ const TABS = [
   { href: '/dashboard/maintenance/assets', label: 'Assets', icon: 'factory', subtabKey: 'assets' },
   { href: '/dashboard/maintenance/schedule', label: 'PM Schedule', icon: 'calendar', subtabKey: 'schedule' },
   { href: '/dashboard/maintenance/spares', label: 'Spares', icon: 'box', subtabKey: 'spares' },
-  { href: '/dashboard/maintenance/contracts', label: 'AMC & Warranty', icon: 'shield', subtabKey: 'assets' },
+  // A feature of Assets (maintenance:assets.contracts) — it needs that feature's View too.
+  { href: '/dashboard/maintenance/contracts', label: 'AMC & Warranty', icon: 'shield', subtabKey: 'assets', feature: 'contracts' },
   { href: '/dashboard/maintenance/reports', label: 'Reports', icon: 'chart', subtabKey: 'reports' },
   { href: '/dashboard/maintenance/settings', label: 'Settings', icon: 'settings', subtabKey: 'settings' },
 ] as const
@@ -51,6 +53,7 @@ export default function MaintenanceNav() {
   const tabs = isMaintenanceUser ? TABS : TABS.filter((t) => t.subtabKey === 'requests')
   // Settings sits as a gear next to the bell, not as a tab (same as R&D).
   const allowedTabs = filterTabsByAccess('maintenance', tabs, user)
+    .filter((t) => !('feature' in t) || canFeature(user, 'maintenance', t.subtabKey, t.feature, 'view'))
   const visibleTabs = allowedTabs.filter((t) => t.href !== '/dashboard/maintenance/settings')
   const settingsTab = allowedTabs.find((t) => t.href === '/dashboard/maintenance/settings')
 

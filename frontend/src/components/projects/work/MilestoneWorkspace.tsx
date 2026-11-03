@@ -18,6 +18,7 @@ import {
   ProgressBar, actionBtn, smallActionBtn, inputStyle, sectionStyle, todayIso,
 } from './pmUi'
 import { useFormDraft } from '@/lib/formDraft'
+import { useVisibility } from '@/lib/visibility'
 import DraftBanner from '@/components/shared/DraftBanner'
 import { FormSheet, Optional, Req, SHEET, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import { TaskTable } from './DepartmentWork'
@@ -29,7 +30,7 @@ import { recordPath } from '@/lib/recordRef'
 import { pillStyle } from '@/components/shared/ui'
 
 type TaskForm = { id?: number; title: string; description: string; assignee_id: string; due_date: string; priority: string; estimated_hours: string }
-const emptyTask = (): TaskForm => ({ title: '', description: '', assignee_id: '', due_date: '', priority: 'standard', estimated_hours: '' })
+const emptyTask = (priority = 'standard'): TaskForm => ({ title: '', description: '', assignee_id: '', due_date: '', priority, estimated_hours: '' })
 
 /** One milestone. The lead (or a department head) plans and assigns its
  * tasks, manages the team, attaches evidence and submits it; management
@@ -42,6 +43,12 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
   const [ws, setWs] = useState<PmMilestoneWorkspace | null>(null)
   const [people, setPeople] = useState<PmDepartmentPerson[]>([])
   const [form, setForm] = useState<TaskForm | null>(null)
+  // Role Visibility (core/features/projects.py): the Priority values offered on the task form; a saved task keeps its own.
+  const vis = useVisibility('projects:overview.tasks')
+  const allowedPriorities = vis.options('priority', Object.keys(PRIORITY_LABELS), (k) => k)
+  const priorityChoices = Object.entries(PRIORITY_LABELS).filter(([k]) => allowedPriorities.includes(k) || (!!form?.id && form.priority === k))
+  // A new task starts on Standard when the role allows it, else on the first allowed value.
+  const defaultPriority = allowedPriorities.includes('standard') ? 'standard' : allowedPriorities[0]
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
   const [reasonFor, setReasonFor] = useState<{ task?: PmProjectTask; kind: 'cancel' | 'reopen' | 'reject' } | null>(null)
@@ -79,7 +86,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
     try { await fn(); load() } catch (err) { setError(extractErrorMessages(err, fallback)) } finally { setBusy(false) }
   }
 
-  const draft = useFormDraft(form && !form.id ? `projects-task-new-${milestoneId}-${selfTask ? 'own' : 'assign'}` : null, form, (d) => setForm({ ...emptyTask(), ...d }))
+  const draft = useFormDraft(form && !form.id ? `projects-task-new-${milestoneId}-${selfTask ? 'own' : 'assign'}` : null, form, (d) => setForm({ ...emptyTask(defaultPriority), ...d }))
 
   if (!ws) return <><ErrorBanner error={error} />{!error && <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>}</>
   const m = ws.milestone
@@ -227,8 +234,8 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
           <h2 style={{ fontSize: 16, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{full ? `Tasks (${live.length})` : `My tasks (${live.length})`}</h2>
           {!form && (
             <div style={{ display: 'flex', gap: 8 }}>
-              {canAddOwn && <button data-tour="pm-mw-add-own-btn" type="button" onClick={() => { setSelfTask(true); setForm(emptyTask()) }} style={actionBtn(canPlan ? 'secondary' : 'primary')}>+ My own task</button>}
-              {canPlan && <button data-tour="pm-mw-add-task-btn" type="button" onClick={() => { setSelfTask(false); setForm(emptyTask()) }} style={actionBtn('primary')}>+ Assign task</button>}
+              {canAddOwn && <button data-tour="pm-mw-add-own-btn" type="button" onClick={() => { setSelfTask(true); setForm(emptyTask(defaultPriority)) }} style={actionBtn(canPlan ? 'secondary' : 'primary')}>+ My own task</button>}
+              {canPlan && <button data-tour="pm-mw-add-task-btn" type="button" onClick={() => { setSelfTask(false); setForm(emptyTask(defaultPriority)) }} style={actionBtn('primary')}>+ Assign task</button>}
             </div>
           )}
         </div>
@@ -275,7 +282,7 @@ export default function MilestoneWorkspace({ milestoneId }: { milestoneId: numbe
                   <div data-tour="pm-task-form-priority" style={{ flex: '0 1 140px', minWidth: 120 }}>
                     <label style={sheetLabel}>Priority <Req /></label>
                     <Select style={sheetInput} value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
-                      {Object.entries(PRIORITY_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                      {priorityChoices.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                     </Select>
                   </div>
                   <div data-tour="pm-task-form-hours" style={{ flex: '0 1 130px', minWidth: 110 }}>

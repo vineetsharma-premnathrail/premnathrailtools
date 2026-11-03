@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.data_scope import apply_scope, ensure_in_scope, register_scoped
 from app.core.permission_registry import is_admin_user
-from app.core.permissions import require_tab_access, require_tab_action
+from app.core.permissions import require_feature_action, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.accounts.models.vendor import Vendor
 from app.modules.main.models.user import User
@@ -83,6 +83,7 @@ async def list_pre_po_receipts(
     limit: int = Query(200, ge=1, le=1000),
     db: Session = Depends(get_db),
     user: User = Depends(require_tab_access("store", "grn")),
+    _feat: User = Depends(require_feature_action("store", "grn", "before_po", "view")),  # Before PO tab
 ):
     if status and status not in STORE_PRE_PO_STATUSES:
         raise HTTPException(status_code=400, detail=f"Unknown status '{status}'. Use one of: {', '.join(STORE_PRE_PO_STATUSES)}.")
@@ -100,6 +101,7 @@ async def create_pre_po_receipt(
     payload: PrePoReceiptCreate,
     db: Session = Depends(get_db),
     user: User = Depends(require_tab_action("store", "grn", "create")),
+    _feat: User = Depends(require_feature_action("store", "grn", "before_po", "create")),  # Before PO tab
 ):
     if payload.received_date > date.today():
         raise HTTPException(status_code=422, detail=f"Received date {payload.received_date:%d-%b-%Y} is in the future - goods can only be booked "
@@ -161,6 +163,7 @@ async def get_pre_po_receipt(
     receipt_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_tab_access("store", "grn")),
+    _feat: User = Depends(require_feature_action("store", "grn", "before_po", "view")),  # Before PO tab
 ):
     return receipt_to_response(db, _load(db, receipt_id, user))
 
@@ -171,6 +174,7 @@ async def cancel_pre_po_receipt(
     payload: PrePoReceiptCancel,
     db: Session = Depends(get_db),
     user: User = Depends(require_tab_action("store", "grn", "create")),
+    _feat: User = Depends(require_feature_action("store", "grn", "before_po", "create")),  # Before PO tab
 ):
     receipt = _load(db, receipt_id, user, lock=True)
     if receipt.status != "pending_po":
@@ -195,6 +199,7 @@ async def attach_file_to_pre_po_receipt(
     doc_type: str = Form("other"),
     db: Session = Depends(get_db),
     user: User = Depends(require_tab_action("store", "grn", "create")),
+    _feat: User = Depends(require_feature_action("store", "grn", "before_po", "create")),  # Before PO tab
 ):
     """Attach the vendor invoice / delivery challan (doc_type invoice | challan | other)."""
     receipt = _load(db, receipt_id, user)
@@ -210,6 +215,7 @@ async def get_pre_po_receipt_attachment(
     attachment_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_tab_access("store", "grn")),
+    _feat: User = Depends(require_feature_action("store", "grn", "before_po", "view")),  # Before PO tab
 ):
     return await attachment_content_response(_load(db, receipt_id, user), attachment_id)
 
@@ -220,6 +226,7 @@ async def delete_pre_po_receipt_attachment(
     attachment_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_tab_action("store", "grn", "create")),
+    _feat: User = Depends(require_feature_action("store", "grn", "before_po", "create")),  # Before PO tab
 ):
     """Only the person who uploaded a file (or an admin) can remove it, and only
     while the receipt is waiting for a PO or has one in progress."""

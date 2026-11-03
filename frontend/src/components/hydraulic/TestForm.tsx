@@ -14,6 +14,8 @@ import { extractErrorMessages } from '@/lib/validation'
 import { SYSTEM_TYPE_LABELS, TEST_TYPE_LABELS } from '@/components/hydraulic/labels'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
+import { useVisibility } from '@/lib/visibility'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
 
 const rowStyle: React.CSSProperties = {
   display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', padding: 12, borderRadius: 12,
@@ -98,8 +100,8 @@ export default function TestForm({
   onDirtyChange?: (dirty: boolean) => void
 }) {
   const [title, setTitle] = useState(initial?.title || '')
-  const [testType, setTestType] = useState(initial?.test_type || 'pressure_test')
-  const [systemType, setSystemType] = useState<string>(initial?.system_type || 'hydraulic')
+  const [pickedTestType, setTestType] = useState(initial?.test_type || 'pressure_test')
+  const [pickedMedium, setSystemType] = useState<string>(initial?.system_type || 'hydraulic')
   const [systemId, setSystemId] = useState(initial?.system_id ? String(initial.system_id) : presetSystemId || '')
   const [componentId, setComponentId] = useState(initial?.component_id ? String(initial.component_id) : presetComponentId || '')
   const [componentSerial, setComponentSerial] = useState(initial?.component_serial || '')
@@ -128,6 +130,19 @@ export default function TestForm({
   const [users, setUsers] = useState<HydLookupOption[]>([])
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
+  // Role visibility (Role & Permissions › Hydraulic & Pneumatic › Testing & Inspection › Visibility); in the Role
+  // editor's "Preview & choose" the form draws every section, loads and saves nothing.
+  const vis = useVisibility('hydraulic:testing')
+  const preview = vis.preview
+  // An edit keeps the test's saved type even when the role no longer offers it.
+  const typeChoices = vis.options('test_type', Object.entries(TEST_TYPE_LABELS), ([k]) => k)
+  const typeOptions: [string, string][] = initial && !typeChoices.some(([k]) => k === initial.test_type)
+    ? [...typeChoices, [initial.test_type, TEST_TYPE_LABELS[initial.test_type] || initial.test_type]] : typeChoices
+  const mediumChoices = vis.options('system_type', Object.entries(SYSTEM_TYPE_LABELS), ([k]) => k)
+  // A new test whose default type / medium the role doesn't offer starts on the first one it does offer.
+  const fresh = !initial && !preview
+  const testType = fresh && typeChoices.length && !typeChoices.some(([k]) => k === pickedTestType) ? typeChoices[0][0] : pickedTestType
+  const systemType = fresh && mediumChoices.length && !mediumChoices.some(([k]) => k === pickedMedium) ? mediumChoices[0][0] : pickedMedium
 
   // Dirty tracking (edit mode) — compares the form to its first render.
   const snapshot = JSON.stringify([
@@ -139,7 +154,7 @@ export default function TestForm({
   const dirty = snapshot !== initialSnapshot
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
 
-  const draft = useFormDraft(initial ? null : 'hyd-test-new',
+  const draft = useFormDraft(initial || preview ? null : 'hyd-test-new',
     {
       title, testType, systemType, systemId, componentId, componentSerial, testDate, testStandard, testPressure, holdTime, testMedium,
       ambientTemp, fluidTemp, testedById, witnessedBy, observations, remarks,
@@ -157,7 +172,7 @@ export default function TestForm({
   // A new test opened from a system or component page starts on that
   // subject's medium, so the pickers below include it.
   useEffect(() => {
-    if (initial) return
+    if (initial || preview) return
     if (presetSystemId) {
       hydraulicApi.lookupSystems()
         .then((rows: HydLookupOption[]) => {
@@ -170,16 +185,18 @@ export default function TestForm({
         .then((c) => { if (c?.system_type === 'hydraulic' || c?.system_type === 'pneumatic') setSystemType(c.system_type) })
         .catch(() => { /* falls back to the default medium */ })
     }
-  }, [initial, presetSystemId, presetComponentId])
+  }, [initial, presetSystemId, presetComponentId, preview])
 
   useEffect(() => {
+    if (preview) return
     hydraulicApi.lookupSystems(systemType).then(setSystems).catch((err) => setError(extractErrorMessages(err, 'Failed to load systems.')))
     hydraulicApi.lookupComponents(systemType).then(setComponents).catch((err) => setError(extractErrorMessages(err, 'Failed to load components.')))
-  }, [systemType])
+  }, [systemType, preview])
 
   useEffect(() => {
+    if (preview) return
     hydraulicApi.lookupUsers().then(setUsers).catch((err) => setError(extractErrorMessages(err, 'Failed to load users.')))
-  }, [])
+  }, [preview])
 
   const systemOptions = useMemo(() => [{ value: '', label: '— None —' }, ...systems.map((s) => ({ value: String(s.id), label: s.label }))], [systems])
   const componentOptions = useMemo(() => [{ value: '', label: '— None —' }, ...components.map((c) => ({ value: String(c.id), label: c.label }))], [components])
@@ -206,6 +223,7 @@ export default function TestForm({
 
   const handleSubmit = async () => {
     setError('')
+    if (preview) return
     if (!title.trim()) { setError('Title is required — e.g. "Proof test of lift cylinder after rebuild".'); return }
     if (!systemId && !componentId) { setError('Pick the system or the component being tested (or both).'); return }
     const nums: Record<string, number | null> = {}
@@ -274,14 +292,15 @@ export default function TestForm({
 
   return (
     <HydFormShell
-      mode={mode} title={shellTitle} subtitle={subtitle} nav={nav} onBack={onBack} onCancel={onCancel}
-      icon={initial ? 'edit' : 'check'} busy={saving} submitLabel={submitLabel} submitIcon={initial ? 'check' : 'plus'}
+      mode={mode} title={shellTitle} subtitle={subtitle} nav={preview ? undefined : nav} onBack={preview ? undefined : onBack} onCancel={onCancel}
+      icon={initial ? 'edit' : 'check'} busy={saving} submitDisabled={preview} submitLabel={submitLabel} submitIcon={initial ? 'check' : 'plus'}
       onSubmit={handleSubmit} tour="hyd-testf-form" backTour="hyd-testf-back-btn" submitTour="hyd-testf-submit-btn"
     >
       <SheetColumns
         left={<>
           <SheetError error={error} />
           <DraftBanner draft={draft} />
+          <VisSection vis={vis} k="test">
           <SheetSection icon="check" title="Test">
             <div style={fieldRow}>
               <Cell tour="hyd-testf-title" basis={260} grow>
@@ -293,8 +312,9 @@ export default function TestForm({
               <Cell tour="hyd-testf-type" basis={200} grow max={260}>
                 <label style={sheetLabel}>Test Type <Req /></label>
                 <Select style={sheetInput} value={testType} onChange={(e) => setTestType(e.target.value)}>
-                  {Object.entries(TEST_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  {typeOptions.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </Select>
+                <VisOptionValues vis={vis} dropdown="test_type" />
               </Cell>
               <Cell tour="hyd-testf-medium" basis={130}>
                 <label style={sheetLabel}>Medium</label>
@@ -303,10 +323,10 @@ export default function TestForm({
                 ) : (
                   <Select style={sheetInput} value={systemType}
                     onChange={(e) => { setSystemType(e.target.value); setSystemId(''); setComponentId('') }}>
-                    <option value="hydraulic">Hydraulic</option>
-                    <option value="pneumatic">Pneumatic</option>
+                    {mediumChoices.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </Select>
                 )}
+                {!initial && <VisOptionValues vis={vis} dropdown="system_type" />}
               </Cell>
               <Cell tour="hyd-testf-date" basis={160}>
                 <label style={sheetLabel}>Test Date</label>
@@ -314,6 +334,8 @@ export default function TestForm({
               </Cell>
             </div>
           </SheetSection>
+          </VisSection>
+          <VisSection vis={vis} k="subject">
           <SheetSection icon="box" title="What Is Tested">
             <div style={{ ...fieldRow, marginBottom: 0 }}>
               <Cell tour="hyd-testf-system" basis={240} grow max={380}>
@@ -333,8 +355,10 @@ export default function TestForm({
               Pick the system, the component, or both <Req />. {initial ? 'The medium follows the system (or component) tested.' : 'Changing the medium clears both pickers.'}
             </p>
           </SheetSection>
+          </VisSection>
         </>}
         right={<>
+          <VisSection vis={vis} k="conditions">
           <SheetSection icon="gear" title="Conditions">
             <div style={fieldRow}>
               <Cell tour="hyd-testf-standard" basis={220} grow>
@@ -369,6 +393,8 @@ export default function TestForm({
               </Cell>
             </div>
           </SheetSection>
+          </VisSection>
+          <VisSection vis={vis} k="people">
           <SheetSection icon="users" title="People">
             <div data-tour="hyd-testf-tested-by" style={{ marginBottom: 12 }}>
               <label style={sheetLabel}>Tested By</label>
@@ -379,10 +405,12 @@ export default function TestForm({
               <input style={sheetInput} value={witnessedBy} maxLength={200} onChange={(e) => setWitnessedBy(e.target.value)} placeholder="RDSO / customer inspector, name & designation" />
             </div>
           </SheetSection>
+          </VisSection>
         </>}
       />
 
-      <div style={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
+      {vis.anySection(['readings', 'notes']) && <div style={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
+        <VisSection vis={vis} k="readings">
         <SheetSection icon="list" title={`Readings (${filledCount})`} extra={<>
           {failCount > 0 && <span style={{ fontSize: 12.5, fontWeight: 700, color: '#b91c1c' }}>{failCount} failing</span>}
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -451,7 +479,9 @@ export default function TestForm({
             {readings.length === 0 && <p style={{ ...sheetHint, margin: 0 }}>No readings yet — a test needs at least one reading before it can be completed.</p>}
           </div>
         </SheetSection>
+        </VisSection>
 
+        <VisSection vis={vis} k="notes">
         <SheetSection icon="chat" title="Notes" extra={<Optional />}>
           <div style={{ ...fieldRow, marginBottom: 0 }}>
             <Cell tour="hyd-testf-observations" basis={300} grow>
@@ -465,7 +495,8 @@ export default function TestForm({
             </Cell>
           </div>
         </SheetSection>
-      </div>
+        </VisSection>
+      </div>}
     </HydFormShell>
   )
 }

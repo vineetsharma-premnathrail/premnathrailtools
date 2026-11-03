@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
 import { productsApi } from '@/lib/api'
-import { FinishedProduct, ProductMeta, ProductStoreItemOption } from '@/types'
+import { FinishedProduct, ProductMeta, ProductStatus, ProductStoreItemOption, ProductType } from '@/types'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { ErrorBanner } from '@/components/products/ProductBits'
 import { extractErrorMessages } from '@/lib/validation'
@@ -14,6 +14,8 @@ import { pricingApi } from '@/lib/sdServiceApi'
 import { CURRENCY_OPTIONS } from '@/components/sales/labels'
 import PriceConditionsPanel from '@/components/products/PriceConditionsPanel'
 import CurrencyConversions from '@/components/products/CurrencyConversions'
+import { useVisibility } from '@/lib/visibility'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
 
 
 const hintStyle = sheetHint
@@ -28,6 +30,9 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
   nav?: React.ReactNode
 }) {
   const [meta, setMeta] = useState<ProductMeta | null>(null)
+  // What the user's roles let them see here (Role editor > CRM > Products > Visibility). In the Role
+  // editor's "Preview & choose" nothing is saved or kept as a draft.
+  const vis = useVisibility('crm:products')
   const [form, setForm] = useState({
     code: initial?.code || '',
     name: initial?.name || '',
@@ -57,7 +62,7 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
   // A new product's typed data survives a refresh / network failure (lib/formDraft.ts).
-  const draft = useFormDraft(initial ? null : 'products-product-new', { form, techSpec, storeItem },
+  const draft = useFormDraft(initial || vis.preview ? null : 'products-product-new', { form, techSpec, storeItem },
     (d) => { setForm(d.form); setTechSpec(typeof d.techSpec === 'string' ? d.techSpec : ''); setStoreItem(d.storeItem || null) })
 
   useEffect(() => {
@@ -75,8 +80,34 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
 
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const isApp = form.product_type === 'application'
+  // Coded values: /products/meta marks each with `allowed` for this user (the server refuses the rest).
+  // A saved product keeps its own value in the list; the preview offers every value (the rule being edited
+  // is set with the tick buttons under the field).
+  type MetaRow = { value: string; label: string; allowed?: boolean }
+  const offered = (rows: MetaRow[] | undefined, dropdown: string, current?: string) =>
+    vis.options(dropdown, (rows || []).filter((r) => vis.preview || r.allowed !== false || r.value === current), (r) => r.value)
+  const typeRows = offered(meta?.types, 'product_type', initial?.product_type)
+  const statusRows = offered(meta?.statuses, 'status', initial?.status)
+  const productTypeRows = typeRows.filter((t) => t.value !== 'application')
+  const mayApp = typeRows.some((t) => t.value === 'application')
+  const mayProduct = productTypeRows.length > 0
+  // New form: a default the role doesn't offer moves to the first value it does.
+  const typeKey = meta ? typeRows.map((t) => t.value).join(',') : ''
+  const statusKey = meta ? statusRows.map((s) => s.value).join(',') : ''
+  useEffect(() => {
+    if (initial || !typeKey) return
+    const allowed = typeKey.split(',')
+    if (!allowed.includes(form.product_type)) setForm((f) => ({ ...f, product_type: (allowed.find((v) => v !== 'application') || allowed[0]) as ProductType }))
+  }, [initial, typeKey, form.product_type])
+  useEffect(() => {
+    if (initial || !statusKey) return
+    const allowed = statusKey.split(',')
+    if (!allowed.includes(form.status)) setForm((f) => ({ ...f, status: allowed[0] as ProductStatus }))
+  }, [initial, statusKey, form.status])
+  const showSide = vis.anySection(['sales_defaults'])
 
   const save = async () => {
+    if (vis.preview) return
     setError('')
     if (!form.code.trim() || !form.name.trim()) {
       setError('Product code and name are required — e.g. code RRB-SV, name RRB Sanding Vehicle.')
@@ -119,25 +150,28 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
       subtitle={initial ? `${initial.name} — the code is fixed once created.` : isApp
         ? 'An add-on sold with a product only when the customer asks for it.'
         : 'A finished product the company sells — the master CRM, Design, Production and Service refer to.'}
-      onBack={onCancel} backTour="product-form-back"
+      onBack={vis.preview ? undefined : onCancel} backTour="product-form-back"
       footer={<>
-        <button type="button" style={sheetBtn('secondary', SHEET.INK, saving)} onClick={onCancel} disabled={saving}>Cancel</button>
-        <button type="button" style={sheetBtn('primary', SHEET.BLUE, saving)} onClick={save} disabled={saving}>
+        <button type="button" style={sheetBtn('secondary', SHEET.INK, saving)} onClick={onCancel} disabled={saving || vis.preview}>Cancel</button>
+        <button type="button" style={sheetBtn('primary', SHEET.BLUE, saving)} onClick={save} disabled={saving || vis.preview}>
           <SheetIcon name={initial ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : initial ? 'Save changes' : 'Create product'}
         </button>
       </>}>
-      <SheetColumns
-        left={<>
+      {(() => {
+        const left = <>
           <ErrorBanner error={error} />
           <DraftBanner draft={draft} />
+          <VisSection vis={vis} k="product">
           <SheetSection icon="box" title={isApp ? 'Application' : 'Product'}>
             {/* One master: first say whether this is a product or an application (add-on). */}
             <div role="radiogroup" aria-label="Product or application" style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-              {([['product', 'Product'], ['application', 'Application']] as const).map(([k, label]) => {
+              {([['product', 'Product'], ['application', 'Application']] as const)
+                .filter(([k]) => (k === 'application' ? mayApp || isApp : mayProduct || !isApp))
+                .map(([k, label]) => {
                 const on = k === 'application' ? isApp : !isApp
                 return (
                   <button key={k} type="button" role="radio" aria-checked={on} disabled={!!initial && !on}
-                    onClick={() => set('product_type', k === 'application' ? 'application' : (initial?.product_type !== 'application' && initial?.product_type) || 'vehicle')}
+                    onClick={() => set('product_type', k === 'application' ? 'application' : (initial?.product_type !== 'application' && initial?.product_type) || productTypeRows[0]?.value || 'vehicle')}
                     style={sheetBtn(on ? 'primary' : 'secondary', SHEET.BLUE, !!initial && !on)}>{label}</button>
                 )
               })}
@@ -154,8 +188,9 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
                 <div style={{ flex: '0 1 200px', minWidth: 170 }}>
                   <L>Type</L>
                   <Select style={sheetInput} value={form.product_type} onChange={(e) => set('product_type', e.target.value)}>
-                    {(meta?.types || []).filter((t) => t.value !== 'application').map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    {productTypeRows.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </Select>
+                  <VisOptionValues vis={vis} dropdown="product_type" />
                 </div>
                 <div style={{ flex: '1 1 160px', maxWidth: 220 }}>
                   <L>Model number</L><input style={sheetInput} value={form.model_number} onChange={(e) => set('model_number', e.target.value)} placeholder="PRT-SV-01" />
@@ -164,13 +199,16 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
               <div style={{ flex: '0 1 160px', minWidth: 150 }}>
                 <L>Status</L>
                 <Select style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)}>
-                  {(meta?.statuses || []).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  {statusRows.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </Select>
+                <VisOptionValues vis={vis} dropdown="status" />
               </div>
             </div>
             <p style={hintStyle}>Only <b>Active</b> products should be quoted and sold. Phased out = still serviced, not sold new. A product can be deleted only while it is In development.</p>
           </SheetSection>
+          </VisSection>
 
+          <VisSection vis={vis} k="description">
           <SheetSection icon="doc" title="Description">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
@@ -183,15 +221,19 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
               </div>
             </div>
           </SheetSection>
+          </VisSection>
 
+          <VisSection vis={vis} k="technical_specifications">
           <SheetSection icon="list" title="Technical specifications" extra={<Optional />}>
             <textarea aria-label="Technical specifications" style={{ ...sheetInput, minHeight: 140, resize: 'vertical', lineHeight: 1.5 }}
               value={techSpec} onChange={(e) => setTechSpec(e.target.value)}
               placeholder={'One specification per line, e.g.\nMax speed on rail: 40 km/h\nEngine: 4-cylinder diesel, 110 HP\nTrack gauge: 1676 mm'} />
             <p style={hintStyle}>Write each specification on its own line — it prints the same way on quotations and the product page.</p>
           </SheetSection>
+          </VisSection>
 
           {canFeature('crm', 'products', 'pricing', 'view') && (
+            <VisSection vis={vis} k="pricing">
             <SheetSection icon="rupee" title="Pricing" extra={initial ? undefined : <Optional />}>
               {initial ? (
                 <PriceConditionsPanel productId={initial.id} emptyText="No price yet — add the list price, then country prices if they differ" />
@@ -216,9 +258,11 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
                 <p style={{ ...hintStyle, marginTop: 0 }}>Adding prices needs &apos;Create&apos; on CRM › Products › Pricing — ask an admin to add it to your role.</p>
               )}
             </SheetSection>
+            </VisSection>
           )}
-        </>}
-        right={<>
+        </>
+        const right = (
+          <VisSection vis={vis} k="sales_defaults">
           <SheetSection icon="gear" title="Sales & service defaults">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '0 1 90px', minWidth: 80 }}>
@@ -260,8 +304,10 @@ export default function ProductForm({ initial, onSaved, onCancel, nav }: {
             </div>
             <p style={hintStyle}>The store item is the stock/BOM code Design, Production and Projects use for this product. Link it once the item exists in Store.</p>
           </SheetSection>
-        </>}
-      />
+          </VisSection>
+        )
+        return showSide ? <SheetColumns left={left} right={right} /> : <div style={{ padding: '20px 24px' }}>{left}</div>
+      })()}
     </FormPage>
   )
 }

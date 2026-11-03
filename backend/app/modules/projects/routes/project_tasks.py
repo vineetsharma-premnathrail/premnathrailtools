@@ -21,7 +21,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFi
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core import assignee_rules
+from app.core import assignee_rules, visibility
 from app.core.priority import map_legacy_priority, parse_priority
 from app.core.permissions import ensure_feature_action, require_feature_action
 from app.core.permission_registry import can_feature, can_view_tab
@@ -958,6 +958,9 @@ async def add_subtask(task_id: int, payload: SubtaskCreate, db: Session = Depend
     if t.due_date and payload.due_date > t.due_date:
         raise HTTPException(status_code=422, detail=f"Sub-task due date {payload.due_date:%d-%m-%Y} is after the milestone's due date {t.due_date:%d-%m-%Y}.")
     assignee_rules.ensure_allowed(db, user, TASK_RULE_KEY, person)
+    # Role-wise visibility (core/features/projects.py): a priority the role does not offer on the
+    # task form is refused here too (the schema default, Standard, is checked as a value).
+    visibility.ensure_option_allowed(user, TASK_RULE_KEY, "priority", parse_priority(payload.priority))  # null / any case -> Standard / Urgent first
     s = PmTaskSubtask(task_id=t.id, title=title, assignee_id=person.id, due_date=payload.due_date, status="todo", created_by_id=user.id)
     collabs = _apply_task_fields(db, project, t, s, payload.model_dump(), user)
     db.add(s)
@@ -1057,6 +1060,9 @@ async def edit_subtask(subtask_id: int, payload: SubtaskEdit, db: Session = Depe
         if not (updates["title"] or "").strip():
             raise HTTPException(status_code=422, detail="The name can't be empty.")
         updates["title"] = updates["title"].strip()
+    if "priority" in updates and parse_priority(updates["priority"]) != map_legacy_priority(s.priority):
+        # Role-wise visibility: the normalised priority (null = Standard) is checked, and only when it CHANGES, so an older task stays editable.
+        visibility.ensure_option_allowed(user, TASK_RULE_KEY, "priority", parse_priority(updates["priority"]))
     if "assignee_id" in updates:
         person = db.get(User, updates["assignee_id"]) if updates["assignee_id"] else None
         if not person or not person.is_active:

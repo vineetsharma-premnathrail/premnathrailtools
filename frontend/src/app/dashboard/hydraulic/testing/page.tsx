@@ -14,6 +14,9 @@ import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import { TEST_TYPE_LABELS, withUnit } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleHydTests } from '@/lib/hydraulicPreviewSamples'
 
 const STATUS_LABELS: Record<string, string> = { planned: 'Planned', in_progress: 'In Progress', under_review: 'Awaiting Sign-off', completed: 'Completed' }
 const STATUS_HEX: Record<string, string> = { planned: '#2563EB', in_progress: '#F59E0B', under_review: '#9333EA', completed: '#16A34A' }
@@ -25,15 +28,23 @@ const inputStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
 }
 const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
+const thCell: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }
+// Columns a role may hide (Role & Permissions › Hydraulic & Pneumatic › Testing & Inspection › Visibility); number, title, status and result always show.
+const COLS: { label: string; key?: string }[] = [
+  { label: 'Test No.' }, { label: 'Title' }, { label: 'Test Type', key: 'test_type' }, { label: 'Subject', key: 'subject' }, { label: 'Date', key: 'date' },
+  { label: 'Test Pressure', key: 'test_pressure' }, { label: 'Failed Readings', key: 'failed_readings' }, { label: 'Status' }, { label: 'Result' },
+]
 const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
 
 export default function HydTestsPage() {
   const { isAuthorized, isLoading } = useRequireApp('hydraulic')
   const router = useRouter()
   const { can } = useCan()
+  // Role editor "Preview & choose": three made-up tests, nothing is loaded.
+  const vis = useVisibility('hydraulic:testing')
 
-  const [tests, setTests] = useState<HydTest[]>([])
-  const [loading, setLoading] = useState(true)
+  const [tests, setTests] = useState<HydTest[]>(vis.preview ? sampleHydTests : [])
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState<string | string[]>('')
   const [search, setSearch] = useState('')
   const [systemType, setSystemType] = useState('')
@@ -42,7 +53,7 @@ export default function HydTestsPage() {
   const [resultFilter, setResultFilter] = useState('')
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     const params: Record<string, unknown> = {}
     if (systemType) params.system_type = systemType
     if (testType) params.test_type = testType
@@ -53,13 +64,14 @@ export default function HydTestsPage() {
       .then((data) => setTests(Array.isArray(data) ? data : []))
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load tests.')))
       .finally(() => setLoading(false))
-  }, [isAuthorized, systemType, testType, statusFilter, resultFilter, search])
+  }, [isAuthorized, systemType, testType, statusFilter, resultFilter, search, vis.preview])
 
   if (isLoading || !isAuthorized) return null
+  const colCount = COLS.filter((c) => !c.key || vis.preview || vis.showColumn('tests', c.key)).length
 
   return (
     <div>
-      <HydraulicNav />
+      {!vis.preview && <HydraulicNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
@@ -68,7 +80,7 @@ export default function HydTestsPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Testing &amp; Inspection</h1>
         </div>
-        {can('hydraulic', 'testing', 'create') && (
+        {can('hydraulic', 'testing', 'create') && !vis.preview && (
           <button
             data-tour="hyd-test-new-btn"
             onClick={() => router.push('/dashboard/hydraulic/testing/new')}
@@ -113,33 +125,31 @@ export default function HydTestsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr>
-              {['Test No.', 'Title', 'Test Type', 'Subject', 'Date', 'Test Pressure', 'Failed Readings', 'Status', 'Result'].map((h, hi) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }}>
-                  {h}{hi === 0 && <RowCount count={tests.length} />}
-                </th>
-              ))}
+              {COLS.map((c, hi) => c.key
+                ? <VisTh key={c.label} vis={vis} table="tests" k={c.key} style={thCell}>{c.label}</VisTh>
+                : <th key={c.label} style={thCell}>{c.label}{hi === 0 && <RowCount count={tests.length} />}</th>)}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={colCount} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : tests.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No tests match. Plan a pressure, proof, leak or cleanliness test against a system or component to start its test record.</td></tr>
+              <tr><td colSpan={colCount} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No tests match. Plan a pressure, proof, leak or cleanliness test against a system or component to start its test record.</td></tr>
             ) : (
               tests.map((t) => (
-                <tr key={t.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/testing', t))} style={{ cursor: 'pointer' }}>
+                <tr key={t.id} onClick={() => { if (!vis.preview) router.push(recordPath('/dashboard/hydraulic/testing', t)) }} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{t.test_number}</td>
                   <td style={cellStyle}>{t.title}</td>
-                  <td style={cellStyle}>{TEST_TYPE_LABELS[t.test_type] || t.test_type}</td>
-                  <td style={cellStyle}>
+                  <VisTd vis={vis} table="tests" k="test_type" style={cellStyle}>{TEST_TYPE_LABELS[t.test_type] || t.test_type}</VisTd>
+                  <VisTd vis={vis} table="tests" k="subject" style={cellStyle}>
                     {[t.system_number, t.component_code].filter(Boolean).join(' · ') || '—'}
                     {t.component_serial && <span style={{ color: TEXT.muted }}> (S/N {t.component_serial})</span>}
-                  </td>
-                  <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{formatDate(t.test_date)}</td>
-                  <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{withUnit(t.test_pressure_bar, 'bar')}</td>
-                  <td style={{ ...cellStyle, fontWeight: t.failed_readings ? 700 : 400, color: t.failed_readings ? DANGER.primary : TEXT.muted }}>
+                  </VisTd>
+                  <VisTd vis={vis} table="tests" k="date" style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{formatDate(t.test_date)}</VisTd>
+                  <VisTd vis={vis} table="tests" k="test_pressure" style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{withUnit(t.test_pressure_bar, 'bar')}</VisTd>
+                  <VisTd vis={vis} table="tests" k="failed_readings" style={{ ...cellStyle, fontWeight: t.failed_readings ? 700 : 400, color: t.failed_readings ? DANGER.primary : TEXT.muted }}>
                     {t.failed_readings ? t.failed_readings : '—'}
-                  </td>
+                  </VisTd>
                   <td style={cellStyle}><span style={pill(STATUS_HEX[t.status])}>{STATUS_LABELS[t.status] || t.status}</span></td>
                   <td style={cellStyle}><span style={pill(RESULT_HEX[t.result])}>{RESULT_LABELS[t.result] || t.result}</span></td>
                 </tr>

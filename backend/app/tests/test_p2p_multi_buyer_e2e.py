@@ -131,19 +131,13 @@ def _approve_po(client, s, po, by=("approver", "partner")):
 
 
 def _grn(client, s, po, qty_by_line):
-    """Store books a goods receipt on `po` for {pr_item_id: qty} and passes everything at inspection."""
+    """Store books a goods receipt on `po` for {pr_item_id: qty}. The items carry no "Quality check on receipt" flag, so
+    the goods are in Free stock and the GRN is completed the moment it is recorded."""
     items = [{"po_item_id": it["id"], "received_quantity": qty_by_line[it["pr_item_id"]]}
              for it in po["items"] if it["pr_item_id"] in qty_by_line]
     r = client.post(GRNS, json={"purchase_order_id": po["id"], "store_location_id": _receiving_store(client), "items": items},
                     headers=_h(s["store"]))
-    if r.status_code != 200:
-        return r
-    grn = r.json()
-    by_po_item = {it["id"]: qty_by_line[it["pr_item_id"]] for it in po["items"] if it["pr_item_id"] in qty_by_line}
-    done = client.post(f"{GRNS}/{grn['id']}/inspect", json={"items": [
-        {"item_id": gi["id"], "accepted_quantity": by_po_item[gi["po_item_id"]], "quality_status": "passed"} for gi in grn["items"]]},
-        headers=_h(s["store"]))
-    return done
+    return r
 
 
 def _tracker(client, s, user=None):
@@ -653,16 +647,21 @@ def test_an_expired_quote_cannot_be_awarded(client, db, s):
 
 
 def test_close_is_refused_while_a_goods_receipt_awaits_inspection_and_names_it(client, db, s):
+    from app.modules.p2p.models.purchase_order import P2PPurchaseOrderItem
+    from app.modules.store.models.item import StoreItem
     _to_three_pos(client, db, s)
     for po in (s["po1"], s["po2"], s["po3"]):
         _approve_po(client, s, po)
     assert _grn(client, s, s["po1"], {s["l1"]: 20}).status_code == 200
     assert _status(db, s) == "partially_received"
-    # Store books 10 more on PO-2 but has not inspected them yet.
+    # The item (L1) is then flagged "Quality check on receipt": the 10 more booked on PO-2 wait in Quality for the lot decision.
+    db.get(StoreItem, db.get(P2PPurchaseOrderItem, s["po2"]["items"][0]["id"]).store_item_id).inspection_on_receipt = True
+    db.commit()
     po2 = s["po2"]
     waiting = client.post(GRNS, json={"purchase_order_id": po2["id"], "store_location_id": _receiving_store(client),
                                       "items": [{"po_item_id": po2["items"][0]["id"], "received_quantity": 10}]}, headers=_h(s["store"]))
     assert waiting.status_code == 200, waiting.text
+    assert waiting.json()["status"] == "draft"
     r = client.post(f"{PR}/{s['pr_id']}/close", json={"reason": "Vendors will not deliver the rest"}, headers=_h(s["head"]))
     assert r.status_code == 409 and waiting.json()["grn_number"] in r.json()["detail"] and "inspection" in r.json()["detail"]
     assert _status(db, s) == "partially_received"
@@ -686,7 +685,7 @@ def test_every_step_of_the_story_is_written_to_the_history(client, db, s):
     actions |= {a.action for a in db.query(AuditLog).filter(AuditLog.entity_type == "p2p_purchase_order").all()}
     expected = {"created", "rfq_created", "submitted", "line_quotation_added", "lines_awarded", "po_draft_created",
                 "po_document_uploaded", "po_raised", "approval_rejected", "po_cancelled", "line_short_closed", "award_trimmed",
-                "line_buyer_reassigned", "approval_approved", "po_fully_approved", "grn_recorded", "grn_inspected", "po_rollup"}
+                "line_buyer_reassigned", "approval_approved", "po_fully_approved", "grn_recorded", "grn_completed_on_receipt", "po_rollup"}
     assert expected <= actions, f"missing from the history: {sorted(expected - actions)}"
     summary = db.query(AuditLog).filter_by(entity_type="p2p_request", entity_id=s["pr_id"], action="line_buyer_reassigned").one().summary
     assert "A is overloaded" in summary and c.name in summary and "40" in summary   # from, to, quantity, reason

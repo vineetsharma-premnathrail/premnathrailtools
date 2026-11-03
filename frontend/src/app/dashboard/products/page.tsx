@@ -15,21 +15,28 @@ import {
   ErrorBanner, PageHeader, Pill, PRODUCT_STATUS_HEX, PRODUCT_STATUS_LABELS, PRODUCT_TYPE_LABELS, tableWrapStyle, tdStyle, thStyle,
 } from '@/components/products/ProductBits'
 import { extractErrorMessages } from '@/lib/validation'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleProducts } from '@/lib/productsPreviewSamples'
+
+const COLUMNS = ['Code', 'Name', 'Type', 'Model', 'Status']
+// Columns a role may hide (Role editor > CRM > Products > Visibility). Code, Name and Status always show.
+const HIDEABLE: Record<string, string> = { Type: 'type', Model: 'model' }
 
 export default function ProductsPage() {
   const { isAuthorized, isLoading } = useProductsAccess()
   const { can } = useCan()
   const router = useRouter()
+  const vis = useVisibility('crm:products')
   const [rows, setRows] = useState<FinishedProduct[]>([])
   const [filters, setFilters] = useState({ search: '', product_type: '', status: '' })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
 
   useEffect(() => {
-  }, [isAuthorized])
-
-  useEffect(() => {
     if (!isAuthorized) return
+    // Role editor preview: made-up rows, nothing is loaded.
+    if (vis.preview) { setRows(sampleProducts); setLoading(false); return }
     const t = setTimeout(() => {
       setLoading(true)
       const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== ''))
@@ -39,19 +46,21 @@ export default function ProductsPage() {
         .finally(() => setLoading(false))
     }, 250)
     return () => clearTimeout(t)
-  }, [isAuthorized, filters])
+  }, [isAuthorized, filters, vis.preview])
 
   if (isLoading || !isAuthorized) return null
+  // The preview draws every column (hidden ones dimmed, with a toggle); normal use drops the hidden ones.
+  const columns = COLUMNS.filter((h) => !HIDEABLE[h] || vis.preview || vis.showColumn('products', HIDEABLE[h]))
 
   const setF = (k: keyof typeof filters, v: string) => setFilters((f) => ({ ...f, [k]: v }))
-  const open = (row: FinishedProduct) => router.push(recordPath('/dashboard/products', row))
+  const open = (row: FinishedProduct) => { if (!vis.preview) router.push(recordPath('/dashboard/products', row)) }
 
   return (
     <div>
-      <ProductsNav />
+      {!vis.preview && <ProductsNav />}
       <PageHeader title="Products">
         {can('crm', 'products', 'create') && (
-          <button type="button" data-tour="prod-new-btn" style={primaryBtnStyle} onClick={() => router.push('/dashboard/products/new')}>+ New Product</button>
+          <button type="button" data-tour="prod-new-btn" style={primaryBtnStyle} disabled={vis.preview} onClick={() => router.push('/dashboard/products/new')}>+ New Product</button>
         )}
       </PageHeader>
       <ErrorBanner error={error} />
@@ -72,11 +81,13 @@ export default function ProductsPage() {
 
       <div data-tour="prod-table" style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-          <thead><tr>{['Code', 'Name', 'Type', 'Model', 'Status'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
+          <thead><tr>{columns.map((h, hi) => HIDEABLE[h]
+            ? <VisTh key={h} vis={vis} table="products" k={HIDEABLE[h]} style={thStyle}>{h}</VisTh>
+            : <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
           <tbody>
-            {loading && rows.length === 0 && <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>}
+            {loading && rows.length === 0 && <tr><td colSpan={columns.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>
+              <tr><td colSpan={columns.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>
                 {Object.values(filters).some(Boolean) ? 'No products match these filters.' : 'No products yet — add your first finished product (e.g. RRB Sanding Vehicle).'}
               </td></tr>
             )}
@@ -84,8 +95,8 @@ export default function ProductsPage() {
               <tr key={p.id} onClick={() => open(p)} style={{ cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, whiteSpace: 'nowrap' }}>{p.code}</td>
                 <td style={tdStyle}>{p.name}</td>
-                <td style={tdStyle}>{PRODUCT_TYPE_LABELS[p.product_type] || p.product_type}</td>
-                <td style={tdStyle}>{p.model_number || '—'}</td>
+                <VisTd vis={vis} table="products" k="type" style={tdStyle}>{PRODUCT_TYPE_LABELS[p.product_type] || p.product_type}</VisTd>
+                <VisTd vis={vis} table="products" k="model" style={tdStyle}>{p.model_number || '—'}</VisTd>
                 <td style={tdStyle}><Pill text={PRODUCT_STATUS_LABELS[p.status] || p.status} hex={PRODUCT_STATUS_HEX[p.status]} /></td>
               </tr>
             ))}

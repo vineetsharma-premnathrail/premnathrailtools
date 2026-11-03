@@ -1,10 +1,13 @@
 'use client'
 
-// My Lines — the buyer's worklist: every requisition line the buyer must still quote, order or chase, one row
-// per line. A buyer sees own lines; the Purchase head (All buyers' lines) sees every buyer's lines plus the
-// lines that have no buyer yet, and can move a line's not-yet-ordered quantity to another buyer.
+// My Lines — the buyer's worklist: every requisition line the buyer must still quote, order or chase. The server
+// sends one row per line; the page shows ONE ROW per requisition + item category + buyer (owner, 2026-11-02): the
+// lines of one requisition that share a category and a buyer go on one RFQ together, so they are one piece of work.
+// A row expands to its lines (Reassign / Short-close act on a line). A buyer sees own lines; the Purchase head
+// (All buyers' lines) sees every buyer's lines plus the lines that have no buyer yet, and can move a line's
+// not-yet-ordered quantity to another buyer.
 // Backend: GET /p2p/my-lines (no prices), POST .../reassign-buyer, POST .../short-close.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -23,7 +26,46 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import { Pill, RowCount, TableScroll, chipBtnStyle, inputStyle, pageBtnStyle, secondaryBtnStyle, smallSecondaryBtnStyle, thStyle, tdStyle, numThStyle, numTdStyle } from '@/components/shared/ui'
 
 const PAGE = 100
-const COLUMNS_BASE = ['PR no.', 'Item', 'To buy', 'Not yet ordered', 'Ordered', 'Received', 'Pending', 'Stage', 'RFQ', 'PO', 'Required by', 'Priority', 'Requester']
+const COLUMNS_BASE = ['PR no.', 'Category · items', 'To buy', 'Not yet ordered', 'Ordered', 'Received', 'Pending', 'Stage', 'RFQ', 'PO', 'Required by', 'Priority', 'Requester']
+
+/** One row of the table: the lines of one requisition that share an item category and a buyer. */
+type LineGroup = {
+  key: string; pr: MyLineRow; category: string | null; buyer_id: number | null; buyer_name: string | null; lines: MyLineRow[]
+  unit: string | null  // the common unit of the lines, null when they differ (then no totals are shown)
+  buy_qty: number | null; open_to_order: number | null; ordered_qty: number | null; accepted_qty: number | null; pending_receipt: number | null
+  states: string[]; rfqs: MyLineRow['rfqs']; pos: MyLineRow['pos']; po_rejected: boolean
+}
+
+const groupKey = (r: MyLineRow) => `${r.p2p_request_id}|${r.category || ''}|${r.buyer_id ?? ''}`
+
+/** Rows -> groups, in the order the rows arrive (requisition number, then line). */
+function groupLines(rows: MyLineRow[]): LineGroup[] {
+  const out: LineGroup[] = []
+  const byKey = new Map<string, LineGroup>()
+  for (const r of rows) {
+    const k = groupKey(r)
+    let g = byKey.get(k)
+    if (!g) {
+      g = { key: k, pr: r, category: r.category, buyer_id: r.buyer_id, buyer_name: r.buyer_name, lines: [], unit: null,
+        buy_qty: 0, open_to_order: 0, ordered_qty: 0, accepted_qty: 0, pending_receipt: 0, states: [], rfqs: [], pos: [], po_rejected: false }
+      byKey.set(k, g); out.push(g)
+    }
+    g.lines.push(r)
+  }
+  for (const g of out) {
+    const units = new Set(g.lines.map((l) => (l.unit || '').trim().toLowerCase()))
+    const same = units.size === 1
+    g.unit = same ? g.lines[0].unit : null
+    const sum = (f: (l: MyLineRow) => number) => (same ? g.lines.reduce((a, l) => a + (f(l) || 0), 0) : null)
+    g.buy_qty = sum((l) => l.buy_qty); g.open_to_order = sum((l) => l.open_to_order); g.ordered_qty = sum((l) => l.ordered_qty)
+    g.accepted_qty = sum((l) => l.accepted_qty); g.pending_receipt = sum((l) => l.pending_receipt)
+    g.states = STATE_ORDER.filter((st) => g.lines.some((l) => l.state === st))
+    g.rfqs = Array.from(new Map(g.lines.flatMap((l) => l.rfqs).map((q) => [q.id, q])).values())
+    g.pos = Array.from(new Map(g.lines.flatMap((l) => l.pos).map((po) => [po.id, po])).values())
+    g.po_rejected = g.lines.some((l) => l.po_rejected)
+  }
+  return out
+}
 // Stage chips in the order a line moves through them.
 const STATE_ORDER = ['awaiting_stock_decision', 'to_quote', 'quoting', 'awarded', 'po_in_approval', 'with_vendor', 'partly_received', 'received', 'short_closed', 'issued_from_stock']
 const STATE_LABEL: Record<string, string> = {
@@ -72,6 +114,7 @@ export default function MyLinesPage() {
   const [buyerNames, setBuyerNames] = useState<Record<string, string>>({})
   const [moving, setMoving] = useState<MyLineRow | null>(null)
   const [closing, setClosing] = useState<MyLineRow | null>(null)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())  // group keys whose lines are open
   const reqId = useRef(0)
 
   useEffect(() => {
@@ -113,6 +156,8 @@ export default function MyLinesPage() {
   useEffect(() => { Promise.resolve().then(load) }, [load])
 
   const rows = data?.rows ?? []
+  const groups = useMemo(() => groupLines(data?.rows ?? []), [data])
+  const toggle = (k: string) => setExpanded((e) => { const n = new Set(e); if (n.has(k)) n.delete(k); else n.add(k); return n })
   const counts = data?.counts ?? {}
   const countTotal = Object.values(counts).reduce((a, b) => a + b, 0)
   const buyerOptions = useMemo(() => [
@@ -148,8 +193,8 @@ export default function MyLinesPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>My Lines</h1>
           <p style={{ fontSize: 13, color: TEXT.secondary, margin: '4px 0 0' }}>
             {isHead
-              ? 'Requisition lines of every buyer, and lines that have no buyer yet. Lines of one requisition go on one RFQ; lines of different requisitions cannot share an RFQ.'
-              : 'Requisition lines you buy: what is still to quote, to order, or waiting for goods. Lines of different requisitions cannot share an RFQ.'}
+              ? 'Requisition lines of every buyer, and lines that have no buyer yet. One row per requisition, item category and buyer; open a row to see its lines. Lines of one requisition go on one RFQ; lines of different requisitions cannot share an RFQ.'
+              : 'Requisition lines you buy: what is still to quote, to order, or waiting for goods. One row per requisition and item category; open a row to see its lines. Lines of different requisitions cannot share an RFQ.'}
           </p>
         </div>
       </div>
@@ -195,7 +240,7 @@ export default function MyLinesPage() {
             <tr>
               {columns.map((c, i) => (
                 <th key={c || 'actions'} style={['To buy', 'Not yet ordered', 'Ordered', 'Received', 'Pending'].includes(c) ? numThStyle : thStyle}>
-                  {c}{i === 0 && <RowCount count={data?.total ?? rows.length} />}
+                  {c}{i === 0 && <RowCount count={groups.length} />}
                 </th>
               ))}
             </tr>
@@ -212,68 +257,119 @@ export default function MyLinesPage() {
                 {filtered && <button type="button" onClick={reset} style={{ background: 'none', border: 'none', paddingBlock: 0, paddingInline: 0, font: 'inherit', color: '#c2410c', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}>Clear filters</button>}
               </td></tr>
             )}
-            {rows.map((r) => {
-              const late = !!r.required_date && r.required_date.slice(0, 10) < today && r.open_to_order > 0
+            {groups.map((g) => {
+              const r = g.pr
+              const open = expanded.has(g.key)
+              const hasOpen = g.lines.some((l) => l.open_to_order > 1e-6)
+              const late = !!r.required_date && r.required_date.slice(0, 10) < today && hasOpen
               const sub = [r.purpose_label, r.charged_to].filter(Boolean).join(' · ')
-              const hasOpen = r.open_to_order > 1e-6
-              const youCanRaise = canRaiseRfq && r.state === 'to_quote' && r.buyer_id != null && (mine(r) || canWorkAll)
-              const youCanMove = canMove && hasOpen
-              const youCanClose = canShortClose && hasOpen && (mine(r) || canWorkAll)
+              const groupMine = g.buyer_id != null && g.buyer_id === user?.id
+              const youCanRaise = canRaiseRfq && g.states.includes('to_quote') && g.buyer_id != null && (groupMine || canWorkAll)
+              const lineActions = g.lines.some((l) => l.open_to_order > 1e-6 && (canMove || (canShortClose && (mine(l) || canWorkAll))))
+              const n = g.lines.length
+              const mixedTitle = 'The lines use different units — open the row to see each line'
+              const qty = (v: number | null, bold = false) => (
+                <td style={{ ...numTdStyle, fontWeight: bold ? 700 : 400, color: bold ? TEXT.heading : undefined }} title={v == null ? mixedTitle : undefined}>
+                  {v == null ? 'mixed' : fmtQty(v)}
+                </td>
+              )
               return (
-                <tr key={r.pr_item_id} style={late ? { background: 'rgba(220,38,38,0.045)' } : undefined}>
-                  <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 700 }}>
-                    <Link href={recordPath('/dashboard/p2p', r, 'p2p_request_id')} style={{ color: TEXT.heading, textDecoration: 'none' }}>{r.p2p_number}</Link>
-                  </td>
-                  <td style={{ ...tdStyle, minWidth: 200 }} title={sub || undefined}>
-                    <div style={{ fontWeight: 600, color: TEXT.heading }}>{r.item_name}</div>
-                    <div style={{ fontSize: 11.5, color: TEXT.muted }}>{r.item_code ? `${r.item_code}` : 'No item code'}{r.charged_to ? ` · ${r.charged_to}` : ''}</div>
-                  </td>
-                  <td style={numTdStyle}>{fmtQty(r.buy_qty)} {r.unit || ''}</td>
-                  <td style={{ ...numTdStyle, fontWeight: hasOpen ? 700 : 400, color: hasOpen ? TEXT.heading : TEXT.muted }}>{fmtQty(r.open_to_order)}</td>
-                  <td style={numTdStyle}>{fmtQty(r.ordered_qty)}</td>
-                  <td style={numTdStyle}>{fmtQty(r.accepted_qty)}</td>
-                  <td style={numTdStyle}>{fmtQty(r.pending_receipt)}</td>
-                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}><div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                      <Pill label={r.state_label} hex={STATE_HEX[r.state] || '#64748b'} />
-                      {r.po_rejected && <Pill label="PO rejected — upload again" hex="#d97706" title="The PO made for this line was rejected in approval. The vendor stays chosen; the buyer uploads a corrected PO." />}
-                    </div>
-                  </td>
-                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                    {r.rfqs.length ? r.rfqs.map((q, i) => (
-                      <span key={q.id}>{i > 0 && ', '}
-                        {mine(r) || canWorkAll
-                          ? <Link href={recordPath('/dashboard/p2p/rfq', q)} style={{ color: '#2563eb', textDecoration: 'none' }} title={`RFQ ${RFQ_STATUS[q.status] || q.status}`}>{q.rfq_number}</Link>
-                          : <span title={`RFQ ${RFQ_STATUS[q.status] || q.status} — it belongs to ${r.buyer_name || 'another buyer'}`}>{q.rfq_number}</span>}
-                      </span>
-                    )) : <span style={{ color: TEXT.muted }}>—</span>}
-                  </td>
-                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                    {r.pos.length ? r.pos.map((p, i) => (
-                      <span key={p.id}>{i > 0 && ', '}
-                        <Link href={recordPath('/dashboard/p2p/purchase-orders', p)} style={{ color: '#2563eb', textDecoration: 'none' }} title={p.stage_label}>{p.po_number}</Link>
-                      </span>
-                    )) : <span style={{ color: TEXT.muted }}>—</span>}
-                  </td>
-                  <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: late ? '#b91c1c' : undefined, fontWeight: late ? 600 : undefined }}>
-                    {r.required_date ? formatDate(r.required_date) : '—'}{late ? ' · late' : ''}
-                  </td>
-                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{isUrgent(r.priority) ? <Pill label={priorityLabel(r.priority)} hex="#dc2626" /> : <span style={{ color: TEXT.muted }}>{priorityLabel(r.priority)}</span>}</td>
-                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{r.requester_name || '—'}</td>
-                  {isHead && <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{r.buyer_name || <span style={{ color: '#b91c1c', fontWeight: 600 }}>Unassigned</span>}</td>}
-                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                    <div style={{ display: 'inline-flex', gap: 6 }}>
-                      {youCanRaise && (
-                        <button type="button" data-tour="my-lines-raise-rfq" style={smallSecondaryBtnStyle}
-                          onClick={() => router.push(recordHref('/dashboard/p2p/rfq/new', r, 'p2p_request_id', undefined, 'pr_id'))}
-                          title="Opens the RFQ for this requisition with your lines. Lines of different requisitions cannot be on one RFQ.">Raise RFQ</button>
-                      )}
-                      {youCanMove && <button type="button" data-tour="my-lines-reassign" style={smallSecondaryBtnStyle} onClick={() => setMoving(r)}
-                        title="Move the not-yet-ordered quantity of this line to another buyer">Reassign</button>}
-                      {youCanClose && <button type="button" data-tour="my-lines-short-close" style={smallSecondaryBtnStyle} onClick={() => setClosing(r)}
-                        title="Write off the not-yet-ordered quantity of this line">Short-close</button>}
-                    </div>
-                  </td>
-                </tr>
+                <Fragment key={g.key}>
+                  <tr style={late ? { background: 'rgba(220,38,38,0.045)' } : undefined}>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 700 }}>
+                      <Link href={recordPath('/dashboard/p2p', r, 'p2p_request_id')} style={{ color: TEXT.heading, textDecoration: 'none' }}>{r.p2p_number}</Link>
+                    </td>
+                    <td style={{ ...tdStyle, minWidth: 220 }} title={sub || undefined}>
+                      <button type="button" onClick={() => toggle(g.key)} aria-expanded={open} aria-label={`${open ? 'Hide' : 'Show'} the ${n} line${n === 1 ? '' : 's'} of ${r.p2p_number}${g.category ? ` · ${g.category}` : ''}`}
+                        style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer', textAlign: 'left', color: TEXT.heading }}>
+                        <div style={{ fontWeight: 600 }}>{open ? '▾' : '▸'} {g.category || 'No category'} <span style={{ fontWeight: 400, color: TEXT.muted }}>· {n} item{n === 1 ? '' : 's'}</span></div>
+                        <div style={{ fontSize: 11.5, color: TEXT.muted, whiteSpace: 'normal' }}>
+                          {g.lines.slice(0, 3).map((l) => l.item_name).join(', ')}{n > 3 ? ` +${n - 3} more` : ''}{r.charged_to ? ` · ${r.charged_to}` : ''}
+                        </div>
+                      </button>
+                    </td>
+                    <td style={numTdStyle} title={g.buy_qty == null ? mixedTitle : undefined}>{g.buy_qty == null ? 'mixed' : `${fmtQty(g.buy_qty)} ${g.unit || ''}`}</td>
+                    {qty(g.open_to_order, hasOpen)}
+                    {qty(g.ordered_qty)}
+                    {qty(g.accepted_qty)}
+                    {qty(g.pending_receipt)}
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}><div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                        {g.states.map((st) => <Pill key={st} label={STATE_LABEL[st] || st} hex={STATE_HEX[st] || '#64748b'} />)}
+                        {g.po_rejected && <Pill label="PO rejected — upload again" hex="#d97706" title="The PO made for a line here was rejected in approval. The vendor stays chosen; the buyer uploads a corrected PO." />}
+                      </div>
+                    </td>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                      {g.rfqs.length ? g.rfqs.map((q, i) => (
+                        <span key={q.id}>{i > 0 && ', '}
+                          {groupMine || canWorkAll
+                            ? <Link href={recordPath('/dashboard/p2p/rfq', q)} style={{ color: '#2563eb', textDecoration: 'none' }} title={`RFQ ${RFQ_STATUS[q.status] || q.status}`}>{q.rfq_number}</Link>
+                            : <span title={`RFQ ${RFQ_STATUS[q.status] || q.status} — it belongs to ${g.buyer_name || 'another buyer'}`}>{q.rfq_number}</span>}
+                        </span>
+                      )) : <span style={{ color: TEXT.muted }}>—</span>}
+                    </td>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                      {g.pos.length ? g.pos.map((po, i) => (
+                        <span key={po.id}>{i > 0 && ', '}
+                          <Link href={recordPath('/dashboard/p2p/purchase-orders', po)} style={{ color: '#2563eb', textDecoration: 'none' }} title={po.stage_label}>{po.po_number}</Link>
+                        </span>
+                      )) : <span style={{ color: TEXT.muted }}>—</span>}
+                    </td>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: late ? '#b91c1c' : undefined, fontWeight: late ? 600 : undefined }}>
+                      {r.required_date ? formatDate(r.required_date) : '—'}{late ? ' · late' : ''}
+                    </td>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{isUrgent(r.priority) ? <Pill label={priorityLabel(r.priority)} hex="#dc2626" /> : <span style={{ color: TEXT.muted }}>{priorityLabel(r.priority)}</span>}</td>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{r.requester_name || '—'}</td>
+                    {isHead && <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{g.buyer_name || <span style={{ color: '#b91c1c', fontWeight: 600 }}>Unassigned</span>}</td>}
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'inline-flex', gap: 6 }}>
+                        {youCanRaise && (
+                          <button type="button" data-tour="my-lines-raise-rfq" style={smallSecondaryBtnStyle}
+                            onClick={() => router.push(recordHref('/dashboard/p2p/rfq/new', r, 'p2p_request_id', undefined, 'pr_id'))}
+                            title="Opens the RFQ for this requisition with your lines. Lines of different requisitions cannot be on one RFQ.">Raise RFQ</button>
+                        )}
+                        {lineActions && !open && <button type="button" style={smallSecondaryBtnStyle} onClick={() => toggle(g.key)} title="Open the lines to reassign or short-close one">Lines</button>}
+                      </div>
+                    </td>
+                  </tr>
+                  {open && g.lines.map((l) => {
+                    const lOpen = l.open_to_order > 1e-6
+                    const youCanMove = canMove && lOpen
+                    const youCanClose = canShortClose && lOpen && (mine(l) || canWorkAll)
+                    return (
+                      <tr key={l.pr_item_id} style={{ background: 'rgba(15,23,42,0.025)' }}>
+                        <td style={{ ...tdStyle, color: TEXT.muted, fontSize: 12 }}>line</td>
+                        <td style={{ ...tdStyle, minWidth: 200, paddingLeft: 24 }}>
+                          <div style={{ fontWeight: 600, color: TEXT.heading }}>{l.item_name}</div>
+                          <div style={{ fontSize: 11.5, color: TEXT.muted }}>{l.item_code || 'No item code'}</div>
+                        </td>
+                        <td style={numTdStyle}>{fmtQty(l.buy_qty)} {l.unit || ''}</td>
+                        <td style={{ ...numTdStyle, fontWeight: lOpen ? 700 : 400, color: lOpen ? TEXT.heading : TEXT.muted }}>{fmtQty(l.open_to_order)}</td>
+                        <td style={numTdStyle}>{fmtQty(l.ordered_qty)}</td>
+                        <td style={numTdStyle}>{fmtQty(l.accepted_qty)}</td>
+                        <td style={numTdStyle}>{fmtQty(l.pending_receipt)}</td>
+                        <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}><div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                            <Pill label={l.state_label} hex={STATE_HEX[l.state] || '#64748b'} />
+                            {l.po_rejected && <Pill label="PO rejected — upload again" hex="#d97706" title="The PO made for this line was rejected in approval. The vendor stays chosen; the buyer uploads a corrected PO." />}
+                          </div>
+                        </td>
+                        <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: TEXT.muted }}>{l.rfqs.length ? l.rfqs.map((q) => q.rfq_number).join(', ') : '—'}</td>
+                        <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: TEXT.muted }}>{l.pos.length ? l.pos.map((po) => po.po_number).join(', ') : '—'}</td>
+                        <td style={tdStyle} />
+                        <td style={tdStyle} />
+                        <td style={tdStyle} />
+                        {isHead && <td style={tdStyle} />}
+                        <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'inline-flex', gap: 6 }}>
+                            {youCanMove && <button type="button" data-tour="my-lines-reassign" style={smallSecondaryBtnStyle} onClick={() => setMoving(l)}
+                              title="Move the not-yet-ordered quantity of this line to another buyer">Reassign</button>}
+                            {youCanClose && <button type="button" data-tour="my-lines-short-close" style={smallSecondaryBtnStyle} onClick={() => setClosing(l)}
+                              title="Write off the not-yet-ordered quantity of this line">Short-close</button>}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </Fragment>
               )
             })}
           </tbody>
@@ -281,7 +377,7 @@ export default function MyLinesPage() {
       </TableScroll>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginTop: 10, fontSize: 12.5, color: TEXT.muted }}>
-        <span aria-live="polite">{data && data.total > 0 ? `Showing ${data.skip + 1}–${to} of ${data.total} lines` : ''}</span>
+        <span aria-live="polite">{data && data.total > 0 ? `Showing ${data.skip + 1}–${to} of ${data.total} lines in ${groups.length} row${groups.length === 1 ? '' : 's'}` : ''}</span>
         <span style={{ display: 'flex', gap: 8 }}>
           <button type="button" style={pageBtnStyle(skip === 0)} disabled={skip === 0} onClick={() => setSkip(Math.max(0, skip - PAGE))}>← Previous</button>
           <button type="button" style={pageBtnStyle(!data || to >= data.total)} disabled={!data || to >= data.total} onClick={() => setSkip(skip + PAGE)}>Next →</button>

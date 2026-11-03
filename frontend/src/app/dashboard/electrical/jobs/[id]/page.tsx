@@ -31,6 +31,9 @@ import { useCan } from '@/lib/permissions'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection } from '@/lib/visibilityComponents'
+import { sampleJobDetail, sampleMeta } from '@/lib/electricalPreviewSamples'
 
 const WORKING = ['draft', 'in_progress', 'handed_over']
 const PHASES = ['design', 'procurement', 'build', 'test_qc', 'handover'] as const
@@ -54,12 +57,16 @@ function JobDetailView() {
   const params = useParams()
   const searchParams = useSearchParams()
   const ref = params.id as string
-  const { id: resolvedJobId, error: linkError } = useRecordId(ref)
+  // Role visibility (Role & Permissions › Electrical › RRV Electrical Jobs › Visibility). In the Role editor's
+  // "Preview & choose" the page draws a made-up job on its Details tab and loads / saves nothing.
+  const vis = useVisibility('electrical:jobs')
+  const preview = vis.preview
+  const { id: resolvedJobId, error: linkError } = useRecordId(preview ? null : ref)
   const jobId = resolvedJobId ?? 0
-  const initialTab = searchParams.get('tab') as Tab | null
+  const initialTab = preview ? 'details' : searchParams.get('tab') as Tab | null
 
-  const [job, setJob] = useState<ElectricalJobDetail | null>(null)
-  const [meta, setMeta] = useState<ElectricalMeta | null>(null)
+  const [job, setJob] = useState<ElectricalJobDetail | null>(preview ? sampleJobDetail : null)
+  const [meta, setMeta] = useState<ElectricalMeta | null>(preview ? sampleMeta : null)
   const [users, setUsers] = useState<ElectricalLookupOption[]>([])
   const [tab, setTab] = useState<Tab>(initialTab && TAB_KEYS.includes(initialTab) ? initialTab : 'stages')
   const [error, setError] = useState<string | string[]>('')
@@ -75,14 +82,14 @@ function JobDetailView() {
     .catch((err) => setError(extractErrorMessages(err, 'Failed to load the electrical job.')))
 
   useEffect(() => {
-    if (!isAuthorized || !jobId) return
+    if (!isAuthorized || !jobId || preview) return
     electricalApi.getJob(jobId)
       .then((j: ElectricalJobDetail) => { setJob(j); setError('') })
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load the electrical job.')))
     electricalApi.getMeta().then(setMeta).catch((err) => addLookupError(extractErrorMessages(err, "Couldn't load the electrical stage and category lists — stage and category names may show blank; refresh the page to try again.")))
     electricalApi.lookupUsers().then(setUsers).catch((err) => addLookupError(extractErrorMessages(err,
       "Couldn't load users for the stage owner pickers — the job is still usable, refresh to try again.")))
-  }, [isAuthorized, jobId])
+  }, [isAuthorized, jobId, preview])
 
   // Sub-tabs the user's role sees (Electrical › RRV Electrical Jobs features).
   // Drawings / Tests / Troubleshooting / BOM also open through their own
@@ -97,7 +104,8 @@ function JobDetailView() {
       default: return sees(t)
     }
   }
-  const visibleTabs = TAB_KEYS.filter(tabVisible)
+  // The preview shows only the Details tab: the other tabs load their own records.
+  const visibleTabs = preview ? (['details'] as Tab[]) : TAB_KEYS.filter(tabVisible)
   const activeTab: Tab = tabVisible(tab) ? tab : (visibleTabs[0] ?? 'details')
 
   const goToTab = (t: string) => {
@@ -138,8 +146,8 @@ function JobDetailView() {
   }
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><ElectricalNav /><InvalidRecordLink message={linkError} listHref="/dashboard/electrical/jobs" listLabel="Back to jobs" /></div>)
-  if (!resolvedJobId) return <div><ElectricalNav /></div>
+  if (linkError && !preview) return (<div><ElectricalNav /><InvalidRecordLink message={linkError} listHref="/dashboard/electrical/jobs" listLabel="Back to jobs" /></div>)
+  if (!resolvedJobId && !preview) return <div><ElectricalNav /></div>
 
   // Every job / tab mutation needs Jobs › Edit on the backend; Tests and
   // Troubleshooting also accept their own tab's create / edit actions, so
@@ -150,8 +158,8 @@ function JobDetailView() {
   // Per sub-tab: the job is open and the role holds that feature's edit (or,
   // for Documents, upload / delete — DocumentsTab refines it).
   const editFor = (feature: string) => isWorking && jf(feature, 'edit')
-  const canHoldClose = jf('job_status', 'edit')
-  const canCancelJob = jf('job_status', 'cancel')
+  const canHoldClose = jf('job_status', 'edit') && !preview
+  const canCancelJob = jf('job_status', 'cancel') && !preview
   const seeRequirement = sees('requirement')
   const s = job?.summary
   const tabLabels: Record<Tab, string> = {
@@ -173,9 +181,10 @@ function JobDetailView() {
 
   return (
     <div>
-      <ElectricalNav />
+      {!preview && <ElectricalNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <VisSection vis={vis} k="detail_header">
         <div style={{ minWidth: 0 }}>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
             Electrical Module · RRV Electrical Job
@@ -193,7 +202,8 @@ function JobDetailView() {
             </p>
           )}
         </div>
-        <button data-tour="elec-job-back-btn" onClick={() => router.push('/dashboard/electrical/jobs')} type="button" style={secondaryBtnStyle}>← Back</button>
+        </VisSection>
+        {!preview && <button data-tour="elec-job-back-btn" onClick={() => router.push('/dashboard/electrical/jobs')} type="button" style={secondaryBtnStyle}>← Back</button>}
       </div>
 
       <ErrorBanner error={error} />
@@ -213,7 +223,7 @@ function JobDetailView() {
             </div>
           )}
 
-          {(canHoldClose || canCancelJob || job.status === 'draft') && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+          {(canHoldClose || canCancelJob || (job.status === 'draft' && !preview)) && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
             {canHoldClose && job.status === 'handed_over' && <button data-tour="elec-job-close-btn" type="button" disabled={busy} style={primaryBtn} onClick={() => setConfirm('close')}>Close Job</button>}
             {canHoldClose && job.status === 'on_hold' && <button data-tour="elec-job-resume-btn" type="button" disabled={busy} style={primaryBtn} onClick={() => setConfirm('resume')}>Resume Job</button>}
             {canHoldClose && ['draft', 'in_progress'].includes(job.status) && <button data-tour="elec-job-hold-btn" type="button" disabled={busy} style={secondaryBtnStyle} onClick={() => setReasonFor('hold')}>Put On Hold</button>}
@@ -222,6 +232,7 @@ function JobDetailView() {
           </div>}
 
           {/* Phase tracker */}
+          <VisSection vis={vis} k="detail_phase_tracker">
           <div data-tour="elec-job-phase-tracker" style={{ ...sectionStyle, padding: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
@@ -251,6 +262,7 @@ function JobDetailView() {
               })}
             </div>
           </div>
+          </VisSection>
 
           {/* Tabs */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, borderBottom: `1px solid ${BORDER.light}`, marginBottom: 18 }}>
@@ -294,10 +306,11 @@ function JobDetailView() {
                     <span>{job.planned_start_date ? `Planned start ${formatDate(job.planned_start_date)}` : 'Start not planned'}</span>
                     {job.started_at && <><span>·</span><span>Started {formatDate(job.started_at)}</span></>}
                   </>}
-                  actions={jobsEdit && !['closed', 'cancelled'].includes(job.status)
+                  actions={jobsEdit && !preview && !['closed', 'cancelled'].includes(job.status)
                     ? <button data-tour="elec-job-edit-btn" type="button" style={smallSecondaryBtnStyle} onClick={() => setEditing(true)}>Edit Details & Requirement</button>
                     : undefined}
                 />
+                <VisSection vis={vis} k="detail_rrv">
                 <div data-tour="elec-job-details-rrv">
                   <DetailGroup title="RRV & Job">
                     {job.order_project_number && (
@@ -313,7 +326,9 @@ function JobDetailView() {
                     <DetailRow label="Plant">{job.branch_name}</DetailRow>
                   </DetailGroup>
                 </div>
+                </VisSection>
                 {seeRequirement && (
+                  <VisSection vis={vis} k="detail_requirement">
                   <div data-tour="elec-job-details-requirement">
                     <DetailGroup title="Electrical Requirement">
                       <DetailRow label="System Voltage">{job.system_voltage}</DetailRow>
@@ -324,10 +339,13 @@ function JobDetailView() {
                       <DetailRow label="Requirement">{job.requirement_notes || <span style={{ color: TEXT.muted }}>Not written down yet.</span>}</DetailRow>
                     </DetailGroup>
                   </div>
+                  </VisSection>
                 )}
+                <VisSection vis={vis} k="detail_remarks">
                 <DetailGroup last>
                   <DetailRow label="Remarks">{job.remarks}</DetailRow>
                 </DetailGroup>
+                </VisSection>
                 <p style={{ fontSize: 12, color: TEXT.muted, margin: '10px 0 0' }}>
                   Created by {job.created_by_name || '—'}{job.created_at ? ` on ${formatDateTime(job.created_at)}` : ''}
                 </p>

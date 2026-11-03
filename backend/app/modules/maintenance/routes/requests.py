@@ -3,11 +3,12 @@ from datetime import date
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core import assignee_rules
+from app.core import assignee_rules, visibility
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.core.priority import map_legacy_priority, parse_priority
 from app.modules.maintenance.role_events import role_event
-from app.core.permissions import require_any_app_access, require_feature_action, require_tab_action
+from app.core.permissions import ensure_tab_action, require_any_app_access, require_feature_action, require_tab_action
+from app.modules.main.routes.auth import get_current_user
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.organization.models.branch import Branch
@@ -33,6 +34,10 @@ router = APIRouter(
     prefix="/maintenance/requests", tags=["Maintenance"],
     dependencies=[Depends(require_any_app_access("maintenance", "production"))],
 )
+
+# Role-wise visibility keys (core/features/maintenance.py): coded dropdown values a role may pick.
+REQUEST_VIS = "maintenance:requests"
+WO_VIS = "maintenance:work_orders"
 
 REQUEST_WO_TYPE = {"breakdown": "breakdown", "abnormality": "corrective", "improvement": "improvement", "safety": "corrective"}
 
@@ -76,6 +81,22 @@ def _get_or_404(db: Session, request_id: int, user: User) -> MaintenanceRequest:
     return req
 
 
+def _requests_viewer(user: User = Depends(get_current_user)) -> User:
+    """Maintenance › Requests › View — or, exactly as before the matrix cleanup
+    (2026-11-03), the Production app: requesters reach Requests from the
+    Sidebar through Production and see only the requests they raised."""
+    if "production" not in user.get_apps():
+        ensure_tab_action(user, "maintenance", "requests", "view")
+    return user
+
+
+def _requests_creator(user: User = Depends(get_current_user)) -> User:
+    """Maintenance › Requests › Create — or the Production app (as before)."""
+    if "production" not in user.get_apps():
+        ensure_tab_action(user, "maintenance", "requests", "create")
+    return user
+
+
 def _require_maintenance(user: User) -> None:
     if not _is_maintenance(user):
         raise HTTPException(status_code=403, detail="Only the Maintenance team can triage requests. Ask an admin for the Maintenance module if you need this.")
@@ -89,7 +110,7 @@ async def list_requests(
     mine: bool = False,
     search: str | None = None,
     db: Session = Depends(get_db),
-    user: User = Depends(require_any_app_access("maintenance", "production")),
+    user: User = Depends(_requests_viewer),
 ):
     query = db.query(MaintenanceRequest)
     if mine or not _is_maintenance(user):
@@ -117,12 +138,17 @@ async def create_request(
     payload: MaintenanceRequestCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_any_app_access("maintenance", "production")),
+    user: User = Depends(_requests_creator),
 ):
     if payload.request_type not in MAINTENANCE_REQUEST_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid request type '{payload.request_type}'. Valid: {', '.join(MAINTENANCE_REQUEST_TYPES)}.")
     if payload.priority:
         payload.priority = parse_priority(payload.priority)
+    # Role visibility: a type / priority the role doesn't offer is refused; with a restricted
+    # priority the "Auto (from criticality)" choice is gone, so a value must be picked.
+    visibility.ensure_option_allowed(user, REQUEST_VIS, "request_type", payload.request_type)
+    visibility.ensure_option_given(user, REQUEST_VIS, "priority", payload.priority)
+    visibility.ensure_option_allowed(user, REQUEST_VIS, "priority", payload.priority)
     if not payload.problem_description.strip():
         raise HTTPException(status_code=400, detail="Describe the problem — what happened, and what you saw or heard.")
     asset = db.query(MaintenanceAsset).filter(MaintenanceAsset.id == payload.asset_id, MaintenanceAsset.is_deleted == False).first()  # noqa: E712
@@ -172,7 +198,7 @@ async def create_request(
 @router.get("/{request_id}", response_model=MaintenanceRequestResponse)
 async def get_request(
     request_id: int, db: Session = Depends(get_db),
-    user: User = Depends(require_any_app_access("maintenance", "production")),
+    user: User = Depends(_requests_viewer),
 ):
     return _to_response(db, _get_or_404(db, request_id, user), user)
 
@@ -248,6 +274,9 @@ async def convert_request(
     if wo_type not in MAINTENANCE_WO_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid work order type '{wo_type}'.")
     priority = parse_priority(payload.priority) if payload.priority else map_legacy_priority(req.priority)
+    # The new job's type / priority follow the Work Orders visibility rule of the converter's roles.
+    visibility.ensure_option_allowed(user, WO_VIS, "wo_type", wo_type)
+    visibility.ensure_option_allowed(user, WO_VIS, "priority", priority)
     if payload.assigned_to_id:
         tech = db.query(User).filter(User.id == payload.assigned_to_id, User.is_active == True).first()  # noqa: E712
         if not tech:
@@ -303,7 +332,7 @@ async def convert_request(
 @router.post("/{request_id}/confirm", response_model=MaintenanceRequestResponse)
 async def confirm_repair(
     request_id: int, payload: MaintenanceRequestConfirmPayload, db: Session = Depends(get_db),
-    user: User = Depends(require_any_app_access("maintenance", "production")),
+    user: User = Depends(_requests_viewer),
 ):
     """The requester confirms the machine is OK after repair (ok=True), or
     sends the job back (ok=False, comment required) — which reopens it."""

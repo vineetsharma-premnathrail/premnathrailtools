@@ -6,6 +6,9 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { hasErpPermission, useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleMachines, sampleServiceRequests } from '@/lib/erpPreviewSamples'
 import { erpApi } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { Project, ServiceRequest, SRStatus } from '@/types'
@@ -72,6 +75,13 @@ function resolutionDays(start?: string | null, end?: string | null) {
 // Client & Site and Issue Summary are the only columns TableFit may cut.
 const WRAP_MIN: Record<string, number> = { 'SR Number': 100, 'Machine Serial': 90, 'Client & Site': 96, 'Issue Summary': 84, Priority: 78, Status: 114, 'Opening Date': 84, 'Closing Date': 84, Age: 76, Warranty: 100 }
 
+// Table columns; the ones in COLUMN_KEYS can be hidden per role (Visibility, core/features/erp.py). SR Number and Status always show.
+const ALL_HEADERS = ['SR Number', 'Machine Serial', 'Client & Site', 'Issue Summary', 'Priority', 'Status', 'Opening Date', 'Closing Date', 'Age', 'Warranty']
+const COLUMN_KEYS: Record<string, string> = {
+  'Machine Serial': 'machine_serial', 'Client & Site': 'client_site', 'Issue Summary': 'issue_summary', Priority: 'priority',
+  'Opening Date': 'opening_date', 'Closing Date': 'closing_date', Age: 'age', Warranty: 'warranty',
+}
+
 const dayText = (n: number) => (n === 0 ? 'Same day' : `${n} day${n === 1 ? '' : 's'}`)
 
 function warrantyLabel(project?: Project) {
@@ -83,12 +93,17 @@ export default function ServiceRequestsPage() {
   const { user, isAuthorized, isLoading } = useRequireApp('erp')
   const canCreate = hasErpPermission(user, 'sr_create')
   const { can } = useCan()
+  const vis = useVisibility('erp:service_requests')
+  // The preview draws every column (hidden ones dimmed, with a toggle); normal use drops the hidden ones.
+  const showCol = (h: string) => !COLUMN_KEYS[h] || vis.preview || vis.showColumn('service_requests', COLUMN_KEYS[h])
+  const headers = ALL_HEADERS.filter(showCol)
   const canExport = can('erp', 'service_requests', 'export')
   const canImport = can('erp', 'service_requests', 'import') && canCreate
   const router = useRouter()
-  const [srs, setSrs] = useState<ServiceRequest[]>([])
-  const [projects, setProjects] = useState<Project[]>([])
-  const [loading, setLoading] = useState(true)
+  // Role editor preview: made-up rows, nothing is loaded.
+  const [srs, setSrs] = useState<ServiceRequest[]>(() => (vis.preview ? sampleServiceRequests : []))
+  const [projects, setProjects] = useState<Project[]>(() => (vis.preview ? sampleMachines : []))
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState<string | string[]>('')
 
   const [search, setSearch] = useState('')
@@ -105,6 +120,7 @@ export default function ServiceRequestsPage() {
   const [showExport, setShowExport] = useState(false)
 
   const load = async () => {
+    if (vis.preview) return
     setLoading(true)
     setError('')
     try {
@@ -190,7 +206,7 @@ export default function ServiceRequestsPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <ErpNav />
+      {!vis.preview && <ErpNav />}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>Service Request Registry</h1>
@@ -322,19 +338,23 @@ export default function ServiceRequestsPage() {
         <table data-tour="erp-sr-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 0 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-              {['SR Number', 'Machine Serial', 'Client & Site', 'Issue Summary', 'Priority', 'Status', 'Opening Date', 'Closing Date', 'Age', 'Warranty'].map((h, hi) => (
-                <th key={h} data-fit-min={WRAP_MIN[h]} data-fit-wrap-head data-fit-cut={h === 'Client & Site' || h === 'Issue Summary' ? '' : undefined} style={{ textAlign: 'left', padding: '12px 8px', fontSize: 12, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#57534e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, ...(WRAP_MIN[h] ? { whiteSpace: 'normal' as const } : {}), ...(h === 'Priority' ? { minWidth: 76, overflow: 'visible', textOverflow: 'clip' } : {}) }}>
-                  {h}{hi === 0 && <RowCount count={visibleSrs.length} />}
-                </th>
-              ))}
+              {headers.map((h, hi) => {
+                const headProps = { 'data-fit-min': WRAP_MIN[h], 'data-fit-wrap-head': true, 'data-fit-cut': h === 'Client & Site' || h === 'Issue Summary' ? '' : undefined,
+                  style: { textAlign: 'left' as const, padding: '12px 8px', fontSize: 12, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase' as const, color: '#57534e', whiteSpace: 'nowrap' as const, position: 'sticky' as const, top: 0, background: '#fdf1e6', zIndex: 1, ...(WRAP_MIN[h] ? { whiteSpace: 'normal' as const } : {}), ...(h === 'Priority' ? { minWidth: 76, overflow: 'visible', textOverflow: 'clip' } : {}) } }
+                const head = <>{h}{hi === 0 && <RowCount count={visibleSrs.length} />}</>
+                // Columns a role may hide: header (VisTh) and cells (VisTd) use the same key so they stay aligned.
+                return COLUMN_KEYS[h]
+                  ? <VisTh key={h} vis={vis} table="service_requests" k={COLUMN_KEYS[h]} {...headProps}>{head}</VisTh>
+                  : <th key={h} {...headProps}>{head}</th>
+              })}
             </tr>
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>
+              <tr><td colSpan={headers.length} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>
             )}
             {!loading && pagedSrs.length === 0 && (
-              <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No service requests found.</td></tr>
+              <tr><td colSpan={headers.length} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No service requests found.</td></tr>
             )}
             {pagedSrs.map((sr) => {
               const statusStyle = STATUS_COLORS[sr.status] || STATUS_COLORS.open
@@ -351,38 +371,38 @@ export default function ServiceRequestsPage() {
                       {sr.request_number}
                     </span>
                   </td>
-                  <td style={{ padding: '12px 8px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.serial_number || '—'}</td>
-                  <td style={{ padding: '12px 8px', fontSize: 12.5, color: '#57534e' }}>
+                  <VisTd vis={vis} table="service_requests" k="machine_serial" style={{ padding: '12px 8px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.serial_number || '—'}</VisTd>
+                  <VisTd vis={vis} table="service_requests" k="client_site" style={{ padding: '12px 8px', fontSize: 12.5, color: '#57534e' }}>
                     <div>{project?.client_company || '—'}</div>
                     <div style={{ color: '#57534e', fontSize: 12 }}>{project?.site_name || ''}</div>
-                  </td>
-                  <td data-fit-clamp style={{ padding: '12px 8px', fontSize: 13, color: '#57534e' }}>
+                  </VisTd>
+                  <VisTd vis={vis} table="service_requests" k="issue_summary" data-fit-clamp style={{ padding: '12px 8px', fontSize: 13, color: '#57534e' }}>
                     {/* One line, cut with "…" by TableFit — it shares the leftover width by its real text length; full text on hover and on the SR page. */}
                     <div title={sr.issue_title} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{sr.issue_title}</div>
-                  </td>
-                  <td style={{ padding: '12px 8px', minWidth: 76, whiteSpace: 'nowrap', overflow: 'visible', textOverflow: 'clip' }}>
+                  </VisTd>
+                  <VisTd vis={vis} table="service_requests" k="priority" style={{ padding: '12px 8px', minWidth: 76, whiteSpace: 'nowrap', overflow: 'visible', textOverflow: 'clip' }}>
                     <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', whiteSpace: 'nowrap', color: PRIORITY_COLORS[sr.priority] || '#64748b' }}>
                       {sr.priority}
                     </span>
-                  </td>
+                  </VisTd>
                   <td style={{ padding: '12px 8px' }}>
                     <span style={{ ...pillStyle(statusStyle.fg), background: statusStyle.bg }}>
                       {STATUS_LABELS[sr.status] || sr.status}
                     </span>
                   </td>
-                  <td style={{ padding: '12px 6px', fontSize: 12.5, color: '#57534e' }}>
+                  <VisTd vis={vis} table="service_requests" k="opening_date" style={{ padding: '12px 6px', fontSize: 12.5, color: '#57534e' }}>
                     {formatDate(sr.opened_at)}
-                  </td>
-                  <td style={{ padding: '12px 6px', fontSize: 12.5, color: '#57534e' }}>
+                  </VisTd>
+                  <VisTd vis={vis} table="service_requests" k="closing_date" style={{ padding: '12px 6px', fontSize: 12.5, color: '#57534e' }}>
                     {sr.closed_at ? formatDate(sr.closed_at) : 'Open'}
-                  </td>
-                  <td style={{ padding: '12px 6px', fontSize: 12.5 }}
+                  </VisTd>
+                  <VisTd vis={vis} table="service_requests" k="age" style={{ padding: '12px 6px', fontSize: 12.5 }}
                     title={sr.closed_at ? 'Time taken from opening to closing' : 'Not closed yet — time since it was opened'}>
                     {tat === null ? '—' : sr.closed_at
                       ? <span style={{ color: '#1f1108', fontWeight: 600 }}>{dayText(tat)}</span>
                       : <span style={{ color: '#b45309' }}>{dayText(tat)}</span>}
-                  </td>
-                  <td style={{ padding: '12px 8px', fontSize: 12, color: '#57534e' }}>{warrantyLabel(project)}</td>
+                  </VisTd>
+                  <VisTd vis={vis} table="service_requests" k="warranty" style={{ padding: '12px 8px', fontSize: 12, color: '#57534e' }}>{warrantyLabel(project)}</VisTd>
                 </tr>
               )
             })}

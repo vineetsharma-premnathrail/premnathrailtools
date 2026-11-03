@@ -5,7 +5,7 @@ import { rndApi } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { RequirementMovementDoc, RndRequest } from '@/types'
 import { extractErrorMessages } from '@/lib/validation'
-import { FormSheet, SheetSection, SheetIcon, FileDropZone, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
+import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { chipBtnStyle, pillStyle, segmentBtnStyle } from '@/components/shared/ui'
 
 const sectionLabel: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 4px' }
@@ -17,9 +17,60 @@ const todayIso = () => {
 
 export function rndRequestBadge(r: RndRequest): { label: string; hex: string } {
   if (r.status === 'superseded') return { label: 'Superseded by re-send', hex: '#78716c' }
+  if (r.status === 'closed') return { label: 'Closed by R&D', hex: '#78716c' }
+  if (r.status === 'withdrawn') return { label: 'Taken back by BD', hex: '#78716c' }
   if (r.status === 'responded') return r.is_late ? { label: 'Responded late', hex: '#D97706' } : { label: 'Responded on time', hex: '#16A34A' }
   if (r.queries && r.queries.length > 0) return { label: 'R&D asked for details', hex: '#7C3AED' }
   return r.is_late ? { label: 'Overdue', hex: '#DC2626' } : { label: 'Awaiting R&D', hex: '#2563EB' }
+}
+
+// "Close without response" (R&D has nothing to share): a reason is required for the audit trail,
+// the request becomes "Closed by R&D" and BD is told. BD can re-send the requirement later.
+export function RndRequestCloseSheet({ request, open, onClose, onClosed }: {
+  request: RndRequest
+  open: boolean
+  onClose: () => void
+  onClosed: (r: RndRequest) => void
+}) {
+  const [reason, setReason] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | string[]>('')
+  if (!open) return null
+
+  const close = () => { if (!saving) { setError(''); onClose() } }
+  const submit = async () => {
+    if (reason.trim().length < 10) { setError('Write why R&D has nothing to share, so BD understands (at least 10 characters), e.g. "Standard product — no R&D input needed".'); return }
+    setSaving(true)
+    setError('')
+    try {
+      const updated = await rndApi.closeRequest(request.id, reason.trim())
+      setReason('')
+      onClosed(updated)
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not close this requirement without a response.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <FormSheet width={520} icon="check" title="Close without response" onClose={close} busy={saving}
+      subtitle={`Requested by ${request.requested_by || 'CRM'} · due ${formatDate(request.due_date)}`}
+      footer={<>
+        <button type="button" onClick={close} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+        <button type="button" onClick={submit} disabled={saving} style={sheetBtn('primary', SHEET.INK, saving)}>
+          <SheetIcon name="check" size={16} />{saving ? 'Closing…' : 'Close requirement'}
+        </button>
+      </>}>
+      <div style={{ padding: '20px 24px' }}>
+        <SheetError error={error} />
+        <label style={sheetLabel}>Reason <Req /></label>
+        <textarea autoFocus maxLength={2000} style={{ ...sheetInput, minHeight: 80, resize: 'vertical' }} value={reason} onChange={(e) => setReason(e.target.value)}
+          placeholder="e.g. Standard product — no R&D input needed" />
+        <p style={sheetHint}>Use this when R&amp;D has nothing to share — BD continues without R&amp;D input. BD is notified and can re-send the requirement later if R&amp;D work is needed.</p>
+      </div>
+    </FormSheet>
+  )
 }
 
 // One CRM → R&D ask inside a Requirement Movement card: who owns it, by when,
@@ -39,7 +90,6 @@ export default function RndRequestBlock({
 }) {
   const [remarks, setRemarks] = useState('')
   const [delayReason, setDelayReason] = useState('')
-  const [files, setFiles] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
   const [open, setOpen] = useState(false)
   const [asking, setAsking] = useState(false)
@@ -64,12 +114,12 @@ export default function RndRequestBlock({
       }
       return
     }
-    if (!remarks.trim() && files.length === 0) { setError('Add response remarks or attach at least one response document.'); return }
+    if (remarks.trim().length < 10) { setError('Write your response to BD (at least 10 characters), e.g. feasibility, deviations or the answer itself.'); return }
     if (lateNow && !delayReason.trim()) { setError(`This response is late — it was due on ${formatDate(request.due_date)}. Enter the reason for the delay.`); return }
     setSaving(true)
     setError('')
     try {
-      const updated = await rndApi.respondToRequest(request.id, { remarks: remarks.trim() || undefined, delay_reason: lateNow ? delayReason.trim() : undefined, files })
+      const updated = await rndApi.respondToRequest(request.id, { remarks: remarks.trim(), delay_reason: lateNow ? delayReason.trim() : undefined })
       setOpen(false)
       onResponded?.(updated)
     } catch (err) {
@@ -107,7 +157,7 @@ export default function RndRequestBlock({
             : 'Closes this request: BD gets your answer and can prepare the quotation.'}
         </p>
         <SheetSection icon="chat" title={asking ? 'Your question to BD' : 'Your Response'}>
-          <label style={sheetLabel}>{asking ? <>Details R&amp;D needs <Req /></> : 'Response remarks'}</label>
+          <label style={sheetLabel}>{asking ? <>Details R&amp;D needs <Req /></> : <>Response remarks <Req /></>}</label>
           <textarea autoFocus style={{ ...sheetInput, minHeight: 80, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)}
             placeholder={asking ? 'e.g. Axle load and track gauge are missing — please add them' : 'Answer, feasibility notes, deviations…'} />
           {!asking && lateNow && (
@@ -117,12 +167,7 @@ export default function RndRequestBlock({
             </>
           )}
         </SheetSection>
-        {!asking && (
-          <SheetSection icon="clip" title="Response documents">
-            <FileDropZone files={files} onChange={setFiles} />
-            <p style={sheetHint}>Give remarks, at least one document, or both. The BD owner is notified.</p>
-          </SheetSection>
-        )}
+        {!asking && <p style={sheetHint}>The BD owner is notified of your response.</p>}
       </div>
     </FormSheet>
   )
@@ -180,6 +225,13 @@ export default function RndRequestBlock({
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {request.status === 'closed' && (
+        <div data-tour="rnd-request-closed" style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed rgba(0,0,0,0.1)' }}>
+          <p style={sectionLabel}>Closed by R&amp;D without a response — {request.responded_by || 'Unknown'} · {formatDateTime(request.responded_at)}</p>
+          {request.response_remarks && <p style={{ fontSize: 12.5, color: '#1f1108', margin: 0, whiteSpace: 'pre-wrap' }}>{request.response_remarks}</p>}
         </div>
       )}
 

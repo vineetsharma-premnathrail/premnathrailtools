@@ -11,7 +11,11 @@ def test_every_event_needs_a_declared_permission():
     declared = all_permission_ids()
     for module, events in EVENTS.items():
         for key, spec in events.items():
-            assert spec["access"] in declared, f"{module}.{key} needs {spec['access']}, which is not declared"
+            if spec.get("audience") == "direct":
+                # Direct notifications go to people the code names; no permission gate.
+                assert spec["access"] is None and spec.get("recipient"), f"{module}.{key}"
+            else:
+                assert spec["access"] in declared, f"{module}.{key} needs {spec['access']}, which is not declared"
             assert set(spec["default_channels"]) <= set(CHANNELS), f"{module}.{key}"
             assert spec["kind"] in {"approval", "assignment", "reminder", "info"}, f"{module}.{key}"
 

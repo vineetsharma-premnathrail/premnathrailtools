@@ -4,7 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.data_scope import apply_scope
-from app.core.permissions import require_app_access
+from app.core.permissions import require_app_access, require_tab_access
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.quality.models.capa import QualityCapa
@@ -22,7 +22,7 @@ router = APIRouter(
 
 
 @router.get("", response_model=QualityDashboardResponse)
-async def get_dashboard(db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
+async def get_dashboard(db: Session = Depends(get_db), user: User = Depends(require_tab_access("quality", "dashboard"))):
     """KPIs over the records inside the user's data scope."""
     today = date.today()
     waiting_days = int(get_setting(db, "lot_waiting_days"))

@@ -602,12 +602,13 @@ def latest_request(db: Session, entity_type: str, entity_id: int) -> ApprovalReq
     )
 
 
-def _notify(db: Session, user_ids, title: str, message: str, req: ApprovalRequest, teams: bool) -> None:
+def _notify(db: Session, user_ids, title: str, message: str, req: ApprovalRequest, teams: bool,
+            notification_type: str = "approval") -> None:
     from app.utils.notifications import notify_user
 
     for uid in dict.fromkeys(i for i in user_ids if i):
         try:
-            notify_user(db, uid, title, message, "approval", entity_type=req.entity_type, entity_id=req.entity_id, teams=teams)
+            notify_user(db, uid, title, message, notification_type, entity_type=req.entity_type, entity_id=req.entity_id, teams=teams)
         except Exception:  # a failed notification must never block the approval itself
             pass
 
@@ -660,7 +661,8 @@ def _finish(db: Session, req: ApprovalRequest, outcome: str, actor: User) -> Non
         tt.on_decided(db, req, outcome, actor)
     if req.requester_id and req.requester_id != actor.id:
         _notify(db, [req.requester_id], f"{req.reference or req.title} {outcome}",
-                f"Your {tt.label if tt else 'request'} {req.reference or req.title} was {outcome} by {actor.name}.", req, teams=False)
+                f"Your {tt.label if tt else 'request'} {req.reference or req.title} was {outcome} by {actor.name}.", req, teams=False,
+                notification_type="approval_decided")
 
 
 def _audit(db: Session, req: ApprovalRequest, actor: User, action: str, summary: str) -> None:

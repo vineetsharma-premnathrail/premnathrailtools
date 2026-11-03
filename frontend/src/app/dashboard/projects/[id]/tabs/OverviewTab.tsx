@@ -5,10 +5,12 @@ import { projectsApi } from '@/lib/api'
 import { PmProject } from '@/types'
 import { formatDate } from '@/lib/format'
 import { useCan } from '@/lib/permissions'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection } from '@/lib/visibilityComponents'
 import { extractErrorMessages } from '@/lib/validation'
 import ProjectForm, { formToPayload, projectToForm, validateProjectForm } from '@/components/projects/ProjectForm'
 import {
-  ErrorBanner, HEALTH_HEX, HEALTH_LABELS, ProgressBar, actionBtn,
+  ErrorBanner, HEALTH_HEX, HEALTH_LABELS, Notice, ProgressBar, actionBtn,
 } from '@/components/projects/work/pmUi'
 import { DetailCard, DetailGroup, DetailRow, DetailSummary, Pill } from '@/components/shared/ui'
 import { FormSheet, SHEET, SheetIcon, sheetBtn } from '@/components/shared/FormSheet'
@@ -19,6 +21,8 @@ import ProjectMachineDetails from './MachineTab'
 
 export default function OverviewTab({ project, onProjectUpdate }: { project: PmProject; onProjectUpdate: () => void }) {
   const { can } = useCan()
+  // Role Visibility (core/features/projects.py, screen "Project page"): the Overview blocks a role may hide.
+  const vis = useVisibility('projects:all_projects')
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState(projectToForm(project))
   const [saving, setSaving] = useState(false)
@@ -51,6 +55,7 @@ export default function OverviewTab({ project, onProjectUpdate }: { project: PmP
           facts on top, then every detail as label–value rows, in the order of the
           New Project form (basic information, timeline, ownership & scope). */}
       <DetailCard tour="pm-ov-details">
+        <VisSection vis={vis} k="detail_summary">
         <DetailSummary
           title={project.name}
           text={project.description || (canEdit ? 'No scope written yet — use Edit to describe what is being delivered.' : undefined)}
@@ -63,10 +68,11 @@ export default function OverviewTab({ project, onProjectUpdate }: { project: PmP
             <span>·</span>
             <ProgressBar value={project.progress_percent} width={90} />
           </>}
-          actions={canEdit ? (
+          actions={canEdit && !vis.preview ? (
             <button data-tour="pm-ov-edit-btn" type="button" onClick={() => { setForm(projectToForm(project)); setError(''); setEditing(true) }} style={actionBtn('secondary')}>Edit</button>
           ) : undefined}
         />
+        </VisSection>
         {editing && (
           <FormSheet width={760} icon="edit" title="Edit Project" subtitle={`${project.project_code} · ${project.name}`} onClose={() => setEditing(false)} busy={saving}
             footer={<>
@@ -80,6 +86,7 @@ export default function OverviewTab({ project, onProjectUpdate }: { project: PmP
           </FormSheet>
         )}
 
+        <VisSection vis={vis} k="detail_progress">
         <DetailGroup title="Progress">
           <DetailRow label="Stage">
             <span data-tour="pm-ov-stage">
@@ -107,7 +114,9 @@ export default function OverviewTab({ project, onProjectUpdate }: { project: PmP
             <DetailRow label="Health"><Pill label={HEALTH_LABELS[project.health] || project.health} hex={HEALTH_HEX[project.health] || '#64748b'} /></DetailRow>
           )}
         </DetailGroup>
+        </VisSection>
 
+        <VisSection vis={vis} k="detail_record">
         <DetailGroup title="Record" last>
           {project.customer_po_ref && <DetailRow label="Customer PO">{project.customer_po_ref}</DetailRow>}
           {project.sales_order_ref && <DetailRow label="Sales order">{project.sales_order_ref}</DetailRow>}
@@ -116,10 +125,20 @@ export default function OverviewTab({ project, onProjectUpdate }: { project: PmP
           {project.released_at && <DetailRow label="Released">{`${formatDate(project.released_at)}${project.released_by_name ? ` by ${project.released_by_name}` : ''}`}</DetailRow>}
           {project.closure_date && <DetailRow label="Closed">{`${formatDate(project.closure_date)}${project.closed_by_name ? ` by ${project.closed_by_name}` : ''}`}</DetailRow>}
         </DetailGroup>
+        </VisSection>
       </DetailCard>
-      <ProjectBudgetCard key={`${project.id}-${project.internal_order_id ?? 0}`} load={() => projectsApi.budget(project.id)} tour="pm-ov-budget"
-        emptyText="No Finance budget linked. Finance creates the budget; the project manager links it with Edit." />
-      <ProjectMachineDetails project={project} />
+      {/* In the Role editor preview the budget and machine cards are stood in for (they load from the server). */}
+      <VisSection vis={vis} k="detail_budget">
+        {vis.preview
+          ? <DetailCard><Notice tone="info">Finance budget card — budget vs spend of the linked Finance budget.</Notice></DetailCard>
+          : <ProjectBudgetCard key={`${project.id}-${project.internal_order_id ?? 0}`} load={() => projectsApi.budget(project.id)} tour="pm-ov-budget"
+              emptyText="No Finance budget linked. Finance creates the budget; the project manager links it with Edit." />}
+      </VisSection>
+      <VisSection vis={vis} k="detail_machine">
+        {vis.preview
+          ? <DetailCard><Notice tone="info">Machine details — identity, client &amp; site, technical specs, timeline &amp; warranty of the machine registered with the project.</Notice></DetailCard>
+          : <ProjectMachineDetails project={project} />}
+      </VisSection>
       {/* The closure panel was removed from open projects; a project closed
           earlier still shows its closure record (read-only). */}
       {project.status === 'closed' && <ClosurePanel project={project} onProjectUpdate={onProjectUpdate} />}

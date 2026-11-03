@@ -19,6 +19,7 @@ import logging
 from typing import Callable
 
 from fastapi import BackgroundTasks
+from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from app.core.permission_registry import MODULES, feature_id, has_grant, is_admin_user, permission_id
@@ -57,10 +58,105 @@ def register_event(module: str, key: str, label: str, trigger: str, access: tupl
     else:
         raise AssertionError(f"access must be (tab, action) or (tab, feature, action): {access}")
     assert set(default_channels) <= set(CHANNELS), default_channels
+    assert key not in EVENTS.get(module, {}), f"{module}.{key} is declared twice"
     EVENTS.setdefault(module, {})[key] = {
         "label": label, "trigger": trigger, "access": grant, "kind": kind,
         "default_channels": list(default_channels),
+        "audience": "watchers", "recipient": "Role members (everyone's records)",
     }
+
+
+# notification_type -> (module, event key) of a direct notification.
+DIRECT_BY_TYPE: dict[str, tuple[str, str]] = {}
+
+
+def register_direct(module: str, notification_type: str, label: str, recipient: str, trigger: str, *,
+                    default_channels: tuple[str, ...] = ("bell",), kind: str = "info") -> None:
+    """Declare a DIRECT notification: the code itself names who gets it (the
+    assignee, the requester, the approver, the department head …) through
+    utils/notifications.notify_user / broadcast_notification with this
+    `notification_type`. A role does not add people to it — the role's
+    Notifications tab (and a user's personal override) only picks the
+    channels those people receive it on; with no setting anywhere the
+    `default_channels` apply. The event key is "<module>.direct:<notification_type>"
+    (its own namespace, so it never clashes with a role event of the same name).
+
+    recipient: who the code sends it to, in plain words ("The assignee")."""
+    assert module in MODULES, module
+    assert notification_type and "." not in notification_type and len(notification_type) <= 50, notification_type
+    assert notification_type not in DIRECT_BY_TYPE, f"direct notification '{notification_type}' is declared twice"
+    assert default_channels and set(default_channels) <= set(CHANNELS), default_channels
+    key = f"direct:{notification_type}"
+    EVENTS.setdefault(module, {})[key] = {
+        "label": label, "trigger": trigger, "access": None, "kind": kind,
+        "default_channels": list(default_channels),
+        "audience": "direct", "recipient": recipient,
+    }
+    DIRECT_BY_TYPE[notification_type] = (module, key)
+
+
+def direct_spec(notification_type: str) -> tuple[str, dict] | None:
+    """(event key, spec) of a registered direct notification, else None."""
+    hit = DIRECT_BY_TYPE.get(notification_type)
+    if not hit:
+        return None
+    module, key = hit
+    return event_key(module, key), EVENTS[module][key]
+
+
+_ROLE_SUBS = "_role_notification_subscriptions"
+
+
+def _role_subscriptions(db: Session) -> list[tuple[int, bool, dict, set[int]]]:
+    """(role id, is_default, notification_events, member ids) of every active
+    role that sets any notification — read once per DB session (one request
+    or one job run), so a loop of notify_user calls doesn't re-query roles."""
+    cached = db.info.get(_ROLE_SUBS)
+    if cached is not None:
+        return cached
+    rows = [(rid, bool(dflt), subs or {}) for rid, dflt, subs in
+            db.query(Role.id, Role.is_default, Role.notification_events).filter(Role.is_active.is_(True)).all() if subs]
+    members: dict[int, set[int]] = {}
+    ids = [rid for rid, dflt, _ in rows if not dflt]
+    if ids:
+        for rid, uid in db.query(user_roles.c.role_id, user_roles.c.user_id).filter(user_roles.c.role_id.in_(ids)).all():
+            members.setdefault(rid, set()).add(uid)
+    cached = [(rid, dflt, subs, members.get(rid, set())) for rid, dflt, subs in rows]
+    db.info[_ROLE_SUBS] = cached
+
+    def _forget(session, *_args) -> None:  # a commit / rollback may have changed roles
+        session.info.pop(_ROLE_SUBS, None)
+    event.listen(db, "after_commit", _forget, once=True)
+    event.listen(db, "after_rollback", _forget, once=True)
+    return cached
+
+
+def resolve_direct_channels(db: Session, users: list[User], key: str, default: list[str]) -> dict[int, set[str]]:
+    """Channels each of `users` gets a direct notification `key` on:
+    their personal override if they have one (an empty list = off), else the
+    union over their active roles (and default roles) that set it — a role
+    entry with no channels switches it off for that role — else `default`."""
+    everyone: set[str] | None = None
+    per_user: dict[int, set[str]] = {}
+    for role_id, is_default, subs, members in _role_subscriptions(db):
+        if key not in subs:
+            continue
+        chans = set(subs.get(key) or [])
+        if is_default:
+            everyone = (everyone or set()) | chans
+            continue
+        for uid in members:
+            per_user.setdefault(uid, set()).update(chans)
+    out: dict[int, set[str]] = {}
+    for u in users:
+        overrides = u.notification_overrides or {}
+        if key in overrides:
+            out[u.id] = {c for c in (overrides.get(key) or []) if c in CHANNELS}
+        elif u.id in per_user or everyone is not None:
+            out[u.id] = per_user.get(u.id, set()) | (everyone or set())
+        else:
+            out[u.id] = set(default)
+    return out
 
 
 def event_key(module: str, key: str) -> str:
@@ -86,12 +182,15 @@ def clean_subscriptions(value) -> dict[str, list[str]]:
     if not isinstance(value, dict):
         raise ValueError("Notification subscriptions must be an object of event → channels.")
     known = all_event_keys()
+    direct = {event_key(m, k) for m, evs in EVENTS.items() for k, e in evs.items() if e.get("audience") == "direct"}
     out: dict[str, list[str]] = {}
     for k, chans in value.items():
         if k not in known:
             raise ValueError(f"Unknown notification event '{k}' — reload the page; the event list may have changed.")
         chans = [c for c in CHANNELS if c in set(chans or [])]
-        if chans:
+        # A direct notification keeps an empty entry: it means "off for this
+        # role" (no entry = the event's default channels).
+        if chans or k in direct:
             out[k] = chans
     return out
 
@@ -120,8 +219,8 @@ def notify_event(
     Never raises — a notification must not break the business action."""
     key = event_key(module, event)
     spec = EVENTS.get(module, {}).get(event)
-    if not spec:
-        logger.warning("notify_event: '%s' is not a registered event (app/core/events/%s.py).", key, module)
+    if not spec or spec.get("audience") == "direct":
+        logger.warning("notify_event: '%s' is not a registered role event (app/core/events/%s.py).", key, module)
         return set()
     try:
         roles = [r for r in db.query(Role).filter(Role.is_active.is_(True)).all() if key in (r.notification_events or {})]

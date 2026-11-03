@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.permissions import require_app_access
+from app.core.settings_framework import can_edit_settings
 from app.db.session import get_db
 from app.modules.design.access import get_settings, is_head, role_of, team_configured
 from app.modules.design.models.change_notice import DESIGN_ECN_ACK_DEPARTMENTS
@@ -15,6 +16,11 @@ from app.modules.design.service import DESIGN_APP, add_event, user_name, users_b
 from app.modules.main.models.user import User
 
 router = APIRouter(prefix="/design/settings", tags=["Design"], dependencies=[Depends(require_app_access("design"))])
+
+
+def _may_edit(db: Session, user: User) -> bool:
+    """The Design head (or an admin) always; anyone else with Design › Settings › Edit ticked on a role."""
+    return is_head(db, user) or can_edit_settings(user, "design")
 
 
 def _response(db: Session, user: User) -> DesignSettingsResponse:
@@ -44,7 +50,7 @@ def _response(db: Session, user: User) -> DesignSettingsResponse:
             for m in members
         ],
         team_configured=bool(members), updated_at=s.updated_at, updated_by_name=user_name(users.get(s.updated_by_id)),
-        my_role=role_of(db, user), can_edit=is_head(db, user),
+        my_role=role_of(db, user), can_edit=_may_edit(db, user),
     )
 
 
@@ -62,8 +68,9 @@ async def my_role(db: Session = Depends(get_db), user: User = Depends(require_ap
 
 @router.put("", response_model=DesignSettingsResponse)
 async def update_settings(payload: DesignSettingsUpdate, db: Session = Depends(get_db), user: User = Depends(require_app_access("design"))):
-    if not is_head(db, user):
-        raise HTTPException(status_code=403, detail="Only the Design head or an admin can change Design settings.")
+    if not _may_edit(db, user):
+        raise HTTPException(status_code=403, detail="Only the Design head, an admin or someone with Design › Settings › Edit can change "
+                                                    "Design settings. Ask an admin to add it to your role in Organization › Role & Permissions.")
     s = get_settings(db)
     changes = payload.model_dump(exclude_unset=True)
     all_ids = set(changes.get("change_board_member_ids") or [])
@@ -111,7 +118,7 @@ async def update_settings(payload: DesignSettingsUpdate, db: Session = Depends(g
             seen.add(row.user_id)
         if rows and not any(r.role == "head" for r in rows):
             raise HTTPException(status_code=400, detail="The team needs at least one Design head — they release drawings and decide ECRs.")
-        if rows and user.role != "admin" and not any(r.user_id == user.id and r.role == "head" for r in rows):
+        if rows and user.role != "admin" and not can_edit_settings(user, "design") and not any(r.user_id == user.id and r.role == "head" for r in rows):
             raise HTTPException(status_code=400, detail="You'd be removing yourself as Design head and lose access to Settings. Keep yourself as head, or ask an admin to make the change.")
         db.query(DesignTeamMember).delete()
         for row in rows:

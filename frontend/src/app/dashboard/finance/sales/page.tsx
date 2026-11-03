@@ -152,8 +152,8 @@ export default function FinanceSalesPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('accounts')
   const { tabs: tabTabs, tab: tabTab, setTab } = useFinanceSubTabs(TABS, TAB_KEYS)
   const { canFeature } = useCan()
-  // Billing Due lists sales orders to bill — Sales Invoices › Bill from sales order (feature).
-  const visibleTabs = tabTabs.filter((t) => t !== 'Billing Due' || canFeature('accounts', 'sales_invoices', 'bill_from_so', 'create'))
+  // Billing Due = feature Sales Invoices › Billing Due tab; it lists sales orders to bill, so it also needs Bill from sales order.
+  const visibleTabs = tabTabs.filter((t) => t !== 'Billing Due' || (canFeature('accounts', 'sales_invoices', 'billing_due', 'view') && canFeature('accounts', 'sales_invoices', 'bill_from_so', 'create')))
   const tab = visibleTabs.includes(tabTab) ? tabTab : (visibleTabs[0] ?? tabTab)
   const [setup, setSetup] = useState<AccountsSetup | null>(null)
   const [ledgers, setLedgers] = useState<GLAccount[]>([])

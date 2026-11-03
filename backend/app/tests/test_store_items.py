@@ -129,9 +129,11 @@ def test_bulk_import_skips_existing_and_reports_both(client, h):
     r = client.post(f"{API}/import", files={"file": ("items.csv", csv_text, "text/csv")}, headers=h)
     assert r.status_code == 200, r.text
     body = r.json()
-    assert [c["item_name"] for c in body["created"]] == ["Safety Gloves", "Hex Bolt M12"]
+    # 2026-11-02: an unknown unit (FURLONG) is added to the unit master from the file, not refused.
+    assert [c["item_name"] for c in body["created"]] == ["Safety Gloves", "Bad Unit", "Hex Bolt M12"]
     assert {e["row"] for e in body["existing"]} == {2, 4}
-    assert body["errors"][0]["row"] == 5 and "FURLONG" in body["errors"][0]["reason"]
+    assert body["errors"] == [] and body["new_units"] == ["FURLONG"]
+    assert body["new_categories"] == [{"category": "PPE", "subcategory": "Leather", "item_type": "Consumable"}]
     assert client.get(f"{API}/import/template", headers=h).status_code == 200
 
 

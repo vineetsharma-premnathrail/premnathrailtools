@@ -26,6 +26,9 @@ import {
   CRITICALITY_LABELS, PRIORITY_LABELS, REQUEST_STATUS_LABELS, REQUEST_TYPE_LABELS, WO_STATUS_LABELS, WO_TYPE_LABELS, formatMinutes,
 } from '@/components/maintenance/labels'
 import Select from '@/components/shared/Select'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection } from '@/lib/visibilityComponents'
+import { sampleRequest } from '@/lib/maintenancePreviewSamples'
 
 const STATUS_HEX: Record<string, string> = { open: '#F59E0B', acknowledged: '#2563EB', converted: '#0f766e', rejected: '#DC2626', duplicate: '#78716c' }
 const PRIORITY_HEX: Record<string, string> = { standard: '#475569', urgent: '#DC2626' }
@@ -47,8 +50,12 @@ export default function MaintenanceRequestDetailPage() {
   const params = useParams()
   const searchParams = useSearchParams()
   const ref = params.id as string
-  const { id: resolvedId, error: linkError } = useRecordId(ref)
-  const id = resolvedId ?? 0
+  // Role visibility of this page; in the Role editor's preview it shows a sample request and loads nothing.
+  const vis = useVisibility('maintenance:requests')
+  // The Create Work Order popup offers the Type / Priority values of the Work Orders rule.
+  const woVis = useVisibility('maintenance:work_orders')
+  const { id: resolvedId, error: linkError } = useRecordId(vis.preview ? null : ref)
+  const id = vis.preview ? sampleRequest.id : resolvedId ?? 0
   const isMaintenanceUser = !!user?.apps?.includes('maintenance')
   const photosFailed = searchParams.get('photos_failed') === '1'
   // Set by the Report-a-Problem form when the request saved but its photo upload failed.
@@ -65,7 +72,7 @@ export default function MaintenanceRequestDetailPage() {
     try { sessionStorage.removeItem(`mt-photo-err-${id}`) } catch { /* storage blocked — nothing to clear */ }
   }, [photosFailed, id])
 
-  const [req, setReq] = useState<MaintenanceRequest | null>(null)
+  const [req, setReq] = useState<MaintenanceRequest | null>(vis.preview ? sampleRequest : null)
   const [lookups, setLookups] = useState<MaintenanceLookups | null>(null)
   // Role assign-to rule (core/features/maintenance.py) — the server enforces it on save too.
   const allowTech = useAssigneeFilter('maintenance:work_orders.assign')
@@ -80,14 +87,14 @@ export default function MaintenanceRequestDetailPage() {
   const [cv, setCv] = useState({ title: '', wo_type: 'breakdown', priority: 'standard', assigned_to_id: '', planned_start: '', description: '' })
 
   useEffect(() => {
-    if (!isAuthorized || !id) return
+    if (!isAuthorized || !id || vis.preview) return
     maintenanceApi.getRequest(id).then(setReq).catch((err) => setError(extractErrorMessages(err, 'Failed to load request.')))
-  }, [isAuthorized, id])
+  }, [isAuthorized, id, vis.preview])
 
   useEffect(() => {
-    if (!isAuthorized || !isMaintenanceUser) return
+    if (!isAuthorized || !isMaintenanceUser || vis.preview) return
     maintenanceApi.getLookups().then(setLookups).catch(() => { /* only needed for the convert dialog */ })
-  }, [isAuthorized, isMaintenanceUser])
+  }, [isAuthorized, isMaintenanceUser, vis.preview])
 
   const run = async (fn: () => Promise<MaintenanceRequest>, fallback: string) => {
     setError('')
@@ -103,10 +110,12 @@ export default function MaintenanceRequestDetailPage() {
 
   const openConvert = () => {
     if (!req) return
+    // A default the role doesn't offer moves to the first value it does (the server refuses the rest).
+    const firstAllowed = (wanted: string, choices: [string, string][]) => (choices.some(([k]) => k === wanted) ? wanted : choices[0]?.[0] || wanted)
     setCv({
       title: `${REQUEST_TYPE_LABELS[req.request_type]?.split(' (')[0] || 'Repair'}: ${req.problem_description.slice(0, 80)}`,
-      wo_type: DEFAULT_WO_TYPE[req.request_type] || 'corrective',
-      priority: normalizePriority(req.priority),
+      wo_type: firstAllowed(DEFAULT_WO_TYPE[req.request_type] || 'corrective', woTypeChoices),
+      priority: firstAllowed(normalizePriority(req.priority), woPriorityChoices),
       assigned_to_id: '',
       planned_start: '',
       description: req.problem_description,
@@ -139,10 +148,10 @@ export default function MaintenanceRequestDetailPage() {
   }
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><MaintenanceNav /><InvalidRecordLink message={linkError} listHref="/dashboard/maintenance/requests" listLabel="Back to requests" /></div>)
+  if (linkError && !vis.preview) return (<div><MaintenanceNav /><InvalidRecordLink message={linkError} listHref="/dashboard/maintenance/requests" listLabel="Back to requests" /></div>)
   if (!id) return <div><MaintenanceNav /></div>
 
-  const canTriage = isMaintenanceUser && req && (req.status === 'open' || req.status === 'acknowledged')
+  const canTriage = !vis.preview && isMaintenanceUser && req && (req.status === 'open' || req.status === 'acknowledged')
   // Backend: acknowledge / reject need requests:edit; converting needs work_orders:create.
   const mayTriage = can('maintenance', 'requests', 'edit')
   // Requests › Acknowledge / reject feature (core/features/maintenance.py).
@@ -150,10 +159,14 @@ export default function MaintenanceRequestDetailPage() {
   const mayReject = mayTriage && canFeature('maintenance', 'requests', 'triage', 'reject')
   const mayConvert = can('maintenance', 'work_orders', 'create')
   const wo = req?.work_order
+  const woTypeChoices = woVis.options('wo_type', Object.entries(WO_TYPE_LABELS), ([k]) => k)
+  const woPriorityChoices = woVis.options('priority', Object.entries(PRIORITY_LABELS), ([k]) => k)
+  // Layout only: the Problem group is the card's last block when the Work order block doesn't show.
+  const showWoGroup = !!wo && (vis.preview || vis.showSection('detail_work_order'))
 
   return (
     <div>
-      <MaintenanceNav />
+      {!vis.preview && <MaintenanceNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
@@ -177,7 +190,7 @@ export default function MaintenanceRequestDetailPage() {
               {mayReject && <button data-tour="maint-reqd-reject-btn" type="button" disabled={busy} onClick={() => setRejectMode('rejected')} style={dangerBtnStyle}>Reject</button>}
             </>
           )}
-          <button data-tour="maint-reqd-back" type="button" onClick={() => router.push('/dashboard/maintenance/requests')} style={secondaryBtnStyle}>← Back</button>
+          {!vis.preview && <button data-tour="maint-reqd-back" type="button" onClick={() => router.push('/dashboard/maintenance/requests')} style={secondaryBtnStyle}>← Back</button>}
         </div>
       </div>
 
@@ -197,7 +210,7 @@ export default function MaintenanceRequestDetailPage() {
         </div>
       )}
 
-      {req?.can_confirm && wo && (
+      {!vis.preview && req?.can_confirm && wo && (
         <div data-tour="maint-reqd-confirm-box" style={{ ...sectionStyle, border: '1px solid rgba(22,163,74,0.35)', background: 'rgba(22,163,74,0.06)' }}>
           <p style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 6px' }}>Maintenance says this is fixed — is the machine OK?</p>
           <p style={{ fontSize: 13, color: TEXT.body, margin: '0 0 14px' }}>
@@ -213,6 +226,7 @@ export default function MaintenanceRequestDetailPage() {
       {req && (
         <>
           <DetailCard tour="maint-reqd-problem">
+            <VisSection vis={vis} k="detail_summary">
             <DetailSummary
               title={`${(REQUEST_TYPE_LABELS[req.request_type] || req.request_type).split(' (')[0]} — ${[req.asset_code, req.asset_name].filter(Boolean).join(' ')}`}
               text={req.problem_description}
@@ -222,7 +236,9 @@ export default function MaintenanceRequestDetailPage() {
                 <span>· Raised by <strong style={{ color: TEXT.heading }}>{req.raised_by_name || '—'}</strong></span>
               </>}
             />
-            <DetailGroup title="Problem" last={!wo}>
+            </VisSection>
+            <VisSection vis={vis} k="detail_problem">
+            <DetailGroup title="Problem" last={!showWoGroup}>
               <DetailRow label="Asset">
                 <span onClick={isMaintenanceUser ? () => router.push(recordPath('/dashboard/maintenance/assets', req, 'asset_id')) : undefined}
                   style={{ fontWeight: 600, color: isMaintenanceUser ? '#FF6A2A' : TEXT.heading, cursor: isMaintenanceUser ? 'pointer' : 'default' }}>
@@ -235,7 +251,9 @@ export default function MaintenanceRequestDetailPage() {
               <DetailRow label="Acknowledged">{req.acknowledged_at ? `${req.acknowledged_by_name || '—'} · ${formatDateTime(req.acknowledged_at)}` : null}</DetailRow>
               {req.rejection_reason && <DetailRow label={req.status === 'duplicate' ? 'Duplicate Of / Reason' : 'Rejection Reason'}>{req.rejection_reason}</DetailRow>}
             </DetailGroup>
+            </VisSection>
             {wo && (
+              <VisSection vis={vis} k="detail_work_order">
               <div data-tour="maint-reqd-wo">
                 <DetailGroup title="Work Order" last>
                   <DetailRow label="Work Order">
@@ -254,13 +272,18 @@ export default function MaintenanceRequestDetailPage() {
                   <DetailRow label={req.raised_by_id != null && req.raised_by_id === user?.id ? 'Confirmed By You' : 'Requester Confirmed'}>{wo.requester_confirmed_at ? formatDateTime(wo.requester_confirmed_at) : null}</DetailRow>
                 </DetailGroup>
               </div>
+              </VisSection>
             )}
           </DetailCard>
 
+          <VisSection vis={vis} k="detail_files">
           <div data-tour="maint-reqd-files" style={sectionStyle}>
             <p style={sectionTitle}>Photos &amp; Files</p>
-            <MaintenanceAttachments entityType="request" entityId={id} defaultDocType="photo" />
+            {vis.preview
+              ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>The request&apos;s photos and files show here.</p>
+              : <MaintenanceAttachments entityType="request" entityId={id} defaultDocType="photo" />}
           </div>
+          </VisSection>
         </>
       )}
 
@@ -320,13 +343,13 @@ export default function MaintenanceRequestDetailPage() {
             <div style={{ flex: '1 1 150px' }}>
               <label style={sheetLabel}>Type</label>
               <Select data-tour="maint-reqcv-type" style={sheetInput} value={cv.wo_type} onChange={(e) => setCv({ ...cv, wo_type: e.target.value })}>
-                {Object.entries(WO_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {woTypeChoices.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </Select>
             </div>
             <div style={{ flex: '1 1 130px' }}>
               <label style={sheetLabel}>Priority</label>
               <Select data-tour="maint-reqcv-priority" style={sheetInput} value={cv.priority} onChange={(e) => setCv({ ...cv, priority: e.target.value })}>
-                {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {woPriorityChoices.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </Select>
             </div>
           </div>

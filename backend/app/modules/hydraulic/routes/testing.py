@@ -3,6 +3,7 @@ from datetime import date, datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.core.permissions import (
     ensure_can_delete, require_app_access, require_feature_action, require_tab_access, require_tab_action,
@@ -28,6 +29,8 @@ router = APIRouter(
 
 _CAN_EDIT = require_tab_action("hydraulic", "testing", "edit")
 TESTER_RULE = "hydraulic:testing.tester"  # "Assign to" rule (core/features/hydraulic.py)
+# Role visibility catalogue entry (core/features/hydraulic.py): test type / medium values per role.
+VISIBILITY_KEY = "hydraulic:testing"
 
 
 def judge_reading(r: dict) -> str:
@@ -166,9 +169,14 @@ async def create_test(
     data = payload.model_dump()
     check_choice(data["test_type"], HYD_TEST_TYPES, "test type")
     check_system_type(data["system_type"])
+    # Role visibility (Role & Permissions › Hydraulic & Pneumatic › Testing & Inspection › Visibility): a test type /
+    # medium the role does not offer is refused with the reason.
+    visibility.ensure_option_allowed(user, VISIBILITY_KEY, "test_type", data["test_type"])
     if not data.get("system_id") and not data.get("component_id"):
         raise HTTPException(status_code=400, detail="Pick the system or the component being tested (or both).")
     _resolve_subject(db, data)
+    # The medium actually stored (a picked system / component can override what the form sent) is what the role's list is checked against.
+    visibility.ensure_option_allowed(user, VISIBILITY_KEY, "system_type", data["system_type"])
     check_user(db, data.get("tested_by_id"), "Tested by")
     ensure_assignee_rule(db, user, TESTER_RULE, data.get("tested_by_id"))
     readings = data.pop("readings")
@@ -201,6 +209,9 @@ async def update_test(
     _require_not_under_review(test, "change its readings")
     updates = payload.model_dump(exclude_unset=True)
     check_choice(updates.get("test_type"), HYD_TEST_TYPES, "test type")
+    if updates.get("test_type") and updates["test_type"] != test.test_type:
+        # Only a CHANGED test type is checked: a test already of a type this role may not pick keeps it.
+        visibility.ensure_option_allowed(_perm, VISIBILITY_KEY, "test_type", updates["test_type"])
     check_user(db, updates.get("tested_by_id"), "Tested by")
     ensure_assignee_rule(db, _perm, TESTER_RULE, updates.get("tested_by_id"), test.tested_by_id)
     readings = updates.pop("readings", None)
@@ -208,6 +219,9 @@ async def update_test(
     if not merged.get("system_id") and not merged.get("component_id"):
         raise HTTPException(status_code=400, detail="A test needs a system or a component — you can't clear both.")
     _resolve_subject(db, merged)
+    if merged.get("system_type") and merged["system_type"] != test.system_type:
+        # Only a CHANGED medium is checked (the system / component picked may switch it): an older test keeps its own.
+        visibility.ensure_option_allowed(_perm, VISIBILITY_KEY, "system_type", merged["system_type"])
     for field, val in updates.items():
         setattr(test, field, val)
     if merged.get("system_type"):

@@ -178,7 +178,7 @@ export default function HydBomDetailPage() {
             {isDraft && canSubmit && <button data-tour="hyd-bomd-submit-btn" type="button" disabled={busy} style={canRelease ? secondaryBtnStyle : primaryBtn} onClick={() => setConfirm('submit')}>Submit for Release Approval</button>}
             {canRelease && (isDraft || ((bom.status as string) === 'under_review' && !approvalRequestId)) && <button data-tour="hyd-bomd-release-btn" type="button" disabled={busy} style={primaryBtn} onClick={() => setConfirm('release')}>Release</button>}
             {bom.status === 'released' && canRevise && <button data-tour="hyd-bomd-revise-btn" type="button" disabled={busy} style={primaryBtn} onClick={() => setConfirm('revise')}>Raise New Revision</button>}
-            <button data-tour="hyd-bomd-export-btn" type="button" disabled={busy} style={secondaryBtnStyle} onClick={handleExport}>Export CSV</button>
+            {can('hydraulic', 'bom', 'export') && <button data-tour="hyd-bomd-export-btn" type="button" disabled={busy} style={secondaryBtnStyle} onClick={handleExport}>Export CSV</button>}
             {isDraft && canDelete('hydraulic', 'bom', (bom as { created_by_id?: number | null } | null)?.created_by_id ?? null) && <button data-tour="hyd-bomd-delete-btn" type="button" disabled={busy} style={dangerBtn} onClick={() => setConfirm('delete')}>Delete</button>}
             {bom.status === 'obsolete' && <span style={{ fontSize: 12.5, color: TEXT.muted }}>This revision is obsolete — a later revision has been released.</span>}
           </div>

@@ -19,18 +19,26 @@ import { PRIORITY_LABELS, WO_TYPE_LABELS, localInputToIso, nowLocalInput } from 
 import Select from '@/components/shared/Select'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
+import { useVisibility } from '@/lib/visibility'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
+
+const WO_TYPE_CHOICES = Object.entries(WO_TYPE_LABELS)
+const PRIORITY_CHOICES = Object.entries(PRIORITY_LABELS)
 
 
 export default function NewMaintenanceWorkOrderPage() {
   const { isAuthorized, isLoading } = useRequireApp('maintenance')
   const router = useRouter()
   const searchParams = useSearchParams()
+  // What the user's roles let them see here (Role editor > Maintenance > Work Orders > Visibility).
+  // In the Role editor's "Preview & choose" nothing is loaded by link, saved or kept as a draft.
+  const vis = useVisibility('maintenance:work_orders')
 
   const [lookups, setLookups] = useState<MaintenanceLookups | null>(null)
   // Role assign-to rule (core/features/maintenance.py) — the server enforces it on save too.
   const allowTech = useAssigneeFilter('maintenance:work_orders.assign')
   // ?asset=<signed ref> pre-selects the asset (from its detail page / QR scan).
-  const { id: presetAsset, error: linkError, loading: presetLoading } = useRecordId(searchParams.get('asset'))
+  const { id: presetAsset, error: linkError, loading: presetLoading } = useRecordId(vis.preview ? null : searchParams.get('asset'))
   const [assetId, setAssetId] = useState<number | null>(presetAsset)
   useEffect(() => { if (presetAsset) setAssetId(presetAsset) }, [presetAsset])
   const [woType, setWoType] = useState('corrective')
@@ -46,7 +54,7 @@ export default function NewMaintenanceWorkOrderPage() {
   const [tasks, setTasks] = useState<{ description: string; expected_value: string }[]>([])
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
-  const draft = useFormDraft(presetLoading ? null : 'maintenance-work-order-new',
+  const draft = useFormDraft(presetLoading || vis.preview ? null : 'maintenance-work-order-new',
     { assetId, woType, priority, title, description, machineDown, downtimeStart, assignedTo, plannedStart, plannedEnd, estimatedHours, tasks },
     (d) => {
       if (d.assetId) setAssetId(d.assetId)
@@ -63,11 +71,26 @@ export default function NewMaintenanceWorkOrderPage() {
     maintenanceApi.getLookups().then(setLookups).catch((err) => setError(extractErrorMessages(err, 'Failed to load technicians.')))
   }, [isAuthorized])
 
+  // Coded values the role offers; a default the role doesn't offer moves to the first one it does.
+  const typeChoices = vis.options('wo_type', WO_TYPE_CHOICES, ([k]) => k)
+  const priorityChoices = vis.options('priority', PRIORITY_CHOICES, ([k]) => k)
+  const typeKey = typeChoices.map(([k]) => k).join(',')
+  const priorityKey = priorityChoices.map(([k]) => k).join(',')
+  useEffect(() => {
+    const allowed = typeKey.split(',').filter(Boolean)
+    if (allowed.length && !allowed.includes(woType)) setWoType(allowed[0])
+  }, [typeKey, woType])
+  useEffect(() => {
+    const allowed = priorityKey.split(',').filter(Boolean)
+    if (allowed.length && !allowed.includes(priority)) setPriority(allowed[0])
+  }, [priorityKey, priority])
+
   const updateTask = (idx: number, key: 'description' | 'expected_value', value: string) =>
     setTasks((prev) => prev.map((t, i) => (i === idx ? { ...t, [key]: value } : t)))
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (vis.preview) return
     setError('')
     if (!assetId) { setError('Pick the asset this work is on.'); return }
     if (!title.trim()) { setError('Give the work order a title.'); return }
@@ -103,17 +126,17 @@ export default function NewMaintenanceWorkOrderPage() {
   }
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><MaintenanceNav /><InvalidRecordLink message={linkError} listHref="/dashboard/maintenance/work-orders" listLabel="Back to work orders" /></div>)
-  if (presetLoading) return <div><MaintenanceNav /></div>
+  if (linkError && !vis.preview) return (<div><MaintenanceNav /><InvalidRecordLink message={linkError} listHref="/dashboard/maintenance/work-orders" listLabel="Back to work orders" /></div>)
+  if (presetLoading && !vis.preview) return <div><MaintenanceNav /></div>
 
   return (
     <form onSubmit={handleSubmit}>
       <FormPage tour="maint-wof-page" icon="tool" title="New Work Order"
         subtitle="For a breakdown someone reported, open their request and use “Create Work Order” instead, so the downtime and sign-off link up."
-        nav={<MaintenanceNav />} onBack={() => router.push('/dashboard/maintenance/work-orders')} backTour="maint-wof-back"
+        nav={vis.preview ? undefined : <MaintenanceNav />} onBack={vis.preview ? undefined : () => router.push('/dashboard/maintenance/work-orders')} backTour="maint-wof-back"
         footer={<>
-          <button type="button" onClick={() => router.push('/dashboard/maintenance/work-orders')} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
-          <button data-tour="maint-wof-submit" type="submit" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+          <button type="button" onClick={() => router.push('/dashboard/maintenance/work-orders')} disabled={saving || vis.preview} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+          <button data-tour="maint-wof-submit" type="submit" disabled={saving || vis.preview} style={sheetBtn('primary', SHEET.BLUE, saving)}>
             <SheetIcon name="plus" size={16} />{saving ? 'Creating…' : 'Create Work Order'}
           </button>
         </>}>
@@ -126,6 +149,7 @@ export default function NewMaintenanceWorkOrderPage() {
 
         <DraftBanner draft={draft} />
 
+        <VisSection vis={vis} k="job">
         <SheetSection icon="tool" title="Job">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div data-tour="maint-wof-asset" style={{ flex: '1 1 280px', maxWidth: 420 }}>
@@ -135,14 +159,16 @@ export default function NewMaintenanceWorkOrderPage() {
             <div style={{ flex: '0 1 170px', minWidth: 150 }}>
               <label style={sheetLabel}>Type</label>
               <Select data-tour="maint-wof-type" style={sheetInput} value={woType} onChange={(e) => setWoType(e.target.value)}>
-                {Object.entries(WO_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {typeChoices.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </Select>
+              <VisOptionValues vis={vis} dropdown="wo_type" />
             </div>
             <div style={{ flex: '0 1 140px', minWidth: 120 }}>
               <label style={sheetLabel}>Priority</label>
               <Select data-tour="maint-wof-priority" style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value)}>
-                {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {priorityChoices.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </Select>
+              <VisOptionValues vis={vis} dropdown="priority" />
             </div>
           </div>
           <div style={{ marginTop: 14, maxWidth: 700 }}>
@@ -164,7 +190,9 @@ export default function NewMaintenanceWorkOrderPage() {
             </div>
           )}
         </SheetSection>
+        </VisSection>
 
+        <VisSection vis={vis} k="planning">
         <SheetSection icon="calendar" title="Planning">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div data-tour="maint-wof-technician" style={{ flex: '1 1 240px', maxWidth: 320 }}>
@@ -186,7 +214,9 @@ export default function NewMaintenanceWorkOrderPage() {
             </div>
           </div>
         </SheetSection>
+        </VisSection>
 
+        <VisSection vis={vis} k="checklist">
         <SheetSection icon="list" title="Checklist" extra={<Optional />}>
           {tasks.length === 0 && <p style={{ ...sheetHint, margin: '0 0 10px' }}>Each line needs a result (OK / Not OK / N/A) before the job can be completed.</p>}
           {tasks.map((t, i) => (
@@ -199,6 +229,7 @@ export default function NewMaintenanceWorkOrderPage() {
           ))}
           <button data-tour="maint-wof-add-line" type="button" onClick={() => setTasks((prev) => [...prev, { description: '', expected_value: '' }])} style={sheetBtn('ghost')}><SheetIcon name="plus" size={14} />Add Line</button>
         </SheetSection>
+        </VisSection>
 
       </div>
       </FormPage>

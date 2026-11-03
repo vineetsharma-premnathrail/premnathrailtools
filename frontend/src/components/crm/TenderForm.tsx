@@ -13,6 +13,9 @@ import DateField from '@/components/erp/DateField'
 import PhoneField from '@/components/erp/PhoneField'
 import { normalizePriority } from '@/lib/priority'
 import { RAILWAY_ZONES, TENDER_PORTALS, TENDER_TYPES, CURRENCIES, TENDER_STATUSES, priorityOptions, priorityLabel } from './constants'
+import { useVisibility } from '@/lib/visibility'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
+import { sampleContact, sampleOrganizations } from '@/lib/crmPreviewSamples'
 import { handleEnterAsTab } from './ui'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import ValidatedInput from '@/components/ValidatedInput'
@@ -152,15 +155,28 @@ export default function TenderForm({
   // Inquiries & Tenders › Prices & margins: without it the value is hidden (and the server ignores it on save).
   const seePrices = useCan().canFeature('crm', 'inquiries_tenders', 'prices', 'view')
   const orgLocked = !!defaultOrgId
-  const [form, setForm] = useState<FormState>(() => toFormState(initial, defaultOrgId))
+  // Role-wise visibility (Organization › Role & Permissions › CRM › Inquiries & Tenders › Visibility): the
+  // Priority / Status lists are narrowed to what the role offers (a saved record keeps its own value). The
+  // server refuses a disallowed value as well.
+  const vis = useVisibility('crm:inquiries_tenders')
+  const keepSaved = (choices: string[], saved?: string | null) => (saved && !choices.includes(saved) ? [...choices, saved] : choices)
+  const priorityChoices = keepSaved(vis.options('tender_priority', priorityOptions(initial?.priority), (p) => p), initial ? normalizePriority(initial.priority) : null)
+  const statusChoices = keepSaved(vis.options('tender_status', TENDER_STATUSES, (s) => s), initial?.status)
+  const [form, setForm] = useState<FormState>(() => {
+    const f = toFormState(initial, defaultOrgId)
+    // A new form never starts on a value the role can't pick: it opens on the first allowed one.
+    if (!initial && !priorityChoices.includes(f.priority)) f.priority = priorityChoices[0]
+    if (!initial && !statusChoices.includes(f.status)) f.status = statusChoices[0]
+    return f
+  })
   const [railwayZoneCustom] = useState(
     initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? initial.railway_zone : ''
   )
   const [tenderPortalCustom, setTenderPortalCustom] = useState(
     initial?.tender_portal && !TENDER_PORTALS.includes(initial.tender_portal) ? initial.tender_portal : ''
   )
-  const [organizations, setOrganizations] = useState<Organization[]>([])
-  const [contacts, setContacts] = useState<OrgContact[]>([])
+  const [organizations, setOrganizations] = useState<Organization[]>(vis.preview ? sampleOrganizations : [])
+  const [contacts, setContacts] = useState<OrgContact[]>(vis.preview ? [sampleContact] : [])
   const [newContact, setNewContact] = useState({ name: '', designation: '', mobile: '', email: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
@@ -171,13 +187,17 @@ export default function TenderForm({
 
   const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
   // A new tender's typed data survives a refresh / network failure (lib/formDraft.ts).
-  const draft = useFormDraft(initial ? null : 'crm-tender-new', { form, tenderPortalCustom, newContact },
+  const draft = useFormDraft(initial || vis.preview ? null : 'crm-tender-new', { form, tenderPortalCustom, newContact },
     (d) => { setForm(d.form); setTenderPortalCustom(d.tenderPortalCustom || ''); if (d.newContact) setNewContact(d.newContact) })
 
-  useEffect(() => { crmApi.listOrganizations({ picker: true }).then(setOrganizations) }, [])
+  useEffect(() => {
+    if (vis.preview) return  // Role editor preview: sample organizations, nothing is loaded
+    crmApi.listOrganizations({ picker: true }).then(setOrganizations)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
-    if (initial) return
+    if (initial || vis.preview) return
     crmApi.listTenders().then((all: Tender[]) => {
       const today = new Date()
       const y = today.getFullYear()
@@ -186,9 +206,10 @@ export default function TenderForm({
       const seq = String(all.length + 1).padStart(4, '0')
       setPreviewNumber(`TND-${y}${m}${d}-${seq}`)
     }).catch(() => {})
-  }, [initial])
+  }, [initial, vis.preview])
 
   useEffect(() => {
+    if (vis.preview) return
     if (!form.org_id) {
       // Deferred so the effect itself sets no state.
       Promise.resolve().then(() => setContacts([]))
@@ -294,12 +315,12 @@ export default function TenderForm({
   const formId = initial ? `tender-form-${initial.id}` : 'tender-form-new'
   const hasError = !!error && (!Array.isArray(error) || error.length > 0)
   return (
-    <FormPage nav={nav} onBack={onBack} backTour="tnd-form-back-btn" tour="tnd-form" icon={initial ? 'edit' : 'flag'}
+    <FormPage nav={vis.preview ? undefined : nav} onBack={vis.preview ? undefined : onBack} backTour="tnd-form-back-btn" tour="tnd-form" icon={initial ? 'edit' : 'flag'}
       title={title || (initial ? `Edit Tender ${initial.universal_id || ''}`.trim() : 'New Tender')}
       subtitle={subtitle || (initial ? 'Change the tender — the change is recorded in its timeline.' : 'A published tender we may bid for: who floated it, its number and its key dates.')}
       footer={<>
         <button type="button" onClick={onCancel} disabled={saving} data-tour="tnd-cancel-btn" style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
-        <button type="submit" form={formId} data-tour="tnd-save" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+        <button type="submit" form={formId} data-tour="tnd-save" disabled={saving || vis.preview} style={sheetBtn('primary', SHEET.BLUE, saving || vis.preview)}>
           <SheetIcon name={initial ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : submitLabel}
         </button>
       </>}>
@@ -315,7 +336,7 @@ export default function TenderForm({
 
       <SheetColumns
         left={<>
-          <SheetSection icon="doc" title="Tender Information">
+          <VisSection vis={vis} k="tnd_info"><SheetSection icon="doc" title="Tender Information">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '1 1 160px', minWidth: 140, maxWidth: 220 }}>
                 <F label={<>Tender Number {needDetails && <Req />}</>} tourId="tnd-number"><input value={form.tender_number} onChange={(e) => set('tender_number', e.target.value)} style={inputStyle} /></F>
@@ -358,8 +379,9 @@ export default function TenderForm({
               <div style={{ flex: '0 1 170px', minWidth: 140 }}>
                 <F label="Status" tourId="tnd-status">
                   <Select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
-                    {TENDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {statusChoices.map((s) => <option key={s} value={s}>{s}</option>)}
                   </Select>
+                  <VisOptionValues vis={vis} dropdown="tender_status" />
                 </F>
               </div>
             </div>
@@ -373,9 +395,9 @@ export default function TenderForm({
                 <textarea value={form.current_status_note} onChange={(e) => set('current_status_note', e.target.value)} rows={2} placeholder="e.g. Waiting for client confirmation" style={{ ...inputStyle, resize: 'vertical' }} />
               </F>
             </div>
-          </SheetSection>
+          </SheetSection></VisSection>
 
-          <SheetSection icon="calendar" title="Key Dates">
+          <VisSection vis={vis} k="tnd_dates"><SheetSection icon="calendar" title="Key Dates">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '0 1 165px', minWidth: 150 }}>
                 <F label={<>Publish Date {needDetails && <Req />}</>} tourId="tnd-publish-date"><DateField value={form.publish_date} onChange={(v) => set('publish_date', v)} /></F>
@@ -395,10 +417,10 @@ export default function TenderForm({
                 </F>
               </div>
             </div>
-          </SheetSection>
+          </SheetSection></VisSection>
         </>}
         right={<>
-          <SheetSection icon="list" title="Basic Information">
+          <VisSection vis={vis} k="tnd_basic"><SheetSection icon="list" title="Basic Information">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '1 1 140px' }}>
                 <F label="Internal Tender ID">
@@ -413,14 +435,15 @@ export default function TenderForm({
               <div style={{ flex: '1 1 200px' }}>
                 <F label={<>Priority <Req /></>} tourId="tnd-priority">
                   <Select value={form.priority} onChange={(e) => set('priority', e.target.value)} style={inputStyle}>
-                    {priorityOptions(initial?.priority).map((p) => <option key={p} value={p}>{priorityLabel(p)}</option>)}
+                    {priorityChoices.map((p) => <option key={p} value={p}>{priorityLabel(p)}</option>)}
                   </Select>
+                  <VisOptionValues vis={vis} dropdown="tender_priority" />
                 </F>
               </div>
             </div>
-          </SheetSection>
+          </SheetSection></VisSection>
 
-          <SheetSection icon="building" title="Customer Organization & Contact">
+          <VisSection vis={vis} k="tnd_customer"><SheetSection icon="building" title="Customer Organization & Contact">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <F label={<>Customer Organization <Req /></>} tourId="tnd-org">
                 <SearchableSelect
@@ -448,7 +471,7 @@ export default function TenderForm({
                 </div>
               )}
             </div>
-          </SheetSection>
+          </SheetSection></VisSection>
         </>}
       />
     </form>

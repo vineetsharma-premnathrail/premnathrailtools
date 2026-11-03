@@ -10,7 +10,9 @@ from app.main import app
 from app.db.base import Base
 from app.db.session import get_db
 from app.middleware.owasp import get_rate_store
-from app.core.permission_registry import expand_grant_sources, expand_grants, legacy_access, standard_module_grants
+from app.core.permission_registry import (
+    ONGOING_PROJECTS_ROWS, expand_grant_sources, expand_grants, legacy_access, standard_module_grants,
+)
 from app.modules.main.models.user import User
 
 
@@ -31,6 +33,10 @@ def _legacy_effective_permissions(self) -> set[str]:
     eff = expand_grants(keep + other + self.role_grants())
     for mk in standard:
         eff |= standard_module_grants(mk)
+        if f"{mk}:project_work" in ONGOING_PROJECTS_ROWS or f"{mk}:ongoing_projects" in ONGOING_PROJECTS_ROWS:
+            # The migrated Standard role held that module's (removed) Ongoing Projects row, which
+            # aliases to Project Management › My Tasks + Department Work (legacy_grant_aliases).
+            eff |= expand_grants([f"projects:{t}:{a}" for t in ("my_tasks", "department_work") for a in ("view", "edit")])
     return eff
 
 

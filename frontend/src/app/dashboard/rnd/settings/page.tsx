@@ -7,6 +7,7 @@ import { RndSettings } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import RndNav from '@/components/rnd/RndNav'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -21,17 +22,25 @@ const noteStyle: React.CSSProperties = { fontSize: 13, color: TEXT.body, margin:
 // user's extra permission.
 export default function RndSettingsPage() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
+  const { canFeature } = useCan()
+  const allowed = canFeature('rnd', 'requirements', 'settings', 'view')
   const [settings, setSettings] = useState<RndSettings | null>(null)
   const [error, setError] = useState<string | string[]>('')
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || !allowed) return
     rndApi.getSettings()
       .then(setSettings)
       .catch((err) => setError(extractErrorMessages(err, 'Could not load R&D settings. Reload the page.')))
-  }, [isAuthorized])
+  }, [isAuthorized, allowed])
 
   if (isLoading || !isAuthorized) return null
+  if (!allowed) return (
+    <div>
+      <RndNav />
+      <p style={noteStyle}>R&amp;D Settings needs R&amp;D › Requirements › &quot;R&amp;D Settings (gear)&quot; on your role. Ask an admin to add it in Organization › Role &amp; Permissions.</p>
+    </div>
+  )
 
   return (
     <div>

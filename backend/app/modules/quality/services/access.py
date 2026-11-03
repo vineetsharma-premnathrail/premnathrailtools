@@ -35,8 +35,8 @@ _ENGINEER = sorted(set(_INSPECTOR + _grants(
 _HEAD = sorted(set(_ENGINEER + _grants(
     ("ncr", "approve"), ("inspection_plans", "approve"), ("settings", "edit"), ("capa", "approve"),
     ("complaints", "approve"), ("supplier_quality", "approve"), ("standards", "create,edit"),
-    ("documents", "create,edit"), ("project_work", "view"), ("inspection_calls", "approve"),
-)))
+    ("documents", "create,edit"), ("inspection_calls", "approve"),
+)) | {"projects:my_tasks:view"})  # was quality:project_work:view (Ongoing Projects row removed 2026-11-03)
 _CALIBRATION = _grants(("dashboard", "view"), ("masters", "view"), ("reports", "view"))
 
 QUALITY_ROLE_PERMISSION_SETS: dict[str, dict] = {

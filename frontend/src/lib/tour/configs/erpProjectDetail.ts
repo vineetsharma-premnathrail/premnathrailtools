@@ -52,6 +52,39 @@ const config: TourConfig = {
       autoActivate: true,
     },
     {
+      target: 'erp-proj-tab-store-issues',
+      title: 'Store Issues tab',
+      purpose: 'Material issued from a store to this machine\'s project: issue number, date, type, who it was issued to and its status.',
+      autoActivate: true,
+    },
+    {
+      target: 'proj-hist-store-issues',
+      title: 'Material issues',
+      purpose: 'Click an issue number to open it. Click "N items" to list the item code, name and quantity on it.',
+    },
+    {
+      target: 'erp-proj-tab-purchases',
+      title: 'Purchases tab',
+      purpose: 'Purchase requisitions charged to this machine\'s project, with their purchase orders (vendor, date, amount) and goods receipts underneath.',
+      autoActivate: true,
+    },
+    {
+      target: 'proj-hist-purchases',
+      title: 'Requisitions, orders and receipts',
+      purpose: 'One row per requisition; its orders are indented under it and their receipts under each order. A dash in the amount means no value is recorded yet. Click a number to open it.',
+    },
+    {
+      target: 'erp-proj-tab-tasks',
+      title: 'Tasks tab',
+      purpose: 'Tasks done for this machine\'s project: milestone, department, assignee, due date (red when overdue), status and completion date.',
+      autoActivate: true,
+    },
+    {
+      target: 'proj-hist-tasks',
+      title: 'Task list',
+      purpose: 'Click a task to open it with its sub-tasks, remarks and files.',
+    },
+    {
       target: 'erp-proj-tab-production',
       title: 'Production tab',
       purpose: 'Production work orders building this machine, with built vs planned quantity, planned end date (red if overdue) and status: Draft, Released, In Progress, Completed, Closed or Cancelled.',

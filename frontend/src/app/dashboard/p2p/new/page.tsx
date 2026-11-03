@@ -6,6 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { organizationApi, p2pApi, storeApi, PrStockAvailability } from '@/lib/api'
 import { P2PPurposeMeta, P2PRequest, P2PRequestLineItemInput, StoreItem } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
+import { itemOptionDetail } from '@/lib/itemOptions'
 import { ACCOUNT_ASSIGNMENTS, accountAssignmentApi } from '@/lib/mmLogisticsApi'
 
 import DateField from '@/components/erp/DateField'
@@ -19,6 +20,8 @@ import { RowCount } from '@/components/shared/ui'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
 import { normalizePriority, PRIORITY_OPTIONS } from '@/lib/priority'
+import { useVisibility } from '@/lib/visibility'
+import { VisOptionValues, VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
 
 type LineFilter = { type: string; category: string; q?: string; custom?: boolean }
 
@@ -33,7 +36,7 @@ const typeLabel = (t: string) => { const s = t.replace(/_/g, ' '); return s.char
 // each line's Item Type + Category say what is bought, and the item type picks
 // the line's buyer (Procurement › Settings › Buyer for each item type).
 const PURPOSE_HINTS: Record<string, string> = {
-  machine_project: 'Service work on a project already delivered to the customer: spares, repair, warranty, commissioning support. Pick the delivered project; every line is for it.',
+  machine_project: 'Service work on a project: spares, repair, warranty, commissioning support. Pick the project (any stage); every line is for it.',
   development: 'New product development (R&D).',
   // The cost centre is picked by Purchase on the PO (your department's by default), not here.
   department: "Day-to-day running cost of a department: cleaning material, stationery, small tools, office repairs, AMC, housekeeping.",
@@ -100,6 +103,8 @@ export default function NewP2PRequestPage() {
   const [purposes, setPurposes] = useState<P2PPurposeMeta[]>([])
   const [purpose, setPurpose] = useState('')
   const purposeMeta = purposes.find((p) => p.code === purpose)
+  // What the user's roles let them see here (Role editor > Purchase Requisitions > Visibility).
+  const vis = useVisibility('p2p:purchase_requisitions')
   // Charged To / line project rules of the chosen purpose (from the server).
   const rule = purposeMeta ? { kinds: purposeMeta.charged_to_kinds, required: purposeMeta.charged_required,
     inhouseOnly: purposeMeta.line_project_mode === 'inhouse', hint: PURPOSE_HINTS[purposeMeta.code] || '' } : undefined
@@ -141,8 +146,9 @@ export default function NewP2PRequestPage() {
       return next
     })
   const [projects, setProjects] = useState<{ id: number; label: string; serviceable: boolean }[]>([])
-  // Project = a machine still being built; Service = a dispatched / delivered machine.
-  const purposeProjects = projects.filter((p) => (purpose === 'machine_project' ? p.serviceable : !p.serviceable))
+  // Every project at any stage, for Project and Service alike (owner 2026-11-02: a closed /
+  // dispatched machine can still need material booked to its project).
+  const purposeProjects = projects
 
   const [projectId, setProjectId] = useState('')
   // What the purchase is charged to: hidden on the form for now (2026-10-28); kept so editing an older PR keeps its charge.
@@ -159,6 +165,13 @@ export default function NewP2PRequestPage() {
   }, [purpose, rndProjects])
   const [requiredDate, setRequiredDate] = useState('')
   const [priority, setPriority] = useState<string>('standard')
+  // New form: when the role doesn't offer 'standard', start on the first value it does offer (a saved record keeps its own).
+  const allowedPriorityKey = vis.options('priority', PRIORITY_OPTIONS, (o) => o.value).map((o) => o.value).join(',')
+  useEffect(() => {
+    if (editRef) return
+    const allowedValues = allowedPriorityKey.split(',').filter(Boolean)
+    if (allowedValues.length && !allowedValues.includes(priority)) setPriority(allowedValues[0])
+  }, [allowedPriorityKey, priority, editRef])
   const [remarks, setRemarks] = useState('')
   const [items, setItems] = useState<P2PRequestLineItemInput[]>([emptyItem()])
   const [specFiles, setSpecFiles] = useState<File[]>([])
@@ -170,7 +183,7 @@ export default function NewP2PRequestPage() {
   // A new requisition's typed data survives a refresh / network failure (lib/formDraft.ts).
   // Off while editing and when the form is pre-filled from Store / Maintenance / MRP.
   const prefilled = !!searchParams.get('prefill') || !!searchParams.get('store_item_id')
-  const draft = useFormDraft(editRef || prefilled || !metaLoaded ? null : 'p2p-pr-new',
+  const draft = useFormDraft(editRef || prefilled || !metaLoaded || vis.preview ? null : 'p2p-pr-new',
     { purpose, projectId, acctKind, acctId, requiredDate, priority, remarks, items, lineFilters },
     (d) => {
       setPurpose(d.purpose || ''); setProjectId(d.projectId || ''); setAcctKind(d.acctKind || ''); setAcctId(d.acctId || '')
@@ -466,14 +479,30 @@ export default function NewP2PRequestPage() {
   const subtitle = !editing ? 'Ask for items from the Item Master — approved requisitions go to stock check, then RFQ and PO.'
     : `${editing.category_code !== 'ITM' ? `${editing.category_label || editing.category_code} · ` : ''}status ${editing.status.replace(/_/g, ' ')}`
 
+  // The server marks each purpose allowed / not for this user (/p2p/requests/meta `allowed`); a saved requisition keeps its own purpose in the list.
+  const purposeChoices = (purposes as (P2PPurposeMeta & { allowed?: boolean })[]).filter((p) => p.allowed !== false || (!!editing && p.code === editing.purpose))
+  // Priority: the role's allowed values, plus the value a saved requisition already holds.
+  const priorityChoices = vis.options('priority', PRIORITY_OPTIONS, (o) => o.value)
+  const currentPriority = PRIORITY_OPTIONS.find((o) => o.value === priority)
+  const priorityOptions = editing && editing.priority === priority && currentPriority && !priorityChoices.some((o) => o.value === priority)
+    ? [...priorityChoices, currentPriority] : priorityChoices
+  // Layout only: a divider belongs between two columns that both show (the preview draws every section).
+  const showRequestDetails = vis.preview || vis.showSection('request_details')
+  const showRemarks = vis.preview || vis.showSection('remarks')
+  const showAttachments = vis.preview || vis.showSection('attachments')
+  // Item table columns the roles may hide: header (VisTh) and cells (VisTd) use the same key so they stay aligned.
+  const ITEM_COL_KEYS: Record<string, string> = { Make: 'make', 'Part Code': 'part_code', UOM: 'uom', 'In Stock': 'in_stock', 'Ship To': 'ship_to' }
+  // Role editor preview: nothing is saved and the page chrome (module nav, Back) is left out.
+  const previewBlock = vis.preview
+
   return (
-    <FormPage nav={<P2PNav />} icon={editing ? 'edit' : 'cart'} title={heading} subtitle={subtitle} onBack={() => router.back()} backTour="pr-new-back"
+    <FormPage nav={previewBlock ? undefined : <P2PNav />} icon={editing ? 'edit' : 'cart'} title={heading} subtitle={subtitle} onBack={previewBlock ? undefined : () => router.back()} backTour="pr-new-back"
       footer={<>
         <button data-tour="pr-new-cancel" onClick={() => router.back()} type="button" style={sheetBtn('secondary', SHEET.INK)}>Cancel</button>
-        <button data-tour="pr-new-save-draft" onClick={() => handleSubmit(true)} disabled={!!submitting} type="button" style={sheetBtn('secondary', SHEET.INK, !!submitting)}>
+        <button data-tour="pr-new-save-draft" onClick={() => handleSubmit(true)} disabled={!!submitting || previewBlock} type="button" style={sheetBtn('secondary', SHEET.INK, !!submitting)}>
           <SheetIcon name="doc" size={16} />{submitting === 'draft' ? 'Saving…' : 'Save as Draft'}
         </button>
-        <button data-tour="pr-new-submit" onClick={() => handleSubmit(false)} disabled={!!submitting} type="button" style={sheetBtn('primary', SHEET.BLUE, !!submitting)}>
+        <button data-tour="pr-new-submit" onClick={() => handleSubmit(false)} disabled={!!submitting || previewBlock} type="button" style={sheetBtn('primary', SHEET.BLUE, !!submitting)}>
           <SheetIcon name="send" size={16} />{submitting === 'submit' ? 'Submitting…' : editing && editing.status !== 'draft' ? 'Save & Submit for Approval' : 'Submit Purchase Requisition'}
         </button>
       </>}>
@@ -497,7 +526,7 @@ export default function NewP2PRequestPage() {
       )}
 
       <div className="sheet-columns" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 0 }}>
-        <div style={{ minWidth: 0, padding: '20px 24px', borderRight: `1px solid ${SHEET.LINE}` }}>
+        <VisSection vis={vis} k="purpose_charging" frame={{ minWidth: 0, padding: '20px 24px', borderRight: showRequestDetails ? `1px solid ${SHEET.LINE}` : undefined }}>
           <SheetSection icon="building" title="Purpose & Charging">
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div data-tour="pr-new-purpose" style={{ minWidth: 0 }}>
@@ -505,8 +534,9 @@ export default function NewP2PRequestPage() {
                 <div id="pr-field-purpose">
                   <SearchableSelect value={purpose} onChange={pickPurpose} ariaLabel="Purpose" disabled={!!metaError}
                     placeholder={metaError ? 'Purposes could not be loaded' : metaLoaded ? 'What is this being bought for?' : 'Loading purposes…'}
-                    options={purposes.map((p) => ({ value: p.code, label: p.label }))} />
+                    options={purposeChoices.map((p) => ({ value: p.code, label: p.label }))} />
                 </div>
+                <VisOptionValues vis={vis} dropdown="purpose" />
               </div>
               {/* Charged To is hidden for now (owner 2026-10-28); the Project sits beside the Purpose. */}
               {(purpose === 'machine_project' || purpose === 'customer_order') && (
@@ -523,8 +553,8 @@ export default function NewP2PRequestPage() {
                     />
                   </div>
                   {metaLoaded && purposeProjects.length === 0 && <p style={sheetHint}>{purpose === 'machine_project'
-                    ? 'No dispatched or delivered machine found. A machine appears here once its project reaches the Dispatched stage in Project Management.'
-                    : 'No machine is being built right now: every project is already dispatched or delivered. To buy for a delivered machine, choose Purpose "Service"; for a new machine, create its project in Project Management first.'}</p>}
+                    ? 'No project found. Create the machine\'s project in Project Management first, then it appears here.'
+                    : 'No project found. Create the project in Project Management first, then it appears here.'}</p>}
                 </div>
               )}
               {purpose === 'development' && (
@@ -548,8 +578,8 @@ export default function NewP2PRequestPage() {
             {metaError && <p role="alert" style={{ ...sheetHint, color: '#B91C1C' }}>{metaError} Reload the page to try again.</p>}
             {rule && <p data-tour="pr-new-purpose-hint" style={sheetHint}>{rule.hint}</p>}
           </SheetSection>
-        </div>
-        <div style={{ minWidth: 0, padding: '20px 24px', background: '#fcfcfd' }}>
+        </VisSection>
+        <VisSection vis={vis} k="request_details" frame={{ minWidth: 0, padding: '20px 24px', background: '#fcfcfd' }}>
           <SheetSection icon="list" title="Request Details">
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div style={{ minWidth: 0 }}>
@@ -560,15 +590,16 @@ export default function NewP2PRequestPage() {
                 <label style={labelStyle}>Priority</label>
                 <div data-tour="pr-new-priority">
                   <SearchableSelect value={priority} onChange={setPriority} ariaLabel="Priority" placeholder="Priority"
-                    options={PRIORITY_OPTIONS} />
+                    options={priorityOptions} />
                 </div>
+                <VisOptionValues vis={vis} dropdown="priority" />
               </div>
             </div>
           </SheetSection>
-        </div>
+        </VisSection>
       </div>
 
-      <div style={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
+      <VisSection vis={vis} k="item_details" frame={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
         <SheetSection icon="box" title="Item Details" extra={
           <button data-tour="pr-new-add-item" onClick={addItem} type="button" style={{ ...sheetBtn('secondary', SHEET.INK), marginLeft: 'auto' }}><SheetIcon name="plus" size={14} />Add Item</button>
         }>
@@ -585,7 +616,9 @@ export default function NewP2PRequestPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
               <thead>
                 <tr>
-                  {['Actions', 'SL', 'Item (from Item Master) *', 'Make', 'Part Code', 'UOM', 'In Stock', 'Qty *', 'Ship To'].map((h, i) => (
+                  {['Actions', 'SL', 'Item (from Item Master) *', 'Make', 'Part Code', 'UOM', 'In Stock', 'Qty *', 'Ship To'].map((h, i) => ITEM_COL_KEYS[h] ? (
+                    <VisTh key={h} vis={vis} table="form_items" k={ITEM_COL_KEYS[h]} style={th}>{h}</VisTh>
+                  ) : (
                     <th key={h} style={th}>{h === 'Actions' ? <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>Actions</span> : h}{i === 1 && <RowCount count={items.length} />}</th>
                   ))}
                 </tr>
@@ -647,17 +680,17 @@ export default function NewP2PRequestPage() {
                             onSearch={(q) => setLineFilter(idx, { q })}
                             searchable
                             disabled={!itemReady}
-                            options={shown.slice(0, 200).map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}${i.part_number ? ` · ${i.part_number}` : ''}` }))}
+                            options={shown.slice(0, 200).map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, description: itemOptionDetail(i) }))}
                             placeholder={loadingMaster ? 'Loading items…' : !itemReady ? (categoryReady ? 'Pick the category first' : 'Pick the type first')
                               : `3. Search ${shown.length} item${shown.length === 1 ? '' : 's'} by code, name, part no. or technical details…`}
                           />
                         </div>
                       </div>
                     </td>
-                    <td data-tour="pr-new-item-make" style={readCell}>{m?.make || '—'}</td>
-                    <td data-tour="pr-new-item-partcode" style={readCell}>{m?.part_number || m?.manufacturer_part_number || '—'}</td>
-                    <td data-tour="pr-new-item-unit" style={readCell}>{m?.uom || '—'}</td>
-                    <td data-tour="pr-new-item-stock" style={{ padding: '6px 8px', fontSize: 12.5, minWidth: 150 }}>
+                    <VisTd vis={vis} table="form_items" k="make" data-tour="pr-new-item-make" style={readCell}>{m?.make || '—'}</VisTd>
+                    <VisTd vis={vis} table="form_items" k="part_code" data-tour="pr-new-item-partcode" style={readCell}>{m?.part_number || m?.manufacturer_part_number || '—'}</VisTd>
+                    <VisTd vis={vis} table="form_items" k="uom" data-tour="pr-new-item-unit" style={readCell}>{m?.uom || '—'}</VisTd>
+                    <VisTd vis={vis} table="form_items" k="in_stock" data-tour="pr-new-item-stock" style={{ padding: '6px 8px', fontSize: 12.5, minWidth: 150 }}>
                       {(() => {
                         if (!m) return <span style={{ color: SHEET.MUTED }}>—</span>
                         const st = stock[m.id]
@@ -678,11 +711,11 @@ export default function NewP2PRequestPage() {
                           </div>
                         )
                       })()}
-                    </td>
+                    </VisTd>
                     <td style={{ padding: '6px 8px', width: 96 }}>
                       <input data-tour="pr-new-item-qty" id={`pr-line-${idx + 1}-qty`} aria-label={`Quantity, line ${idx + 1}`} type="number" min={0} step="any" style={{ ...inputStyle, width: 88 }} value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} />
                     </td>
-                    <td data-tour="pr-new-item-shipto" style={{ padding: '6px 8px', minWidth: 220 }}>
+                    <VisTd vis={vis} table="form_items" k="ship_to" data-tour="pr-new-item-shipto" style={{ padding: '6px 8px', minWidth: 220 }}>
                       {(() => {
                         const plant = plants.find((b) => plantLabel(b) === item.ship_to)
                         const custom = f.custom || (!!item.ship_to && !plant)
@@ -708,7 +741,7 @@ export default function NewP2PRequestPage() {
                           </div>
                         )
                       })()}
-                    </td>
+                    </VisTd>
                   </tr>
                   )
                 })}
@@ -725,21 +758,21 @@ export default function NewP2PRequestPage() {
             </button>.
           </p>
         </SheetSection>
-      </div>
+      </VisSection>
 
-      <div className="sheet-columns" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', borderTop: `1px solid ${SHEET.LINE}` }}>
-        <div style={{ minWidth: 0, padding: '20px 24px', borderRight: `1px solid ${SHEET.LINE}` }}>
+      {vis.anySection(['remarks', 'attachments']) && <div className="sheet-columns" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', borderTop: `1px solid ${SHEET.LINE}` }}>
+        <VisSection vis={vis} k="remarks" frame={{ minWidth: 0, padding: '20px 24px', borderRight: showAttachments ? `1px solid ${SHEET.LINE}` : undefined }}>
           <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
             <textarea data-tour="pr-new-remarks" aria-label="Remarks" style={{ ...inputStyle, minHeight: 72, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)}
               placeholder="Why it is needed, references, anything the buyer should know…" />
           </SheetSection>
-        </div>
-        <div style={{ minWidth: 0, padding: '20px 24px', background: '#fcfcfd' }}>
+        </VisSection>
+        <VisSection vis={vis} k="attachments" frame={{ minWidth: 0, padding: '20px 24px', background: '#fcfcfd' }}>
           <SheetSection icon="clip" title="Attachments" extra={<Optional />}>
             <AttachRow label="Specification / reference file" files={specFiles} onChange={setSpecFiles} tour="pr-new-spec-docs" />
           </SheetSection>
-        </div>
-      </div>
+        </VisSection>
+      </div>}
     </FormPage>
   )
 }

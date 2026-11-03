@@ -328,7 +328,7 @@ export default function HrAttendancePage() {
         <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>
           Mark and correct attendance, import biometric exports and pull the monthly summary. Dashed badges are worked out from the calendar — nothing is stored for those days.
         </p>
-        <Link href="/dashboard/hr/attendance/time-evaluation" style={{ display: 'inline-block', marginTop: 6, fontSize: 13, fontWeight: 600, color: '#FF6A2A' }}>Time evaluation &amp; overtime (worked hours, OT approvals, ADP export) →</Link>
+        {canFeature('hr', 'attendance', 'time_evaluation', 'view') && <Link href="/dashboard/hr/attendance/time-evaluation" style={{ display: 'inline-block', marginTop: 6, fontSize: 13, fontWeight: 600, color: '#FF6A2A' }}>Time evaluation &amp; overtime (worked hours, OT approvals, ADP export) →</Link>}
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>

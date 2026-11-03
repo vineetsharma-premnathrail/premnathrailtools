@@ -17,6 +17,7 @@ from app.modules.hr.services.time_evaluation import TimeRules, evaluate_day, wor
 from app.modules.organization.services import approval_engine as engine
 from app.tests.test_cov_hr_support import *  # noqa: F401,F403
 from app.tests.test_cov_hr_support import IST
+from app.core.permission_registry import MODULES  # labels follow the registry
 
 TE = f"{HR}/time-evaluation"
 S = f"{HR}/safety"
@@ -351,6 +352,6 @@ def test_form18_word_document_needs_the_statutory_feature(client, db, ehs):
                      title="Hydraulic hose burst").json()["id"]
     url = f"/api/v1/managed-documents/{safety_svc.FORM18_ENTITY}/{inc_id}"
     r = client.get(url, headers=hdr(w["welder"]))
-    assert r.status_code == 403 and "'Print' permission on HR & Administration › Safety (EHS incidents) › Statutory reporting (Form 18)" in r.json()["detail"]
+    assert r.status_code == 403 and f"'Print' permission on {MODULES['hr']['label']} › {MODULES['hr']['subtabs']['safety']} › Statutory reporting (Form 18)" in r.json()["detail"]
     assert client.post(url, headers=hdr(w["welder"])).status_code == 403
     assert client.get(url, headers=hdr(w["officer"])).status_code == 200

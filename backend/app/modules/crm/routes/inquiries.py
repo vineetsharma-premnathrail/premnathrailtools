@@ -7,13 +7,14 @@ from app.modules.crm.services.notify import broadcast_except
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.core import visibility
 from app.core.permissions import ensure_can_delete, ensure_feature_action, require_feature_action, require_tab_access, require_tab_action
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.modules.crm.access import INQUIRY_MONEY_FIELDS, blank, can_open_record, drop_money_updates, ensure_parent_in_scope, mask_revision_changes, sees_prices
 from app.core.sequential_id import next_sequential_id
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
-from app.modules.crm.models.inquiry import Inquiry, InquiryLineItem
+from app.modules.crm.models.inquiry import INQ_STATUSES, Inquiry, InquiryLineItem
 from app.modules.crm.services.cascade import cascade_delete_children
 from app.modules.crm.services import requirement_movement, technical_offer
 from app.modules.crm.services.stage_guard import check_stage_move, ensure_deletable
@@ -58,11 +59,9 @@ INQ_STAGES = [
     "Negotiation", "Order Received", "Closed – Not Ordered",
 ]
 
-# Mirrors INQUIRY_STATUSES in frontend/src/components/crm/constants.ts.
-INQ_STATUSES = [
-    "Lead", "Requirement Received", "R&D / Technical Review", "Qualified Inquiry", "Quotation Sent",
-    "Order Received", "Closed - Ordered", "Closed - Not Ordered",
-]
+# INQ_STATUSES lives on the model (models/inquiry.py) — shared with the visibility catalogue.
+# Role-wise visibility key of this screen (core/features/crm.py).
+VIS_KEY = "crm:inquiries_tenders"
 
 # The stage is no longer shown or picked in CRM (owner, 2026-10-27): it follows the
 # status, so the Sales handoff (needs stage 'Order Received') and lost/won logic keep working.
@@ -222,6 +221,9 @@ async def create_inquiry(
 
     data = payload.model_dump(exclude={"additional_items"})
     data["priority"] = parse_priority(data.get("priority"))
+    # Role-wise visibility: a Priority / Status the role doesn't offer is refused with the real reason.
+    visibility.ensure_option_allowed(user, VIS_KEY, "inquiry_priority", data["priority"])
+    visibility.ensure_option_allowed(user, VIS_KEY, "inquiry_status", data.get("status"))
     if data.get("followup_priority"):
         data["followup_priority"] = parse_priority(data["followup_priority"])
     data["current_stage"] = STATUS_STAGE.get(data.get("status"), data.get("current_stage"))
@@ -330,6 +332,12 @@ async def update_inquiry(
     updates.pop("bd_owner_id", None)
     _check_choice(updates, inquiry, "current_stage", INQ_STAGES, "inquiry stage")
     _check_choice(updates, inquiry, "status", INQ_STATUSES, "inquiry status")
+    # Role-wise visibility checks only a CHANGED value, so a record that already holds a
+    # value the role doesn't offer stays editable.
+    if updates.get("priority") is not None and updates["priority"] != inquiry.priority:
+        visibility.ensure_option_allowed(user, VIS_KEY, "inquiry_priority", updates["priority"])
+    if updates.get("status") is not None and updates["status"] != inquiry.status:
+        visibility.ensure_option_allowed(user, VIS_KEY, "inquiry_status", updates["status"])
     drop_money_updates(user, updates, INQUIRY_MONEY_FIELDS)
     if "current_stage" in updates and updates["current_stage"] != inquiry.current_stage:
         ensure_feature_action(user, "crm", "inquiries_tenders", "stage", "edit")
@@ -352,6 +360,15 @@ async def update_inquiry(
             and STATUS_STAGE.get(updates["status"], inquiry.current_stage) != inquiry.current_stage):
         updates["current_stage"] = STATUS_STAGE[updates["status"]]
     stage_changed = "current_stage" in updates and updates["current_stage"] != inquiry.current_stage
+    # A status or stage going back while R&D still holds the requirement takes it back from
+    # R&D — refused once R&D has started (tasks / documents / offer). Owner, 2026-11-03.
+    status_back = (updates.get("status") in INQ_STATUSES and inquiry.status in INQ_STATUSES
+                   and INQ_STATUSES.index(updates["status"]) < INQ_STATUSES.index(inquiry.status))
+    taken_back = None
+    if moved_back or status_back:
+        taken_back = requirement_movement.take_back_on_move_back(
+            db, module="inquiry", record=inquiry, user=user, label="inquiry",
+            reason=payload.stage_reason or (f"status changed to {updates['status']}" if status_back else None))
     changed = [f for f, v in updates.items() if str(getattr(inquiry, f, None)) != str(v)]
     # Stage changes get their own timeline entry (_log_stage below) — everything else
     # that changed in this single save is combined into ONE info-update entry, so a
@@ -372,6 +389,8 @@ async def update_inquiry(
     opp.stamp_closed(inquiry)
     if info_changed:
         _write_spec_revision(db, inquiry.id, user, info_old, info_new)
+    if taken_back:
+        _log_stage(db, inquiry.id, inquiry.universal_id, "Taken back from R&D", user, notes=taken_back)
     if stage_changed:
         _log_stage(db, inquiry.id, inquiry.universal_id, "Stage moved back" if moved_back else "Stage updated", user,
                    notes=f"Moved back to {inquiry.current_stage} — reason: {payload.stage_reason.strip()}" if moved_back else f"Moved to {inquiry.current_stage}")
@@ -612,8 +631,12 @@ async def add_inquiry_stage(
         raise HTTPException(status_code=403, detail="Only the creator or an admin can change this inquiry's stage.")
     if payload.stage not in INQ_STAGES:
         raise HTTPException(status_code=422, detail=f"Invalid stage. Must be one of: {', '.join(INQ_STAGES)}")
-    check_stage_move(db, stages=INQ_STAGES, old=inquiry.current_stage, new=payload.stage, user=user,
-                     reason=payload.notes, label="inquiry", inquiry_id=inquiry.id)
+    if check_stage_move(db, stages=INQ_STAGES, old=inquiry.current_stage, new=payload.stage, user=user,
+                        reason=payload.notes, label="inquiry", inquiry_id=inquiry.id):
+        taken_back = requirement_movement.take_back_on_move_back(
+            db, module="inquiry", record=inquiry, user=user, reason=payload.notes, label="inquiry")
+        if taken_back:
+            _log_stage(db, inquiry.id, inquiry.universal_id, "Taken back from R&D", user, notes=taken_back)
     # Closing as not ordered from the timeline needs the lost reason on the inquiry first.
     opp.ensure_lost_details({"current_stage": payload.stage, "status": inquiry.status, "lost_reason_code": inquiry.lost_reason_code,
                              "lost_to_competitor": inquiry.lost_to_competitor, "lost_remarks": inquiry.lost_remarks})

@@ -8,7 +8,7 @@ const config: TourConfig = {
     {
       target: 'rnd-nav-tasks',
       title: 'R&D Tasks',
-      purpose: 'Every R&D task in one place: Requirement tasks (on a requirement R&D has accepted) and Prototype tasks (on a Prototype / Research project). PM tasks stay in Project Management › My Tasks.',
+      purpose: 'Every R&D task in one place: Requirement tasks (on a requirement R&D has accepted), Prototype tasks (on a Prototype / Research project) and Project tasks (on a Project Management › All Projects project). PM tasks stay in Project Management › My Tasks.',
     },
     {
       target: 'rnd-tasks-header',
@@ -23,10 +23,17 @@ const config: TourConfig = {
     },
     {
       target: 'rnd-tasks-type-requirement',
-      title: 'Type — Requirement or Prototype',
-      purpose: 'Pick the type first; the matching form follows. Requirement: pick a requirement by its R&D ID — only requirements whose latest revision R&D has accepted are listed. Prototype: pick a Prototype / Research project.',
+      title: 'Type — Requirement, Prototype or Project',
+      purpose: 'Pick the type first; the matching form follows. Requirement: pick a requirement by its R&D ID — only requirements whose latest revision R&D has accepted are listed. Prototype: pick a Prototype / Research project. Project: pick a project from Project Management › All Projects.',
       required: true,
       invalidExample: 'Saving without a type, or with a requirement that is only awaiting review — the form says what to pick.',
+    },
+    {
+      target: 'rnd-tasks-type-project',
+      title: 'Type — Project',
+      purpose: 'Gives R&D work on a project from Project Management › All Projects, picked by its PEW code. Only R&D heads or that project manager can give such a task; the assignee is picked from people with R&D access. The task is tracked here and on R&D › R&D Tasks › the project page; Project Management only shows it (read-only) on the project Tasks tab.',
+      required: true,
+      invalidExample: 'Saving without picking the project, or on a project you cannot give R&D tasks on — the form says so.',
     },
     {
       target: 'rnd-tasks-priority',
@@ -57,7 +64,7 @@ const config: TourConfig = {
     {
       target: 'rnd-tasks-filter-btn',
       title: 'Filters',
-      purpose: 'Project / requirement, assigned user, department (the assignee\'s department in Organization), type, status, priority, due-date range and completion progress (0, 1–49, 50–99, 100%). Tiles, the table and the grouped views all use the same filters; Clear resets them.',
+      purpose: 'Project (Prototype, All Projects) / requirement, assigned user, department (the assignee\'s department in Organization), type, status, priority, due-date range and completion progress (0, 1–49, 50–99, 100%). Tiles, the table and the grouped views all use the same filters; Clear resets them.',
     },
     {
       target: 'rnd-tasks-views',
@@ -67,7 +74,7 @@ const config: TourConfig = {
     {
       target: 'rnd-tasks-table',
       title: 'Task table',
-      purpose: 'Task, type, project or requirement (R&D ID / RND number), assignee, department, priority, status, progress, start, due, completed on and days overdue — sorted by R&D ID / project number ascending. Click a row to open its requirement or project on the Tasks tab.',
+      purpose: 'Task, type, project or requirement (R&D ID / RND number), assignee, department, priority, status, progress, start, due, completed on and days overdue — sorted by R&D ID / project number ascending. Click a row to open its requirement or project on the Tasks tab (All Projects tasks open the project R&D task page).',
     },
   ],
 }

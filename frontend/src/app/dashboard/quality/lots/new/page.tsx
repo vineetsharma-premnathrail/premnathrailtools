@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { recordPath } from '@/lib/recordRef'
-import { useRequireApp } from '@/hooks/useAuth'
 import { qualityApi } from '@/lib/api'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
+import { useQualityScreen } from '@/components/quality/useQualityScreen'
 import QualityNav from '@/components/quality/QualityNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
@@ -27,7 +28,11 @@ function F({ label, flex = '1 1 200px', children }: { label: React.ReactNode; fl
 }
 
 export default function NewManualLotPage() {
-  const { isAuthorized, isLoading } = useRequireApp('quality')
+  // What the user's roles let them see here (the lot types a role may raise by hand are also enforced by the
+  // server); in the Role editor's preview nothing is loaded or saved.
+  const { vis, isAuthorized, isLoading } = useQualityScreen('quality:inspection_lots')
+  const preview = vis.preview
+  const typeChoices = vis.options('inspection_type', MANUAL_TYPES, (t) => t)
   const router = useRouter()
   const [items, setItems] = useState<ItemOpt[]>([])
   const [locations, setLocations] = useState<{ id: number; code: string; name: string }[]>([])
@@ -36,16 +41,18 @@ export default function NewManualLotPage() {
   // Project (the vehicle / spares lot this inspection is for) — optional.
   const [op, setOp] = useState<OrderProjectValue | null>(null)
   const [error, setError] = useState<string | string[]>('')
-  const draft = useFormDraft('quality-lot-new', { form, op }, (d) => {
+  const draft = useFormDraft(preview ? null : 'quality-lot-new', { form, op }, (d) => {
     if (d.form) setForm((f) => ({ ...f, ...d.form }))
     setOp(d.op || null)
   })
+  // When the role doesn't offer the default type, the form shows (and sends) the first type it does offer.
+  const inspectionType = typeChoices.includes(form.inspection_type) ? form.inspection_type : (typeChoices[0] || form.inspection_type)
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || preview) return
     qualityApi.lookupItems('').then(setItems).catch((e) => setError(extractErrorMessages(e, 'Failed to load items.')))
     qualityApi.lookupLocations().then(setLocations).catch(() => setLocations([]))
-  }, [isAuthorized])
+  }, [isAuthorized, preview])
 
   const item = items.find((i) => String(i.id) === form.item_id)
 
@@ -57,7 +64,7 @@ export default function NewManualLotPage() {
     setBusy(true)
     try {
       const lot = await qualityApi.createLot({
-        inspection_type: form.inspection_type, item_id: Number(form.item_id), quantity: Number(form.quantity),
+        inspection_type: inspectionType, item_id: Number(form.item_id), quantity: Number(form.quantity),
         location_id: form.take_from_free ? Number(form.location_id) : null, take_from_free: form.take_from_free,
         batch_number: form.batch_number.trim() || null, vendor_name: form.vendor_name.trim() || null,
         source_reference: form.source_reference.trim() || null, remarks: form.remarks.trim() || null,
@@ -76,21 +83,23 @@ export default function NewManualLotPage() {
   const back = () => router.push('/dashboard/quality/lots')
 
   return (
-    <FormPage nav={<QualityNav />} icon="box" title="New Manual Inspection Lot"
-      subtitle="Incoming lots come from GRNs and final lots from production output — raise one here for re-inspection, returns, job work, in-process or third-party." onBack={back} backTour="qa-lot-new-back"
+    <FormPage nav={preview ? undefined : <QualityNav />} icon="box" title="New Manual Inspection Lot"
+      subtitle="Incoming lots come from GRNs and final lots from production output — raise one here for re-inspection, returns, job work, in-process or third-party." onBack={preview ? undefined : back} backTour="qa-lot-new-back"
       footer={<>
-        <button type="button" onClick={back} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
-        <button type="button" onClick={submit} disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="plus" size={16} />{busy ? 'Creating…' : 'Create Lot'}</button>
+        <button type="button" onClick={back} disabled={busy || preview} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+        <button type="button" onClick={submit} disabled={busy || preview} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="plus" size={16} />{busy ? 'Creating…' : 'Create Lot'}</button>
       </>}>
       <SheetColumns
         left={<>
           <ErrorBanner error={error} />
           <DraftBanner draft={draft} />
+          <VisSection vis={vis} k="lot">
           <SheetSection icon="box" title="Lot">
             <label style={sheetLabel}>Inspection type</label>
-            <Select style={sheetInput} value={form.inspection_type} onChange={(e) => setForm({ ...form, inspection_type: e.target.value })}>
-              {MANUAL_TYPES.map((t) => <option key={t} value={t}>{INSPECTION_TYPE_LABELS[t]}</option>)}
+            <Select style={sheetInput} value={inspectionType} onChange={(e) => setForm({ ...form, inspection_type: e.target.value })}>
+              {typeChoices.map((t) => <option key={t} value={t}>{INSPECTION_TYPE_LABELS[t]}</option>)}
             </Select>
+            <VisOptionValues vis={vis} dropdown="inspection_type" />
             <label style={{ ...sheetLabel, ...sheetGap }}>Item <Req /></label>
             <SearchableSelect value={form.item_id} onChange={(v) => setForm({ ...form, item_id: v })} placeholder="Search item code / name"
               options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
@@ -108,8 +117,10 @@ export default function NewManualLotPage() {
             <OrderProjectPicker value={op} onChange={(v) => setOp(v)} />
             <p style={sheetHint}>Link a final / in-process check to the build it belongs to — it shows on the Project&apos;s Quality column.</p>
           </SheetSection>
+          </VisSection>
         </>}
         right={<>
+          <VisSection vis={vis} k="stock">
           <SheetSection icon="building" title="Stock">
             <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: SHEET.BODY, cursor: 'pointer' }}>
               <input type="checkbox" style={{ marginTop: 2 }} checked={form.take_from_free} onChange={(e) => setForm({ ...form, take_from_free: e.target.checked })} />
@@ -126,9 +137,12 @@ export default function NewManualLotPage() {
             )}
             <p style={sheetHint}>Untick only when the material is not in a store&apos;s Free stock.</p>
           </SheetSection>
+          </VisSection>
+          <VisSection vis={vis} k="remarks">
           <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
             <textarea style={{ ...sheetInput, minHeight: 70, resize: 'vertical' }} value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
           </SheetSection>
+          </VisSection>
         </>}
       />
     </FormPage>

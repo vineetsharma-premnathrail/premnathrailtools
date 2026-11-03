@@ -4,6 +4,9 @@ import Select from '@/components/shared/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleLeaveBalances, sampleLeaveRequests, sampleLeaveTypes } from '@/lib/hrPreviewSamples'
 import { hrApi } from '@/lib/api'
 import { HrAttendanceLookups, HrLeaveAllotSummary, HrLeaveBalance, HrLeaveRequest, HrLeaveType } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
@@ -50,6 +53,11 @@ function Banner({ errors, ok }: { errors?: string[]; ok?: string }) {
 
 const TABS = [{ key: 'requests', label: 'Requests' }, { key: 'balances', label: 'Balances' }] as const
 
+// Column header -> key in the role-wise visibility catalogue (core/features/hr.py, tables "requests" / "balances").
+// Headers not listed (Request, Employee, Dates, Status, Leave type, Available, actions) are always shown.
+const REQUEST_COLS: Record<string, string> = { 'Leave': 'leave', 'Days': 'days', 'Approver / decision': 'approver' }
+const BALANCE_COLS: Record<string, string> = { 'Carried': 'carried', 'Allotted': 'allotted', 'Adjusted': 'adjusted', 'Used': 'used', 'Pending': 'pending' }
+
 export default function HrLeavePage() {
   const { isAuthorized, isLoading } = useRequireApp('hr')
   const { can, canFeature } = useCan()
@@ -58,17 +66,24 @@ export default function HrLeavePage() {
   // HR › Leave › Allot & adjust balances feature (allot = create, adjust = edit)
   const canAllot = canFeature('hr', 'leave', 'balance_admin', 'create')
   const canAdjust = canFeature('hr', 'leave', 'balance_admin', 'edit')
+  // Role-wise visibility (Organization › Role & Permissions › HR › Leave › Visibility): hidden list columns.
+  // In the Role editor's "Preview & choose" (vis.preview) the lists draw made-up rows and every column, with toggles.
+  const vis = useVisibility('hr:leave')
+  const showReqCol = (header: string) => !REQUEST_COLS[header] || vis.preview || vis.showColumn('requests', REQUEST_COLS[header])
+  const showBalCol = (header: string) => !BALANCE_COLS[header] || vis.preview || vis.showColumn('balances', BALANCE_COLS[header])
+  const requestHeaders = ['Request', 'Employee', 'Leave', 'Dates', 'Days', 'Status', 'Approver / decision', ''].filter(showReqCol)
+  const balanceHeaders = ['Employee', 'Leave type', 'Carried', 'Allotted', 'Adjusted', 'Used', 'Pending', 'Available', ''].filter(showBalCol)
   const canBalance = canAllot || canAdjust
   const thisYear = new Date().getFullYear()
   const [tab, setTab] = useState<'requests' | 'balances'>('requests')
-  const [types, setTypes] = useState<HrLeaveType[]>([])
+  const [types, setTypes] = useState<HrLeaveType[]>(vis.preview ? sampleLeaveTypes : [])
   const [lookups, setLookups] = useState<HrAttendanceLookups | null>(null)
   const [error, setError] = useState<string[]>([])
   const [notice, setNotice] = useState('')
 
   // requests
-  const [requests, setRequests] = useState<HrLeaveRequest[]>([])
-  const [reqLoading, setReqLoading] = useState(true)
+  const [requests, setRequests] = useState<HrLeaveRequest[]>(vis.preview ? sampleLeaveRequests : [])
+  const [reqLoading, setReqLoading] = useState(!vis.preview)
   const [status, setStatus] = useState('pending')
   const [typeFilter, setTypeFilter] = useState('')
   const [search, setSearch] = useState('')
@@ -80,7 +95,7 @@ export default function HrLeavePage() {
 
   // balances
   const [year, setYear] = useState(thisYear)
-  const [balances, setBalances] = useState<HrLeaveBalance[]>([])
+  const [balances, setBalances] = useState<HrLeaveBalance[]>(vis.preview ? sampleLeaveBalances : [])
   const [balLoading, setBalLoading] = useState(false)
   const [balType, setBalType] = useState('')
   const [balSearch, setBalSearch] = useState('')
@@ -95,11 +110,11 @@ export default function HrLeavePage() {
   const [adjust, setAdjust] = useState<{ user_id: string; leave_type_id: string; year: number; delta: string; reason: string; label?: string } | null>(null)
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     Promise.all([hrApi.listLeaveTypes({ include_inactive: true }), hrApi.getAttendanceLookups()])
       .then(([t, l]) => { setTypes(t); setLookups(l) })
       .catch((err) => setError(extractErrorMessages(err, 'Could not load leave setup.')))
-  }, [isAuthorized])
+  }, [isAuthorized, vis.preview])
 
   const loadRequests = useCallback(() => {
     setReqLoading(true)
@@ -128,16 +143,16 @@ export default function HrLeavePage() {
   }, [year, balType, balSearch])
 
   useEffect(() => {
-    if (!isAuthorized || tab !== 'requests') return
+    if (!isAuthorized || vis.preview || tab !== 'requests') return
     const h = setTimeout(loadRequests, 250)
     return () => clearTimeout(h)
-  }, [isAuthorized, tab, loadRequests])
+  }, [isAuthorized, vis.preview, tab, loadRequests])
 
   useEffect(() => {
-    if (!isAuthorized || tab !== 'balances') return
+    if (!isAuthorized || vis.preview || tab !== 'balances') return
     const h = setTimeout(loadBalances, 250)
     return () => clearTimeout(h)
-  }, [isAuthorized, tab, loadBalances])
+  }, [isAuthorized, vis.preview, tab, loadBalances])
 
   const activeTypes = useMemo(() => types.filter((t) => t.is_active), [types])
   const employeeOptions = useMemo(
@@ -218,7 +233,7 @@ export default function HrLeavePage() {
 
   return (
     <div>
-      <HrNav />
+      {!vis.preview && <HrNav />}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <div>
@@ -226,9 +241,9 @@ export default function HrLeavePage() {
             HR &amp; Administration
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Leave</h1>
-          <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>All leave requests and employee leave balances.</p>
+          <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>{vis.preview ? 'Columns are shown with sample data.' : 'All leave requests and employee leave balances.'}</p>
         </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {!vis.preview && <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {tab === 'requests' ? (can('hr', 'leave', 'create') &&
             <button type="button" data-tour="hr-leave-apply-behalf-btn" onClick={() => { setShowApply(true); setNotice('') }} style={primaryBtnStyle}>
               + Apply on behalf
@@ -241,7 +256,7 @@ export default function HrLeavePage() {
               </button>}
             </>
           )}
-        </div>
+        </div>}
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -303,13 +318,15 @@ export default function HrLeavePage() {
           <div data-tour="hr-leave-requests-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1040 }}>
               <thead>
-                <tr>{['Request', 'Employee', 'Leave', 'Dates', 'Days', 'Status', 'Approver / decision', ''].map((h, hi) => <th key={h} style={h === 'Days' ? { ...th, textAlign: 'right' } : th}>{h}{hi === 0 && <RowCount count={requests.length} />}</th>)}</tr>
+                <tr>{requestHeaders.map((h, hi) => REQUEST_COLS[h]
+                  ? <VisTh key={h} vis={vis} table="requests" k={REQUEST_COLS[h]} style={h === 'Days' ? { ...th, textAlign: 'right' } : th}>{h}</VisTh>
+                  : <th key={h} style={th}>{h}{hi === 0 && <RowCount count={requests.length} />}</th>)}</tr>
               </thead>
               <tbody>
                 {reqLoading ? (
-                  <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+                  <tr><td colSpan={requestHeaders.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
                 ) : requests.length === 0 ? (
-                  <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No leave requests match these filters.</td></tr>
+                  <tr><td colSpan={requestHeaders.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No leave requests match these filters.</td></tr>
                 ) : requests.map((r) => (
                   <tr key={r.id}>
                     <td style={{ ...td, fontWeight: 600, color: TEXT.heading }}>
@@ -320,22 +337,22 @@ export default function HrLeavePage() {
                       <div style={{ fontWeight: 600 }}>{r.user_name}</div>
                       <div style={{ fontSize: 11.5, color: TEXT.muted }}>{[r.employee_code, r.department_name].filter(Boolean).join(' · ')}</div>
                     </td>
-                    <td style={td}>
+                    <VisTd vis={vis} table="requests" k="leave" style={td}>
                       {r.leave_type_name}
                       {r.reason && <div style={{ fontSize: 12, color: TEXT.muted, marginTop: 2, maxWidth: 220 }}>{r.reason}</div>}
-                    </td>
+                    </VisTd>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>
                       {dmy(r.from_date)}{SESSION_SHORT[r.from_session]}
                       {r.to_date !== r.from_date && <div>→ {dmy(r.to_date)}{SESSION_SHORT[r.to_session]}</div>}
                     </td>
-                    <td style={{ ...td, fontWeight: 700, textAlign: 'right' }}>{num(r.days)}</td>
+                    <VisTd vis={vis} table="requests" k="days" style={{ ...td, fontWeight: 700, textAlign: 'right' }}>{num(r.days)}</VisTd>
                     <td style={td}>
                       <span data-tour="hr-leave-status-badge" style={pillStyle(STATUS_HEX[r.status])}>{STATUS_LABELS[r.status] || r.status}</span>
                     </td>
-                    <td style={{ ...td, fontSize: 12.5 }}>
+                    <VisTd vis={vis} table="requests" k="approver" style={{ ...td, fontSize: 12.5 }}>
                       {r.status === 'pending' ? (r.approver_name || <span style={{ color: '#B45309' }}>HR (no manager)</span>) : (r.decided_by_name || '—')}
                       {r.decision_remarks && <div style={{ color: TEXT.muted, marginTop: 2 }}>“{r.decision_remarks}”</div>}
-                    </td>
+                    </VisTd>
                     <td data-tour="hr-leave-row-actions" style={{ ...td, whiteSpace: 'nowrap' }}>
                       {r.attachment_path && <button type="button" style={linkBtn('#2563EB')} onClick={() => openAttachment(r)}>File</button>}
                       {r.can_decide && <button type="button" style={linkBtn('#16A34A')} onClick={() => setDecision({ kind: 'approve', req: r })}>Approve</button>}
@@ -366,13 +383,15 @@ export default function HrLeavePage() {
           <div data-tour="hr-leave-balances-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
               <thead>
-                <tr>{['Employee', 'Leave type', 'Carried', 'Allotted', 'Adjusted', 'Used', 'Pending', 'Available', ''].map((h, hi) => <th key={h} style={['Carried', 'Allotted', 'Adjusted', 'Used', 'Pending', 'Available'].includes(h) ? { ...th, textAlign: 'right' } : th}>{h}{hi === 0 && <RowCount count={balances.length} />}</th>)}</tr>
+                <tr>{balanceHeaders.map((h, hi) => BALANCE_COLS[h]
+                  ? <VisTh key={h} vis={vis} table="balances" k={BALANCE_COLS[h]} style={{ ...th, textAlign: 'right' }}>{h}</VisTh>
+                  : <th key={h} style={h === 'Available' ? { ...th, textAlign: 'right' } : th}>{h}{hi === 0 && <RowCount count={balances.length} />}</th>)}</tr>
               </thead>
               <tbody>
                 {balLoading ? (
-                  <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+                  <tr><td colSpan={balanceHeaders.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
                 ) : balances.length === 0 ? (
-                  <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+                  <tr><td colSpan={balanceHeaders.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                     No balances for {year}{balSearch || balType ? ' match these filters' : ' yet. Use “Allot year” to give every active employee their annual quota'}.
                   </td></tr>
                 ) : balances.map((b) => (
@@ -382,11 +401,11 @@ export default function HrLeavePage() {
                       <div style={{ fontSize: 11.5, color: TEXT.muted }}>{[b.employee_code, b.department_name].filter(Boolean).join(' · ')}</div>
                     </td>
                     <td style={td}>{b.leave_type_name} <span style={{ fontSize: 11, color: TEXT.muted }}>{b.leave_type_code}</span></td>
-                    <td style={{ ...td, textAlign: 'right' }}>{num(b.opening)}</td>
-                    <td style={{ ...td, textAlign: 'right' }}>{num(b.allotted)}</td>
-                    <td style={{ ...td, textAlign: 'right', color: Number(b.adjusted) < 0 ? '#DC2626' : Number(b.adjusted) > 0 ? '#16A34A' : TEXT.body }}>{Number(b.adjusted) > 0 ? '+' : ''}{num(b.adjusted)}</td>
-                    <td style={{ ...td, textAlign: 'right' }}>{num(b.used)}</td>
-                    <td style={{ ...td, textAlign: 'right', color: Number(b.pending) > 0 ? '#B45309' : TEXT.muted }}>{num(b.pending)}</td>
+                    <VisTd vis={vis} table="balances" k="carried" style={{ ...td, textAlign: 'right' }}>{num(b.opening)}</VisTd>
+                    <VisTd vis={vis} table="balances" k="allotted" style={{ ...td, textAlign: 'right' }}>{num(b.allotted)}</VisTd>
+                    <VisTd vis={vis} table="balances" k="adjusted" style={{ ...td, textAlign: 'right', color: Number(b.adjusted) < 0 ? '#DC2626' : Number(b.adjusted) > 0 ? '#16A34A' : TEXT.body }}>{Number(b.adjusted) > 0 ? '+' : ''}{num(b.adjusted)}</VisTd>
+                    <VisTd vis={vis} table="balances" k="used" style={{ ...td, textAlign: 'right' }}>{num(b.used)}</VisTd>
+                    <VisTd vis={vis} table="balances" k="pending" style={{ ...td, textAlign: 'right', color: Number(b.pending) > 0 ? '#B45309' : TEXT.muted }}>{num(b.pending)}</VisTd>
                     <td style={{ ...td, fontWeight: 800, color: TEXT.heading, textAlign: 'right' }}>{b.is_paid === false ? '—' : num(b.available)}</td>
                     <td style={td}>
                       {canAdjust && <button type="button" data-tour="hr-leave-bal-adjust-link" style={linkBtn('#E85A1F')} onClick={() => { setModalErrors([]); setAdjust({ user_id: String(b.user_id), leave_type_id: String(b.leave_type_id), year: b.year, delta: '', reason: '', label: `${b.user_name} · ${b.leave_type_name} · ${b.year} (available ${num(b.available)})` }) }}>Adjust</button>}

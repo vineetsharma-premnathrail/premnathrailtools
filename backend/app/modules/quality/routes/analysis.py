@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.permission_registry import can_feature, can_view_tab
-from app.core.permissions import require_app_access
+from app.core.permissions import require_app_access, require_tab_access
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.quality.services.pareto import defect_pareto
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/quality/analysis", tags=["Quality"], dependencies=[D
 @router.get("/defect-pareto")
 async def get_defect_pareto(basis: str = "ncr", date_from: date | None = None, date_to: date | None = None,
                             item_id: int | None = None, vendor: str | None = None, source: str | None = None,
-                            db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
+                            db: Session = Depends(get_db), user: User = Depends(require_tab_access("quality", "reports"))):
     try:
         out = defect_pareto(db, basis=basis, date_from=date_from, date_to=date_to, item_id=item_id,
                             vendor_name=vendor, source=source, user=user)

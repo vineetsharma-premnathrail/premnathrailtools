@@ -216,14 +216,26 @@ def tor_env(monkeypatch, sp):
     return sent
 
 
+def make_rnd_heads(db, *users):
+    """New requirements go to the R&D department heads (Organization › Department);
+    with no head set only admins receive them (2026-11-03), never every R&D user."""
+    from app.modules.organization.models.department import Department
+    first, *rest = users
+    db.add(Department(name="R&D", code=f"RND-{first.id}", head_user_id=first.id,
+                      secondary_head_user_id=rest[0].id if rest else None))
+    db.commit()
+
+
 @pytest.fixture
 def people(db):
-    return {
+    out = {
         "bd": make_user(db, "tor.bd@premnathrail.com"),
         "rnd": make_user(db, "tor.rnd@premnathrail.com", apps=("rnd",)),
         "rnd2": make_user(db, "tor.rnd2@premnathrail.com", apps=("rnd",)),
         "plain": make_user(db, "tor.plain@premnathrail.com", apps=("store",)),
     }
+    make_rnd_heads(db, out["rnd"], out["rnd2"])
+    return out
 
 
 def send_tor(client, inq_id, user, due=None, **extra):
@@ -307,7 +319,7 @@ def test_tor_send_creates_shared_doc_movement_and_rnd_request(client, db, people
     assert db.get(CrmDocument, unrelated.id).shared_via_tor is False
 
     req = db.query(CrmRndRequest).one()
-    # Whole R&D team queue: no named engineer, every R&D user is notified.
+    # Team queue: no named engineer; the R&D heads (both set in Organization › Department) are notified.
     assert (req.status, req.assigned_to_id, req.crm_remarks, req.offer_number) == ("open", None, "urgent", "RDR-2026-0001-R0")
     notified = {n.user_id for n in db.query(Notification).filter(Notification.notification_type == "rnd_request_assigned").all()}
     assert notified == {people["rnd"].id, people["rnd2"].id}

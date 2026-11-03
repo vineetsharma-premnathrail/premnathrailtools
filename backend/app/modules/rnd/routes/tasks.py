@@ -1,6 +1,7 @@
-"""R&D › R&D Tasks — one board over requirement tasks and Prototype / Research
-project tasks: list, filters, analytics (tiles, per person, per project /
-requirement) and Create Task by type.
+"""R&D › R&D Tasks — one board over requirement tasks, Prototype / Research
+project tasks and (since 2026-11-03) R&D tasks on Project Management "All
+Projects" projects: list, filters, analytics (tiles, per person, per project /
+requirement) and Create Task by type (requirement / prototype / project).
 
 Permissions: the tab `rnd:tasks` (view, create); the feature
 `rnd:tasks.analytics:view` (all R&D tasks, not only mine — the R&D head and
@@ -8,8 +9,10 @@ admins always see all). Everyone else sees only the tasks assigned to or
 created by them (rnd/services/task_board.py applies this in SQL).
 
 Create Task keeps each record's own rules: a requirement task needs a
-requirement the user can open whose latest revision is accepted; a project
-task needs the user to be a lead of the project (or an admin). The assignee
+requirement the user can open whose latest revision is accepted; a prototype
+task needs the user to be a lead of the project (or an admin); a task on a
+Project Management project needs an R&D head, an admin or the project's
+manager / management (routes/project_tasks.py). The assignee
 rules ("Assign to") apply as on the record's own Tasks tab.
 """
 from datetime import date
@@ -22,6 +25,8 @@ from app.core.permissions import ensure_tab_action, require_app_access, require_
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.routes.auth import get_current_user
+from app.modules.projects import workflow as pm_wf
+from app.modules.projects.models.project import PmProject
 from app.modules.rnd.models.project import RndProject
 from app.modules.rnd.models.requirement import RndRequirement
 from app.modules.rnd.routes import project_tasks as project_task_routes
@@ -39,13 +44,13 @@ router = APIRouter(
 
 
 def _filters(
-    type: str | None = None, requirement_id: int | None = None, rnd_project_id: int | None = None,
+    type: str | None = None, requirement_id: int | None = None, rnd_project_id: int | None = None, pm_project_id: int | None = None,
     assigned_to_id: int | None = None, department: str | None = None, status: str | None = None,
     priority: str | None = None, due_from: date | None = None, due_to: date | None = None,
     progress_band: str | None = None, q: str | None = None,
 ) -> dict:
     return {
-        "type": type, "requirement_id": requirement_id, "rnd_project_id": rnd_project_id, "assigned_to_id": assigned_to_id,
+        "type": type, "requirement_id": requirement_id, "rnd_project_id": rnd_project_id, "pm_project_id": pm_project_id, "assigned_to_id": assigned_to_id,
         "department": department, "status": status, "priority": priority, "due_from": due_from, "due_to": due_to,
         "progress_band": progress_band, "q": q,
     }
@@ -80,6 +85,7 @@ async def filter_options(db: Session = Depends(get_db), user: User = Depends(get
         "departments": sorted({p["department"] for p in people.values() if p["department"]}),
         "requirements": sorted((p for p in parents.values() if p["kind"] == "requirement" and p.get("id")), key=lambda p: p["ref"]),
         "projects": sorted((p for p in parents.values() if p["kind"] == "project"), key=lambda p: p["ref"]),
+        "pm_projects": sorted((p for p in parents.values() if p["kind"] == "pm_project"), key=lambda p: p["ref"]),
     }
 
 
@@ -121,10 +127,30 @@ async def project_options(q: str | None = None, db: Session = Depends(get_db), u
     return [{"id": p.id, "project_number": p.project_number, "title": p.title, "label": f"{p.project_number} · {p.title}"} for p in projects[:50]]
 
 
+@router.get("/pm-project-options")
+async def pm_project_options(q: str | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Project Management (All Projects) projects the user may give R&D tasks on: running
+    projects in the user's data scope, where the user is an admin, an R&D head or the
+    project's manager / management. Sorted by project code."""
+    query = db.query(PmProject).filter(PmProject.status.notin_(("closed", "cancelled")))
+    term = (q or "").strip()
+    if term:
+        like = f"%{term}%"
+        query = query.filter(PmProject.project_code.ilike(like) | PmProject.name.ilike(like) | PmProject.client_name.ilike(like))
+    # Narrow in SQL before any cap: admins / R&D heads see every running project; others
+    # only their own (project manager) or, for management, those in their PM data scope.
+    sees_all = user.role == "admin" or user.id in ra.org_head_ids(db)
+    if not sees_all and not pm_wf.is_management(user):
+        query = query.filter(PmProject.project_manager_id == user.id)
+    projects = [p for p in query.order_by(PmProject.project_code.asc()).limit(2000).all() if sees_all or project_task_routes.pm_manages(db, user, p)]
+    return [{"id": p.id, "project_code": p.project_code, "name": p.name, "client_name": p.client_name,
+             "label": f"{p.project_code} · {p.name}"} for p in projects]
+
+
 @router.get("/assignees")
 async def assignees(
-    type: Literal["requirement", "prototype"], source: Literal["inquiry", "tender"] | None = None,
-    record_id: int | None = None, rnd_project_id: int | None = None,
+    type: Literal["requirement", "prototype", "project"], source: Literal["inquiry", "tender"] | None = None,
+    record_id: int | None = None, rnd_project_id: int | None = None, pm_project_id: int | None = None,
     db: Session = Depends(get_db), user: User = Depends(get_current_user),
 ):
     """Who the chosen requirement / project can give the task to (after the role's "Assign to" rule)."""
@@ -132,6 +158,10 @@ async def assignees(
         if not source or not record_id:
             raise HTTPException(status_code=422, detail="Pick the requirement first — the people you can assign depend on it.")
         return await requirement_work_routes.list_assignees(source, record_id, db, user)
+    if type == "project":
+        if not pm_project_id:
+            raise HTTPException(status_code=422, detail="Pick the project first — the people you can assign depend on it.")
+        return (await project_task_routes.pm_task_access(pm_project_id, db, user))["people"]
     if not rnd_project_id:
         raise HTTPException(status_code=422, detail="Pick the Prototype / Research project first — only its team members can get tasks.")
     return (await project_task_routes.task_access(rnd_project_id, db, user))["people"]
@@ -140,7 +170,7 @@ async def assignees(
 @router.post("")
 async def create_task(
     type: str | None = Form(None), source: str | None = Form(None), record_id: int | None = Form(None),
-    rnd_project_id: int | None = Form(None),
+    rnd_project_id: int | None = Form(None), pm_project_id: int | None = Form(None),
     title: str = Form(...), assigned_to_id: int = Form(...), due_date: str = Form(...),
     remarks: str | None = Form(None), details: str | None = Form(None), files: list[UploadFile] | None = File(None),
     priority: str | None = Form(None), start_date: str | None = Form(None),
@@ -149,17 +179,27 @@ async def create_task(
     db: Session = Depends(get_db), user: User = Depends(get_current_user),
 ):
     """Create Task. Type decides the form: `requirement` (source + record_id of an accepted
-    requirement) or `prototype` (rnd_project_id of a Prototype / Research project).
+    requirement), `prototype` (rnd_project_id of a Prototype / Research project) or
+    `project` (pm_project_id of a Project Management project).
     `remarks` is the task's details (`details` is accepted as an alias); `checklist` is a JSON string."""
     remarks = remarks if remarks is not None else details
     ensure_tab_action(user, "rnd", "tasks", "create")
-    if type not in ("requirement", "prototype"):
-        raise HTTPException(status_code=422, detail="Pick the task type first — Requirement or Prototype — then the requirement or project it belongs to.")
+    if type not in ("requirement", "prototype", "project"):
+        raise HTTPException(status_code=422, detail="Pick the task type first — Requirement, Prototype or Project — then the requirement or project it belongs to.")
+    # The role's Priority list (R&D Tasks › Create Task visibility) is checked in task_fields.apply_create.
     if type == "requirement":
         if source not in ("inquiry", "tender") or not record_id:
             raise HTTPException(status_code=422, detail="Pick the requirement this task is for (it must be accepted by R&D).")
         task = await requirement_work_routes.create_requirement_task(
             db, user, source=source, record_id=record_id, title=title, assigned_to_id=assigned_to_id, due_date=due_date,
+            remarks=remarks, files=files, priority=priority, start_date=start_date, work_status=work_status,
+            checklist=checklist, background_tasks=background_tasks, check_feature=False,
+        )
+    elif type == "project":
+        if not pm_project_id:
+            raise HTTPException(status_code=422, detail="Pick the project (All Projects) this task is for.")
+        task = await project_task_routes.create_project_task(
+            db, user, pm_project_id=pm_project_id, title=title, assigned_to_id=assigned_to_id, due_date=due_date,
             remarks=remarks, files=files, priority=priority, start_date=start_date, work_status=work_status,
             checklist=checklist, background_tasks=background_tasks, check_feature=False,
         )

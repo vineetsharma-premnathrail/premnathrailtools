@@ -1,7 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
-from app.core import assignee_rules
+from app.core import assignee_rules, visibility
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.core.priority import parse_priority
 from app.core.permissions import require_app_access, require_feature_action, require_tab_access, require_tab_action
@@ -51,6 +51,16 @@ SPARE_ACTIVE_STATUSES = ("assigned", "in_progress", "on_hold")
 # Role assign-to rules (core/assignee_rules.PICKERS — Role & Permissions › Maintenance › Work Orders).
 ASSIGN_RULE = "maintenance:work_orders.assign"
 LABOUR_RULE = "maintenance:work_orders.labour"
+# Role-wise visibility (core/features/maintenance.py): coded dropdown values a role may pick.
+WO_VIS = "maintenance:work_orders"
+
+
+def _ensure_vis(user: User, data: dict, current: MaintenanceWorkOrder | None = None) -> None:
+    """Type / priority / failure category must be values the user's roles offer. On an
+    existing job only a CHANGED value is checked, so an older job stays editable."""
+    for field in ("wo_type", "priority", "failure_category"):
+        if field in data and (current is None or data[field] != getattr(current, field)):
+            visibility.ensure_option_allowed(user, WO_VIS, field, data[field])
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +262,8 @@ async def create_work_order(
     if not data["title"].strip():
         raise HTTPException(status_code=400, detail="Work order title is required.")
     _validate_details(db, data)
+    data["priority"] = parse_priority(data.get("priority"))  # normalise first (blank / any case), so the role's Priority list sees the stored value
+    _ensure_vis(user, data)
     asset = db.query(MaintenanceAsset).filter(MaintenanceAsset.id == payload.asset_id, MaintenanceAsset.is_deleted == False).first()  # noqa: E712
     if not asset:
         raise HTTPException(status_code=404, detail=f"Asset #{payload.asset_id} not found — pick the machine again.")
@@ -323,6 +335,7 @@ async def update_work_order(
         raise HTTPException(status_code=400, detail="Work order title can't be empty.")
     merged = {"planned_start": wo.planned_start, "planned_end": wo.planned_end, **data}
     _validate_details(db, merged)
+    _ensure_vis(user, data, wo)
     for field, val in data.items():
         setattr(wo, field, val)
     if "external_cost" in data and data["external_cost"] is None:
@@ -422,6 +435,7 @@ async def complete(
     handed_back_at = _aware(data.pop("handed_back_at", None))
     meter_reading = data.pop("meter_reading", None)
     _validate_details(db, data)
+    _ensure_vis(user, {k: v for k, v in data.items() if k == "failure_category" and v}, wo)
     for field, val in data.items():
         if val is not None:
             setattr(wo, field, val.strip() if isinstance(val, str) else val)

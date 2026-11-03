@@ -15,19 +15,29 @@ import { normalizePriority, priorityLabel } from '@/lib/priority'
 import ElectricalNav from '@/components/electrical/ElectricalNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleJobs } from '@/lib/electricalPreviewSamples'
 
 const PHASE_LABELS: Record<string, string> = { design: 'Design', procurement: 'Procurement', build: 'Assembly', test_qc: 'Testing & QC', handover: 'Handover' }
 
 const cellStyle: React.CSSProperties = tdStyle
-const COLS = ['Job No.', 'Title / RRV', 'Customer', 'Lead Engineer', 'Current Stage', 'Progress', 'Target Handover', 'Priority', 'Status']
+// Columns a role may hide (Role & Permissions › Electrical › RRV Electrical Jobs › Visibility); number, title and status always show.
+const COLS: { label: string; key?: string }[] = [
+  { label: 'Job No.' }, { label: 'Title / RRV' }, { label: 'Customer', key: 'customer' }, { label: 'Lead Engineer', key: 'lead_engineer' },
+  { label: 'Current Stage', key: 'current_stage' }, { label: 'Progress', key: 'progress' }, { label: 'Target Handover', key: 'target_handover' },
+  { label: 'Priority', key: 'priority' }, { label: 'Status' },
+]
 
 export default function ElectricalJobsPage() {
   const { isAuthorized, isLoading } = useRequireApp('electrical')
   const router = useRouter()
   const { can } = useCan()
+  // Role editor "Preview & choose": three made-up jobs, nothing is loaded.
+  const vis = useVisibility('electrical:jobs')
 
-  const [jobs, setJobs] = useState<ElectricalJob[]>([])
-  const [loading, setLoading] = useState(true)
+  const [jobs, setJobs] = useState<ElectricalJob[]>(vis.preview ? sampleJobs : [])
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState<string | string[]>('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('open')
@@ -35,7 +45,7 @@ export default function ElectricalJobsPage() {
   const [mine, setMine] = useState(false)
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     const params: Record<string, unknown> = {}
     if (statusFilter) params.status = statusFilter
     if (phaseFilter) params.phase = phaseFilter
@@ -45,13 +55,14 @@ export default function ElectricalJobsPage() {
       .then((data) => { setJobs(Array.isArray(data) ? data : []); setError('') })
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load electrical jobs.')))
       .finally(() => setLoading(false))
-  }, [isAuthorized, statusFilter, phaseFilter, mine, search])
+  }, [isAuthorized, statusFilter, phaseFilter, mine, search, vis.preview])
 
   if (isLoading || !isAuthorized) return null
+  const colCount = COLS.filter((c) => !c.key || vis.preview || vis.showColumn('jobs', c.key)).length
 
   return (
     <div>
-      <ElectricalNav />
+      {!vis.preview && <ElectricalNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
@@ -63,7 +74,7 @@ export default function ElectricalJobsPage() {
             One job per RRV whose electrical system is being built — open a job to work its stages, BOM, drawings and tests.
           </p>
         </div>
-        {can('electrical', 'jobs', 'create') && (
+        {can('electrical', 'jobs', 'create') && !vis.preview && (
           <button
             data-tour="elec-jobs-new-btn"
             onClick={() => router.push('/dashboard/electrical/jobs/new')}
@@ -103,52 +114,50 @@ export default function ElectricalJobsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1050 }}>
           <thead>
             <tr>
-              {COLS.map((h, hi) => (
-                <th key={`${h}-${hi}`} style={thStyle}>
-                  {h}{hi === 0 && <RowCount count={jobs.length} />}
-                </th>
-              ))}
+              {COLS.map((c, hi) => c.key
+                ? <VisTh key={c.label} vis={vis} table="jobs" k={c.key} style={thStyle}>{c.label}</VisTh>
+                : <th key={c.label} style={thStyle}>{c.label}{hi === 0 && <RowCount count={jobs.length} />}</th>)}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={colCount} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : jobs.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={colCount} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 {search.trim() || phaseFilter || mine || statusFilter !== 'open'
                   ? 'No electrical jobs match these filters — clear the search or pick another status.'
                   : `No open electrical jobs.${can('electrical', 'jobs', 'create') ? ' Use "+ New Job" for each RRV whose electrical system you’re building.' : ''}`}
               </td></tr>
             ) : (
               jobs.map((j) => (
-                <tr key={j.id} onClick={() => router.push(recordPath('/dashboard/electrical/jobs', j))} style={{ cursor: 'pointer' }}>
+                <tr key={j.id} onClick={() => { if (!vis.preview) router.push(recordPath('/dashboard/electrical/jobs', j)) }} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{j.job_number}</td>
                   <td style={{ ...cellStyle, maxWidth: 280 }} title={j.title}>
                     <div style={{ fontWeight: 600, color: TEXT.heading, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.title}</div>
                     <div style={{ fontSize: 12, color: TEXT.muted }}>{[j.rrv_model, j.vehicle_number].filter(Boolean).join(' · ') || '—'}</div>
                   </td>
-                  <td style={cellStyle}>{j.customer_name || '—'}</td>
-                  <td style={cellStyle}>{j.lead_engineer_name || '—'}</td>
-                  <td style={cellStyle}>
+                  <VisTd vis={vis} table="jobs" k="customer" style={cellStyle}>{j.customer_name || '—'}</VisTd>
+                  <VisTd vis={vis} table="jobs" k="lead_engineer" style={cellStyle}>{j.lead_engineer_name || '—'}</VisTd>
+                  <VisTd vis={vis} table="jobs" k="current_stage" style={cellStyle}>
                     {j.current_stage_label ? (
                       <>
                         <div>{j.current_stage_label}</div>
                         <div style={{ fontSize: 11.5, color: TEXT.muted }}>{PHASE_LABELS[j.current_phase || ''] || ''}</div>
                       </>
                     ) : <span style={{ color: '#16A34A', fontWeight: 600 }}>All stages done</span>}
-                  </td>
-                  <td style={{ ...cellStyle, minWidth: 130 }}>
+                  </VisTd>
+                  <VisTd vis={vis} table="jobs" k="progress" style={{ ...cellStyle, minWidth: 130 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div style={{ flex: 1, height: 6, borderRadius: 3, background: 'rgba(0,0,0,0.07)', overflow: 'hidden' }}>
                         <div style={{ width: `${j.progress_percent}%`, height: '100%', background: '#16A34A' }} />
                       </div>
                       <span style={{ fontSize: 12, color: TEXT.muted, whiteSpace: 'nowrap' }}>{j.done_stages}/{j.total_stages}</span>
                     </div>
-                  </td>
-                  <td style={{ ...cellStyle, color: j.is_overdue ? '#DC2626' : TEXT.body, fontWeight: j.is_overdue ? 600 : 400, whiteSpace: 'nowrap' }}>
+                  </VisTd>
+                  <VisTd vis={vis} table="jobs" k="target_handover" style={{ ...cellStyle, color: j.is_overdue ? '#DC2626' : TEXT.body, fontWeight: j.is_overdue ? 600 : 400, whiteSpace: 'nowrap' }}>
                     {j.target_handover_date ? formatDate(j.target_handover_date) : '—'}
-                  </td>
-                  <td style={cellStyle}><Pill label={priorityLabel(j.priority)} hex={PRIORITY_HEX[normalizePriority(j.priority)]} /></td>
+                  </VisTd>
+                  <VisTd vis={vis} table="jobs" k="priority" style={cellStyle}><Pill label={priorityLabel(j.priority)} hex={PRIORITY_HEX[normalizePriority(j.priority)]} /></VisTd>
                   <td style={cellStyle}><Pill label={STATUS_LABELS[j.status] || j.status} hex={STATUS_HEX[j.status]} /></td>
                 </tr>
               ))

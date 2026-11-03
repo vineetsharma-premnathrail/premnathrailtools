@@ -28,6 +28,9 @@ class ElectricalMetaResponse(BaseModel):
     drawing_types: dict[str, str]
     test_types: dict[str, str]
     document_categories: dict[str, str]
+    # Role visibility: dropdown key ("job_priority", "test_phase", "test_type") -> values the caller's roles allow,
+    # None = every value. The lists above stay complete so a saved record's value still shows its label.
+    allowed: dict[str, list[str] | None] = {}
 
 
 class ElectricalPhaseCount(BaseModel):

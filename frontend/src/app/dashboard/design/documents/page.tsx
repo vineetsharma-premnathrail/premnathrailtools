@@ -14,6 +14,9 @@ import { DOC_TYPE_LABELS, DISCIPLINE_LABELS } from '@/components/design/designMe
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleDocuments } from '@/lib/designPreviewSamples'
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Draft', in_review: 'In Review', in_approval: 'In Approval', approved: 'Approved · awaiting customer', released: 'Released', revising: 'Released · Revising',
@@ -43,16 +46,24 @@ const inputStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
 }
 const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
+const thCell: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }
+// Columns a role may hide (Role & Permissions › Design › Drawings › Visibility); number, title and status always show.
+const COLS: { label: string; key?: string }[] = [
+  { label: 'Doc Number' }, { label: 'Title' }, { label: 'Type', key: 'type' }, { label: 'Discipline', key: 'discipline' }, { label: 'Customer', key: 'customer' },
+  { label: 'Controlled Rev', key: 'controlled_rev' }, { label: 'Work in Progress', key: 'wip' }, { label: 'Owner', key: 'owner' }, { label: 'Status' },
+]
 
 export default function DesignDocumentsPage() {
   const { isAuthorized, isLoading } = useRequireApp('design')
   const router = useRouter()
   const searchParams = useSearchParams()
-  const me = useDesignMe(isAuthorized)
+  // Role editor "Preview & choose": three made-up documents, nothing is loaded.
+  const vis = useVisibility('design:documents')
+  const me = useDesignMe(isAuthorized && !vis.preview)
 
   const initialStatus = searchParams.get('status')
-  const [docs, setDocs] = useState<DesignDocument[]>([])
-  const [loading, setLoading] = useState(true)
+  const [docs, setDocs] = useState<DesignDocument[]>(vis.preview ? sampleDocuments : [])
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState<string | string[]>('')
   const [search, setSearch] = useState('')
   const [statusTab, setStatusTab] = useState(initialStatus ?? STATUS_TABS[0].key)
@@ -60,7 +71,7 @@ export default function DesignDocumentsPage() {
   const [discipline, setDiscipline] = useState('')
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     const params: Record<string, unknown> = {}
     if (statusTab) params.status = statusTab
     if (docType) params.document_type = docType
@@ -74,13 +85,14 @@ export default function DesignDocumentsPage() {
         .finally(() => setLoading(false))
     }, search ? 250 : 0)
     return () => clearTimeout(handle)
-  }, [isAuthorized, statusTab, docType, discipline, search])
+  }, [isAuthorized, statusTab, docType, discipline, search, vis.preview])
 
   if (isLoading || !isAuthorized) return null
+  const colCount = COLS.filter((c) => !c.key || vis.preview || vis.showColumn('documents', c.key)).length
 
   return (
     <div>
-      <DesignNav />
+      {!vis.preview && <DesignNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
@@ -135,23 +147,21 @@ export default function DesignDocumentsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1260 }}>
           <thead>
             <tr>
-              {['Doc Number', 'Title', 'Type', 'Discipline', 'Customer', 'Controlled Rev', 'Work in Progress', 'Owner', 'Status'].map((h, hi) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}{hi === 0 && <RowCount count={docs.length} />}
-                </th>
-              ))}
+              {COLS.map((c, hi) => c.key
+                ? <VisTh key={c.label} vis={vis} table="documents" k={c.key} style={thCell}>{c.label}</VisTh>
+                : <th key={c.label} style={thCell}>{c.label}{hi === 0 && <RowCount count={docs.length} />}</th>)}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={colCount} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : docs.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={colCount} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 No documents match these filters.{statusTab !== '' ? ' Try the “All” tab.' : ' Use + New Document to create one.'}
               </td></tr>
             ) : (
               docs.map((d) => (
-                <tr key={d.id} onClick={() => router.push(recordPath('/dashboard/design/documents', d))} style={{ cursor: 'pointer' }}>
+                <tr key={d.id} onClick={() => { if (!vis.preview) router.push(recordPath('/dashboard/design/documents', d)) }} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>
                     {d.doc_number}
                     {d.legacy_number && <div style={{ fontSize: 11.5, fontWeight: 400, color: TEXT.muted }}>old: {d.legacy_number}</div>}
@@ -162,29 +172,29 @@ export default function DesignDocumentsPage() {
                       <div style={{ fontSize: 11.5, color: TEXT.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.pm_project_label || d.erp_project_label}</div>
                     )}
                   </td>
-                  <td style={cellStyle}>{DOC_TYPE_LABELS[d.document_type] || d.document_type}</td>
-                  <td style={cellStyle}>{DISCIPLINE_LABELS[d.discipline] || d.discipline}</td>
-                  <td style={{ ...cellStyle, maxWidth: 200 }}>
+                  <VisTd vis={vis} table="documents" k="type" style={cellStyle}>{DOC_TYPE_LABELS[d.document_type] || d.document_type}</VisTd>
+                  <VisTd vis={vis} table="documents" k="discipline" style={cellStyle}>{DISCIPLINE_LABELS[d.discipline] || d.discipline}</VisTd>
+                  <VisTd vis={vis} table="documents" k="customer" style={{ ...cellStyle, maxWidth: 200 }}>
                     {d.customer_name ? (
                       <>
                         <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.customer_name}</div>
                         {d.customer_approval_required && <div style={{ fontSize: 11.5, color: TEXT.muted }}>approval required</div>}
                       </>
                     ) : <span style={{ color: TEXT.muted }}>—</span>}
-                  </td>
-                  <td style={cellStyle}>
+                  </VisTd>
+                  <VisTd vis={vis} table="documents" k="controlled_rev" style={cellStyle}>
                     {d.released_revision_label ? (
                       <><strong>{d.released_revision_label}</strong> <span style={{ color: TEXT.muted, fontSize: 12 }}>· {formatDate(d.released_at)}</span></>
                     ) : <span style={{ color: TEXT.muted }}>Not released</span>}
-                  </td>
-                  <td style={cellStyle}>
+                  </VisTd>
+                  <VisTd vis={vis} table="documents" k="wip" style={cellStyle}>
                     {d.open_revision_label ? (
                       <span>{d.open_revision_label} {OPEN_REV_LABELS[d.open_revision_status || ''] || ''}
                         {d.pending_with_name && <span style={{ color: TEXT.muted, fontSize: 12 }}> · with {d.pending_with_name}</span>}
                       </span>
                     ) : <span style={{ color: TEXT.muted }}>—</span>}
-                  </td>
-                  <td style={cellStyle}>{d.owner_name || '—'}</td>
+                  </VisTd>
+                  <VisTd vis={vis} table="documents" k="owner" style={cellStyle}>{d.owner_name || '—'}</VisTd>
                   <td style={cellStyle}>
                     <span style={pillStyle(STATUS_HEX[d.display_status])}>
                       {STATUS_LABELS[d.display_status] || d.display_status}

@@ -16,17 +16,27 @@ import {
   TEST_RESULT_LABELS, TEST_RESULT_HEX, TEST_PHASE_LABELS,
 } from '@/components/electrical/shared'
 import { RowCount, Pill as UiPill, segmentBtnStyle } from '@/components/shared/ui'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleMeta, sampleTests } from '@/lib/electricalPreviewSamples'
 
 
-const COLS = ['Test No.', 'Job', 'Phase', 'Type', 'Circuit', 'Measured', 'Result', 'Date', 'Tested by']
+// Columns a role may hide (Role & Permissions › Electrical › Testing › Visibility); number and result always show.
+const COLS: { label: string; key?: string }[] = [
+  { label: 'Test No.' }, { label: 'Job', key: 'job' }, { label: 'Phase', key: 'phase' }, { label: 'Type', key: 'type' },
+  { label: 'Circuit', key: 'circuit' }, { label: 'Measured', key: 'measured' }, { label: 'Result' }, { label: 'Date', key: 'date' },
+  { label: 'Tested by', key: 'tested_by' },
+]
 
 export default function ElectricalTestRegisterPage() {
   const { isAuthorized, isLoading } = useRequireApp('electrical')
   const router = useRouter()
 
-  const [tests, setTests] = useState<ElectricalTest[]>([])
-  const [meta, setMeta] = useState<ElectricalMeta | null>(null)
-  const [loading, setLoading] = useState(true)
+  // Role editor "Preview & choose": three made-up tests, nothing is loaded.
+  const vis = useVisibility('electrical:testing')
+  const [tests, setTests] = useState<ElectricalTest[]>(vis.preview ? sampleTests : [])
+  const [meta, setMeta] = useState<ElectricalMeta | null>(vis.preview ? sampleMeta : null)
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState<string | string[]>('')
   const [lookupErrors, addLookupError] = useLookupErrors()
   const [phase, setPhase] = useState('')
@@ -35,13 +45,13 @@ export default function ElectricalTestRegisterPage() {
   const [needsRetest, setNeedsRetest] = useState(false)
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     electricalApi.getMeta().then(setMeta).catch((err) => { setMeta(null); addLookupError(extractErrorMessages(err,
       "Couldn't load the test type list for the Test Type filter — the register below still works unfiltered; refresh to try again.")) })
-  }, [isAuthorized])
+  }, [isAuthorized, vis.preview])
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     const params: Record<string, unknown> = {}
     if (phase) params.phase = phase
     if (result) params.result = result
@@ -51,17 +61,18 @@ export default function ElectricalTestRegisterPage() {
       .then((d) => { setTests(Array.isArray(d) ? d : []); setError('') })
       .catch((err) => setError(extractErrorMessages(err, "Couldn't load the electrical test register. Refresh the page to try again.")))
       .finally(() => setLoading(false))
-  }, [isAuthorized, phase, result, testType, needsRetest])
+  }, [isAuthorized, phase, result, testType, needsRetest, vis.preview])
 
   const typeLabel = (k: string) => meta?.test_types?.[k] || k.replace(/_/g, ' ')
-  const go = (t: ElectricalTest) => router.push(`${recordPath('/dashboard/electrical/jobs', t, 'job_id')}?tab=tests`)
+  const colCount = COLS.filter((c) => !c.key || vis.preview || vis.showColumn('tests', c.key)).length
+  const go = (t: ElectricalTest) => vis.preview ? undefined : router.push(`${recordPath('/dashboard/electrical/jobs', t, 'job_id')}?tab=tests`)
   const openFailures = tests.filter((t) => t.needs_retest).length
 
   if (isLoading || !isAuthorized) return null
 
   return (
     <div>
-      <ElectricalNav />
+      {!vis.preview && <ElectricalNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
@@ -105,14 +116,16 @@ export default function ElectricalTestRegisterPage() {
       }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
-            <tr>{COLS.map((h, i) => <th key={`${h}-${i}`} style={thStyle}>{h}{i === 0 && <RowCount count={tests.length} />}</th>)}</tr>
+            <tr>{COLS.map((c, i) => c.key
+              ? <VisTh key={c.label} vis={vis} table="tests" k={c.key} style={thStyle}>{c.label}</VisTh>
+              : <th key={c.label} style={thStyle}>{c.label}{i === 0 && <RowCount count={tests.length} />}</th>)}</tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={COLS.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={colCount} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : tests.length === 0 ? (
               <tr>
-                <td colSpan={COLS.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+                <td colSpan={colCount} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                   {phase || result || testType || needsRetest
                     ? 'No tests match these filters.'
                     : 'No electrical tests recorded yet. Tests are recorded from each RRV job’s Tests tab.'}
@@ -124,27 +137,27 @@ export default function ElectricalTestRegisterPage() {
                   {t.test_number}
                   {t.retest_of_number && <div style={{ fontSize: 11.5, fontWeight: 500, color: TEXT.muted }}>Retest of {t.retest_of_number}</div>}
                 </td>
-                <td style={tdStyle}>
+                <VisTd vis={vis} table="tests" k="job" style={tdStyle}>
                   <div style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{t.job_number || '—'}</div>
                   {t.job_title && <div title={t.job_title} style={{ fontSize: 11.5, color: TEXT.muted, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.job_title}</div>}
-                </td>
-                <td style={tdStyle}>{TEST_PHASE_LABELS[t.phase] || t.phase}</td>
-                <td style={tdStyle}>{typeLabel(t.test_type)}</td>
-                <td style={tdStyle}>
+                </VisTd>
+                <VisTd vis={vis} table="tests" k="phase" style={tdStyle}>{TEST_PHASE_LABELS[t.phase] || t.phase}</VisTd>
+                <VisTd vis={vis} table="tests" k="type" style={tdStyle}>{typeLabel(t.test_type)}</VisTd>
+                <VisTd vis={vis} table="tests" k="circuit" style={tdStyle}>
                   {t.circuit || '—'}
                   {(t.panel_tag || t.cable_tag) && (
                     <div style={{ fontSize: 11.5, color: TEXT.muted }}>{[t.panel_tag, t.cable_tag].filter(Boolean).join(' · ')}</div>
                   )}
-                </td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{t.measured_value ? `${t.measured_value}${t.unit ? ` ${t.unit}` : ''}` : '—'}</td>
+                </VisTd>
+                <VisTd vis={vis} table="tests" k="measured" style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{t.measured_value ? `${t.measured_value}${t.unit ? ` ${t.unit}` : ''}` : '—'}</VisTd>
                 <td style={tdStyle}>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     <Pill value={t.result} labels={TEST_RESULT_LABELS} hex={TEST_RESULT_HEX} />
                     {t.needs_retest && <UiPill label="Needs retest" hex="#DC2626" />}
                   </div>
                 </td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(t.test_date)}</td>
-                <td style={tdStyle}>{t.tested_by_name || '—'}</td>
+                <VisTd vis={vis} table="tests" k="date" style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(t.test_date)}</VisTd>
+                <VisTd vis={vis} table="tests" k="tested_by" style={tdStyle}>{t.tested_by_name || '—'}</VisTd>
               </tr>
             ))}
           </tbody>

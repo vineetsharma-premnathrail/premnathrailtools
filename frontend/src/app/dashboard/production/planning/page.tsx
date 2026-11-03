@@ -12,6 +12,9 @@ import StockRequirementsDrawer from '@/components/production/StockRequirementsDr
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordHref, recordPath } from '@/lib/recordRef'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
+import { samplePlanning } from '@/lib/productionPreviewSamples'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', released: 'Released', in_progress: 'In Progress' }
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', released: '#2563EB', in_progress: '#F59E0B' }
@@ -31,18 +34,21 @@ const actionBtn: React.CSSProperties = smallSecondaryBtnStyle
 export default function ProductionPlanningPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('production')
   const router = useRouter()
-  const [data, setData] = useState<ProductionPlanning | null>(null)
+  // What the user's roles let them see here (Role & Permissions › Production › Planning › Visibility). In the Role
+  // editor's "Preview & choose" sample data is drawn: nothing loads, no module nav, no actions.
+  const vis = useVisibility('production:planning')
+  const [data, setData] = useState<ProductionPlanning | null>(vis.preview ? samplePlanning : null)
   const [includeDraft, setIncludeDraft] = useState(true)
   const [shortOnly, setShortOnly] = useState(false)
   const [error, setError] = useState<string | string[]>('')
   const [md04Item, setMd04Item] = useState<number | null>(null)
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     productionApi.getPlanning({ include_draft: includeDraft })
       .then(setData)
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load production planning.')))
-  }, [isAuthorized, includeDraft])
+  }, [isAuthorized, includeDraft, vis.preview])
 
   const requirements = useMemo(() => (data?.requirements || []).filter((r) => !shortOnly || r.shortage_qty > 0), [data, shortOnly])
 
@@ -57,7 +63,9 @@ export default function ProductionPlanningPage() {
     return { start, end, span: end - start, todayMs }
   }, [data])
 
-  const canRaisePr = !!user?.apps?.includes('p2p')
+  const canRaisePr = !!user?.apps?.includes('p2p') && !vis.preview
+  const reqCols = ([['Item', null], ['Needed', null], ['Reserved', 'reserved'], ['Free Stock', 'free_stock'], ['Shortage', null], ['Reorder Level', 'reorder_level'],
+    ['For Work Orders', 'for_work_orders'], ['', null]] as [string, string | null][]).filter(([, k]) => !k || vis.preview || vis.showColumn('requirements', k))
   const prLink = (r: ProductionMaterialRequirement) => {
     const params = new URLSearchParams({
       store_item_id: String(r.item_id),
@@ -78,7 +86,7 @@ export default function ProductionPlanningPage() {
 
   return (
     <div>
-      <ProductionNav />
+      {!vis.preview && <ProductionNav />}
 
       <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
         <div>
@@ -87,7 +95,7 @@ export default function ProductionPlanningPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Production Planning</h1>
         </div>
-        <button type="button" style={secondaryBtnStyle} onClick={() => router.push('/dashboard/production/planning/mrp')}>MRP &amp; Planned Orders →</button>
+        {!vis.preview && <button type="button" style={secondaryBtnStyle} onClick={() => router.push('/dashboard/production/planning/mrp')}>MRP &amp; Planned Orders →</button>}
       </div>
       <StockRequirementsDrawer itemId={md04Item} onClose={() => setMd04Item(null)} />
 
@@ -99,6 +107,7 @@ export default function ProductionPlanningPage() {
 
       {data && (
         <>
+          <VisSection vis={vis} k="material_requirements">
           <div data-tour="production-plan-requirements" style={sectionStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
               <div>
@@ -118,21 +127,23 @@ export default function ProductionPlanningPage() {
             </div>
             <div style={{ overflow: 'auto', maxHeight: 460 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-                <thead><tr>{['Item', 'Needed', 'Reserved', 'Free Stock', 'Shortage', 'Reorder Level', 'For Work Orders', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={requirements.length} />}</th>)}</tr></thead>
+                <thead><tr>{reqCols.map(([h, k], i) => (k
+                  ? <VisTh key={h} vis={vis} table="requirements" k={k} style={thStyle}>{h}</VisTh>
+                  : <th key={h || 'actions'} style={thStyle}>{h}{i === 0 && <RowCount count={requirements.length} />}</th>))}</tr></thead>
                 <tbody>
                   {requirements.length === 0 ? (
-                    <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>{shortOnly ? 'No shortages — Store can cover every open work order.' : 'No outstanding material on open work orders.'}</td></tr>
+                    <tr><td colSpan={reqCols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>{shortOnly ? 'No shortages — Store can cover every open work order.' : 'No outstanding material on open work orders.'}</td></tr>
                   ) : requirements.map((r) => (
                     <tr key={r.item_id}>
                       <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>
                         <span onClick={() => setMd04Item(r.item_id)} style={{ cursor: 'pointer' }} title="Stock / requirements list">{r.item_code} — {r.item_name}</span>
                       </td>
                       <td style={tdStyle}>{fmtQty(r.outstanding_qty)} {r.uom || ''}</td>
-                      <td style={tdStyle}>{fmtQty(r.reserved_qty)}</td>
-                      <td style={tdStyle}>{fmtQty(r.available_qty)}</td>
+                      <VisTd vis={vis} table="requirements" k="reserved" style={tdStyle}>{fmtQty(r.reserved_qty)}</VisTd>
+                      <VisTd vis={vis} table="requirements" k="free_stock" style={tdStyle}>{fmtQty(r.available_qty)}</VisTd>
                       <td style={{ ...tdStyle, fontWeight: 700, color: r.shortage_qty > 0 ? '#DC2626' : '#16A34A' }}>{r.shortage_qty > 0 ? fmtQty(r.shortage_qty) : 'Covered'}</td>
-                      <td style={tdStyle}>{r.reorder_level ?? '—'}</td>
-                      <td style={tdStyle}>
+                      <VisTd vis={vis} table="requirements" k="reorder_level" style={tdStyle}>{r.reorder_level ?? '—'}</VisTd>
+                      <VisTd vis={vis} table="requirements" k="for_work_orders" style={tdStyle}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                           {r.orders.map((o) => (
                             <span key={o.work_order_id} onClick={() => router.push(recordPath('/dashboard/production/work-orders', o, 'work_order_id'))}
@@ -141,9 +152,9 @@ export default function ProductionPlanningPage() {
                             </span>
                           ))}
                         </div>
-                      </td>
+                      </VisTd>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                        {r.shortage_qty > 0 && r.make_bom_id && (
+                        {r.shortage_qty > 0 && r.make_bom_id && !vis.preview && (
                           <button data-tour="production-plan-build-btn" type="button" style={actionBtn} title="This item has its own active BOM — build the shortfall"
                             onClick={() => router.push(recordHref('/dashboard/production/work-orders/new', r, 'make_bom_id', { quantity: fmtQty(r.shortage_qty) }, 'bom_id'))}>
                             Build
@@ -165,6 +176,9 @@ export default function ProductionPlanningPage() {
             )}
           </div>
 
+          </VisSection>
+
+          <VisSection vis={vis} k="workstation_load">
           <div data-tour="production-plan-load" style={sectionStyle}>
             <p style={sectionTitle}>Workstation Load</p>
             <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }}>Remaining planned hours of open operations on released and in-progress orders, in working days at each workstation&apos;s daily capacity.</p>
@@ -189,6 +203,9 @@ export default function ProductionPlanningPage() {
             </div>
           </div>
 
+          </VisSection>
+
+          <VisSection vis={vis} k="schedule">
           <div data-tour="production-plan-schedule" style={sectionStyle}>
             <p style={sectionTitle}>Schedule</p>
             <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }}>Open work orders on their planned dates. The orange line is today.</p>
@@ -235,6 +252,7 @@ export default function ProductionPlanningPage() {
               </div>
             )}
           </div>
+          </VisSection>
         </>
       )}
     </div>

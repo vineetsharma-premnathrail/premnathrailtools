@@ -10,6 +10,7 @@ from app.modules.hr.models.asset import HrAsset
 from app.modules.hr.models.holiday import HrHoliday
 from app.modules.hr.models.leave import HrLeaveRequest
 from app.tests.test_cov_hr_support import *  # noqa: F401,F403
+from app.core.permission_registry import MODULES  # labels follow the registry
 
 ME_ALL = ["hr:me:view", "hr:me:create", "hr:me:edit"]
 
@@ -33,10 +34,10 @@ def test_holidays_view_only_user_cannot_write(client, db):
     hv = hdr(viewer)
     assert client.get(f"{HR}/holidays?year=2026", headers=hv).status_code == 200
     r = client.post(f"{HR}/holidays", json={"holiday_date": "2026-11-14", "name": "Diwali", "holiday_type": "festival"}, headers=hv)
-    assert r.status_code == 403 and "'Create' permission on HR & Administration › Holidays" in r.json()["detail"]
+    assert r.status_code == 403 and f"'Create' permission on {MODULES['hr']['label']} › Holidays" in r.json()["detail"]
     assert client.patch(f"{HR}/holidays/{h.id}", json={"name": "X-mas"}, headers=hv).status_code == 403
     r = client.delete(f"{HR}/holidays/{h.id}", headers=hv)
-    assert r.status_code == 403 and "'Delete' permission on HR & Administration › Holidays" in r.json()["detail"]
+    assert r.status_code == 403 and f"'Delete' permission on {MODULES['hr']['label']} › Holidays" in r.json()["detail"]
     assert db.get(HrHoliday, h.id) is not None
 
 

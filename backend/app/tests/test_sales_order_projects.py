@@ -115,7 +115,7 @@ def test_delivery_events_drive_element_and_project_status(client, db):
     p = _project(db, so["id"])
     assert p.elements[0].status == "delivered"
 
-    pm_user = make_user(db, "pmu2@premnathrail.com", apps=("projects",), granular_permissions=["projects:all_projects:view"])
+    pm_user = make_user(db, "pmu2@premnathrail.com", apps=("projects",), granular_permissions=["projects:all_projects:view", "projects:overview:view"])
     p.project_manager_id = pm_user.id
     db.commit()
     r = client.get(f"/api/v1/projects/{p.id}/units", headers=hdr(pm_user))
@@ -131,7 +131,7 @@ def test_units_and_lookup_permissions_and_scope(client, db):
     assert p.status == "active" and p.lifecycle_stage == "planned" and p.released_at is not None
     assert p.sales_order_ref == so["so_number"]
 
-    pm_user = make_user(db, "pmu@premnathrail.com", apps=("projects",), granular_permissions=["projects:all_projects:view"])
+    pm_user = make_user(db, "pmu@premnathrail.com", apps=("projects",), granular_permissions=["projects:all_projects:view", "projects:overview:view"])
     p.project_manager_id = pm_user.id
     db.commit()
     d = client.get(f"/api/v1/projects/{p.id}/units", headers=hdr(pm_user))

@@ -61,7 +61,7 @@ def _module(label: str, *tabs: tuple) -> dict:
 MODULES: dict[str, dict] = {
     "organization": _module(
         "Organization",
-        ("info", "Company Info", SETTINGS),
+        ("info", "Info", SETTINGS),
         ("branches", "Branches", CRUD),
         ("department", "Department", CRUD),
         ("users", "Users", ["view", "create", "edit"]),
@@ -73,15 +73,15 @@ MODULES: dict[str, dict] = {
         # Governance / Basis (main/routes/grc.py, basis.py, analytics.py)
         ("access_reviews", "Access Reviews", VE),  # edit = start / close a campaign, decide any line
         ("grc", "Access Risk (SoD)", VE),  # edit = record / withdraw a mitigation
-        ("monitor", "System Monitor (jobs, errors, denied access)", VE),  # edit = re-run a job
-        ("cockpit", "Management Cockpit", V),
+        ("monitor", "System Monitor", VE),  # jobs, errors, denied access; edit = re-run a job
+        ("cockpit", "Cockpit", V),
     ),
     "erp": _module(
-        "Service & Commissioning",
+        "Service Module",
         ("dashboard", "Dashboard", V),
-        ("service_requests", "Service Requests", _with(DOC, "import")),
-        ("service_contracts", "Service Contracts (AMC / CMC)", _with(WORKFLOW, "submit", "cancel")),  # VA41: approval engine erp.service_contract
-        ("reports", "Reports", REPORT),
+        ("service_requests", "Service Requests", _with(CRUD, "export", "import")),
+        ("service_contracts", "Contracts", _with(CRUD, "submit", "approve", "reject", "cancel")),  # AMC / CMC; approval engine erp.service_contract
+        ("reports", "Reports", ["view", "export"]),
         ("recycle_bin", "Recycle Bin", VE),  # edit = restore; items auto-purge after 10 days
         ("settings", "Settings", SETTINGS),
     ),
@@ -91,16 +91,16 @@ MODULES: dict[str, dict] = {
         ("organizations", "Customer Organizations", _with(CRUD, "export", "import")),
         ("inquiries_tenders", "Inquiries & Tenders", WORKFLOW),
         ("products", "Products", CRUD),
-        ("reports", "Reports", REPORT),
+        ("reports", "Reports", ["view", "export"]),
         ("settings", "Settings", SETTINGS),
     ),
     "p2p": _module(
         "Procurement",
         ("purchase_requisitions", "Purchase Requisitions", _with(WORKFLOW, "submit", "cancel")),
         ("vendors", "Vendors", _with(CRUD, "export", "import")),
-        ("rfq", "R.F.Q", WORKFLOW),
+        ("rfq", "R.F.Q", _with(CRUD, "export")),
         ("purchase_orders", "Purchase Orders", _with(WORKFLOW, "submit", "cancel")),
-        ("mis", "M.I.S Report", REPORT),
+        ("mis", "M.I.S Report", ["view", "export"]),
         # The buyer desk: works every PR (RFQs, POs, vendors). Granting it
         # gives the user the internal "purchase" app (User.get_apps) — there
         # is no separate Purchase Team module. Never granted by a wildcard.
@@ -110,159 +110,149 @@ MODULES: dict[str, dict] = {
     "rnd": _module(
         "R&D",
         ("dashboard", "Dashboard", V),
-        ("project_work", "Ongoing Projects", VE),
-        ("requirements", "Requirements", ["view", "create", "edit"]),  # no delete endpoint
+        ("requirements", "Requirements", V),  # requirements come from CRM; work on them is per record
         ("tasks", "R&D Tasks", ["view", "create"]),  # task board + Create Task (2026-10-30)
         ("projects", "Prototype / Research", _with(CRUD, "approve")),
         ("experiments", "Experiments & Tests", CRUD),
         ("prototypes", "Prototypes", _with(CRUD, "approve")),
-        ("documents", "Documents", CRUD),
+        ("documents", "Documents", ["view", "create", "delete"]),  # no edit route
         # "all" was the old calculator landing page — kept as the key for the
         # Engineering Tools tab so existing grants still apply.
-        ("all", "Engineering Tools (landing)", V, "Engineering Tools"),
-        ("braking", "Braking", ["view", "create", "print"], "Engineering Tools"),
-        ("hydraulic", "Hydraulic", ["view", "create", "print"], "Engineering Tools"),
-        ("qmax", "Qmax", ["view", "create", "print"], "Engineering Tools"),
-        ("load_distribution", "Load Distribution", ["view", "create", "print"], "Engineering Tools"),
-        ("tractive_effort", "Tractive Effort", ["view", "create", "print"], "Engineering Tools"),
-        ("vehicle_performance", "Vehicle Performance", ["view", "create", "print"], "Engineering Tools"),
-        ("spline", "Spline", ["view", "create", "print"], "Engineering Tools"),
-        ("history", "Calculation History", ["view", "delete", "export"], "Engineering Tools"),
+        ("all", "Engineering Tools", V, "Engineering Tools"),
+        ("braking", "Braking", V, "Engineering Tools"),
+        ("hydraulic", "Hydraulic", V, "Engineering Tools"),
+        ("qmax", "Qmax", V, "Engineering Tools"),
+        ("load_distribution", "Load Distribution", V, "Engineering Tools"),
+        ("tractive_effort", "Tractive Effort", V, "Engineering Tools"),
+        ("vehicle_performance", "Vehicle Performance", V, "Engineering Tools"),
+        ("spline", "Spline", V, "Engineering Tools"),
+        ("history", "Calculation History", ["view", "delete"], "Engineering Tools"),
     ),
     "design": _module(
         "Design",
         ("dashboard", "Dashboard", V),
-        ("ongoing_projects", "Ongoing Projects", VE),
-        ("project_work", "Requests", WORKFLOW),
-        ("tasks", "My Work", VE),
-        ("documents", "Drawings", _with(DOC, "submit", "approve", "cancel")),
-        ("boms", "BOMs", _with(DOC, "submit", "approve", "cancel")),
-        ("reviews", "Reviews & Approvals", ["view", "approve", "reject"]),
-        ("change_notices", "Changes (ECR / ECN)", _with(WORKFLOW, "submit", "cancel")),
-        ("library", "Library", CRUD),
-        ("reports", "Reports", REPORT),
+        ("project_work", "Requests", V),  # the Requests screen; work follows team rules + features
+        ("tasks", "My Work", V),
+        ("documents", "Drawings", ["view", "delete", "submit", "approve"]),
+        ("boms", "BOMs", ["view", "delete", "submit", "approve"]),
+        ("reviews", "Reviews & Approvals", ["view", "approve"]),
+        ("change_notices", "Changes", ["view", "delete", "submit", "approve", "reject"]),
+        ("library", "Library", ["view", "delete"]),
+        ("reports", "Reports", ["view", "export"]),
         ("settings", "Settings", SETTINGS),
     ),
     "electrical": _module(
         "Electrical",
         ("dashboard", "Dashboard", V),
-        ("project_work", "Ongoing Projects", VE),
-        ("jobs", "RRV Electrical Jobs", _with(CRUD, "submit", "approve", "cancel", "print")),
-        ("drawings", "Drawings", _with(CRUD, "approve")),
-        ("purchase", "Purchase Requirements", CRUD),
-        ("testing", "Testing", _with(CRUD, "print")),
+        ("jobs", "RRV Jobs", _with(CRUD, "submit", "approve")),
+        ("drawings", "Drawings", ["view", "delete", "approve"]),
+        ("purchase", "Purchase Req.", VE),
+        ("testing", "Testing", CRUD),
         ("troubleshooting", "Troubleshooting", CRUD),
     ),
     "hydraulic": _module(
         "Hydraulic & Pneumatic",
         ("dashboard", "Dashboard", V),
-        ("project_work", "Ongoing Projects", VE),
         ("systems", "Systems", CRUD),
-        ("components", "Component Master", _with(CRUD, "export", "import")),
-        ("circuits", "Circuits & Diagrams", _with(CRUD, "approve")),
-        ("bom", "BOM", _with(CRUD, "submit", "approve", "cancel", "export")),
+        ("components", "Components", CRUD),
+        ("circuits", "Circuits", _with(CRUD, "approve")),
+        ("bom", "BOM", _with(CRUD, "submit", "approve", "export")),
         ("calculations", "Calculations", CRUD),
-        ("testing", "Testing & Inspection", _with(CRUD, "submit", "approve", "cancel", "print")),
+        ("testing", "Testing", _with(CRUD, "submit", "approve")),
     ),
     "maintenance": _module(
         "Maintenance",
         ("dashboard", "Dashboard", V),
-        ("project_work", "Ongoing Projects", VE),
-        ("requests", "Requests", ["view", "create", "edit"]),  # no delete endpoint
-        ("work_orders", "Work Orders", [a for a in WORKFLOW if a != "delete"]),  # no delete endpoint
-        ("assets", "Assets / AMC & Warranty", _with(CRUD, "export", "import")),
+        ("requests", "Requests", ["view", "create", "edit"]),  # Production-app users raise / see their own requests without this row
+        ("work_orders", "Work Orders", ["view", "create", "edit", "approve", "reject"]),  # reject: close_out.reject inherits it
+        ("assets", "Assets", _with(CRUD, "export", "import")),  # AMC & Warranty tab = feature assets.contracts
         ("schedule", "PM Schedule", CRUD),
-        ("spares", "Spares", _with(CRUD, "export")),
-        ("reports", "Maintenance Reports", REPORT),
+        ("spares", "Spares", V),  # read-only list
+        ("reports", "Reports", ["view", "export"]),
         ("settings", "Settings", SETTINGS),
     ),
     "production": _module(
         "Production",
         ("dashboard", "Dashboard", V),
-        ("project_work", "Ongoing Projects", VE),
-        ("rrv_builds", "RRV Builds", WORKFLOW),
-        ("work_orders", "Work Orders", WORKFLOW),
-        ("shop_floor", "Shop Floor", CRUD),
+        ("rrv_builds", "RRV Builds", ["view", "create", "edit", "delete", "approve", "print"]),
+        ("work_orders", "Work Orders", ["view", "create", "edit", "delete", "approve", "print"]),
+        ("shop_floor", "Shop Floor", ["view", "edit", "delete"]),
         ("planning", "Planning", ["view", "create", "edit"]),
-        ("bom", "BOM & Routing", _with(DOC, "approve")),
+        ("bom", "BOM & Routing", ["view", "create", "edit", "delete", "approve", "print"]),
         ("workstations", "Workstations", CRUD),
-        ("reports", "Production Reports", REPORT),
+        ("reports", "Reports", ["view", "export"]),
     ),
     "store": _module(
         "Store",
-        ("items", "Items", _with(CRUD, "export", "import")),
-        ("stock", "Stock", ["view", "export", "print"]),
-        # Racks / shelves / bins inside a store — kept by the store team itself,
+        ("items", "Item Master", _with(CRUD, "export", "import"), "Inventory"),
+        ("stock", "Stock", ["view", "export", "print"], "Inventory"),  # Batches / Serial Nos. / Reorder tabs = features
+        # Racks / shelves / bins inside a store - kept by the store team itself,
         # not a Settings master (a store re-slots as it fills up).
-        ("bins", "Bins (rack / shelf / bin)", CRUD),
-        ("movements", "Movements", ["view", "export", "print"]),
-        # Issues post at once — no approval, so no approve/reject action.
-        ("issues", "Issues", ["view", "create", "edit", "delete", "export", "print"]),
-        ("reservations", "Reservations", CRUD),
-        ("adjustments", "Adjustments", WORKFLOW),
-        ("returns", "Returns", WORKFLOW),
-        ("transfers", "Transfers", WORKFLOW),
-        ("grn", "GRN & Inspection", WORKFLOW),
-        ("project_work", "Ongoing Projects", VE),
-        ("settings", "General settings", SETTINGS, "Settings"),
+        ("bins", "Bins (rack / shelf / bin)", CRUD, "Inventory"),
+        ("movements", "Movements", ["view", "export", "print"], "Inventory"),
+        ("adjustments", "Adjustments", WORKFLOW, "Inventory"),
+        ("grn", "GRN & Quality check", WORKFLOW, "Inward"),  # Before PO tab = feature grn.before_po
+        ("returns", "Returns", WORKFLOW, "Inward"),
+        # Issues post at once - no approval, so no approve/reject action.
+        ("issues", "Issues", ["view", "create", "edit", "delete", "export", "print"], "Outward"),
+        ("transfers", "Transfers", WORKFLOW, "Outward"),
+        ("reservations", "Reservations", CRUD, "Outward"),
+        ("settings", "Settings gear (opens Store settings)", SETTINGS, "Settings"),
         ("item_types", "Item Types", CRUD, "Settings"),
         ("uoms", "Units of Measure", CRUD, "Settings"),
         ("categories", "Categories", CRUD, "Settings"),
-        ("warehouses", "Stores (locations)", CRUD, "Settings"),
-        ("entry_types", "Stock Entry Types", CRUD, "Settings"),
+        ("warehouses", "Stores", CRUD, "Settings"),
         ("issue_types", "Issue Types", CRUD, "Settings"),
-        ("issue_rules", "Issue Rules", CRUD, "Settings"),
-        # Plant Access moved to the central data scope (Organization › Role & Permissions).
+        # Plant Access moved to the central data scope (Organization > Role & Permissions).
     ),
     "quality": _module(
         "Quality",
         ("dashboard", "Dashboard", V),
-        ("project_work", "Ongoing Projects", VE),
         ("my_inspections", "My Inspections", VE),
         ("inspection_lots", "Inspection Lots", _with(CRUD, "approve", "print")),
-        ("ncr", "Non-Conformance (NCR)", WORKFLOW),
+        ("ncr", "NCR", WORKFLOW),
         ("inspection_plans", "Inspection Plans", _with(CRUD, "submit", "approve", "cancel")),  # submit/cancel: approval engine
-        ("masters", "Masters (Characteristics, Defects, Dispositions, Sampling)", ["view", "create", "edit"]),  # no delete endpoint
-        ("in_process_inspection", "In-process (Operation Gate) Inspections", _with(CRUD, "approve")),
+        ("masters", "Masters", ["view", "create", "edit"]),  # Characteristics, Defects, Dispositions, Sampling; no delete endpoint
+        ("in_process_inspection", "In-process", _with(CRUD, "approve")),
         ("final_inspection", "RRV Final Inspections", _with(CRUD, "approve", "print")),
-        ("first_article", "First Article Inspection (FAI)", ["view", "create", "edit", "approve", "print"]),  # no delete endpoint
-        ("inspection_calls", "Customer / Third-party Inspection Calls", ["view", "create", "edit", "approve", "print"]),  # no delete endpoint
+        ("first_article", "First Article", ["view", "create", "edit", "approve", "print"]),  # no delete endpoint
+        ("inspection_calls", "Inspection Calls", ["view", "create", "edit", "approve", "print"]),  # no delete endpoint
         ("standards", "Standards", CRUD),
-        ("capa", "Corrective & Preventive Actions", ["view", "create", "edit", "approve"]),  # no delete endpoint
-        ("complaints", "Customer Complaints", ["view", "create", "edit", "approve"]),  # no delete endpoint
+        ("capa", "CAPA", ["view", "create", "edit", "approve"]),  # no delete endpoint
+        ("complaints", "Complaints", ["view", "create", "edit", "approve"]),  # no delete endpoint
         ("supplier_quality", "Supplier Quality", ["view", "create", "edit", "approve"]),  # no delete endpoint
-        ("documents", "Quality Documents", CRUD),
-        ("reports", "Quality Reports", REPORT),
+        ("documents", "Documents", CRUD),
+        ("reports", "Reports", REPORT),
         ("settings", "Quality Settings", SETTINGS),
     ),
     "projects": _module(
         "Project Management",
         ("dashboard", "Dashboard", V),
-        ("all_projects", "All Projects", _with(CRUD, "export")),
-        # The machine register (erp_projects: serial, client, site, warranty) = our past projects, shown inside
-        # All Projects (owner, 2026-10-26); moved here from Service. API stays /erp/projects.
-        ("service_projects", "Past Projects (machines)", _with(DOC, "import")),
+        # All Projects = current projects AND the machine register (erp_projects: serial, client, site,
+        # warranty — our past projects), one tab since 2026-11-02 (the separate "Past Projects (machines)"
+        # tab was merged in; its features sit here). API for machines stays /erp/projects.
+        ("all_projects", "All Projects", _with(DOC, "import")),
         ("department_board", "Department Board", V),
-        ("department_work", "Department Work", VE),
+        ("department_work", "Department work (milestone heads)", VE),
         ("my_tasks", "My Tasks", VE),
         ("overview", "Overview", VE, "Project workspace"),
-        ("milestones", "WBS", CRUD, "Project workspace"),
+        ("milestones", "Milestone accept / reject (WBS)", CRUD, "Project workspace"),
         ("documents", "Documents", CRUD, "Project workspace"),
         ("project_history", "History", V, "Project workspace"),
     ),
     "accounts": _module(
         "Finance & Accounting",
-        ("company_fy", "Company & FY", SETTINGS, "Masters"),
+        ("company_fy", "Company & FY", V, "Masters"),  # read-only; edited in Organization > Info
         ("account_groups", "Account Groups", CRUD, "Masters"),
         ("ledgers", "Ledgers", _with(CRUD, "export", "import"), "Masters"),
         ("ledger_settings", "Ledger Settings", SETTINGS, "Masters"),
         ("gst_rates", "GST Rates", CRUD, "Masters"),
-        ("bank_cash_accounts", "Bank & Cash Accounts", CRUD, "Masters"),
+        ("bank_cash_accounts", "Bank & Cash", CRUD, "Masters"),
         ("vendors", "Vendors", _with(CRUD, "export", "import"), "Masters"),
         ("internal_orders", "Internal Orders", CRUD, "Masters"),
         ("opening_balances", "Opening Balances", ["view", "edit", "import"], "Masters"),
         ("settings", "Finance Settings", SETTINGS, "Masters"),
-        ("currencies", "Currencies & FX", ["view", "create", "edit", "approve", "export"], "Masters"),  # approve = month-end revaluation
+        ("currencies", "Currencies & FX", ["view", "create", "edit", "approve", "export"], "Currencies & FX"),  # approve = month-end revaluation
         ("journal_vouchers", "Journal Vouchers", _with(WORKFLOW, "submit", "cancel"), "Journals"),
         ("day_book", "Day Book", REPORT, "Journals"),
         ("ledger_statement", "Ledger Statement", REPORT, "Journals"),
@@ -272,34 +262,34 @@ MODULES: dict[str, dict] = {
         ("sales_invoices", "Sales Invoices", _with(WORKFLOW, "submit", "cancel"), "Sales"),
         ("credit_notes", "Credit Notes", _with(WORKFLOW, "submit", "cancel"), "Sales"),
         ("payments", "Payments & Receipts", WORKFLOW, "Payments"),
-        ("payment_runs", "Payment Runs (proposals)", _with(WORKFLOW, "submit", "cancel"), "Payments"),
+        ("payment_runs", "Payment Runs", _with(WORKFLOW, "submit", "cancel"), "Payments"),
         ("bank_book", "Bank / Cash Book", REPORT, "Bank & Cash"),
         ("reconciliation", "Reconciliation (BRS)", ["view", "create", "edit", "delete", "export"], "Bank & Cash"),
         ("liquidity", "Liquidity Forecast", _with(REPORT, "create", "edit", "delete"), "Bank & Cash"),  # create/edit/delete = planned cash items
-        ("guarantees", "Bank Guarantees, LC & EMD", _with(WORKFLOW, "submit", "cancel"), "Bank & Cash"),
+        ("guarantees", "Guarantees & EMD", _with(WORKFLOW, "submit", "cancel"), "Bank & Cash"),
         ("gst", "GST Registers & Returns", ["view", "edit", "export", "print"], "GST"),
         ("outstanding", "Receivables & Payables", REPORT, "Outstanding"),
         ("collections", "Collections & Dunning", ["view", "create", "edit", "export", "print"], "Outstanding"),
         ("disputes", "Disputes", ["view", "create", "edit", "export"], "Outstanding"),
         ("credit_management", "Credit Management", ["view", "approve", "export"], "Outstanding"),  # approve = release a credit block
-        ("inventory", "Stock Value & Closing Stock", ["view", "edit", "export", "print"], "Inventory"),
+        ("inventory", "Inventory", ["view", "edit", "export", "print"], "Inventory"),
         ("fixed_assets", "Asset Register", _with(CRUD, "export"), "Assets"),
         ("depreciation", "Depreciation", ["view", "approve", "export"], "Assets"),  # run & reverse = approve
         ("tax_depreciation", "Tax Depreciation & Deferred Tax", ["view", "edit", "export"], "Assets"),
         ("financial_reports", "Financial Reports", REPORT, "Reports"),
         ("year_end_close", "Year-end Close", ["view", "approve"], "Reports"),
         # CO product costing (CK11N/CK24: approve = release to standard price), profit centres (KE51/KE5Z), CO-PA (KE30).
-        ("product_costing", "Product Costing (cost estimates)", _with(DOC, "approve"), "Controlling"),
-        ("profit_centers", "Profit Centres", CRUD, "Controlling"),
-        ("profitability", "Profitability", REPORT, "Controlling"),
+        ("product_costing", "Cost Estimates", _with(DOC, "approve"), "Costing & Profitability"),
+        ("profit_centers", "Profit Centres", CRUD, "Costing & Profitability"),
+        ("profitability", "Profitability", REPORT, "Costing & Profitability"),
         # CO (Finance › Controlling). approve = lock a plan / post or reverse a run.
-        ("co_planning", "Cost Centre Planning", _with(CRUD, "approve", "export", "import"), "Controlling"),
-        ("activity_rates", "Activity Types & Rates", CRUD, "Controlling"),
-        ("allocations", "Assessment & Distribution", _with(CRUD, "approve"), "Controlling"),
-        ("overhead", "Overhead (Costing Sheet)", _with(CRUD, "approve"), "Controlling"),
+        ("co_planning", "Planning", _with(CRUD, "approve", "export", "import"), "Controlling"),
+        ("activity_rates", "Activity Rates", CRUD, "Controlling"),
+        ("allocations", "Allocations", _with(CRUD, "approve"), "Controlling"),
+        ("overhead", "Overhead", _with(CRUD, "approve"), "Controlling"),
     ),
     "hr": _module(
-        "HR & Administration",
+        "HR & Admin",
         ("dashboard", "Dashboard", V),
         ("me", "My HR (self-service)", ["view", "create", "edit"]),
         ("approvals", "Approvals", ["view", "approve", "reject"]),
@@ -312,8 +302,8 @@ MODULES: dict[str, dict] = {
         ("assets", "Assets", CRUD),
         ("visitors", "Visitors", CRUD),
         ("travel", "Travel & Claims", _with(CRUD, "approve", "reject")),
-        ("safety", "Safety (EHS incidents)", _with(CRUD, "approve", "export", "print")),
-        ("reports", "Statutory registers & reports", REPORT),
+        ("safety", "Safety", _with(CRUD, "approve", "export", "print")),
+        ("reports", "Reports", REPORT),
         ("masters", "Masters", CRUD),
         ("settings", "Settings", SETTINGS),
     ),
@@ -342,6 +332,7 @@ FEATURE_KINDS = {
     "section": "Section",           # a block of a page / record
     "action": "Action",             # one specific button / operation
     "sensitive": "Sensitive data",  # prices, costs, margins …
+    "picker": "Assign-to rule",     # only carries the "Assign to" rule of a picker (owner, lead, approver …)
 }
 
 
@@ -396,9 +387,8 @@ NON_APP_MODULES = {"organization"}
 # "purchase" app); the old "Purchase Team" module's grants (purchase:*) alias
 # to it. A module wildcard (p2p:*:*) never grants it — only an explicit tick.
 PURCHASE_DESK_GRANT = "p2p:purchase_desk:view"
-# Tabs a module wildcard (mk:*:x) does not cover: Purchase Desk, and Service Projects (machines, moved
-# from Service on 2026-10-26) so a Project Management wildcard never hands out the machine register.
-EXPLICIT_ONLY_TABS = {("p2p", "purchase_desk"), ("projects", "service_projects")}
+# Tabs a module wildcard (mk:*:x) does not cover: Purchase Desk only.
+EXPLICIT_ONLY_TABS = {("p2p", "purchase_desk")}
 
 # Retired Sales tabs that were Product Management; their grants alias to CRM › Products
 # (Sales module retired 2026-10-30, Products moved into CRM).
@@ -494,6 +484,124 @@ def _crm_products_alias(grant: str) -> list[str]:
     return []
 
 
+# Matrix rows removed because no screen or route used them (matrix cleanup 2026-11-03,
+# docs/agent-runs/2026-11-02-role-ui-visibility/matrix-cleanup-plan.md). Roles that still hold one
+# keep saving: validate_grants drops them, expand_grants ignores them. Prefix match on "module:tab".
+RETIRED_GRANT_PREFIXES: set[str] = {
+    "p2p:rfq.evaluation",
+    "erp:service_requests:print",
+    "erp:service_contracts:export",
+    "erp:service_contracts:print",
+    "erp:reports:print",
+    "crm:reports:print",
+    "p2p:rfq:approve",
+    "p2p:rfq:reject",
+    "p2p:rfq:print",
+    "p2p:mis:print",
+    "accounts:company_fy:edit",
+    "accounts:payments.payment_block",
+    "design:boms.owner:create",
+    "design:boms.owner:edit",
+    "design:boms:cancel",
+    "design:boms:create",
+    "design:boms:edit",
+    "design:boms:export",
+    "design:boms:print",
+    "design:change_notices:cancel",
+    "design:change_notices:create",
+    "design:change_notices:edit",
+    "design:change_notices:export",
+    "design:change_notices:print",
+    "design:documents.owner:create",
+    "design:documents.owner:edit",
+    "design:documents:cancel",
+    "design:documents:create",
+    "design:documents:edit",
+    "design:documents:export",
+    "design:documents:print",
+    "design:library:create",
+    "design:library:edit",
+    "design:project_work:approve",
+    "design:project_work:create",
+    "design:project_work:delete",
+    "design:project_work:edit",
+    "design:project_work:export",
+    "design:project_work:print",
+    "design:project_work:reject",
+    "design:reports:print",
+    "design:reviews:reject",
+    "design:tasks:edit",
+    "electrical:drawings:create",
+    "electrical:drawings:edit",
+    "electrical:jobs.lead_engineer:create",
+    "electrical:jobs.lead_engineer:edit",
+    "electrical:jobs:cancel",
+    "electrical:jobs:print",
+    "electrical:purchase:create",
+    "electrical:purchase:delete",
+    "electrical:testing:print",
+    "hydraulic:bom:cancel",
+    "hydraulic:components:export",
+    "hydraulic:components:import",
+    "hydraulic:systems.owner:create",
+    "hydraulic:systems.owner:edit",
+    "hydraulic:testing.tester:create",
+    "hydraulic:testing.tester:edit",
+    "hydraulic:testing:cancel",
+    "hydraulic:testing:print",
+    "maintenance:reports:print",
+    "maintenance:spares:create",
+    "maintenance:spares:delete",
+    "maintenance:spares:edit",
+    "maintenance:spares:export",
+    "maintenance:work_orders:export",
+    "maintenance:work_orders:print",
+    "production:bom:export",
+    "production:reports:print",
+    "production:rrv_builds:export",
+    "production:rrv_builds:reject",
+    "production:shop_floor:create",
+    "production:work_orders:export",
+    "production:work_orders:reject",
+    "rnd:braking:create",
+    "rnd:braking:print",
+    "rnd:documents:edit",
+    "rnd:history:export",
+    "rnd:hydraulic:create",
+    "rnd:hydraulic:print",
+    "rnd:load_distribution:create",
+    "rnd:load_distribution:print",
+    "rnd:qmax:create",
+    "rnd:qmax:print",
+    "rnd:requirements.projects",
+    "rnd:requirements:create",
+    "rnd:requirements:edit",
+    "rnd:spline:create",
+    "rnd:spline:print",
+    "rnd:tractive_effort:create",
+    "rnd:tractive_effort:print",
+    "rnd:vehicle_performance:create",
+    "rnd:vehicle_performance:print",
+    "store:entry_types",
+    "store:issue_rules",
+}
+
+# Department "Ongoing Projects" rows (removed): they used to open the Project Management task
+# screens, so a stored grant now means the same action on Project Management › My Tasks.
+ONGOING_PROJECTS_ROWS = (
+    "design:ongoing_projects", "rnd:project_work", "electrical:project_work", "hydraulic:project_work",
+    "maintenance:project_work", "production:project_work", "store:project_work", "quality:project_work",
+)
+
+
+def is_retired_grant(grant: str) -> bool:
+    head = ":".join(grant.split(":")[:2])
+    tab = head.split(".", 1)[0]
+    # A whole retired tab / feature ("module:tab", "module:tab.feature") or one retired action (full id).
+    return (grant in RETIRED_GRANT_PREFIXES or head in RETIRED_GRANT_PREFIXES or tab in RETIRED_GRANT_PREFIXES
+            or tab in ONGOING_PROJECTS_ROWS)
+
+
 def legacy_grant_aliases(grant: str) -> list[str]:
     """Current ids for a grant of a retired module: Purchase Team (purchase:*)
     → Procurement › Purchase Desk; Product Management (products:*) and the
@@ -506,14 +614,25 @@ def legacy_grant_aliases(grant: str) -> list[str]:
         return _crm_products_alias(grant)
     if grant.startswith("projects:order_projects"):
         return []
-    # Service Projects (machines) moved from Service to Project Management (2026-10-26). Migration
-    # f7c3a9e1d5b2 rewrote stored grants; this only catches a stray old id.
-    if grant.startswith("erp:projects."):
-        return ["projects:service_projects" + grant[len("erp:projects"):]]
-    if grant.startswith("erp:projects:"):
+    # Machines moved from Service (erp:projects, 2026-10-26) and then the separate Past Projects tab
+    # (projects:service_projects) was merged into All Projects (2026-11-02). Migrations f7c3a9e1d5b2 and
+    # b8d2f6a1c3e5 rewrote stored grants; this only catches a stray old id.
+    for old in ("erp:projects", "projects:service_projects"):
+        if grant.startswith(old + "."):
+            return ["projects:all_projects" + grant[len(old):]]
+        if grant.startswith(old + ":"):
+            a = grant.rsplit(":", 1)[1]
+            return [f"projects:all_projects:{x}" for x in MODULES["projects"]["actions"]["all_projects"] if a in ("*", x)]
+    tab = ":".join(grant.split(":")[:2]).split(".", 1)[0]
+    if tab in ONGOING_PROJECTS_ROWS:
+        if "." in grant.split(":")[1]:
+            return []
         a = grant.rsplit(":", 1)[1]
-        return [f"projects:service_projects:{x}" for x in MODULES["projects"]["actions"].get("service_projects", [])
-                if a in ("*", x)]
+        # They opened both the task screens and the department task lists (work.py), so the grant maps to both.
+        return [f"projects:{t}:{x}" for t in ("my_tasks", "department_work")
+                for x in MODULES["projects"]["actions"].get(t, []) if a in ("*", x)]
+    if is_retired_grant(grant):
+        return []
     return [grant]
 
 
@@ -649,7 +768,7 @@ def legacy_erp_permissions(user) -> list[str]:
     for frontend code that still checks User.erp_permissions."""
     return [
         f"{prefix}_{action}"
-        for prefix, mk, tab in (("project", "projects", "service_projects"), ("sr", "erp", "service_requests"))
+        for prefix, mk, tab in (("project", "projects", "all_projects"), ("sr", "erp", "service_requests"))
         for action in ("view", "create", "edit", "delete")
         if can_perform(user, mk, tab, action)
     ]
@@ -695,11 +814,11 @@ def legacy_access(apps, erp_permissions, grants) -> tuple[list[str], list[str]]:
         if mk not in MODULES or mk in NON_APP_MODULES:
             continue
         # Machines (old erp:projects:*) are worked out in their old spelling, then written as
-        # projects:service_projects:* (moved to Project Management on 2026-10-26).
+        # projects:all_projects:* (moved to Project Management on 2026-10-26, merged into All Projects 2026-11-02).
         mine = {g for g in old if g.startswith(f"{mk}:") and (is_valid_grant(g) or g.startswith("erp:projects:"))}
         if mk == "erp":
-            machines = {f"erp:projects:{a}" for a in MODULES["projects"]["actions"].get("service_projects", [])
-                        if f"projects:service_projects:{a}" not in AUTHORITY_GRANTS}
+            machines = {f"erp:projects:{a}" for a in MODULES["projects"]["actions"]["all_projects"]
+                        if f"projects:all_projects:{a}" not in AUTHORITY_GRANTS}
             base = mine or (standard_module_grants("erp") | machines)
             for g in base:
                 _, tab, action = g.split(":")
@@ -713,7 +832,7 @@ def legacy_access(apps, erp_permissions, grants) -> tuple[list[str], list[str]]:
                     tab = _ERP_LEGACY_TABS.get(prefix)
                     if tab and action in ("create", "edit", "delete") and f"erp:{tab}:view" in mine:
                         keep.add(f"erp:{tab}:{action}")
-            keep = {("projects:service_projects" + g[len("erp:projects"):]) if g.startswith("erp:projects:") else g for g in keep}
+            keep = {("projects:all_projects" + g[len("erp:projects"):]) if g.startswith("erp:projects:") else g for g in keep}
         elif mine:
             keep |= mine
         else:

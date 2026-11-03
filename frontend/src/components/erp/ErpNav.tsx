@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { filterTabsByAccess } from '@/lib/tabAccess'
 import NotificationBell from './NotificationBell'
 import TourButton from '@/components/tour/TourButton'
+import NavSettingsGear from '@/components/shared/NavSettingsGear'
 import { SERVICE_CONTRACTS_ENABLED } from '@/lib/features'
 import { ChartBar, FileText, ShieldCheck, SquaresFour, Trash, Users, type Icon } from '@phosphor-icons/react'
 import { pillStyle } from '@/components/shared/ui'
@@ -17,6 +18,8 @@ const TABS = [
   { href: '/dashboard/erp/service-contracts', label: 'Contracts', icon: 'shield', subtabKey: 'service_contracts' },
   { href: '/dashboard/erp/reports', label: 'Reports', icon: 'chart', subtabKey: 'reports' },
   { href: '/dashboard/erp/recycle-bin', label: 'Recycle Bin', icon: 'trash', subtabKey: 'recycle_bin' },
+  // Approvals switches, warranty & billing defaults and notification rules (gear next to the bell, not a tab).
+  { href: '/dashboard/erp/settings', label: 'Settings', icon: 'gear', subtabKey: 'settings' },
 ] as const
 
 // Tab icon key -> Phosphor icon (Regular weight). The key also feeds the
@@ -38,8 +41,10 @@ function TabIcon({ name }: { name: string }) {
 export default function ErpNav() {
   const pathname = usePathname()
   const { user } = useAuth()
-  // No settings gear here: the service settings are not offered in the module nav.
-  const visibleTabs = filterTabsByAccess('erp', TABS, user)
+  // Settings sits as a gear next to the bell, not as a tab (same as CRM / R&D).
+  const allowedTabs = filterTabsByAccess('erp', TABS, user)
+  const visibleTabs = allowedTabs.filter((t) => t.subtabKey !== 'settings')
+  const settingsTab = allowedTabs.find((t) => t.subtabKey === 'settings')
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
@@ -86,6 +91,9 @@ export default function ErpNav() {
       })}
     </div>
       <div className="nav-cluster" style={{ paddingBottom: 8, flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+        {settingsTab && (
+          <NavSettingsGear href={settingsTab.href} active={pathname.startsWith(settingsTab.href)} label="Service settings" tour="erp-nav-settings" />
+        )}
         <TourButton variant="icon" />
         <div data-tour="erp-nav-bell">
           <NotificationBell />

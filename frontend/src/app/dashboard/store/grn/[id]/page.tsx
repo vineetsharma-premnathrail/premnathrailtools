@@ -29,7 +29,7 @@ const inputStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
 }
 const primaryBtn = primaryBtnStyle
-const STATUS_LABELS: Record<string, string> = { draft: 'Pending Inspection', completed: 'Completed', reversed: 'Reversed' }
+const STATUS_LABELS: Record<string, string> = { draft: 'Pending quality check', completed: 'Completed', reversed: 'Reversed' }
 const STATUS_HEX: Record<string, string> = { draft: '#d97706', completed: '#16a34a', reversed: '#dc2626' }
 const qty = (v?: number | null) => (v == null ? '—' : v.toLocaleString('en-IN', { maximumFractionDigits: 3 }))
 
@@ -38,14 +38,14 @@ const QUALITY_OPTIONS = [
   { value: 'failed', label: 'Failed' },
   { value: 'partial', label: 'Partially Accepted' },
 ]
-// Lines for items flagged "inspection on receipt" are inspected by Quality
+// Lines for items flagged "Quality check on receipt" are inspected by Quality
 // (an inspection lot holds them in Quality stock); the lot's usage decision
 // fills in their accepted / rejected split.
-const QUALITY_LOT_LABEL = 'In Quality inspection'
+const QUALITY_LOT_LABEL = 'With Quality (inspection lot)'
 
 // Why goods go back (backend P2P_RETURN_REASONS).
 const RETURN_REASONS = [
-  { value: 'quality_rejection', label: 'Rejected in inspection' },
+  { value: 'quality_rejection', label: 'Rejected in quality check' },
   { value: 'damaged', label: 'Damaged in transit / on receipt' },
   { value: 'wrong_item', label: 'Wrong item supplied' },
   { value: 'excess', label: 'Excess quantity supplied' },
@@ -162,7 +162,7 @@ export default function StoreGrnDetailPage() {
       setStockNotes(updated.stock_sync_notes || [])
       load()
     } catch (err: any) {
-      setError(extractErrorMessages(err, 'Failed to complete quality inspection.'))
+      setError(extractErrorMessages(err, 'Could not complete the quality check.'))
     } finally {
       setBusy(false)
     }
@@ -284,7 +284,8 @@ export default function StoreGrnDetailPage() {
             <Pill label={STATUS_LABELS[grn.status] || grn.status} hex={STATUS_HEX[grn.status] || '#64748b'} />
             <span>· Received {formatDate(grn.received_date)}</span>
             {grn.received_by_name && <span>· by <strong style={{ color: TEXT.heading }}>{grn.received_by_name}</strong></span>}
-            {grn.status === 'completed' && grn.inspected_by_name && <span>· Inspected by <strong style={{ color: TEXT.heading }}>{grn.inspected_by_name}</strong></span>}
+            {grn.status === 'completed' && grn.inspected_by_name && <span>· Quality check by <strong style={{ color: TEXT.heading }}>{grn.inspected_by_name}</strong></span>}
+            {grn.status === 'completed' && !grn.inspected_by_name && <span>· Completed on receipt — no quality check needed for these items</span>}
           </>}
         />
         <DetailGroup title="Order">
@@ -312,7 +313,7 @@ export default function StoreGrnDetailPage() {
 
       <div style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>
-          {isDraft ? 'Quality Inspection' : 'Inspection Result'}
+          {isDraft ? 'Quality check' : 'Quality check result'}
         </h2>
         <div data-tour="store-grn-detail-lines">
           <TableScroll maxHeight="none" minWidth={900}>
@@ -412,18 +413,18 @@ export default function StoreGrnDetailPage() {
 
         {isDraft && grn.items.some((it) => it.quality_status === 'in_quality') && (
           <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '12px 0 0' }}>
-            Lines marked &ldquo;{QUALITY_LOT_LABEL}&rdquo; are held in Quality stock; the GRN completes once Quality makes the usage decision on their inspection lots.
+            Lines marked &ldquo;{QUALITY_LOT_LABEL}&rdquo; are held in Quality stock; the GRN completes once Quality makes the usage decision on their inspection lots. Items without the &lsquo;Quality check on receipt&rsquo; flag are already in Free stock.
           </p>
         )}
         {isDraft && !canInspect && grn.items.some((it) => it.quality_status === 'pending') && (
           <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '12px 0 0' }}>
-            The goods are already in this store&apos;s Quality stock (not issuable). Someone with &lsquo;Approve&rsquo; on Store › GRN &amp; Inspection
-            completes the inspection — accepted quantity then moves to Free stock, rejected to Blocked stock until it goes back to the vendor.
+            These lines still need an accepted / rejected decision. Someone with &lsquo;Approve&rsquo; on Store › GRN &amp; Quality check
+            completes it — accepted quantity then counts as received, rejected goes back to the vendor.
           </p>
         )}
         {isDraft && canInspect && grn.items.some((it) => it.quality_status === 'pending') && (
           <div style={{ marginTop: 16 }}>
-            <button data-tour="store-grn-detail-complete-btn" disabled={busy} onClick={complete} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>{busy ? 'Completing…' : 'Complete Inspection'}</button>
+            <button data-tour="store-grn-detail-complete-btn" disabled={busy} onClick={complete} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>{busy ? 'Completing…' : 'Complete quality check'}</button>
           </div>
         )}
       </div>

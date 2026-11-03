@@ -31,9 +31,13 @@ interface Meta { limits: { watch_below: number; block_below: number; weights: Re
 export default function SupplierQualityPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
   const router = useRouter()
-  const { can } = useCan()
+  const { can, canFeature } = useCan()
   const canCreate = can('quality', 'supplier_quality', 'create')
   const canEdit = can('quality', 'supplier_quality', 'edit')
+  // Vendor audits sub-tab = feature quality:supplier_quality.audits (core/features/quality.py).
+  const seeAudits = canFeature('quality', 'supplier_quality', 'audits', 'view')
+  const canScheduleAudit = canCreate && canFeature('quality', 'supplier_quality', 'audits', 'create')
+  const canRecordAudit = canEdit && canFeature('quality', 'supplier_quality', 'audits', 'edit')
   const [scheduling, setScheduling] = useState(false)
   const [sheetError, setSheetError] = useState<string | string[]>('')
   const [tab, setTab] = useState<Tab>('vendors')
@@ -74,8 +78,8 @@ export default function SupplierQualityPage() {
       qualityApi.listAvl(params).then(setAvl).catch(fail)
     }
     if (tab === 'ratings') qualityApi.listRatings(period ? { period } : {}).then(setRatings).catch(fail)
-    if (tab === 'audits') qualityApi.listVendorAudits().then(setAudits).catch(fail)
-  }, [isAuthorized, tab, avlStatus, pendingOnly, search, period, reload])
+    if (tab === 'audits' && seeAudits) qualityApi.listVendorAudits().then(setAudits).catch(fail)
+  }, [isAuthorized, tab, avlStatus, pendingOnly, search, period, reload, seeAudits])
 
   const act = async (fn: () => Promise<unknown>, fallback: string, after?: () => void, setErr: (e: string | string[]) => void = setError) => {
     setErr('')
@@ -97,7 +101,7 @@ export default function SupplierQualityPage() {
     <div>
       <QualityNav />
       <PageHeader title="Supplier Quality">
-        {canCreate && tab === 'audits' && <button type="button" onClick={() => { setSheetError(''); setScheduling(true) }} style={secondaryBtnStyle}>+ Schedule audit</button>}
+        {canScheduleAudit && tab === 'audits' && <button type="button" onClick={() => { setSheetError(''); setScheduling(true) }} style={secondaryBtnStyle}>+ Schedule audit</button>}
         {canCreate && <button type="button" onClick={() => router.push('/dashboard/quality/supplier-quality/new')} style={primaryBtnStyle}>+ Add vendor for an item</button>}
       </PageHeader>
       <ErrorBanner error={error} />
@@ -109,7 +113,7 @@ export default function SupplierQualityPage() {
         </p>
       )}
       <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-        {TABS.map(([k, l]) => (
+        {TABS.filter(([k]) => k !== 'audits' || seeAudits).map(([k, l]) => (
           <button key={k} type="button" onClick={() => setTab(k)}
             style={{ ...secondaryBtnStyle, background: tab === k ? '#FF6A2A1a' : undefined, color: tab === k ? '#c2410c' : undefined }}>{l}</button>
         ))}
@@ -212,7 +216,7 @@ export default function SupplierQualityPage() {
         </>
       )}
 
-      {tab === 'audits' && (
+      {tab === 'audits' && seeAudits && (
         <>
           <div style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
@@ -231,7 +235,7 @@ export default function SupplierQualityPage() {
                     <td style={tdStyle}>{a.result || '—'}</td>
                     <td style={tdStyle}>{(a.findings || []).map((f) => `[${f.type}] ${f.description}`).join('; ') || '—'}</td>
                     <td style={tdStyle}>{a.capa_id ? <span onClick={() => router.push(recordPath('/dashboard/quality/capa', a, 'capa_id'))} style={{ color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>{a.capa_number}</span> : '—'}</td>
-                    <td style={tdStyle}>{canEdit && a.status === 'planned' && <span onClick={() => { setSheetError(''); setCompleting(a.id) }} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>Record result</span>}</td>
+                    <td style={tdStyle}>{canRecordAudit && a.status === 'planned' && <span onClick={() => { setSheetError(''); setCompleting(a.id) }} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>Record result</span>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -240,7 +244,7 @@ export default function SupplierQualityPage() {
         </>
       )}
 
-      {scheduling && canCreate && (
+      {scheduling && canScheduleAudit && (
         <ActionSheet icon="calendar" title="Schedule Vendor Audit" subtitle="Plan an audit of a supplier's process and quality system." onClose={() => setScheduling(false)}
           busy={busy} error={sheetError} submitLabel="Schedule" busyLabel="Scheduling…"
           onSubmit={() => act(() => qualityApi.scheduleVendorAudit({ vendor_name: audit.vendor_name, planned_date: audit.planned_date || null, scope: audit.scope || null, auditor_id: audit.auditor_id ? Number(audit.auditor_id) : null }),
@@ -256,7 +260,7 @@ export default function SupplierQualityPage() {
         </ActionSheet>
       )}
 
-      {completing !== null && canEdit && (
+      {completing !== null && canRecordAudit && (
         <ActionSheet icon="check" iconColor="#16A34A" title="Record Audit Result" subtitle={audits.find((x) => x.id === completing)?.audit_number || 'Vendor audit'} onClose={() => setCompleting(null)}
           busy={busy} error={sheetError} submitLabel="Save result"
           onSubmit={() => act(() => qualityApi.completeVendorAudit(completing, {

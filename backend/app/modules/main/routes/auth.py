@@ -26,6 +26,7 @@ from app.modules.hr.services.employee_sync import is_org_locked
 from app.modules.hr.services.exit_guard import is_exited, exited_login_message
 from app.core.config import settings
 from app.core.permission_registry import is_admin_user, legacy_erp_permissions, restricted_subtabs
+from app.core import visibility
 
 logger = logging.getLogger(__name__)
 
@@ -633,6 +634,8 @@ async def get_current_user_info(user: User = Depends(get_current_user), db: Sess
         tab_access=restricted_subtabs(user),
         permissions=[] if is_admin_user(user) else sorted(user.effective_permissions),
         roles=sorted(r.name for r in user.roles or [] if r.is_active),
+        # Role-wise UI visibility: only the effective restrictions (core/visibility.py).
+        visibility=visibility.effective(user),
     )
 
 

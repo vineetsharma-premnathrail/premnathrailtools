@@ -54,7 +54,7 @@ export default function ProjectMachineDetails({ project }: { project: PmProject 
 
   if (machines === null) return <DetailCard><p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>Loading machine details…</p></DetailCard>
   if (forbidden) {
-    return <DetailCard tour="pm-ov-machine"><Notice tone="warn">You cannot view this project&apos;s machine details: the machine is outside your data scope. Ask an admin to widen your Project Management data scope, or to add &apos;View&apos; on Project Management › Past Projects to one of your roles (Organization › Role &amp; Permissions).</Notice></DetailCard>
+    return <DetailCard tour="pm-ov-machine"><Notice tone="warn">You cannot view this project&apos;s machine details: the machine is outside your data scope. Ask an admin to widen your Project Management data scope, or to add &apos;View&apos; on Project Management › All Projects to one of your roles (Organization › Role &amp; Permissions).</Notice></DetailCard>
   }
   if (error) return <DetailCard tour="pm-ov-machine"><ErrorBanner error={error} /></DetailCard>
   if (machines.length === 0) {

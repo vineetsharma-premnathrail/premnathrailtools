@@ -64,6 +64,10 @@ def test_sqli_in_json_body_is_blocked(client, db):
 
 def test_ordinary_request_is_not_blocked_by_injection_scan(client, db):
     user = make_user(db, "sec5@premnathrail.com", erp_permissions=["project_create"])
+    # Machine create is projects:all_projects:create since All Projects absorbed Past Projects (2026-11-02);
+    # it is an authority grant, so the legacy "project_create" id no longer gives it — grant it explicitly.
+    user.granular_permissions = ["projects:all_projects:create"]
+    db.commit()
     response = client.post(
         "/api/v1/erp/projects",
         json={"serial_number": "SN-SEC-1", "model_name": "Model Select 9000"},

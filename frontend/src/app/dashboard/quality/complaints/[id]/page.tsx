@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
-import { useRequireApp } from '@/hooks/useAuth'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
+import { VisSection } from '@/lib/visibilityComponents'
+import { useQualityScreen } from '@/components/quality/useQualityScreen'
+import { sampleComplaint } from '@/lib/qualityPreviewSamples'
 import { qualityApi } from '@/lib/api'
 import { QualityComplaintContainment, QualityCustomerComplaint } from '@/types'
 import { TEXT } from '@/lib/theme'
@@ -43,11 +45,15 @@ function Photo({ complaintId, photoId, name }: { complaintId: number; photoId: n
 }
 
 export default function ComplaintDetailPage() {
-  const { isAuthorized, isLoading } = useRequireApp('quality')
+  // What the user's roles let them see here. In the Role editor's preview the page shows a sample complaint,
+  // resolves no link, loads nothing and offers no action.
+  const { vis, isAuthorized, isLoading } = useQualityScreen('quality:complaints')
+  const preview = vis.preview
   const router = useRouter()
-  const { id: recordId, error: linkError } = useRecordId(useParams().id as string)
+  const routeRef = useParams().id as string
+  const { id: recordId, error: linkError } = useRecordId(preview ? null : routeRef)
   const cid = recordId ?? 0
-  const [c, setC] = useState<QualityCustomerComplaint | null>(null)
+  const [c, setC] = useState<QualityCustomerComplaint | null>(preview ? sampleComplaint : null)
   const [cont, setCont] = useState<QualityComplaintContainment | null>(null)
   const [contError, setContError] = useState<string | string[]>('')
   const [users, setUsers] = useState<{ id: number; name: string }[]>([])
@@ -70,8 +76,9 @@ export default function ComplaintDetailPage() {
   // Complaint costs: Quality › Complaints › costs switch (binds roles holding the tab).
   const seeCosts = !can('quality', 'complaints', 'view') || canFeature('quality', 'complaints', 'costs', 'view')
   // Mirrors the backend: working a complaint needs quality:complaints:edit; close / reject is a Quality head's (quality:complaints:approve).
-  const canEdit = can('quality', 'complaints', 'edit')
-  const canApprove = can('quality', 'complaints', 'approve')
+  // The preview offers no action at all (nothing can be saved there).
+  const canEdit = !preview && can('quality', 'complaints', 'edit')
+  const canApprove = !preview && can('quality', 'complaints', 'approve')
   // The customer response / feedback also needs Quality engineer authority (quality:ncr:edit, or a head's quality:ncr:approve).
   const canRespond = canEdit && (can('quality', 'ncr', 'edit') || can('quality', 'ncr', 'approve'))
 
@@ -86,13 +93,13 @@ export default function ComplaintDetailPage() {
   }
 
   useEffect(() => {
-    if (!isAuthorized || !cid) return
+    if (!isAuthorized || !cid || preview) return
     qualityApi.getComplaint(cid).then(load).catch((e) => setError(extractErrorMessages(e, 'Failed to load this complaint.')))
     qualityApi.getComplaintContainment(cid)
       .then((c) => { setCont(c); setContError('') })
       .catch((e) => { setCont(null); setContError(extractErrorMessages(e, 'Failed to load the traceability / containment check.')) })
     qualityApi.lookupUsers().then(setUsers).catch(() => setUsers([]))
-  }, [isAuthorized, cid])
+  }, [isAuthorized, cid, preview])
 
   const openSheet = (s: typeof sheet) => { setError(''); setSheet(s) }
   const closeSheet = () => { if (!busy) { setSheet(''); setError('') } }
@@ -110,7 +117,7 @@ export default function ComplaintDetailPage() {
   }
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/complaints" listLabel="Back to complaints" /></div>)
+  if (linkError && !preview) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/complaints" listLabel="Back to complaints" /></div>)
   if (!c) {
     return (
       <div>
@@ -124,10 +131,11 @@ export default function ComplaintDetailPage() {
   const live = !['closed', 'rejected'].includes(c.status)
   const num = (v: string) => (v === '' ? null : Number(v))
   const tr = cont?.traceability
+  const previewNote = (text: string) => <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{text}</p>
 
   return (
     <div>
-      <QualityNav />
+      {!preview && <QualityNav />}
       <PromptDialog open={rejectOpen} title="Reject as not a valid complaint?" message="Give the reason (it is shared with the customer)." requireValue
         confirmLabel="Reject complaint" onCancel={() => setRejectOpen(false)}
         onConfirm={(reason) => { setRejectOpen(false); run(() => qualityApi.complaintAction(c.id, 'reject', { reason }), 'Failed to reject the complaint.') }} />
@@ -136,23 +144,29 @@ export default function ComplaintDetailPage() {
         onConfirm={(remarks) => { setNotSatisfied(false); run(() => qualityApi.complaintAction(c.id, 'feedback', { accepted: false, remarks }), 'Failed to record the feedback.') }} />
 
       <PageHeader title={c.complaint_number} subtitle="Quality · Customer complaint">
-        <button type="button" onClick={() => router.push('/dashboard/quality/complaints')} style={secondaryBtnStyle}>← Back</button>
+        {!preview && <button type="button" onClick={() => router.push('/dashboard/quality/complaints')} style={secondaryBtnStyle}>← Back</button>}
       </PageHeader>
       {!sheet && <ErrorBanner error={error} />}
       {/* Close / reject decisions are recorded in Organization › Approval Workflows › Customer complaint close / reject. */}
-      <ApprovalPanel key={c.status} entityType="quality_complaint" entityId={c.id} title="Close / reject approval"
-        onChanged={() => { qualityApi.getComplaint(c.id).then(load).catch((e) => setError(extractErrorMessages(e, 'Failed to reload this complaint.'))) }} />
-
-      {c.status !== 'rejected' && (
-        <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
-          {STEPS.map((s, i) => {
-            const reached = STEPS.indexOf(c.status) >= i
-            return <span key={s} style={{ ...pillStyle(reached ? '#15803d' : '#64748b'), background: reached ? '#16A34A1a' : 'rgba(0,0,0,0.04)' }}>{i + 1}. {COMPLAINT_STATUS_LABELS[s]}</span>
-          })}
-        </div>
+      <VisSection vis={vis} k="detail_approval">
+      {preview ? (
+        <Section title="Close / reject approval" style={{ marginBottom: 20 }}>{previewNote('Who has to approve closing or rejecting the complaint and who already did.')}</Section>
+      ) : (
+        <ApprovalPanel key={c.status} entityType="quality_complaint" entityId={c.id} title="Close / reject approval"
+          onChanged={() => { qualityApi.getComplaint(c.id).then(load).catch((e) => setError(extractErrorMessages(e, 'Failed to reload this complaint.'))) }} />
       )}
+      </VisSection>
 
       <DetailCard>
+        <VisSection vis={vis} k="detail_summary">
+        {c.status !== 'rejected' && (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+            {STEPS.map((s, i) => {
+              const reached = STEPS.indexOf(c.status) >= i
+              return <span key={s} style={{ ...pillStyle(reached ? '#15803d' : '#64748b'), background: reached ? '#16A34A1a' : 'rgba(0,0,0,0.04)' }}>{i + 1}. {COMPLAINT_STATUS_LABELS[s]}</span>
+            })}
+          </div>
+        )}
         <DetailSummary
           title={`Complaint from ${c.customer_name}`}
           text={c.description}
@@ -165,12 +179,16 @@ export default function ComplaintDetailPage() {
             <span>·</span><span>{c.response_days != null ? `Answered in ${c.response_days} days` : `Open ${c.age_days} days`}</span>
           </>}
         />
+        </VisSection>
+        <VisSection vis={vis} k="detail_customer">
         <DetailGroup title="Customer">
           <DetailRow label="Contact person">{c.contact_person}</DetailRow>
           <DetailRow label="Machine / order">{c.project_label}</DetailRow>
           <DetailRow label="Came in through">{`${c.source.replace(/_/g, ' ').replace(/^./, (x) => x.toUpperCase())}${c.source_reference ? ` · ${c.source_reference}` : ''}`}</DetailRow>
         </DetailGroup>
-        <DetailGroup title="What failed">
+        </VisSection>
+        <VisSection vis={vis} k="detail_failed">
+        <DetailGroup title="What failed" last={!vis.showSection('detail_photos')}>
           <DetailRow label="Item">{c.item_name ? `${c.item_code ? `${c.item_code} — ` : ''}${c.item_name}` : null}</DetailRow>
           <DetailRow label="Serial / batch">{[c.serial_number, c.batch_number].filter(Boolean).join(' / ') || null}</DetailRow>
           <DetailRow label="Qty affected">{fmtQty(c.quantity_affected)}</DetailRow>
@@ -178,15 +196,17 @@ export default function ComplaintDetailPage() {
           <DetailRow label="Defect">{c.defect_code_label}</DetailRow>
           {c.repeat_of_id && (
             <DetailRow label="Repeat of">
-              <button type="button" style={linkBtn} onClick={() => router.push(recordPath('/dashboard/quality/complaints', c, 'repeat_of_id'))}>{c.repeat_of_number}</button>
+              <button type="button" style={linkBtn} disabled={preview} onClick={() => router.push(recordPath('/dashboard/quality/complaints', c, 'repeat_of_id'))}>{c.repeat_of_number}</button>
               <span style={{ color: '#b91c1c' }}> (same customer and item)</span>
             </DetailRow>
           )}
           {c.rejection_reason && <DetailRow label="Rejected because">{c.rejection_reason}</DetailRow>}
         </DetailGroup>
+        </VisSection>
+        <VisSection vis={vis} k="detail_photos">
         <DetailGroup last>
           <DetailRow label="Photos">
-            {c.photos.length > 0 || (live && canEdit) ? (
+            {preview ? 'Photos of the failed part / site.' : c.photos.length > 0 || (live && canEdit) ? (
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                 {c.photos.map((p) => <Photo key={p.id} complaintId={c.id} photoId={p.id} name={p.file_name} />)}
                 {live && canEdit && <button type="button" disabled={busy} style={secondaryBtnStyle} onClick={() => { setPhotos([]); openSheet('photos') }}>+ Add photos</button>}
@@ -194,6 +214,7 @@ export default function ComplaintDetailPage() {
             ) : null}
           </DetailRow>
         </DetailGroup>
+        </VisSection>
         {c.status === 'open' && (canEdit || canApprove) && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', borderTop: '1px solid #e2e8f0', paddingTop: 14, marginTop: 4 }}>
             {canEdit && (
@@ -207,20 +228,23 @@ export default function ComplaintDetailPage() {
       </DetailCard>
 
       {(c.ncr_id || c.capa_id) && (
+        <VisSection vis={vis} k="detail_investigation">
         <Section title="Investigation" style={{ marginBottom: 20 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-            {c.ncr_id && <p style={{ fontSize: 13, margin: 0 }}>NCR: <span style={linkStyle} onClick={() => router.push(recordPath('/dashboard/quality/ncr', c, 'ncr_id'))}>{c.ncr_number}</span></p>}
+            {c.ncr_id && <p style={{ fontSize: 13, margin: 0 }}>NCR: <span style={linkStyle} onClick={preview ? undefined : () => router.push(recordPath('/dashboard/quality/ncr', c, 'ncr_id'))}>{c.ncr_number}</span></p>}
             {c.capa_id && (
-              <p style={{ fontSize: 13, margin: 0 }}>CAPA (8D): <span style={linkStyle} onClick={() => router.push(recordPath('/dashboard/quality/capa', c, 'capa_id'))}>{c.capa_number}</span>
+              <p style={{ fontSize: 13, margin: 0 }}>CAPA (8D): <span style={linkStyle} onClick={preview ? undefined : () => router.push(recordPath('/dashboard/quality/capa', c, 'capa_id'))}>{c.capa_number}</span>
                 {' '}· {CAPA_STATUS_LABELS[c.capa_status || ''] || c.capa_status}{c.capa_effective ? ' · effective' : ''}</p>
             )}
           </div>
           <p style={{ fontSize: 12, color: TEXT.muted, margin: 0 }}>The 8D report for the customer is generated on the CAPA once its root cause is found.</p>
         </Section>
+        </VisSection>
       )}
 
+      <VisSection vis={vis} k="detail_traceability">
       <Section title="Traceability & containment" style={{ marginBottom: 20 }}>
-        {!cont ? (contError
+        {preview ? previewNote('Same batch in stock and already delivered, its inspection history, and the containment notes.') : !cont ? (contError
           ? <p style={{ fontSize: 13, color: '#b91c1c', margin: 0 }}>{Array.isArray(contError) ? contError.join(' ') : contError}</p>
           : <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Loading…</p>) : cont.note ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{cont.note}</p> : (
           <>
@@ -297,8 +321,10 @@ export default function ComplaintDetailPage() {
           </div>
         )}
       </Section>
+      </VisSection>
 
       {['under_investigation', 'response_sent', 'customer_accepted', 'closed'].includes(c.status) && (
+        <VisSection vis={vis} k="detail_response">
         <Section title="Customer response" style={{ marginBottom: 20 }}>
           {c.response_sent_at && <InfoRow label="Sent" value={`${fmtDate(c.response_sent_at)} (${c.response_days} days after the complaint)`} />}
           {c.status === 'under_investigation' ? (
@@ -314,6 +340,7 @@ export default function ComplaintDetailPage() {
           )}
           {c.customer_accepted_at && <InfoRow label="Customer accepted" value={`${fmtDate(c.customer_accepted_at)} · ${c.customer_acceptance_reference || ''}`} />}
         </Section>
+        </VisSection>
       )}
 
       {c.status !== 'rejected' && seeCosts && (
@@ -336,6 +363,7 @@ export default function ComplaintDetailPage() {
       )}
 
       {(c.status === 'customer_accepted' || c.status === 'closed') && (
+        <VisSection vis={vis} k="detail_closure">
         <Section title="Closure" style={{ marginBottom: 20 }}>
           {c.status === 'closed' ? (
             <InfoRow label="Closed" value={`${fmtDate(c.closed_at)}${c.resolution_notes ? ` · ${c.resolution_notes}` : ''}`} />
@@ -352,6 +380,7 @@ export default function ComplaintDetailPage() {
             </>
           )}
         </Section>
+        </VisSection>
       )}
       {sheet === 'photos' && (
         <ActionSheet icon="upload" title="Add photos" subtitle={`${c.complaint_number} · ${c.customer_name}`} onClose={closeSheet} busy={busy} error={error}

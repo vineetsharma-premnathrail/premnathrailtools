@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { recordPath } from '@/lib/recordRef'
-import { useRequireApp } from '@/hooks/useAuth'
 import { qualityApi } from '@/lib/api'
+import { VisSection } from '@/lib/visibilityComponents'
+import { useQualityScreen } from '@/components/quality/useQualityScreen'
 import { QualityContract, QualityInspectionLot, QualityOrderProjectRequirement } from '@/types'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import QualityNav from '@/components/quality/QualityNav'
@@ -25,7 +26,9 @@ function F({ label, flex = '1 1 200px', children }: { label: React.ReactNode; fl
 }
 
 export default function NewInspectionCallPage() {
-  const { isAuthorized, isLoading } = useRequireApp('quality')
+  // What the user's roles let them see here; in the Role editor's preview nothing is loaded or saved.
+  const { vis, isAuthorized, isLoading } = useQualityScreen('quality:inspection_calls')
+  const preview = vis.preview
   const router = useRouter()
   const [items, setItems] = useState<ItemOpt[]>([])
   const [contracts, setContracts] = useState<QualityContract[]>([])
@@ -41,7 +44,7 @@ export default function NewInspectionCallPage() {
   const [op, setOp] = useState<OrderProjectValue | null>(null)
   const [req, setReq] = useState<QualityOrderProjectRequirement | null>(null)
   const [reqError, setReqError] = useState('')
-  const draft = useFormDraft('quality-inspection-call-new', { form, op }, (d) => {
+  const draft = useFormDraft(preview ? null : 'quality-inspection-call-new', { form, op }, (d) => {
     if (d.form) setForm((f) => ({ ...f, ...d.form }))
     setOp(d.op || null)
   })
@@ -64,11 +67,11 @@ export default function NewInspectionCallPage() {
   }, [op])
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || preview) return
     qualityApi.lookupItems('').then(setItems).catch((e) => setError(extractErrorMessages(e, 'Failed to load items.')))
     qualityApi.listContracts().then(setContracts).catch(() => setContracts([]))
     qualityApi.getInspectionCallMeta().then((m) => setAgencies(m.agencies || [])).catch(() => setAgencies([]))
-  }, [isAuthorized])
+  }, [isAuthorized, preview])
 
   useEffect(() => {
     if (!form.item_id) return
@@ -111,15 +114,16 @@ export default function NewInspectionCallPage() {
   const back = () => router.push('/dashboard/quality/inspection-calls')
 
   return (
-    <FormPage nav={<QualityNav />} icon="shield" title="New Inspection Call" subtitle="Offer material to the customer's / third-party inspector (RITES, RDSO, customer)." onBack={back} backTour="qa-call-new-back"
+    <FormPage nav={preview ? undefined : <QualityNav />} icon="shield" title="New Inspection Call" subtitle="Offer material to the customer's / third-party inspector (RITES, RDSO, customer)." onBack={preview ? undefined : back} backTour="qa-call-new-back"
       footer={<>
-        <button type="button" onClick={back} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
-        <button type="button" onClick={submit} disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="send" size={16} />{busy ? 'Saving…' : 'Raise Call'}</button>
+        <button type="button" onClick={back} disabled={busy || preview} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+        <button type="button" onClick={submit} disabled={busy || preview} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="send" size={16} />{busy ? 'Saving…' : 'Raise Call'}</button>
       </>}>
       <SheetColumns
         left={<>
           <ErrorBanner error={error} />
           <DraftBanner draft={draft} />
+          <VisSection vis={vis} k="order">
           <SheetSection icon="building" title="Order">
             <div style={row}>
               <F label="Project — Unit (vehicle / lot)" flex="1 1 100%">
@@ -159,6 +163,8 @@ export default function NewInspectionCallPage() {
                 : 'Pick the Project unit (vehicle / lot), the ERP machine / order, or type the customer order reference.'}
             </p>
           </SheetSection>
+          </VisSection>
+          <VisSection vis={vis} k="material">
           <SheetSection icon="box" title="Material offered">
             <div style={row}>
               <F label={<>Item <Req /></>} flex="1 1 100%">
@@ -182,8 +188,10 @@ export default function NewInspectionCallPage() {
               </Select>
             </F>
           </SheetSection>
+          </VisSection>
         </>}
         right={<>
+          <VisSection vis={vis} k="call">
           <SheetSection icon="calendar" title="Call">
             <label style={sheetLabel}>Agency <Req /></label>
             {op ? (
@@ -203,9 +211,12 @@ export default function NewInspectionCallPage() {
             <label style={sheetLabel}>Inspector</label>
             <input style={sheetInput} value={form.inspector_name} onChange={(e) => setForm({ ...form, inspector_name: e.target.value })} />
           </SheetSection>
+          </VisSection>
+          <VisSection vis={vis} k="remarks">
           <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
             <textarea style={{ ...sheetInput, minHeight: 80, resize: 'vertical' }} value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
           </SheetSection>
+          </VisSection>
         </>}
       />
     </FormPage>

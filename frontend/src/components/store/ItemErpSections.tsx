@@ -14,6 +14,9 @@ import { TEXT } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import { StoreItem, StoreItemMeta, StoreItemVendorSuggestion } from '@/types'
 import Select from '@/components/shared/Select'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection } from '@/lib/visibilityComponents'
+import { sampleVendorSuggestions } from '@/lib/storePreviewSamples'
 
 export type ItemErpValues = Pick<StoreItem,
   'preferred_vendor_id' | 'make' | 'manufacturer' | 'manufacturer_part_number' | 'min_order_qty'
@@ -94,13 +97,15 @@ export function ItemErpForm({ values, onChange, meta, itemType, uom, effective, 
 }) {
   const isService = itemType === 'service'
   const unit = uom || 'unit'
+  // Role visibility (Store › Items › Visibility): every section here holds optional fields only, so each may be hidden.
+  const vis = useVisibility('store:items')
   const idOptions = (opts: { value: number; label: string }[] | undefined, blank: string) =>
     [{ value: '', label: blank }, ...(opts || []).map((o) => ({ value: String(o.value), label: o.label }))]
   const toId = (v: string) => (v ? Number(v) : null)
 
   return (
     <>
-      <SheetSection icon="cart" title="Purchasing">
+      <VisSection vis={vis} k="purchasing"><SheetSection icon="cart" title="Purchasing">
         <SRow>
           <SField label="Preferred vendor">
             <div data-tour="item-preferred-vendor">
@@ -128,9 +133,9 @@ export function ItemErpForm({ values, onChange, meta, itemType, uom, effective, 
             </SField>
           </>}
         </SRow>
-      </SheetSection>
+      </SheetSection></VisSection>
 
-      <SheetSection icon="rupee" title="Tax & Accounts">
+      <VisSection vis={vis} k="tax_accounts"><SheetSection icon="rupee" title="Tax & Accounts">
         <SRow>
           <SField label={isService ? 'SAC code' : 'HSN code'}>
             <input data-tour="item-hsn" style={sheetInput} value={values.hsn_sac_code || ''} maxLength={12}
@@ -170,10 +175,10 @@ export function ItemErpForm({ values, onChange, meta, itemType, uom, effective, 
             </span>
           </SField>
         </SRow>
-      </SheetSection>
+      </SheetSection></VisSection>
 
       {!isService && (
-        <SheetSection icon="box" title="Stock Levels & Cost">
+        <VisSection vis={vis} k="stock_levels"><SheetSection icon="box" title="Stock Levels & Cost">
           <SRow>
             <SField label="Standard cost (₹ per unit)">
               <NumberInput tour="item-standard-cost" value={values.standard_cost} onChange={(v) => onChange({ standard_cost: v })} placeholder="Planned rate" />
@@ -198,15 +203,15 @@ export function ItemErpForm({ values, onChange, meta, itemType, uom, effective, 
               <NumberInput value={values.maximum_stock} onChange={(v) => onChange({ maximum_stock: v })} />
             </SField>
           </SRow>
-        </SheetSection>
+        </SheetSection></VisSection>
       )}
 
       {!isService && (
-        <SheetSection icon="shield" title="Quality & Tracking">
+        <VisSection vis={vis} k="quality_tracking"><SheetSection icon="shield" title="Quality & Tracking">
           <label data-tour="item-inspection" style={checkRow}>
             <input type="checkbox" checked={!!values.inspection_on_receipt}
               onChange={(e) => onChange({ inspection_on_receipt: e.target.checked, ...(e.target.checked ? {} : { test_certificate_required: false }) })} />
-            Inspection on receipt — receipts go to Quality stock with an inspection lot instead of straight to Free stock
+            Quality check on receipt — receipts wait in Quality stock under an inspection lot; without this, GRN quantity goes straight into Free stock
           </label>
           <label data-tour="item-mtc" style={{ ...checkRow, opacity: values.inspection_on_receipt ? 1 : 0.5 }}>
             <input type="checkbox" disabled={!values.inspection_on_receipt} checked={!!values.test_certificate_required}
@@ -232,7 +237,7 @@ export function ItemErpForm({ values, onChange, meta, itemType, uom, effective, 
               </div>
             )}
           </div>
-        </SheetSection>
+        </SheetSection></VisSection>
       )}
     </>
   )
@@ -245,41 +250,46 @@ const yesNo = (v?: boolean) => (v ? 'Yes' : 'No')
  * inside the item page's DetailCard (one label–value list, no separate cards). */
 export function ItemErpInfo({ item }: { item: StoreItem }) {
   const isService = item.item_type === 'service'
+  // Item page blocks (catalogue screen "detail"); `last` only decides the divider under a block.
+  const vis = useVisibility('store:items')
+  const showTax = vis.preview || vis.showSection('detail_tax_accounts')
+  const showStock = !isService && (vis.preview || vis.showSection('detail_stock_levels'))
+  const showQuality = !isService && (vis.preview || vis.showSection('detail_quality'))
   const ledger = (name?: string | null, source?: string | null) =>
     name ? `${name}${source && source !== 'item' ? ` (${SOURCE_TEXT[source]})` : ''}` : source === 'none' ? SOURCE_TEXT.none : null
   return (
     <>
-      <div data-tour="item-detail-purchasing">
-        <DetailGroup title="Purchasing">
+      <VisSection vis={vis} k="detail_purchasing"><div data-tour="item-detail-purchasing">
+        <DetailGroup title="Purchasing" last={!showTax && !showStock && !showQuality}>
           <DetailRow label="Preferred vendor">{item.preferred_vendor_name || (item.preferred_supplier ? `${item.preferred_supplier} (not linked to the vendor master — pick it again)` : null)}</DetailRow>
           <DetailRow label="Minimum order qty">{item.min_order_qty == null ? null : num(item.min_order_qty, item.uom)}</DetailRow>
           {!isService && <DetailRow label="Make / Manufacturer">{[item.make, item.manufacturer].filter(Boolean).join(' · ') || null}</DetailRow>}
         </DetailGroup>
-      </div>
-      <div data-tour="item-detail-accounts">
-        <DetailGroup title="Tax & Accounts" last={isService}>
+      </div></VisSection>
+      <VisSection vis={vis} k="detail_tax_accounts"><div data-tour="item-detail-accounts">
+        <DetailGroup title="Tax & Accounts" last={!showStock && !showQuality}>
           <DetailRow label={isService ? 'SAC code' : 'HSN code'}>{item.hsn_sac_code || 'Not set — needed on GST invoices'}</DetailRow>
           <DetailRow label="GST rate">{item.gst_rate != null ? `${item.gst_rate}%` : 'Not set'}</DetailRow>
           <DetailRow label="Purchase ledger">{ledger(item.effective_purchase_gl, item.effective_purchase_gl_source)}</DetailRow>
           <DetailRow label="Sales ledger">{ledger(item.effective_sales_gl, item.effective_sales_gl_source)}</DetailRow>
         </DetailGroup>
-      </div>
+      </div></VisSection>
       {!isService && (
-        <DetailGroup title="Stock Levels">
+        <VisSection vis={vis} k="detail_stock_levels"><DetailGroup title="Stock Levels" last={!showQuality}>
           <DetailRow label="Reorder level / qty">{`${num(item.reorder_level, item.uom)} / ${num(item.reorder_quantity, item.uom)}`}</DetailRow>
           <DetailRow label="Safety stock">{item.safety_stock == null ? null : num(item.safety_stock, item.uom)}</DetailRow>
           <DetailRow label="Min / Max stock">{`${num(item.minimum_stock, item.uom)} / ${num(item.maximum_stock, item.uom)}`}</DetailRow>
-        </DetailGroup>
+        </DetailGroup></VisSection>
       )}
       {!isService && (
-        <div data-tour="item-detail-quality">
+        <VisSection vis={vis} k="detail_quality"><div data-tour="item-detail-quality">
           <DetailGroup title="Quality & Tracking" last>
-            <DetailRow label="Inspection on receipt">{item.inspection_on_receipt ? 'Yes — GRN / production receipts go to Quality stock and get an inspection lot' : 'No — receipts go straight to Free stock'}</DetailRow>
+            <DetailRow label="Quality check on receipt">{item.inspection_on_receipt ? 'Yes — GRN / production receipts wait in Quality stock under an inspection lot' : 'No — GRN quantity goes straight into Free stock'}</DetailRow>
             <DetailRow label="Test certificate required">{item.test_certificate_required ? "Yes — an incoming lot can't be accepted without the MTC / test certificate" : 'No'}</DetailRow>
             <DetailRow label="Batch / Serial tracked">{`${yesNo(item.batch_controlled)} / ${yesNo(item.serial_controlled)}`}</DetailRow>
             <DetailRow label="Expiry">{item.expiry_controlled ? (item.shelf_life_days != null ? `Yes — shelf life ${item.shelf_life_days.toLocaleString('en-IN')} day(s)` : 'Yes — shelf life not set') : 'No'}</DetailRow>
           </DetailGroup>
-        </div>
+        </div></VisSection>
       )}
     </>
   )
@@ -287,15 +297,17 @@ export function ItemErpInfo({ item }: { item: StoreItem }) {
 
 const rupees = (v?: number | null, unit?: string | null) => (v == null ? '—' : `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })}${unit ? ` / ${unit}` : ''}`)
 
-export function ItemVendorSuggestions({ itemId }: { itemId: number }) {
-  const [rows, setRows] = useState<StoreItemVendorSuggestion[] | null>(null)
+export function ItemVendorSuggestions({ itemId, preview = false }: { itemId: number; preview?: boolean }) {
+  // preview = the Role editor's "Preview & choose": sample vendors, nothing loaded.
+  const [rows, setRows] = useState<StoreItemVendorSuggestion[] | null>(preview ? sampleVendorSuggestions : null)
   const [error, setError] = useState('')
 
   useEffect(() => {
+    if (preview) return
     storeApi.getItemVendors(itemId)
       .then((r) => { setRows(r); setError('') })
       .catch((err) => { setRows([]); setError(extractErrorMessages(err, "Couldn't load vendor suggestions.").join(' ')) })
-  }, [itemId])
+  }, [itemId, preview])
 
   return (
     <Section title="Vendors for this item" style={{ marginBottom: 20 }}>

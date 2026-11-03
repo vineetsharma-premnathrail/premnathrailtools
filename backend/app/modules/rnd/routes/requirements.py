@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -118,9 +118,9 @@ async def list_requirements(
 ):
     """Every requirement the user may see — needs-my-review first, then by R&D ID ascending.
     Filters: search, source, mine (requests I may respond to), needs_my_review, status
-    (submitted / accepted / returned / responded)."""
-    if status and status not in ("submitted", "accepted", "returned", "responded"):
-        raise HTTPException(status_code=422, detail=f"Status '{status}' isn't valid — pick submitted, accepted, returned or responded.")
+    (submitted / accepted / returned / responded / closed)."""
+    if status and status not in ("submitted", "accepted", "returned", "responded", "closed"):
+        raise HTTPException(status_code=422, detail=f"Status '{status}' isn't valid — pick submitted, accepted, returned, responded or closed.")
     rows: list[dict] = []
     term = f"%{search.strip()}%" if search and search.strip() else None
     visible = ra.visible_keys(db, user)  # None = all
@@ -421,6 +421,42 @@ async def respond_to_request(
         entity_type=req.source, entity_id=record.id, action="rnd_responded", module_key="crm",
         summary=f"{user.name or user.email} (R&D) responded to {req.offer_number or 'the Technical Offer Request'}"
                 + (" after the due date." if req.delay_reason else "."),
+        performed_by_id=user.id,
+    ))
+    db.commit()
+    return requirement_movement.serialize_requests(db, [req])[req.id]
+
+
+class ClosePayload(BaseModel):
+    # Optional here so a missing reason gets mark_closed's actionable 422, not the generic one.
+    reason: str | None = Field(None, max_length=2000)
+
+
+@router.post("/requests/{request_id}/close")
+async def close_request(
+    request_id: int, payload: ClosePayload,
+    db: Session = Depends(get_db), user: User = Depends(get_current_user),
+):
+    """R&D closes a request without a response (nothing to deliver). Same right as responding
+    (R&D head / admin, or a legacy respond tick, plus R&D › Requirements › CRM request › Submit);
+    while the revision still awaits review only a reviewer may close it. A reason of at least
+    10 characters is mandatory; BD is told and can re-send the requirement later."""
+    req = db.query(CrmRndRequest).filter(CrmRndRequest.id == request_id).with_for_update().first()  # lock: a parallel respond / re-send waits
+    if not req:
+        raise HTTPException(status_code=404, detail="This R&D request no longer exists — refresh the page.")
+    model = Inquiry if req.source == "inquiry" else Tender
+    record = db.query(model).filter(model.id == req.record_id, model.is_deleted == False).first()  # noqa: E712
+    if not record:
+        raise HTTPException(status_code=404, detail=f"The CRM {req.source} behind this request was deleted, so it can't be closed.")
+
+    ra.ensure(db, user, req.source, req.record_id, "respond")
+    if ra.is_rnd_side(user):
+        ensure_feature_action(user, "rnd", "requirements", "crm_request", "submit")
+    intake.require_closable(db, req, user)
+    requirement_movement.mark_closed(db, req=req, user=user, reason=payload.reason)
+    db.add(AuditLog(
+        entity_type=req.source, entity_id=record.id, action="rnd_closed", module_key="crm",
+        summary=f"{user.name or user.email} (R&D) closed {req.offer_number or 'the Technical Offer Request'} without a response: {req.response_remarks}",
         performed_by_id=user.id,
     ))
     db.commit()

@@ -26,6 +26,9 @@ import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import RndBudgetFields, { EMPTY_RND_BUDGET, RndBudgetDraft, rndBudgetError, rndBudgetFromProject, rndBudgetPayload } from '@/components/rnd/RndBudgetFields'
 import { ProjectBudgetCard } from '@/components/finance/ProjectBudget'
+import { useVisibility } from '@/lib/visibility'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
+import { sampleProject } from '@/lib/rndPreviewSamples'
 import ProjectOriginFields, { EMPTY_ORIGIN, KIND_LABELS, ORIGIN_LABELS, OriginDraft, normalizeOrigin, originError, originFromProject, originPayload } from '@/components/rnd/ProjectOriginFields'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, FileDropZone, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
@@ -122,12 +125,15 @@ export default function RndProjectDetailPage() {
   const { can, canDelete, canFeature } = useCan()
   const router = useRouter()
   const params = useParams()
-  const { id: resolvedId, error: linkError } = useRecordId(params.id as string)
+  // Role visibility (Overview blocks, Edit form values). In the Role editor's preview the page shows a
+  // sample project's Overview, loads nothing and offers no action.
+  const vis = useVisibility('rnd:projects')
+  const { id: resolvedId, error: linkError } = useRecordId(vis.preview ? null : params.id as string)
   const projectId = resolvedId ?? 0
 
-  const [project, setProject] = useState<RndProjectDetail | null>(null)
+  const [project, setProject] = useState<RndProjectDetail | null>(vis.preview ? (sampleProject as RndProjectDetail) : null)
   const [users, setUsers] = useState<DirectoryUser[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState<string | string[]>('')
 
   const [title, setTitle] = useState('')
@@ -200,7 +206,7 @@ export default function RndProjectDetailPage() {
   }
 
   useEffect(() => {
-    if (!isAuthorized || !projectId) return
+    if (!isAuthorized || !projectId || vis.preview) return
     ;(async () => {
       try {
         const [p, dir, access] = await Promise.all([rndApi.getProject(projectId), usersApi.directory(), rndApi.projectTaskAccess(projectId)])
@@ -213,10 +219,10 @@ export default function RndProjectDetailPage() {
         setLoading(false)
       }
     })()
-  }, [isAuthorized, projectId])
+  }, [isAuthorized, projectId, vis.preview])
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div style={{ width: '100%' }}><RndNav /><InvalidRecordLink message={linkError} listHref="/dashboard/rnd/projects" listLabel="Back to projects" /></div>)
+  if (linkError && !vis.preview) return (<div style={{ width: '100%' }}><RndNav /><InvalidRecordLink message={linkError} listHref="/dashboard/rnd/projects" listLabel="Back to projects" /></div>)
   if (loading) return null
   if (!project) {
     return (
@@ -233,10 +239,13 @@ export default function RndProjectDetailPage() {
     )
   }
 
-  const canEdit = can('rnd', 'projects', 'edit')
-  const visibleTabs = TABS.filter((t) => t !== 'Tasks' || canFeature('rnd', 'projects', 'tasks', 'view'))
+  const canEdit = !vis.preview && can('rnd', 'projects', 'edit')
+  // The preview shows the Overview only (the other tabs load the project's own records).
+  const visibleTabs: Tab[] = vis.preview ? ['Overview'] : TABS.filter((t) => t !== 'Tasks' || canFeature('rnd', 'projects', 'tasks', 'view'))
+  // Edit form: Priority values the role offers (a saved project keeps its own).
+  const priorityChoices = PRIORITY_OPTIONS.filter((o) => vis.options('priority', PRIORITY_OPTIONS, (x) => x.value).includes(o) || o.value === normalizePriority(project.priority))
   const tab: Tab = visibleTabs.includes(chosenTab) ? chosenTab : 'Overview'
-  const canDeleteProject = canDelete('rnd', 'projects', project.created_by_id ?? null)
+  const canDeleteProject = !vis.preview && canDelete('rnd', 'projects', project.created_by_id ?? null)
 
   const startEdit = () => { setError(''); setSaved(false); applyProject(project); setEditing(true) }
   const discardEdit = () => { setError(''); setFiles([]); applyProject(project); setEditing(false) }
@@ -346,9 +355,12 @@ export default function RndProjectDetailPage() {
 
           <SheetColumns
             left={<>
+              <VisSection vis={vis} k="origin">
               <SheetSection icon="flag" title="Project Origin" extra={<span style={{ fontSize: 12, color: SHEET.MUTED }}>Why does this project exist? <Req /></span>}>
-                <ProjectOriginFields value={origin} onChange={setOrigin} />
+                <ProjectOriginFields value={origin} onChange={setOrigin} vis={vis} />
               </SheetSection>
+              </VisSection>
+              <VisSection vis={vis} k="initiation">
               <SheetSection icon="list" title="Project Initiation">
                 <label style={labelStyle}>Project Title <Req /></label>
                 <input style={inputStyle} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Lightweight bogie frame for track machines" autoFocus />
@@ -357,13 +369,16 @@ export default function RndProjectDetailPage() {
                 <label style={{ ...labelStyle, marginTop: 14 }}>Scope</label>
                 <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={scope} onChange={(e) => setScope(e.target.value)} placeholder="In scope / out of scope, key deliverables" />
               </SheetSection>
+              </VisSection>
+              <VisSection vis={vis} k="priority_schedule">
               <SheetSection icon="calendar" title="Priority & Schedule">
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                   <div style={{ flex: '1 1 240px', minWidth: 220, maxWidth: 300 }}>
                     <label style={labelStyle}>Priority</label>
                     <Select style={inputStyle} value={priority} onChange={(e) => setPriority(e.target.value as Priority)}>
-                      {PRIORITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      {priorityChoices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </Select>
+                    <VisOptionValues vis={vis} dropdown="priority" />
                   </div>
                   <div style={{ flex: '0 1 160px', minWidth: 150 }}>
                     <label style={labelStyle}>Start Date</label>
@@ -375,18 +390,24 @@ export default function RndProjectDetailPage() {
                   </div>
                 </div>
               </SheetSection>
-              <RndBudgetFields value={budget} onChange={setBudget} projectId={project.id} />
+              </VisSection>
+              <VisSection vis={vis} k="budget"><RndBudgetFields value={budget} onChange={setBudget} projectId={project.id} /></VisSection>
             </>}
             right={<>
+              <VisSection vis={vis} k="members">
               <SheetSection icon="users" title="Project Members">
                 <label style={labelStyle}>Project Leads</label>
                 <TeamMemberPicker users={pickable} value={leadIds} onChange={setLeadIds} excludeIds={teamIds} placeholder="Search name or email to add a project lead…" />
                 <label style={{ ...labelStyle, marginTop: 14 }}>Team Members</label>
                 <TeamMemberPicker users={pickable} value={teamIds} onChange={setTeamIds} excludeIds={leadIds} />
               </SheetSection>
+              </VisSection>
+              <VisSection vis={vis} k="remarks">
               <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
                 <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
               </SheetSection>
+              </VisSection>
+              <VisSection vis={vis} k="attachments">
               <SheetSection icon="clip" title="Attachments" extra={<Optional />}>
                 <FileDropZone
                   files={files}
@@ -394,6 +415,7 @@ export default function RndProjectDetailPage() {
                 />
                 <p style={sheetHint}>Add more specs, drawings, photos or proof — saved to the project&apos;s Documents along with the files already there.</p>
               </SheetSection>
+              </VisSection>
             </>}
           />
         </FormPage>
@@ -403,7 +425,7 @@ export default function RndProjectDetailPage() {
 
   return (
     <div style={{ width: '100%' }}>
-      <RndNav />
+      {!vis.preview && <RndNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div data-tour="rnd-pd-badges">
@@ -420,7 +442,7 @@ export default function RndProjectDetailPage() {
               {deleting ? 'Deleting…' : 'Delete'}
             </button>
           )}
-          <button data-tour="rnd-pd-back-btn" onClick={() => router.push('/dashboard/rnd/projects')} type="button" style={secondaryBtnStyle}>← Back</button>
+          {!vis.preview && <button data-tour="rnd-pd-back-btn" onClick={() => router.push('/dashboard/rnd/projects')} type="button" style={secondaryBtnStyle}>← Back</button>}
         </div>
       </div>
 
@@ -444,6 +466,7 @@ export default function RndProjectDetailPage() {
         return (
           // Summary on top (what the project is), then every detail as one label–value list.
           <div data-tour="rnd-pd-overview" style={{ borderRadius: 18, background: '#fff', border: `1px solid ${SHEET.LINE}`, boxShadow: '0 4px 16px rgba(15,23,42,0.06)', padding: '22px 26px', marginBottom: 20 }}>
+            <VisSection vis={vis} k="detail_summary">
             <div data-tour="rnd-pd-details" style={{ paddingBottom: 18, borderBottom: `1px solid ${SHEET.LINE}` }}>
               <h2 style={{ fontSize: 20, fontWeight: 700, color: SHEET.INK, margin: '0 0 6px' }}>{project.title}</h2>
               <p style={{ fontSize: 14, lineHeight: '21px', color: SHEET.BODY, margin: '0 0 12px', whiteSpace: 'pre-wrap' }}>{project.objective || '—'}</p>
@@ -453,7 +476,9 @@ export default function RndProjectDetailPage() {
                 {' · '}Lead: <strong style={{ color: SHEET.INK }}>{leads || '—'}</strong>
               </p>
             </div>
+            </VisSection>
 
+            <VisSection vis={vis} k="detail_origin">
             <div data-tour="rnd-pd-source" style={{ padding: '6px 0', borderBottom: `1px solid ${SHEET.LINE}` }}>
               {project.origin ? (
                 <>
@@ -485,28 +510,41 @@ export default function RndProjectDetailPage() {
               )}
               <DetailRow label="Scope">{project.scope}</DetailRow>
             </div>
+            </VisSection>
 
+            <VisSection vis={vis} k="detail_members">
             <div data-tour="rnd-pd-members" style={{ padding: '6px 0', borderBottom: `1px solid ${SHEET.LINE}` }}>
               <DetailRow label="Team Members">{team || null}</DetailRow>
               <DetailRow label="Remarks">{project.remarks}</DetailRow>
             </div>
+            </VisSection>
 
+            <VisSection vis={vis} k="detail_attachments">
             <div data-tour="rnd-pd-attachments" style={{ padding: '6px 0' }}>
               <DetailRow label="Attachments">
-                <OverviewAttachments projectId={project.id} />
+                {vis.preview
+                  ? <span style={{ fontSize: 13, color: SHEET.MUTED }}>The project&apos;s files show here.</span>
+                  : <OverviewAttachments projectId={project.id} />}
                 {visibleTabs.includes('Documents') && (
                   <button type="button" onClick={() => setTab('Documents')} style={{ ...smallSecondaryBtnStyle, marginTop: 8 }}>Manage in Documents</button>
                 )}
               </DetailRow>
             </div>
+            </VisSection>
 
             <p style={{ fontSize: 12, color: SHEET.MUTED, margin: '10px 0 0' }}>Created {formatDate(project.created_at)}</p>
           </div>
         )
       })()}
       {tab === 'Overview' && (
-        <ProjectBudgetCard key={`${project.id}-${project.updated_at || ''}`} load={() => rndApi.projectBudget(project.id)} tour="rnd-pd-budget"
-          emptyText={canEdit ? 'No budget yet — use Edit to pick a budget Finance created, or type an amount.' : 'No budget set for this project.'} />
+        <VisSection vis={vis} k="detail_budget">
+          {vis.preview
+            ? <div style={{ borderRadius: 18, background: '#fff', border: `1px solid ${SHEET.LINE}`, padding: '18px 22px', marginBottom: 20, fontSize: 13, color: SHEET.MUTED }}>
+                Budget card — budget, committed, actual and available for the project.
+              </div>
+            : <ProjectBudgetCard key={`${project.id}-${project.updated_at || ''}`} load={() => rndApi.projectBudget(project.id)} tour="rnd-pd-budget"
+                emptyText={canEdit ? 'No budget yet — use Edit to pick a budget Finance created, or type an amount.' : 'No budget set for this project.'} />}
+        </VisSection>
       )}
 
       {tab === 'Members' && (

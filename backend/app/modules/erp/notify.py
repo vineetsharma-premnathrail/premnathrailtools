@@ -75,15 +75,13 @@ def broadcast_except(db: Session, skip: set[int], *, title: str, message: str, n
     """The old "every Service user" bell, minus whoever a role event already
     reached (and the actor) — same rules as utils.notifications.broadcast_notification."""
     import logging
-    from app.modules.main.models.notification import Notification
-    from app.utils.notifications import _is_suppressed
+    from app.utils.notifications import _deliver, _is_suppressed
     if _is_suppressed(notification_type):
         return
     try:
-        for u in db.query(User).filter(User.is_active == True).all():  # noqa: E712
-            if u.id in skip or not u.notifications_enabled or app_name not in u.get_apps():
-                continue
-            db.add(Notification(user_id=u.id, title=title, message=message, notification_type=notification_type,
-                                entity_type=entity_type, entity_id=entity_id))
+        users = [u for u in db.query(User).filter(User.is_active == True).all()  # noqa: E712
+                 if u.id not in skip and app_name in u.get_apps()]
+        # Channels from Organization › Roles › Notifications (direct notification settings).
+        _deliver(db, users, title, message, notification_type, entity_type, entity_id, teams=False)
     except Exception:
         logging.getLogger(__name__).exception("Failed to broadcast notification '%s'", title)

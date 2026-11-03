@@ -8,7 +8,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access, require_tab_access
+from app.core.permissions import require_app_access, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.design.access import is_team
 from app.modules.design.models.document import DesignDocument, DesignDocumentRevision
@@ -83,7 +83,7 @@ async def master_document_list(
     erp_project_id: int | None = None,
     search: str | None = None,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("design")),
+    _user: User = Depends(require_tab_action("design", "reports", "export")),
 ):
     # Viewers outside the Design team see released drawings only, and not
     # who an in-progress revision is pending with.

@@ -194,7 +194,7 @@ def test_store_only_user_can_open_grn_lists(client, db, env):
 
 # ── GRN Plant Access: Store users scoped, Purchase users cross-plant ───────
 
-def _grn_po(db, env):
+def _grn_po(db, env, category=None):
     from datetime import datetime, timezone
     from app.modules.p2p.models.p2p_request import P2PRequest
     from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
@@ -209,7 +209,7 @@ def _grn_po(db, env):
     db.add(po)
     db.flush()
     line = P2PPurchaseOrderItem(purchase_order_id=po.id, item_name="Washer M12", unit="NOS", quantity=10, unit_price=5,
-                                store_item_id=env["item"].id)
+                                store_item_id=env["item"].id, **({"item_category": category} if category else {}))
     db.add(line)
     db.commit()
     return po, line
@@ -256,9 +256,13 @@ def test_store_user_sees_and_records_grns_only_for_own_plant(client, db, env, _n
 
 def test_store_user_with_grn_approve_can_inspect_a_non_qc_receipt(client, db, env, _no_series_lock):
     """2026-10-13 (MIGO 101): the Permission Matrix ('Approve' on Store › GRN)
-    alone decides who inspects — no separate Purchase-module check."""
-    po, line = _grn_po(db, env)
+    alone decides who inspects — no separate Purchase-module check.
+    Since 2026-11-03 a stock item without the Quality-check flag completes on
+    receipt, so the accept / reject step is shown on an asset line (the only
+    non-Quality line that still waits for it on the GRN)."""
+    po, line = _grn_po(db, env, category="asset")
     g = _grn(client, env["keeper"], po, line, env["s1"].id).json()
+    assert g["status"] == "draft" and g["items"][0]["quality_status"] == "pending"
     r = client.post(f"/api/v1/p2p/goods-receipts/{g['id']}/inspect", json={"items": [
         {"item_id": g["items"][0]["id"], "accepted_quantity": 1, "rejected_quantity": 0, "quality_status": "passed"}]},
         headers=_h(env["keeper"]))

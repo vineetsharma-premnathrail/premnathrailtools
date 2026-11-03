@@ -133,21 +133,22 @@ def test_short_closed_po_balance_is_not_on_order_for_reorder(client, db):
     assert qty.get(item_id, 0) == 0
 
 
-def test_inspection_into_a_store_that_cannot_take_stock_is_refused_cleanly(client, db):
+def test_grn_completes_on_receipt_and_a_receipt_into_a_store_that_cannot_take_stock_is_refused_cleanly(client, db):
     from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt
     from app.tests.test_p2p_item_master_link import _grn, _inspect_all
 
     buyer, po, loc = _approved_po(client, db, "SAP7", qty=5)
-    grn = _grn(client, buyer, po, loc, 5)
+    grn = _grn(client, buyer, po, loc, 3)
     assert grn.status_code == 200, grn.text
+    # No Quality-check flag: the goods went into the store's Free stock and the GRN completed when it was recorded.
+    assert grn.json()["status"] == "completed"
     loc.is_active = False  # store deactivated after the goods arrived
     db.commit()
-    # The goods went into that store's Quality stock when the GRN was recorded
-    # (SAP 101), so the inspection only releases them there — it still completes.
-    r = _inspect_all(client, buyer, grn.json())
-    assert r.status_code == 200, r.text
+    r = _inspect_all(client, buyer, grn.json())  # nothing left to inspect
+    assert r.status_code == 409 and "already been completed" in r.json()["detail"]
     db.expire_all()
     assert db.get(P2PGoodsReceipt, grn.json()["id"]).status == "completed"
-    # And a new GRN into the inactive store is refused up front.
+    # A new GRN into the inactive store is refused up front and nothing is saved.
     again = _grn(client, buyer, po, loc, 1)
     assert again.status_code == 422 and "inactive" in again.json()["detail"]
+    assert db.query(P2PGoodsReceipt).count() == 1

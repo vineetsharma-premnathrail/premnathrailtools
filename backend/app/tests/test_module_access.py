@@ -1,5 +1,6 @@
 from app.auth.jwt_handler import create_access_token
 from app.modules.main.models.user import AVAILABLE_APPS, User
+from app.core.permission_registry import MODULES  # labels follow the registry
 
 
 def _user(db, email, role="user", apps=("crm",), azure_admin=False, azure_id=None):
@@ -19,8 +20,9 @@ def test_users_see_exactly_their_assigned_modules(db):
     normal = _user(db, "someone@premnathrail.com", apps=("quality", "hr", "crm"))
     admin = _user(db, "boss@premnathrail.com", role="admin", apps=())
     azure_admin = _user(db, "tenant.admin@premnathrail.com", apps=(), azure_admin=True)
-    # No module is locked any more: assigned = visible.
-    assert set(normal.get_apps()) == {"quality", "hr", "crm"}
+    # No module is locked any more: assigned = visible. A department module (Quality) also opens
+    # Project Management for its task screens (the removed Ongoing Projects row, 2026-11-03).
+    assert set(normal.get_apps()) == {"quality", "hr", "crm", "projects"}
     assert set(admin.get_apps()) == AVAILABLE_APPS
     assert set(azure_admin.get_apps()) == AVAILABLE_APPS
 
@@ -29,7 +31,7 @@ def test_hr_routes_need_the_hr_app(client, db):
     no_hr = _user(db, "crmuser@premnathrail.com", apps=("crm",))
     r = client.get("/api/v1/hr/leave/requests/me", headers=_h(no_hr))
     assert r.status_code == 403
-    assert "HR & Administration" in r.json()["detail"]
+    assert MODULES["hr"]["label"] in r.json()["detail"]
 
 
 def test_hr_app_user_can_use_hr(client, db):

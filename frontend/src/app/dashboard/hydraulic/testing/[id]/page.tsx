@@ -18,6 +18,9 @@ import { SYSTEM_TYPE_LABELS, TEST_TYPE_LABELS, withUnit } from '@/components/hyd
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { useCan } from '@/lib/permissions'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection } from '@/lib/visibilityComponents'
+import { sampleHydTest } from '@/lib/hydraulicPreviewSamples'
 import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 
 const STATUS_LABELS: Record<string, string> = { planned: 'Planned', in_progress: 'In Progress', under_review: 'Awaiting Sign-off', completed: 'Completed' }
@@ -61,10 +64,14 @@ export default function HydTestDetailPage() {
   const router = useRouter()
   const params = useParams()
   const ref = params.id as string
-  const { id: resolvedId, error: linkError } = useRecordId(ref)
+  // Role visibility (Role & Permissions › Hydraulic & Pneumatic › Testing & Inspection › Visibility). In the Role
+  // editor's "Preview & choose" the page draws a made-up completed test and loads / saves nothing.
+  const vis = useVisibility('hydraulic:testing')
+  const preview = vis.preview
+  const { id: resolvedId, error: linkError } = useRecordId(preview ? null : ref)
   const testId = resolvedId ?? 0
 
-  const [test, setTest] = useState<HydTest | null>(null)
+  const [test, setTest] = useState<HydTest | null>(preview ? sampleHydTest : null)
   const [error, setError] = useState<string | string[]>('')
   const [saved, setSaved] = useState('')
   const [dirty, setDirty] = useState(false)
@@ -78,11 +85,11 @@ export default function HydTestDetailPage() {
   // Bumped after a decision in the approval panel to re-read the test.
   const [reloadKey, setReloadKey] = useState(0)
   useEffect(() => {
-    if (!isAuthorized || !testId) return
+    if (!isAuthorized || !testId || preview) return
     hydraulicApi.getTest(testId)
       .then(setTest)
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load test.')))
-  }, [isAuthorized, testId, reloadKey])
+  }, [isAuthorized, testId, reloadKey, preview])
 
   const failedParams = test?.readings.filter((r) => r.result === 'fail').map((r) => r.parameter) || []
 
@@ -153,8 +160,8 @@ export default function HydTestDetailPage() {
   }
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><HydraulicNav /><InvalidRecordLink message={linkError} listHref="/dashboard/hydraulic/testing" listLabel="Back to tests" /></div>)
-  if (!resolvedId) return <div><HydraulicNav /></div>
+  if (linkError && !preview) return (<div><HydraulicNav /><InvalidRecordLink message={linkError} listHref="/dashboard/hydraulic/testing" listLabel="Back to tests" /></div>)
+  if (!resolvedId && !preview) return <div><HydraulicNav /></div>
 
   const completed = test?.status === 'completed'
   const underReview = (test?.status as string | undefined) === 'under_review'  // shared HydTestStatus type predates the sign-off step
@@ -179,7 +186,7 @@ export default function HydTestDetailPage() {
 
   return (
     <div>
-      <HydraulicNav />
+      {!preview && <HydraulicNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
@@ -195,7 +202,7 @@ export default function HydTestDetailPage() {
             </div>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {!preview && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {test && !completed && (
             <>
               {test.status === 'planned' && canEditTest && (
@@ -212,7 +219,7 @@ export default function HydTestDetailPage() {
             <button data-tour="hyd-testd-retest-btn" type="button" onClick={handleRetest} disabled={busy} style={{ ...primaryBtn, ...disabledStyle(busy) }}>Raise Re-test</button>
           )}
           <button data-tour="hyd-testd-back-btn" onClick={() => router.push('/dashboard/hydraulic/testing')} type="button" style={secondaryBtnStyle}>← Back</button>
-        </div>
+        </div>}
       </div>
 
       {error && <div style={errorBanner}>{Array.isArray(error) ? error.join(' ') : error}</div>}
@@ -222,7 +229,7 @@ export default function HydTestDetailPage() {
         </div>
       )}
 
-      {test && (
+      {test && !preview && (
         <ApprovalPanel
           key={`${test.id}-${test.status}-${approvalRequestId}`}
           entityType="hyd_test"
@@ -308,15 +315,20 @@ export default function HydTestDetailPage() {
       {test && readOnlyView && (
         <>
           <DetailCard tour="hyd-testd-record">
+            <VisSection vis={vis} k="detail_summary">
             <DetailSummary
               title={test.title}
               text={subject ? `Test on ${subject}.` : undefined}
               meta={<span data-tour="hyd-testd-badges" style={{ display: 'inline-flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>{badges}<span>· {formatDate(test.test_date)}</span></span>}
             />
+            </VisSection>
+            <VisSection vis={vis} k="detail_subject">
             <DetailGroup title="What was tested">
               <DetailRow label="Component serial no.">{test.component_serial}</DetailRow>
               <DetailRow label="Test standard">{test.test_standard}</DetailRow>
             </DetailGroup>
+            </VisSection>
+            <VisSection vis={vis} k="detail_conditions">
             <DetailGroup title="Test conditions">
               <DetailRow label="Test pressure">{dash(withUnit(test.test_pressure_bar, 'bar'))}</DetailRow>
               <DetailRow label="Hold time">{dash(withUnit(test.hold_time_min, 'min'))}</DetailRow>
@@ -325,19 +337,25 @@ export default function HydTestDetailPage() {
                 {test.ambient_temp_c == null && test.fluid_temp_c == null ? null : `${withUnit(test.ambient_temp_c, '°C')} / ${withUnit(test.fluid_temp_c, '°C')}`}
               </DetailRow>
             </DetailGroup>
-            <DetailGroup title="People" last={!test.observations && !test.remarks}>
+            </VisSection>
+            <VisSection vis={vis} k="detail_people">
+            <DetailGroup title="People" last={(!test.observations && !test.remarks) || !vis.showSection('detail_notes')}>
               <DetailRow label="Tested by">{test.tested_by_name}</DetailRow>
               <DetailRow label="Witnessed by">{test.witnessed_by}</DetailRow>
               <DetailRow label="Completed by">{test.completed_by_name ? `${test.completed_by_name}${test.completed_at ? ` · ${formatDateTime(test.completed_at)}` : ''}` : null}</DetailRow>
             </DetailGroup>
+            </VisSection>
             {(test.observations || test.remarks) && (
+              <VisSection vis={vis} k="detail_notes">
               <DetailGroup title="Notes" last>
                 {test.observations && <DetailRow label="Observations">{test.observations}</DetailRow>}
                 {test.remarks && <DetailRow label="Remarks">{test.remarks}</DetailRow>}
               </DetailGroup>
+              </VisSection>
             )}
           </DetailCard>
 
+          <VisSection vis={vis} k="detail_readings">
           <div data-tour="hyd-testd-readings" style={{ ...cardStyle, padding: 0, overflow: 'auto' }}>
             <p style={{ ...sectionTitle, padding: '20px 20px 0' }}>
               Readings ({test.readings.length}){test.failed_readings > 0 && <span style={{ color: DANGER.primary, marginLeft: 8 }}>{test.failed_readings} failed</span>}
@@ -368,11 +386,20 @@ export default function HydTestDetailPage() {
               </tbody>
             </table>
           </div>
+          </VisSection>
 
         </>
       )}
 
-      {test && (
+      {test && preview && (
+        <VisSection vis={vis} k="detail_documents">
+          <div style={cardStyle}>
+            <p style={sectionTitle}>Test Certificates &amp; Reports</p>
+            <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>The test&apos;s certificates and reports show here.</p>
+          </div>
+        </VisSection>
+      )}
+      {test && !preview && vis.showSection('detail_documents') && (
         <div style={{ marginTop: completed ? 0 : 20 }}>
           <HydDocumentsPanel entityType="test" entityId={test.id} title="Test Certificates & Reports" defaultDocType="test_certificate"
             currentUserId={user?.id} isAdmin={user?.role === 'admin'}

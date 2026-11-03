@@ -15,6 +15,12 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import Select from '@/components/shared/Select'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleItems } from '@/lib/storePreviewSamples'
+
+// Columns a role may hide (Store › Items › Visibility); Code, Name and Status are always shown.
+const HIDEABLE: Record<string, string> = { Type: 'type', Category: 'category', Subcategory: 'subcategory', UOM: 'uom', 'Technical Specification': 'description' }
 
 const filterSelectStyle: React.CSSProperties = {
   ...inputStyle, width: undefined, background: 'rgba(255,255,255,.7)', textOverflow: 'ellipsis',
@@ -24,8 +30,9 @@ export default function StoreItemsPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
   const router = useRouter()
   const { can } = useCan()
-  const [items, setItems] = useState<StoreItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const vis = useVisibility('store:items')
+  const [items, setItems] = useState<StoreItem[]>(vis.preview ? sampleItems : [])
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
@@ -85,6 +92,8 @@ export default function StoreItemsPage() {
   }
 
   const load = async () => {
+    // Role editor preview: made-up rows (initial state), nothing is loaded.
+    if (vis.preview) return
     setLoading(true)
     try {
       const data = await storeApi.listItems(filterParams())
@@ -107,9 +116,13 @@ export default function StoreItemsPage() {
 
   if (isLoading || !isAuthorized) return null
 
+  // The preview draws every column (hidden ones dimmed, with a toggle); normal use drops the hidden ones.
+  const showCol = (h: string) => !HIDEABLE[h] || vis.preview || vis.showColumn('items', HIDEABLE[h])
+  const headers = ['Code', 'Type', 'Category', 'Subcategory', 'Name', 'UOM', 'Technical Specification', 'Status'].filter(showCol)
+
   return (
     <div>
-      <StoreNav />
+      {!vis.preview && <StoreNav />}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <div>
@@ -126,7 +139,7 @@ export default function StoreItemsPage() {
         </div>
       </div>
 
-      <ItemImportDialog open={showImport} onClose={() => setShowImport(false)} onImported={load} />
+      {!vis.preview && <ItemImportDialog open={showImport} onClose={() => setShowImport(false)} onImported={load} />}
       <MessageDialog open={!!exportError} variant="error" title="Export Failed" message={exportError} onClose={() => setExportError('')} />
       <MessageDialog open={!!error} variant="error" title="Failed to Load Items" message={error} onClose={() => setError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
 
@@ -180,30 +193,34 @@ export default function StoreItemsPage() {
         )}
       </div>
 
-      <div ref={tableRef} data-tour="items-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', height: tableHeight }}>
+      <div ref={tableRef} data-tour="items-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', height: vis.preview ? undefined : tableHeight }}>
         {/* Columns are sized to their text (TableFit); only Technical Specification is ever cut with "…". */}
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              {['Code', 'Type', 'Category', 'Subcategory', 'Name', 'UOM', 'Technical Specification', 'Status'].map((h, hi) => (
-                <th key={h} data-fit-min={60} data-fit-cut={h === 'Technical Specification' ? '' : undefined} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', whiteSpace: 'nowrap', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}{hi === 0 && <RowCount count={items.length} />}</th>
-              ))}
+              {headers.map((h, hi) => {
+                const th: React.CSSProperties = { position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', whiteSpace: 'nowrap', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }
+                const head = <>{h}{hi === 0 && <RowCount count={items.length} />}</>
+                return HIDEABLE[h]
+                  ? <VisTh key={h} vis={vis} table="items" k={HIDEABLE[h]} data-fit-min={60} data-fit-cut={h === 'Technical Specification' ? '' : undefined} style={th}>{head}</VisTh>
+                  : <th key={h} data-fit-min={60} style={th}>{head}</th>
+              })}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
+            {loading && <tr><td colSpan={headers.length} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && items.length === 0 && (
-              <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No items match these filters.' : 'No items yet — use + Add Item to create the first one.'}</td></tr>
+              <tr><td colSpan={headers.length} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No items match these filters.' : 'No items yet — use + Add Item to create the first one.'}</td></tr>
             )}
             {items.map((item) => (
               <tr key={item.id} onClick={() => router.push(recordPath('/dashboard/store', item))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, whiteSpace: 'nowrap' }}>{item.item_code}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{(item.item_type && ITEM_TYPE_LABELS[item.item_type]) || item.item_type || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.category || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.subcategory || '—'}</td>
+                <VisTd vis={vis} table="items" k="type" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{(item.item_type && ITEM_TYPE_LABELS[item.item_type]) || item.item_type || '—'}</VisTd>
+                <VisTd vis={vis} table="items" k="category" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.category || '—'}</VisTd>
+                <VisTd vis={vis} table="items" k="subcategory" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.subcategory || '—'}</VisTd>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.item_name}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.uom || '—'}</td>
-                <td title={item.description || ''} style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description || '—'}</td>
+                <VisTd vis={vis} table="items" k="uom" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.uom || '—'}</VisTd>
+                <VisTd vis={vis} table="items" k="description" title={item.description || ''} style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description || '—'}</VisTd>
                 <td style={{ padding: '12px 16px' }}>
                   <Pill label={item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1).replace(/_/g, ' ') : '—'} hex={item.status === 'active' ? SUCCESS.hover : TEXT.muted} />
                 </td>

@@ -261,7 +261,7 @@ def _sr_closure_decided(db: Session, req, outcome: str, actor: User) -> None:
 
 
 register_transaction(TransactionType(
-    key=MACHINE_KEY, module_key="projects", subtab_key="service_projects", label="New machine",
+    key=MACHINE_KEY, module_key="projects", subtab_key="all_projects", label="New machine",
     entity_type=MACHINE_ENTITY, url="/dashboard/projects/service-projects/{id}",
     description="A newly registered machine, when Service → Settings › 'New machines need approval' is on. "
                 "Service requests can't be raised on the machine until it is approved.",

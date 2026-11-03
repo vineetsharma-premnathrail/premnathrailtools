@@ -14,6 +14,7 @@ from app.modules.organization.services.department_membership import (
 )
 from app.modules.organization.schemas.department import (
     DepartmentCreate, DepartmentUpdate, DepartmentResponse, DepartmentMemberResponse, DepartmentAddMemberPayload,
+    DepartmentMemberManagerPayload,
 )
 from app.modules.organization.services.department_heads import cross_unit_head_error
 from app.modules.organization.services.provisioning import unique_code
@@ -39,6 +40,18 @@ def _department_reader(user: User = Depends(get_current_user)) -> User:
 def _all_head_ids(dept: Department) -> list[int]:
     ids = [dept.head_user_id, dept.secondary_head_user_id, *(dept.additional_head_user_ids or [])]
     return [i for i in ids if i]
+
+
+def _member_responses(db: Session, users: list[User], head_ids: set[int]) -> list[DepartmentMemberResponse]:
+    manager_ids = {u.reporting_manager_id for u in users if u.reporting_manager_id}
+    names = dict(db.query(User.id, User.name).filter(User.id.in_(manager_ids)).all()) if manager_ids else {}
+    return [
+        DepartmentMemberResponse(
+            id=u.id, name=u.name, email=u.email, designation=u.designation, is_head=u.id in head_ids,
+            reporting_manager_id=u.reporting_manager_id, reporting_manager_name=names.get(u.reporting_manager_id),
+        )
+        for u in users
+    ]
 
 
 def _to_response(dept: Department, db: Session) -> DepartmentResponse:
@@ -126,10 +139,7 @@ async def list_department_members(
         head_user = db.query(User).filter(User.id == head_id).first()
         if head_user and (not department.branch_id or head_user.branch_id == department.branch_id):
             members.append(head_user)
-    return [
-        DepartmentMemberResponse(id=u.id, name=u.name, email=u.email, designation=u.designation, is_head=u.id in head_ids)
-        for u in members
-    ]
+    return _member_responses(db, members, head_ids)
 
 
 @router.post("/{department_id}/members", response_model=DepartmentMemberResponse, status_code=201)
@@ -163,8 +173,68 @@ async def add_department_member(
     )
     db.commit()
     db.refresh(user)
+    return _member_responses(db, [user], set(_all_head_ids(department)))[0]
+
+
+def _reporting_loop_error(db: Session, member: User, manager_id: int) -> str | None:
+    """Why `manager_id` can't be `member`'s reporting manager, or None."""
+    if manager_id == member.id:
+        return f"{member.name} can't report to themself. Pick the person they actually report to, or leave it empty."
+    manager = db.get(User, manager_id)
+    if not manager or not manager.is_active:
+        return "That person is not an active user any more. Reload the page and pick someone else."
+    chain, cur = [manager], manager
+    while cur.reporting_manager_id and len(chain) <= 100:
+        if cur.reporting_manager_id == member.id:
+            path = " → ".join(u.name for u in chain) + f" → {member.name}"
+            return (f"{manager.name} already reports up to {member.name} ({path}), so this would make a loop. "
+                    f"Change {manager.name}'s 'Reports to' first, or pick someone else.")
+        cur = db.get(User, cur.reporting_manager_id)
+        if not cur or cur in chain:
+            break
+        chain.append(cur)
+    return None
+
+
+@router.put("/{department_id}/members/{user_id}/manager", response_model=DepartmentMemberResponse)
+async def set_member_manager(
+    department_id: int,
+    user_id: int,
+    payload: DepartmentMemberManagerPayload,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_tab_action("organization", "department", "edit")),
+):
+    """Set who a department member reports to (User.reporting_manager_id). This
+    is the reporting hierarchy the approval engine's "Requester's reporting
+    manager" stage and the task pickers' "my team" rule follow."""
+    department = db.query(Department).filter(Department.id == department_id).first()
+    if not department:
+        raise HTTPException(status_code=404, detail="Department not found")
     head_ids = set(_all_head_ids(department))
-    return DepartmentMemberResponse(id=user.id, name=user.name, email=user.email, designation=user.designation, is_head=user.id in head_ids)
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user or (user.id not in head_ids and not db.query(User.id).filter(User.id == user_id, members_condition(department)).first()):
+        raise HTTPException(
+            status_code=404,
+            detail=f"This person is not a member of department '{department.name}'. Reload the page — they may have been moved to another department.",
+        )
+    new_id = payload.reporting_manager_id
+    old_id = user.reporting_manager_id
+    if new_id == old_id:
+        return _member_responses(db, [user], head_ids)[0]
+    if new_id:
+        error = _reporting_loop_error(db, user, new_id)
+        if error:
+            raise HTTPException(status_code=422, detail=error)
+    user.reporting_manager_id = new_id
+    names = dict(db.query(User.id, User.name).filter(User.id.in_([i for i in (old_id, new_id) if i])).all())
+    record_audit(
+        db, entity_type="department", entity_id=department.id, action="member_manager_changed", module_key="organization",
+        summary=f"{user.name or user.email} now reports to {names.get(new_id) or 'no one'} (was: {names.get(old_id) or 'no one'}).",
+        old_value={"user_id": user.id, "reporting_manager_id": old_id}, new_value={"user_id": user.id, "reporting_manager_id": new_id},
+    )
+    db.commit()
+    db.refresh(user)
+    return _member_responses(db, [user], head_ids)[0]
 
 
 @router.delete("/{department_id}/members/{user_id}", status_code=204)

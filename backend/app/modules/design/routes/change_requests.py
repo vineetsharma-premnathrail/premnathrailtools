@@ -7,6 +7,7 @@ from datetime import date
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
+from app.core import visibility
 from app.core.permissions import require_app_access, require_tab_access
 from app.core.priority import map_legacy_priority
 from app.db.session import get_db
@@ -46,6 +47,8 @@ router = APIRouter(
 )
 
 _NOTIFY_ENTITY = "design_ecr"
+# Role visibility catalogue entry (core/features/design.py): ECR source / urgency values per role.
+VISIBILITY_KEY = "design:change_notices"
 _PHRASE = {
     "open": "open (waiting for the impact check)", "impact_checked": "with the change board",
     "approved": "approved", "rejected": "rejected", "deferred": "deferred", "withdrawn": "withdrawn",
@@ -319,6 +322,10 @@ async def create_change_request(payload: DesignChangeRequestCreate, background_t
     """Anyone with the Design app may raise an ECR (plan: Production, Quality,
     Purchase, customer via BD, Design)."""
     _validate(db, payload.model_dump())
+    # Role visibility (Role & Permissions › Design › Changes › Visibility): a source / urgency the role does not
+    # offer is refused with the reason (the form's defaults are checked too).
+    visibility.ensure_option_allowed(user, VISIBILITY_KEY, "source", payload.source)
+    visibility.ensure_option_allowed(user, VISIBILITY_KEY, "urgency", payload.urgency)
     validate_links(db, pm_project_id=payload.pm_project_id, erp_project_id=payload.erp_project_id)
     if not payload.items:
         raise HTTPException(status_code=400, detail="List at least one released drawing or BOM this change affects.")
@@ -359,6 +366,10 @@ async def update_change_request(ecr_id: int, payload: DesignChangeRequestUpdate,
     changes = payload.model_dump(exclude_unset=True)
     rows = changes.pop("items", None)
     _validate(db, changes)
+    for key in ("source", "urgency"):
+        if changes.get(key) and changes[key] != getattr(ecr, key):
+            # Only a CHANGED value is checked: an ECR already holding one this role may not pick keeps it.
+            visibility.ensure_option_allowed(user, VISIBILITY_KEY, key, changes[key])
     validate_links(db, **{k: v for k, v in changes.items() if k in ("pm_project_id", "erp_project_id")})
     for key in ("title", "reason", "proposed_change", "source", "urgency"):
         if key in changes and not changes[key]:

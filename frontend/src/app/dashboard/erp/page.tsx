@@ -8,9 +8,11 @@ import { erpApi } from '@/lib/api'
 import { ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import { Section, StatChip, RowCount } from '@/components/shared/ui'
+import { BarChart, PieChart } from '@/components/shared/charts'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 import { formatDate } from '@/lib/format'
+import { canViewTab } from '@/lib/tabAccess'
 
 const PRIORITY_COLORS: Record<string, string> = {
   urgent: '#dc2626',
@@ -63,13 +65,25 @@ export default function ErpDashboardPage() {
   // Clicking what is already applied clears it, so every chip is a toggle.
   const applyFilter = (next: TicketFilter) => setFilter((cur) => (sameFilter(cur, next) ? NO_FILTER : next))
 
+  // Role & Permissions › Service Module › Dashboard decides who sees this page; anyone without it lands on
+  // the first Service tab they may open. The figures themselves come from the Service Requests list
+  // (server-gated by Service Requests › View and data access).
+  const seeDashboard = canViewTab('erp', 'dashboard', user)
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || seeDashboard) return
+    const next = ([['service_requests', '/dashboard/erp/service-requests'], ['service_contracts', '/dashboard/erp/service-contracts'],
+      ['reports', '/dashboard/erp/reports'], ['recycle_bin', '/dashboard/erp/recycle-bin']] as const)
+      .find(([key]) => canViewTab('erp', key, user))
+    router.replace(next ? next[1] : '/dashboard')
+  }, [isAuthorized, seeDashboard, user, router])
+
+  useEffect(() => {
+    if (!isAuthorized || !seeDashboard) return
     erpApi.listServiceRequests({ limit: 1000 })
       .then(setSrs)
       .catch((e) => setLoadErrors([`Service requests: ${extractErrorMessages(e, 'could not be loaded — check your connection and reload.').join(' ')}`]))
       .finally(() => setLoading(false))
-  }, [isAuthorized])
+  }, [isAuthorized, seeDashboard])
 
   const stats = useMemo(() => {
     return {
@@ -106,7 +120,7 @@ export default function ErpDashboardPage() {
   )
   const isFiltered = !sameFilter(filter, NO_FILTER)
 
-  if (isLoading || !isAuthorized) return null
+  if (isLoading || !isAuthorized || !seeDashboard) return null
 
   return (
     <div>
@@ -202,75 +216,6 @@ export default function ErpDashboardPage() {
           </table>
         </div>
         </div>
-      </div>
-    </div>
-  )
-}
-
-const rowButtonReset: React.CSSProperties = { background: 'none', border: 'none', padding: 0, font: 'inherit', textAlign: 'left', cursor: 'pointer' }
-
-function BarChart({ data, colorMap, onSelect, isActive }: { data: [string, number][]; colorMap: Record<string, string>; onSelect: (label: string) => void; isActive: (label: string) => boolean }) {
-  const max = Math.max(...data.map(([, v]) => v), 1)
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {data.map(([label, value]) => (
-        // ui-audit-ignore-next-line custom-button — chart row used as a filter toggle
-        <button type="button" key={label} onClick={() => onSelect(label)} aria-pressed={isActive(label)} title={isActive(label) ? 'Click to show all tickets' : `Show ${label.replace(/_/g, ' ')} tickets`}
-          style={{ ...rowButtonReset, display: 'flex', alignItems: 'center', gap: 10, width: '100%', borderRadius: 6, background: isActive(label) ? 'rgba(234,88,12,0.08)' : 'none' }}>
-          <span style={{ fontSize: 11.5, color: '#57534e', width: 130, flexShrink: 0, textTransform: 'capitalize', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {label.replace(/_/g, ' ')}
-          </span>
-          <div style={{ flex: 1, height: 10, borderRadius: 6, background: 'rgba(0,0,0,0.05)', overflow: 'hidden' }}>
-            <div style={{ width: `${(value / max) * 100}%`, height: '100%', background: colorMap[label] || '#FF7A45', borderRadius: 6 }} />
-          </div>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#1f1108', width: 24, textAlign: 'right' }}>{value}</span>
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function PieChart({ data, colorMap, onSelect, isActive }: { data: [string, number][]; colorMap: Record<string, string>; onSelect: (label: string) => void; isActive: (label: string) => boolean }) {
-  const total = data.reduce((sum, [, v]) => sum + v, 0) || 1
-  let cumulative = 0
-  const radius = 15.9155
-  const circumference = 2 * Math.PI * radius
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-      <svg width="120" height="120" viewBox="0 0 36 36">
-        <circle cx="18" cy="18" r={radius} fill="none" stroke="rgba(0,0,0,0.05)" strokeWidth="4" />
-        {data.map(([label, value]) => {
-          const fraction = value / total
-          const dash = fraction * circumference
-          const offset = -cumulative * circumference
-          cumulative += fraction
-          return (
-            <circle
-              key={label}
-              cx="18"
-              cy="18"
-              r={radius}
-              fill="none"
-              stroke={colorMap[label] || '#a8a29e'}
-              strokeWidth="4"
-              strokeDasharray={`${dash} ${circumference - dash}`}
-              strokeDashoffset={offset}
-              transform="rotate(-90 18 18)"
-            />
-          )
-        })}
-      </svg>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {data.map(([label, value]) => (
-          // ui-audit-ignore-next-line custom-button — legend row used as a filter toggle
-          <button type="button" key={label} onClick={() => onSelect(label)} aria-pressed={isActive(label)} title={isActive(label) ? 'Click to show all tickets' : `Show active ${label} tickets`}
-            style={{ ...rowButtonReset, display: 'flex', alignItems: 'center', gap: 6, borderRadius: 6, background: isActive(label) ? 'rgba(234,88,12,0.08)' : 'none' }}>
-            <span style={{ width: 9, height: 9, borderRadius: '50%', background: colorMap[label] || '#a8a29e', flexShrink: 0 }} />
-            <span style={{ fontSize: 12, color: '#57534e', textTransform: 'capitalize' }}>{label}</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#1f1108' }}>{value}</span>
-          </button>
-        ))}
       </div>
     </div>
   )

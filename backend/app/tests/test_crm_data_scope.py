@@ -68,7 +68,8 @@ def test_own_scope_limits_lists_records_and_children(client, db):
 
     assert _ids(client.get(f"{API}/inquiries", headers=h)) == {mine["inq"]}
     assert _ids(client.get(f"{API}/tenders", headers=h)) == {mine["tnd"]}
-    assert _ids(client.get(f"{API}/organizations", headers=h)) == {mine["org"]}
+    # Customer organizations are a shared master (2026-10-27): every CRM user sees all of them.
+    assert _ids(client.get(f"{API}/organizations", headers=h)) == {mine["org"], theirs["org"]}
     # Dropdown lookup mode stays organization-wide.
     assert {mine["org"], theirs["org"]} <= _ids(client.get(f"{API}/organizations", params={"picker": True}, headers=h))
 
@@ -81,7 +82,7 @@ def test_own_scope_limits_lists_records_and_children(client, db):
     assert client.get(f"{API}/inquiries/{mine['inq']}/quotations", headers=h).status_code == 200
     assert client.get(f"{API}/inquiries/{theirs['inq']}/stages", headers=h).status_code == 403
     assert client.get(f"{API}/tenders/{theirs['tnd']}", headers=h).status_code == 403
-    assert client.get(f"{API}/organizations/{theirs['org']}/detail", headers=h).status_code == 403
+    assert client.get(f"{API}/organizations/{theirs['org']}/detail", headers=h).status_code == 200  # shared master
     assert client.get(f"{API}/documents", params={"related_module": "inquiry", "related_id": theirs["inq"]},
                       headers=h).status_code == 403
     assert client.get(f"{API}/activities", params={"related_module": "tender", "related_id": theirs["tnd"]},
@@ -118,7 +119,8 @@ def test_dashboard_counts_are_scoped_and_override_wins(client, db):
     alice.data_access_scopes = {"crm": "own"}  # personal override, no role needed
     db.commit()
     d = client.get(f"{API}/dashboard", headers=_auth(alice)).json()
-    assert (d["total_organizations"], d["total_inquiries"], d["total_tenders"]) == (1, 1, 1)
+    # Organizations are shared (2026-10-27), so only inquiries / tenders narrow.
+    assert (d["total_organizations"], d["total_inquiries"], d["total_tenders"]) == (2, 1, 1)
     assert {i["id"] for i in d["recent_inquiries"]} == {rows[alice.id]["inq"]}
 
     alice.data_access_scopes = {"crm": "organization"}

@@ -17,6 +17,8 @@ import type { RndProjectOriginV2 } from '@/types/rndIntake'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { Req, Optional, SHEET, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
+import type { VisibilityApi } from '@/lib/visibility'
+import { VisOptionValues } from '@/lib/visibilityComponents'
 
 export interface OriginDraft {
   origin: RndProjectOriginV2 | ''
@@ -157,20 +159,25 @@ const PROOF_HINT: Record<string, string> = {
   new_project: 'Proof: attach the proposal or management note in Attachments.',
 }
 
-export default function ProjectOriginFields({ value, onChange, creating }: {
+export default function ProjectOriginFields({ value, onChange, creating, vis }: {
   value: OriginDraft
   onChange: (next: OriginDraft) => void
   /** New project form: attachments are mandatory proof for a New Project. */
   creating?: boolean
+  /** Role visibility of the project form (rnd:projects): narrows Origin / Reason to the values the role offers
+   *  (a saved project keeps its own value). Omitted = every value. */
+  vis?: VisibilityApi
 }) {
   const d = value
+  const origins = vis ? vis.options('origin', ORIGINS, (o) => o.value).concat(ORIGINS.filter((o) => o.value === d.origin && !vis.options('origin', ORIGINS, (x) => x.value).includes(o))) : ORIGINS
+  const reasons = vis ? vis.options('improvement_reason', REASONS, (r) => r.value).concat(REASONS.filter((r) => r.value === d.reason && !vis.options('improvement_reason', REASONS, (x) => x.value).includes(r))) : REASONS
   const set = (patch: Partial<OriginDraft>) => onChange({ ...d, ...patch })
   const needNote = d.origin === 'new_project'
 
   return (
     <div>
       <div data-tour="rnd-pf-origin" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
-        {ORIGINS.map((o) => {
+        {origins.map((o) => {
           const on = d.origin === o.value
           const Icon = o.icon
           return (
@@ -190,6 +197,7 @@ export default function ProjectOriginFields({ value, onChange, creating }: {
           )
         })}
       </div>
+      {vis && <VisOptionValues vis={vis} dropdown="origin" />}
 
       {d.origin === 'existing_projects' && (
         <div data-tour="rnd-pf-origin-source" style={{ marginTop: 14 }}>
@@ -203,8 +211,9 @@ export default function ProjectOriginFields({ value, onChange, creating }: {
               <label style={sheetLabel}>Reason <Req /></label>
               <Select style={sheetInput} value={d.reason} onChange={(e) => set({ reason: e.target.value as RndImprovementReason })}>
                 <option value="">Select reason…</option>
-                {REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                {reasons.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
               </Select>
+              {vis && <VisOptionValues vis={vis} dropdown="improvement_reason" />}
             </div>
           </div>
         </div>

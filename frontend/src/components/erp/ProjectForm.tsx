@@ -3,6 +3,8 @@
 import Select from '@/components/shared/Select'
 import { useEffect, useRef, useState } from 'react'
 import { useFormDraft } from '@/lib/formDraft'
+import { useVisibility } from '@/lib/visibility'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
 import DraftBanner from '@/components/shared/DraftBanner'
 import { DirectoryUser, Project } from '@/types'
 import { usersApi } from '@/lib/api'
@@ -99,7 +101,7 @@ type FormState = {
   notes: string
 }
 
-function toFormState(initial?: Partial<Project>): FormState {
+function toFormState(initial?: Partial<Project>, defaultStatus = 'active'): FormState {
   return {
     serial_number: initial?.serial_number || '',
     model_name: initial?.model_name || '',
@@ -107,7 +109,7 @@ function toFormState(initial?: Partial<Project>): FormState {
     engine_number: initial?.engine_number || '',
     chassis_number: initial?.chassis_number || '',
     application_type: initial?.application_type && !APPLICATION_TYPES.includes(initial.application_type) ? 'Other' : initial?.application_type || '',
-    status: initial?.status || 'active',
+    status: initial?.status || defaultStatus,
     year_of_manufacture: initial?.year_of_manufacture || '',
     po_number: initial?.po_number || '',
     po_date: initial?.po_date || '',
@@ -173,9 +175,20 @@ export default function ProjectForm({
   nav?: React.ReactNode
 }) {
   const [tabIndex, setTabIndex] = useState(0)
-  const tabLabels: string[] = [...TABS]
   const projectMode = !!projectName
-  const [form, setForm] = useState<FormState>(() => toFormState(initial))
+  // Role Visibility (core/features/projects.py): which sections show and which Operational Status
+  // values are offered. A tab whose only section is hidden (Technical Specs, Documents) goes with it;
+  // tabIndex keeps addressing TABS so the sections below stay as they are.
+  const vis = useVisibility('projects:all_projects')
+  const showSection = vis.showSection
+  const visibleTabs = TABS.map((t, i) => ({ t, i })).filter(({ i }) => vis.preview || ((i !== 2 || showSection('technical_specs')) && (i !== 4 || showSection('attachments'))))
+  const tabPos = Math.max(0, visibleTabs.findIndex((x) => x.i === tabIndex))
+  // Operational Status: the role's allowed values, plus the value a saved machine already holds. A new
+  // machine starts on Active when the role allows it, else on the first allowed value.
+  const allowedStatuses = vis.options('status', STATUS_OPTIONS, (o) => o.value)
+  const statusChoices = STATUS_OPTIONS.filter((o) => allowedStatuses.includes(o) || (!!initial && o.value === initial.status))
+  const defaultStatus = allowedStatuses.some((o) => o.value === 'active') ? 'active' : allowedStatuses[0].value
+  const [form, setForm] = useState<FormState>(() => toFormState(initial, defaultStatus))
   const [isExport, setIsExport] = useState(!!initial?.is_export)
   const [extendedWarranty, setExtendedWarranty] = useState(!!initial?.extended_warranty)
   const [extendedWarrantyEnd, setExtendedWarrantyEnd] = useState(initial?.extended_warranty_end || '')
@@ -187,7 +200,7 @@ export default function ProjectForm({
     initial?.application_type && !APPLICATION_TYPES.includes(initial.application_type) ? initial.application_type : ''
   )
   // A new machine's typed data survives a refresh / network failure (lib/formDraft.ts). The page-level project tab fields live in the page, not here.
-  const draft = useFormDraft(initial ? null : 'erp-machine-new',
+  const draft = useFormDraft(initial || vis.preview ? null : 'erp-machine-new',  // no draft in the Role editor preview
     { form, isExport, extendedWarranty, extendedWarrantyEnd, warrantyStatus, machineTypeCustom, applicationTypeCustom },
     (d) => {
       setForm(d.form); setIsExport(!!d.isExport); setExtendedWarranty(!!d.extendedWarranty); setExtendedWarrantyEnd(d.extendedWarrantyEnd || '')
@@ -311,24 +324,24 @@ export default function ProjectForm({
     }
   }
 
-  const goNext = () => setTabIndex((i) => Math.min(tabLabels.length - 1, i + 1))
-  const goPrev = () => setTabIndex((i) => Math.max(0, i - 1))
+  const goNext = () => setTabIndex(visibleTabs[Math.min(visibleTabs.length - 1, tabPos + 1)].i)
+  const goPrev = () => setTabIndex(visibleTabs[Math.max(0, tabPos - 1)].i)
 
   const errorText = Array.isArray(error) ? error.join(' ') : error
 
   return (
     <form onSubmit={handleSubmit}>
-      <FormPage tour="erp-pf-page" icon={initial ? 'edit' : 'truck'} title={title} subtitle={subtitle} onBack={onCancel} backTour="erp-pf-back" nav={nav}
+      <FormPage tour="erp-pf-page" icon={initial ? 'edit' : 'truck'} title={title} subtitle={subtitle} onBack={vis.preview ? undefined : onCancel} backTour="erp-pf-back" nav={vis.preview ? undefined : nav}
         footer={<>
           <button type="button" onClick={onCancel} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)} data-tour="erp-pf-cancel-btn">Cancel</button>
-          {tabIndex > 0 && <button type="button" onClick={goPrev} style={sheetBtn('secondary', SHEET.INK)}><SheetIcon name="left" size={14} />Previous</button>}
-          {tabIndex < tabLabels.length - 1 &&<button type="button" onClick={goNext} style={sheetBtn('secondary', SHEET.INK)}>Next<SheetIcon name="right" size={14} /></button>}
-          <button type="submit" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)} data-tour="erp-pf-submit-btn">
+          {tabPos > 0 && <button type="button" onClick={goPrev} style={sheetBtn('secondary', SHEET.INK)}><SheetIcon name="left" size={14} />Previous</button>}
+          {tabPos < visibleTabs.length - 1 &&<button type="button" onClick={goNext} style={sheetBtn('secondary', SHEET.INK)}>Next<SheetIcon name="right" size={14} /></button>}
+          <button type="submit" disabled={saving || vis.preview} style={sheetBtn('primary', SHEET.BLUE, saving || vis.preview)} data-tour="erp-pf-submit-btn">
             <SheetIcon name="check" size={16} />{saving ? 'Saving…' : submitLabel}
           </button>
         </>}>
       <div style={{ display: 'flex', gap: 4, padding: '0 24px', borderBottom: `1px solid ${SHEET.LINE}`, flexWrap: 'wrap' }}>
-        {tabLabels.map((t, i) => (
+        {visibleTabs.map(({ t, i }) => (
           <button
             key={t}
             type="button"
@@ -364,6 +377,7 @@ export default function ProjectForm({
         )}
         {projectName?.banner}
         {tabIndex === 0 && (
+          <VisSection vis={vis} k="machine_identity">
           <SheetSection icon="truck" title="Machine Asset Identity">
             <Grid3>
               {projectName && (
@@ -394,8 +408,9 @@ export default function ProjectForm({
               <Field label="Year of Manufacture"><div data-tour="erp-pf-year"><YearField value={form.year_of_manufacture} onChange={(v) => set('year_of_manufacture', v)} style={sheetInput} /></div></Field>
               <Field label="Operational Status">
                 <Select value={form.status} onChange={(e) => set('status', e.target.value)} style={sheetInput} data-tour="erp-pf-status">
-                  {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  {statusChoices.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </Select>
+                <VisOptionValues vis={vis} dropdown="status" />
               </Field>
               <Field label="Application Type">
                 <Select value={form.application_type} onChange={(e) => set('application_type', e.target.value)} style={sheetInput} data-tour="erp-pf-app-type">
@@ -414,10 +429,12 @@ export default function ProjectForm({
               <textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={3} placeholder="Enter other critical identity comments..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-pf-notes" />
             </Field>
           </SheetSection>
+          </VisSection>
         )}
 
         {tabIndex === 1 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <VisSection vis={vis} k="site_location">
             <SheetSection icon="building" title="Operational Site Location">
               <span data-tour="erp-pf-export" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: SHEET.BODY }}>
                 <Checkbox
@@ -455,7 +472,9 @@ export default function ProjectForm({
               </Row>
               <Field label="Zone"><input value={form.zone} onChange={(e) => set('zone', e.target.value)} placeholder="e.g. Northern Railway (NR)" style={sheetInput} data-tour="erp-pf-zone" /></Field>
             </SheetSection>
+            </VisSection>
 
+            <VisSection vis={vis} k="client_details">
             <SheetSection icon="users" title="Client Details">
               <Field label="Client Company" req><input value={form.client_company} onChange={(e) => set('client_company', e.target.value)} placeholder="Enter client company name" style={sheetInput} data-tour="erp-pf-client-company" /></Field>
               <Field label="Contact Person"><input value={form.client_name} onChange={(e) => set('client_name', e.target.value)} placeholder="Enter contact person name" style={sheetInput} data-tour="erp-pf-client-contact" /></Field>
@@ -470,11 +489,12 @@ export default function ProjectForm({
                 <textarea value={form.client_address} onChange={(e) => set('client_address', e.target.value)} rows={2} placeholder="Client corporate/billing address..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-pf-client-address" />
               </Field>
             </SheetSection>
-
+            </VisSection>
           </div>
         )}
 
         {tabIndex === 2 && (
+          <VisSection vis={vis} k="technical_specs">
           <SheetSection icon="gear" title="Technical Specifications" extra={<Optional />}>
             <Field label="Specifications">
               <textarea value={form.specifications} onChange={(e) => set('specifications', e.target.value)} rows={3} placeholder="List model engine power, capacity, and key metrics..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-pf-specs" />
@@ -487,10 +507,12 @@ export default function ProjectForm({
               <textarea value={form.tech_notes} onChange={(e) => set('tech_notes', e.target.value)} rows={2} placeholder="Additional engineering notes..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-pf-tech-notes" />
             </Field>
           </SheetSection>
+          </VisSection>
         )}
 
         {tabIndex === 3 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <VisSection vis={vis} k="procurement_delivery">
             <SheetSection icon="cart" title="Procurement & Delivery Information">
               <Grid3>
                 <Field label={projectMode ? 'Customer PO Number' : 'PO Number'} req={projectMode}><input value={form.po_number} onChange={(e) => set('po_number', e.target.value)} placeholder="Purchase Order Ref" style={sheetInput} data-tour="erp-pf-po" /></Field>
@@ -500,7 +522,9 @@ export default function ProjectForm({
                 <Field label="Handover Date"><div data-tour="erp-pf-handover-date"><DateField value={form.handover_date} onChange={(v) => set('handover_date', v)} /></div></Field>
               </Grid3>
             </SheetSection>
+            </VisSection>
 
+            <VisSection vis={vis} k="warranty">
             <SheetSection icon="shield" title="Warranty Coverage Details">
               <Field label="Warranty Status">
                 <Select value={warrantyStatus} onChange={(e) => setWarrantyStatus(e.target.value)} style={sheetInput} data-tour="erp-pf-warranty-status">
@@ -534,10 +558,12 @@ export default function ProjectForm({
                 <Field label="AMC End Date"><DateField value={form.amc_end_date} onChange={(v) => set('amc_end_date', v)} /></Field>
               )}
             </SheetSection>
+            </VisSection>
           </div>
         )}
 
         {tabIndex === 4 && (
+          <VisSection vis={vis} k="attachments">
           <SheetSection icon="clip" title="Attachments & Documents">
             <p style={{ ...sheetHint, margin: '0 0 10px' }}>PDFs, Office files, images, and videos — max 10GB each</p>
             <div
@@ -591,6 +617,7 @@ export default function ProjectForm({
               </div>
             )}
           </SheetSection>
+          </VisSection>
         )}
 
       </div>

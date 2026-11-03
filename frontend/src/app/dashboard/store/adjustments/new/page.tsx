@@ -8,7 +8,7 @@ import { storeApi, usersApi } from '@/lib/api'
 import { StoreItem, StoreLocation, StoreStockBalance, DirectoryUser } from '@/types'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
-import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import { FormPage, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import StoreNav from '@/components/store/StoreNav'
 import { recordPath } from '@/lib/recordRef'
@@ -16,14 +16,24 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
 import { CONTROL } from '@/lib/theme'
+import { RowCount } from '@/components/shared/ui'
+import { useVisibility } from '@/lib/visibility'
+import { VisColumns } from '@/components/quality/VisColumns'
+import { VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
 
 interface Line { itemId: string; actualQuantity: string; remarks: string }
+
+const lineTh: React.CSSProperties = { ...sheetLabel, textAlign: 'left', padding: '0 6px 6px 0', whiteSpace: 'nowrap' }
+const lineTd: React.CSSProperties = { padding: '6px 6px 6px 0', verticalAlign: 'top' }
 
 export default function NewStockAdjustmentPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('store')
   const router = useRouter()
   // The role's assign-to rule for the approver (Role & Permissions › Store › Adjustments).
   const allowApprover = useAssigneeFilter('store:adjustments.approver')
+  // Role visibility (Store › Adjustments › Visibility): Remarks may be hidden; hiding Existing Qty makes it a blind count.
+  const vis = useVisibility('store:adjustments')
+  const showExisting = vis.preview || vis.showColumn('form_items', 'existing_qty')
 
   const [items, setItems] = useState<StoreItem[]>([])
   const [locations, setLocations] = useState<StoreLocation[]>([])
@@ -36,7 +46,8 @@ export default function NewStockAdjustmentPage() {
   const [remarks, setRemarks] = useState('')
   const [lines, setLines] = useState<Line[]>([{ itemId: '', actualQuantity: '', remarks: '' }])
 
-  const draft = useFormDraft('store-adjustment-new', { locationId, approvedById, reason, remarks, lines }, (d) => {
+  // Role editor preview: nothing is saved, no draft, module nav / Back left out.
+  const draft = useFormDraft(vis.preview ? null : 'store-adjustment-new', { locationId, approvedById, reason, remarks, lines }, (d) => {
     setLocationId(d.locationId ?? ''); setApprovedById(d.approvedById ?? ''); setReason(d.reason ?? ''); setRemarks(d.remarks ?? '')
     setLines(d.lines?.length ? d.lines : [{ itemId: '', actualQuantity: '', remarks: '' }])
   })
@@ -114,19 +125,19 @@ export default function NewStockAdjustmentPage() {
   if (isLoading || !isAuthorized) return null
 
   return (
-    <FormPage nav={<StoreNav />} icon="edit" title="New Stock Adjustment" subtitle="Correct the book quantity to what is physically there — an approver signs it off before stock changes."
-      onBack={() => router.push('/dashboard/store/adjustments')} backTour="adjustment-back-btn"
+    <FormPage nav={vis.preview ? undefined : <StoreNav />} icon="edit" title="New Stock Adjustment" subtitle="Correct the book quantity to what is physically there — an approver signs it off before stock changes."
+      onBack={vis.preview ? undefined : () => router.push('/dashboard/store/adjustments')} backTour="adjustment-back-btn"
       footer={<>
-        <button data-tour="adjustment-cancel-btn" type="button" disabled={busy} onClick={() => router.push('/dashboard/store/adjustments')} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
-        <button data-tour="adjustment-save-btn" type="button" disabled={busy} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="send" size={16} />{busy ? 'Saving…' : 'Send for Approval'}</button>
+        <button data-tour="adjustment-cancel-btn" type="button" disabled={busy || vis.preview} onClick={() => router.push('/dashboard/store/adjustments')} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+        <button data-tour="adjustment-save-btn" type="button" disabled={busy || vis.preview} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="send" size={16} />{busy ? 'Saving…' : 'Send for Approval'}</button>
       </>}>
       <DraftBanner draft={draft} />
       <MessageDialog open={errors.length > 0} variant="error" title="Cannot Save Stock Adjustment" message={errors} onClose={() => setErrors([])} />
       <MessageDialog open={loadErrors.length > 0} variant="error" title="Couldn't Load Form Data" message={loadErrors} onClose={() => setLoadErrors([])} />
 
-      <SheetColumns
+      <VisColumns vis={vis} rightKeys={['remarks']}
         left={
-          <SheetSection icon="list" title="Adjustment Details">
+          <VisSection vis={vis} k="adjustment_details"><SheetSection icon="list" title="Adjustment Details">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '1 1 200px' }}>
                 <label style={sheetLabel}>Store <Req /></label>
@@ -151,48 +162,64 @@ export default function NewStockAdjustmentPage() {
             </div>
             <label style={{ ...sheetLabel, marginTop: 14 }}>Reason <Optional /></label>
             <input data-tour="adjustment-reason" style={sheetInput} value={reason} onChange={(e) => setReason(e.target.value)} />
-          </SheetSection>
+          </SheetSection></VisSection>
         }
         right={
-          <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
+          <VisSection vis={vis} k="remarks"><SheetSection icon="chat" title="Remarks" extra={<Optional />}>
             <textarea data-tour="adjustment-remarks" style={{ ...sheetInput, minHeight: 90, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
-          </SheetSection>
+          </SheetSection></VisSection>
         }
       />
 
-      <div style={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
+      <VisSection vis={vis} k="items" frame={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
         <SheetSection icon="box" title="Items">
-          {!locationId && <p style={{ fontSize: 12.5, color: SHEET.MUTED, margin: '0 0 10px' }}>Select a store first to see current system quantities.</p>}
+          {!locationId && <p style={{ fontSize: 12.5, color: SHEET.MUTED, margin: '0 0 10px' }}>{showExisting ? 'Select a store first to see current system quantities.' : 'Select a store first, then enter the counted quantities.'}</p>}
+          {/* One row per counted line; Existing Qty + the difference are one hideable column (hidden = a blind count). */}
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+              <thead>
+                <tr>
+                  <th style={lineTh}>Item <Req /><RowCount count={lines.length} /></th>
+                  <VisTh vis={vis} table="form_items" k="existing_qty" style={{ ...lineTh, width: 120 }}>Existing Qty</VisTh>
+                  <th style={{ ...lineTh, width: 120 }}>Actual Qty <Req /></th>
+                  <VisTd vis={vis} table="form_items" k="existing_qty" style={{ ...lineTh, width: 90 }}>Difference</VisTd>
+                  <th style={{ ...lineTh, width: 44 }} aria-label="Remove" />
+                </tr>
+              </thead>
+              <tbody>
           {lines.map((line, idx) => {
             const existingQty = existingQtyFor(line.itemId)
+            const diff = line.actualQuantity !== '' && existingQty != null ? Number(line.actualQuantity) - existingQty : null
             return (
-              <div key={idx} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 10, flexWrap: 'wrap' }}>
-                <div style={{ flex: '1 1 280px' }}>
-                  {idx === 0 && <label style={sheetLabel}>Item <Req /></label>}
+              <tr key={idx} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+                <td style={lineTd}>
                   <Select {...(idx === 0 ? { 'data-tour': 'adjustment-item' } : {})} style={sheetInput} value={line.itemId} onChange={(e) => updateLine(idx, { itemId: e.target.value })} disabled={!locationId}>
                     <option value="">— Select —</option>
                     {items.map((i) => <option key={i.id} value={i.id}>{i.item_code} — {i.item_name}</option>)}
                   </Select>
-                </div>
-                <div style={{ flex: '0 0 120px' }}>
-                  {idx === 0 && <label style={sheetLabel}>Existing Qty</label>}
+                </td>
+                <VisTd vis={vis} table="form_items" k="existing_qty" style={lineTd}>
                   <div {...(idx === 0 ? { 'data-tour': 'adjustment-existing-qty' } : {})} style={{ ...sheetInput, background: SHEET.SOFT, color: SHEET.MUTED }}>{existingQty ?? '—'}</div>
-                </div>
-                <div style={{ flex: '0 0 120px' }}>
-                  {idx === 0 && <label style={sheetLabel}>Actual Qty <Req /></label>}
+                </VisTd>
+                <td style={lineTd}>
                   <input {...(idx === 0 ? { 'data-tour': 'adjustment-actual-qty' } : {})} type="number" style={sheetInput} value={line.actualQuantity} onChange={(e) => updateLine(idx, { actualQuantity: e.target.value })} />
-                </div>
-                <div style={{ flex: '0 0 90px', fontSize: 13, fontWeight: 700, paddingBottom: 10, color: line.actualQuantity === '' ? SHEET.MUTED : Number(line.actualQuantity) - (existingQty ?? 0) === 0 ? SHEET.MUTED : Number(line.actualQuantity) - (existingQty ?? 0) > 0 ? '#16A34A' : '#b91c1c' }}>
-                  {line.actualQuantity !== '' && existingQty != null ? (Number(line.actualQuantity) - existingQty > 0 ? '+' : '') + (Number(line.actualQuantity) - existingQty) : ''}
-                </div>
-                <button type="button" aria-label="Remove line" {...(idx === 0 ? { 'data-tour': 'adjustment-remove-line-btn' } : {})} onClick={() => removeLine(idx)} disabled={lines.length === 1}
-                  style={{ ...sheetBtn('secondary', SHEET.INK, lines.length === 1), padding: 0, width: CONTROL.height, height: CONTROL.height, justifyContent: 'center', flex: 'none' }}><SheetIcon name="trash" size={15} /></button>
-              </div>
+                </td>
+                <VisTd vis={vis} table="form_items" k="existing_qty" style={{ ...lineTd, fontSize: 13, fontWeight: 700, color: diff == null || diff === 0 ? SHEET.MUTED : diff > 0 ? '#16A34A' : '#b91c1c' }}>
+                  {diff == null ? '' : (diff > 0 ? '+' : '') + diff}
+                </VisTd>
+                <td style={lineTd}>
+                  <button type="button" aria-label="Remove line" {...(idx === 0 ? { 'data-tour': 'adjustment-remove-line-btn' } : {})} onClick={() => removeLine(idx)} disabled={lines.length === 1}
+                    style={{ ...sheetBtn('secondary', SHEET.INK, lines.length === 1), padding: 0, width: CONTROL.height, height: CONTROL.height, justifyContent: 'center', flex: 'none' }}><SheetIcon name="trash" size={15} /></button>
+                </td>
+              </tr>
             )
           })}
-          <button type="button" data-tour="adjustment-add-item-btn" onClick={addLine} disabled={!locationId} style={sheetBtn('ghost', SHEET.BLUE, !locationId)}><SheetIcon name="plus" size={15} />Add Item</button>
+              </tbody>
+            </table>
+          </div>
+          <button type="button" data-tour="adjustment-add-item-btn" onClick={addLine} disabled={!locationId} style={{ ...sheetBtn('ghost', SHEET.BLUE, !locationId), marginTop: 10 }}><SheetIcon name="plus" size={15} />Add Item</button>
         </SheetSection>
-      </div>
+      </VisSection>
     </FormPage>
   )
 }

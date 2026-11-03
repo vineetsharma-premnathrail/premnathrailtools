@@ -19,6 +19,9 @@ import EmployeeAssignmentTab from '@/components/hr/employee/EmployeeAssignmentTa
 import { extractErrorMessages } from '@/lib/validation'
 import { sectionStyle, ErrorBanner, Avatar, StatusPill, EMPLOYMENT_STATUS_LABELS, EMPLOYMENT_STATUS_HEX } from '@/components/hr/masters/masterUi'
 import { useRecordId } from '@/lib/recordRef'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection } from '@/lib/visibilityComponents'
+import { sampleEmployee } from '@/lib/hrPreviewSamples'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { UploadFailedNotice } from '@/components/hr/employee/JoiningDocumentsChecklist'
 
@@ -38,18 +41,20 @@ export default function HrEmployeeDetailPage() {
   const { can, canFeature } = useCan()
   const router = useRouter()
   const params = useParams<{ id: string }>()
-  const { id: idResolved, error: linkError } = useRecordId(params?.id)
-  const id = idResolved ?? 0
+  // Role editor "Preview & choose" (vis.preview): a made-up record, no link resolved, nothing loaded, no nav / Back / Edit.
+  const vis = useVisibility('hr:employees')
+  const { id: idResolved, error: linkError } = useRecordId(vis.preview ? null : params?.id)
+  const id = vis.preview ? -1 : (idResolved ?? 0)
 
-  const [emp, setEmp] = useState<HrEmployeeProfile | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [emp, setEmp] = useState<HrEmployeeProfile | null>(vis.preview ? sampleEmployee : null)
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState<string[]>([])
   const [tab, setTab] = useState<TabKey>('profile')
 
   // remember the tab in the URL (?tab=documents) so a refresh/back keeps it
   // Record sub-tabs a role may not get (Organization › Role & Permissions ›
   // HR › Employees features); Profile is the base view.
-  const tabs = TABS.filter((t) => t.key === 'profile' || canFeature('hr', 'employees', t.key, 'view'))
+  const tabs = TABS.filter((t) => t.key === 'profile' || (!vis.preview && canFeature('hr', 'employees', t.key, 'view')))
   const tabAllowed = (t: string) => tabs.some((x) => x.key === t)
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get('tab')
@@ -65,24 +70,25 @@ export default function HrEmployeeDetailPage() {
   }
 
   useEffect(() => {
-    if (!isAuthorized || !id) return
+    if (!isAuthorized || !id || vis.preview) return
     setLoading(true)
     hrApi.getEmployee(id)
       .then((p) => { setEmp(p); setError([]) })
       .catch((err) => setError(extractErrorMessages(err, "Couldn't load this employee.")))
       .finally(() => setLoading(false))
-  }, [isAuthorized, id])
+  }, [isAuthorized, id, vis.preview])
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><HrNav /><InvalidRecordLink message={linkError} listHref="/dashboard/hr/employees" listLabel="Back to employees" /></div>)
+  if (linkError && !vis.preview) return (<div><HrNav /><InvalidRecordLink message={linkError} listHref="/dashboard/hr/employees" listLabel="Back to employees" /></div>)
   if (!id) return <div><HrNav /></div>
 
   const statusKey = emp?.employment_status || ''
 
   return (
     <div>
-      <HrNav />
+      {!vis.preview && <HrNav />}
 
+      <VisSection vis={vis} k="detail_header">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 18, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: 14, alignItems: 'center', minWidth: 0 }}>
           {emp && <Avatar name={emp.name} url={emp.profile_photo_url} id={emp.user_id ?? undefined} size={52} />}
@@ -100,15 +106,16 @@ export default function HrEmployeeDetailPage() {
             {emp && <EmployeeHeaderSummary p={emp} />}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        {!vis.preview && <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           {emp && can('hr', 'employees', emp.has_profile ? 'edit' : 'create') && (
             <button type="button" data-tour="hr-emp-edit-btn" style={primaryBtnStyle} onClick={() => router.push(`/dashboard/hr/employees/${params.id}/edit`)}>
               {emp.has_profile ? 'Edit Profile' : 'Create HR Profile'}
             </button>
           )}
           <button data-tour="hr-emp-back-btn" onClick={() => router.push('/dashboard/hr/employees')} type="button" style={secondaryBtnStyle}>← Back</button>
-        </div>
+        </div>}
       </div>
+      </VisSection>
 
       <UploadFailedNotice />
       <ErrorBanner errors={error} />

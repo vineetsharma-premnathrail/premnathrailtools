@@ -2,6 +2,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session, selectinload
 
+from app.core import visibility
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.core.permissions import ensure_feature_action, require_app_access, require_tab_action
 from app.db.session import get_db
@@ -297,6 +298,10 @@ async def create_material_issue(
     # Optional at the API level (issues raised from a PR have no type);
     # the Store issue form always sends one. The type decides which fields
     # the issue must carry (store/issue_forms.py — the dynamic form standard).
+    # Role visibility ("store:issues" > Issue Type): a restricted role must send a
+    # type, and only one it is allowed — leaving it out is not a way round it.
+    visibility.ensure_option_given(user, "store:issues", "issue_type", payload.issue_type)
+    visibility.ensure_option_allowed(user, "store:issues", "issue_type", payload.issue_type)
     issue_type_row = get_doc_type(db, "issue", payload.issue_type, field="issue type") if payload.issue_type else None
     from app.modules.store.services.job_work import JOB_WORK_TYPE
     if issue_type_row and issue_type_row.value == JOB_WORK_TYPE:

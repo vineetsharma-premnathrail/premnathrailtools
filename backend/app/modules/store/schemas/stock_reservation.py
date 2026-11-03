@@ -16,6 +16,26 @@ class StoreStockReservationCreate(BaseModel):
     order_project_element_id: int | None = None
 
 
+class StoreStockReservationLine(BaseModel):
+    item_id: int
+    quantity: float
+    remarks: str | None = None
+
+
+class StoreStockReservationBulkCreate(BaseModel):
+    """One reservation document: the header (store, reserved for, required
+    date) is shared, each line becomes its own reservation row so it can be
+    fulfilled or cancelled on its own."""
+    location_id: int
+    lines: list[StoreStockReservationLine]
+    project: str | None = None
+    production_order: str | None = None
+    required_date: date | None = None
+    remarks: str | None = None
+    order_project_id: int | None = None
+    order_project_element_id: int | None = None
+
+
 class StoreStockReservationResponse(BaseModel):
     model_config = {"from_attributes": True}
 

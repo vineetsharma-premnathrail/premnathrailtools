@@ -25,7 +25,7 @@ DICT_MONEY = frozenset({
 })
 
 _DENIED = (
-    "You can't see or change charges on service requests — that needs Service & Commissioning › Service Requests › "
+    "You can't see or change charges on service requests — that needs Service Module › Service Requests › "
     "Charges, costs & billing amounts. Leave the {what} out, or ask an admin "
     "to add it to your role in Organization › Role & Permissions."
 )

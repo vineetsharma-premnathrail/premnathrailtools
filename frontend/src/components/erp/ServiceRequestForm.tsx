@@ -3,6 +3,10 @@
 import Select from '@/components/shared/Select'
 import { useEffect, useRef, useState } from 'react'
 import { useFormDraft } from '@/lib/formDraft'
+import { useVisibility } from '@/lib/visibility'
+import { VisColumns } from '@/components/quality/VisColumns'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
+import { sampleMachines } from '@/lib/erpPreviewSamples'
 import DraftBanner from '@/components/shared/DraftBanner'
 import { MinusCircle, Warning } from '@phosphor-icons/react'
 import { useAuth } from '@/hooks/useAuth'
@@ -13,7 +17,7 @@ import SearchableSelect from './SearchableSelect'
 import PhoneField, { isPhoneValid } from './PhoneField'
 import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, VALIDATION_MESSAGES } from '@/lib/validation'
-import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, Optional, Req, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import { FormPage, SheetSection, SheetIcon, SHEET, Optional, Req, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { SERVICE_TYPES } from './serviceTypes'
@@ -113,7 +117,11 @@ export default function ServiceRequestForm({
   nav?: React.ReactNode
 }) {
   const { user } = useAuth()
-  const [projects, setProjects] = useState<Project[]>([])
+  // Role Visibility (core/features/erp.py): which optional sections show and which Service Type /
+  // Priority values are offered (the server refuses the rest).
+  const vis = useVisibility('erp:service_requests')
+  // Role editor preview: made-up machines in the picker, nothing is loaded or saved.
+  const [projects, setProjects] = useState<Project[]>(() => (vis.preview ? sampleMachines : []))
 
   const [form, setForm] = useState<FormState>(() => toFormState(initial))
   const [requestDate] = useState(todayISO())
@@ -132,15 +140,22 @@ export default function ServiceRequestForm({
   const [machinesError, setMachinesError] = useState('')
   const [focusedPriority, setFocusedPriority] = useState('')
   useEffect(() => {
+    if (vis.preview) return
     erpApi.listProjects({ limit: 5000 }).then(setProjects)
       .catch((e) => setMachinesError(`Machines could not be loaded: ${extractErrorMessages(e, 'check your connection').join(' ')}. Reload the page to try again.`))
-  }, [])
+  }, [vis.preview])
 
   // A new request's typed data survives a refresh / network failure (lib/formDraft.ts).
   // Chargeability is decided by the server from the machine's warranty cover.
-  const draft = useFormDraft(!initial ? 'erp-service-request-new' : null, { form }, (d) => setForm(d.form))
+  const draft = useFormDraft(!initial && !vis.preview ? 'erp-service-request-new' : null, { form }, (d) => setForm(d.form))
 
   const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
+
+  // Coded lists narrowed to the role's allowed values; a saved request keeps its own value in the list.
+  const allowedTypes = vis.options('service_type', SERVICE_TYPES, (t) => t.value)
+  const serviceTypeChoices = SERVICE_TYPES.filter((t) => allowedTypes.includes(t) || (!!initial && t.value === initial.service_type))
+  const allowedPriorities = vis.options('priority', [...PRIORITIES], (p) => p.value)
+  const priorityChoices = PRIORITIES.filter((p) => allowedPriorities.includes(p) || (!!initial && p.value === initial.priority))
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -219,14 +234,14 @@ export default function ServiceRequestForm({
 
   return (
     <form onSubmit={handleSubmit}>
-      <FormPage tour="erp-srf-page" icon={initial ? 'edit' : 'tool'} title={title} subtitle={subtitle} onBack={onCancel} backTour="erp-srf-back" nav={nav}
+      <FormPage tour="erp-srf-page" icon={initial ? 'edit' : 'tool'} title={title} subtitle={subtitle} onBack={vis.preview ? undefined : onCancel} backTour="erp-srf-back" nav={vis.preview ? undefined : nav}
         footer={<>
           <button type="button" onClick={onCancel} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)} data-tour="erp-srf-cancel-btn">Cancel</button>
-          <button type="submit" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)} data-tour="erp-srf-submit-btn">
+          <button type="submit" disabled={saving || vis.preview} style={sheetBtn('primary', SHEET.BLUE, saving || vis.preview)} data-tour="erp-srf-submit-btn">
             <SheetIcon name={initial ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : submitLabel}
           </button>
         </>}>
-        <SheetColumns
+        <VisColumns vis={vis} rightKeys={['assignment_schedule', 'notes', 'attachments']}
           left={<>
             <DraftBanner draft={draft} />
             {errorText && (
@@ -237,6 +252,7 @@ export default function ServiceRequestForm({
             {machinesError && (
               <div role="alert" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{machinesError}</div>
             )}
+            <VisSection vis={vis} k="machine">
             <SheetSection icon="truck" title="Machine">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div data-tour="erp-srf-asset" style={{ flex: '1 1 280px', maxWidth: 440 }}>
@@ -269,22 +285,25 @@ export default function ServiceRequestForm({
               <label style={{ ...sheetLabel, marginTop: 14 }}>Site / Location {initial ? <Optional /> : <Req />}</label>
               <input value={form.site_location} onChange={(e) => set('site_location', e.target.value)} placeholder="Current location of asset" style={sheetInput} data-tour="erp-srf-location" />
             </SheetSection>
+            </VisSection>
 
+            <VisSection vis={vis} k="issue_information">
             <SheetSection icon="alert" title="Issue Information">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
                 <div>
                   <label style={sheetLabel}>Service Type <Req /></label>
                   <Select value={form.service_type} onChange={(e) => set('service_type', e.target.value)} style={sheetInput} data-tour="erp-srf-service-type">
                     <option value="">Select Service Type</option>
-                    {SERVICE_TYPES.map((t) => (
+                    {serviceTypeChoices.map((t) => (
                       <option key={t.value} value={t.value}>{t.label}</option>
                     ))}
                   </Select>
+                  <VisOptionValues vis={vis} dropdown="service_type" />
                 </div>
                 <div>
                   <div style={sheetLabel}>Priority Level <Req /></div>
                   <div data-tour="erp-srf-priority" role="radiogroup" aria-label="Priority" style={{ display: 'flex', gap: 8 }}>
-                    {PRIORITIES.map((p) => (
+                    {priorityChoices.map((p) => (
                       <label
                         key={p.value}
                         title={p.sub}
@@ -302,6 +321,7 @@ export default function ServiceRequestForm({
                       </label>
                     ))}
                   </div>
+                  <VisOptionValues vis={vis} dropdown="priority" />
                 </div>
               </div>
               <label style={{ ...sheetLabel, marginTop: 14 }}>Issue Title <Req /></label>
@@ -309,7 +329,9 @@ export default function ServiceRequestForm({
               <label style={{ ...sheetLabel, marginTop: 14 }}>Detailed Description <Optional /></label>
               <textarea value={form.issue_description} onChange={(e) => set('issue_description', e.target.value)} rows={4} placeholder="Describe symptoms, context, and impact..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-srf-description" />
             </SheetSection>
+            </VisSection>
 
+            <VisSection vis={vis} k="reported_by">
             <SheetSection icon="user" title="Reported By" extra={<Optional />}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ flex: '1 1 220px', maxWidth: 320 }}>
@@ -326,9 +348,11 @@ export default function ServiceRequestForm({
                 </div>
               </div>
             </SheetSection>
+            </VisSection>
             <div aria-hidden style={{ height: 28 }} />
           </>}
           right={<>
+            <VisSection vis={vis} k="assignment_schedule">
             <SheetSection icon="calendar" title="Assignment & Schedule">
               <label style={sheetLabel}>Assign To Engineer</label>
               <div data-tour="erp-srf-assignee">
@@ -354,9 +378,13 @@ export default function ServiceRequestForm({
                 {STATUS_OPTIONS.filter((s) => initial || !['work_completed', 'review', 'closed', 'cancelled'].includes(s.value)).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
               </Select>
             </SheetSection>
+            </VisSection>
+            <VisSection vis={vis} k="notes">
             <SheetSection icon="chat" title="Notes" extra={<Optional />}>
               <textarea value={form.service_report_notes} onChange={(e) => set('service_report_notes', e.target.value)} rows={3} placeholder="Any additional notes..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-srf-notes" />
             </SheetSection>
+            </VisSection>
+            <VisSection vis={vis} k="attachments">
             <SheetSection icon="clip" title="Attachments" extra={<Optional />}>
               <div
                 data-tour="erp-srf-attachments"
@@ -387,6 +415,7 @@ export default function ServiceRequestForm({
                 </div>
               )}
             </SheetSection>
+            </VisSection>
             <div aria-hidden style={{ height: 28 }} />
           </>}
         />

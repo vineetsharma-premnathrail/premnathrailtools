@@ -8,7 +8,7 @@ import { StoreItem, StoreLocation, StoreDocType, StoreIssueFormStandard, StoreSt
 import { CONTROL, TEXT } from '@/lib/theme'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
-import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import { FormPage, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import BatchPicker from '@/components/store/BatchPicker'
 import BinSerialPicker from '@/components/store/BinSerialPicker'
@@ -20,6 +20,10 @@ import { extractErrorMessages } from '@/lib/validation'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
 import { RowCount } from '@/components/shared/ui'
+import { itemOptionDetail } from '@/lib/itemOptions'
+import { useVisibility } from '@/lib/visibility'
+import { VisColumns } from '@/components/quality/VisColumns'
+import { VisOptionValues, VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
 
 const inputStyle = sheetInput
 const smallBtn = (): React.CSSProperties => ({ ...sheetBtn('secondary', SHEET.INK), padding: '6px 12px', minHeight: 30, fontSize: 12 })
@@ -68,6 +72,8 @@ type LineState = 'none' | 'ok' | 'short' | 'out'
 // only from Store › Job Work (/store/job-work/new, `challan`): there the type is
 // fixed, and the plain Material Issue form doesn't offer Job Work — one way in.
 const JOB_WORK = 'job_work'
+// Item-line columns a role may hide (Store › Issues › Visibility).
+const LINE_HIDEABLE: Record<string, string> = { 'Available in store': 'available', Remarks: 'remarks' }
 
 /** New Material Issue (/store/issues/new) — or, with `challan`, a New Job Work
  *  Challan (/store/job-work/new). */
@@ -80,6 +86,9 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
   const [overrideReason, setOverrideReason] = useState('')
   const isChallan = challan
   const backHref = isChallan ? '/dashboard/store/job-work' : '/dashboard/store/issues'
+  // Role visibility (Organization › Role & Permissions › Store › Issues › Visibility): hidden sections / columns;
+  // issue types come flagged `allowed` from the server, which also refuses a type outside the role.
+  const vis = useVisibility('store:issues')
 
   const [items, setItems] = useState<StoreItem[]>([])
   const [locations, setLocations] = useState<StoreLocation[]>([])
@@ -146,7 +155,8 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
   // Fields of the picked type: "if:" fields appear only once their condition holds.
   const shownFields = (spec?.fields || []).filter((f) => !f.rule.startsWith('if:') || condHolds(f.rule.slice(3), vals))
   // One draft for the issue form and one for the job-work challan.
-  const draft = useFormDraft(isChallan ? 'store-job-work-challan-new' : 'store-material-issue-new',
+  // Role editor preview: nothing is saved, no draft, module nav / Back left out.
+  const draft = useFormDraft(vis.preview ? null : isChallan ? 'store-job-work-challan-new' : 'store-material-issue-new',
     { issueType, locationId, vals, remarks, lines, backLines, orderProject, overrideReason },
     (d) => {
       setIssueType(d.issueType || (isChallan ? JOB_WORK : '')); setLocationId(d.locationId ?? ''); setVals(d.vals ?? {}); setRemarks(d.remarks ?? '')
@@ -313,14 +323,33 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
   if (isLoading || !isAuthorized) return null
 
   const filledCount = lines.filter((l) => l.itemId).length
+  const typeChoices = issueTypes.filter((t) => t.value !== JOB_WORK && (vis.preview || (t as StoreDocType & { allowed?: boolean }).allowed !== false))
+  // The preview draws every column (hidden ones dimmed, with a toggle); normal use drops the hidden ones.
+  const showLineCol = (h: string) => !LINE_HIDEABLE[h] || vis.preview || vis.showColumn('form_items', LINE_HIDEABLE[h])
+  const remarksBlock = (
+    <SheetSection icon="chat" title="Remarks" extra={spec?.remarks_label ? undefined : <Optional />}>
+      <Field label={spec?.remarks_label ? <>{spec.remarks_label} <Req /></> : 'Remarks'}>
+        <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+      </Field>
+      {storeManager && (
+        <div data-tour="issue-override-reason" style={{ marginTop: 12 }}>
+          <Field label={<>Reason for using project stock <span style={{ fontWeight: 400, color: SHEET.MUTED }}>(Store Manager)</span></>}>
+            <input style={inputStyle} value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)}
+              placeholder="Only if stock held for another vehicle must be issued here" />
+          </Field>
+        </div>
+      )}
+    </SheetSection>
+  )
+  const lineHeaders = ['#', 'Item', 'Quantity', 'Available in store', 'Batch / bin / serial', 'Remarks', ''].filter(showLineCol)
 
   return (
-    <FormPage nav={<StoreNav />} icon={isChallan ? 'truck' : 'box'} title={isChallan ? 'New Job Work Challan' : 'New Material Issue'}
+    <FormPage nav={vis.preview ? undefined : <StoreNav />} icon={isChallan ? 'truck' : 'box'} title={isChallan ? 'New Job Work Challan' : 'New Material Issue'}
       subtitle={isChallan ? 'Material sent to a job-work vendor — it stays ours, in With-vendor stock, until it comes back.' : 'Stock leaving the store — pick the issue type; its fields follow.'}
-      onBack={() => router.push(backHref)} backTour="issue-back-btn"
+      onBack={vis.preview ? undefined : () => router.push(backHref)} backTour="issue-back-btn"
       footer={<>
-        <button type="button" disabled={busy} onClick={() => router.push(backHref)} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
-        <button data-tour="issue-save-btn" type="button" disabled={busy} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy)}>
+        <button type="button" disabled={busy || vis.preview} onClick={() => router.push(backHref)} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+        <button data-tour="issue-save-btn" type="button" disabled={busy || vis.preview} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy)}>
           <SheetIcon name={isChallan ? 'truck' : 'check'} size={16} />
           {busy ? 'Saving…' : `${isChallan ? 'Create Challan' : 'Issue Material'}${filledCount ? ` (${filledCount} line${filledCount === 1 ? '' : 's'})` : ''}`}
         </button>
@@ -330,9 +359,9 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
       <MessageDialog open={errors.length > 0} variant="error" title="Cannot Save Material Issue" message={errors} onClose={() => setErrors([])} />
       <MessageDialog open={importErrors.length > 0} variant="error" title="Excel Import" message={importErrors} onClose={() => setImportErrors([])} />
 
-      <SheetColumns
+      <VisColumns vis={vis} rightKeys={['remarks']} force={!!spec?.remarks_label || (vis.showSection('notes') && !!(spec?.leaves_factory || spec?.manager_only || isDispatch))}
         left={
-      <SheetSection icon="list" title="Issue Details">
+      <VisSection vis={vis} k="issue_details"><SheetSection icon="list" title="Issue Details">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
           <Field label={<>Store <Req /></>}>
             <Select data-tour="issue-location" style={inputStyle} value={locationId} onChange={(e) => { setLocationId(e.target.value); setBalances(new Map()); setStockLoadedAt(null) }}>
@@ -344,8 +373,9 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
             <Field label={<>Issue Type <Req /></>}>
               <Select data-tour="issue-type" style={inputStyle} value={issueType} onChange={(e) => { setIssueType(e.target.value); setVals({}); setOrderProject(null) }}>
                 <option value="">— Select —</option>
-                {issueTypes.filter((t) => t.value !== JOB_WORK).map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                {typeChoices.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </Select>
+              <VisOptionValues vis={vis} dropdown="issue_type" />
             </Field>
           )}
         </div>
@@ -402,24 +432,13 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
             )}
           </div>
         )}
-      </SheetSection>
+      </SheetSection></VisSection>
         }
         right={<>
-          <SheetSection icon="chat" title="Remarks" extra={spec?.remarks_label ? undefined : <Optional />}>
-            <Field label={spec?.remarks_label ? <>{spec.remarks_label} <Req /></> : 'Remarks'}>
-              <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
-            </Field>
-            {storeManager && (
-              <div data-tour="issue-override-reason" style={{ marginTop: 12 }}>
-                <Field label={<>Reason for using project stock <span style={{ fontWeight: 400, color: SHEET.MUTED }}>(Store Manager)</span></>}>
-                  <input style={inputStyle} value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)}
-                    placeholder="Only if stock held for another vehicle must be issued here" />
-                </Field>
-              </div>
-            )}
-          </SheetSection>
-          {(spec?.leaves_factory || spec?.manager_only || isDispatch) && (
-            <SheetSection icon="alert" title="Notes">
+          {/* Remarks can be hidden by role, but never for a type that requires them (Scrap / Disposal). */}
+          {spec?.remarks_label && !vis.preview && !vis.showSection('remarks') ? remarksBlock : <VisSection vis={vis} k="remarks">{remarksBlock}</VisSection>}
+          {(spec?.leaves_factory || spec?.manager_only || isDispatch || vis.preview) && (
+            <VisSection vis={vis} k="notes"><SheetSection icon="alert" title="Notes">
               {spec?.leaves_factory && (
                 <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 10px' }}>This material leaves the factory, so it travels on a delivery challan.</p>
               )}
@@ -432,12 +451,15 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
                   {selectedProject?.third_party_inspection_required ? `, and this order needs an accepted ${(selectedProject.inspection_agency || 'third-party').toUpperCase()} inspection certificate` : ''}.
                 </p>
               )}
-            </SheetSection>
+              {vis.preview && !(spec?.leaves_factory || spec?.manager_only || isDispatch) && (
+                <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Hints about delivery challans, write-offs and dispatch checks appear here for the issue types that need them.</p>
+              )}
+            </SheetSection></VisSection>
           )}
         </>}
       />
 
-      <div style={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
+      <VisSection vis={vis} k="items" frame={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
       <SheetSection icon="box" title={isChallan ? 'Items to send' : 'Items'}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
           <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>
@@ -472,9 +494,13 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
             <thead>
               <tr>
-                {['#', 'Item', 'Quantity', 'Available in store', 'Batch / bin / serial', 'Remarks', ''].map((h, hi) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '8px 6px', fontSize: 11, fontWeight: 700, color: SHEET.MUTED, background: SHEET.SOFT, textTransform: 'uppercase', letterSpacing: '.04em' }}>{h}{hi === 0 && <RowCount count={lines.length} />}</th>
-                ))}
+                {lineHeaders.map((h, hi) => {
+                  const th: React.CSSProperties = { textAlign: 'left', padding: '8px 6px', fontSize: 11, fontWeight: 700, color: SHEET.MUTED, background: SHEET.SOFT, textTransform: 'uppercase', letterSpacing: '.04em' }
+                  const head = <>{h}{hi === 0 && <RowCount count={lines.length} />}</>
+                  return LINE_HIDEABLE[h]
+                    ? <VisTh key={h} vis={vis} table="form_items" k={LINE_HIDEABLE[h]} style={th}>{head}</VisTh>
+                    : <th key={h} style={th}>{head}</th>
+                })}
               </tr>
             </thead>
             <tbody>
@@ -490,14 +516,14 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
                     <td style={{ padding: '6px', minWidth: 260 }}>
                       <div {...(idx === 0 ? { 'data-tour': 'issue-item' } : {})}>
                         <SearchableSelect value={line.itemId} onChange={(v) => updateLine(idx, { itemId: v })} placeholder="Search item code or name…"
-                          options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
+                          options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, description: itemOptionDetail(i) }))} />
                       </div>
                     </td>
                     <td style={{ padding: '6px', width: 120 }}>
                       <input {...(idx === 0 ? { 'data-tour': 'issue-quantity' } : {})} type="number" min="0" style={{ ...inputStyle, borderColor: bad ? '#dc2626' : undefined }}
                         value={line.quantity} placeholder={item?.uom || ''} onChange={(e) => updateLine(idx, { quantity: e.target.value })} />
                     </td>
-                    <td style={{ padding: '6px', width: 190, fontSize: 12.5, lineHeight: 1.35 }} {...(idx === 0 ? { 'data-tour': 'issue-available' } : {})}>
+                    <VisTd vis={vis} table="form_items" k="available" style={{ padding: '6px', width: 190, fontSize: 12.5, lineHeight: 1.35 }} {...(idx === 0 ? { 'data-tour': 'issue-available' } : {})}>
                       {!locationId || !line.itemId ? <span style={{ color: TEXT.muted }}>—</span> : (
                         <>
                           <span style={{ fontWeight: 700, color: st === 'out' ? '#b91c1c' : st === 'short' ? '#b91c1c' : '#15803d' }}>
@@ -509,7 +535,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
                           {b && b.held > 0 && <div style={{ color: '#d97706', fontSize: 11.5 }}>{b.held.toLocaleString('en-IN')} held in Quality / Blocked</div>}
                         </>
                       )}
-                    </td>
+                    </VisTd>
                     <td style={{ padding: '6px', width: 130 }}>
                       {item?.batch_controlled && locationId ? (
                         <BatchPicker itemId={item.id} locationId={Number(locationId)} quantity={Number(line.quantity || 0)}
@@ -523,9 +549,9 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
                           onChange={(patch) => updateLine(idx, patch)} />
                       )}
                     </td>
-                    <td style={{ padding: '6px', minWidth: 140 }}>
+                    <VisTd vis={vis} table="form_items" k="remarks" style={{ padding: '6px', minWidth: 140 }}>
                       <input style={inputStyle} value={line.remarks} onChange={(e) => updateLine(idx, { remarks: e.target.value })} />
-                    </td>
+                    </VisTd>
                     <td style={{ padding: '6px', width: 44 }}>
                       <button type="button" title="Remove this line" onClick={() => removeLine(idx)}
                         aria-label="Remove line" style={{ ...sheetBtn('secondary', SHEET.INK), padding: 0, width: CONTROL.height, height: CONTROL.height, justifyContent: 'center', color: bad ? '#b91c1c' : undefined }}><SheetIcon name="trash" size={15} /></button>
@@ -538,10 +564,10 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
         </div>
         <button type="button" data-tour="issue-add-item-btn" onClick={addLine} style={{ ...sheetBtn('ghost', SHEET.BLUE), marginTop: 10 }}><SheetIcon name="plus" size={15} />Add Item</button>
       </SheetSection>
-      </div>
+      </VisSection>
 
-      {isChallan && (
-        <div data-tour="issue-receive-back" style={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
+      {(isChallan || vis.preview) && (
+        <VisSection vis={vis} k="receive_back" frame={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}><div data-tour="issue-receive-back">
           <SheetSection icon="box" title="Items to receive back" extra={<Optional />}>
             <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 12px' }}>
               What the vendor sends back — it can be different items (plate sent, flange + ring back). Leave empty if the same items come back (plating, heat treatment).
@@ -563,7 +589,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
                         <td style={{ padding: '6px', fontSize: 12, color: TEXT.muted, width: 28 }}>{idx + 1}</td>
                         <td style={{ padding: '6px', minWidth: 260 }}>
                           <SearchableSelect value={line.itemId} onChange={(v) => updateBack(idx, { itemId: v })} placeholder="Search item code or name…"
-                            options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
+                            options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, description: itemOptionDetail(i) }))} />
                         </td>
                         <td style={{ padding: '6px', width: 160 }}>
                           <input type="number" min="0" style={inputStyle} value={line.quantity} placeholder={item?.uom || ''}
@@ -581,7 +607,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
             </div>
             <button type="button" onClick={() => setBackLines((prev) => [...prev, emptyBack()])} style={{ ...sheetBtn('ghost', SHEET.BLUE), marginTop: 10 }}><SheetIcon name="plus" size={15} />Add Item</button>
           </SheetSection>
-        </div>
+        </div></VisSection>
       )}
     </FormPage>
   )

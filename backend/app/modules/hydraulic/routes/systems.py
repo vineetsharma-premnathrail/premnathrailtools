@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.core.permissions import ensure_can_delete, require_app_access, require_tab_access, require_tab_action
 from app.db.session import get_db
@@ -32,6 +33,8 @@ router = APIRouter(
 )
 
 _OPEN_SERVICE = ("open", "in_progress")
+# Role visibility catalogue entry (core/features/hydraulic.py): system type values per role.
+VISIBILITY_KEY = "hydraulic:systems"
 
 # Retired under plan rule R5 (HY-0): hidden in the UI, rejected by the API, dropped in HY-4.
 _RETIRED_SYSTEM_FIELDS = {"running_hours": "running hours", "commissioned_on": "commissioned on", "location": "location"}
@@ -145,6 +148,9 @@ async def create_system(
     data = payload.model_dump()
     _reject_retired_fields(data)
     _validate(db, data)
+    # Role visibility (Role & Permissions › Hydraulic & Pneumatic › Systems › Visibility): a type the role does not
+    # offer is refused with the reason (the form's default Hydraulic is checked too). The type can't change later.
+    visibility.ensure_option_allowed(user, VISIBILITY_KEY, "system_type", data.get("system_type"))
     clean_op_link(db, data)
     ensure_assignee_rule(db, user, OWNER_RULE, data.get("owner_id"))
     system = HydSystem(**data, system_number=generate_system_number(db, data["system_type"]), created_by_id=user.id)

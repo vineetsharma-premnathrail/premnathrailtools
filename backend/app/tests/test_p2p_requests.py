@@ -605,7 +605,7 @@ def test_po_approval_queue_shows_only_pos_i_can_approve(client, db):
     assert client.get(BASE, params={"queue": "po-approval"}, headers=auth_header(director)).json() == []
 
 
-# ── Receiving (per-PO Goods Receipt → quality inspection → PR receipt status) ─
+# ── Receiving (per-PO Goods Receipt → completed at once for items without a quality check → PR receipt status) ─
 
 def _receiving_store(client) -> int:
     """A GRN must name its store (MIGO 101 posts stock at once) — one shared test store."""
@@ -621,19 +621,15 @@ def _receiving_store(client) -> int:
 
 
 def _receive(client, pr_id, buyer, quantity):
-    """Record a GRN for `quantity` of the PO's first line and accept it all at
-    inspection — that is what rolls the receipt up onto the PR."""
+    """Record a GRN for `quantity` of the PO's first line. The item has no
+    "Quality check on receipt" flag, so the goods go straight into Free stock
+    and the GRN is completed at once — that is what rolls the receipt up onto
+    the PR (no separate inspection step)."""
     po = next(p for p in client.get("/api/v1/p2p/purchase-orders", headers=auth_header(buyer)).json() if p["p2p_request_id"] == pr_id)
-    grn = client.post("/api/v1/p2p/goods-receipts", json={
+    return client.post("/api/v1/p2p/goods-receipts", json={
         "purchase_order_id": po["id"], "store_location_id": _receiving_store(client),
         "items": [{"po_item_id": po["items"][0]["id"], "received_quantity": quantity}],
     }, headers=auth_header(buyer))
-    if grn.status_code != 200:
-        return grn
-    grn = grn.json()
-    return client.post(f"/api/v1/p2p/goods-receipts/{grn['id']}/inspect", json={"items": [
-        {"item_id": grn["items"][0]["id"], "accepted_quantity": quantity, "quality_status": "passed"},
-    ]}, headers=auth_header(buyer))
 
 
 def test_goods_receipt_requires_po_approval(client, db):

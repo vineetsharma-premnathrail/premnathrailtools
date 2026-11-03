@@ -20,16 +20,28 @@ import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
 import { RowCount } from '@/components/shared/ui'
+import { useVisibility } from '@/lib/visibility'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
+import { sampleBom } from '@/lib/productionPreviewSamples'
 
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '9px 12px', fontSize: 11.5, fontWeight: 600, color: SHEET.MUTED, background: SHEET.SOFT, borderBottom: `1px solid ${SHEET.LINE}`, whiteSpace: 'nowrap' }
 const tdStyle: React.CSSProperties = { padding: '9px 12px', fontSize: 13, color: SHEET.BODY, borderBottom: `1px solid ${SHEET.LINE}` }
 const errorBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
+const PRIORITY_OPTIONS = [{ value: 'standard', label: 'Standard' }, { value: 'urgent', label: 'Urgent' }]
 const toOptions = (rows: ProductionLookupOption[], none = '— None —') => [{ value: '', label: none }, ...rows.map((r) => ({ value: String(r.id), label: r.label }))]
+
+/** Two form columns; when the role hides every section of the right one, the left one takes the full width. */
+function Columns({ showRight, left, right }: { showRight: boolean; left: React.ReactNode; right: React.ReactNode }) {
+  return showRight ? <SheetColumns left={left} right={right} /> : <div style={{ padding: '20px 24px' }}>{left}</div>
+}
 
 export default function NewWorkOrderPage() {
   const { isAuthorized, isLoading } = useRequireApp('production')
   const router = useRouter()
   const searchParams = useSearchParams()
+  // What the user's roles let them see here (Role & Permissions › Production › Work Orders › Visibility).
+  // In the Role editor's "Preview & choose" nothing loads or saves and the page chrome is left out.
+  const vis = useVisibility('production:work_orders')
 
   // ?bom_id= / ?rrv_build_id= carry signed record refs (lib/recordRef.ts).
   const { id: presetBomId, error: bomLinkError } = useRecordId(searchParams.get('bom_id'))
@@ -74,7 +86,7 @@ export default function NewWorkOrderPage() {
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
 
-  const draft = useFormDraft(rrvLinkLoading ? null : `production-work-order-new${rrvBuildRef ? '-rrv' : ''}`,
+  const draft = useFormDraft(rrvLinkLoading || vis.preview ? null : `production-work-order-new${rrvBuildRef ? '-rrv' : ''}`,
     { bomId, quantity, priority, projectId, branchId, sourceId, targetId, supervisorId, startDate, endDate, remarks, soLineId, orderProject },
     (d) => {
       setBomId(d.bomId ?? ''); setQuantity(d.quantity ?? '1'); setPriority(normalizePriority(d.priority)); setProjectId(d.projectId ?? '')
@@ -83,8 +95,16 @@ export default function NewWorkOrderPage() {
       setOrderProject(d.orderProject ?? null)
     })
 
+  // New form: when the role doesn't offer 'standard', start on the first value it does offer.
+  const priorityChoices = vis.options('priority', PRIORITY_OPTIONS, (o) => o.value)
+  const allowedPriorityKey = priorityChoices.map((o) => o.value).join(',')
   useEffect(() => {
-    if (!isAuthorized) return
+    const allowedValues = allowedPriorityKey.split(',').filter(Boolean)
+    if (allowedValues.length && !allowedValues.includes(priority)) setPriority(allowedValues[0])
+  }, [allowedPriorityKey, priority])
+
+  useEffect(() => {
+    if (!isAuthorized || vis.preview) return
     const fail = (what: string) => (err: unknown) => setError(extractErrorMessages(err, `Failed to load ${what}.`))
     productionApi.lookupActiveBoms().then(setBoms).catch(fail('active BOMs'))
     productionApi.lookupProjects().then(setProjects).catch(fail('ERP machines'))
@@ -92,20 +112,21 @@ export default function NewWorkOrderPage() {
     productionApi.lookupLocations().then(setLocations).catch(fail('store locations'))
     productionApi.lookupUsers().then(setUsers).catch(fail('users'))
     productionEngineeringLookups.salesOrderLines().then(setSoLines).catch(fail('sales order lines'))
-  }, [isAuthorized])
+  }, [isAuthorized, vis.preview])
 
   useEffect(() => {
-    if (!bomId) return
+    if (!bomId || vis.preview) return
     productionApi.getBom(Number(bomId)).then(setLoadedBom).catch((err) => setError(extractErrorMessages(err, 'Failed to load the selected BOM.')))
-  }, [bomId])
+  }, [bomId, vis.preview])
 
   // Only show the BOM that matches the current pick (a stale one lingers while the next loads).
-  const bom = bomId && loadedBom && String(loadedBom.id) === bomId ? loadedBom : null
+  const bom = vis.preview ? sampleBom : bomId && loadedBom && String(loadedBom.id) === bomId ? loadedBom : null
   const qty = Number(quantity) || 0
   const factor = bom ? qty / (bom.base_quantity || 1) : 0
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault()
+    if (vis.preview) return
     setError('')
     if (!bomId) { setError('Pick the active BOM to build from.'); return }
     if (!(qty > 0)) { setError('Planned quantity must be more than zero.'); return }
@@ -137,23 +158,23 @@ export default function NewWorkOrderPage() {
   }
 
   if (isLoading || !isAuthorized) return null
-  if (bomLinkError || rrvLinkError) return (<div><ProductionNav /><InvalidRecordLink message={(bomLinkError || rrvLinkError) as string} listHref="/dashboard/production/work-orders" listLabel="Back to work orders" /></div>)
-  if (rrvLinkLoading) return <div><ProductionNav /></div>
+  if (!vis.preview && (bomLinkError || rrvLinkError)) return (<div><ProductionNav /><InvalidRecordLink message={(bomLinkError || rrvLinkError) as string} listHref="/dashboard/production/work-orders" listLabel="Back to work orders" /></div>)
+  if (rrvLinkLoading && !vis.preview) return <div><ProductionNav /></div>
 
   const goBack = () => router.push(rrvBuildRef && rrvBuildId ? `/dashboard/production/rrv-builds/${rrvBuildRef}` : '/dashboard/production/work-orders')
 
   return (
     <form onSubmit={handleSubmit}>
-      <FormPage nav={<ProductionNav />} tour="production-wo-new-form" icon="tool" title="New Work Order"
+      <FormPage nav={vis.preview ? undefined : <ProductionNav />} tour="production-wo-new-form" icon="tool" title="New Work Order"
         subtitle="Build a quantity of one product from its active BOM — saved as a Draft first."
-        onBack={goBack} backTour="production-wo-new-back-btn"
+        onBack={vis.preview ? undefined : goBack} backTour="production-wo-new-back-btn"
         footer={<>
           <button type="button" onClick={goBack} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
-          <button data-tour="production-wo-new-submit-btn" type="submit" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+          <button data-tour="production-wo-new-submit-btn" type="submit" disabled={saving || vis.preview} style={sheetBtn('primary', SHEET.BLUE, saving)}>
             <SheetIcon name="plus" size={16} />{saving ? 'Creating…' : 'Create Draft Work Order'}
           </button>
         </>}>
-        <SheetColumns
+        <Columns showRight={vis.anySection(['store_locations', 'remarks'])}
           left={<>
             {rrvBuildId && (
               <div data-tour="production-wo-new-rrv-banner" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(37,99,235,0.07)', border: '1px solid rgba(37,99,235,0.2)', color: '#1e40af', fontSize: 13 }}>
@@ -163,6 +184,7 @@ export default function NewWorkOrderPage() {
             <DraftBanner draft={draft} />
             {error && <div style={errorBox}>{Array.isArray(error) ? error.join(' ') : error}</div>}
 
+            <VisSection vis={vis} k="what_to_build">
             <SheetSection icon="box" title="What to Build">
               <div data-tour="production-wo-new-bom">
                 <label style={sheetLabel}>Product / Active BOM <Req /></label>
@@ -181,13 +203,15 @@ export default function NewWorkOrderPage() {
                 <div data-tour="production-wo-new-priority" style={{ flex: '1 1 140px' }}>
                   <label style={sheetLabel}>Priority</label>
                   <Select style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value)}>
-                    <option value="standard">Standard</option>
-                    <option value="urgent">Urgent</option>
+                    {priorityChoices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </Select>
+                  <VisOptionValues vis={vis} dropdown="priority" />
                 </div>
               </div>
             </SheetSection>
+            </VisSection>
 
+            <VisSection vis={vis} k="built_for">
             <SheetSection icon="building" title="Built For">
               <div data-tour="production-wo-new-machine">
                 <label style={sheetLabel}>For Machine / Project (ERP)</label>
@@ -214,7 +238,9 @@ export default function NewWorkOrderPage() {
                 </div>
               )}
             </SheetSection>
+            </VisSection>
 
+            <VisSection vis={vis} k="schedule_responsibility">
             <SheetSection icon="calendar" title="Schedule & Responsibility">
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <div data-tour="production-wo-new-start" style={{ flex: '1 1 150px' }}>
@@ -231,8 +257,10 @@ export default function NewWorkOrderPage() {
                 <SearchableSelect value={supervisorId} onChange={setSupervisorId} placeholder="Select user…" options={toOptions(users.filter((u) => allowSupervisor(u.id)))} />
               </div>
             </SheetSection>
+            </VisSection>
           </>}
           right={<>
+            <VisSection vis={vis} k="store_locations">
             <SheetSection icon="building" title="Store Locations">
               <div data-tour="production-wo-new-source">
                 <label style={sheetLabel}>Issue Materials From</label>
@@ -244,15 +272,19 @@ export default function NewWorkOrderPage() {
               </div>
               <p style={sheetHint}>Both store locations are required before the work order can be released to the shop floor.</p>
             </SheetSection>
+            </VisSection>
+            <VisSection vis={vis} k="remarks">
             <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
               <div data-tour="production-wo-new-remarks">
                 <textarea style={{ ...sheetInput, minHeight: 100, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="e.g. customer special requirements" />
               </div>
             </SheetSection>
+            </VisSection>
           </>}
         />
 
         {bom && (
+          <VisSection vis={vis} k="bom_preview">
           <div data-tour="production-wo-new-preview" style={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
             <SheetSection icon="list" title={`Preview — ${bom.bom_number} v${bom.version} × ${qty || 0}`}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -288,6 +320,7 @@ export default function NewWorkOrderPage() {
               </div>
             </SheetSection>
           </div>
+          </VisSection>
         )}
       </FormPage>
     </form>

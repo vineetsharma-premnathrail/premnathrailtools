@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import record_audit
 from app.core.data_scope import apply_scope
+from app.core.permissions import require_feature_action
 from app.core.sequential_id import next_sequential_id
 from app.db.session import get_db
 from app.modules.hr.models.employee_profile import HrEmployeeProfile
@@ -46,6 +47,8 @@ router = APIRouter(prefix="/hr/time-evaluation", tags=["HR"])
 require_hr = require_hr_tab("attendance")
 require_hr_edit = require_hr_tab("attendance", "edit")
 require_hr_export = require_hr_tab("attendance", "export")
+# The HR-team page (Attendance › Time evaluation) = feature hr:attendance.time_evaluation (inherits Attendance › View).
+_TIME_EVAL = require_feature_action("hr", "attendance", "time_evaluation", "view")
 
 OT_ENTITY = hr_approvals.OVERTIME_ENTITY
 LIVE = ("pending", "approved")
@@ -115,7 +118,7 @@ async def my_time_evaluation(year: int | None = Query(None), month: int | None =
 
 @router.get("/employee/{user_id}")
 async def employee_time_evaluation(user_id: int, year: int | None = Query(None), month: int | None = Query(None),
-                                   db: Session = Depends(get_db), user: User = Depends(require_hr)):
+                                   db: Session = Depends(get_db), user: User = Depends(require_hr), _f: User = Depends(_TIME_EVAL)):
     target = db.get(User, user_id)
     if target is None:
         raise HTTPException(status_code=404, detail=f"Employee (user #{user_id}) doesn't exist. Pick the employee from the list again.")
@@ -141,7 +144,7 @@ def _month_items(db: Session, viewer: User, y: int, m: int, start: date, end: da
 async def month_time_evaluation(
     year: int | None = Query(None), month: int | None = Query(None), branch_id: int | None = Query(None),
     department_id: int | None = Query(None), search: str | None = Query(None),
-    db: Session = Depends(get_db), user: User = Depends(require_hr),
+    db: Session = Depends(get_db), user: User = Depends(require_hr), _f: User = Depends(_TIME_EVAL),
 ):
     y, m, start, end = _month(year, month)
     return _month_items(db, user, y, m, start, end, branch_id, department_id, search)
@@ -167,7 +170,7 @@ EXPORT_COLUMNS = [
 async def export_time_evaluation(
     year: int | None = Query(None), month: int | None = Query(None), branch_id: int | None = Query(None),
     department_id: int | None = Query(None), search: str | None = Query(None),
-    db: Session = Depends(get_db), user: User = Depends(require_hr_export),
+    db: Session = Depends(get_db), user: User = Depends(require_hr_export), _f: User = Depends(_TIME_EVAL),
 ):
     y, m, start, end = _month(year, month)
     data = _month_items(db, user, y, m, start, end, branch_id, department_id, search)
@@ -312,7 +315,8 @@ async def claim_overtime(payload: HrOvertimeCreate, db: Session = Depends(get_db
 
 
 @router.post("/overtime/generate")
-async def generate_overtime(payload: HrOvertimeGeneratePayload, db: Session = Depends(get_db), user: User = Depends(require_hr_edit)):
+async def generate_overtime(payload: HrOvertimeGeneratePayload, db: Session = Depends(get_db), user: User = Depends(require_hr_edit),
+                            _f: User = Depends(_TIME_EVAL)):
     """Raise an OT approval for every day of the month whose computed OT has
     no live request. Employees with no approver are listed, not raised."""
     start, end = month_bounds(payload.year, payload.month)
@@ -379,6 +383,7 @@ async def overtime_pending_for_me(db: Session = Depends(get_db), user: User = De
 async def list_overtime(
     status: str | None = Query(None), user_id: int | None = Query(None), year: int | None = Query(None),
     month: int | None = Query(None), db: Session = Depends(get_db), user: User = Depends(require_hr),
+    _f: User = Depends(_TIME_EVAL),
 ):
     q = apply_scope(db.query(HrOvertime), user, HrOvertime)
     if status:

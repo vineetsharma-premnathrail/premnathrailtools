@@ -14,6 +14,9 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDateTime } from '@/lib/format'
 import { PRIORITY_LABELS, REQUEST_STATUS_LABELS, REQUEST_TYPE_LABELS, WO_STATUS_LABELS } from '@/components/maintenance/labels'
 import Select from '@/components/shared/Select'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleRequests } from '@/lib/maintenancePreviewSamples'
 
 const STATUS_HEX: Record<string, string> = { open: '#F59E0B', acknowledged: '#2563EB', converted: '#0f766e', rejected: '#DC2626', duplicate: '#78716c' }
 const PRIORITY_HEX: Record<string, string> = { standard: '#475569', urgent: '#DC2626' }
@@ -23,12 +26,19 @@ const inputStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
 }
 const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }
+const COLUMNS = ['Number', 'Asset', 'Type', 'Problem', 'Priority', 'Reported', 'Raised By', 'Status', 'Work Order']
+// Columns a role may hide (Role editor > Maintenance > Requests > Visibility). Number and Status always show.
+const HIDEABLE: Record<string, string> = {
+  Asset: 'asset', Type: 'type', Problem: 'problem', Priority: 'priority', Reported: 'reported', 'Raised By': 'raised_by', 'Work Order': 'work_order',
+}
 
 export default function MaintenanceRequestsPage() {
   const { isAuthorized, isLoading, user } = useRequireAnyApp('maintenance', 'production')
   const router = useRouter()
   const searchParams = useSearchParams()
   const isMaintenanceUser = !!user?.apps?.includes('maintenance')
+  const vis = useVisibility('maintenance:requests')
 
   const [requests, setRequests] = useState<MaintenanceRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -41,12 +51,14 @@ export default function MaintenanceRequestsPage() {
   const [lookups, setLookups] = useState<MaintenanceLookups | null>(null)
 
   useEffect(() => {
-    if (!isAuthorized || !isMaintenanceUser) return
+    if (!isAuthorized || !isMaintenanceUser || vis.preview) return
     maintenanceApi.getLookups().then(setLookups).catch(() => { /* plant filter is optional */ })
-  }, [isAuthorized, isMaintenanceUser])
+  }, [isAuthorized, isMaintenanceUser, vis.preview])
 
   useEffect(() => {
     if (!isAuthorized) return
+    // Role editor preview: made-up rows, nothing is loaded.
+    if (vis.preview) { setRequests(sampleRequests); setLoading(false); return }
     const params: Record<string, unknown> = {}
     if (statusFilter) params.status = statusFilter
     if (mine) params.mine = true
@@ -61,13 +73,15 @@ export default function MaintenanceRequestsPage() {
         .finally(() => { if (!ignore) setLoading(false) })
     }, 250)
     return () => { ignore = true; clearTimeout(t) }
-  }, [isAuthorized, statusFilter, mine, branchFilter, search])
+  }, [isAuthorized, statusFilter, mine, branchFilter, search, vis.preview])
 
   if (isLoading || !isAuthorized) return null
+  // The preview draws every column (hidden ones dimmed, with a toggle); normal use drops the hidden ones.
+  const columns = COLUMNS.filter((h) => !HIDEABLE[h] || vis.preview || vis.showColumn('requests', HIDEABLE[h]))
 
   return (
     <div>
-      <MaintenanceNav />
+      {!vis.preview && <MaintenanceNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
@@ -79,6 +93,7 @@ export default function MaintenanceRequestsPage() {
         <button
           data-tour="maint-req-new-btn"
           onClick={() => router.push('/dashboard/maintenance/requests/new')}
+          disabled={vis.preview}
           style={primaryBtnStyle}
         >
           + Report Breakdown
@@ -117,45 +132,43 @@ export default function MaintenanceRequestsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr>
-              {['Number', 'Asset', 'Type', 'Problem', 'Priority', 'Reported', 'Raised By', 'Status', 'Work Order'].map((h, hi) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}{hi === 0 && <RowCount count={requests.length} />}
-                </th>
-              ))}
+              {columns.map((h, hi) => HIDEABLE[h]
+                ? <VisTh key={h} vis={vis} table="requests" k={HIDEABLE[h]} style={thStyle}>{h}</VisTh>
+                : <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={requests.length} />}</th>)}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={columns.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : requests.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={columns.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 {search || statusFilter || mine || branchFilter ? 'No requests match these filters.' : 'No maintenance requests yet. Use “Report Breakdown” when a machine stops or misbehaves.'}
               </td></tr>
             ) : (
               requests.map((r) => (
-                <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/maintenance/requests', r))} style={{ cursor: 'pointer' }}>
+                <tr key={r.id} onClick={vis.preview ? undefined : () => router.push(recordPath('/dashboard/maintenance/requests', r))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{r.request_number}</td>
-                  <td style={cellStyle}>
+                  <VisTd vis={vis} table="requests" k="asset" style={cellStyle}>
                     <span style={{ fontWeight: 600 }}>{r.asset_code}</span>
                     <span style={{ color: TEXT.muted }}> {r.asset_name}</span>
-                  </td>
-                  <td style={cellStyle}>
+                  </VisTd>
+                  <VisTd vis={vis} table="requests" k="type" style={cellStyle}>
                     {REQUEST_TYPE_LABELS[r.request_type]?.split(' (')[0] || r.request_type}
                     {r.machine_down && <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#DC2626' }}>Machine down</span>}
-                  </td>
-                  <td style={{ ...cellStyle, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.problem_description}>{r.problem_description}</td>
-                  <td style={cellStyle}>
+                  </VisTd>
+                  <VisTd vis={vis} table="requests" k="problem" style={{ ...cellStyle, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.problem_description}>{r.problem_description}</VisTd>
+                  <VisTd vis={vis} table="requests" k="priority" style={cellStyle}>
                     <Pill label={priorityLabel(r.priority)} hex={PRIORITY_HEX[normalizePriority(r.priority)]} />
-                  </td>
-                  <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{formatDateTime(r.reported_at)}</td>
-                  <td style={cellStyle}>{r.raised_by_name || '—'}</td>
+                  </VisTd>
+                  <VisTd vis={vis} table="requests" k="reported" style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{formatDateTime(r.reported_at)}</VisTd>
+                  <VisTd vis={vis} table="requests" k="raised_by" style={cellStyle}>{r.raised_by_name || '—'}</VisTd>
                   <td style={cellStyle}>
                     <Pill label={REQUEST_STATUS_LABELS[r.status] || r.status} hex={STATUS_HEX[r.status]} />
                     {r.can_confirm && <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#F59E0B', marginTop: 4 }}>Confirm repair</span>}
                   </td>
-                  <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
+                  <VisTd vis={vis} table="requests" k="work_order" style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
                     {r.work_order ? `${r.work_order.wo_number} · ${WO_STATUS_LABELS[r.work_order.status] || r.work_order.status}` : '—'}
-                  </td>
+                  </VisTd>
                 </tr>
               ))
             )}

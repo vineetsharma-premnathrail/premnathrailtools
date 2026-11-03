@@ -16,6 +16,9 @@ modules/design/features.py), so board voters, ECN acknowledgers and named
 signatories reaching a record without the tab keep working as before."""
 from app.core.assignee_rules import register_pickers
 from app.core.permission_registry import MODULES, _feature, register_features
+from app.core.visibility import register_visibility
+from app.modules.design.models.change_request import DESIGN_ECR_SOURCES, DESIGN_ECR_URGENCIES
+from app.modules.design.models.document import DESIGN_DISCIPLINES, DESIGN_DOCUMENT_TYPES
 
 
 def _reg(tab: str, *features: tuple) -> None:
@@ -48,8 +51,8 @@ _reg(
              "The Where used block: the BOMs and projects that use this drawing."),
     _feature("timeline", "Timeline & comments", "section", {"view": "view", "create": "view"},
              "The record's timeline (audit history) and posting comments on it."),
-    _feature("owner", "Owner", "action", {"view": "view", "create": "view", "edit": "view"},
-             "Name the engineer who owns a drawing when creating it (create) and hand it over to another owner (edit). Record-level rules still apply (owner, Design head)."),
+    _feature("owner", "Owner", "picker", {"view": "view"},
+             "Only carries the role's 'Assign to' rule for the Owner picker of a drawing (new drawing, hand-over). Record-level rules still apply (owner, Design head)."),
 )
 
 _reg(
@@ -69,8 +72,8 @@ _reg(
              "The Where used block: parent BOMs and projects that use this BOM's product."),
     _feature("timeline", "Timeline & comments", "section", {"view": "view", "create": "view"},
              "The record's timeline (audit history) and posting comments on it."),
-    _feature("owner", "Owner", "action", {"view": "view", "create": "view", "edit": "view"},
-             "Name the engineer who owns a BOM when creating it (create) and hand it over to another owner (edit). Record-level rules still apply (owner, Design head)."),
+    _feature("owner", "Owner", "picker", {"view": "view"},
+             "Only carries the role's 'Assign to' rule for the Owner picker of a BOM (new BOM, hand-over). Record-level rules still apply (owner, Design head)."),
 )
 
 _reg(
@@ -95,7 +98,7 @@ _reg(
 
 _reg(
     "reviews",
-    _feature("customer_submissions", "Customer submissions", "subtab", {
+    _feature("customer_submissions", "Customer submissions", "section", {
         "view": "view", "create": "view", "edit": "view", "submit": "view", "cancel": "view",
     }, "Customer drawing submissions: see them, prepare / edit / delete a draft, send it to the customer and cancel it. Design team only; delete also needs Drawings › Delete."),
     _feature("customer_response", "Record customer response", "action", {"view": "view", "edit": "view"},
@@ -142,3 +145,89 @@ register_pickers("design", "project_work",
                  ("request_progress", "Assign lead designer", "Who this role may make lead designer of a design request, when raising or editing it."))
 register_pickers("design", "reviews",
                  ("comment_actions", "Assign comment actions to", "Who this role may give a customer comment action to on a customer submission."))
+
+
+# UI visibility per role (core/visibility.py): what a member of a role sees on
+# the Drawings and Changes (ECR) screens. The dropdown values are the coded
+# ones from modules/design/models (never retyped); a value a role does not
+# allow is also refused by the server (routes/documents.py, routes/change_requests.py).
+# Sections holding a required field are locked (always shown). Number / status
+# columns are never offered; the ECR cost figure stays behind "Cost impact of changes".
+def _words(value: str) -> str:
+    """'ga_drawing' -> 'GA Drawing', 'bom' -> 'BOM', 'part_drawing' -> 'Part Drawing'."""
+    short = {"ga": "GA", "bom": "BOM", "ncr": "NCR", "capa": "CAPA", "rnd": "R&D", "bd": "BD"}
+    return " ".join(short.get(w, w.capitalize()) for w in value.split("_"))
+
+
+register_visibility(
+    "design", "documents",
+    label="Drawings & Documents — form, page & register",
+    screens=(("form", "New Document form"), ("detail", "Drawing page"), ("list", "Document Register")),
+    sections=(
+        # New Document form (dashboard/design/documents/new)
+        ("document", "Document", "Title, type, discipline, standard, legacy number and description.", True, "form"),
+        ("associations", "Associations", "Project, machine, part, department and design request links.", False, "form"),
+        ("customer", "Customer", "Customer and whether the customer must approve the drawing.", False, "form"),
+        ("signoff", "R0 — sign-off", "Owner, checker, approver and the issue note of the first revision.", False, "form"),
+        ("files", "Files", "The files staged on the first revision (controlled print, CAD source).", False, "form"),
+        # Drawing page (dashboard/design/documents/[id])
+        ("detail_summary", "Document summary", "Number, title, status, controlled revision and owner.", True, "detail"),
+        ("detail_document", "Document", "Type, discipline, standard, department and legacy number.", False, "detail"),
+        ("detail_customer", "Customer", "Customer and customer-approval flag.", False, "detail"),
+        ("detail_links", "Linked to", "Project, machine, part, design request and approved change notices.", False, "detail"),
+        ("detail_revision", "Revision", "The selected revision: signatories, dates and its files.", True, "detail"),
+        ("detail_history", "Revision history", "The table of every revision and its check answers.", False, "detail"),
+        ("detail_submissions", "Customer submissions", "Transmittals sent to the customer and their responses.", False, "detail"),
+        ("detail_where_used", "Where used",
+         "BOM lines that reference this drawing. Access is still set by the Where used feature; this only hides the block on screen.", False, "detail"),
+        ("detail_timeline", "Timeline",
+         "The document's history and comments. Access is still set by the Timeline & comments feature; this only hides the block on screen.", False, "detail"),
+    ),
+    options=(
+        ("document_type", "Type", {k: _words(k) for k in DESIGN_DOCUMENT_TYPES},
+         "The document types a member may create. A value not allowed here is also refused by the server.", "form"),
+        ("discipline", "Discipline", {k: _words(k) for k in DESIGN_DISCIPLINES},
+         "The disciplines a member may pick when creating or editing a document.", "form"),
+    ),
+    tables=(
+        ("documents", "Document Register", {"type": "Type", "discipline": "Discipline", "customer": "Customer",
+                                            "controlled_rev": "Controlled Rev", "wip": "Work in Progress", "owner": "Owner"}, "list"),
+        ("detail_revisions", "Revision history on the drawing page",
+         {"change_summary": "Change summary", "prepared": "Prepared", "checked": "Checked", "approved": "Approved",
+          "released": "Released", "checklist": "Checklist"}, "detail"),
+    ),
+)
+
+register_visibility(
+    "design", "change_notices",
+    label="Change requests (ECR) — form, page & list",
+    screens=(("form", "Raise ECR form"), ("detail", "Change request page"), ("list", "Change requests list")),
+    sections=(
+        # Raise Change Request form (dashboard/design/change-requests/new)
+        ("request", "Request", "Title, source, urgency, reason and proposed change.", True, "form"),
+        ("source_details", "Source details", "The NCR / CAPA link and the source reference.", False, "form"),
+        ("associations", "Associations", "Project and machine links.", False, "form"),
+        ("affected_items", "Affected drawings & BOMs", "The released drawings and BOMs the change touches.", True, "form"),
+        # Change request page (dashboard/design/change-requests/[id])
+        ("detail_summary", "Request summary", "Number, title, status, urgency and who raised it.", True, "detail"),
+        ("detail_request", "Request", "Reason and proposed change.", True, "detail"),
+        ("detail_origin", "Where it came from", "Source, NCR / CAPA and source reference.", False, "detail"),
+        ("detail_links", "Linked to", "Project, machine and the change notice raised from it.", False, "detail"),
+        ("detail_items", "Affected items & where used", "The affected drawings / BOMs and the BOMs that use them.", True, "detail"),
+        ("detail_impact", "Impact", "The impact check (stock, open orders, delivery). The cost figure stays behind the Cost impact feature.", False, "detail"),
+        ("detail_board", "Change board",
+         "Board members and their votes. Access is still set by the Change board vote feature; this only hides the block on screen.", False, "detail"),
+        ("detail_timeline", "Timeline", "The request's history and comments.", False, "detail"),
+    ),
+    options=(
+        ("source", "Source", {k: _words(k) for k in DESIGN_ECR_SOURCES},
+         "Where a change request may come from. A value not allowed here is also refused by the server.", "form"),
+        ("urgency", "Urgency", {k: _words(k) for k in DESIGN_ECR_URGENCIES},
+         "The urgencies a member may raise a change request with.", "form"),
+    ),
+    tables=(
+        ("change_requests", "Change requests list",
+         {"source": "Source", "urgency": "Urgency", "items": "Items", "raised_by": "Raised by", "votes": "Votes",
+          "days_open": "Days open", "ecn": "ECN"}, "list"),
+    ),
+)

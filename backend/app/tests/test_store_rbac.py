@@ -40,7 +40,7 @@ def test_view_only_user_cannot_create_edit_or_delete_items(client, db, item):
     assert client.get(f"{API}/items", headers=h).status_code == 200
     assert client.get(f"{API}/items/{item['id']}", headers=h).status_code == 200
     r = client.post(f"{API}/items", json={"item_name": "Nut", "uom": "NOS"}, headers=h)
-    assert r.status_code == 403 and "'create' permission on store › items" in r.json()["detail"].lower()
+    assert r.status_code == 403 and "'create' permission on store › item master" in r.json()["detail"].lower()
     assert client.patch(f"{API}/items/{item['id']}", json={"item_name": "X"}, headers=h).status_code == 403
     r = client.delete(f"{API}/items/{item['id']}", headers=h)
     assert r.status_code == 403 and "'delete' permission" in r.json()["detail"].lower()
@@ -48,11 +48,11 @@ def test_view_only_user_cannot_create_edit_or_delete_items(client, db, item):
 
 
 def test_view_only_user_cannot_write_settings_masters(client, db):
-    viewer = _user(db, "rbac.settings@premnathrail.com", ["store:uoms:view", "store:categories:view", "store:entry_types:view"])
+    viewer = _user(db, "rbac.settings@premnathrail.com", ["store:uoms:view", "store:categories:view", "store:settings:view"])
     h = _h(viewer)
     assert client.post(f"{API}/uoms", json={"code": "BAG", "label": "Bag"}, headers=h).status_code == 403
     assert client.post(f"{API}/categories", json={"name": "Fasteners"}, headers=h).status_code == 403
-    assert client.post(f"{API}/doc-types/stock_entry", json={"label": "Found", "stock_effect": "in"}, headers=h).status_code == 403
+    assert client.post(f"{API}/doc-types/stock_entry", json={"label": "Found", "stock_effect": "in"}, headers=h).status_code in (403, 410)  # Record Stock Entry retired: 410 for everyone
     # Issue Rules settings were retired (2026-10-12) — the per-type form standard replaced them.
     assert client.put(f"{API}/settings/issue-rules", json={}, headers=h).status_code in (404, 405)
 

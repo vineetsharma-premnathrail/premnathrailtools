@@ -6,6 +6,7 @@ routes (same approach as production/routes/lookups.py)."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.permissions import require_app_access
 from app.db.session import get_db
 from app.modules.electrical.models.bom import ELECTRICAL_COMPONENT_CATEGORIES
@@ -54,8 +55,17 @@ async def approval_target(
 
 
 @router.get("/meta", response_model=ElectricalMetaResponse)
-async def get_meta():
+async def get_meta(user: User = Depends(require_app_access(ELECTRICAL_APP))):
+    def allowed(key: str, dropdown: str) -> list[str] | None:
+        values = visibility.allowed_values(user, key, dropdown)
+        return None if values is None else sorted(values)
+
     return ElectricalMetaResponse(
+        allowed={
+            "job_priority": allowed("electrical:jobs", "priority"),
+            "test_phase": allowed("electrical:testing", "phase"),
+            "test_type": allowed("electrical:testing", "test_type"),
+        },
         stages=[
             ElectricalStageMeta(key=k, label=label, phase=phase, sequence=i, is_mandatory=k in MANDATORY_STAGES)
             for i, (k, label, phase) in enumerate(ELECTRICAL_STAGES, start=1)

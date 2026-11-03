@@ -25,12 +25,12 @@ register_event(
     default_channels=("bell", "teams"), kind="approval",
 )
 register_event(
-    "rnd", "task_assigned", "Requirement task assigned",
+    "rnd", "task_assigned", "Someone got a requirement task (supervisor view)",
     "someone gives a task or sub-task on a requirement", ("requirements", "tasks", "view"),
     kind="assignment",
 )
 register_event(
-    "rnd", "project_task_assigned", "Project task assigned",
+    "rnd", "project_task_assigned", "Someone got a project task (supervisor view)",
     "a project lead gives a task (or an assignee a sub-task) on a Prototype / Research project", ("projects", "tasks", "view"),
     kind="assignment",
 )

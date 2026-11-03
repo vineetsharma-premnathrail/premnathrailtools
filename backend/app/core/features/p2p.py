@@ -14,19 +14,21 @@ always sees that tab's prices: they type them, and a blanked rate sent back
 on save would wipe the real one (app/modules/p2p/pricing.py)."""
 from app.core.assignee_rules import register_pickers
 from app.core.permission_registry import _feature, register_features
+from app.core.visibility import register_visibility
+from app.modules.p2p.models.p2p_request import P2P_PURPOSES, P2P_REQUEST_PRIORITIES
 
 _PRICES_HINT = ("Unit prices, tax, line totals and order values. Off = those figures are blanked on screen and in the API. "
                 "Holders of Edit on this tab always see them (they enter the rates).")
 
 register_features(
     "p2p", "purchase_requisitions",
-    _feature("my_requisitions", "My Requisitions tab", "subtab", {"view": "view"},
-             "The My Requisitions tab on the Purchase Requisitions page: the requisitions this person raised."),
-    _feature("all_requisitions", "All Requisitions tab", "subtab", {"view": "view"},
-             "The All Requisitions tab: every requisition this person's data access allows them to see. "
+    _feature("my_requisitions", "Approved / Rejected segments", "subtab", {"view": "view"},
+             "The Approved and Rejected segments on the Purchase Requisitions page."),
+    _feature("all_requisitions", "All segment", "subtab", {"view": "view"},
+             "The All segment on the Purchase Requisitions page: every requisition this person's data access allows them to see. "
              "Data access (Role & Permissions > Data access) still decides which ones those are."),
-    _feature("approvals", "Approvals tab", "subtab", {"view": "view"},
-             "The Approvals tab: requisitions waiting for this person's decision. Only people named as PR approvers "
+    _feature("approvals", "Waiting for me segment", "subtab", {"view": "view"},
+             "The Waiting for me segment: requisitions waiting for this person's decision. Only people named as PR approvers "
              "in Organization > Approval Workflows get a list in it, whatever the role says."),
     _feature("purchase_order", "Purchase order block", "section", {"view": "view"},
              "The Purchase Order card on a requisition (vendor, PO lines, PO document) for the people who buy or approve it."),
@@ -35,7 +37,7 @@ register_features(
     _feature("buyer", "Assign buyer", "action", {"edit": "edit", "view": "view"},
              "Assign or change the Purchase-team buyer of an approved requisition, or move one line's not-yet-ordered quantity to another buyer."),
     _feature("my_lines", "My Lines tab", "subtab", {"view": "view"},
-             "Requisition lines this person buys: to quote, ordered, waiting for goods."),
+             "The My Lines tab of Procurement (Purchase team): requisition lines this person buys — to quote, ordered, waiting for goods."),
     _feature("all_lines", "All buyers' lines (purchase head)", "action", {"view": None, "edit": None},
              "See and work every buyer's lines: raise RFQs, award, upload POs and short-close lines bought by someone else. "
              "Only ticking it on a role grants it."),
@@ -54,9 +56,6 @@ register_features(
     _feature("vendor_quotes", "Vendor quotations", "subtab",
              {"view": "view", "create": "edit", "edit": "edit", "delete": "delete"},
              "Vendor quotation files and line-wise quotes on an RFQ: add, change and remove them (only your own files)."),
-    _feature("evaluation", "Technical & commercial evaluation", "action",
-             {"view": "view", "edit": "edit", "approve": "approve", "reject": "reject"},
-             "Start the technical / commercial evaluation and qualify (approve) or disqualify (reject) vendor quotations."),
     _feature("comparison", "Quotation comparison", "subtab", {"view": "view", "export": "export"},
              "The side-by-side quotation comparison and its Excel export."),
     _feature("award", "Award / split award", "action", {"view": "view", "edit": "edit"},
@@ -90,9 +89,9 @@ register_features(
     _feature("catalog", "Vendor catalog", "subtab",
              {"view": "view", "create": "edit", "edit": "edit", "delete": "edit", "import": "import", "export": "export"},
              "The items a vendor supplies: add, change, remove, import and export catalog lines."),
-    _feature("info_records", "Item rates & approved vendors", "subtab",
+    _feature("info_records", "Item Rates tab", "subtab",
              {"view": "view", "create": "edit", "edit": "edit", "delete": "delete"},
-             "Saved vendor rates per item (rate contracts, last PO and quoted rates) and the approved-vendor list."),
+             "The Item Rates tab of Procurement: saved vendor rates per item (rate contracts, last PO and quoted rates) and the approved-vendor list."),
     _feature("prices", "Prices & rates", "sensitive", {"view": "view"}, _PRICES_HINT),
 )
 
@@ -101,3 +100,63 @@ register_features(
 # checked; PR / PO approvers are fixed in Settings and never take a rule.
 register_pickers("p2p", "purchase_requisitions",
                  ("buyer", "Assign buyer to", "Who this role may assign (or re-assign) as the buyer of an approved requisition."))
+
+# UI visibility per role (core/visibility.py): what a member of a role sees on the
+# New / Edit requisition form and the requisitions list. Purpose and priority
+# values are the coded ones (never retyped); a value a role does not allow is
+# also refused by the server (routes/p2p_requests.py). "Purpose & Charging" and
+# "Item Details" hold required fields, so they are locked (always shown).
+# Money columns are not offered here: they stay behind the "Prices & PO values" switch.
+register_visibility(
+    "p2p", "purchase_requisitions",
+    label="Purchase Requisitions — form, page & list",
+    screens=(("form", "New Requisition form"), ("detail", "Requisition page"), ("list", "Requisitions list")),
+    sections=(
+        # New / Edit Requisition form
+        ("purpose_charging", "Purpose & Charging", "Purpose and the project / R&D project it is charged to.", True, "form"),
+        ("request_details", "Request Details", "Required date and priority.", False, "form"),
+        ("item_details", "Item Details", "The item lines.", True, "form"),
+        ("remarks", "Remarks", "Free-text remarks on the requisition.", False, "form"),
+        ("attachments", "Attachments", "Specification / reference files on the form.", False, "form"),
+        # Requisition page (dashboard/p2p/[id]). Visibility is the cosmetic layer: the feature grants
+        # (Purchase order block, Attachments, Audit history) still decide who may see the data at all.
+        ("detail_header", "Request summary",
+         "Number, purpose, status, priority, requester and what it is charged to.", True, "detail"),
+        ("detail_people_dates", "People & dates", "Requested by, buyer, request date and required-by date.", False, "detail"),
+        ("detail_remarks", "Remarks", "The requester's remarks shown under the summary.", False, "detail"),
+        ("detail_approval_flow", "Approval flow",
+         "Who has to approve and who already did. Hiding it only removes the card; approvers still decide from My Approvals.",
+         False, "detail"),
+        ("detail_lines", "Item Details", "The item lines of the requisition.", True, "detail"),
+        ("detail_tracker", "Progress tracker",
+         "How far each line has got: RFQ, award, PO, goods received.", False, "detail"),
+        ("detail_rfqs", "RFQs and vendor quotations",
+         "The RFQs raised for this requisition and their quotations (the Purchase team's work area).", False, "detail"),
+        ("detail_purchase_order", "Purchase order",
+         "The Purchase Order card. Who may open it is still set by Role & Permissions > Purchase order block; this only hides the card on screen.",
+         False, "detail"),
+        ("detail_attachments", "Attachments",
+         "Files attached to the requisition. Access is still set by the Attachments feature; this only hides the block on screen.",
+         False, "detail"),
+        ("detail_history", "History",
+         "The change / approval log. Access is still set by the Audit history feature; this only hides the block on screen.",
+         False, "detail"),
+    ),
+    options=(
+        ("purpose", "Purpose", dict(P2P_PURPOSES),
+         "What the purchase is for. A value not allowed here is also refused by the server.", "form"),
+        ("priority", "Priority", {v: v.capitalize() for v in P2P_REQUEST_PRIORITIES}, "Standard / Urgent on the requisition form. "
+         "Requisitions raised from Service Requests or work orders keep their own priority.", "form"),
+    ),
+    # Hiding Request Details means the form sends the default priority (Standard), so a role
+    # that hides it must still allow Standard (clean_rules refuses the combination).
+    section_defaults=(("request_details", "priority", "standard"),),
+    tables=(
+        ("requisitions", "Requisitions list", {"category": "Category", "project": "Project",
+                                               "required_by": "Required By", "priority": "Priority"}, "list"),
+        ("form_items", "Item lines on the form", {"make": "Make", "part_code": "Part Code", "uom": "UOM",
+                                                  "in_stock": "In Stock", "ship_to": "Ship To"}, "form"),
+        ("detail_lines", "Item lines on the requisition page",
+         {"make": "Make", "part_code": "Part Code", "uom": "UOM", "in_stock": "Stock", "ship_to": "Ship To", "buyer": "Buyer"}, "detail"),
+    ),
+)

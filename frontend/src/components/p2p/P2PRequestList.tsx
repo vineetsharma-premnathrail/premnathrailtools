@@ -18,6 +18,9 @@ import { RowCount, pillStyle, smallSecondaryBtnStyle, smallDangerBtnStyle, input
 import { Funnel } from '@phosphor-icons/react'
 import Checkbox from '@/components/Checkbox'
 import { priorityLabel } from '@/lib/priority'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleRows } from '@/lib/p2pPreviewSamples'
 
 // One-row text longer than 25 characters is cut with "…" (full text in the title); two-row columns cut at 50.
 const clip = (v?: string | null, max = 25) => (!v ? '—' : v.length > max ? `${v.slice(0, max).trimEnd()}…` : v)
@@ -90,6 +93,9 @@ function displayStatus(pr: P2PRequest): { label: string; hex: string } {
   return { label: STATUS_LABELS[pr.status] || pr.status, hex: STATUS_HEX[pr.status] || '#64748b' }
 }
 
+/** Three made-up requisitions the Role editor's "Preview & choose" draws the list with. */
+export { sampleRows }
+
 export default function P2PRequestList({ statuses, emptyLabel, context, queue, onlyPendingForViewer, showFilters, onlyMine, mineToggle, toolbarLeft, toolbarRight, onStats, statusFilter: statusFilterProp, onStatusFilterChange }: {
   statuses?: string[]; emptyLabel: string; context?: string; queue?: string; onlyPendingForViewer?: boolean; showFilters?: boolean;
   /** Only the requisitions this user raised (the My Requisitions tab). */ onlyMine?: boolean;
@@ -102,6 +108,8 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
   statusFilter?: string; onStatusFilterChange?: (v: string) => void }) {
   const router = useRouter()
   const { user } = useAuth()
+  // Columns the user's roles hide (Role editor > Purchase Requisitions > Visibility). PR No., PO Value, Status and actions always show.
+  const vis = useVisibility('p2p:purchase_requisitions')
   const [prs, setPrs] = useState<P2PRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
@@ -127,6 +135,8 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
   const detailHref = (pr: object) => (context ? `${recordPath('/dashboard/p2p', pr)}?from=${context}` : recordPath('/dashboard/p2p', pr))
 
   const load = async () => {
+    // Role editor preview: made-up rows, nothing is loaded.
+    if (vis.preview) { setPrs(sampleRows); setLoading(false); return }
     setLoading(true)
     setError('')
     try {
@@ -198,7 +208,10 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
   // and ALL roles must approve (any one Director clears the Director slot);
   // legacy PRs keep the Purchase Head / Director / Partner chain.
   const showPoValue = context === 'po-approval'
-  const columns = ['PR No.', 'Category', 'Project', 'Required By', 'Priority', ...(showPoValue ? ['PO Value'] : []), 'Status', ...(showPoValue ? [''] : [])]
+  const HIDEABLE: Record<string, string> = { Category: 'category', Project: 'project', 'Required By': 'required_by', Priority: 'priority' }
+  // The preview draws every column (hidden ones dimmed, with a toggle); normal use drops the hidden ones.
+  const showCol = (label: string) => !HIDEABLE[label] || vis.preview || vis.showColumn('requisitions', HIDEABLE[label])
+  const columns = ['PR No.', 'Category', 'Project', 'Required By', 'Priority'].filter(showCol).concat([...(showPoValue ? ['PO Value'] : []), 'Status', ...(showPoValue ? [''] : [])])
   // Engine-routed POs: the backend's can_decide; older in-flight POs: the old role check.
   const enginePo = (pr: P2PRequest) => pr.engine_approval?.entity_type === 'p2p_purchase_order' && pr.engine_approval.status === 'pending'
   const canApprovePoInline = (pr: P2PRequest) =>
@@ -348,19 +361,29 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
         </FormSheet>
       )}
       <div data-tour="p2p-list-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
-        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
+        <div style={{ overflow: 'auto', maxHeight: vis.preview ? undefined : 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: `${BRAND.primary}0d` }}>
-              {columns.map((h, i) => (
-                <th key={h || 'actions'} data-fit-min={60} data-fit-cut={h === 'Project' ? '' : undefined} aria-sort={i === 0 ? (sortAsc ? 'ascending' : 'descending') : undefined} style={{ textAlign: h === 'PO Value' ? 'right' : 'left', padding: '10px 8px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {i === 0
-                    ? <button type="button" onClick={() => setSortAsc(!sortAsc)} title={`Sorted by PR number, ${sortAsc ? 'lowest first' : 'highest first'} — click to reverse`}
-                        style={{ background: 'none', border: 'none', padding: 0, margin: 0, font: 'inherit', color: 'inherit', textTransform: 'inherit', letterSpacing: 'inherit', cursor: 'pointer' }}>{h} {sortAsc ? '↑' : '↓'}</button>
-                    : h}
-                  {i === 0 && <RowCount count={visiblePrs.length} />}
-                </th>
-              ))}
+              {columns.map((h, i) => {
+                const headProps = {
+                  'data-fit-min': 60, 'data-fit-cut': h === 'Project' ? '' : undefined,
+                  'aria-sort': i === 0 ? (sortAsc ? 'ascending' : 'descending') : undefined,
+                  style: { textAlign: h === 'PO Value' ? 'right' : 'left', padding: '10px 8px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 },
+                } as React.ThHTMLAttributes<HTMLTableCellElement>
+                const head = (
+                  <>
+                    {i === 0
+                      ? <button type="button" onClick={() => setSortAsc(!sortAsc)} title={`Sorted by PR number, ${sortAsc ? 'lowest first' : 'highest first'} — click to reverse`}
+                          style={{ background: 'none', border: 'none', padding: 0, margin: 0, font: 'inherit', color: 'inherit', textTransform: 'inherit', letterSpacing: 'inherit', cursor: 'pointer' }}>{h} {sortAsc ? '↑' : '↓'}</button>
+                      : h === '' ? <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>Actions</span> : h}
+                    {i === 0 && <RowCount count={visiblePrs.length} />}
+                  </>
+                )
+                return HIDEABLE[h]
+                  ? <VisTh key={h} vis={vis} table="requisitions" k={HIDEABLE[h]} {...headProps}>{head}</VisTh>
+                  : <th key={h || 'actions'} {...headProps}>{head}</th>
+              })}
             </tr>
           </thead>
           <tbody>
@@ -375,10 +398,10 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
               return (
               <tr key={pr.id} onClick={() => router.push(detailHref(pr))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ padding: '10px 8px', fontSize: 13, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{pr.p2p_number}</td>
-                <td title={pr.category_label || pr.category_code || undefined} style={{ padding: '10px 8px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{clip(pr.category_label || pr.category_code)}</td>
-                <td data-fit-clamp style={{ padding: '10px 8px', fontSize: 13, color: TEXT.secondary }}><div title={pr.project_label || undefined}>{clip2(pr.project_label)}</div></td>
-                <td style={{ padding: '10px 8px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(pr.required_date)}</td>
-                <td style={{ padding: '10px 8px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{pr.priority ? priorityLabel(pr.priority) : '—'}</td>
+                <VisTd vis={vis} table="requisitions" k="category" title={pr.category_label || pr.category_code || undefined} style={{ padding: '10px 8px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{clip(pr.category_label || pr.category_code)}</VisTd>
+                <VisTd vis={vis} table="requisitions" k="project" data-fit-clamp style={{ padding: '10px 8px', fontSize: 13, color: TEXT.secondary }}><div title={pr.project_label || undefined}>{clip2(pr.project_label)}</div></VisTd>
+                <VisTd vis={vis} table="requisitions" k="required_by" style={{ padding: '10px 8px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(pr.required_date)}</VisTd>
+                <VisTd vis={vis} table="requisitions" k="priority" style={{ padding: '10px 8px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{pr.priority ? priorityLabel(pr.priority) : '—'}</VisTd>
                 {showPoValue && (
                   <td style={{ padding: '10px 8px', fontSize: 13, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap', textAlign: 'right' }}>
                     {pr.po_value != null ? `₹ ${pr.po_value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}

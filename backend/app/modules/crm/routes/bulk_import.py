@@ -53,6 +53,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.permissions import require_tab_action
 from app.core.priority import map_legacy_priority
 from app.core.validators import validate_email_format, validate_gst_format
@@ -217,6 +218,19 @@ async def bulk_import(
     db: Session = Depends(get_db),
     user: User = Depends(require_tab_action("crm", "organizations", "import")),
 ):
+    # Role-wise visibility: the file sets Organization Scope, Inquiry Status and Priority itself (or
+    # their defaults), so a role that limits any of them can't import — the restriction would be skipped.
+    limited = [label for key, dropdown, label in (
+        ("crm:organizations", "org_scope", "Organization Scope"),
+        ("crm:inquiries_tenders", "inquiry_status", "Inquiry Status"),
+        ("crm:inquiries_tenders", "inquiry_priority", "Priority"),
+    ) if visibility.allowed_values(user, key, dropdown) is not None]
+    if limited:
+        many = len(limited) > 1
+        raise HTTPException(status_code=422, detail=(
+            f"Your role limits {' and '.join(limited)}, and the import file sets {'them' if many else 'it'} row by row — "
+            "add the customer organizations and inquiries from their forms, or ask an admin to widen "
+            f"{'them' if many else 'it'} for your role in Organization › Role & Permissions › CRM › Visibility."))
     _require_admin(user)
     rows = _read_csv_rows(await file.read())
     if not rows:

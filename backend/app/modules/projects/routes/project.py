@@ -666,6 +666,9 @@ async def delete_project(project_id: int, db: Session = Depends(get_db), user: U
     # Department tasks and documents point at the project (no cascade), and
     # they are its work history — a project that has any is cancelled, not deleted.
     n_tasks = db.query(func.count(PmProjectTask.id)).filter(PmProjectTask.project_id == project_id).scalar() or 0
+    # R&D tasks given on the project (R&D › R&D Tasks › Project) point at it too.
+    from app.modules.rnd.models.project_task import RndProjectTask
+    n_tasks += db.query(func.count(RndProjectTask.id)).filter(RndProjectTask.pm_project_id == project_id).scalar() or 0
     from app.modules.projects.models.document import PmProjectDocument
     # Deleted files are tombstones (their SharePoint file is already gone) —
     # they don't block deleting a Planning project and go with it.
@@ -728,3 +731,8 @@ async def get_project_audit(project_id: int, db: Session = Depends(get_db), _use
         }
         for log in logs
     ]
+
+
+# History tab lists (store issues, purchases, tasks) — routes/project_history.py
+from app.modules.projects.routes import project_history as _project_history_routes  # noqa: E402
+router.include_router(_project_history_routes.router)

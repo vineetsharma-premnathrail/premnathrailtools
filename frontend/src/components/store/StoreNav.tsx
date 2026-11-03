@@ -22,14 +22,14 @@ const GROUPS = [
     tabs: [
       { href: '/dashboard/store', label: 'Item Master', key: 'items', subtabKey: 'items' },
       { href: '/dashboard/store/stock', label: 'Stock', key: 'stock', subtabKey: 'stock' },
-      { href: '/dashboard/store/batches', label: 'Batches', key: 'batches', subtabKey: 'stock' },
+      { href: '/dashboard/store/batches', label: 'Batches', key: 'batches', subtabKey: 'stock', feature: 'batches' },
       // Racks / shelves / bins and the stock in each — one page (/bin-stock redirects here).
       { href: '/dashboard/store/bins', label: 'Bins', key: 'bins', subtabKeys: ['bins', 'stock'], paths: ['/dashboard/store/bins', '/dashboard/store/bin-stock'] },
-      { href: '/dashboard/store/serials', label: 'Serial Nos.', key: 'serials', subtabKey: 'stock' },
+      { href: '/dashboard/store/serials', label: 'Serial Nos.', key: 'serials', subtabKey: 'stock', feature: 'serials' },
       { href: '/dashboard/store/movements', label: 'Movements', key: 'movements', subtabKey: 'movements' },
       // Approval documents — approvers land here from the notification bell.
       { href: '/dashboard/store/adjustments', label: 'Adjustments', key: 'adjustments', subtabKey: 'adjustments' },
-      { href: '/dashboard/store/reorder', label: 'Reorder', key: 'reorder', subtabKey: 'stock' },
+      { href: '/dashboard/store/reorder', label: 'Reorder', key: 'reorder', subtabKey: 'stock', feature: 'reorder' },
       { href: '/dashboard/store/cycle-count', label: 'Physical Count', key: 'cycle-count', subtabKey: 'adjustments', feature: 'cycle_count' },
     ],
   },
@@ -38,9 +38,9 @@ const GROUPS = [
     tabs: [
       // Own page under Store (not a link out to P2P) — same goods-receipts API
       // as the P2P GRN pages, presented here since goods physically land here.
-      { href: '/dashboard/store/grn', label: 'GRN & Inspection', key: 'grn', subtabKey: 'grn' },
+      { href: '/dashboard/store/grn', label: 'GRN & Quality check', key: 'grn', subtabKey: 'grn' },
       // Goods that arrived before their PO — held, not in stock; Procurement makes the PO.
-      { href: '/dashboard/store/before-po', label: 'Before PO', key: 'before-po', subtabKey: 'grn' },
+      { href: '/dashboard/store/before-po', label: 'Before PO', key: 'before-po', subtabKey: 'grn', feature: 'before_po' },
       { href: '/dashboard/store/returns', label: 'Returns', key: 'returns', subtabKey: 'returns' },
     ],
   },
@@ -97,7 +97,8 @@ export default function StoreNav() {
   const groups = GROUPS
     .map((g) => ({
       ...g,
-      // A page that is a feature of its tab (Physical Count, Job Work) also needs that feature's View.
+      // A page that is a feature of its tab (Batches, Serial Nos., Reorder, Physical Count, Before PO, Job Work)
+      // also needs that feature's View.
       visible: filterTabsByAccess<SubTab>('store', g.tabs, user)
         .filter((t) => !('feature' in t) || canFeature(user, 'store', t.subtabKey, t.feature, 'view')),
     }))

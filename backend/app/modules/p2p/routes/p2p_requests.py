@@ -4,7 +4,7 @@ from fastapi.responses import Response
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, object_session, selectinload
 
-from app.core import assignee_rules
+from app.core import assignee_rules, visibility
 from app.core.config import settings
 from app.core.permission_registry import can_feature, can_perform, can_view_tab
 from app.core.permissions import GRANT_HINT, ensure_can_delete, ensure_feature_action, ensure_tab_action, require_app_access
@@ -61,6 +61,9 @@ from app.modules.store.services.stock_ledger import post_stock_transaction
 from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, download_file_content
 from app.utils.notifications import notify_user
 from app.utils.email import send_p2p_pr_approval_email, send_p2p_po_approval_email
+
+# Role-wise UI visibility entry of this screen (core/features/p2p.py register_visibility).
+PR_VISIBILITY_KEY = "p2p:purchase_requisitions"
 
 router = APIRouter(prefix="/p2p/requests", tags=["P2P"])
 BUYER_RULE_KEY = "p2p:purchase_requisitions.buyer"  # core/assignee_rules.PICKERS
@@ -574,18 +577,23 @@ def _check_po_approve_access(pr: P2PRequest, user: User) -> list[str]:
 
 
 @router.get("/meta")
-async def get_meta(db: Session = Depends(get_db), _user: User = Depends(_requester_or_purchase)):
+async def get_meta(db: Session = Depends(get_db), user: User = Depends(_requester_or_purchase)):
     # UOMs come from the Store item master's fixed list so a PR line's unit
     # matches store stock exactly — requesters usually lack the `store` app,
     # so the list is served here rather than from /store/items/meta.
     from app.modules.store.routes.uoms import uom_options
     rules = pr_purpose.resolve_purpose_rules(db)  # defaults + Procurement › Settings › Purpose rules
+    purpose_allowed = visibility.allowed_values(user, PR_VISIBILITY_KEY, "purpose")
     return {
         "categories": [{"code": k, "label": v} for k, v in P2P_CATEGORIES.items() if k != LINE_CATEGORY],
         "requirement_types": list(P2P_REQUIREMENT_TYPES),
         # Each purpose with the categories it offers and the pre-filled
         # category / requirement type (p2p/purpose.py PURPOSE_FORM).
-        "purposes": [{"code": k, "label": v, "categories": list(rules[k]["categories"]),
+        # Every purpose, each flagged `allowed` for this user: a role's Visibility rule
+        # (core/visibility.py) may offer only some. The form lists the allowed ones (and
+        # keeps an old requisition's own purpose); the server refuses the rest.
+        "purposes": [{"code": k, "label": v, "allowed": purpose_allowed is None or k in purpose_allowed,
+                      "categories": list(rules[k]["categories"]),
                       "default_category": rules[k]["category"], "category_locked": rules[k]["category_locked"],
                       "requirement_types": list(rules[k]["requirement_types"]),
                       "default_requirement_type": rules[k]["requirement_type"],
@@ -604,7 +612,7 @@ async def get_meta(db: Session = Depends(get_db), _user: User = Depends(_request
 @router.get("/projects")
 async def list_projects_for_picker(
     search: str | None = None,
-    include_delivered: bool = False,
+    include_delivered: bool = True,
     db: Session = Depends(get_db),
     _user: User = Depends(_requester_or_purchase),
 ):
@@ -612,10 +620,9 @@ async def list_projects_for_picker(
     requester (any department, not just `erp` app holders) needs to be able
     to search existing Service Module projects, so this deliberately bypasses
     `require_app_access("erp")` and only requires this module's own access.
-    Only machines still being built (stage before Dispatched, owner 2026-10-27):
-    a dispatched / delivered machine is Service's, not a project to buy for.
-    include_delivered=true returns every project with a `serviceable` flag, so
-    the form shows in-build machines for Project and delivered ones for Service."""
+    Every project at any stage (owner 2026-11-02: material can be booked to a
+    dispatched or closed machine's project too), each with a `serviceable`
+    flag. include_delivered=false narrows to machines still being built."""
     from app.modules.projects.lifecycle import SERVICEABLE_STAGES
     query = db.query(Project).filter(Project.is_deleted == False)  # noqa: E712
     if not include_delivered:
@@ -644,6 +651,7 @@ async def create_p2p_request(
     user: User = Depends(require_app_access("p2p")),
 ):
     _ensure_pr_action(user, "create")
+    _ensure_pr_options_allowed(user, payload)
     draft = payload.save_as_draft
     lines = _validate_pr_payload(db, payload, draft=draft)
 
@@ -707,6 +715,23 @@ async def create_p2p_request(
     db.refresh(pr)
     background_tasks.add_task(_send_p2p_pr_approval_emails_background, pr.id)
     return _to_response(db, pr, user=user)
+
+
+def _ensure_pr_options_allowed(user: User, payload, pr: P2PRequest | None = None) -> None:
+    """Purpose / priority must be values the user's roles offer (Role &
+    Permissions > Visibility). On an edit only a CHANGED value is checked, so a
+    requisition raised before a role was narrowed stays editable."""
+    purpose = getattr(payload, "purpose", None)
+    priority = getattr(payload, "priority", None)
+    # Leaving Purpose out must not be a way round the restriction: a requisition that is
+    # raised / submitted needs one (a draft may still be saved without; an old requisition
+    # raised before purposes existed keeps its empty one).
+    if hasattr(payload, "save_as_draft") and not payload.save_as_draft and (pr is None or pr.status == "draft" or pr.purpose):
+        visibility.ensure_option_given(user, PR_VISIBILITY_KEY, "purpose", purpose)
+    if pr is None or purpose != pr.purpose:
+        visibility.ensure_option_allowed(user, PR_VISIBILITY_KEY, "purpose", purpose)
+    if pr is None or priority != pr.priority:
+        visibility.ensure_option_allowed(user, PR_VISIBILITY_KEY, "priority", priority)
 
 
 def _default_label(pr: P2PRequest) -> None:
@@ -893,6 +918,7 @@ async def edit_p2p_request(
     if not draft:
         # Submitting a draft is raising it; anything else is a resubmission.
         _ensure_pr_action(user, "create" if pr.status == "draft" else "submit")
+    _ensure_pr_options_allowed(user, payload, pr)
     lines = _validate_pr_payload(db, payload, draft=draft, check_category=pr.status == "draft")
 
     # The form no longer sends a category (2026-10-27): the requisition keeps
@@ -1270,6 +1296,7 @@ async def update_p2p_request(
     if reason:
         raise HTTPException(status_code=409, detail=reason)
     updates = payload.model_dump(exclude_unset=True, exclude=set(payload.model_extra or {}))
+    _ensure_pr_options_allowed(user, payload, pr)
 
     for field, val in updates.items():
         setattr(pr, field, val)

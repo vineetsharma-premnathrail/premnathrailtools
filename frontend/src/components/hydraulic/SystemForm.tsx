@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import { hydraulicApi } from '@/lib/api'
 import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { HydSystem, HydLookupOption } from '@/types'
-import { SheetColumns, SheetSection, SHEET, sheetInput, sheetLabel, sheetHint, Req, Optional, SheetError } from '@/components/shared/FormSheet'
+import { SheetSection, SHEET, sheetInput, sheetLabel, sheetHint, Req, Optional, SheetError } from '@/components/shared/FormSheet'
 import HydFormShell, { HydShellProps, Cell, fieldRow } from '@/components/hydraulic/HydFormShell'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
@@ -13,6 +13,9 @@ import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/Projec
 import { SYSTEM_TYPE_LABELS, SYSTEM_TYPE_HEX, SYSTEM_STATUS_LABELS, flowUnit } from '@/components/hydraulic/labels'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
+import { useVisibility } from '@/lib/visibility'
+import { VisColumns } from '@/components/quality/VisColumns'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
 
 
 const numOrNull = (v: string) => (v.trim() === '' ? null : Number(v))
@@ -34,7 +37,7 @@ export default function SystemForm({
   onSubmit: (payload: Record<string, unknown>) => Promise<void>
 }) {
   const [name, setName] = useState(initial?.name || '')
-  const [systemType, setSystemType] = useState<string>(initial?.system_type || defaultSystemType || 'hydraulic')
+  const [pickedType, setSystemType] = useState<string>(initial?.system_type || defaultSystemType || 'hydraulic')
   const [application, setApplication] = useState(initial?.application || '')
   const [status, setStatus] = useState<string>(initial?.status || 'design')
   const [projectId, setProjectId] = useState(initial?.erp_project_id ? String(initial.erp_project_id) : '')
@@ -65,8 +68,15 @@ export default function SystemForm({
   const allowOwner = useAssigneeFilter('hydraulic:systems.owner')
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
+  // Role visibility (Role & Permissions › Hydraulic & Pneumatic › Systems › Visibility); in the Role editor's
+  // "Preview & choose" the form draws every section, loads and saves nothing.
+  const vis = useVisibility('hydraulic:systems')
+  const preview = vis.preview
+  const typeChoices = vis.options('system_type', Object.entries(SYSTEM_TYPE_LABELS), ([k]) => k)
+  // A new system whose default type the role doesn't offer starts on the first type it does offer.
+  const systemType = !initial && !preview && typeChoices.length && !typeChoices.some(([k]) => k === pickedType) ? typeChoices[0][0] : pickedType
 
-  const draft = useFormDraft(initial ? null : 'hyd-system-new',
+  const draft = useFormDraft(initial || preview ? null : 'hyd-system-new',
     { name, systemType, application, status, projectId, branchId, orderProject, ownerId, equipmentRef, nums, fluidMedium, cleanliness, description, remarks },
     (d) => {
       setName(d.name ?? ''); setSystemType(d.systemType || defaultSystemType || 'hydraulic'); setApplication(d.application ?? ''); setStatus(d.status || 'design')
@@ -77,16 +87,18 @@ export default function SystemForm({
     })
 
   useEffect(() => {
+    if (preview) return
     hydraulicApi.lookupProjects().then(setProjects).catch((err) => setError(extractErrorMessages(err, 'Failed to load ERP projects for the Project picker.')))
     hydraulicApi.lookupBranches().then(setBranches).catch((err) => setError(extractErrorMessages(err, 'Failed to load plants for the Plant picker.')))
     hydraulicApi.lookupUsers().then(setUsers).catch((err) => setError(extractErrorMessages(err, 'Failed to load users for the Owner picker.')))
-  }, [])
+  }, [preview])
 
   const pneumatic = systemType === 'pneumatic'
   const setNum = (k: NumKey, v: string) => setNums((prev) => ({ ...prev, [k]: v }))
 
   const handleSubmit = async () => {
     setError('')
+    if (preview) return
     if (!name.trim()) { setError('System name is required — e.g. "WDG4 brake actuation unit".'); return }
 
     const checks: [NumKey, string, boolean][] = [
@@ -155,14 +167,15 @@ export default function SystemForm({
 
   return (
     <HydFormShell
-      mode={mode} title={shellTitle} subtitle={subtitle} nav={nav} onBack={onBack} onCancel={onCancel}
-      icon={initial ? 'edit' : 'gear'} busy={saving} submitLabel={submitLabel} submitIcon={initial ? 'check' : 'plus'}
+      mode={mode} title={shellTitle} subtitle={subtitle} nav={preview ? undefined : nav} onBack={preview ? undefined : onBack} onCancel={onCancel}
+      icon={initial ? 'edit' : 'gear'} busy={saving} submitDisabled={preview} submitLabel={submitLabel} submitIcon={initial ? 'check' : 'plus'}
       onSubmit={handleSubmit} tour="hyd-sys-form" backTour="hyd-sys-back-btn" submitTour="hyd-sys-save-btn"
     >
-      <SheetColumns
+      <VisColumns vis={vis} rightKeys={['description', 'remarks']}
         left={<>
           <SheetError error={error} />
           <DraftBanner draft={draft} />
+          <VisSection vis={vis} k="system">
           <SheetSection icon="gear" title="System">
             <div style={{ ...fieldRow, marginBottom: 0 }}>
               <Cell tour="hyd-sys-type" basis={140}>
@@ -173,9 +186,10 @@ export default function SystemForm({
                   </div>
                 ) : (
                   <Select style={sheetInput} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
-                    {Object.entries(SYSTEM_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    {typeChoices.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </Select>
                 )}
+                {!initial && <VisOptionValues vis={vis} dropdown="system_type" />}
               </Cell>
               <Cell basis={240} grow max={380}>
                 <label style={sheetLabel}>Name <Req /></label>
@@ -201,7 +215,9 @@ export default function SystemForm({
               </Cell>
             </div>
           </SheetSection>
+          </VisSection>
 
+          <VisSection vis={vis} k="project_ownership">
           <SheetSection icon="building" title="Project & Ownership">
             <div style={fieldRow}>
               <Cell tour="hyd-sys-order-project" basis={320} grow>
@@ -234,7 +250,9 @@ export default function SystemForm({
               </Cell>
             </div>
           </SheetSection>
+          </VisSection>
 
+          <VisSection vis={vis} k="design_parameters">
           <SheetSection icon="tool" title={`Design Parameters — ${SYSTEM_TYPE_LABELS[systemType] || systemType}`}>
             <div style={fieldRow}>
               {numInput('working', 'Working Pressure (bar)', { width: 160 })}
@@ -263,14 +281,19 @@ export default function SystemForm({
               {numInput('tempMax', 'Max Temp (°C)', { width: 120, allowNegative: true })}
             </div>
           </SheetSection>
+          </VisSection>
         </>}
         right={<>
+          <VisSection vis={vis} k="description">
           <SheetSection icon="list" title="Description" extra={<Optional />}>
             <textarea data-tour="hyd-sys-description" style={{ ...sheetInput, minHeight: 100, resize: 'vertical' }} value={description} onChange={(e) => setDescription(e.target.value)} aria-label="Description" />
           </SheetSection>
+          </VisSection>
+          <VisSection vis={vis} k="remarks">
           <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
             <textarea data-tour="hyd-sys-remarks" style={{ ...sheetInput, minHeight: 80, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} aria-label="Remarks" />
           </SheetSection>
+          </VisSection>
         </>}
       />
     </HydFormShell>

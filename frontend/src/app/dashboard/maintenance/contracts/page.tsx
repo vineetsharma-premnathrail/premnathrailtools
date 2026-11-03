@@ -56,7 +56,7 @@ async function blobError(err: unknown, fallback: string): Promise<string> {
 
 export default function MaintenanceContractsPage() {
   const { isAuthorized, isLoading } = useRequireApp('maintenance')
-  const { can } = useCan()
+  const { can, canFeature } = useCan()
   const router = useRouter()
 
   const [data, setData] = useState<MaintenanceContractList | null>(null)
@@ -142,7 +142,7 @@ export default function MaintenanceContractsPage() {
             Once either lapses, every repair is billed. Dates and vendors are edited on the asset; planners get a reminder 30, 15, 7 and 1 day before expiry and the day after.
           </p>
         </div>
-        {can('maintenance', 'assets', 'export') && <button data-tour="maint-amc-export-btn" onClick={exportExcel} disabled={exporting || !items.length} style={{ ...secondaryBtnStyle, opacity: exporting || !items.length ? 0.6 : 1 }}>
+        {can('maintenance', 'assets', 'export') && canFeature('maintenance', 'assets', 'contracts', 'export') && <button data-tour="maint-amc-export-btn" onClick={exportExcel} disabled={exporting || !items.length} style={{ ...secondaryBtnStyle, opacity: exporting || !items.length ? 0.6 : 1 }}>
           {exporting ? 'Exporting…' : 'Export Excel'}
         </button>}
       </div>

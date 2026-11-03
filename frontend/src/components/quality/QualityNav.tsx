@@ -7,6 +7,7 @@ import { navScrollRef } from '@/components/shared/navScroll'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { filterTabsByAccess } from '@/lib/tabAccess'
+import { canFeature } from '@/lib/permissions'
 import NotificationBell from '@/components/erp/NotificationBell'
 import NavSettingsGear from '@/components/shared/NavSettingsGear'
 import TourButton from '@/components/tour/TourButton'
@@ -18,7 +19,7 @@ const TABS = [
   { href: '/dashboard/quality/ncr', label: 'NCR', icon: 'alert', subtabKey: 'ncr' },
   { href: '/dashboard/quality/inspection-plans', label: 'Inspection Plans', icon: 'clipboard', subtabKey: 'inspection_plans' },
   { href: '/dashboard/quality/masters', label: 'Masters', icon: 'list', subtabKey: 'masters' },
-  { href: '/dashboard/quality/gauges', label: 'Gauges', icon: 'target', subtabKey: 'masters' },
+  { href: '/dashboard/quality/gauges', label: 'Gauges', icon: 'target', subtabKey: 'masters', feature: 'calibration' },
   { href: '/dashboard/quality/in-process-inspection', label: 'In-process', icon: 'gear', subtabKey: 'in_process_inspection' },
   { href: '/dashboard/quality/first-articles', label: 'First Article', icon: 'target', subtabKey: 'first_article' },
   { href: '/dashboard/quality/inspection-calls', label: 'Inspection Calls', icon: 'badge', subtabKey: 'inspection_calls' },
@@ -61,7 +62,9 @@ export default function QualityNav() {
   const pathname = usePathname()
   const { user } = useAuth()
   // Settings sits as a gear next to the bell, not as a tab (same as R&D).
+  // Gauges is a feature of Masters (core/features/quality.py: quality:masters.calibration, "Gauges tab").
   const allowedTabs = filterTabsByAccess('quality', TABS, user)
+    .filter((t) => !('feature' in t) || canFeature(user, 'quality', t.subtabKey, t.feature, 'view'))
   const visibleTabs = allowedTabs.filter((t) => t.href !== '/dashboard/quality/settings')
   const settingsTab = allowedTabs.find((t) => t.href === '/dashboard/quality/settings')
 

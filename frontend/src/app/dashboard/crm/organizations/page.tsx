@@ -24,6 +24,9 @@ import { recordHref, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { RowCount, StatChip } from '@/components/shared/ui'
 import FilterMenu from '@/components/shared/FilterMenu'
+import { useVisibility, type VisibilityApi } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleOrganizations } from '@/lib/crmPreviewSamples'
 
 const PINNED_ORGS_KEY = 'crm_pinned_org_ids'
 
@@ -49,14 +52,23 @@ type DuplicateOrgRow = {
 }
 type DuplicateOrgGroup = { name: string; organizations: DuplicateOrgRow[] }
 
+/** A list header cell: the Name / code column is always there; every other one carries the role-wise toggle. */
+function ColTh({ vis, k, ...rest }: { vis: VisibilityApi; k: string } & React.ThHTMLAttributes<HTMLTableCellElement>) {
+  return k === 'name' ? <th {...rest} /> : <VisTh vis={vis} table="organizations" k={k} {...rest} />
+}
+
 export default function OrganizationsPage() {
   const { user, isAuthorized, isLoading } = useRequireApp('crm')
+  // Role-wise visibility: columns a role hides (header AND cells from the same check; Name / code always shows).
+  // In the Role editor's preview (vis.preview) the list draws sample rows and loads nothing.
+  const vis = useVisibility('crm:organizations')
+  const showCol = (key: string) => key === 'name' || vis.showColumn('organizations', key)
   const { can } = useCan()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [orgs, setOrgs] = useState<Organization[]>([])
-  const [loading, setLoading] = useState(true)
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
+  const [orgs, setOrgs] = useState<Organization[]>(vis.preview ? sampleOrganizations : [])
+  const [loading, setLoading] = useState(!vis.preview)
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(vis.preview)
   const [error, setError] = useState('')
 
   const isAdmin = user?.role === 'admin'
@@ -113,19 +125,19 @@ export default function OrganizationsPage() {
   }
 
   useEffect(() => {
-    if (isAuthorized) Promise.resolve().then(load)
+    if (isAuthorized && !vis.preview) Promise.resolve().then(load)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized])
 
   useEffect(() => {
-    if (!isAuthorized || !isAdmin) return
+    if (!isAuthorized || !isAdmin || vis.preview) return
     crmApi.getDuplicateOrganizations()
       .then((data) => setDuplicateGroups(data.groups || []))
       .catch(() => setDuplicateGroups([]))
-  }, [isAuthorized, isAdmin])
+  }, [isAuthorized, isAdmin, vis.preview])
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     const t = setTimeout(load, 300)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -176,7 +188,7 @@ export default function OrganizationsPage() {
 
   const scopeLabel = (v?: string | null) => (v === 'international' ? 'International' : 'Domestic')
 
-  const columns: { label: string; key: SortKey | FilterKey; type: 'sort' | 'filter' | 'none'; sortLabels?: [string, string] }[] = [
+  const allColumns: { label: string; key: SortKey | FilterKey; type: 'sort' | 'filter' | 'none'; sortLabels?: [string, string] }[] = [
     { label: 'Name', key: 'name', type: 'sort', sortLabels: ['A–Z', 'Z–A'] },
     { label: 'Scope', key: 'org_scope', type: 'filter' },
     { label: 'Type', key: 'org_type', type: 'filter' },
@@ -185,6 +197,7 @@ export default function OrganizationsPage() {
     { label: 'Created Date', key: 'created_at', type: 'sort', sortLabels: ['Old', 'New'] },
     { label: 'Created By', key: 'created_by_name', type: 'filter' },
   ]
+  const columns = allColumns.filter((col) => vis.preview || showCol(col.key))
 
   const filteredOrgs = useMemo(() => {
     return orgs.filter((o) => FILTER_KEYS.every((key) => !filters[key] || o[key as keyof Organization] === filters[key]))
@@ -335,7 +348,7 @@ export default function OrganizationsPage() {
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
               {columns.map((col) =>
                 col.type === 'filter' ? (
-                  <th
+                  <ColTh vis={vis} k={col.key}
                     key={col.key}
                     data-tour={`orgs-col-${col.key}`}
                     style={{ textAlign: 'left', padding: '5px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: filters[col.key as FilterKey] ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}
@@ -350,16 +363,16 @@ export default function OrganizationsPage() {
                         <option key={v} value={v} style={{ textTransform: 'none', color: '#1f1108' }}>{col.key === 'org_scope' ? scopeLabel(v) : v}</option>
                       ))}
                     </Select>
-                  </th>
+                  </ColTh>
                 ) : col.type === 'none' ? (
-                  <th
+                  <ColTh vis={vis} k={col.key}
                     key={col.key}
                     style={{ textAlign: 'left', padding: '7px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}
                   >
                     {col.label}
-                  </th>
+                  </ColTh>
                 ) : (
-                  <th
+                  <ColTh vis={vis} k={col.key}
                     key={col.key}
                     onClick={() => toggleSort(col.key as SortKey)}
                     data-tour={`orgs-col-${col.key}`}
@@ -375,14 +388,14 @@ export default function OrganizationsPage() {
                       <CaretUp size={9}
                         style={{ opacity: sortKey === col.key ? 1 : 0.35, transform: sortKey === col.key && sortDir === 'desc' ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
                     </span>
-                  </th>
+                  </ColTh>
                 )
               )}
             </tr>
           </thead>
           <tbody data-tour="orgs-table-rows" style={{ opacity: loading && hasLoadedOnce ? 0.5 : 1, transition: 'opacity .15s' }}>
-            {loading && !hasLoadedOnce && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && paged.length === 0 && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No customer organizations found.</td></tr>}
+            {loading && !hasLoadedOnce && <tr><td colSpan={columns.length} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
+            {!loading && paged.length === 0 && <tr><td colSpan={columns.length} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No customer organizations found.</td></tr>}
             {(!loading || hasLoadedOnce) && paged.map((o, idx) => {
               const pinned = pinnedIds.includes(o.id)
               return (
@@ -403,12 +416,12 @@ export default function OrganizationsPage() {
                     </div>
                   </div>
                 </td>
-                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{scopeLabel(o.org_scope)}</td>
-                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.org_type || undefined}>{o.org_type || '—'}</td>
-                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.railway_zone || undefined}>{o.railway_zone || '—'}</td>
-                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.city || undefined}>{o.city || '—'}</td>
-                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{formatDate(o.created_at)}</td>
-                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{o.created_by_name || '—'}</td>
+                <VisTd vis={vis} table="organizations" k="org_scope" style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{scopeLabel(o.org_scope)}</VisTd>
+                <VisTd vis={vis} table="organizations" k="org_type" style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.org_type || undefined}>{o.org_type || '—'}</VisTd>
+                <VisTd vis={vis} table="organizations" k="railway_zone" style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.railway_zone || undefined}>{o.railway_zone || '—'}</VisTd>
+                <VisTd vis={vis} table="organizations" k="city" style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.city || undefined}>{o.city || '—'}</VisTd>
+                <VisTd vis={vis} table="organizations" k="created_at" style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{formatDate(o.created_at)}</VisTd>
+                <VisTd vis={vis} table="organizations" k="created_by_name" style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{o.created_by_name || '—'}</VisTd>
               </tr>
               )
             })}
@@ -423,7 +436,7 @@ export default function OrganizationsPage() {
   if (!selectedRef) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-        <CrmNav />
+        {!vis.preview && <CrmNav />}
         {header}
         {fullTable}
       </div>

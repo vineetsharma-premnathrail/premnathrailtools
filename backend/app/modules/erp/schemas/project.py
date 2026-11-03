@@ -11,6 +11,13 @@ PROJECT_STATUSES = (
     "active", "under_service", "manufacturing_under_progress", "work_in_progress",
     "standby", "inactive", "decommissioned", "cancel",
 )
+# Labels as the machine form's Operational Status dropdown shows them.
+PROJECT_STATUS_LABELS = {
+    "active": "Active", "under_service": "Under Service", "manufacturing_under_progress": "Manufacturing Under Progress",
+    "work_in_progress": "Work in Progress", "standby": "Standby", "inactive": "Inactive",
+    "decommissioned": "Decommissioned", "cancel": "Cancel",
+}
+assert tuple(PROJECT_STATUS_LABELS) == PROJECT_STATUSES
 
 
 def validate_project_status(v: str | None) -> str | None:

@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.audit import record_audit
 from app.core.permissions import ensure_feature_action, ensure_tab_action
 from app.db.session import get_db
@@ -22,6 +23,7 @@ from app.modules.hr.models.assignment import ASSIGNMENT_FIELDS, HrEmployeeAssign
 from app.modules.hr.models.employee_profile import EMPLOYMENT_TYPES
 from app.modules.hr.models.lifecycle import HrLifecycleEvent
 from app.modules.hr.models.masters import HrDesignation, HrGrade
+from app.modules.hr.routes.employees import EMPLOYEES_VISIBILITY_KEY
 from app.modules.hr.services import assignments as asg
 from app.modules.hr.services import lifecycle as lc
 from app.modules.hr.services.access import require_hr_tab
@@ -181,6 +183,10 @@ async def change_assignment(user_id: int, payload: HrAssignmentChangePayload, db
     changed = {f: sent[f] for f in ASSIGNMENT_FIELDS if f in sent}
     if not changed:
         raise HTTPException(status_code=400, detail="Nothing to change — set at least one of department, designation, grade, plant, cost center, manager or employment type.")
+    # Role visibility (Employees > Employment Type): only a CHANGED value is checked; an older record keeps its value.
+    # (Lifecycle joining is deliberately not bound by this rule - owner decision pending.)
+    if "employment_type" in changed and changed["employment_type"] != values.get("employment_type"):
+        visibility.ensure_option_allowed(user, EMPLOYEES_VISIBILITY_KEY, "employment_type", changed["employment_type"])
     values.update(changed)
     if values.get("employment_type") and values["employment_type"] not in EMPLOYMENT_TYPES:
         raise HTTPException(status_code=400, detail=f"Employment type '{values['employment_type']}' isn't valid. Use one of: {', '.join(EMPLOYMENT_TYPES)}.")

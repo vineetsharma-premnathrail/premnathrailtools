@@ -9,6 +9,14 @@ from app.db.mixins import TimestampMixin, SoftDeleteMixin
 if TYPE_CHECKING:
     from app.modules.crm.models.organization import Organization
 
+# Coded tender statuses — mirrors TENDER_STATUSES in frontend/src/components/crm/constants.ts.
+# Lives on the model so the routes AND the visibility catalogue (core/features/crm.py) share one list.
+TND_STATUSES = [
+    "Waiting for Future Tender", "Tender Published", "Tender Participation", "Tender Submitted",
+    "LOA / Order Received",
+    "Closed – Ordered", "Closed – Not Ordered", "Tender Cancelled",
+]
+
 
 class Tender(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "crm_tenders"

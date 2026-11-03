@@ -23,6 +23,9 @@ import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
 import { PermissionAction, useCan } from '@/lib/permissions'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection } from '@/lib/visibilityComponents'
+import { sampleWorkOrder } from '@/lib/maintenancePreviewSamples'
 import { SHEET, SheetSection, Optional, Req, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { formatDate, formatDateTime } from '@/lib/format'
 import {
@@ -119,10 +122,12 @@ export default function MaintenanceWorkOrderDetailPage() {
   const router = useRouter()
   const params = useParams()
   const ref = params.id as string
-  const { id: resolvedId, error: linkError } = useRecordId(ref)
-  const id = resolvedId ?? 0
+  // Role visibility of this page; in the Role editor's preview it shows a sample job, loads nothing and offers no action.
+  const vis = useVisibility('maintenance:work_orders')
+  const { id: resolvedId, error: linkError } = useRecordId(vis.preview ? null : ref)
+  const id = vis.preview ? sampleWorkOrder.id : resolvedId ?? 0
 
-  const [wo, setWo] = useState<MaintenanceWorkOrder | null>(null)
+  const [wo, setWo] = useState<MaintenanceWorkOrder | null>(vis.preview ? sampleWorkOrder : null)
   const [lookups, setLookups] = useState<MaintenanceLookups | null>(null)
   // Role assign-to rules (core/features/maintenance.py) — the server enforces them on save too.
   const allowAssign = useAssigneeFilter('maintenance:work_orders.assign')
@@ -156,19 +161,19 @@ export default function MaintenanceWorkOrderDetailPage() {
   const [closeOutPending, setCloseOutPending] = useState(false)
 
   useEffect(() => {
-    if (!isAuthorized || !id) return
+    if (!isAuthorized || !id || vis.preview) return
     maintenanceApi.getWorkOrder(id).then(setWo).catch((err) => setError(extractErrorMessages(err, 'Failed to load work order.')))
       .finally(() => setLoading(false))
     maintenanceApi.getLookups().then(setLookups).catch(() => { /* pickers degrade to empty lists */ })
-  }, [isAuthorized, id])
+  }, [isAuthorized, id, vis.preview])
 
   const woStatus = wo?.status
   useEffect(() => {
-    if (!isAuthorized || !id || !woStatus) return
+    if (!isAuthorized || !id || !woStatus || vis.preview) return
     approvalsApi.entity('maintenance_work_order', id)
       .then((st) => setCloseOutPending(st.current?.status === 'pending'))
       .catch(() => setCloseOutPending(false))
-  }, [isAuthorized, id, woStatus])
+  }, [isAuthorized, id, woStatus, vis.preview])
 
   const reloadWo = () => {
     maintenanceApi.getWorkOrder(id).then(setWo).catch((err) => setError(extractErrorMessages(err, 'Failed to reload the work order.')))
@@ -223,13 +228,20 @@ export default function MaintenanceWorkOrderDetailPage() {
     run(() => maintenanceApi.workOrderAction(id, action, payload), `Couldn't ${action.replace('_', ' ')} the work order.`)
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><MaintenanceNav /><InvalidRecordLink message={linkError} listHref="/dashboard/maintenance/work-orders" listLabel="Back to work orders" /></div>)
+  if (linkError && !vis.preview) return (<div><MaintenanceNav /><InvalidRecordLink message={linkError} listHref="/dashboard/maintenance/work-orders" listLabel="Back to work orders" /></div>)
   if (!id) return <div><MaintenanceNav /></div>
 
   const s = wo?.status || ''
   // Backend: every job change needs work_orders:edit; reopen / close / cancel need :approve.
-  const mayEdit = can('maintenance', 'work_orders', 'edit')
-  const mayApprove = can('maintenance', 'work_orders', 'approve')
+  // The preview offers no action at all (nothing is saved there).
+  const mayEdit = !vis.preview && can('maintenance', 'work_orders', 'edit')
+  const mayApprove = !vis.preview && can('maintenance', 'work_orders', 'approve')
+  // Coded values the role offers in the Edit details / Mark completed popups; a saved job keeps its own value.
+  const keepCurrent = (current: string | null | undefined) => <T extends [string, string]>(choices: T[], all: T[]) =>
+    current && !choices.some(([k]) => k === current) ? all.filter(([k]) => k === current || choices.some(([c]) => c === k)) : choices
+  const typeOptions = keepCurrent(wo?.wo_type)(vis.options('wo_type', Object.entries(WO_TYPE_LABELS), ([k]) => k), Object.entries(WO_TYPE_LABELS))
+  const priorityOptions = keepCurrent(wo ? normalizePriority(wo.priority) : '')(vis.options('priority', Object.entries(PRIORITY_LABELS), ([k]) => k), Object.entries(PRIORITY_LABELS))
+  const failureOptions = keepCurrent(wo?.failure_category)(vis.options('failure_category', Object.entries(FAILURE_CATEGORY_LABELS), ([k]) => k), Object.entries(FAILURE_CATEGORY_LABELS))
   const editable = !!wo && s !== 'closed' && s !== 'cancelled' && mayEdit
   const canIssue = SPARE_ISSUE_STATUSES.includes(s) && mayEdit
   const canLabour = LABOUR_STATUSES.includes(s) && mayEdit
@@ -354,7 +366,7 @@ export default function MaintenanceWorkOrderDetailPage() {
 
   return (
     <div>
-      <MaintenanceNav />
+      {!vis.preview && <MaintenanceNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <div>
@@ -387,7 +399,7 @@ export default function MaintenanceWorkOrderDetailPage() {
           {wo && mayApprove && wf('close_out', 'edit') && s === 'completed' && !closeOutPending && <button data-tour="maint-wo-reopen-btn" type="button" disabled={busy} onClick={() => setPrompt('reopen')} style={secondaryBtnStyle}>Reopen</button>}
           {editable && <button data-tour="maint-wo-edit-btn" type="button" disabled={busy} onClick={openDetails} style={secondaryBtnStyle}>Edit Details</button>}
           {wo && mayApprove && wf('close_out', 'cancel') && ['draft', 'assigned', 'on_hold'].includes(s) && <button data-tour="maint-wo-cancel-btn" type="button" disabled={busy} onClick={() => setPrompt('cancel')} style={dangerBtnStyle}>Cancel</button>}
-          <button data-tour="maint-wod-back" type="button" onClick={() => router.push('/dashboard/maintenance/work-orders')} style={secondaryBtnStyle}>← Back</button>
+          {!vis.preview && <button data-tour="maint-wod-back" type="button" onClick={() => router.push('/dashboard/maintenance/work-orders')} style={secondaryBtnStyle}>← Back</button>}
         </div>
       </div>
 
@@ -426,7 +438,7 @@ export default function MaintenanceWorkOrderDetailPage() {
               Waiting for {wo.requester_name || 'the requester'} to confirm the machine is working ({wo.request_number}). You can close the job once they confirm.
             </div>
           )}
-          {s !== 'draft' && (
+          {s !== 'draft' && !vis.preview && (
             <ApprovalPanel key={`${wo.id}-${s}`} entityType="maintenance_work_order" entityId={wo.id} title="Close-out approval"
               onChanged={reloadWo} />
           )}
@@ -447,6 +459,7 @@ export default function MaintenanceWorkOrderDetailPage() {
           )}
 
           <DetailCard tour="maint-wod-summary">
+            <VisSection vis={vis} k="detail_summary">
             <DetailSummary
               title={wo.title}
               text={wo.description || undefined}
@@ -457,6 +470,8 @@ export default function MaintenanceWorkOrderDetailPage() {
                 {wo.machine_down && <span style={{ color: '#DC2626', fontWeight: 600 }}>· Machine down {formatMinutes(downtime)}</span>}
               </>}
             />
+            </VisSection>
+            <VisSection vis={vis} k="detail_asset_source">
             <DetailGroup title="Asset & Source">
               <DetailRow label="Asset">
                 <span onClick={() => router.push(recordPath('/dashboard/maintenance/assets', wo, 'asset_id'))} style={{ fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>
@@ -482,6 +497,8 @@ export default function MaintenanceWorkOrderDetailPage() {
                 </div>
               )}
             </DetailGroup>
+            </VisSection>
+            <VisSection vis={vis} k="detail_schedule">
             <DetailGroup title="Schedule & Time" last={!(wo.failure_category || wo.root_cause || wo.action_taken)}>
               <DetailRow label="Planned">{wo.planned_start ? `${formatDate(wo.planned_start)}${wo.planned_end ? ` → ${formatDate(wo.planned_end)}` : ''}` : null}</DetailRow>
               <DetailRow label="Estimated Hours">{wo.estimated_hours != null ? `${wo.estimated_hours} h` : null}</DetailRow>
@@ -491,16 +508,19 @@ export default function MaintenanceWorkOrderDetailPage() {
               {wo.machine_down && <DetailRow label={wo.downtime_minutes != null ? 'Downtime' : 'Down For (live)'}>{formatMinutes(downtime)}</DetailRow>}
               {wo.verified_at && <DetailRow label="Closed By">{`${wo.verified_by_name || '—'} · ${formatDateTime(wo.verified_at)}`}</DetailRow>}
             </DetailGroup>
+            </VisSection>
             {(wo.failure_category || wo.root_cause || wo.action_taken) && (
+              <VisSection vis={vis} k="detail_failure_analysis">
               <DetailGroup title="Failure Analysis" last>
                 <DetailRow label="Failure Category">{wo.failure_category ? FAILURE_CATEGORY_LABELS[wo.failure_category] || wo.failure_category : null}</DetailRow>
                 <DetailRow label="Root Cause">{wo.root_cause}</DetailRow>
                 <DetailRow label="Action Taken">{wo.action_taken}</DetailRow>
               </DetailGroup>
+              </VisSection>
             )}
           </DetailCard>
 
-          {wf('checklist') && <div data-tour="maint-wod-checklist" style={sectionStyle}>
+          {wf('checklist') && <VisSection vis={vis} k="detail_checklist"><div data-tour="maint-wod-checklist" style={sectionStyle}>
             <div style={sectionHead}>
               <p style={sectionTitle}>Checklist</p>
               {wo.tasks.length > 0 && <span style={{ fontSize: 12, color: TEXT.muted }}>{wo.tasks.filter((t) => t.result).length} of {wo.tasks.length} done</span>}
@@ -527,9 +547,9 @@ export default function MaintenanceWorkOrderDetailPage() {
               </div>
             )}
             {!editable && wo.tasks.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No checklist on this job.</p>}
-          </div>}
+          </div></VisSection>}
 
-          {wf('spares') && <div data-tour="maint-wod-spares" style={sectionStyle}>
+          {wf('spares') && <VisSection vis={vis} k="detail_spares"><div data-tour="maint-wod-spares" style={sectionStyle}>
             <div style={sectionHead}>
               <p style={sectionTitle}>Spares</p>
               {editable && wf('spares', 'create') && (
@@ -576,9 +596,9 @@ export default function MaintenanceWorkOrderDetailPage() {
                 </table>
               </div>
             )}
-          </div>}
+          </div></VisSection>}
 
-          {wf('labour') && <div data-tour="maint-wod-labour" style={sectionStyle}>
+          {wf('labour') && <VisSection vis={vis} k="detail_labour"><div data-tour="maint-wod-labour" style={sectionStyle}>
             <div style={sectionHead}>
               <p style={sectionTitle}>Labour</p>
               {canLabour && wf('labour', 'create') && <button data-tour="maint-wo-log-time-btn" type="button" disabled={busy} onClick={openLabour} style={smallBtn}>+ Log Time</button>}
@@ -610,7 +630,7 @@ export default function MaintenanceWorkOrderDetailPage() {
                 </table>
               </div>
             )}
-          </div>}
+          </div></VisSection>}
 
           {showCosts && <div data-tour="maint-wod-cost" style={sectionStyle}>
             <div style={sectionHead}><p style={sectionTitle}>Cost</p></div>
@@ -623,14 +643,16 @@ export default function MaintenanceWorkOrderDetailPage() {
             </div>
           </div>}
 
-          {wf('permits') && <WorkOrderPermitsCard woId={id} woStatus={wo.status} permitRequired={!!wo.permit_required} assignedToId={wo.assigned_to_id ?? null} onChanged={reloadWo} />}
-          {wf('purchase') && <WorkOrderPurchaseCard woId={id} woStatus={wo.status} onChanged={reloadWo} />}
+          {wf('permits') && !vis.preview && <WorkOrderPermitsCard woId={id} woStatus={wo.status} permitRequired={!!wo.permit_required} assignedToId={wo.assigned_to_id ?? null} onChanged={reloadWo} />}
+          {wf('purchase') && !vis.preview && <WorkOrderPurchaseCard woId={id} woStatus={wo.status} onChanged={reloadWo} />}
 
-          {wf('documents') && <div data-tour="maint-wod-files" style={sectionStyle}>
+          {wf('documents') && <VisSection vis={vis} k="detail_documents"><div data-tour="maint-wod-files" style={sectionStyle}>
             <div style={sectionHead}><p style={sectionTitle}>Service Reports &amp; Photos</p></div>
-            <MaintenanceAttachments entityType="work_order" entityId={id} canUpload={s !== 'closed' && s !== 'cancelled' && wf('documents', 'create')}
-              canDeleteFiles={wf('documents', 'delete')} defaultDocType="service_report" />
-          </div>}
+            {vis.preview
+              ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>The job&apos;s service reports and photos show here.</p>
+              : <MaintenanceAttachments entityType="work_order" entityId={id} canUpload={s !== 'closed' && s !== 'cancelled' && wf('documents', 'create')}
+                canDeleteFiles={wf('documents', 'delete')} defaultDocType="service_report" />}
+          </div></VisSection>}
         </>
       )}
 
@@ -686,7 +708,7 @@ export default function MaintenanceWorkOrderDetailPage() {
           <label style={sheetLabel}>Failure Category {needsRca && <Req />}</label>
           <Select data-tour="maint-woc-failure" style={sheetInput} value={cp.failure_category} onChange={(e) => setCp({ ...cp, failure_category: e.target.value })}>
             <option value="">— Select —</option>
-            {Object.entries(FAILURE_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            {failureOptions.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </Select>
           <label style={{ ...sheetLabel, marginTop: 14 }}>Root Cause {needsRca && <Req />}</label>
           <textarea data-tour="maint-woc-root-cause" style={{ ...sheetInput, minHeight: 60, resize: 'vertical' }} value={cp.root_cause} onChange={(e) => setCp({ ...cp, root_cause: e.target.value })} placeholder="Why did it fail?" />
@@ -726,13 +748,13 @@ export default function MaintenanceWorkOrderDetailPage() {
             <div style={{ flex: '1 1 150px' }}>
               <label style={sheetLabel}>Type</label>
               <Select data-tour="maint-wodt-type" style={sheetInput} value={dt.wo_type || ''} onChange={(e) => setDt({ ...dt, wo_type: e.target.value })}>
-                {Object.entries(WO_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {typeOptions.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </Select>
             </div>
             <div style={{ flex: '1 1 130px' }}>
               <label style={sheetLabel}>Priority</label>
               <Select data-tour="maint-wodt-priority" style={sheetInput} value={dt.priority || ''} onChange={(e) => setDt({ ...dt, priority: e.target.value })}>
-                {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {priorityOptions.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </Select>
             </div>
           </div>

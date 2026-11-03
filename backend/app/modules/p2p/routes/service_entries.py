@@ -118,7 +118,7 @@ async def create_service_entry(po_id: int, payload: P2PServiceEntryCreate, backg
     if line is None:
         raise HTTPException(status_code=422, detail=f"Line #{payload.po_item_id} is not on PO {po.po_number}.")
     if line.category != "service":
-        raise HTTPException(status_code=422, detail=f"'{line.item_name}' is a {line.category} line, not a service — goods are received on a GRN in Store › GRN & Inspection.")
+        raise HTTPException(status_code=422, detail=f"'{line.item_name}' is a {line.category} line, not a service — goods are received on a GRN in Store › GRN & Quality check.")
     if payload.quantity <= 0:
         raise HTTPException(status_code=422, detail=f"Enter how much of '{line.item_name}' was done — the quantity must be more than 0.")
     service_date = payload.service_date or date.today()

@@ -15,6 +15,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { FormPage, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { formatDate } from '@/lib/format'
+import { itemOptionDetail } from '@/lib/itemOptions'
 import { extractErrorMessages } from '@/lib/validation'
 import { useRecordId, recordPath } from '@/lib/recordRef'
 import { RowCount, Pill, TableScroll, thStyle, tdStyle, numThStyle, numTdStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
@@ -190,7 +191,7 @@ export default function PhysicalCountDetailPage() {
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 14 }}>
                 <div style={{ flex: '0 1 340px', minWidth: 240 }}>
                   <SearchableSelect value={addItemId} onChange={setAddItemId} placeholder="Found something not on the list? Add item…"
-                    options={items.filter((i) => !count.items.some((l) => l.item_id === i.id)).map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
+                    options={items.filter((i) => !count.items.some((l) => l.item_id === i.id)).map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, description: itemOptionDetail(i) }))} />
                 </div>
                 <button type="button" disabled={!addItemId || busy} onClick={() => { run(() => physicalCountsApi.addItem(count.id, Number(addItemId))); setAddItemId('') }} style={sheetBtn('secondary', SHEET.INK, !addItemId || busy)}><SheetIcon name="plus" size={15} />Add to count</button>
               </div>

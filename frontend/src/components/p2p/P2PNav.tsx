@@ -59,6 +59,8 @@ export default function P2PNav() {
     // Vendors: the purchase team or Finance (one shared vendor master).
     if (tab.href === '/dashboard/p2p/vendors') return isPurchaseTeam || !!user?.apps?.includes('accounts') || isAdmin
     if (tab.href === '/dashboard/p2p/my-lines') return (isPurchaseTeam || isAdmin) && canFeature(user, 'p2p', 'purchase_requisitions', 'my_lines', 'view')
+    // Item Rates rides on Vendors and its own feature (Role & Permissions › Vendors › Item Rates tab).
+    if (tab.href === '/dashboard/p2p/info-records') return isPurchaseTeam && canFeature(user, 'p2p', 'vendors', 'info_records', 'view')
     if (tab.purchaseOnly && !isPurchaseTeam) return false
     // P.O Approval is a pure action queue for PO approvers / Partners (admin
     // sees it too) — old routing tables or the approval engine.

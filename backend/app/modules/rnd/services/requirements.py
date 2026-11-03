@@ -14,6 +14,7 @@ State machine (per revision)::
                     │ Return(head, reason)      │ Return(head, reason; only before Respond)
                     ▼                           ▼
                  returned  ◄────────────────────┘
+    accepted (or submitted, reviewer only) ──Close(R&D, reason)──► closed — no response needed
     BD re-sends ──► new revision = submitted; the previous revision, if still
     submitted / accepted (unanswered), becomes superseded.
 
@@ -46,9 +47,14 @@ STATUS_LABELS = {
     "accepted": "Accepted",
     "returned": "Returned to BD",
     "responded": "Responded",
+    "closed": "Closed by R&D — no response needed",
     "superseded": "Superseded by a newer revision",
+    "withdrawn": "Taken back by BD",
 }
-SHORT_LABELS = {"submitted": "Submitted", "accepted": "Accepted", "returned": "Returned", "responded": "Responded", "superseded": "Superseded"}
+SHORT_LABELS = {
+    "submitted": "Submitted", "accepted": "Accepted", "returned": "Returned", "responded": "Responded",
+    "closed": "Closed by R&D", "superseded": "Superseded", "withdrawn": "Taken back",
+}
 UNANSWERED = ("submitted", "accepted")
 # Work (tasks, offers) may start once the latest revision was accepted — and
 # continues after R&D has responded to CRM.
@@ -180,6 +186,7 @@ def accept_first_message(rev: RndRequirementRevision, what: str) -> str:
     hint = {
         "submitted": "R&D must review it first (Accept it from the requirement page).",
         "returned": "BD must fix what was returned and send it again.",
+        "closed": "R&D closed it without a response — ask BD to send it again if R&D work is needed now.",
     }.get(rev.status, "")
     return f"Accept the requirement first ({rev.revision_code} is {label}) before you {what}. {hint}".strip()
 
@@ -202,9 +209,60 @@ def require_accepted_for_request(db: Session, crm_request: CrmRndRequest) -> Rnd
     rev = revision_for_request(db, crm_request.id)
     if rev is None or rev.status in ("accepted", "superseded"):
         return rev
-    if rev.status == "responded":
-        return rev  # mark_responded explains that it was already answered
+    if rev.status in ("responded", "closed"):
+        return rev  # mark_responded explains that it was already answered / closed
     raise HTTPException(status_code=409, detail=accept_first_message(rev, "respond to CRM"))
+
+
+def require_closable(db: Session, crm_request: CrmRndRequest, user: User) -> RndRequirementRevision | None:
+    """The close gate. An accepted revision can be closed by whoever may respond; one still
+    awaiting review only by a reviewer (deciding "not an R&D job" is the head's call, like
+    Accept). Responded / closed / superseded / returned fall through so
+    requirement_movement.mark_closed names the exact reason."""
+    rev = revision_for_request(db, crm_request.id)
+    if rev is None or rev.status != "submitted":
+        return rev
+    if not (ra.can_accept(db, user) or ra.can_return(db, user)):
+        raise HTTPException(
+            status_code=403,
+            detail=f"{rev.revision_code} is still waiting for R&D review, so only the R&D head ({ra._head_names(db)}) or someone with "
+                   "R&D › Requirements › Review can close it. Ask them to accept or close it — an admin grants the Review right in "
+                   "Organization › Role & Permissions.",
+        )
+    return rev
+
+
+def on_closed(db: Session, crm_request: CrmRndRequest, user: User) -> None:
+    """R&D closed the request without a response: revision + requirement become "closed"."""
+    rev = revision_for_request(db, crm_request.id)
+    if rev is None:
+        return
+    rev.status = "closed"
+    rev.responded_at = _now()
+    req = db.get(RndRequirement, rev.requirement_id)
+    if req and req.current_revision == rev.revision_no:
+        req.status = "closed"
+    reason = crm_request.response_remarks or ""
+    db.add(AuditLog(
+        entity_type=f"rnd_req_{req.source}" if req else "rnd_req", entity_id=req.record_id if req else None, action="requirement_closed",
+        module_key="rnd", summary=f"{_name(user)} closed {rev.revision_code} without a response: {reason}", performed_by_id=user.id,
+    ))
+
+
+def on_withdrawn(db: Session, crm_request: CrmRndRequest, user: User) -> None:
+    """BD moved the CRM record back before R&D started: revision + requirement become "withdrawn"."""
+    rev = revision_for_request(db, crm_request.id)
+    if rev is None:
+        return
+    rev.status = "withdrawn"
+    rev.responded_at = _now()
+    req = db.get(RndRequirement, rev.requirement_id)
+    if req and req.current_revision == rev.revision_no:
+        req.status = "withdrawn"
+    db.add(AuditLog(
+        entity_type=f"rnd_req_{req.source}" if req else "rnd_req", entity_id=req.record_id if req else None, action="requirement_withdrawn",
+        module_key="rnd", summary=f"{_name(user)} took {rev.revision_code} back from R&D: {crm_request.response_remarks or ''}", performed_by_id=user.id,
+    ))
 
 
 def on_responded(db: Session, crm_request: CrmRndRequest, user: User) -> None:
@@ -271,6 +329,7 @@ def accept(db: Session, *, source: str, record, user: User, remarks: str | None,
             "accepted": f"{rev.revision_code} is already accepted.",
             "returned": f"{rev.revision_code} was returned to BD — wait for BD to fix it and send it again.",
             "responded": f"{rev.revision_code} is already answered — nothing left to accept.",
+            "closed": f"R&D closed {rev.revision_code} without a response — nothing left to accept. Ask BD to send it again if R&D work is needed now.",
         }.get(rev.status, f"{rev.revision_code} is {rev.status}, so it can't be accepted.")
         raise HTTPException(status_code=409, detail=detail)
     rev.status = "accepted"
@@ -293,6 +352,8 @@ def return_to_bd(db: Session, *, source: str, record, user: User, reason: str | 
     req, rev = _locked_latest(db, source, record.id, revision_no)
     if rev.status == "responded":
         raise HTTPException(status_code=409, detail="Already answered — ask BD to re-send if it must change.")
+    if rev.status == "closed":
+        raise HTTPException(status_code=409, detail=f"R&D closed {rev.revision_code} without a response, so it can't be returned. Ask BD to send it again if R&D work is needed now.")
     if rev.status == "returned":
         raise HTTPException(status_code=409, detail=f"{rev.revision_code} was already returned to BD — BD must fix it and send it again.")
     if rev.status not in UNANSWERED:

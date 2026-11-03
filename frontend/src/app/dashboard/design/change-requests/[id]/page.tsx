@@ -24,6 +24,9 @@ import { formatDate, formatDateTime } from '@/lib/format'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import { useDesignFeature } from '@/components/design/useDesignFeature'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection } from '@/lib/visibilityComponents'
+import { sampleChangeRequestDetail } from '@/lib/designPreviewSamples'
 
 const STATUS_HEX: Record<string, string> = { open: '#F59E0B', impact_checked: '#7C3AED', approved: '#16A34A', rejected: '#DC2626', deferred: '#78716c', withdrawn: '#a8a29e' }
 const URGENCY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', critical: '#DC2626' }
@@ -90,7 +93,11 @@ export default function ChangeRequestDetailPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('design')
   const router = useRouter()
   const params = useParams()
-  const { id, error: linkError } = useRecordId(params.id as string)
+  // Role visibility (Role & Permissions › Design › Changes › Visibility). In the Role editor's "Preview & choose"
+  // the page draws a made-up change request and loads / saves nothing.
+  const vis = useVisibility('design:change_notices')
+  const preview = vis.preview
+  const { id, error: linkError } = useRecordId(preview ? null : params.id as string)
   // Role-level features (Design › Changes); buttons follow the server's allowed_actions.
   const designFeature = useDesignFeature()
   const seeCost = designFeature('change_notices', 'cost_impact', 'view')
@@ -98,7 +105,7 @@ export default function ChangeRequestDetailPage() {
   const canApproveEcr = designFeature('change_notices', 'ecr_decision', 'approve')
   const canRejectEcr = designFeature('change_notices', 'ecr_decision', 'reject')
 
-  const [ecr, setEcr] = useState<DesignChangeRequestDetail | null>(null)
+  const [ecr, setEcr] = useState<DesignChangeRequestDetail | null>(preview ? sampleChangeRequestDetail : null)
   const [users, setUsers] = useState<DesignLookupOption[]>([])
   const [projects, setProjects] = useState<DesignLookupOption[]>([])
   const [machines, setMachines] = useState<DesignLookupOption[]>([])
@@ -131,14 +138,14 @@ export default function ChangeRequestDetailPage() {
   })
 
   useEffect(() => {
-    if (!isAuthorized || !id) return
+    if (!isAuthorized || !id || preview) return
     designApi.getChangeRequest(id)
       .then(setEcr)
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load the change request.')))
     Promise.all([designApi.lookupUsers(), designApi.lookupProjects(), designApi.lookupMachines()])
       .then(([u, p, m]) => { setUsers(u); setProjects(p); setMachines(m) })
       .catch(() => { /* pickers only — the page still works read-only */ })
-  }, [isAuthorized, id])
+  }, [isAuthorized, id, preview])
 
   // Edit-only pickers.
   useEffect(() => {
@@ -177,9 +184,9 @@ export default function ChangeRequestDetailPage() {
   }, [bomSearch, bomOptions, items])
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><DesignNav /><InvalidRecordLink message={linkError} listHref="/dashboard/design/change-notices" listLabel="Back to changes" /></div>)
+  if (linkError && !preview) return (<div><DesignNav /><InvalidRecordLink message={linkError} listHref="/dashboard/design/change-notices" listLabel="Back to changes" /></div>)
 
-  const can = (a: string) => !!ecr?.allowed_actions.includes(a)
+  const can = (a: string) => !preview && !!ecr?.allowed_actions.includes(a)
 
   const act = async (fn: () => Promise<DesignChangeRequestDetail>, fallback: string, done: string) => {
     setBusy(true)
@@ -343,16 +350,22 @@ export default function ChangeRequestDetailPage() {
   }
 
   const postComment = async () => {
-    if (!ecr || !comment.trim()) return
+    if (!ecr || !comment.trim() || preview) return
     if (await act(() => designApi.commentEcr(ecr.id, comment.trim()), 'Posting the comment failed.', 'Comment added.')) setComment('')
   }
+
+  // Edit popup: the source / urgency values the role offers, plus the request's own saved value.
+  const keepOwn = (choices: [string, string][], own: string, labels: Record<string, string>): [string, string][] =>
+    !own || choices.some(([k]) => k === own) ? choices : [...choices, [own, labels[own] || own]]
+  const sourceOptions = keepOwn(vis.options('source', Object.entries(ECR_SOURCE_LABELS), ([k]) => k), ecr?.source || '', ECR_SOURCE_LABELS)
+  const urgencyOptions = keepOwn(vis.options('urgency', Object.entries(ECR_URGENCY_LABELS), ([k]) => k), ecr?.urgency || '', ECR_URGENCY_LABELS)
 
   const itemHref = (i: DesignChangeRequestItem) => (i.bom_id ? recordPath('/dashboard/design/boms', i, 'bom_id') : recordPath('/dashboard/design/documents', i, 'document_id'))
   const myVote = ecr?.votes.find((v) => v.user_id === user?.id)
 
   return (
     <div>
-      <DesignNav />
+      {!preview && <DesignNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
@@ -361,7 +374,7 @@ export default function ChangeRequestDetailPage() {
             {ecr ? ecr.ecr_number : 'Change Request'}
           </h1>
         </div>
-        <button data-tour="design-ecr-back-btn" onClick={() => router.push('/dashboard/design/change-notices')} type="button" style={secondaryBtnStyle}>← Back</button>
+        {!preview && <button data-tour="design-ecr-back-btn" onClick={() => router.push('/dashboard/design/change-notices')} type="button" style={secondaryBtnStyle}>← Back</button>}
       </div>
 
       {error && (
@@ -379,6 +392,7 @@ export default function ChangeRequestDetailPage() {
         <>
           {/* What is being asked and why: summary on top, then the request's details. */}
           <DetailCard tour="design-ecr-request">
+            <VisSection vis={vis} k="detail_summary">
             <DetailSummary
               title={ecr.title}
               meta={<>
@@ -388,17 +402,23 @@ export default function ChangeRequestDetailPage() {
                 {['open', 'impact_checked'].includes(ecr.status) && <span>· Open {ecr.days_open} day{ecr.days_open === 1 ? '' : 's'}</span>}
               </>}
             />
+            </VisSection>
+            <VisSection vis={vis} k="detail_request">
             <DetailGroup title="Request">
               <DetailRow label="Reason">{ecr.reason}</DetailRow>
               <DetailRow label="Proposed change">{ecr.proposed_change}</DetailRow>
             </DetailGroup>
+            </VisSection>
             <div data-tour="design-ecr-details">
+              <VisSection vis={vis} k="detail_origin">
               <DetailGroup title="Where it came from">
                 <DetailRow label="Source">{ECR_SOURCE_LABELS[ecr.source] || ecr.source}</DetailRow>
                 {ecr.ncr_number && <DetailRow label="NCR">{ecr.ncr_number}</DetailRow>}
                 {ecr.capa_number && <DetailRow label="CAPA">{ecr.capa_number}</DetailRow>}
                 <DetailRow label="Source reference">{ecr.source_reference}</DetailRow>
               </DetailGroup>
+              </VisSection>
+              <VisSection vis={vis} k="detail_links">
               <DetailGroup title="Linked to" last>
                 <DetailRow label="Project">{ecr.pm_project_label}</DetailRow>
                 <DetailRow label="Machine">{ecr.erp_project_label}</DetailRow>
@@ -408,6 +428,7 @@ export default function ChangeRequestDetailPage() {
                   </DetailRow>
                 )}
               </DetailGroup>
+              </VisSection>
             </div>
           </DetailCard>
 
@@ -451,6 +472,7 @@ export default function ChangeRequestDetailPage() {
 
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
             <div style={{ flex: '2 1 560px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+              <VisSection vis={vis} k="detail_items">
               <div data-tour="design-ecr-items" style={sectionStyle}>
                 <p style={sectionTitle}>Affected items &amp; where used</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -489,7 +511,9 @@ export default function ChangeRequestDetailPage() {
                   {ecr.items.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No affected items listed.</p>}
                 </div>
               </div>
+              </VisSection>
 
+              <VisSection vis={vis} k="detail_impact">
               <div data-tour="design-ecr-impact" style={sectionStyle}>
                 <p style={sectionTitle}>Impact</p>
                 {ecr.impact_checked_at ? (
@@ -505,7 +529,9 @@ export default function ChangeRequestDetailPage() {
                   <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Not checked yet — the Design team records the impact before the change board votes.</p>
                 )}
               </div>
+              </VisSection>
 
+              <VisSection vis={vis} k="detail_board">
               <div data-tour="design-ecr-board" style={sectionStyle}>
                 <p style={sectionTitle}>Change board</p>
                 {!seeBoard ? (
@@ -547,9 +573,11 @@ export default function ChangeRequestDetailPage() {
                   </div>
                 )}
               </div>
+              </VisSection>
             </div>
 
             <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+              <VisSection vis={vis} k="detail_timeline">
               <div data-tour="design-ecr-timeline" style={sectionStyle}>
                 <p style={sectionTitle}>Timeline</p>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
@@ -571,6 +599,7 @@ export default function ChangeRequestDetailPage() {
                   ))}
                 </div>
               </div>
+              </VisSection>
             </div>
           </div>
         </>
@@ -771,13 +800,13 @@ export default function ChangeRequestDetailPage() {
                   <div style={{ flex: '1 1 200px', maxWidth: 260 }}>
                     <label style={labelStyle}>Source</label>
                     <Select style={inputStyle} value={form.source} onChange={(e) => { setForm({ ...form, source: e.target.value, quality_id: '' }); setQualityRecords([]) }}>
-                      {Object.entries(ECR_SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                      {sourceOptions.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </Select>
                   </div>
                   <div style={{ flex: '0 1 140px', minWidth: 120 }}>
                     <label style={labelStyle}>Urgency</label>
                     <Select style={inputStyle} value={form.urgency} onChange={(e) => setForm({ ...form, urgency: e.target.value })}>
-                      {Object.entries(ECR_URGENCY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                      {urgencyOptions.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </Select>
                   </div>
                 </div>

@@ -1,12 +1,13 @@
 'use client'
 
-import { CaretDoubleRight, ClipboardText, ClockCounterClockwise, Disc, Drop, Flask, Gear, GearFine, Lightning, ListChecks, Pulse, Scales, SquaresFour, Wrench } from '@phosphor-icons/react'
+import { CaretDoubleRight, ClipboardText, ClockCounterClockwise, Cube, Disc, Drop, Files, Flask, Gear, GearFine, Lightning, ListChecks, Pulse, Scales, SquaresFour, TestTube, Wrench } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
 import Link from 'next/link'
 import { navScrollRef } from '@/components/shared/navScroll'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { filterTabsByAccess } from '@/lib/tabAccess'
+import { canFeature } from '@/lib/permissions'
 import NotificationBell from '@/components/erp/NotificationBell'
 import TourButton from '@/components/tour/TourButton'
 
@@ -16,10 +17,13 @@ const TABS = [
   // Requirement and Prototype / Research tasks: create, track, analytics (R&D › R&D Tasks).
   { href: '/dashboard/rnd/tasks', label: 'R&D Tasks', icon: 'tasks', subtabKey: 'tasks' },
   { href: '/dashboard/rnd/projects', label: 'Prototype / Research', icon: 'projects', subtabKey: 'projects' },
+  { href: '/dashboard/rnd/experiments', label: 'Experiments & Tests', icon: 'experiments', subtabKey: 'experiments' },
+  { href: '/dashboard/rnd/prototypes', label: 'Prototypes', icon: 'prototypes', subtabKey: 'prototypes' },
+  { href: '/dashboard/rnd/documents', label: 'Documents', icon: 'documents', subtabKey: 'documents' },
   // "all" is the old calculator-landing key — kept so existing Permission
   // Matrix grants for the calculators still cover this tab.
   { href: '/dashboard/rnd/tools', label: 'Engineering Tools', icon: 'tools', subtabKey: 'all' },
-  // R&D team (head / member). Viewable with Requirements access; only heads/admins can change it.
+  // R&D Settings gear: needs Requirements › "R&D Settings (gear)" (inherits Requirements view).
   { href: '/dashboard/rnd/settings', label: 'Settings', icon: 'settings', subtabKey: 'requirements' },
 ] as const
 
@@ -41,6 +45,9 @@ const TAB_ICONS: Record<string, Icon> = {
   requirements: ClipboardText,
   tasks: ListChecks,
   projects: Flask,
+  experiments: TestTube,
+  prototypes: Cube,
+  documents: Files,
   tools: Wrench,
   braking: Disc,
   hydraulic: Drop,
@@ -64,7 +71,7 @@ export default function RndNav() {
   // Settings sits as a gear next to the bell so the tab row fits on one line.
   const allowedTabs = filterTabsByAccess('rnd', TABS, user)
   const visibleTabs = allowedTabs.filter((t) => t.icon !== 'settings')
-  const settingsTab = allowedTabs.find((t) => t.icon === 'settings')
+  const settingsTab = allowedTabs.find((t) => t.icon === 'settings' && canFeature(user, 'rnd', 'requirements', 'settings', 'view'))
   const inTools = pathname.startsWith('/dashboard/rnd/tools') || TOOL_TABS.some((t) => pathname.startsWith(t.href))
 
   const isActive = (href: string) => {

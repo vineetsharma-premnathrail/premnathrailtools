@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.permission_registry import can_feature, can_view_tab
 from app.core.permissions import ensure_can_delete, require_app_access, require_tab_access
 from app.db.session import get_db
@@ -37,6 +38,8 @@ _VIEWER = require_app_access(ELECTRICAL_APP)
 _CAN_CREATE = require_job_feature("tests", "create", ("testing", "create"))
 _CAN_EDIT = require_job_feature("tests", "edit", ("testing", "edit"))
 _CAN_DELETE = require_job_feature("tests", "delete", ("testing", "delete"))
+# Role visibility catalogue entry (core/features/electrical.py): test phase / type values per role.
+VISIBILITY_KEY = "electrical:testing"
 
 
 def _to_responses(db: Session, tests: list[ElectricalTest]) -> list[ElectricalTestResponse]:
@@ -141,6 +144,11 @@ async def create_test(job_id: int, payload: ElectricalTestCreate, background_tas
     if data["result"] not in ELECTRICAL_TEST_RESULTS:
         raise HTTPException(status_code=400, detail="Result must be 'pass' or 'fail'.")
     _validate_links(db, job_id, data)
+    # Role visibility (Role & Permissions › Electrical › Testing › Visibility): a phase / test type the role does not
+    # offer is refused with the reason. A retest keeps the failed test's phase, so only its type is checked.
+    if not data.get("retest_of_id"):
+        visibility.ensure_option_allowed(user, VISIBILITY_KEY, "phase", data["phase"])
+    visibility.ensure_option_allowed(user, VISIBILITY_KEY, "test_type", data["test_type"])
     if data.get("retest_of_id"):
         original = _get_test(db, data["retest_of_id"])
         if original.job_id != job_id:

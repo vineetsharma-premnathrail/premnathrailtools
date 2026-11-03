@@ -49,6 +49,7 @@ async def list_batches(
     in_stock: bool = Query(False),
     db: Session = Depends(get_db),
     user: User = Depends(require_tab_access("store", "stock")),
+    _feat: User = Depends(require_feature_action("store", "stock", "batches", "view")),  # Batches tab
 ):
     """Batches with their stock per store and stock type (from the ledger)."""
     query = db.query(StoreBatch)

@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.permissions import ensure_tab_action, require_any_app_access, require_tab_action
+from app.core import visibility
 from app.core.data_scope import apply_scope
 from app.core.permission_registry import can_view_tab
 from app.core.pew_numbers import normalise_serial
@@ -63,7 +64,7 @@ AMC_CHOICES = {"Active": "Active AMC", "Expired": "Expired Contract"}
 
 def _require_create(user: User) -> None:
     # Importing registers new machines, so it needs Create as well as Import.
-    ensure_tab_action(user, "projects", "service_projects", "create")
+    ensure_tab_action(user, "projects", "all_projects", "create")
 
 
 def _machine_label(p: Project) -> str:
@@ -93,7 +94,7 @@ def _row_payload(r: dict) -> dict:
 @router.get("/import/template")
 async def import_template(
     _user: User = Depends(require_any_app_access("erp", "projects")),
-    _tab: User = Depends(require_tab_action("projects", "service_projects", "import")),
+    _tab: User = Depends(require_tab_action("projects", "all_projects", "import")),
 ):
     keys = [k for k, _ in COLUMNS]
     sample = {"serial_number": "PRT-RRV-0101", "machine_type": "Rail Road Vehicle", "model_name": "RRV 4x4",
@@ -111,9 +112,16 @@ async def import_projects(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: User = Depends(require_any_app_access("erp", "projects")),
-    _tab: User = Depends(require_tab_action("projects", "service_projects", "import")),
+    _tab: User = Depends(require_tab_action("projects", "all_projects", "import")),
 ):
     _require_create(user)
+    if visibility.allowed_values(user, "projects:all_projects", "status") is not None:
+        # A role that offers only some operational statuses registers machines one by one on the
+        # form, where the restriction applies; a sheet (blank Status = Active) would skip it.
+        raise HTTPException(status_code=422, detail=(
+            "Your role limits the Operational Status of machines, so a bulk import isn't available to you — add them "
+            "with + Create Project, or ask an admin to widen it in Organization › Role & Permissions › Project Management "
+            "› All Projects › Visibility."))
     rows = read_rows(file.filename, await file.read())
     check_rows(rows, ["serial_number"])
 
@@ -222,7 +230,7 @@ async def export_projects(
     date_to: date | None = Query(None),
     db: Session = Depends(get_db),
     _user: User = Depends(require_any_app_access("erp", "projects")),
-    _tab: User = Depends(require_tab_action("projects", "service_projects", "export")),
+    _tab: User = Depends(require_tab_action("projects", "all_projects", "export")),
 ):
     """Excel of the asset register with the same filters as the list page.
     Columns match the import template, so the sheet can be edited and

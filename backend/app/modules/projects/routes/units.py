@@ -14,7 +14,7 @@ from sqlalchemy import exists, or_
 from sqlalchemy.orm import Session
 
 from app.core.data_scope import ensure_in_scope
-from app.core.permissions import require_tab_access, require_any_app_access
+from app.core.permissions import ensure_feature_action, require_tab_access, require_any_app_access
 from app.db.session import get_db
 from app.modules.erp.models.project import Project as Machine
 from app.modules.main.models.user import User
@@ -129,6 +129,9 @@ async def project_units(
     Production, Quality and Dispatch linked to the project itself."""
     from app.modules.projects import lifecycle
     from app.modules.sales.legacy import prices_hidden
+
+    # The Units tab of the project workspace = feature projects:overview.units (inherits Overview › View).
+    ensure_feature_action(user, "projects", "overview", "units", "view")
 
     project = db.get(PmProject, project_id)
     if project is None:

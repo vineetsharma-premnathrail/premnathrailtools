@@ -26,6 +26,7 @@ from app.modules.erp.settings import get_setting as get_erp_setting
 from app.modules.erp.notify import broadcast_except, fire_event, role_event
 from app.modules.erp import access as erp_access
 from app.core.data_scope import apply_scope, ensure_in_scope, in_scope
+from app.core import visibility
 from app.core.pew_numbers import link_machine_to_project, normalise_serial
 from app.modules.projects import lifecycle
 from app.modules.projects.lifecycle import SERVICEABLE_STAGES
@@ -47,6 +48,11 @@ LETTER_ENTITY = "erp_project_letter"
 _NATURAL_SORT_SPLIT = re.compile(r"(\d+)")
 
 
+# Role-wise UI visibility entry of the machine form (core/features/projects.py register_visibility):
+# the "Add New Project" form and the machine edit form live under All Projects.
+MACHINE_VISIBILITY_KEY = "projects:all_projects"
+
+
 def _natural_sort_key(value: str | None) -> list:
     """Split a serial number like 'PEW-53-A-9' into ['pew-', 9, '-a-', ''] so that
     digit groups sort numerically (9 before 10) instead of lexicographically."""
@@ -66,7 +72,7 @@ _MACHINE_NOT_FOUND = "Machine not found — it may have been deleted or moved to
 
 
 def _has_machine_or_sr_tab(user: User) -> bool:
-    return can_view_tab(user, "projects", "service_projects") or can_view_tab(user, "erp", "service_requests")
+    return can_view_tab(user, "projects", "all_projects") or can_view_tab(user, "erp", "service_requests")
 
 
 def _deny_machine_tab() -> None:
@@ -128,9 +134,9 @@ def _machines_tab_or_pm_project(
 ) -> User:
     """Machines list gate: the Machines tab, or — when asking for one project's machines —
     permission to view that Project Management project."""
-    if can_view_tab(user, "projects", "service_projects") or _pm_project_viewable(db, user, pm_project_id):
+    if can_view_tab(user, "projects", "all_projects") or _pm_project_viewable(db, user, pm_project_id):
         return user
-    return require_tab_access("projects", "service_projects")(user)  # raises the standard 403
+    return require_tab_access("projects", "all_projects")(user)  # raises the standard 403
 
 
 def _machine_view_gate(user: User = Depends(get_current_user)) -> User:
@@ -145,12 +151,12 @@ def _documents_view_or_pm(project_id: int, db: Session = Depends(get_db), user: 
     """Machine documents: the Documents › View grant, or the machine is linked to a Project
     Management project the user can view."""
     from app.core.permission_registry import can_feature
-    if can_feature(user, "projects", "service_projects", "documents", "view"):
+    if can_feature(user, "projects", "all_projects", "documents", "view"):
         return user
     machine = db.query(Project).filter(Project.id == project_id, Project.is_deleted == False).first()  # noqa: E712
     if _can_view_via_pm_project(db, user, machine):
         return user
-    ensure_feature_action(user, "projects", "service_projects", "documents", "view")  # raises the standard 403
+    ensure_feature_action(user, "projects", "all_projects", "documents", "view")  # raises the standard 403
     return user
 
 
@@ -340,7 +346,7 @@ async def list_projects(
 async def get_project_filter_options(
     db: Session = Depends(get_db),
     _user: User = Depends(require_any_app_access("erp", "projects")),
-    _tab: User = Depends(require_tab_access("projects", "service_projects")),
+    _tab: User = Depends(require_tab_access("projects", "all_projects")),
 ):
     """Distinct values for the registry's filter dropdowns, so the UI only ever
     offers values that actually exist in the data."""
@@ -359,7 +365,7 @@ async def get_project_filter_options(
 async def get_installed_base_link_options(
     db: Session = Depends(get_db),
     _user: User = Depends(require_any_app_access("erp", "projects")),
-    _tab: User = Depends(require_tab_access("projects", "service_projects")),
+    _tab: User = Depends(require_tab_access("projects", "all_projects")),
 ):
     """Customer (CRM organizations) and product (Product master) pick-lists
     for the machine form — served here because Service users usually don't
@@ -381,7 +387,7 @@ async def get_installed_base(
     customer_id: int | None = None,
     db: Session = Depends(get_db),
     _user: User = Depends(require_any_app_access("erp", "projects")),
-    _tab: User = Depends(require_tab_access("projects", "service_projects")),
+    _tab: User = Depends(require_tab_access("projects", "all_projects")),
 ):
     """Customer-wise installed base (SAP IB51/IH01): per customer, its
     machines with today's warranty cover and open service requests. Machines
@@ -449,6 +455,9 @@ def register_machine(db: Session, background_tasks: BackgroundTasks, values: dic
     Project Management project and its machine in one transaction.
     `values` are Project columns (may include pm_project_id)."""
     values["serial_number"] = normalise_serial(values["serial_number"])
+    # Role-wise visibility (core/features/projects.py): an operational status the role does not
+    # offer on the machine form is refused here too (the schema default, Active, is checked as a value).
+    visibility.ensure_option_allowed(user, MACHINE_VISIBILITY_KEY, "status", values.get("status"))
     existing = _find_serial_clash(db, values["serial_number"])
     if existing:
         raise HTTPException(status_code=409, detail=_serial_clash_detail(existing))
@@ -574,6 +583,10 @@ async def update_project(
             status_code=422,
             detail=f"Invalid machine status '{updates['status']}' — choose one of: {', '.join(PROJECT_STATUSES)}.",
         )
+    if "status" in updates and updates["status"] != project.status:
+        # Role-wise visibility: only a CHANGED status is checked, so a machine saved before the
+        # role was narrowed stays editable.
+        visibility.ensure_option_allowed(user, MACHINE_VISIBILITY_KEY, "status", updates["status"])
     serial_note = ""
     serial_builds: list = []
     if "serial_number" in updates and updates["serial_number"] != project.serial_number:
@@ -683,7 +696,7 @@ async def set_machine_lifecycle_stage(
     project_id: int,
     payload: MachineStagePayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_tab_action("projects", "service_projects", "edit")),
+    user: User = Depends(require_tab_action("projects", "all_projects", "edit")),
 ):
     """Sets the stage of a machine that has no Project Management project (a past project).
     A machine linked to a project follows that project's stage instead."""
@@ -727,7 +740,7 @@ async def approve_project(
     # Compatibility route: the decision goes through the central approval
     # engine (Organization › Approval Workflows › New machine); the page uses
     # the shared ApprovalPanel.
-    _tab: User = Depends(require_tab_access("projects", "service_projects")),
+    _tab: User = Depends(require_tab_access("projects", "all_projects")),
 ):
     project = _approval_target(db, project_id, user)
     remarks = (payload.remarks or "").strip() or None
@@ -757,7 +770,7 @@ async def reject_project(
     payload: ProjectApprovalPayload,
     db: Session = Depends(get_db),
     user: User = Depends(require_any_app_access("erp", "projects")),
-    _tab: User = Depends(require_tab_access("projects", "service_projects")),
+    _tab: User = Depends(require_tab_access("projects", "all_projects")),
 ):
     remarks = (payload.remarks or "").strip()
     if not remarks:
@@ -797,7 +810,7 @@ async def delete_project(
     if not project:
         raise HTTPException(status_code=404, detail=_MACHINE_NOT_FOUND)
     ensure_in_scope(db, user, project)
-    ensure_can_delete(user, project, "projects", "service_projects", what="machine")
+    ensure_can_delete(user, project, "projects", "all_projects", what="machine")
     links = _machine_links(db, project.id)
     if links:
         raise HTTPException(
@@ -896,7 +909,7 @@ async def get_project_audit(
     project_id: int,
     db: Session = Depends(get_db),
     _user: User = Depends(require_any_app_access("erp", "projects")),
-    _tab: User = Depends(require_feature_action("projects", "service_projects", "audit_trail", "view")),
+    _tab: User = Depends(require_feature_action("projects", "all_projects", "audit_trail", "view")),
 ):
     if not db.query(Project.id).filter(Project.id == project_id).first():
         raise HTTPException(status_code=404, detail=f"No machine with id {project_id} — check the link or open it from the Machines list.")
@@ -1036,7 +1049,7 @@ async def upload_project_attachments(
 ):
     if not has_erp_permission(user, "project_edit"):
         raise HTTPException(status_code=403, detail="You need the 'Edit machines' ERP permission to upload documents. Ask an admin to grant it in Users & Roles.")
-    ensure_feature_action(user, "projects", "service_projects", "documents", "create")
+    ensure_feature_action(user, "projects", "all_projects", "documents", "create")
     project = db.query(Project).options(selectinload(Project.attachments)).filter(
         Project.id == project_id, Project.is_deleted == False  # noqa: E712
     ).first()
@@ -1097,7 +1110,7 @@ async def update_project_attachment_permissions(
     payload: ProjectAttachmentPermissionUpdate,
     db: Session = Depends(get_db),
     user: User = Depends(require_any_app_access("erp", "projects")),
-    _tab: User = Depends(require_feature_action("projects", "service_projects", "documents", "edit")),
+    _tab: User = Depends(require_feature_action("projects", "all_projects", "documents", "edit")),
 ):
     _get_live_project(db, project_id, user)
     attachment = db.query(ProjectAttachment).options(selectinload(ProjectAttachment.shares)).filter(
@@ -1129,8 +1142,8 @@ async def delete_project_attachment(
     db: Session = Depends(get_db),
     user: User = Depends(require_any_app_access("erp", "projects")),
 ):
-    ensure_tab_action(user, "projects", "service_projects", "delete")  # before the lookup, so a missing grant is never a 404
-    ensure_feature_action(user, "projects", "service_projects", "documents", "delete")
+    ensure_tab_action(user, "projects", "all_projects", "delete")  # before the lookup, so a missing grant is never a 404
+    ensure_feature_action(user, "projects", "all_projects", "documents", "delete")
     _get_live_project(db, project_id, user)
     attachment = db.query(ProjectAttachment).options(selectinload(ProjectAttachment.shares)).filter(
         ProjectAttachment.id == attachment_id, ProjectAttachment.project_id == project_id
@@ -1142,7 +1155,7 @@ async def delete_project_attachment(
             status_code=403,
             detail="This is a private document shared with others — only its uploader, people it is shared with, or an admin can delete it.",
         )
-    ensure_can_delete(user, attachment, "projects", "service_projects", what="machine document")
+    ensure_can_delete(user, attachment, "projects", "all_projects", what="machine document")
 
     if settings.SHAREPOINT_SITE_ID and attachment.sharepoint_path:
         try:
@@ -1201,7 +1214,7 @@ async def project_letter_defaults(
     project_id: int,
     db: Session = Depends(get_db),
     _user: User = Depends(require_any_app_access("erp", "projects")),
-    _tab: User = Depends(require_feature_action("projects", "service_projects", "letters", "view")),
+    _tab: User = Depends(require_feature_action("projects", "all_projects", "letters", "view")),
 ):
     """Default signatory for a new document: a company Partner (Organization →
     Company Info → Partners) — the logged-in user if they are one, else the
@@ -1226,7 +1239,7 @@ async def list_project_letters(
     project_id: int,
     db: Session = Depends(get_db),
     _user: User = Depends(require_any_app_access("erp", "projects")),
-    _tab: User = Depends(require_feature_action("projects", "service_projects", "letters", "view")),
+    _tab: User = Depends(require_feature_action("projects", "all_projects", "letters", "view")),
 ):
     _get_live_project(db, project_id, _user)
     letters = db.query(ProjectLetter).filter(
@@ -1244,7 +1257,7 @@ async def create_project_letter(
 ):
     if not has_erp_permission(user, "project_edit"):
         raise HTTPException(status_code=403, detail="You need the 'Edit projects' ERP permission to create letters. Ask an admin to grant it.")
-    ensure_feature_action(user, "projects", "service_projects", "letters", "create")
+    ensure_feature_action(user, "projects", "all_projects", "letters", "create")
     # Only the fixed delivery documents are created now; existing general letters stay viewable/editable.
     if payload.letter_type == "general":
         raise HTTPException(status_code=422, detail="General letters are no longer created here — pick Delivery Cover Letter, Delivery Confirmation or Guarantee Certificate.")
@@ -1275,7 +1288,7 @@ async def update_project_letter(
 ):
     if not has_erp_permission(user, "project_edit"):
         raise HTTPException(status_code=403, detail="You need the 'Edit projects' ERP permission to edit letters. Ask an admin to grant it.")
-    ensure_feature_action(user, "projects", "service_projects", "letters", "edit")
+    ensure_feature_action(user, "projects", "all_projects", "letters", "edit")
     letter = _get_letter(db, project_id, letter_id, user)
     if payload.letter_type != letter.letter_type:
         raise HTTPException(status_code=422, detail=f"{letter.letter_no} is a {letter.subject or 'letter'} — its type can't be changed. Create a new document of the other type instead.")
@@ -1300,8 +1313,8 @@ async def delete_project_letter(
     user: User = Depends(require_any_app_access("erp", "projects")),
 ):
     letter = _get_letter(db, project_id, letter_id, user)
-    ensure_can_delete(user, letter, "projects", "service_projects", what="letter")
-    ensure_feature_action(user, "projects", "service_projects", "letters", "delete")
+    ensure_can_delete(user, letter, "projects", "all_projects", what="letter")
+    ensure_feature_action(user, "projects", "all_projects", "letters", "delete")
     _write_audit(db, project_id, "letter_deleted", user, summary=f"{user.name or user.email} deleted letter {letter.letter_no}: {letter.subject}")
     letter.is_deleted = True
     letter.deleted_at = datetime.now(timezone.utc)
@@ -1316,7 +1329,7 @@ async def download_project_letter(
     format: str = "pdf",
     db: Session = Depends(get_db),
     _user: User = Depends(require_any_app_access("erp", "projects")),
-    _tab: User = Depends(require_feature_action("projects", "service_projects", "letters", "print")),
+    _tab: User = Depends(require_feature_action("projects", "all_projects", "letters", "print")),
 ):
     if format not in ("pdf", "docx"):
         raise HTTPException(status_code=422, detail=f"Unknown letter format '{format}' — use 'pdf' or 'docx'.")
@@ -1364,13 +1377,13 @@ def _letter_document_target(db: Session, letter_id: int, user: User, modify: boo
         raise HTTPException(status_code=404, detail="Letter not found — it may have been deleted. Refresh the Documents tab.")
     # Reading the Word document's state = Machines › View; creating / editing /
     # uploading it = Machines › Edit and Print (it is the printable letter).
-    ensure_tab_action(user, "projects", "service_projects", "view")
-    ensure_feature_action(user, "projects", "service_projects", "letters", "view")
+    ensure_tab_action(user, "projects", "all_projects", "view")
+    ensure_feature_action(user, "projects", "all_projects", "letters", "view")
     if modify:
-        ensure_tab_action(user, "projects", "service_projects", "edit")
-        ensure_tab_action(user, "projects", "service_projects", "print")
-        ensure_feature_action(user, "projects", "service_projects", "letters", "edit")
-        ensure_feature_action(user, "projects", "service_projects", "letters", "print")
+        ensure_tab_action(user, "projects", "all_projects", "edit")
+        ensure_tab_action(user, "projects", "all_projects", "print")
+        ensure_feature_action(user, "projects", "all_projects", "letters", "edit")
+        ensure_feature_action(user, "projects", "all_projects", "letters", "print")
     return managed_documents.DocumentTarget(
         entity_id=letter.id, revision=letter.revision, title=f"Letter {letter.letter_no}",
         folder=managed_documents.sharepoint_folder("ERP-Letters", project.serial_number),
@@ -1381,4 +1394,9 @@ def _letter_document_target(db: Session, letter_id: int, user: User, modify: boo
 
 managed_documents.register(managed_documents.DocumentAdapter(
     entity_type=LETTER_ENTITY, app="projects", load=_letter_document_target,
-    view_grant="projects:service_projects.letters:view", edit_grant="projects:service_projects.letters:edit"))
+    view_grant="projects:all_projects.letters:view", edit_grant="projects:all_projects.letters:edit"))
+
+
+# Machine page history lists (store issues, purchases, tasks) — routes/machine_history.py
+from app.modules.erp.routes import machine_history as _machine_history_routes  # noqa: E402
+router.include_router(_machine_history_routes.router)

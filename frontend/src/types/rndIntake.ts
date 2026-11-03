@@ -7,7 +7,7 @@ import type { Priority } from '@/lib/priority'
 export type RndReqSource = 'inquiry' | 'tender'
 
 /** Review state of one revision (the requirement shows the latest revision's state). */
-export type RndRevisionStatus = 'submitted' | 'accepted' | 'returned' | 'responded' | 'superseded'
+export type RndRevisionStatus = 'submitted' | 'accepted' | 'returned' | 'responded' | 'closed' | 'superseded'
 
 export interface RndRevision {
   revision_no: number
@@ -154,7 +154,8 @@ export const RND_DOC_CATEGORY_LABELS: Record<string, string> = Object.fromEntrie
   ['technical_offer', 'Technical Offer'],
 ])
 
-export type RndTaskType = 'requirement' | 'prototype'
+/** requirement = on an accepted requirement; prototype = on a Prototype / Research project; project = on a Project Management (All Projects) project. */
+export type RndTaskType = 'requirement' | 'prototype' | 'project'
 export type RndTaskBucket = 'pending' | 'completed' | 'overdue' | 'cancelled'
 
 /** One row of R&D › R&D Tasks (GET /rnd/tasks). */
@@ -165,9 +166,10 @@ export interface RndTaskRow {
   type: RndTaskType
   title: string
   parent: {
-    kind: 'requirement' | 'project'
+    kind: 'requirement' | 'project' | 'pm_project'
     id: number
-    /** R&D ID (requirement) or RND number (project). */
+    id_ref?: string
+    /** R&D ID (requirement), RND number (project) or PEW code (pm_project). */
     ref: string
     title: string | null
     source?: RndReqSource
@@ -200,7 +202,7 @@ export interface RndTaskGroup {
   user_id?: number
   name?: string | null
   // by_project rows (project or requirement)
-  kind?: 'requirement' | 'project'
+  kind?: 'requirement' | 'project' | 'pm_project'
   ref?: string
   title?: string | null
   source?: RndReqSource
@@ -220,6 +222,7 @@ export interface RndTaskFilters {
   type?: RndTaskType
   requirement_id?: number
   rnd_project_id?: number
+  pm_project_id?: number
   assigned_to_id?: number
   department?: string
   status?: string
@@ -237,6 +240,7 @@ export interface RndTaskCreatePayload {
   source?: RndReqSource
   record_id?: number
   rnd_project_id?: number
+  pm_project_id?: number
   title: string
   remarks?: string
   assigned_to_id: number
@@ -255,6 +259,7 @@ export const REVISION_STATUS_LABEL: Record<RndRevisionStatus, string> = {
   accepted: 'Accepted by R&D',
   returned: 'Returned to BD',
   responded: 'Responded',
+  closed: 'Closed by R&D',
   superseded: 'Superseded',
 }
 export const REVISION_STATUS_HEX: Record<RndRevisionStatus, string> = {
@@ -262,5 +267,6 @@ export const REVISION_STATUS_HEX: Record<RndRevisionStatus, string> = {
   accepted: '#16A34A',
   returned: '#DC2626',
   responded: '#0D9488',
+  closed: '#78716c',
   superseded: '#78716c',
 }

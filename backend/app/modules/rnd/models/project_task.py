@@ -19,10 +19,18 @@ class RndProjectTask(Base, TimestampMixin):
     task_id set (task_doc_role "brief" = lead's, "work" = assignee's)."""
 
     __tablename__ = "rnd_project_tasks"
-    __table_args__ = (CheckConstraint("progress_percent BETWEEN 0 AND 100", name="ck_rnd_proj_task_progress"),)
+    __table_args__ = (
+        CheckConstraint("progress_percent BETWEEN 0 AND 100", name="ck_rnd_proj_task_progress"),
+        # Exactly one parent: a Prototype / Research project OR a Project Management project.
+        CheckConstraint("(project_id IS NULL) <> (pm_project_id IS NULL)", name="ck_rnd_proj_task_one_parent"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("rnd_projects.id"), index=True, nullable=False)
+    # Parent = a Prototype / Research project (project_id) or, since 2026-11-03, a Project
+    # Management "All Projects" project (pm_project_id) — R&D work on a customer project,
+    # given from R&D › R&D Tasks. Exactly one of the two is set.
+    project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_projects.id"), index=True, nullable=True)
+    pm_project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("pm_projects.id"), index=True, nullable=True)
     # Sub-task: the parent's assignee split their work and handed this part on.
     # The sub-task's creator reviews it, like a lead reviews a top-level task.
     parent_task_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_project_tasks.id", ondelete="CASCADE"), index=True, nullable=True)

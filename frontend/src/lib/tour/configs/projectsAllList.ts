@@ -37,7 +37,7 @@ const config: TourConfig = {
     {
       target: 'pm-all-table',
       title: 'Project rows',
-      purpose: 'One row per project, smallest PEW number on top (PEW-70, PEW-70A, PEW-70B ...): project number, project name or machine model, client, site, stage, project manager and closing date (projects) or dispatch date (past machines). A machine that belongs to a project appears through its project row. A past machine without a project gets its stage picked right in the row.',
+      purpose: 'One row per project, smallest PEW number on top (PEW-70, PEW-70A, PEW-70B ...): project number, project name or machine model, client, site, stage, project manager and closing date (projects) or dispatch date (past machines). A machine that belongs to a project appears through its project row. The Stage column only shows the stage; to change the stage of a past machine, open it and set the stage there.',
       after: 'Click a row to open the project, or the machine record for a past machine.',
     },
   ],

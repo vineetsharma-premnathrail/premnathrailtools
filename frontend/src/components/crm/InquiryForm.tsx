@@ -9,7 +9,10 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import PhoneField, { isPhoneValid } from '@/components/erp/PhoneField'
 import { normalizePriority } from '@/lib/priority'
-import { RAILWAY_ZONES, leadSourceOptions, inquiryStatusOptions, priorityOptions, priorityLabel } from './constants'
+import { RAILWAY_ZONES, INQUIRY_STATUSES, leadSourceOptions, priorityOptions, priorityLabel } from './constants'
+import { useVisibility } from '@/lib/visibility'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
+import { sampleContact, sampleOrganizations } from '@/lib/crmPreviewSamples'
 import { Row, handleEnterAsTab, InfoRow, XIcon } from './ui'
 import { AddMoreButton, RemoveValueButton, ValueRow, canAddMore, squareBtn } from '@/components/shared/MoreValuesButtons'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
@@ -109,17 +112,30 @@ export default function InquiryForm({
   onBack?: () => void
 }) {
   const orgLocked = !!defaultOrgId
-  const [form, setForm] = useState<FormState>(() => toFormState(initial, defaultOrgId))
+  // Role-wise visibility (Organization › Role & Permissions › CRM › Inquiries & Tenders › Visibility): the
+  // Priority / Status lists are narrowed to what the role offers (a saved record keeps its own value; an older
+  // record's retired status stays selectable). The server refuses a disallowed value as well.
+  const vis = useVisibility('crm:inquiries_tenders')
+  const keepSaved = (choices: string[], saved?: string | null) => (saved && !choices.includes(saved) ? [...choices, saved] : choices)
+  const priorityChoices = keepSaved(vis.options('inquiry_priority', priorityOptions(initial?.priority), (p) => p), initial ? normalizePriority(initial.priority) : null)
+  const statusChoices = keepSaved(vis.options('inquiry_status', INQUIRY_STATUSES, (s) => s), initial?.status)
+  const [form, setForm] = useState<FormState>(() => {
+    const f = toFormState(initial, defaultOrgId)
+    // A new form never starts on a value the role can't pick: it opens on the first allowed one.
+    if (!initial && !priorityChoices.includes(f.priority)) f.priority = priorityChoices[0]
+    if (!initial && !statusChoices.includes(f.status)) f.status = statusChoices[0]
+    return f
+  })
   // Client first: the inquiry is about a customer, so its other fields open only
   // once the client company and a saved contact person are chosen.
-  const clientChosen = !!form.org_id && !!form.org_contact_id && form.org_contact_id !== '__new__'
+  const clientChosen = vis.preview || (!!form.org_id && !!form.org_contact_id && form.org_contact_id !== '__new__')
   const gatedStyle: React.CSSProperties = clientChosen ? {} : { opacity: 0.45, pointerEvents: 'none', userSelect: 'none' }
   // Secondary requirement fields stay folded unless the record already has one filled.
   const [railwayZoneCustom] = useState(
     initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? initial.railway_zone : ''
   )
-  const [organizations, setOrganizations] = useState<Organization[]>([])
-  const [contacts, setContacts] = useState<OrgContact[]>([])
+  const [organizations, setOrganizations] = useState<Organization[]>(vis.preview ? sampleOrganizations : [])
+  const [contacts, setContacts] = useState<OrgContact[]>(vis.preview ? [sampleContact] : [])
   const emptyNewContact = () => ({ name: '', designation: '', mobile: '', email: '', additionalMobiles: [] as string[], additionalEmails: [] as string[] })
   const [newContact, setNewContact] = useState(emptyNewContact())
   const [savingContact, setSavingContact] = useState(false)
@@ -227,12 +243,14 @@ export default function InquiryForm({
   }
 
   useEffect(() => {
+    if (vis.preview) return  // Role editor preview: sample organizations, nothing is loaded
     crmApi.listOrganizations({ picker: true }).then(setOrganizations)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
 
   useEffect(() => {
-    if (initial) return
+    if (initial || vis.preview) return
     crmApi.listInquiries().then((all: Inquiry[]) => {
       const today = new Date()
       const y = today.getFullYear()
@@ -241,9 +259,10 @@ export default function InquiryForm({
       const seq = String(all.length + 1).padStart(4, '0')
       setPreviewNumber(`INQ-${y}${m}${d}-${seq}`)
     }).catch(() => {})
-  }, [initial])
+  }, [initial, vis.preview])
 
   useEffect(() => {
+    if (vis.preview) return
     if (!form.org_id) {
       // Deferred so the effect itself sets no state.
       Promise.resolve().then(() => { setContacts([]); setDuplicateWarning('') })
@@ -359,12 +378,12 @@ export default function InquiryForm({
 
   const formId = initial ? `inquiry-form-${initial.id}` : 'inquiry-form-new'
   return (
-    <FormPage nav={nav} onBack={onBack} backTour="inq-form-back-btn" tour="inq-form" icon={initial ? 'edit' : 'doc'}
+    <FormPage nav={vis.preview ? undefined : nav} onBack={vis.preview ? undefined : onBack} backTour="inq-form-back-btn" tour="inq-form" icon={initial ? 'edit' : 'doc'}
       title={title || (initial ? `Edit Inquiry ${initial.universal_id || ''}`.trim() : 'New Inquiry')}
       subtitle={subtitle || (initial ? 'Change the inquiry — the change is recorded in its timeline.' : 'A customer requirement: who asked, for what, and by when.')}
       footer={<>
         <button type="button" onClick={onCancel} disabled={saving} data-tour="inq-cancel-btn" style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
-        <button type="submit" form={formId} data-tour="inq-save" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+        <button type="submit" form={formId} data-tour="inq-save" disabled={saving || vis.preview} style={sheetBtn('primary', SHEET.BLUE, saving || vis.preview)}>
           <SheetIcon name={initial ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : submitLabel}
         </button>
       </>}>
@@ -379,7 +398,7 @@ export default function InquiryForm({
 
       <SheetColumns
         left={<>
-      <SheetSection icon="building" title="Company Information">
+      <VisSection vis={vis} k="inq_company"><SheetSection icon="building" title="Company Information">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <F label={<>Client Company <Req /></>} tourId="inq-org">
             <SearchableSelect
@@ -461,14 +480,14 @@ export default function InquiryForm({
             <span>{duplicateWarning}</span>
           </div>
         )}
-      </SheetSection>
+      </SheetSection></VisSection>
       {!clientChosen && (
         <p style={{ margin: '0 0 12px', padding: '10px 14px', borderRadius: 10, background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', fontSize: 12.5 }}>
           Pick the <b>Client Company</b> and <b>Contact Person</b> first — the rest of the inquiry opens once the client is chosen.
         </p>
       )}
       <div inert={!clientChosen} style={gatedStyle}>
-      <SheetSection icon="list" title="Basic Information">
+      <VisSection vis={vis} k="inq_basic"><SheetSection icon="list" title="Basic Information">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ flex: '1 1 160px', minWidth: 160 }}>
             <F label="Inquiry Number" tourId="inq-number">
@@ -495,15 +514,17 @@ export default function InquiryForm({
           <div style={{ flex: '1 1 260px', minWidth: 220 }}>
             <F label={<>Customer Requirement Priority <Req /></>} tourId="inq-priority">
               <Select value={form.priority} onChange={(e) => set('priority', e.target.value)} style={inputStyle}>
-                {priorityOptions(initial?.priority).map((p) => <option key={p} value={p}>{priorityLabel(p)}</option>)}
+                {priorityChoices.map((p) => <option key={p} value={p}>{priorityLabel(p)}</option>)}
               </Select>
+              <VisOptionValues vis={vis} dropdown="inquiry_priority" />
             </F>
           </div>
           <div style={{ flex: '1 1 200px', minWidth: 190 }}>
             <F label={<>Status <Req /></>} tourId="inq-status">
               <Select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
-                {inquiryStatusOptions(form.status, initial?.status).map((s) => <option key={s} value={s}>{s}</option>)}
+                {statusChoices.map((s) => <option key={s} value={s}>{s}</option>)}
               </Select>
+              <VisOptionValues vis={vis} dropdown="inquiry_status" />
             </F>
           </div>
         </div>
@@ -512,12 +533,12 @@ export default function InquiryForm({
           <textarea value={form.current_status_note} onChange={(e) => set('current_status_note', e.target.value)} rows={2} placeholder="e.g. Waiting for client confirmation" style={{ ...inputStyle, resize: 'vertical' }} />
         </F>
         </div>
-      </SheetSection>
+      </SheetSection></VisSection>
       </div>
         </>}
         right={<>
       <div inert={!clientChosen} style={gatedStyle}>
-      <SheetSection
+      <VisSection vis={vis} k="inq_product"><SheetSection
         icon="box"
         title="Product Requirement"
       >
@@ -565,10 +586,10 @@ export default function InquiryForm({
         )}
 
         </div>
-      </SheetSection>
-      <SheetSection icon="doc" title="Project Details">
+      </SheetSection></VisSection>
+      <VisSection vis={vis} k="inq_project_details"><SheetSection icon="doc" title="Project Details">
         <F label="Project Details" tourId="inq-project-details"><textarea value={form.project_details} onChange={(e) => set('project_details', e.target.value)} rows={3} placeholder="Project background, scope, timeline..." style={{ ...inputStyle, resize: 'vertical' }} /></F>
-      </SheetSection>
+      </SheetSection></VisSection>
       </div>
         </>}
       />

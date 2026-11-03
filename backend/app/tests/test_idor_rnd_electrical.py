@@ -9,7 +9,7 @@ from app.modules.crm.models.document import CrmDocument
 from app.modules.main.models.user import User
 from app.modules.rnd.models.document import RndDocument
 from app.modules.rnd.routes import requirement_work as work_routes
-from app.tests.test_cov_crm_quotations_rnd import make_inquiry, send_tor, tor_env  # noqa: F401 — fixture
+from app.tests.test_cov_crm_quotations_rnd import make_inquiry, make_rnd_heads, send_tor, tor_env  # noqa: F401 — fixture
 from app.tests.test_crm_quotation_documents import sp  # noqa: F401 — fixture
 
 RND = "/api/v1/rnd"
@@ -94,6 +94,7 @@ def test_team_member_delete_gets_real_reason(client, db):
 def test_requirement_work_cannot_open_crm_internal_file_by_id(client, db, tor_env, monkeypatch):
     bd = make_user(db, "idor.rnd.bd@premnathrail.com", apps=("crm",))
     head = make_user(db, "idor.rnd.head@premnathrail.com")
+    make_rnd_heads(db, head)  # receives the requirement (Organization › Department, R&D head)
 
     async def fake_download(site, path):
         return b"%PDF", "application/pdf"

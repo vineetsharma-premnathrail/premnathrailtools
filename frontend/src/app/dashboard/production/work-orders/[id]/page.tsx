@@ -28,6 +28,9 @@ import ReasonSheet from '@/components/shared/ReasonSheet'
 import { productionEngineeringApi } from '@/lib/productionEngineeringApi'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleWorkOrder } from '@/lib/productionPreviewSamples'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', released: 'Released', in_progress: 'In Progress', completed: 'Completed', closed: 'Closed', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', released: '#2563EB', in_progress: '#F59E0B', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
@@ -110,10 +113,13 @@ export default function WorkOrderDetailPage() {
   const seeCosting = wof('costs', 'view')
   const router = useRouter()
   const params = useParams()
-  const { id: woIdResolved, error: linkError } = useRecordId(params.id as string)
+  // What the user's roles let them see here (Role & Permissions › Production › Work Orders › Visibility). In the
+  // Role editor's "Preview & choose" a sample order is drawn: no record id, nothing loaded, no actions.
+  const vis = useVisibility('production:work_orders')
+  const { id: woIdResolved, error: linkError } = useRecordId(vis.preview ? null : (params.id as string))
   const woId = woIdResolved ?? 0
 
-  const [wo, setWo] = useState<ProductionWorkOrder | null>(null)
+  const [wo, setWo] = useState<ProductionWorkOrder | null>(vis.preview ? sampleWorkOrder : null)
   const [tab, setTab] = useState<Tab>('materials')
   const [error, setError] = useState<string | string[]>('')
   const [notice, setNotice] = useState('')
@@ -349,8 +355,8 @@ export default function WorkOrderDetailPage() {
   }
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><ProductionNav /><InvalidRecordLink message={linkError} listHref="/dashboard/production/work-orders" listLabel="Back to work orders" /></div>)
-  if (!woId) return <div><ProductionNav /></div>
+  if (linkError && !vis.preview) return (<div><ProductionNav /><InvalidRecordLink message={linkError} listHref="/dashboard/production/work-orders" listLabel="Back to work orders" /></div>)
+  if (!woId && !vis.preview) return <div><ProductionNav /></div>
 
   const executing = wo?.status === 'released' || wo?.status === 'in_progress'
   const editable = wo && ['draft', 'released', 'in_progress'].includes(wo.status)
@@ -362,7 +368,7 @@ export default function WorkOrderDetailPage() {
 
   return (
     <div>
-      <ProductionNav />
+      {!vis.preview && <ProductionNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
@@ -373,7 +379,7 @@ export default function WorkOrderDetailPage() {
             <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{wo?.wo_number || 'Work Order'}</h1>
           </div>
         </div>
-        <button data-tour="production-wo-detail-back-btn" onClick={() => router.push('/dashboard/production/work-orders')} type="button" style={secondaryBtnStyle}>← Back</button>
+        {!vis.preview && <button data-tour="production-wo-detail-back-btn" onClick={() => router.push('/dashboard/production/work-orders')} type="button" style={secondaryBtnStyle}>← Back</button>}
       </div>
 
       {error && (
@@ -389,7 +395,7 @@ export default function WorkOrderDetailPage() {
 
       {wo && (
         <>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+          {!vis.preview && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
             {wo.status === 'draft' && (canApprove || canSubmitRelease) && <button data-tour="production-wo-release-btn" type="button" disabled={busy} style={primaryBtn} onClick={() => setConfirm('release')}>{canApprove ? 'Release to Shop Floor' : 'Submit for Release'}</button>}
             {wo.status === 'in_progress' && canFinish && <button data-tour="production-wo-complete-btn" type="button" disabled={busy} style={primaryBtn} onClick={() => setConfirm('complete')}>Complete Work Order</button>}
             {wo.status === 'completed' && canFinish && <button data-tour="production-wo-close-btn" type="button" disabled={busy} style={primaryBtn} onClick={() => setConfirm('close')}>Close Work Order</button>}
@@ -397,15 +403,16 @@ export default function WorkOrderDetailPage() {
             {canPrint && <button data-tour="production-wo-job-card-btn" type="button" disabled={busy} style={secondaryBtnStyle} onClick={printJobCard}>Print Job Card</button>}
             {editable && wo.status !== 'draft' && canCancelWo && <button data-tour="production-wo-cancel-btn" type="button" disabled={busy} style={dangerBtn} onClick={() => setCancelOpen(true)}>Cancel Work Order</button>}
             {wo.status === 'draft' && canDelete('production', 'work_orders', (wo as { created_by_id?: number | null } | null)?.created_by_id ?? null) && <button data-tour="production-wo-delete-btn" type="button" disabled={busy} style={dangerBtn} onClick={() => setConfirm('delete')}>Delete Draft</button>}
-          </div>
+          </div>}
 
-          <div data-tour="production-wo-approval-panel">
+          {!vis.preview && <div data-tour="production-wo-approval-panel">
             <ApprovalPanel entityType="production_work_order" entityId={wo.id} title="Release approval" onChanged={() => load()} />
-          </div>
+          </div>}
 
           <ChangeFlagBanner wo={wo} canEdit={can('production', 'work_orders', 'edit')} onChanged={load} />
           {/* One record card: what is being made, its key facts, then details grouped. */}
           <DetailCard tour="production-wo-info">
+            <VisSection vis={vis} k="detail_summary">
             <DetailSummary
               title={`${wo.product_code} — ${wo.product_name}`}
               text={`Make ${wo.quantity_planned} ${wo.product_uom || 'unit(s)'} to BOM ${wo.bom_number} v${wo.bom_version} — ${wo.project_label ? `for ${wo.project_label}` : 'a stock build (no machine / project)'}.`}
@@ -417,6 +424,8 @@ export default function WorkOrderDetailPage() {
                 <span>· Supervisor: <strong style={{ color: TEXT.heading }}>{wo.supervisor_name || '—'}</strong></span>
               </>}
             />
+            </VisSection>
+            <VisSection vis={vis} k="detail_progress">
             <DetailGroup title="Progress">
               <DetailRow label="Output received">
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
@@ -430,7 +439,9 @@ export default function WorkOrderDetailPage() {
               <DetailRow label="Scrapped">{`${fmtQty(wo.quantity_scrapped)} ${wo.product_uom || ''}`}</DetailRow>
               <DetailRow label="Actual start → end">{`${wo.actual_start_at ? formatDateTime(wo.actual_start_at) : 'Not started'} → ${wo.actual_end_at ? formatDateTime(wo.actual_end_at) : '—'}`}</DetailRow>
             </DetailGroup>
+            </VisSection>
             {(wo.rrv_build_id || wo.sales_order_label || wo.parent_work_order_id || wo.order_project_number) && (
+              <VisSection vis={vis} k="detail_linked">
               <DetailGroup title="Linked records">
                 {wo.rrv_build_id && (
                   <DetailRow label="RRV build">
@@ -442,20 +453,25 @@ export default function WorkOrderDetailPage() {
                 )}
                 <WorkOrderLinks wo={wo} />
               </DetailGroup>
+              </VisSection>
             )}
+            <VisSection vis={vis} k="detail_store_locations">
             <DetailGroup title="Store locations">
               <DetailRow label="Issue materials from">{wo.source_location_name || <span style={{ color: '#b45309' }}>Not set — needed before release</span>}</DetailRow>
               <DetailRow label="Receive output into">{wo.target_location_name || <span style={{ color: '#b45309' }}>Not set — needed before release</span>}</DetailRow>
             </DetailGroup>
+            </VisSection>
+            <VisSection vis={vis} k="detail_other">
             <DetailGroup title="Other details" last>
               <DetailRow label="Plant">{wo.branch_name}</DetailRow>
               <DetailRow label="Remarks">{wo.remarks}</DetailRow>
               {wo.cancel_reason && <DetailRow label="Cancel reason">{wo.cancel_reason}</DetailRow>}
             </DetailGroup>
+            </VisSection>
             <p style={{ fontSize: 12, color: TEXT.muted, margin: '10px 0 0' }}>Created by {wo.created_by_name || '—'}</p>
           </DetailCard>
 
-          {wof('sub_orders', 'view') && <DependentOrdersSection wo={wo} canCreate={wof('sub_orders', 'create')} onChanged={load} />}
+          {wof('sub_orders', 'view') && !vis.preview && <DependentOrdersSection wo={wo} canCreate={wof('sub_orders', 'create')} onChanged={load} />}
 
           <div style={{ display: 'flex', gap: 4, marginBottom: 14, borderBottom: '1px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
             {([
@@ -478,7 +494,7 @@ export default function WorkOrderDetailPage() {
             <div data-tour="production-wo-materials" style={sectionStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
                 <p style={{ ...sectionTitle, margin: 0 }}>Material Requirement</p>
-                {executing && (canIssue || canReturn) && (
+                {executing && (canIssue || canReturn) && !vis.preview && (
                   <div style={{ display: 'flex', gap: 8 }}>
                     {canIssue && <button data-tour="production-wo-issue-btn" type="button" style={primaryBtn} onClick={() => openMaterialMode('issue')}>Issue from Store</button>}
                     {canIssue && wo.shortage_count > 0 && (
@@ -490,7 +506,7 @@ export default function WorkOrderDetailPage() {
                     {canReturn && <button data-tour="production-wo-return-btn" type="button" style={secondaryBtnStyle} onClick={() => openMaterialMode('return')}>Return Unused</button>}
                   </div>
                 )}
-                {wo.status === 'completed' && canReturn && (
+                {wo.status === 'completed' && canReturn && !vis.preview && (
                   <button type="button" style={secondaryBtnStyle} onClick={() => openMaterialMode('return')}>Return Unused</button>
                 )}
               </div>
@@ -501,7 +517,10 @@ export default function WorkOrderDetailPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
                   <thead>
                     <tr>
-                      {['Item', 'Required', 'Issued', 'Returned', 'Outstanding', 'Reserved', `Free${wo.source_location_name ? ' at source' : ''}`].map((h, i) => <th key={h} style={i === 0 ? thStyle : { ...thStyle, textAlign: 'right' }}>{h}{i === 0 && <RowCount count={wo.materials.length} />}</th>)}
+                      {([['Item', null], ['Required', null], ['Issued', 'issued'], ['Returned', 'returned'], ['Outstanding', null], ['Reserved', 'reserved'],
+                        [`Free${wo.source_location_name ? ' at source' : ''}`, 'free']] as [string, string | null][]).map(([h, k], i) => (k
+                        ? <VisTh key={h} vis={vis} table="detail_materials" k={k} style={{ ...thStyle, textAlign: 'right' }}>{h}</VisTh>
+                        : <th key={h} style={i === 0 ? thStyle : { ...thStyle, textAlign: 'right' }}>{h}{i === 0 && <RowCount count={wo.materials.length} />}</th>))}
                     </tr>
                   </thead>
                   <tbody>
@@ -514,13 +533,13 @@ export default function WorkOrderDetailPage() {
                             {m.required_qty === 0 && <span style={{ fontSize: 11, color: TEXT.muted, fontWeight: 400 }}> · extra</span>}
                           </td>
                           <td style={numTd}>{fmtQty(m.required_qty)} {m.uom || ''}</td>
-                          <td style={numTd}>{fmtQty(m.issued_qty)}</td>
-                          <td style={numTd}>{fmtQty(m.returned_qty)}</td>
+                          <VisTd vis={vis} table="detail_materials" k="issued" style={numTd}>{fmtQty(m.issued_qty)}</VisTd>
+                          <VisTd vis={vis} table="detail_materials" k="returned" style={numTd}>{fmtQty(m.returned_qty)}</VisTd>
                           <td style={{ ...numTd, fontWeight: 600 }}>{fmtQty(m.outstanding_qty)}</td>
-                          <td style={numTd}>{wo.status === 'draft' ? '—' : fmtQty(m.reserved_qty)}</td>
-                          <td style={{ ...numTd, color: short && m.outstanding_qty > 0 ? '#DC2626' : TEXT.body, fontWeight: short && m.outstanding_qty > 0 ? 600 : 400 }}>
+                          <VisTd vis={vis} table="detail_materials" k="reserved" style={numTd}>{wo.status === 'draft' ? '—' : fmtQty(m.reserved_qty)}</VisTd>
+                          <VisTd vis={vis} table="detail_materials" k="free" style={{ ...numTd, color: short && m.outstanding_qty > 0 ? '#DC2626' : TEXT.body, fontWeight: short && m.outstanding_qty > 0 ? 600 : 400 }}>
                             {wo.source_location_id ? fmtQty(m.available_qty) : '—'}{short && m.outstanding_qty > 0 && wo.source_location_id ? ' · short' : ''}
-                          </td>
+                          </VisTd>
                         </tr>
                       )
                     })}
@@ -536,7 +555,10 @@ export default function WorkOrderDetailPage() {
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
                   <thead>
-                    <tr>{['Seq', 'Operation', 'Workstation', 'Hours (actual / plan)', 'Good', 'Scrap', 'Quality', 'Status', ''].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={wo.operations.length} />}</th>)}</tr>
+                    <tr>{([['Seq', null], ['Operation', null], ['Workstation', 'workstation'], ['Hours (actual / plan)', 'hours'], ['Good', 'good'], ['Scrap', 'scrap'],
+                      ['Quality', 'quality'], ['Status', null], ['', null]] as [string, string | null][]).map(([h, k], i) => (k
+                      ? <VisTh key={h} vis={vis} table="detail_operations" k={k} style={thStyle}>{h}</VisTh>
+                      : <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={wo.operations.length} />}</th>))}</tr>
                   </thead>
                   <tbody>
                     {wo.operations.map((op) => {
@@ -549,7 +571,7 @@ export default function WorkOrderDetailPage() {
                             {op.operation_name}
                             {op.instructions && <div style={{ fontSize: 11.5, color: TEXT.muted, marginTop: 2 }}>{op.instructions}</div>}
                           </td>
-                          <td style={tdStyle}>
+                          <VisTd vis={vis} table="detail_operations" k="workstation" style={tdStyle}>
                             {op.control_key === 'external' ? (
                               <>
                                 <span style={pill('#9333ea')}>External</span>
@@ -561,21 +583,21 @@ export default function WorkOrderDetailPage() {
                             ) : (op.workstation_name || '—')}
                             {op.confirmation === 'required' && <div style={{ fontSize: 10.5, color: TEXT.muted }}>confirmation required</div>}
                             {op.confirmation === 'none' && <div style={{ fontSize: 10.5, color: TEXT.muted }}>milestone</div>}
-                          </td>
-                          <td style={{ ...tdStyle, color: op.actual_hours > op.planned_hours ? '#b45309' : TEXT.body }}>{op.actual_hours} / {op.planned_hours}</td>
-                          <td style={tdStyle}>{fmtQty(op.qty_good)}</td>
-                          <td style={{ ...tdStyle, color: op.qty_scrap > 0 ? '#DC2626' : TEXT.body }}>{fmtQty(op.qty_scrap)}</td>
-                          <td style={tdStyle}>
+                          </VisTd>
+                          <VisTd vis={vis} table="detail_operations" k="hours" style={{ ...tdStyle, color: op.actual_hours > op.planned_hours ? '#b45309' : TEXT.body }}>{op.actual_hours} / {op.planned_hours}</VisTd>
+                          <VisTd vis={vis} table="detail_operations" k="good" style={tdStyle}>{fmtQty(op.qty_good)}</VisTd>
+                          <VisTd vis={vis} table="detail_operations" k="scrap" style={{ ...tdStyle, color: op.qty_scrap > 0 ? '#DC2626' : TEXT.body }}>{fmtQty(op.qty_scrap)}</VisTd>
+                          <VisTd vis={vis} table="detail_operations" k="quality" style={tdStyle}>
                             {!op.requires_inspection ? '—' : op.inspection_status ? (
                               <span style={pill(INSP_HEX[op.inspection_status] || '#78716c')} title={op.inspection_number || ''}>
                                 {INSP_LABELS[op.inspection_status] || op.inspection_status}
                               </span>
                             ) : <span style={pill('#78716c')}>Gate — not requested</span>}
                             {op.inspection_number && <div style={{ fontSize: 11, color: TEXT.muted, marginTop: 3 }}>{op.inspection_number}</div>}
-                          </td>
+                          </VisTd>
                           <td style={tdStyle}><span style={pill(OP_STATUS_HEX[op.status])}>{OP_STATUS_LABELS[op.status] || op.status}</span></td>
                           <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                            {executing && canRunFloor && op.status !== 'completed' && (
+                            {executing && canRunFloor && op.status !== 'completed' && !vis.preview && (
                               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                 {op.status === 'pending' && <button data-tour="production-wo-op-start-btn" type="button" disabled={busy} style={smallBtn} onClick={() => act(() => productionApi.startOperation(woId, op.id), 'Failed to start operation.')}>Start</button>}
                                 {op.control_key === 'external' && !op.job_work_issue_id && canLinkJobWork && (
@@ -771,7 +793,9 @@ export default function WorkOrderDetailPage() {
                   <div data-tour="production-wo-edit-priority" style={{ flex: '1 1 140px' }}>
                     <label style={sheetLabel}>Priority</label>
                     <Select style={sheetInput} value={edit.priority} onChange={(e) => setEdit({ ...edit, priority: e.target.value })}>
-                      {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                      {/* The role's allowed priorities, plus the one the order already holds (the server checks a change only). */}
+                      {Object.entries(PRIORITY_LABELS).filter(([k]) => k === normalizePriority(wo.priority)
+                        || vis.options('priority', Object.keys(PRIORITY_LABELS), (x) => x).includes(k)).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </Select>
                   </div>
                 </div>

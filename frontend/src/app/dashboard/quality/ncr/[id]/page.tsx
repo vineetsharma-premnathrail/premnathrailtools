@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
-import { useRequireApp } from '@/hooks/useAuth'
 import { qualityApi } from '@/lib/api'
+import { VisSection } from '@/lib/visibilityComponents'
+import { useQualityScreen } from '@/components/quality/useQualityScreen'
+import { sampleNcr } from '@/lib/qualityPreviewSamples'
 import { QualityDispositionCode, QualityNcr } from '@/types'
 import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
@@ -30,11 +32,15 @@ const ACTION_HINT: Record<string, string> = {
 }
 
 export default function NcrDetailPage() {
-  const { isAuthorized, isLoading } = useRequireApp('quality')
+  // What the user's roles let them see here. In the Role editor's preview the page shows a sample NCR,
+  // resolves no link, loads nothing and offers no action.
+  const { vis, isAuthorized, isLoading } = useQualityScreen('quality:ncr')
+  const preview = vis.preview
   const router = useRouter()
-  const { id: recordId, error: linkError } = useRecordId(useParams().id as string)
+  const routeRef = useParams().id as string
+  const { id: recordId, error: linkError } = useRecordId(preview ? null : routeRef)
   const ncrId = recordId ?? 0
-  const [ncr, setNcr] = useState<QualityNcr | null>(null)
+  const [ncr, setNcr] = useState<QualityNcr | null>(preview ? sampleNcr : null)
   const [codes, setCodes] = useState<QualityDispositionCode[]>([])
   const [error, setError] = useState<string | string[]>('')
   const [busy, setBusy] = useState(false)
@@ -52,23 +58,24 @@ export default function NcrDetailPage() {
   // or a head's quality:ncr:approve); close and cancel are a Quality head's (quality:ncr:approve).
   // NCR features (core/features/quality.py) layer on top; approvers outside the
   // NCR tab (Design / Purchase / Partner) are bound only by their stage role.
-  const isHead = can('quality', 'ncr', 'approve')
-  const isEngineer = can('quality', 'ncr', 'edit') || isHead
+  // The preview offers no action at all (nothing can be saved there).
+  const isHead = !preview && can('quality', 'ncr', 'approve')
+  const isEngineer = !preview && (can('quality', 'ncr', 'edit') || isHead)
   const holdsTab = can('quality', 'ncr', 'view')
   const nf = (feature: string, action: Parameters<typeof canFeature>[3]) => canFeature('quality', 'ncr', feature, action)
   const canPropose = isEngineer && nf('disposition', 'submit')
-  const canSign = !holdsTab || nf('disposition', 'approve')
-  const canRejectDisp = !holdsTab || nf('disposition', 'reject')
+  const canSign = !preview && (!holdsTab || nf('disposition', 'approve'))
+  const canRejectDisp = !preview && (!holdsTab || nf('disposition', 'reject'))
   const canActVerify = isEngineer && nf('action_verify', 'edit')
   const canClose = isHead && nf('closure', 'approve')
   const canCancel = isHead && nf('closure', 'cancel')
   const seeCosts = !holdsTab || nf('costs', 'view')
 
   useEffect(() => {
-    if (!isAuthorized || !ncrId) return
+    if (!isAuthorized || !ncrId || preview) return
     qualityApi.getNcr(ncrId).then(setNcr).catch((e) => setError(extractErrorMessages(e, 'Failed to load this NCR.')))
     qualityApi.listMaster('disposition-codes').then(setCodes).catch(() => setCodes([]))
-  }, [isAuthorized, ncrId])
+  }, [isAuthorized, ncrId, preview])
 
   const reload = () => { qualityApi.getNcr(ncrId).then(setNcr).catch((e) => setError(extractErrorMessages(e, 'Failed to reload this NCR.'))) }
   const act = async (name: Parameters<typeof qualityApi.ncrAction>[1], payload: Record<string, unknown>, fallback: string) => {
@@ -89,7 +96,7 @@ export default function NcrDetailPage() {
   const closeSheet = () => { if (!busy) { setSheet(''); setError('') } }
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/ncr" listLabel="Back to NCRs" /></div>)
+  if (linkError && !preview) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/ncr" listLabel="Back to NCRs" /></div>)
   if (!ncr) {
     return (
       <div>
@@ -103,10 +110,11 @@ export default function NcrDetailPage() {
 
   const active = ncr.approvals.filter((a) => !a.superseded)
   const selectedCode = codes.find((c) => String(c.id) === propose.disposition_code_id)
+  const previewNote = (text: string) => <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{text}</p>
 
   return (
     <div>
-      <QualityNav />
+      {!preview && <QualityNav />}
       <PromptDialog open={!!rejectRole} title="Reject this disposition?" message="The proposer will be asked to propose a different disposition. Give the reason." requireValue
         confirmLabel="Reject" danger onCancel={() => setRejectRole(null)}
         onConfirm={(reason) => { const role = rejectRole; setRejectRole(null); act('approve-disposition', { role, approve: false, remarks: reason }, 'Failed to reject the disposition.') }} />
@@ -115,18 +123,18 @@ export default function NcrDetailPage() {
         onConfirm={(reason) => { setCancelOpen(false); act('cancel', { reason }, 'Failed to cancel the NCR.') }} />
 
       <PageHeader title={ncr.ncr_number} subtitle={`Quality · NCR${ncr.auto_raised ? ' (raised by inspection)' : ''}`}>
-        <button type="button" onClick={() => router.push('/dashboard/quality/ncr')} style={secondaryBtnStyle}>← Back</button>
+        {!preview && <button type="button" onClick={() => router.push('/dashboard/quality/ncr')} style={secondaryBtnStyle}>← Back</button>}
       </PageHeader>
       {!sheet && <ErrorBanner error={error} />}
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
-        {STEPS.map((s, i) => {
-          const reached = STEPS.indexOf(ncr.status) >= i
-          return <span key={s} style={{ ...pillStyle(reached ? '#15803d' : '#64748b'), background: reached ? '#16A34A1a' : 'rgba(0,0,0,0.04)' }}>{i + 1}. {NCR_STATUS_LABELS[s]}</span>
-        })}
-      </div>
-
       <DetailCard>
+        <VisSection vis={vis} k="detail_summary">
+        <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+          {STEPS.map((s, i) => {
+            const reached = STEPS.indexOf(ncr.status) >= i
+            return <span key={s} style={{ ...pillStyle(reached ? '#15803d' : '#64748b'), background: reached ? '#16A34A1a' : 'rgba(0,0,0,0.04)' }}>{i + 1}. {NCR_STATUS_LABELS[s]}</span>
+          })}
+        </div>
         <DetailSummary
           title={`${ncr.item_code ? `${ncr.item_code} — ` : ''}${ncr.item_name}`}
           text={ncr.description}
@@ -140,6 +148,8 @@ export default function NcrDetailPage() {
             ? <button type="button" disabled={busy} style={dangerBtnStyle} onClick={() => setCancelOpen(true)}>Cancel NCR</button>
             : undefined}
         />
+        </VisSection>
+        <VisSection vis={vis} k="detail_origin">
         <DetailGroup title="Where it came from">
           <DetailRow label="Source">{ncr.source.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}</DetailRow>
           <DetailRow label="Reference">{ncr.source_reference}</DetailRow>
@@ -151,23 +161,29 @@ export default function NcrDetailPage() {
           <DetailRow label="Vendor">{ncr.vendor_name}</DetailRow>
           <DetailRow label="Batch / serial">{ncr.batch_number}</DetailRow>
         </DetailGroup>
-        <DetailGroup title="Defect & stock" last={!(ncr.capas || []).length}>
+        </VisSection>
+        <VisSection vis={vis} k="detail_defect_stock">
+        <DetailGroup title="Defect & stock" last={!(ncr.capas || []).length || !vis.showSection('detail_capa')}>
           <DetailRow label="Defect">{ncr.defect_code_label}</DetailRow>
           <DetailRow label="Stock">{ncr.stock_blocked ? `Blocked at ${ncr.location_name || 'store'}` : 'Not holding Blocked stock'}</DetailRow>
           {seeCosts && <DetailRow label="Estimated value">{ncr.estimated_value != null ? `₹${ncr.estimated_value.toLocaleString('en-IN')}` : null}</DetailRow>}
           {ncr.root_cause && <DetailRow label="Root cause">{ncr.root_cause}</DetailRow>}
         </DetailGroup>
+        </VisSection>
         {(ncr.capas || []).length > 0 && (
+          <VisSection vis={vis} k="detail_capa">
           <DetailGroup last>
             <DetailRow label="CAPA">
               {(ncr.capas || []).map((c, i) => (
-                <span key={c.id}>{i > 0 ? ', ' : ''}<button type="button" onClick={() => router.push(recordPath('/dashboard/quality/capa', c))} style={linkBtn}>{c.capa_number}</button> ({c.status.replace(/_/g, ' ')})</span>
+                <span key={c.id}>{i > 0 ? ', ' : ''}<button type="button" disabled={preview} onClick={() => router.push(recordPath('/dashboard/quality/capa', c))} style={linkBtn}>{c.capa_number}</button> ({c.status.replace(/_/g, ' ')})</span>
               ))}
             </DetailRow>
           </DetailGroup>
+          </VisSection>
         )}
       </DetailCard>
 
+      <VisSection vis={vis} k="detail_disposition">
       <Section title="Disposition" style={{ marginBottom: 20 }}>
         {ncr.disposition_type && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
@@ -213,19 +229,31 @@ export default function NcrDetailPage() {
           </div>
         )}
       </Section>
+      </VisSection>
 
-      <ApprovalPanel key={panelKey} entityType="quality_ncr" entityId={ncr.id}
-        onChanged={reload} title="Disposition approval" />
+      <VisSection vis={vis} k="detail_approval">
+      {preview ? (
+        <Section title="Disposition approval" style={{ marginBottom: 20 }}>{previewNote('Who has to approve the proposed disposition and who already did.')}</Section>
+      ) : (
+        <ApprovalPanel key={panelKey} entityType="quality_ncr" entityId={ncr.id}
+          onChanged={reload} title="Disposition approval" />
+      )}
+      </VisSection>
 
-      {ncr.disposition_status === 'approved' && ncr.disposition_type && ['use_as_is', 'repair'].includes(ncr.disposition_type) && (
+      {(preview || (ncr.disposition_status === 'approved' && ncr.disposition_type && ['use_as_is', 'repair'].includes(ncr.disposition_type))) && (
+        <VisSection vis={vis} k="detail_deviation_doc">
         <Section title="Deviation approval" style={{ marginBottom: 20 }}>
-          <QualityRecordDoc title="Deviation approval" hint="Concession record with the approving authorities, on the company letterhead (attach to the material / send to the customer where required)."
-            entityType="quality_deviation_approval" entityId={ncr.id} pdfKind="deviation-approval" canModify={can('quality', 'ncr', 'edit')}
-            downloadName={`Deviation-Approval-${ncr.ncr_number}`} />
+          {preview ? previewNote('The concession record of a use-as-is / repair disposition, on the company letterhead.') : (
+            <QualityRecordDoc title="Deviation approval" hint="Concession record with the approving authorities, on the company letterhead (attach to the material / send to the customer where required)."
+              entityType="quality_deviation_approval" entityId={ncr.id} pdfKind="deviation-approval" canModify={can('quality', 'ncr', 'edit')}
+              downloadName={`Deviation-Approval-${ncr.ncr_number}`} />
+          )}
         </Section>
+        </VisSection>
       )}
 
-      {(ncr.status === 'disposition_decided' || ncr.action_done_at) && (
+      {(preview || ncr.status === 'disposition_decided' || ncr.action_done_at) && (
+        <VisSection vis={vis} k="detail_action">
         <Section title="Action" style={{ marginBottom: 20 }}>
           {ncr.action_done_at ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
@@ -248,17 +276,21 @@ export default function NcrDetailPage() {
             <p style={{ fontSize: 12, color: TEXT.muted, margin: 0 }}>Recording the action moves the Blocked quantity back to Quality stock and opens a re-inspection lot.</p>
           )}
         </Section>
+        </VisSection>
       )}
 
-      {ncr.status === 'action_done' && (
+      {(preview || ncr.status === 'action_done') && (
+        <VisSection vis={vis} k="detail_verification">
         <Section title="Verification" style={{ marginBottom: 20 }}>
           {canActVerify
             ? <div><button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => { setVerifyRemarks(''); openSheet('verify') }}>Verify</button></div>
             : <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Waiting for a Quality engineer to verify the action.</p>}
         </Section>
+        </VisSection>
       )}
 
-      {(ncr.status === 'verified' || ncr.status === 'closed') && (
+      {(preview || ncr.status === 'verified' || ncr.status === 'closed') && (
+        <VisSection vis={vis} k="detail_closure">
         <Section title={seeCosts ? 'Closure & cost of non-quality' : 'Closure'} style={{ marginBottom: 20 }}>
           {ncr.status === 'closed' ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
@@ -283,6 +315,7 @@ export default function NcrDetailPage() {
             </>
           )}
         </Section>
+        </VisSection>
       )}
       {sheet === 'propose' && (
         <ActionSheet icon="flag" title={ncr.disposition_status === 'none' ? 'Propose disposition' : 'Re-propose disposition'} subtitle={`${ncr.ncr_number} · ${ncr.item_name} · ${fmtQty(ncr.quantity, ncr.uom)}`}

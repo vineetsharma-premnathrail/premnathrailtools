@@ -10,6 +10,7 @@ import { secondaryBtnStyle, smallDangerBtnStyle, RowCount, Pill } from '@/compon
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 import { formatDateTime } from '@/lib/format'
 import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
@@ -36,6 +37,8 @@ export function ExplosionSection({ bom, showCosts = true }: { bom: ProductionBom
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | string[]>('')
   const [loading, setLoading] = useState(false)
+  // Print button: Production › BOM & Routing › Print.
+  const canPrint = useCan().can('production', 'bom', 'print')
 
   const load = useCallback(() => {
     const n = Number(qty)
@@ -60,7 +63,7 @@ export function ExplosionSection({ bom, showCosts = true }: { bom: ProductionBom
                 <input style={inputStyle} type="number" min={0} step="any" value={qty} onChange={(e) => setQty(e.target.value)} />
               </div>
               <button type="button" style={secondaryBtnStyle} disabled={loading} onClick={load}>{loading ? 'Exploding…' : 'Explode'}</button>
-              <button type="button" style={secondaryBtnStyle} onClick={() => window.print()}>Print</button>
+              {canPrint && <button type="button" style={secondaryBtnStyle} onClick={() => window.print()}>Print</button>}
             </>
           )}
           <button type="button" style={secondaryBtnStyle} onClick={() => { if (!open && !data) load(); setOpen(!open) }}>{open ? 'Hide' : 'Show tree'}</button>

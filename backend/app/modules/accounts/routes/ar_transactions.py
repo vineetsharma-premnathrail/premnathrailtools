@@ -3,6 +3,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
+from app.core import visibility
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.core.permissions import require_tab_access, require_tab_action, require_feature_action, ensure_can_delete
 from app.db.session import get_db
@@ -18,6 +19,7 @@ from app.modules.accounts.service import (
 from app.modules.accounts.services.outstanding import allocation_history
 from app.modules.accounts.routes._common import write_audit, who, service_errors, user_names, gl_labels, tax_lines_response
 from app.modules.accounts import access
+from app.modules.accounts.routes.payments import PAYMENTS_VISIBILITY_KEY
 
 router = APIRouter(prefix="/accounts/ar-transactions", tags=["Accounts"])
 
@@ -206,6 +208,9 @@ async def collect_ar_transaction_route(
     user: User = Depends(require_tab_action("accounts", "payments", "create")),
 ):
     _load_in_scope(db, user, ar_transaction_id)
+    # A collection is a customer payment: same Payment Type / Payment Mode rule as Payments > New Payment.
+    visibility.ensure_option_allowed(user, PAYMENTS_VISIBILITY_KEY, "payment_type", "customer")
+    visibility.ensure_option_allowed(user, PAYMENTS_VISIBILITY_KEY, "payment_mode", payload.payment_mode)
     with service_errors(db):
         post_collection(
             db, ar_transaction_id=ar_transaction_id, bank_account_id=payload.bank_account_id, amount=payload.amount,

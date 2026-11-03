@@ -52,6 +52,10 @@ export interface User {
   roles?: string[]
   /** module key -> tab keys this user may view. Non-admins get every module (empty list = no tab); admins get {} (unrestricted). */
   tab_access?: Record<string, string[]>
+  /** /auth/me only: effective visibility restrictions — "<module>:<tab>" or "<module>:<tab>.<feature>" ->
+   * {hidden_sections, options (dropdown -> allowed values), hidden_columns (table -> columns)}. Only restricted keys;
+   * {} for admins / partners (core/visibility.py). */
+  visibility?: Record<string, VisibilityRule>
   created_at: string
   updated_at: string
 }
@@ -94,6 +98,8 @@ export interface Role {
   notification_events?: Record<string, string[]>
   /** "<module>:<tab>.<feature>" -> who the role's members may pick in that "Assign to" field (core/assignee_rules.py) */
   assignee_rules?: Record<string, { mode: string; departments?: number[]; roles?: number[]; users?: number[] }>
+  /** "<module>:<tab>" or "<module>:<tab>.<feature>" -> what this role hides / which dropdown values it allows (core/visibility.py). Only overrides. */
+  visibility_rules?: Record<string, VisibilityRule>
   is_system: boolean
   is_default: boolean
   is_active: boolean
@@ -156,6 +162,27 @@ export interface PermissionRegistry {
   default_scope?: string
   /** "Assign to" fields that take a per-role rule, and the rule options */
   assignee_rules?: { pickers: Record<string, { label: string; hint: string }>; modes: Record<string, string> }
+  /** Screens whose sections / dropdown values / table columns a role may hide (core/visibility.py catalogue) */
+  visibility?: Record<string, VisibilityCatalogEntry>
+}
+
+/** One role's visibility overrides for one screen key. Absent list = nothing hidden / all values. */
+export interface VisibilityRule {
+  hidden_sections?: string[]
+  /** dropdown key -> allowed values (a dropdown missing here offers every value) */
+  options?: Record<string, string[]>
+  /** table key -> hidden column keys */
+  hidden_columns?: Record<string, string[]>
+}
+
+/** What a screen lets a role hide (declared in code, served in the role catalog). */
+export interface VisibilityCatalogEntry {
+  label: string
+  /** screen code -> label (New form / Record page / List); absent = one screen named like the entry */
+  screens?: Record<string, string>
+  sections: Record<string, { label: string; hint?: string; locked?: boolean; screen?: string }>
+  options: Record<string, { label: string; hint?: string; values: Record<string, string>; screen?: string }>
+  tables: Record<string, { label: string; columns: Record<string, string>; screen?: string }>
 }
 
 export interface AuthResponse {
@@ -800,7 +827,8 @@ export interface RequirementMovement {
 
 // CRM <-> R&D channel — who in R&D answers a Technical Offer Request, by when,
 // and what they replied. One per send; a re-send supersedes the open one.
-export type RndRequestStatus = 'open' | 'responded' | 'superseded'
+/** closed = R&D closed it without a response (nothing to share); the reason sits in response_remarks. */
+export type RndRequestStatus = 'open' | 'responded' | 'closed' | 'superseded' | 'withdrawn'
 
 export interface RndRequest {
   id: number
@@ -1060,7 +1088,8 @@ export interface RndTaskApproval {
 
 export interface RndTask {
   id: number
-  source: 'inquiry' | 'tender' | 'project'
+  /** pm_project = an R&D task on a Project Management (All Projects) project. */
+  source: 'inquiry' | 'tender' | 'project' | 'pm_project'
   record_id: number
   // Project tasks only: set on a sub-task (the parent's assignee split the work).
   parent_task_id?: number | null
@@ -1838,7 +1867,7 @@ export interface PrTracker {
 }
 export interface MyLineRow {
   pr_item_id: number; p2p_request_id: number; p2p_number: string; pr_status: string; priority: string | null; required_date: string | null
-  requester_name: string | null; purpose_label: string | null; charged_to: string | null; item_code: string | null; item_name: string; unit: string | null
+  requester_name: string | null; purpose_label: string | null; charged_to: string | null; item_code: string | null; item_name: string; category: string | null; unit: string | null
   buy_qty: number; short_closed_qty: number; ordered_qty: number; released_qty: number; accepted_qty: number; open_to_order: number; pending_receipt: number
   state: string; state_label: string; buyer_id: number | null; buyer_name: string | null; po_rejected?: boolean
   rfqs: { id: number; rfq_number: string; status: string }[]; pos: { id: number; po_number: string; stage: string; stage_label: string }[]; last_activity: string | null
@@ -3471,6 +3500,8 @@ export interface DepartmentMember {
   email: string
   designation?: string | null
   is_head: boolean
+  reporting_manager_id?: number | null
+  reporting_manager_name?: string | null
 }
 
 export interface StoreLocation {
@@ -3625,7 +3656,7 @@ export interface StoreItem {
 }
 
 export interface StoreItemMeta {
-  item_types: { value: string; label: string; prefix: string }[]
+  item_types: { value: string; label: string; prefix: string; allowed?: boolean }[]
   uoms: { value: string; label: string }[]
   gst_rates: number[]
   purchase_ledgers: { value: number; label: string }[]
@@ -3842,6 +3873,8 @@ export type StoreDocTypeKind = 'stock_entry' | 'issue' | 'return_source' | 'retu
 export interface StoreDocType {
   value: string
   label: string
+  /** false = this user's role does not offer this type (Role & Permissions > Visibility) */
+  allowed?: boolean
   stock_effect: string | null
   requires_issue: boolean
   approver_rule: 'none' | 'warehouse_manager' | 'department_head' | 'specific_users'
@@ -10769,6 +10802,8 @@ export interface PurposeRulesPayload {
 export interface P2PPurposeMeta {
   code: string
   label: string
+  /** false = this user's role does not offer the purpose (Role & Permissions › Visibility); the form hides it unless the record already holds it */
+  allowed?: boolean
   categories: string[]
   default_category: string | null
   category_locked: boolean

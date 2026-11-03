@@ -98,7 +98,7 @@ def require_hr_tab(subtab: str | tuple[str, ...], action: str | None = None):
     tabs = _tabs(subtab)
 
     def _dependency(user: User = Depends(require_hr)) -> User:
-        labels = " or ".join(f"HR & Administration › {(HR_MODULE.get('subtabs') or {}).get(t, t)}" for t in tabs)
+        labels = " or ".join(f"{HR_MODULE.get('label', 'HR')} › {(HR_MODULE.get('subtabs') or {}).get(t, t)}" for t in tabs)
         allowed = [t for t in tabs if can_view_tab(user, HR_APP, t)]
         if not allowed:
             raise HTTPException(
@@ -187,7 +187,7 @@ def ensure_can_decide(user: User, approver_id: int | None, requester_id: int, wh
             detail=f"You cannot approve or reject your own {what}. It has to be decided by your reporting manager or HR.",
         )
     if not can_decide(user, approver_id, requester_id, action, tabs):
-        labels = " or ".join(f"HR & Administration › {(HR_MODULE.get('subtabs') or {}).get(t, t)}"
+        labels = " or ".join(f"{HR_MODULE.get('label', 'HR')} › {(HR_MODULE.get('subtabs') or {}).get(t, t)}"
                              for t in _decision_tabs(tabs, action))
         raise HTTPException(
             status_code=403,

@@ -1,19 +1,22 @@
 'use client'
 
 import Select from '@/components/shared/Select'
-import { RowCount, inputStyle as sharedInputStyle, Pill } from '@/components/shared/ui'
+import { RowCount, inputStyle as sharedInputStyle } from '@/components/shared/ui'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
-import { formatDate, formatDateTime } from '@/lib/format'
-import { REVISION_STATUS_HEX, REVISION_STATUS_LABEL, type RndRequirementRow } from '@/types/rndIntake'
-import { priorityLabel, priorityTone } from '@/lib/priority'
+import { formatDateTime } from '@/lib/format'
+import { REVISION_STATUS_LABEL, type RndRequirementRow } from '@/types/rndIntake'
+import { priorityLabel } from '@/lib/priority'
 import { TEXT, GLASS, SHADOWS, BORDER, BRAND, CONTROL } from '@/lib/theme'
 import RndNav from '@/components/rnd/RndNav'
-import { rndRequestBadge } from '@/components/crm/RndRequestBlock'
+import type { RndRequest } from '@/types'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleRequirements } from '@/lib/rndPreviewSamples'
 
 // Nothing picked = both. Clicking the picked one again clears it.
 const SOURCE_RADIOS = [
@@ -24,6 +27,41 @@ const SOURCE_RADIOS = [
 // Shared 34px control scale; list filters keep their own width.
 const inputStyle: React.CSSProperties = { ...sharedInputStyle, width: 'auto', background: 'rgba(255,255,255,.7)' }
 const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
+// Header text wraps instead of being cut with "…" by TableFit.
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'normal', textOverflow: 'clip', verticalAlign: 'bottom' }
+// Customer and Product wrap onto two lines (then "…") instead of being cut to one line by TableFit.
+const WRAP_MIN_PX: Record<string, number> = { Customer: 150, 'Product / Tender': 170 }
+// Short status words in the list — the row's colour strip already carries the state.
+const SHORT_STATUS: Record<string, string> = {
+  submitted: 'Awaiting review', accepted: 'Accepted', returned: 'Returned', responded: 'Responded', closed: 'Closed', superseded: 'Superseded',
+}
+// R&D Response in a few words, its text coloured by how it stands
+// (the row background is kept for priority: Urgent = light red).
+const RED = '#b91c1c', ORANGE = '#c2410c', GREEN = '#15803d', BLUE = '#1d4ed8', PURPLE = '#6d28d9', GREY = '#78716c'
+const dayNo = (iso: string) => Math.floor(Date.parse(iso.slice(0, 10)) / 86400000)
+const todayNo = () => { const d = new Date(); return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000) }
+function shortResponse(q: RndRequest): { text: string; color: string } {
+  if (q.status === 'superseded') return { text: 'Re-sent', color: GREY }
+  if (q.status === 'closed') return { text: 'Closed', color: GREY }
+  if (q.status === 'withdrawn') return { text: 'Taken back', color: GREY }
+  if (q.status === 'responded') {
+    const late = q.responded_at ? dayNo(q.responded_at) - dayNo(q.due_date) : 0
+    return late > 0 ? { text: `Done · ${late}d late`, color: ORANGE } : { text: 'Done on time', color: GREEN }
+  }
+  if (q.queries && q.queries.length > 0) return { text: 'Query raised', color: PURPLE }
+  const left = dayNo(q.due_date) - todayNo()
+  if (left < 0) return { text: `${-left}d late`, color: RED }
+  if (left === 0) return { text: 'Due today', color: ORANGE }
+  return { text: `${left}d left`, color: left <= 2 ? ORANGE : BLUE }
+}
+const shortDate = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`
+
+const COLUMNS = ['R&D ID', 'Rev', 'Status', 'Source', 'Customer', 'Product / Tender', 'R&D Response', 'BD Owner', 'Last Received']
+// Columns a role may hide (Role editor > R&D > Requirements > Visibility). R&D ID and Status always show.
+const HIDEABLE: Record<string, string> = {
+  Rev: 'revision', Source: 'source', Customer: 'customer', 'Product / Tender': 'product',
+  'R&D Response': 'rnd_response', 'BD Owner': 'bd_owner', 'Last Received': 'last_received',
+}
 
 // Inbox of CRM requirements sent to R&D via "Send Technical Requirement to R&D": every one has an R&D ID
 // (RDR-YYYY-NNNN), a revision per send, and a review state — R&D accepts it.
@@ -35,6 +73,7 @@ function sortRows(list: RndRequirementRow[]): RndRequirementRow[] {
 export default function RndRequirementsPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('rnd')
   const router = useRouter()
+  const vis = useVisibility('rnd:requirements')
 
   const [rows, setRows] = useState<RndRequirementRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -46,6 +85,8 @@ export default function RndRequirementsPage() {
 
   useEffect(() => {
     if (!isAuthorized) return
+    // Role editor preview: made-up rows, nothing is loaded.
+    if (vis.preview) { setRows(sampleRequirements); setLoading(false); return }
     const t = setTimeout(() => {
       rndApi.listRequirements({ search: search.trim() || undefined, source: source || undefined, mine: mine === 'respond' ? true : undefined, needs_my_review: mine === 'review' ? true : undefined })
         .then((data) => { setRows(sortRows(data)); setError('') })
@@ -53,9 +94,11 @@ export default function RndRequirementsPage() {
         .finally(() => setLoading(false))
     }, 250)
     return () => clearTimeout(t)
-  }, [isAuthorized, search, source, mine])
+  }, [isAuthorized, search, source, mine, vis.preview])
 
   if (isLoading || !isAuthorized) return null
+  // The preview draws every column (hidden ones dimmed, with a toggle); normal use drops the hidden ones.
+  const columns = COLUMNS.filter((h) => !HIDEABLE[h] || vis.preview || vis.showColumn('requirements', HIDEABLE[h]))
 
   const pendingResend = rows.filter((r) => r.edited_after_send).length
   const toReview = rows.filter((r) => r.needs_my_review).length
@@ -64,7 +107,7 @@ export default function RndRequirementsPage() {
 
   return (
     <div>
-      <RndNav />
+      {!vis.preview && <RndNav />}
 
       <div data-tour="rnd-req-header" style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
@@ -122,26 +165,28 @@ export default function RndRequirementsPage() {
         <table data-tour="rnd-req-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1280 }}>
           <thead>
             <tr>
-              {['R&D ID', 'Revision', 'Status', 'Source', 'Customer', 'Product / Tender', 'Priority', 'R&D Response', 'BD Owner', 'Last Received'].map((h, hi) => (
-                // Header text wraps instead of being cut with "…" by TableFit.
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'normal', textOverflow: 'clip', verticalAlign: 'bottom' }}>
-                  {h}{hi === 0 && <RowCount count={rows.length} />}
-                </th>
-              ))}
+              {columns.map((h, hi) => HIDEABLE[h]
+                ? <VisTh key={h} vis={vis} table="requirements" k={HIDEABLE[h]} style={thStyle}
+                    {...(WRAP_MIN_PX[h] ? { 'data-fit-min': WRAP_MIN_PX[h], 'data-fit-cut': '' } : {})}>{h}</VisTh>
+                : <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={rows.length} />}</th>)}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={columns.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={columns.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 {search || source || mine ? 'No requirements match your filters.' : 'No requirements yet — they arrive here when the business team sends a Technical Offer Request from CRM.'}
               </td></tr>
             ) : (
               rows.map((r) => {
                 const href = recordPath(`/dashboard/rnd/requirements/${r.source}`, r, 'record_id')
+                // Left colour strip = where the requirement stands (R&D response state,
+                // else the review status): red overdue, green responded, blue on track, grey closed.
+                // Urgent requirements are tinted red across the whole row; Standard rows stay plain.
+                const urgent = priorityLabel(r.priority) === 'Urgent'
                 return (
-                  <tr key={`${r.source}-${r.record_id}`} onClick={() => router.push(href)} style={{ cursor: 'pointer' }}>
+                  <tr key={`${r.source}-${r.record_id}`} onClick={vis.preview ? undefined : () => router.push(href)} style={{ cursor: 'pointer', background: urgent ? 'rgba(220,38,38,0.06)' : undefined }}>
                     <td style={{ ...cellStyle, fontWeight: 700, color: TEXT.heading, whiteSpace: 'nowrap' }}>
                       {r.rd_number || '—'}
                       {r.needs_my_review && (
@@ -150,47 +195,35 @@ export default function RndRequirementsPage() {
                         </span>
                       )}
                     </td>
-                    <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
+                    <VisTd vis={vis} table="requirements" k="revision" style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
                       {r.revision_code ? `R${r.revision_code.split('-R').pop()}` : '—'}
-                      {r.edited_after_send && (
-                        <span title="The requirement was edited in CRM after it was last sent to R&D — expect a re-send." style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(180,83,9,0.12)', color: '#B45309' }}>
-                          Edited
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.status ? <Pill label={REVISION_STATUS_LABEL[r.status]} hex={REVISION_STATUS_HEX[r.status]} /> : '—'}</td>
-                    <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
+                    </VisTd>
+                    <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.status ? SHORT_STATUS[r.status] || REVISION_STATUS_LABEL[r.status] : '—'}</td>
+                    <VisTd vis={vis} table="requirements" k="source" style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
                       <span style={{ fontSize: 11, fontWeight: 600, color: TEXT.muted }}>{r.source === 'inquiry' ? 'Inquiry' : 'Tender'}</span><br />
                       {r.universal_id}
-                    </td>
-                    <td style={cellStyle}>{r.org_name || '—'}</td>
-                    <td style={cellStyle}>
-                      {r.product || '—'}
+                    </VisTd>
+                    <VisTd vis={vis} table="requirements" k="customer" style={{ ...cellStyle, whiteSpace: 'normal' }} data-fit-clamp="" title={r.org_name || undefined}><div>{r.org_name || '—'}</div></VisTd>
+                    <VisTd vis={vis} table="requirements" k="product" style={{ ...cellStyle, whiteSpace: 'normal' }} data-fit-clamp=""
+                      title={[r.product, r.category].filter(Boolean).join(' — ') || undefined}>
+                      <div>{r.product || '—'}</div>
                       {r.category && <div style={{ fontSize: 11.5, color: TEXT.muted }}>{r.category}</div>}
-                    </td>
-                    <td style={cellStyle}>
-                      {r.priority ? (
-                        <Pill label={priorityLabel(r.priority)} hex={priorityTone(r.priority).color} />
-                      ) : '—'}
-                    </td>
-                    <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
-                      {r.rnd_request ? (() => {
-                        const b = rndRequestBadge(r.rnd_request)
-                        return (
-                          <>
-                            <Pill label={b.label} hex={b.hex} />
-                            <div style={{ fontSize: 11.5, color: TEXT.muted, marginTop: 4 }}>
-                              {r.rnd_request.assigned_to_id == null ? 'R&D team' : r.rnd_request.assigned_to_id === user?.id ? 'You' : r.rnd_request.assigned_to} · due {formatDate(r.rnd_request.due_date)}
-                            </div>
-                          </>
-                        )
-                      })() : <span style={{ fontSize: 12, color: TEXT.muted }}>Not assigned</span>}
-                    </td>
-                    <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.bd_owner || '—'}</td>
-                    <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
+                    </VisTd>
+                    <VisTd vis={vis} table="requirements" k="rnd_response" style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
+                      {r.rnd_request ? (
+                        <>
+                          {(() => { const st = shortResponse(r.rnd_request); return <div style={{ fontWeight: 600, color: st.color }}>{st.text}</div> })()}
+                          <div style={{ fontSize: 11.5, color: TEXT.muted, marginTop: 2 }}>
+                            {r.rnd_request.assigned_to_id == null ? 'Team' : r.rnd_request.assigned_to_id === user?.id ? 'You' : (r.rnd_request.assigned_to || '').split(' ')[0]} · {shortDate(r.rnd_request.due_date)}
+                          </div>
+                        </>
+                      ) : <span style={{ fontSize: 12, color: TEXT.muted }}>Not assigned</span>}
+                    </VisTd>
+                    <VisTd vis={vis} table="requirements" k="bd_owner" style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.bd_owner || '—'}</VisTd>
+                    <VisTd vis={vis} table="requirements" k="last_received" style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
                       {formatDateTime(r.last_received_at || r.last_sent_at)}
                       {r.last_sent_by && <div style={{ fontSize: 11.5, color: TEXT.muted }}>by {r.last_sent_by}</div>}
-                    </td>
+                    </VisTd>
                   </tr>
                 )
               })

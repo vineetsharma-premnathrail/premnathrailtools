@@ -13,26 +13,42 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleIssues } from '@/lib/storePreviewSamples'
+
+// Columns a role may hide (Store › Issues › Visibility); Issue # is always shown.
+const HIDEABLE: Record<string, string> = {
+  'Purchase Requisition': 'requisition', Store: 'store', 'Issue Type': 'issue_type', 'Challan No.': 'challan', Vendor: 'vendor',
+  Department: 'department', 'Project / WO': 'project_wo', 'Requested By': 'requested_by', 'Issued By': 'issued_by', Date: 'date', Items: 'items',
+}
 
 export default function StoreMaterialIssuesPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
   const { can } = useCan()
+  const vis = useVisibility('store:issues')
   const router = useRouter()
-  const [issues, setIssues] = useState<StoreMaterialIssue[]>([])
-  const [loading, setLoading] = useState(true)
+  // Role editor preview: made-up rows, nothing is loaded.
+  const [issues, setIssues] = useState<StoreMaterialIssue[]>(vis.preview ? sampleIssues : [])
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState('')
 
   useEffect(() => {
     if (!isAuthorized) return
+    if (vis.preview) return
     setLoading(true)
     storeApi.listMaterialIssues().then(setIssues).catch((err) => setError(extractErrorMessages(err, 'Failed to load material issues.').join(' '))).finally(() => setLoading(false))
   }, [isAuthorized])
 
   if (isLoading || !isAuthorized) return null
 
+  // The preview draws every column (hidden ones dimmed, with a toggle); normal use drops the hidden ones.
+  const showCol = (h: string) => !HIDEABLE[h] || vis.preview || vis.showColumn('issues', HIDEABLE[h])
+  const headers = ['Issue #', 'Purchase Requisition', 'Store', 'Issue Type', 'Challan No.', 'Vendor', 'Department', 'Project / WO', 'Requested By', 'Issued By', 'Date', 'Items'].filter(showCol)
+
   return (
     <div>
-      <StoreNav />
+      {!vis.preview && <StoreNav />}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <div>
@@ -55,32 +71,35 @@ export default function StoreMaterialIssuesPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr>
-              {['Issue #', 'Purchase Requisition', 'Store', 'Issue Type', 'Challan No.', 'Vendor', 'Department', 'Project / WO', 'Requested By', 'Issued By', 'Date', 'Items'].map((h, hi) => (
-                <th key={h} style={h === 'Items' ? numThStyle : thStyle}>{h}{hi === 0 && <RowCount count={issues.length} />}</th>
-              ))}
+              {headers.map((h, hi) => {
+                const head = <>{h}{hi === 0 && <RowCount count={issues.length} />}</>
+                return HIDEABLE[h]
+                  ? <VisTh key={h} vis={vis} table="issues" k={HIDEABLE[h]} style={h === 'Items' ? numThStyle : thStyle}>{head}</VisTh>
+                  : <th key={h} style={thStyle}>{head}</th>
+              })}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={12} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
+            {loading && <tr><td colSpan={headers.length} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && issues.length === 0 && (
-              <tr><td colSpan={12} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No material issues yet{can('store', 'issues', 'create') ? ' — use + New Issue to hand material out of a store.' : '.'}</td></tr>
+              <tr><td colSpan={headers.length} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No material issues yet{can('store', 'issues', 'create') ? ' — use + New Issue to hand material out of a store.' : '.'}</td></tr>
             )}
             {issues.map((i) => (
               <tr key={i.id} onClick={() => router.push(recordPath('/dashboard/store/issues', i))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, whiteSpace: 'nowrap' }}>{i.issue_number}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13 }} onClick={(e) => { if (i.p2p_request_id) { e.stopPropagation(); router.push(recordPath('/dashboard/p2p', i, 'p2p_request_id')) } }}>
+                <VisTd vis={vis} table="issues" k="requisition" style={{ padding: '12px 16px', fontSize: 13 }} onClick={(e) => { if (i.p2p_request_id) { e.stopPropagation(); router.push(recordPath('/dashboard/p2p', i, 'p2p_request_id')) } }}>
                   {i.p2p_number ? <span style={{ color: '#2563eb', fontWeight: 600, cursor: 'pointer' }}>{i.p2p_number}</span> : <span style={{ color: TEXT.muted }}>—</span>}
-                </td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.location_name || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.issue_type_label || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.challan_number || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.vendor_name || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.department_name || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.project_or_work_order || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.requested_by_name || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.issued_by_name || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(i.issue_date)}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, textAlign: 'right' }}>{i.items.length}</td>
+                </VisTd>
+                <VisTd vis={vis} table="issues" k="store" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.location_name || '—'}</VisTd>
+                <VisTd vis={vis} table="issues" k="issue_type" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.issue_type_label || '—'}</VisTd>
+                <VisTd vis={vis} table="issues" k="challan" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.challan_number || '—'}</VisTd>
+                <VisTd vis={vis} table="issues" k="vendor" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.vendor_name || '—'}</VisTd>
+                <VisTd vis={vis} table="issues" k="department" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.department_name || '—'}</VisTd>
+                <VisTd vis={vis} table="issues" k="project_wo" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.project_or_work_order || '—'}</VisTd>
+                <VisTd vis={vis} table="issues" k="requested_by" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.requested_by_name || '—'}</VisTd>
+                <VisTd vis={vis} table="issues" k="issued_by" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.issued_by_name || '—'}</VisTd>
+                <VisTd vis={vis} table="issues" k="date" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(i.issue_date)}</VisTd>
+                <VisTd vis={vis} table="issues" k="items" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, textAlign: 'right' }}>{i.items.length}</VisTd>
               </tr>
             ))}
           </tbody>

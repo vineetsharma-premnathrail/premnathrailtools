@@ -136,10 +136,10 @@ def test_c21_grn_with_store_posts_accepted_qty_to_stock(client, db, env):
     _, po, line = _approved_po(db, env)
     grn = _receive(client, env["buyer"], po, line, 10, env["loc"].id)
     assert grn.status_code == 200, grn.text
-    done = _inspect_all_passed(client, env["buyer"], grn.json())
-    assert done.status_code == 200, done.text
-    assert done.json()["status"] == "completed"
+    # Item has no Quality-check flag: stock is posted and the GRN completed when it is recorded.
+    assert grn.json()["status"] == "completed"
     assert _qty(db, env["item"].id, env["loc"].id) == 10
+    assert _inspect_all_passed(client, env["buyer"], grn.json()).status_code == 409  # nothing left to inspect
 
 
 # Closed 2026-10-13 (MIGO 101): a GRN must name its store — it posts stock at once.
@@ -166,7 +166,7 @@ def test_c21_grn_posts_to_the_po_lines_item_id_not_name_match(client, db, env):
     _, po, line = _approved_po(db, env, store_item_id=twin.id)
     grn = _receive(client, env["buyer"], po, line, 4, env["loc"].id)
     assert grn.status_code == 200, grn.text
-    assert _inspect_all_passed(client, env["buyer"], grn.json()).status_code == 200
+    assert grn.json()["status"] == "completed"
     assert _qty(db, twin.id, env["loc"].id) == 4
     assert _qty(db, env["item"].id, env["loc"].id) == 0
 
@@ -177,7 +177,7 @@ def test_c21_grn_posts_to_the_po_lines_item_id_not_name_match(client, db, env):
 def test_c23_completed_grn_can_be_reversed(client, db, env):
     _, po, line = _approved_po(db, env)
     grn = _receive(client, env["buyer"], po, line, 10, env["loc"].id)
-    assert _inspect_all_passed(client, env["buyer"], grn.json()).status_code == 200
+    assert grn.json()["status"] == "completed"  # no Quality-check flag: complete the moment it is recorded
     assert _qty(db, env["item"].id, env["loc"].id) == 10
     r = None
     for action in ("reverse", "cancel"):
@@ -303,10 +303,12 @@ def test_c15_user_without_store_or_purchase_cannot_receive(client, db, env):
     assert db.query(P2PGoodsReceipt).count() == 0
 
 
-def test_c15_store_only_receiver_can_receive_and_purchase_inspects(client, db, env):
-    """C-15 fixed: the GRN API takes 'store' OR 'purchase'. Inspection stays
-    with the Purchase/QC team by design (goods_receipts.py inspect_goods_receipt;
-    pinned by test_store_access_controls.py::test_store_only_user_gets_a_real_reason_on_inspect)."""
+def test_c15_store_only_receiver_can_receive_and_the_goods_are_in_free_stock_at_once(client, db, env):
+    """C-15 fixed: the GRN API takes 'store' OR 'purchase'. An item without the
+    Quality-check flag goes straight into Free stock and the GRN completes, so
+    the store clerk needs no Purchase/QC person to finish it. Who may still
+    accept/reject (asset lines) is pinned by
+    test_store_access_controls.py::test_store_user_with_grn_approve_can_inspect_a_non_qc_receipt."""
     _, po, line = _approved_po(db, env)
     h = _h(env["receiver"])
     pending = client.get(f"{GRN_BASE}/pending-purchase-orders", headers=h)
@@ -315,6 +317,7 @@ def test_c15_store_only_receiver_can_receive_and_purchase_inspects(client, db, e
     grn = _receive(client, env["receiver"], po, line, 10, env["loc"].id)
     assert grn.status_code == 200, grn.text
     assert client.get(f"{GRN_BASE}/{grn.json()['id']}", headers=h).status_code == 200
-    done = _inspect_all_passed(client, env["buyer"], grn.json())
-    assert done.status_code == 200, done.text
+    assert grn.json()["status"] == "completed"
+    assert grn.json()["items"][0]["receipt_posting"] == "free"
     assert _qty(db, env["item"].id, env["loc"].id) == 10
+    assert _inspect_all_passed(client, env["buyer"], grn.json()).status_code == 409

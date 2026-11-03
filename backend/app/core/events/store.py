@@ -1,6 +1,6 @@
 """Store notifiable events (see core/notification_events.py). Fired from
 app/modules/store (routes, stock ledger, job-work reminder job) and from the
-GRN routes in app/modules/p2p (GRNs are worked in Store › GRN & Inspection)."""
+GRN routes in app/modules/p2p (GRNs are worked in Store › GRN & Quality check)."""
 from app.core.notification_events import register_event
 
 # ── Waiting for a decision ───────────────────────────────────────────────────
@@ -25,8 +25,8 @@ register_event(
     default_channels=("bell", "teams"), kind="approval",
 )
 register_event(
-    "store", "grn_awaiting_inspection", "Goods received — waiting for inspection",
-    "a GRN is saved with lines waiting for the inspection decision (goods sit in Quality stock)", ("grn", "inspection", "approve"),
+    "store", "grn_awaiting_inspection", "Goods received — waiting for a quality check",
+    "a GRN is saved with asset lines waiting for the accept / reject decision", ("grn", "inspection", "approve"),
     default_channels=("bell", "teams"), kind="approval",
 )
 
@@ -40,8 +40,8 @@ register_event(
     "a material return is approved (posted to stock), rejected or returned", ("returns", "view"),
 )
 register_event(
-    "store", "grn_inspected", "GRN inspected (accepted / rejected)",
-    "the inspection of a GRN is completed — accepted goes to Free stock, rejected to Blocked", ("grn", "view"),
+    "store", "grn_inspected", "GRN quality check done (accepted / rejected)",
+    "the quality check of a GRN is completed — accepted goes to Free stock, rejected to Blocked", ("grn", "view"),
 )
 register_event(
     "store", "transfer_dispatched", "Stock transfer dispatched to your store",

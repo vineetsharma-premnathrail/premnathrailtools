@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.audit import record_audit
 from app.core.config import settings
 from app.db.session import get_db
@@ -59,6 +60,26 @@ require_org_chart = require_hr_tab(("org_chart", "me"))
 STATUTORY_FIELDS = ("pan_number", "aadhaar_last4", "uan_number", "esic_number")
 PERSONAL_FIELDS = tuple(f for f in PII_FIELDS if f not in STATUTORY_FIELDS)
 _FEATURE_FIELDS = (("personal", PERSONAL_FIELDS), ("statutory_ids", STATUTORY_FIELDS), ("hr_notes", ("notes",)))
+
+# Role-wise UI visibility entry of this screen (core/features/hr.py register_visibility):
+# the coded dropdowns a role may narrow. The form only offers the allowed values;
+# the server refuses the rest here so a value can't be sent by hand.
+EMPLOYEES_VISIBILITY_KEY = "hr:employees"
+_VISIBILITY_DROPDOWNS = ("worker_type", "employment_type", "attendance_policy")
+
+
+def _check_visibility(user: User, payload, current: HrEmployeeProfile | None) -> None:
+    """422 for a dropdown value outside what `user`'s roles allow — every value
+    on a new record (incl. the Worker Category default the column would take),
+    only a CHANGED value on an existing one (an older record keeps its value)."""
+    for field in _VISIBILITY_DROPDOWNS:
+        value = getattr(payload, field, None)
+        if current is None:
+            if field == "worker_type":
+                value = value or "office"  # hr_employee_profiles.worker_type default when the form sends nothing
+            visibility.ensure_option_allowed(user, EMPLOYEES_VISIBILITY_KEY, field, value)
+        elif field in payload.model_fields_set and value != getattr(current, field, None):
+            visibility.ensure_option_allowed(user, EMPLOYEES_VISIBILITY_KEY, field, value)
 
 
 def _mask(viewer: User, resp: HrEmployeeProfileResponse) -> HrEmployeeProfileResponse:
@@ -369,7 +390,12 @@ async def workforce_form_rules(db: Session = Depends(get_db), _user: User = Depe
     from app.modules.main.models.role import Role
 
     roles = (db.query(Role).filter(Role.is_active.is_(True), Role.is_default.is_(False)).order_by(Role.name).all())
-    return rules_payload([{"id": r.id, "name": r.name, "description": r.description} for r in roles])
+    payload = rules_payload([{"id": r.id, "name": r.name, "description": r.description} for r in roles])
+    # Role-wise visibility (core/visibility.py): dropdown -> the values this user may pick, None = every value.
+    # The lists above stay complete so an older record's value still shows; the form filters by `allowed`.
+    allowed = {f: visibility.allowed_values(_user, EMPLOYEES_VISIBILITY_KEY, f) for f in _VISIBILITY_DROPDOWNS}
+    payload["allowed"] = {f: (sorted(v) if v is not None else None) for f, v in allowed.items()}
+    return payload
 
 
 def _record_response(db: Session, profile: HrEmployeeProfile, viewer: User) -> HrEmployeeProfileResponse:
@@ -388,6 +414,7 @@ async def create_worker(payload: HrWorkerCreate, db: Session = Depends(get_db), 
     workshop staff, contract labour. They exist only as an HR record."""
     ensure_tab_action(user, "hr", "employees", "create")
     _drop_ungranted(user, payload, creating=True)
+    _check_visibility(user, payload, None)
     try:
         profile = svc.upsert_worker(db, None, payload, user)
         ensure_worker_in_scope(db, user, profile)
@@ -412,6 +439,7 @@ async def update_worker(profile_id: int, payload: HrWorkerUpdate, db: Session = 
     profile = svc.get_worker(db, profile_id)
     ensure_worker_in_scope(db, user, profile)
     _drop_ungranted(user, payload, creating=False)
+    _check_visibility(user, payload, profile)
     try:
         svc.upsert_worker(db, profile, payload, user)
     except HTTPException:
@@ -552,6 +580,7 @@ async def upsert_employee_profile(
 
     existing = svc.get_profile(db, user_id)
     _drop_ungranted(user, payload, creating=existing is None)
+    _check_visibility(user, payload, existing)
     before = asg.current_values(target, existing) if existing is not None else None
     try:
         profile = svc.upsert_profile(db, target, payload, user)

@@ -25,9 +25,10 @@ const byNumber = (a: PrePoReceipt, b: PrePoReceipt) => a.receipt_number.localeCo
 
 export default function StoreBeforePoPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
-  const { can } = useCan()
-  const canCreate = can('store', 'grn', 'create')
-  const canView = can('store', 'grn', 'view')
+  const { can, canFeature } = useCan()
+  // Store › GRN & Quality check › Before PO tab (core/features/store.py).
+  const canCreate = can('store', 'grn', 'create') && canFeature('store', 'grn', 'before_po', 'create')
+  const canView = can('store', 'grn', 'view') && canFeature('store', 'grn', 'before_po', 'view')
   const [rows, setRows] = useState<PrePoReceipt[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')

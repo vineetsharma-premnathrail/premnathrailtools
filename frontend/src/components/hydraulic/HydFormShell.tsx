@@ -26,7 +26,7 @@ export interface HydShellProps {
 
 export default function HydFormShell({
   mode = 'page', icon, iconColor, title, subtitle, nav, onBack, onCancel, busy, submitLabel, submitIcon = 'check', onSubmit,
-  tour, width = 960, submitTour, cancelTour, backTour, children,
+  tour, width = 960, submitTour, cancelTour, backTour, submitDisabled = false, children,
 }: HydShellProps & {
   icon: SheetIconName
   iconColor?: string
@@ -40,12 +40,14 @@ export default function HydFormShell({
   cancelTour?: string
   /** data-tour on the page-mode "← Back" pill. */
   backTour?: string
+  /** Role editor preview: the primary button shows but can't save. */
+  submitDisabled?: boolean
   children: React.ReactNode
 }) {
   const footer = (
     <>
       {onCancel && <button data-tour={cancelTour} type="button" onClick={onCancel} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>}
-      <button data-tour={submitTour} type="button" onClick={onSubmit} disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)}>
+      <button data-tour={submitTour} type="button" onClick={onSubmit} disabled={busy || submitDisabled} style={sheetBtn('primary', SHEET.BLUE, busy || submitDisabled)}>
         <SheetIcon name={submitIcon} size={16} />{busy ? 'Saving…' : submitLabel}
       </button>
     </>

@@ -1,10 +1,14 @@
 'use client'
 
 import Select from '@/components/shared/Select'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, Fragment, ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
+import { useVisibility } from '@/lib/visibility'
+import { normalizePriority } from '@/lib/priority'
+import { VisSection } from '@/lib/visibilityComponents'
+import { sampleContact, sampleInquiries, sampleOrganizations } from '@/lib/crmPreviewSamples'
 import { crmApi } from '@/lib/api'
 import { recordVisit } from '@/lib/crmShortcuts'
 import { formatDate, formatDateTime } from '@/lib/format'
@@ -41,29 +45,35 @@ const tabFromUrl = (): 'Info' | 'Quotations' | 'Technical Offers' => {
 }
 
 const TABS = ['Info', 'Documents', 'Technical Offers', 'Quotations', 'Follow Ups', 'Timeline'] as const
+// Role-wise visibility section of each sub-tab (core/features/crm.py); 'Info' always shows.
+const TAB_SECTION: Partial<Record<typeof TABS[number], string>> = { 'Quotations': 'inq_detail_quotations', 'Technical Offers': 'inq_detail_technical_offers', 'Documents': 'inq_detail_documents', 'Follow Ups': 'inq_detail_followups', 'Timeline': 'inq_detail_timeline' }
 
 export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId: number; onDeleted?: () => void }) {
   const { user } = useAuth()
   const { can, canDelete, canFeature } = useCan()
+  // Role-wise visibility (Organization › Role & Permissions › CRM › Inquiries & Tenders › Visibility › Inquiry page):
+  // optional blocks and sub-tabs a role hides. In the Role editor's preview (vis.preview) the page draws a sample
+  // inquiry, loads nothing and offers no action.
+  const vis = useVisibility('crm:inquiries_tenders')
   // Inquiry › Quotations is its own feature (Organization › Roles › CRM › Inquiries & Tenders › features).
-  const seeQuotations = canFeature('crm', 'inquiries_tenders', 'quotations', 'view')
-  // The other sub-tabs / actions are features too (core/features/crm.py).
-  const seeTab = (t: typeof TABS[number]) => t === 'Info'
+  const seeQuotations = canFeature('crm', 'inquiries_tenders', 'quotations', 'view') && (vis.preview || vis.showSection('inq_detail_quotations'))
+  // The other sub-tabs / actions are features too (core/features/crm.py); visibility then hides a tab on screen.
+  const seeTab = (t: typeof TABS[number]) => (vis.preview || !TAB_SECTION[t] || vis.showSection(TAB_SECTION[t]!)) && (t === 'Info'
     || (t === 'Quotations' && seeQuotations)
     || (t === 'Technical Offers' && canFeature('crm', 'inquiries_tenders', 'technical_offer', 'view'))
     || (t === 'Documents' && canFeature('crm', 'inquiries_tenders', 'documents', 'view'))
     || (t === 'Follow Ups' && canFeature('crm', 'inquiries_tenders', 'followups', 'view'))
-    || (t === 'Timeline' && canFeature('crm', 'inquiries_tenders', 'timeline', 'view'))
-  const canSendTor = canFeature('crm', 'inquiries_tenders', 'send_tor', 'create')
+    || (t === 'Timeline' && canFeature('crm', 'inquiries_tenders', 'timeline', 'view')))
+  const canSendTor = canFeature('crm', 'inquiries_tenders', 'send_tor', 'create') && !vis.preview
   const router = useRouter()
   const searchParams = useSearchParams()
   const backParam = searchParams.get('back')
   const backHref = backParam && backParam.startsWith('/dashboard/') ? backParam : '/dashboard/crm/inquiries'
 
-  const [inquiry, setInquiry] = useState<Inquiry | null>(null)
-  const [org, setOrg] = useState<Organization | null>(null)
-  const [contact, setContact] = useState<OrgContact | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [inquiry, setInquiry] = useState<Inquiry | null>(vis.preview ? sampleInquiries[0] : null)
+  const [org, setOrg] = useState<Organization | null>(vis.preview ? sampleOrganizations[0] : null)
+  const [contact, setContact] = useState<OrgContact | null>(vis.preview ? sampleContact : null)
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState<string | string[]>('')
   const [tab, setTab] = useState<typeof TABS[number]>(tabFromUrl)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -107,14 +117,14 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
 
   useEffect(() => {
     // Deferred so the effect itself sets no state.
-    if (inquiryId) Promise.resolve().then(() => { setTab(tabFromUrl()); setEditing(false); load() })
+    if (inquiryId && !vis.preview) Promise.resolve().then(() => { setTab(tabFromUrl()); setEditing(false); load() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inquiryId])
 
   // Creator-or-admin (backend rule) AND Inquiries & Tenders › Edit in the Permission Matrix.
-  const canModify = !!inquiry && !!user && (user.role === 'admin' || inquiry.created_by_id === user.id) && can('crm', 'inquiries_tenders', 'edit')
+  const canModify = !!inquiry && !!user && (user.role === 'admin' || inquiry.created_by_id === user.id) && can('crm', 'inquiries_tenders', 'edit') && !vis.preview
   const canEditRecord = canModify
-  const canDeleteRecord = !!inquiry && canDelete('crm', 'inquiries_tenders', inquiry.created_by_id ?? null)
+  const canDeleteRecord = !!inquiry && canDelete('crm', 'inquiries_tenders', inquiry.created_by_id ?? null) && !vis.preview
   const isAdmin = user?.role === 'admin'
 
   const patch = async (payload: Record<string, unknown>) => {
@@ -201,7 +211,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+      <VisSection vis={vis} k="inq_detail_header"><div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45' }}>{inquiry.universal_id}</span>
@@ -216,9 +226,9 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
         {!editing && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
-              <button onClick={() => router.push(backHref)} type="button" data-tour="inq-back-btn" style={secondaryBtnStyle}>
+              {!vis.preview && <button onClick={() => router.push(backHref)} type="button" data-tour="inq-back-btn" style={secondaryBtnStyle}>
                 ← Back
-              </button>
+              </button>}
               {/* Sending needs Inquiries & Tenders › Send Technical Requirement (TOR) to R&D › Create. */}
               {canSendTor && <button
                 onClick={openTorPicker}
@@ -252,16 +262,20 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
             <button onClick={() => setEditing(false)} type="button" style={secondaryBtnStyle}>Cancel</button>
           </div>
         )}
-      </div>
+      </div></VisSection>
 
       <MessageDialog open={!!torError} variant="error" title="Send Technical Requirement Failed" message={torError} onClose={() => setTorError('')} />
       <MessageDialog open={!!error} variant="error" title="Inquiry Action Failed" message={error} onClose={() => setError('')} />
 
-      {!editing && <RndIntakeCard rnd={rnd} tourId="inq-rnd-status" canResend={canSendTor} sending={sendingTOR} onResend={openTorPicker} />}
+      {!editing && <VisSection vis={vis} k="inq_detail_rnd"><RndIntakeCard rnd={rnd} tourId="inq-rnd-status" canResend={canSendTor} sending={sendingTOR} onResend={openTorPicker} /></VisSection>}
 
       <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, overflowX: 'auto', overflowY: 'visible' }}>
-        {TABS.filter((t) => seeTab(t)).map((t) => (
-          <div key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+        {TABS.filter((t) => seeTab(t)).map((t) => {
+          const section = TAB_SECTION[t]
+          const wrap = (node: ReactNode) => section ? <VisSection vis={vis} k={section}>{node}</VisSection> : node
+          return (
+          <Fragment key={t}>{wrap(
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             <button
               onClick={() => setTab(t)}
               data-tour={`inquiry-tab-${t}`}
@@ -278,7 +292,9 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
               <RevisionSelector revisions={revisions} selectedId={selectedRevId} onSelect={setSelectedRevId} tourId="inq-revision-selector" />
             )}
           </div>
-        ))}
+          )}</Fragment>
+          )
+        })}
       </div>
 
       {(tab === 'Info' || !seeTab(tab)) && editing && (
@@ -296,11 +312,13 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
         <InfoTab inquiry={inquiry} org={org} contact={contact} revisions={revisions} selectedRevId={selectedRevId} canModify={canEditRecord}
           onChangeLeadInfo={(p) => (p.status === LOST_STATUS && !inquiry.lost_reason_code ? setLostStatusPending(true) : patchLeadInfo(p))} />
       )}
-      {tab === 'Quotations' && seeQuotations && <QuotationsTab inquiryId={inquiry.id} org={org} contact={contact} inquiry={inquiry} />}
-      {tab === 'Technical Offers' && seeTab('Technical Offers') && <BdTechnicalOffers kind="inquiry" recordId={inquiry.id} />}
-      {tab === 'Documents' && seeTab('Documents') && <DocumentsTab inquiry={inquiry} canModify={canModify && canFeature('crm', 'inquiries_tenders', 'documents', 'create')} isAdmin={isAdmin} />}
-      {tab === 'Follow Ups' && seeTab('Follow Ups') && <ActivitiesTab inquiry={inquiry} org={org} />}
-      {tab === 'Timeline' && seeTab('Timeline') && <TimelineTab inquiryId={inquiry.id} />}
+      {/* Role editor preview: the sub-tabs load their own records, so the preview only shows a note under them. */}
+      {tab !== 'Info' && seeTab(tab) && vis.preview && <p style={{ fontSize: 13, color: '#78716c', padding: '14px 16px', borderRadius: 12, background: '#fff', border: '1px dashed rgba(0,0,0,0.12)', margin: 0 }}>Shown with the real records on the page; the preview only decides whether this tab is offered.</p>}
+      {tab === 'Quotations' && seeQuotations && !vis.preview && <QuotationsTab inquiryId={inquiry.id} org={org} contact={contact} inquiry={inquiry} />}
+      {tab === 'Technical Offers' && seeTab('Technical Offers') && !vis.preview && <BdTechnicalOffers kind="inquiry" recordId={inquiry.id} />}
+      {tab === 'Documents' && seeTab('Documents') && !vis.preview && <DocumentsTab inquiry={inquiry} canModify={canModify && canFeature('crm', 'inquiries_tenders', 'documents', 'create')} isAdmin={isAdmin} />}
+      {tab === 'Follow Ups' && seeTab('Follow Ups') && !vis.preview && <ActivitiesTab inquiry={inquiry} org={org} />}
+      {tab === 'Timeline' && seeTab('Timeline') && !vis.preview && <TimelineTab inquiryId={inquiry.id} />}
 
       <TechnicalOfferPickerDialog
         open={showTorPicker}
@@ -334,10 +352,14 @@ const LOST_REASON_LABELS: Record<string, string> = {
   competitor: 'Lost to competitor', no_response: 'No response', other: 'Other',
 }
 
+/** A role's allowed choices, plus the record's own current value so an existing record never shows a blank. */
+const keepCurrent = (choices: string[], current?: string | null) => (current && !choices.includes(current) ? [...choices, current] : choices)
+
 function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, onChangeLeadInfo }: { inquiry: Inquiry; org: Organization | null; contact: OrgContact | null; revisions: SpecRevision[]; selectedRevId: number | null; canModify: boolean; onChangeLeadInfo: (payload: Record<string, unknown>) => void }) {
   const selectedRev = revisions.find((r) => r.id === selectedRevId) || null
   const changeFor = (field: string) => selectedRev?.changes.find((c) => c.field === field)
   const { canFeature } = useCan()
+  const vis = useVisibility('crm:inquiries_tenders')
   const seeCustomer = canFeature('crm', 'inquiries_tenders', 'customer_contact', 'view')
   const seePrices = canFeature('crm', 'inquiries_tenders', 'prices', 'view')
 
@@ -379,22 +401,22 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
         />
 
         {seeCustomer && (
-          <DetailGroup title="Customer">
+          <VisSection vis={vis} k="inq_detail_customer"><DetailGroup title="Customer">
             <DetailRow label="Client company">{org ? join(org.name, org.org_type) : null}</DetailRow>
             <DetailRow label="GST number">{org?.gst_number}</DetailRow>
             <DetailRow label="Address">{org ? join(org.address, org.city, org.state) : null}</DetailRow>
             <DetailRow label="Contact person">{contact ? join(contact.name, contact.designation, contact.department) : null}</DetailRow>
             <DetailRow label="Mobile">{contact ? join(contact.mobile, ...(contact.additional_mobiles || [])) : null}</DetailRow>
             <DetailRow label="Email">{contact ? join(contact.email, ...(contact.additional_emails || [])) : null}</DetailRow>
-          </DetailGroup>
+          </DetailGroup></VisSection>
         )}
 
-        <DetailGroup title="Lead">
+        <VisSection vis={vis} k="inq_detail_lead"><DetailGroup title="Lead">
           <DetailRow label="Status">
             {canModify ? (
               <div style={{ maxWidth: 320 }}>
                 <Select data-tour="inq-info-status" value={inquiry.status} onChange={(e) => onChangeLeadInfo({ status: e.target.value })} style={{ ...inputStyle, width: '100%' }}>
-                  {inquiryStatusOptions(inquiry.status, inquiry.status).map((s) => <option key={s} value={s}>{s}</option>)}
+                  {keepCurrent(vis.options('inquiry_status', inquiryStatusOptions(inquiry.status, inquiry.status), (s) => s), inquiry.status).map((s) => <option key={s} value={s}>{s}</option>)}
                 </Select>
               </div>
             ) : <Pill label={inquiry.status} hex={inquiryStatusColor(inquiry.status).text} />}
@@ -403,7 +425,7 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
             {canModify ? (
               <div style={{ maxWidth: 320 }}>
                 <Select data-tour="inq-info-priority" value={inquiry.priority} onChange={(e) => onChangeLeadInfo({ priority: e.target.value })} style={{ ...inputStyle, width: '100%' }}>
-                  {priorityOptions(inquiry.priority).map((p) => <option key={p} value={p}>{priorityLabel(p)}</option>)}
+                  {keepCurrent(vis.options('inquiry_priority', priorityOptions(inquiry.priority), (p) => p), inquiry.priority ? normalizePriority(inquiry.priority) : null).map((p) => <option key={p} value={p}>{priorityLabel(p)}</option>)}
                 </Select>
               </div>
             ) : (inquiry.priority ? priorityLabel(inquiry.priority) : null)}
@@ -413,9 +435,9 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
           {inquiry.probability != null && <DetailRow label="Win probability">{inquiry.probability}%</DetailRow>}
           {inquiry.expected_order_date && <DetailRow label="Expected order">{formatDate(inquiry.expected_order_date)}</DetailRow>}
           {lostReason && <DetailRow label="Lost reason">{lostReason}</DetailRow>}
-        </DetailGroup>
+        </DetailGroup></VisSection>
 
-        <DetailGroup title="Product Requirement" last>
+        <VisSection vis={vis} k="inq_detail_product"><DetailGroup title="Product Requirement" last>
           <SpecDetailRow label="Product" value={inquiry.product} change={changeFor('product')} />
           <SpecDetailRow label="Customer requirement" value={inquiry.product_spec} change={changeFor('product_spec')} />
           {(inquiry.additional_items || []).map((it, i) => (
@@ -425,7 +447,7 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
             </DetailRow>
           ))}
           <SpecDetailRow label="Project details" value={inquiry.project_details} change={changeFor('project_details')} />
-        </DetailGroup>
+        </DetailGroup></VisSection>
       </DetailCard>
     </div>
   )
@@ -477,7 +499,7 @@ const seesQuotationPrices = (canFeature: ReturnType<typeof useCan>['canFeature']
   || canFeature('crm', 'inquiries_tenders', 'quotations', 'approve')
 
 /** Labelled field in the sheet style (keeps the tour target on the wrapper). */
-function SF({ label, tourId, children }: { label: React.ReactNode; tourId?: string; children: React.ReactNode }) {
+function SF({ label, tourId, children }: { label: ReactNode; tourId?: string; children: ReactNode }) {
   return (
     <div {...(tourId ? { 'data-tour': tourId } : {})}>
       <label style={sheetLabel}>{label}</label>

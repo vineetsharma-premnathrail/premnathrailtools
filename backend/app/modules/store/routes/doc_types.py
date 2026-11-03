@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.permissions import ensure_can_delete, ensure_tab_action, require_app_access
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -89,8 +90,9 @@ def _to_dict(db: Session, t: StoreDocType) -> dict:
 
 # Which Store › Settings tab manages each list. Return sources / conditions
 # are fixed in code (only renamed by an admin) and have no tab of their own —
-# they fall under Store › Settings › General settings.
-_KIND_TAB = {"stock_entry": "entry_types", "issue": "issue_types", "return_source": "settings", "return_condition": "settings"}
+# they fall under the Store Settings gear. Old stock entry types are read-only
+# (their Stock Entry Types tab was retired 2026-10-12).
+_KIND_TAB = {"stock_entry": "settings", "issue": "issue_types", "return_source": "settings", "return_condition": "settings"}
 
 
 def _ensure_kind_action(user: User, kind: str, action: str) -> None:
@@ -243,10 +245,17 @@ async def list_doc_types(
     kind: str,
     include_inactive: bool = Query(False),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_app_access("store")),
 ):
     _check_kind(kind)
-    return [_to_dict(db, t) for t in doc_types(db, kind, active_only=not include_inactive)]
+    rows = [_to_dict(db, t) for t in doc_types(db, kind, active_only=not include_inactive)]
+    if kind == "issue":
+        # Role visibility ("store:issues" > Issue Type): every type is listed, each
+        # flagged `allowed` for this user; the form filters and keeps a saved issue's type.
+        allowed = visibility.allowed_values(user, "store:issues", "issue_type")
+        for row in rows:
+            row["allowed"] = allowed is None or row["value"] in allowed
+    return rows
 
 
 @router.post("/{kind}")
@@ -259,8 +268,8 @@ async def create_doc_type(
     _check_kind(kind)
     if kind in _FIXED_KINDS:
         raise _fixed_kind_error(kind)
+    _ensure_editable_kind(kind)  # retired for everyone: 410 before the permission check
     _ensure_kind_action(user, kind, "create")
-    _ensure_editable_kind(kind)
     doc_types(db, kind)
     fields = _clean(db, kind, payload)
     value = re.sub(r"[^a-z0-9]+", "_", fields["label"].lower()).strip("_")[:45] or "type"
@@ -284,6 +293,7 @@ async def update_doc_type(
     """Edits label / approval / active flag. The stored value never changes,
     so documents already using this type keep resolving to it."""
     _check_kind(kind)
+    _ensure_editable_kind(kind)  # retired for everyone: 410 before the permission check
     if kind in _FIXED_KINDS and not is_unrestricted_user(user):
         raise _fixed_kind_error(kind)
     doc_types(db, kind)
@@ -292,7 +302,6 @@ async def update_doc_type(
         raise HTTPException(status_code=404, detail=f"That {KIND_LABELS[kind]} wasn't found — reload the page and try again.")
     _guard_fixed_kind_update(kind, user, payload, t)
     _ensure_kind_action(user, kind, "edit")
-    _ensure_editable_kind(kind)
     fields = _clean(db, kind, payload, t)
     if not payload.is_active and t.is_active:
         others = db.query(StoreDocType).filter(StoreDocType.kind == kind, StoreDocType.is_active.is_(True), StoreDocType.id != t.id).count()

@@ -22,12 +22,16 @@ Every check raises a 403 that says what is missing and who can grant it.
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.permission_registry import can_feature, can_view_tab
 from app.modules.main.models.user import User
 from app.modules.rnd.models.requirement_work import RndRequirementAccess, RndRequirementTask
+
+logger = logging.getLogger(__name__)
 
 PERMS = ("view", "download", "upload", "respond")
 RND = "rnd"
@@ -101,16 +105,24 @@ def rnd_users(db: Session) -> list[User]:
     return [u for u in db.query(User).filter(User.is_active == True).order_by(User.name.asc()).all() if "rnd" in u.get_apps()]  # noqa: E712
 
 
+_warned_no_head = False
+
+
 def heads(db: Session) -> list[User]:
-    """Who receives new requirements from CRM: the R&D department head(s).
-    Admins see every module, so without a head they only count when nobody
-    else has R&D."""
+    """Who receives new requirements from CRM and every "R&D head" notice: the
+    R&D department head(s) from Organization › Department. With no head set,
+    the admins only (never the whole department)."""
     ids = org_head_ids(db)
     if ids:
         return db.query(User).filter(User.id.in_(ids)).all()
-    users = rnd_users(db)
-    members = [u for u in users if u.role != "admin" and not u.is_azure_admin]
-    return members or users
+    # No R&D head in Organization › Department: tell the admins only. Falling
+    # back to every R&D user sent each "head" notice (new requirement, task
+    # given, approval asked) to the whole department (owner, 2026-11-03).
+    global _warned_no_head
+    if not _warned_no_head:
+        _warned_no_head = True
+        logger.warning("No R&D department head is set in Organization › Department — R&D head notices go to admins only.")
+    return [u for u in rnd_users(db) if u.role == "admin" or u.is_azure_admin]
 
 
 def head_ids(db: Session) -> list[int]:

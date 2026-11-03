@@ -14,14 +14,25 @@ frontend reuses one task component for both.
 
 Files are RndDocument rows on the project with task_id set; they are kept out
 of the project's Attachments list.
+
+Since 2026-11-03 a task can also hang on a Project Management ("All Projects")
+project — R&D work on a customer project, given from R&D › R&D Tasks. Every
+route works on a TaskParent (R&D project or PM project): on a PM project the
+R&D heads, admins and the project's manager / management give and review
+tasks, and any active person with R&D access can be assigned.
 """
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.data_scope import in_scope as pm_in_scope
+from app.core.permission_registry import can_view_tab, is_admin_user
 from app.core.permissions import ensure_feature_action, require_app_access, require_tab_access
 from app.db.session import get_db
 from app.modules.crm.services.requirement_movement import today_ist
@@ -30,8 +41,11 @@ from app.modules.main.routes.auth import get_current_user
 from app.modules.rnd.models.document import RndDocument
 from app.modules.rnd.models.project import RndProject
 from app.modules.rnd.models.project_task import RndProjectTask, RndProjectTaskEvent
+from app.modules.projects import workflow as pm_wf
+from app.modules.projects.models.project import PmProject
 from app.modules.rnd.scope import ensure_in_scope
 from app.modules.rnd.services import project_roles as roles
+from app.modules.rnd.services import requirement_access as ra
 from app.modules.rnd.services import task_approvals
 from app.modules.rnd.services import task_fields
 from app.modules.rnd.services import events as rnd_events
@@ -57,12 +71,99 @@ def _name(u: User | None) -> str:
     return (u.name or u.email or f"User #{u.id}") if u else "—"
 
 
-def _project(db: Session, project_id: int, user: User) -> RndProject:
+@dataclass
+class TaskParent:
+    """What a task hangs on: a Prototype / Research project (`rnd`) or a Project
+    Management project (`pm`). Routes read only this — never the models directly."""
+    kind: str                     # "rnd" | "pm"
+    id: int
+    project_number: str           # RND number or PEW code
+    title: str
+    lead_ids: list[int]           # who gives / reviews tasks (besides admins) and is told about them
+    members_fn: Callable[[], list[int]]   # who a top-level task can go to — computed only when needed (create / edit / access)
+    manager_label: str            # for messages: "a project lead" / "an R&D head or the project manager"
+    rnd: RndProject | None = None
+    pm: PmProject | None = None
+    managers: set[int] = field(default_factory=set)
+    _members: list[int] | None = None
+
+    @property
+    def member_ids(self) -> list[int]:
+        if self._members is None:
+            self._members = self.members_fn()
+        return self._members
+
+    @property
+    def entity_type(self) -> str:
+        """Notification entity: the bell opens the R&D page for both (NotificationBell maps
+        rnd_pm_project → /dashboard/rnd/project-tasks/<ref>), never the PM project page."""
+        return "rnd_project" if self.kind == "rnd" else "rnd_pm_project"
+
+    def can_manage(self, user: User) -> bool:
+        return is_admin_user(user) or user.id in self.managers
+
+    def fk(self) -> dict:
+        """Keyword for RndProjectTask / RndDocument: which parent column to set."""
+        return {"project_id": self.id} if self.kind == "rnd" else {"pm_project_id": self.id}
+
+    def task_filter(self):
+        return RndProjectTask.project_id == self.id if self.kind == "rnd" else RndProjectTask.pm_project_id == self.id
+
+
+def _rnd_parent(db: Session, project_id: int, user: User) -> TaskParent:
     p = db.query(RndProject).filter(RndProject.id == project_id, RndProject.is_deleted == False).first()  # noqa: E712
     if not p:
         raise HTTPException(status_code=404, detail=f"R&D project #{project_id} not found (it may have been deleted) — refresh the list.")
     ensure_in_scope(db, user, p)
-    return p
+    leads = roles.lead_ids(p)
+    return TaskParent(kind="rnd", id=p.id, project_number=p.project_number, title=p.title, lead_ids=leads,
+                      members_fn=lambda: roles.member_ids(p), manager_label="a project lead", rnd=p, managers=set(leads))
+
+
+def _rnd_people_ids(db: Session) -> list[int]:
+    """Active people who can hold an R&D task on a PM project — everyone with R&D access
+    who can open R&D › Prototype / Research (where the task actions live); admins only
+    when nobody else qualifies. Like the requirement task assignees."""
+    active = db.query(User).filter(User.is_active == True).order_by(User.name.asc()).all()  # noqa: E712
+    people = [u for u in active if "rnd" in u.get_apps() and can_view_tab(u, "rnd", "projects")]
+    return [u.id for u in people if u.role != "admin" and not u.is_azure_admin] or [u.id for u in people]
+
+
+def pm_manages(db: Session, user: User, p: PmProject) -> bool:
+    """Who gives / reviews R&D tasks on a PM project: admins, the R&D department head(s)
+    set in Organization › Department (no "everyone" fallback here), the project manager,
+    and management (Partners / Directors / All Projects › Create) when the project is
+    inside their Project Management data scope. Shared with the picker (routes/tasks.py)."""
+    if is_admin_user(user) or user.id in ra.org_head_ids(db) or user.id == p.project_manager_id:
+        return True
+    return pm_wf.can_manage(p, user) and pm_in_scope(db, user, p)
+
+
+def _pm_parent(db: Session, pm_project_id: int, user: User) -> TaskParent:
+    """The PM project behind an R&D task. Opens for whoever manages R&D tasks on it
+    (pm_manages) and for anyone who holds or gave a task on it; everyone else gets 404
+    (not 403) so project codes / client names can't be enumerated. The Project
+    Management data scope is not required of R&D heads or assignees — the per-task
+    rules (_list, _ensure_reviewer, _ensure_assignee) decide what they may do."""
+    p = db.get(PmProject, pm_project_id)
+    not_found = HTTPException(status_code=404, detail="Project not found, or you have no R&D task on it — open it from R&D › R&D Tasks, or ask an R&D head to give you a task on it.")
+    if not p:
+        raise not_found
+    managers = {*ra.org_head_ids(db), *([p.project_manager_id] if p.project_manager_id else [])}
+    if pm_manages(db, user, p):
+        managers.add(user.id)
+    elif db.query(RndProjectTask.id).filter(RndProjectTask.pm_project_id == p.id,
+                                            or_(RndProjectTask.assigned_to_id == user.id, RndProjectTask.created_by_id == user.id)).first() is None:
+        raise not_found
+    return TaskParent(kind="pm", id=p.id, project_number=p.project_code, title=p.name,
+                      lead_ids=sorted(managers), members_fn=lambda: _rnd_people_ids(db),
+                      manager_label="an R&D head or the project manager", pm=p, managers=managers)
+
+
+def _parent_of(db: Session, task: RndProjectTask, user: User) -> TaskParent:
+    if task.pm_project_id:
+        return _pm_parent(db, task.pm_project_id, user)
+    return _rnd_parent(db, task.project_id, user)
 
 
 def _task(db: Session, task_id: int) -> RndProjectTask:
@@ -72,29 +173,43 @@ def _task(db: Session, task_id: int) -> RndProjectTask:
     return t
 
 
-def _ensure_manager(user: User, project: RndProject, what: str) -> None:
-    if not roles.can_manage(user, project):
-        raise HTTPException(status_code=403, detail=f"Only a project lead of {project.project_number} can {what}. Ask a lead, or have them add you as a lead.")
+def _ensure_manager(user: User, project: TaskParent, what: str) -> None:
+    if not project.can_manage(user):
+        hint = " Ask a lead, or have them add you as a lead." if project.kind == "rnd" else " Ask them to give the task, or to make you the project manager."
+        raise HTTPException(status_code=403, detail=f"Only {project.manager_label} of {project.project_number} can {what}.{hint}")
 
 
-def _ensure_reviewer(user: User, project: RndProject, task: RndProjectTask, what: str) -> None:
-    """The task's creator reviews it; project leads / admins can review any task."""
-    if task.created_by_id != user.id and not roles.can_manage(user, project):
-        raise HTTPException(status_code=403, detail=f"Only the person who created this task (or a project lead of {project.project_number}) can {what}.")
+def _ensure_reviewer(user: User, project: TaskParent, task: RndProjectTask, what: str) -> None:
+    """The task's creator reviews it; project leads (R&D heads / the project manager on a PM project) and admins can review any task."""
+    if task.created_by_id != user.id and not project.can_manage(user):
+        raise HTTPException(status_code=403, detail=f"Only the person who created this task (or {project.manager_label} of {project.project_number}) can {what}.")
 
 
-def _team_ids(project: RndProject) -> list[int]:
-    return list(dict.fromkeys([*roles.member_ids(project), *roles.lead_ids(project)]))
+def _team_ids(project: TaskParent) -> list[int]:
+    return list(dict.fromkeys([*project.member_ids, *project.lead_ids]))
 
 
-def _check_assignee(db: Session, project: RndProject, assignee_id: int, allowed: list[int], who: str, user: User) -> User:
+def _broadcast(db: Session, project: TaskParent, event: str, *, title: str, message: str, actor: User,
+               skip_user_ids: set[int], background_tasks: BackgroundTasks | None) -> None:
+    """Role subscribers of an R&D project event. A PM project has no R&D data scope to
+    broadcast on — its people were told directly (assignee, creator, heads, manager)."""
+    if project.rnd is not None:
+        rnd_events.project_event(db, event, project.rnd, title=title, message=message, actor=actor,
+                                 skip_user_ids=skip_user_ids, background_tasks=background_tasks)
+
+
+def _check_assignee(db: Session, project: TaskParent, assignee_id: int, allowed: list[int], who: str, user: User) -> User:
     if assignee_id not in allowed:
-        raise HTTPException(status_code=400, detail=f"That person isn't {who} of {project.project_number}. Add them under Project Members (Edit → Team Members) first, then assign the task.")
+        hint = "Add them under Project Members (Edit → Team Members) first, then assign the task." if project.kind == "rnd" else "Only active people with R&D access can hold an R&D task — grant R&D in User Management first."
+        raise HTTPException(status_code=400, detail=f"That person isn't {who} of {project.project_number}. {hint}")
     assignee = db.query(User).filter(User.id == assignee_id).first()
     if not assignee or not assignee.is_active:
         raise HTTPException(status_code=400, detail="The selected person was not found or is deactivated — pick someone else.")
     if "rnd" not in assignee.get_apps():
         raise HTTPException(status_code=400, detail=f"{_name(assignee)} has no access to the R&D module, so they couldn't see this task. Grant it in User Management, then assign again.")
+    if project.kind == "pm" and not can_view_tab(assignee, "rnd", "projects"):
+        # Task actions live under the R&D › Prototype / Research tab (this router's gate).
+        raise HTTPException(status_code=400, detail=f"{_name(assignee)} can't open R&D › Prototype / Research, so they couldn't work this task. Give their role 'View' on that tab in Organization › Role & Permissions, then assign again.")
     # The role's assign-to rule (Role & Permissions › R&D › Prototype / Research › Project tasks).
     assignee_rules.ensure_allowed(db, user, RULE_KEY, assignee)
     return assignee
@@ -122,7 +237,7 @@ def _event(db: Session, task: RndProjectTask, action: str, user: User, remarks: 
                                user_id=user.id, created_at=datetime.now(timezone.utc)))
 
 
-async def _store_files(db: Session, project: RndProject, task: RndProjectTask, files: list[UploadFile] | None, role: str, user: User) -> list[RndDocument]:
+async def _store_files(db: Session, project: TaskParent, task: RndProjectTask, files: list[UploadFile] | None, role: str, user: User) -> list[RndDocument]:
     files = [f for f in (files or []) if f and f.filename]
     if not files:
         return []
@@ -135,7 +250,7 @@ async def _store_files(db: Session, project: RndProject, task: RndProjectTask, f
     for f in files:
         result = await upload_file_to_sharepoint(settings.SHAREPOINT_SITE_ID, path, f)
         doc = RndDocument(
-            project_id=project.id, task_id=task.id, task_doc_role=role, doc_type="other",
+            **project.fk(), task_id=task.id, task_doc_role=role, doc_type="other",
             title=result["name"], file_name=result["name"], sharepoint_path=result["path"],
             sharepoint_url=result.get("webUrl"), file_size=result.get("size"), mime_type=f.content_type,
             uploaded_by_id=user.id, uploaded_by_name=_name(user),
@@ -174,7 +289,7 @@ def _serialize(db: Session, tasks: list[RndProjectTask]) -> list[dict]:
     approvals = task_approvals.serialize(db, KIND, ids, doc_dicts)
     return [
         {
-            "id": t.id, "source": "project", "record_id": t.project_id, "parent_task_id": t.parent_task_id,
+            "id": t.id, "source": "project" if t.project_id else "pm_project", "record_id": t.project_id or t.pm_project_id, "parent_task_id": t.parent_task_id,
             "department": (users.get(t.assigned_to_id).department if users.get(t.assigned_to_id) else None) or "R&D",
             "title": t.title, "remarks": t.remarks,
             "assigned_to_id": t.assigned_to_id, "assigned_to": _name(users.get(t.assigned_to_id)),
@@ -196,31 +311,47 @@ def _serialize(db: Session, tasks: list[RndProjectTask]) -> list[dict]:
     ]
 
 
-def _notify_managers(db: Session, project: RndProject, task: RndProjectTask, actor: User, title: str, message: str, kind: str) -> None:
+def _notify_managers(db: Session, project: TaskParent, task: RndProjectTask, actor: User, title: str, message: str, kind: str) -> None:
     # Top-level task → its creator + the leads; sub-task → only its creator.
-    targets = {task.created_by_id} if task.parent_task_id else {task.created_by_id, *roles.lead_ids(project)}
+    targets = {task.created_by_id} if task.parent_task_id else {task.created_by_id, *project.lead_ids}
     for uid in (targets - {actor.id}):
-        notify_user(db, uid, title=title, message=message, notification_type=kind, entity_type="rnd_project", entity_id=project.id)
+        notify_user(db, uid, title=title, message=message, notification_type=kind, entity_type=project.entity_type, entity_id=project.id)
 
 
 # ── project-level ─────────────────────────────────────────────────────────
+
+def _access(db: Session, project: TaskParent, user: User) -> dict:
+    ids = _team_ids(project)
+    found = {u.id: u for u in db.query(User).filter(User.id.in_(ids)).all()} if ids else {}
+    leads = set(project.lead_ids)
+
+    def row(u: User) -> dict:
+        return {"id": u.id, "name": _name(u), "email": u.email, "designation": getattr(u, "designation", None),
+                "department": u.department, "team_role": "head" if u.id in leads else "member"}
+
+    team = assignee_rules.filter_people(db, user, RULE_KEY, [row(u) for i in ids if (u := found.get(i)) and u.is_active])
+    members = set(project.member_ids)
+    out = {"can_manage": project.can_manage(user), "people": [r for r in team if r["id"] in members], "team": team}
+    if project.pm is not None:
+        out["project"] = {"id": project.pm.id, "project_code": project.pm.project_code, "name": project.pm.name,
+                          "client_name": project.pm.client_name, "status": project.pm.status}
+    return out
+
 
 @router.get("/projects/{project_id}/task-access")
 async def task_access(project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Whether the current user can hand out top-level tasks (leads / admins), and
     the project team: `people` (team members — top-level task assignees) and
     `team` (members + leads — who a sub-task can go to)."""
-    project = _project(db, project_id, user)
-    ids = _team_ids(project)
-    found = {u.id: u for u in db.query(User).filter(User.id.in_(ids)).all()} if ids else {}
-    leads = set(roles.lead_ids(project))
+    return _access(db, _rnd_parent(db, project_id, user), user)
 
-    def row(u: User) -> dict:
-        return {"id": u.id, "name": _name(u), "email": u.email, "designation": getattr(u, "designation", None),
-                "team_role": "head" if u.id in leads else "member"}
 
-    team = assignee_rules.filter_people(db, user, RULE_KEY, [row(u) for i in ids if (u := found.get(i)) and u.is_active])
-    return {"can_manage": roles.can_manage(user, project), "people": [r for r in team if r["id"] in roles.member_ids(project)], "team": team}
+@router.get("/pm-projects/{pm_project_id}/task-access")
+async def pm_task_access(pm_project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Same for a Project Management project: `can_manage` (admin, R&D head, the project's
+    manager / management), `people` = active people with R&D access (after the role's
+    "Assign to" rule), plus the project header for the R&D page."""
+    return _access(db, _pm_parent(db, pm_project_id, user), user)
 
 
 @router.get("/project-tasks/mine")
@@ -231,39 +362,63 @@ async def my_project_tasks(include_done: bool = False, db: Session = Depends(get
         q = q.filter(RndProjectTask.status == "open")
     tasks = q.order_by(RndProjectTask.due_date.asc()).all()
     projects = {p.id: p for p in db.query(RndProject).filter(
-        RndProject.id.in_({t.project_id for t in tasks}), RndProject.is_deleted == False).all()} if tasks else {}  # noqa: E712
-    tasks = [t for t in tasks if t.project_id in projects]
+        RndProject.id.in_({t.project_id for t in tasks if t.project_id}), RndProject.is_deleted == False).all()} if tasks else {}  # noqa: E712
+    pm_projects = {p.id: p for p in db.query(PmProject).filter(
+        PmProject.id.in_({t.pm_project_id for t in tasks if t.pm_project_id})).all()} if tasks else {}
+    tasks = [t for t in tasks if (t.project_id in projects) or (t.pm_project_id in pm_projects)]
     out = _serialize(db, tasks)
-    for row in out:
-        p = projects[row["record_id"]]
-        row["requirement_ref"], row["requirement_title"] = p.project_number, p.title
+    for row, t in zip(out, tasks):
+        if t.pm_project_id:
+            p = pm_projects[t.pm_project_id]
+            row["requirement_ref"], row["requirement_title"] = p.project_code, p.name
+        else:
+            p = projects[t.project_id]
+            row["requirement_ref"], row["requirement_title"] = p.project_number, p.title
     return out
+
+
+def _list(db: Session, project: TaskParent, user: User) -> list[dict]:
+    ensure_feature_action(user, "rnd", "projects", "tasks", "view")
+    tasks = db.query(RndProjectTask).filter(project.task_filter()).order_by(RndProjectTask.id.desc()).all()
+    if not project.can_manage(user):
+        mine = {t.id for t in tasks if user.id in (t.assigned_to_id, t.created_by_id)}
+        tasks = [t for t in tasks if t.id in mine or t.parent_task_id in mine]
+    return _serialize(db, tasks)
 
 
 @router.get("/projects/{project_id}/tasks")
 async def list_tasks(project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Leads / admins: every task on the project. Others: tasks assigned to
     them, tasks they created (their sub-tasks) and the sub-tasks under those."""
-    project = _project(db, project_id, user)
-    ensure_feature_action(user, "rnd", "projects", "tasks", "view")
-    tasks = db.query(RndProjectTask).filter(RndProjectTask.project_id == project.id).order_by(RndProjectTask.id.desc()).all()
-    if not roles.can_manage(user, project):
-        mine = {t.id for t in tasks if user.id in (t.assigned_to_id, t.created_by_id)}
-        tasks = [t for t in tasks if t.id in mine or t.parent_task_id in mine]
-    return _serialize(db, tasks)
+    return _list(db, _rnd_parent(db, project_id, user), user)
+
+
+@router.get("/pm-projects/{pm_project_id}/tasks")
+async def list_pm_tasks(pm_project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """R&D tasks on a Project Management project — same visibility rule."""
+    return _list(db, _pm_parent(db, pm_project_id, user), user)
 
 
 async def create_project_task(
-    db: Session, user: User, *, project_id: int, title: str, assigned_to_id: int, due_date: str,
+    db: Session, user: User, *, project_id: int | None = None, pm_project_id: int | None = None,
+    title: str, assigned_to_id: int, due_date: str,
     remarks: str | None = None, files: list[UploadFile] | None = None, priority: str | None = None,
     start_date: str | None = None, work_status: str | None = None, checklist: str | None = None,
     background_tasks: BackgroundTasks | None = None, check_feature: bool = True,
 ) -> dict:
-    """Create a task on a Prototype / Research project (shared by this router and
-    POST /rnd/tasks). Project leads (and admins) give tasks; `check_feature`
-    also asks for the role's Project tasks > Create feature (the R&D Tasks
-    board checks rnd:tasks:create instead)."""
-    project = _project(db, project_id, user)
+    """Create a task on a Prototype / Research project (`project_id`) or on a Project
+    Management project (`pm_project_id`) — shared by this router and POST /rnd/tasks.
+    Project leads (R&D heads / the project manager on a PM project) and admins give
+    tasks; `check_feature` also asks for the role's Project tasks > Create feature
+    (the R&D Tasks board checks rnd:tasks:create instead)."""
+    if pm_project_id:
+        project = _pm_parent(db, pm_project_id, user)
+        if project.pm.status in ("closed", "cancelled"):
+            raise HTTPException(status_code=422, detail=f"{project.project_number} is {project.pm.status} — R&D tasks can only be given on a running project. Pick another project, or ask management to reopen this one.")
+    elif project_id:
+        project = _rnd_parent(db, project_id, user)
+    else:
+        raise HTTPException(status_code=422, detail="Pick the project this task is for.")
     _ensure_manager(user, project, "create tasks")
     if check_feature:
         ensure_feature_action(user, "rnd", "projects", "tasks", "create")
@@ -275,13 +430,13 @@ async def create_project_task(
     due = _parse_date(due_date, "Due date")
     if due < today_ist():
         raise HTTPException(status_code=422, detail=f"Due date {due.strftime('%d %b %Y')} is in the past — pick today or a later date.")
-    assignee = _check_assignee(db, project, assigned_to_id, roles.member_ids(project), "a team member", user)
+    assignee = _check_assignee(db, project, assigned_to_id, project.member_ids, "a team member" if project.kind == "rnd" else "an R&D person", user)
 
     task = RndProjectTask(
-        project_id=project.id, title=title, remarks=(remarks or "").strip() or None,
+        **project.fk(), title=title, remarks=(remarks or "").strip() or None,
         assigned_to_id=assignee.id, created_by_id=user.id, original_due_date=due, due_date=due, status="open",
     )
-    task_fields.apply_create(task, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist)
+    task_fields.apply_create(task, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist, user=user)
     db.add(task)
     db.flush()
     await _store_files(db, project, task, files, BRIEF, user)
@@ -289,9 +444,9 @@ async def create_project_task(
     if assignee.id != user.id:
         notify_user(db, assignee.id, title=f"New task on {project.project_number} — {project.title}",
                     message=f"{_name(user)} assigned you \"{title}\" — due {due.strftime('%d %b %Y')}." + (f" Remarks: {task.remarks}" if task.remarks else ""),
-                    notification_type="rnd_project_task_assigned", entity_type="rnd_project", entity_id=project.id)
-    rnd_events.project_event(
-        db, "project_task_assigned", project, title=f"{_name(assignee)} got a task on {project.project_number}",
+                    notification_type="rnd_project_task_assigned", entity_type=project.entity_type, entity_id=project.id)
+    _broadcast(
+        db, project, "project_task_assigned", title=f"{_name(assignee)} got a task on {project.project_number}",
         message=f"{_name(user)} assigned {_name(assignee)} \"{title}\" on {project.project_number} — {project.title}, due {due.strftime('%d %b %Y')}.",
         actor=user, skip_user_ids={assignee.id}, background_tasks=background_tasks,
     )
@@ -316,6 +471,24 @@ async def create_task(
     )
 
 
+@router.post("/pm-projects/{pm_project_id}/tasks")
+async def create_pm_task(
+    pm_project_id: int,
+    title: str = Form(...), assigned_to_id: int = Form(...), due_date: str = Form(...),
+    remarks: str | None = Form(None), files: list[UploadFile] | None = File(None),
+    priority: str | None = Form(None), start_date: str | None = Form(None),
+    work_status: str | None = Form(None), checklist: str | None = Form(None),
+    background_tasks: BackgroundTasks = None,
+    db: Session = Depends(get_db), user: User = Depends(get_current_user),
+):
+    """An R&D task on a Project Management project (from its R&D page)."""
+    return await create_project_task(
+        db, user, pm_project_id=pm_project_id, title=title, assigned_to_id=assigned_to_id, due_date=due_date, remarks=remarks,
+        files=files, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist,
+        background_tasks=background_tasks,
+    )
+
+
 @router.post("/project-tasks/{task_id}/subtasks")
 async def create_subtask(
     task_id: int,
@@ -328,7 +501,7 @@ async def create_subtask(
 ):
     """The assignee of an open task hands part of it to someone on the project team."""
     parent = _task(db, task_id)
-    project = _project(db, parent.project_id, user)
+    project = _parent_of(db, parent, user)
     _ensure_assignee(parent, user, "split it into sub-tasks")
     ensure_feature_action(user, "rnd", "projects", "tasks", "create")
     if parent.parent_task_id:
@@ -348,10 +521,10 @@ async def create_subtask(
     assignee = _check_assignee(db, project, assigned_to_id, _team_ids(project), "on the project team", user)
 
     task = RndProjectTask(
-        project_id=project.id, parent_task_id=parent.id, title=title, remarks=(remarks or "").strip() or None,
+        **project.fk(), parent_task_id=parent.id, title=title, remarks=(remarks or "").strip() or None,
         assigned_to_id=assignee.id, created_by_id=user.id, original_due_date=due, due_date=due, status="open",
     )
-    task_fields.apply_create(task, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist)
+    task_fields.apply_create(task, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist, user=user)
     db.add(task)
     db.flush()
     await _store_files(db, project, task, files, BRIEF, user)
@@ -359,9 +532,9 @@ async def create_subtask(
     if assignee.id != user.id:
         notify_user(db, assignee.id, title=f"New sub-task on {project.project_number} — {project.title}",
                     message=f"{_name(user)} assigned you \"{title}\" (part of \"{parent.title}\") — due {due.strftime('%d %b %Y')}.",
-                    notification_type="rnd_project_task_assigned", entity_type="rnd_project", entity_id=project.id)
-    rnd_events.project_event(
-        db, "project_task_assigned", project, title=f"{_name(assignee)} got a sub-task on {project.project_number}",
+                    notification_type="rnd_project_task_assigned", entity_type=project.entity_type, entity_id=project.id)
+    _broadcast(
+        db, project, "project_task_assigned", title=f"{_name(assignee)} got a sub-task on {project.project_number}",
         message=f"{_name(user)} assigned {_name(assignee)} \"{title}\" (part of \"{parent.title}\") on {project.project_number}, due {due.strftime('%d %b %Y')}.",
         actor=user, skip_user_ids={assignee.id}, background_tasks=background_tasks,
     )
@@ -394,7 +567,7 @@ class TaskProgressPayload(BaseModel):
 async def edit_task(task_id: int, payload: TaskEditPayload, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """The task's creator (or a lead / admin) changes what, who or when — only while it is open."""
     task = _task(db, task_id)
-    project = _project(db, task.project_id, user)
+    project = _parent_of(db, task, user)
     _ensure_reviewer(user, project, task, "edit it")
     ensure_feature_action(user, "rnd", "projects", "tasks", "edit")
     if task.status != "open":
@@ -437,12 +610,12 @@ async def edit_task(task_id: int, payload: TaskEditPayload, db: Session = Depend
         task.due_date = due
     old_assignee = task.assigned_to_id
     if data.get("assigned_to_id") and data["assigned_to_id"] != task.assigned_to_id:
-        allowed = _team_ids(project) if task.parent_task_id else roles.member_ids(project)
+        allowed = _team_ids(project) if task.parent_task_id else project.member_ids
         assignee = _check_assignee(db, project, data["assigned_to_id"], allowed, "on the project team" if task.parent_task_id else "a team member", user)
         prev = db.query(User).filter(User.id == task.assigned_to_id).first()
         changes.append(f"Assignee: {_name(prev)} → {_name(assignee)}")
         task.assigned_to_id = assignee.id
-    changes += task_fields.apply_edit(task, data, _name(user))
+    changes += task_fields.apply_edit(task, data, _name(user), user)
 
     if not changes:
         return _serialize(db, [task])[0]
@@ -457,7 +630,7 @@ async def edit_task(task_id: int, payload: TaskEditPayload, db: Session = Depend
         else:
             msg = f"{_name(user)} changed \"{task.title}\": {summary}"
         notify_user(db, uid, title=f"Task updated ({project.project_number})", message=msg,
-                    notification_type="rnd_project_task_edited", entity_type="rnd_project", entity_id=project.id)
+                    notification_type="rnd_project_task_edited", entity_type=project.entity_type, entity_id=project.id)
     db.commit()
     return _serialize(db, [task])[0]
 
@@ -473,7 +646,7 @@ class ReviewPayload(BaseModel):
 async def extend_task(task_id: int, reason: str = Form(...), new_due_date: str = Form(...),
                       db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     task = _task(db, task_id)
-    project = _project(db, task.project_id, user)
+    project = _parent_of(db, task, user)
     _ensure_assignee(task, user, "give a new completion date")
     ensure_feature_action(user, "rnd", "projects", "tasks", "view")
     if task.status != "open":
@@ -502,7 +675,7 @@ async def complete_task(task_id: int, remarks: str = Form(...), delay_reason: st
                         db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Assignee completes the task themselves (remarks + files; a delay reason when late)."""
     task = _task(db, task_id)
-    project = _project(db, task.project_id, user)
+    project = _parent_of(db, task, user)
     _ensure_assignee(task, user, "complete it")
     ensure_feature_action(user, "rnd", "projects", "tasks", "view")
     if task.status != "open":
@@ -536,7 +709,7 @@ async def task_progress(task_id: int, payload: TaskProgressPayload, db: Session 
     """Tick / untick a checklist step or change the work status of an open task —
     the assignee, or whoever reviews the task (its creator, a lead, an admin)."""
     task = _task(db, task_id)
-    project = _project(db, task.project_id, user)
+    project = _parent_of(db, task, user)
     if task.assigned_to_id != user.id:
         _ensure_reviewer(user, project, task, "update its checklist or status")
         ensure_feature_action(user, "rnd", "projects", "tasks", "edit")
@@ -557,7 +730,7 @@ async def request_approval(task_id: int, request: str = Form(...), files: list[U
                            db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Assignee asks whoever created the task (or a lead) to approve something task-related."""
     task = _task(db, task_id)
-    project = _project(db, task.project_id, user)
+    project = _parent_of(db, task, user)
     _ensure_assignee(task, user, "ask for approval on it")
     ensure_feature_action(user, "rnd", "projects", "tasks", "view")
     if task.status != "open":
@@ -566,11 +739,11 @@ async def request_approval(task_id: int, request: str = Form(...), files: list[U
     docs = await _store_files(db, project, task, files, APPROVAL, user)
     row.document_ids = [d.id for d in docs]
     _event(db, task, "approval_requested", user, remarks=row.request)
-    targets = {task.created_by_id} if task.parent_task_id else {task.created_by_id, *roles.lead_ids(project)}
+    targets = {task.created_by_id} if task.parent_task_id else {task.created_by_id, *project.lead_ids}
     for uid in targets - {user.id}:
         notify_user(db, uid, title=f"Approval needed on a task ({project.project_number})",
                     message=f"{_name(user)} asks for your approval on \"{task.title}\": {row.request[:200]}",
-                    notification_type="rnd_project_task_approval_requested", entity_type="rnd_project", entity_id=project.id, teams=True)
+                    notification_type="rnd_project_task_approval_requested", entity_type=project.entity_type, entity_id=project.id, teams=True)
     db.commit()
     return _serialize(db, [task])[0]
 
@@ -584,7 +757,7 @@ class ApprovalDecision(BaseModel):
 async def decide_approval(approval_id: int, payload: ApprovalDecision, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     row = task_approvals.get(db, KIND, approval_id)
     task = _task(db, row.task_id)
-    project = _project(db, task.project_id, user)
+    project = _parent_of(db, task, user)
     _ensure_reviewer(user, project, task, "decide its approval requests")
     ensure_feature_action(user, "rnd", "projects", "tasks", "approve")
     task_approvals.ensure_task_open(task)
@@ -593,7 +766,7 @@ async def decide_approval(approval_id: int, payload: ApprovalDecision, db: Sessi
     if row.requested_by_id != user.id:
         notify_user(db, row.requested_by_id, title=f"Approval {row.status} ({project.project_number})",
                     message=f"{_name(user)} {row.status} your request on \"{task.title}\"." + (f" Remarks: {row.decision_remarks}" if row.decision_remarks else ""),
-                    notification_type=f"rnd_project_task_approval_{row.status}", entity_type="rnd_project", entity_id=project.id)
+                    notification_type=f"rnd_project_task_approval_{row.status}", entity_type=project.entity_type, entity_id=project.id)
     db.commit()
     return _serialize(db, [task])[0]
 
@@ -602,7 +775,7 @@ async def decide_approval(approval_id: int, payload: ApprovalDecision, db: Sessi
 async def withdraw_approval(approval_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     row = task_approvals.get(db, KIND, approval_id)
     task = _task(db, row.task_id)
-    _project(db, task.project_id, user)
+    _parent_of(db, task, user)
     task_approvals.withdraw(row, user)
     _event(db, task, "approval_withdrawn", user)
     db.commit()
@@ -614,7 +787,7 @@ async def add_task_update(task_id: int, remarks: str = Form(...), files: list[Up
                           db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Assignee posts progress (remarks + any files); the task stays open."""
     task = _task(db, task_id)
-    project = _project(db, task.project_id, user)
+    project = _parent_of(db, task, user)
     _ensure_assignee(task, user, "post an update on it")
     ensure_feature_action(user, "rnd", "projects", "tasks", "view")
     if task.status != "open":
@@ -627,7 +800,7 @@ async def add_task_update(task_id: int, remarks: str = Form(...), files: list[Up
     for uid in {task.created_by_id} - {user.id}:
         notify_user(db, uid, title=f"Task update ({project.project_number})",
                     message=f"{_name(user)} on \"{task.title}\": {remarks[:200]}",
-                    notification_type="rnd_project_task_update", entity_type="rnd_project", entity_id=project.id)
+                    notification_type="rnd_project_task_update", entity_type=project.entity_type, entity_id=project.id)
     db.commit()
     return _serialize(db, [task])[0]
 
@@ -635,7 +808,7 @@ async def add_task_update(task_id: int, remarks: str = Form(...), files: list[Up
 @router.post("/project-tasks/{task_id}/reopen")
 async def reopen_task(task_id: int, payload: ReviewPayload, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     task = _task(db, task_id)
-    project = _project(db, task.project_id, user)
+    project = _parent_of(db, task, user)
     _ensure_reviewer(user, project, task, "reopen it")
     ensure_feature_action(user, "rnd", "projects", "tasks", "edit")
     if task.status != "closed":
@@ -662,7 +835,7 @@ async def reopen_task(task_id: int, payload: ReviewPayload, db: Session = Depend
     if task.assigned_to_id != user.id:
         notify_user(db, task.assigned_to_id, title=f"Task reopened ({project.project_number})",
                     message=f"{_name(user)} reopened \"{task.title}\" — due {task.due_date.strftime('%d %b %Y')}. Reason: {reason}",
-                    notification_type="rnd_project_task_reopened", entity_type="rnd_project", entity_id=project.id)
+                    notification_type="rnd_project_task_reopened", entity_type=project.entity_type, entity_id=project.id)
     db.commit()
     return _serialize(db, [task])[0]
 
@@ -670,7 +843,7 @@ async def reopen_task(task_id: int, payload: ReviewPayload, db: Session = Depend
 @router.post("/project-tasks/{task_id}/cancel")
 async def cancel_task(task_id: int, payload: ReviewPayload, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     task = _task(db, task_id)
-    project = _project(db, task.project_id, user)
+    project = _parent_of(db, task, user)
     _ensure_reviewer(user, project, task, "cancel it")
     ensure_feature_action(user, "rnd", "projects", "tasks", "cancel")
     if task.status in ("closed", "cancelled"):
@@ -689,6 +862,6 @@ async def cancel_task(task_id: int, payload: ReviewPayload, db: Session = Depend
     if task.assigned_to_id != user.id:
         notify_user(db, task.assigned_to_id, title=f"Task cancelled ({project.project_number})",
                     message=f"{_name(user)} cancelled \"{task.title}\". Reason: {reason}",
-                    notification_type="rnd_project_task_cancelled", entity_type="rnd_project", entity_id=project.id)
+                    notification_type="rnd_project_task_cancelled", entity_type=project.entity_type, entity_id=project.id)
     db.commit()
     return _serialize(db, [task])[0]

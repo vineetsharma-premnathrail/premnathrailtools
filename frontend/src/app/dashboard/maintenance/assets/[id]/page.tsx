@@ -51,7 +51,7 @@ export default function MaintenanceAssetDetailPage() {
   const { can, canDelete, canFeature } = useCan()
   // Asset sub-tabs that are features (maintenance:assets.<key>) — core/features/maintenance.py.
   const af = (key: string, action: 'view' | 'create' | 'edit' | 'delete' = 'view') => canFeature('maintenance', 'assets', key, action)
-  const TAB_FEATURE: Record<string, string> = { history: 'history', spares: 'spare_parts', readings: 'readings', documents: 'documents' }
+  const TAB_FEATURE: Record<string, string> = { history: 'history', pm: 'pm_plans', spares: 'spare_parts', readings: 'readings', documents: 'documents' }
   const visibleTabs = TABS.filter((t) => !TAB_FEATURE[t.key] || af(TAB_FEATURE[t.key]))
   const showCosts = canFeature('maintenance', 'work_orders', 'costs', 'view')
   const router = useRouter()

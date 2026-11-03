@@ -180,3 +180,18 @@ db.commit()
 - **Security & Sessions**: SSO means MFA / password / lockout live in Microsoft Entra ID (Conditional Access).
   The ERP sets access-token minutes, session days, idle timeout, max concurrent sessions; shows live sessions
   with revoke; logs sign-ins and blocked sign-ins (with IP) to the audit trail.
+
+## 5. Role visibility (show/hide inside a screen) (2026-11-02)
+
+Decision record: `docs/11-decisions/0005-role-ui-visibility-rules.md`. Spec: `docs/agent-runs/2026-11-02-role-ui-visibility/spec.md`.
+
+```
+Role.visibility_rules (JSON overrides only)  ->  effective(user) union across roles  ->  /auth/me "visibility"  ->  useVisibility(key) in pages
+```
+
+- **Declare** (module import time, next to the features): `register_visibility(module_key, tab_key, feature_key=None, label=..., sections=(...), options=(...), tables=(...))` in `app/core/visibility.py`. A section that holds a required field is `locked=True`. Dropdown values come from the code constant, never retyped. The catalogue reaches the Role editor through `/roles/catalog` (`visibility`).
+- **Store**: `roles.visibility_rules`, keyed `"<module>:<tab>"` or `"<module>:<tab>.<feature>"`, with `hidden_sections`, `options` (dropdown to allowed values) and `hidden_columns` (table to columns). `clean_rules()` refuses unknown keys, hiding a locked section and an empty value list (422, real message).
+- **Resolve**: `effective(user)`. Roles counted are the user's active roles plus active default roles that hold `<key>:view`. Hidden only if all counted roles hide it. Admin and `is_partner` get `{}`. No counted role means no restriction.
+- **Enforce**: dropdown values on the server with `ensure_option_allowed(user, key, dropdown, value)` (create always; edit only when the value changes) and `filter_options(...)` for `/meta`. Sections and columns are screen-only (`useVisibility(key).showSection / showColumn / options`), so never use them to protect data.
+- **Add to a new module**: register the entry, call the two server helpers where the dropdown is saved, use `useVisibility` in the page. No change to the Role editor.
+- First entry: `p2p:purchase_requisitions` (sections Purpose & Charging and Item Details locked; dropdowns Purpose and Priority; tables requisitions list and form item lines).

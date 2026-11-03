@@ -155,13 +155,13 @@ def ensure_can_delete(user: User, record, module_key: str, subtab_key: str, what
 
 # Legacy ERP ids (stored in User.erp_permissions before roles) -> the
 # Permission Matrix grant that now decides them.
-_ERP_LEGACY = {"project": ("projects", "service_projects"), "sr": ("erp", "service_requests")}
+_ERP_LEGACY = {"project": ("projects", "all_projects"), "sr": ("erp", "service_requests")}
 
 
 def has_erp_permission(user: User, permission: str) -> bool:
     """True if `user` may do a legacy ERP action id ("project_edit",
     "sr_delete" …) — now answered by the Permission Matrix:
-    `project_*` -> projects:service_projects:*, `sr_*` -> erp:service_requests:*."""
+    `project_*` -> projects:all_projects:*, `sr_*` -> erp:service_requests:*."""
     prefix, _, action = permission.partition("_")
     target = _ERP_LEGACY.get(prefix)
     if not target:

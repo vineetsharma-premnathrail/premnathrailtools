@@ -3,13 +3,15 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { recordPath } from '@/lib/recordRef'
-import { useRequireApp } from '@/hooks/useAuth'
 import { qualityApi } from '@/lib/api'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
+import { useQualityScreen } from '@/components/quality/useQualityScreen'
+import { VisColumns } from '@/components/quality/VisColumns'
 import { QualityDefectCode, QualityMasterValue } from '@/types'
 import QualityNav from '@/components/quality/QualityNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, Req } from '@/components/shared/FormSheet'
+import { FormPage, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, Req } from '@/components/shared/FormSheet'
 import { ErrorBanner, sheetGap } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import Select from '@/components/shared/Select'
@@ -18,13 +20,17 @@ import DraftBanner from '@/components/shared/DraftBanner'
 
 interface ItemOpt { id: number; item_code: string; item_name: string; uom?: string }
 
+// Coded severities (backend QUALITY_NCR_SEVERITIES); a role may offer only some (Role & Permissions › Quality › NCR › Visibility).
+const SEVERITY_OPTIONS = [{ value: 'minor', label: 'Minor' }, { value: 'major', label: 'Major' }, { value: 'critical', label: 'Critical' }]
+
 const row: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14 }
 function F({ label, flex = '1 1 200px', children }: { label: React.ReactNode; flex?: string; children: React.ReactNode }) {
   return <div style={{ flex, minWidth: 0 }}><label style={sheetLabel}>{label}</label>{children}</div>
 }
 
 export default function NewNcrPage() {
-  const { isAuthorized, isLoading } = useRequireApp('quality')
+  // What the user's roles let them see here; in the Role editor's preview nothing is loaded or saved.
+  const { vis, isAuthorized, isLoading } = useQualityScreen('quality:ncr')
   const router = useRouter()
   const [items, setItems] = useState<ItemOpt[]>([])
   const [locations, setLocations] = useState<{ id: number; code: string; name: string }[]>([])
@@ -35,17 +41,20 @@ export default function NewNcrPage() {
     source: 'internal', severity: 'minor', item_id: '', item_name: '', quantity: '', block_stock: false, location_id: '',
     batch_number: '', vendor_name: '', defect_code_id: '', source_reference: '', description: '', ncr_date: today,
   })
-  const draft = useFormDraft('quality-ncr-new', form, (d) => setForm((f) => ({ ...f, ...d })))
+  const draft = useFormDraft(vis.preview ? null : 'quality-ncr-new', form, (d) => setForm((f) => ({ ...f, ...d })))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  const severityChoices = vis.options('severity', SEVERITY_OPTIONS, (o) => o.value)
+  // When the role doesn't offer the default severity, the form shows (and sends) the first value it does offer.
+  const severity = severityChoices.some((o) => o.value === form.severity) ? form.severity : (severityChoices[0]?.value || form.severity)
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     qualityApi.lookupItems('').then(setItems).catch(() => setItems([]))
     qualityApi.lookupLocations().then(setLocations).catch(() => setLocations([]))
     qualityApi.listMasterValues({ list_key: 'ncr_sources' }).then(setSources).catch(() => setSources([]))
     qualityApi.listMaster('defect-codes').then(setCodes).catch(() => setCodes([]))
-  }, [isAuthorized])
+  }, [isAuthorized, vis.preview])
 
   const item = items.find((i) => String(i.id) === form.item_id)
 
@@ -56,7 +65,7 @@ export default function NewNcrPage() {
     setBusy(true)
     try {
       const ncr = await qualityApi.createNcr({
-        source: form.source, severity: form.severity, item_id: form.item_id ? Number(form.item_id) : null,
+        source: form.source, severity, item_id: form.item_id ? Number(form.item_id) : null,
         item_name: form.item_id ? null : form.item_name.trim(), quantity: form.quantity ? Number(form.quantity) : null,
         block_stock: form.block_stock, location_id: form.block_stock && form.location_id ? Number(form.location_id) : null,
         batch_number: form.batch_number.trim() || null, vendor_name: form.vendor_name.trim() || null,
@@ -74,18 +83,21 @@ export default function NewNcrPage() {
 
   if (isLoading || !isAuthorized) return null
   const back = () => router.push('/dashboard/quality/ncr')
+  // Role editor preview: nothing is saved and the page chrome (module nav, Back) is left out.
+  const preview = vis.preview
 
   return (
-    <FormPage nav={<QualityNav />} icon="alert" iconColor="#DC2626" title="Raise NCR"
-      subtitle="Rejections at an inspection lot raise their NCR automatically — use this for non-conformances found elsewhere (in stock, on the shop floor, in an audit, from a customer)." onBack={back} backTour="qa-ncr-new-back"
+    <FormPage nav={preview ? undefined : <QualityNav />} icon="alert" iconColor="#DC2626" title="Raise NCR"
+      subtitle="Rejections at an inspection lot raise their NCR automatically — use this for non-conformances found elsewhere (in stock, on the shop floor, in an audit, from a customer)." onBack={preview ? undefined : back} backTour="qa-ncr-new-back"
       footer={<>
-        <button type="button" onClick={back} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
-        <button type="button" onClick={submit} disabled={busy} style={sheetBtn('primary', '#DC2626', busy)}><SheetIcon name="alert" size={16} />{busy ? 'Raising…' : 'Raise NCR'}</button>
+        <button type="button" onClick={back} disabled={busy || preview} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+        <button type="button" onClick={submit} disabled={busy || preview} style={sheetBtn('primary', '#DC2626', busy)}><SheetIcon name="alert" size={16} />{busy ? 'Raising…' : 'Raise NCR'}</button>
       </>}>
-      <SheetColumns
+      <VisColumns vis={vis} rightKeys={['stock']}
         left={<>
           <ErrorBanner error={error} />
           <DraftBanner draft={draft} />
+          <VisSection vis={vis} k="non_conformance">
           <SheetSection icon="alert" title="Non-conformance" color="#DC2626">
             <div style={row}>
               <F label="Source">
@@ -94,9 +106,10 @@ export default function NewNcrPage() {
                 </Select>
               </F>
               <F label="Severity" flex="0 1 150px">
-                <Select style={sheetInput} value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value })}>
-                  <option value="minor">Minor</option><option value="major">Major</option><option value="critical">Critical</option>
+                <Select style={sheetInput} value={severity} onChange={(e) => setForm({ ...form, severity: e.target.value })}>
+                  {severityChoices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </Select>
+                <VisOptionValues vis={vis} dropdown="severity" />
               </F>
               <F label="NCR date" flex="0 1 170px"><DateField value={form.ncr_date} onChange={(v) => setForm({ ...form, ncr_date: v })} /></F>
             </div>
@@ -130,8 +143,10 @@ export default function NewNcrPage() {
             <label style={sheetLabel}>Description <Req /></label>
             <textarea style={{ ...sheetInput, minHeight: 100, resize: 'vertical' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What is wrong, where it was found, how much is affected" />
           </SheetSection>
+          </VisSection>
         </>}
         right={<>
+          <VisSection vis={vis} k="stock">
           <SheetSection icon="building" title="Stock">
             {form.item_id ? (
               <>
@@ -153,6 +168,7 @@ export default function NewNcrPage() {
               <p style={{ ...sheetHint, marginTop: 0 }}>Pick an Item Master item to block its stock while the NCR is open.</p>
             )}
           </SheetSection>
+          </VisSection>
         </>}
       />
     </FormPage>

@@ -6,10 +6,14 @@
  *  bank & cash accounts, vendors, internal orders and the one-time
  *  opening-balance voucher. One component per sub-tab below. */
 import Select from '@/components/shared/Select'
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useContext, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
+import { useVisibility, VisibilityPreviewContext } from '@/lib/visibility'
+import { VisOptionValues, VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
+import PreviewSafeSheet from '@/lib/visibilityPreviews/PreviewSafeSheet'
+import { sampleVendors } from '@/lib/accountsPreviewSamples'
 import { accountsApi, costCentersApi, crmApi } from '@/lib/api'
 import {
   AccountsSetup, AccountGroup, GLAccount, LedgerSetting, GSTRate, BankAccount, Vendor, InternalOrder, CostCenter, Organization,
@@ -87,23 +91,25 @@ function SF({ label, req, opt, style, tour, children }: { label: string; req?: b
 
 /** Master create/edit popup: the sheet's body is a <form> so Enter still saves,
  *  and the footer's Save button submits it. Errors show inside the popup. */
-function MasterSheet({ tour, formId, icon, title, subtitle, onClose, onSubmit, saving, label, editing, error, width = 960, children }: {
+function MasterSheet({ tour, formId, icon, title, subtitle, onClose, onSubmit, saving, label, editing, error, width = 960, preview = false, children }: {
   tour: string; formId: string; icon: SheetIconName; title: string; subtitle: string; onClose: () => void
-  onSubmit: (e: React.FormEvent) => void; saving: boolean; label: string; editing: boolean; error: string[]; width?: number; children: React.ReactNode
+  onSubmit: (e: React.FormEvent) => void; saving: boolean; label: string; editing: boolean; error: string[]; width?: number
+  /** Role editor "Preview & choose": drawn in place, Cancel / Save disabled, nothing submitted. */
+  preview?: boolean; children: React.ReactNode
 }) {
   return (
-    <FormSheet tour={tour} icon={editing ? 'edit' : icon} title={title} subtitle={subtitle} onClose={onClose} busy={saving} width={width}
+    <PreviewSafeSheet inline={preview} tour={tour} icon={editing ? 'edit' : icon} title={title} subtitle={subtitle} onClose={onClose} busy={saving} width={width}
       footer={<>
-        <button type="button" data-tour="fin-masters-form-cancel" onClick={onClose} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
-        <button type="submit" form={formId} data-tour="fin-masters-form-save" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+        <button type="button" data-tour="fin-masters-form-cancel" onClick={onClose} disabled={saving || preview} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+        <button type="submit" form={formId} data-tour="fin-masters-form-save" disabled={saving || preview} style={sheetBtn('primary', SHEET.BLUE, saving)}>
           <SheetIcon name={editing ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : label}
         </button>
       </>}>
-      <form id={formId} onSubmit={onSubmit}>
+      <form id={formId} onSubmit={(e) => { if (preview) { e.preventDefault(); return } onSubmit(e) }}>
         {error.length > 0 && <div style={{ padding: '16px 24px 0' }}><ErrorBanner error={error} /></div>}
         {children}
       </form>
-    </FormSheet>
+    </PreviewSafeSheet>
   )
 }
 
@@ -137,8 +143,11 @@ export default function FinanceMastersPage() {
   const { tabs: visibleTabs, tab, setTab } = useFinanceSubTabs(SUB_TABS, SUB_TAB_KEYS)
   const { can } = useCan()
   const isFinanceManager = !!(user?.is_finance_manager || user?.role === 'admin')
+  // Role editor "Preview & choose" of Finance > Vendors: only the Vendors section, without the page chrome.
+  const vendorsPreview = useVisibility('accounts:vendors').preview
 
   if (isLoading || !isAuthorized) return null
+  if (vendorsPreview) return <VendorsSection />
 
   return (
     <div>
@@ -1137,14 +1146,21 @@ function VendorsSection() {
   // Vendors › Bank details (feature): without view the API blanks them; without
   // create / edit the fields are read-only and are not sent on save.
   const seeBank = canFeature('accounts', 'vendors', 'bank_details', 'view')
-  const [bankWritable, setBankWritable] = useState(false)
-  const [vendors, setVendors] = useState<Vendor[]>([])
+  // Role-wise visibility (Organization › Role & Permissions › Finance › Vendors › Visibility): optional form
+  // sections, the coded GST registration / status values this role may pick (the server refuses the rest) and list columns.
+  const vis = useVisibility('accounts:vendors')
+  // In "Preview & choose" the screen being previewed decides what is drawn: the form open, or the list with 3 made-up rows.
+  const previewScreen = useContext(VisibilityPreviewContext)?.screen
+  const showVendorCol = (col: string) => vis.preview || vis.showColumn('vendors', col)
+  const vendorCols = 4 + ['gst_type', 'gstin', 'city_state', 'payment_days', 'referred_by', 'created_by'].filter(showVendorCol).length
+  const [bankWritable, setBankWritable] = useState(vis.preview)
+  const [vendors, setVendors] = useState<Vendor[]>(vis.preview ? sampleVendors : [])
   const [ledgers, setLedgers] = useState<GLAccount[]>([])
   const [stateNames, setStateNames] = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState<string[]>([])
   const [search, setSearch] = useState('')
-  const [formOpen, setFormOpen] = useState(false)
+  const [formOpen, setFormOpen] = useState(vis.preview && previewScreen === 'form')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState(emptyVendor())
   const [referral, setReferral] = useState<ReferralValue>(EMPTY_REFERRAL)
@@ -1161,7 +1177,7 @@ function VendorsSection() {
       .catch((err: unknown) => setError(extractErrorMessages(err, 'Could not load vendors')))
       .finally(() => setLoading(false))
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (!vis.preview) load() }, [vis.preview])
 
   const expenseOpts = useMemo(() => [{ value: '', label: '— None —' }, ...ledgerOptions(ledgers, (a) => a.account_type === 'expense')], [ledgers])
   const stateOpts = useMemo(() => {
@@ -1239,10 +1255,27 @@ function VendorsSection() {
   }
 
   const needsGstin = form.gst_registration_type === 'regular' || form.gst_registration_type === 'composition' || form.gst_registration_type === 'sez'
+  // Coded lists narrowed to the role's allowed values; a saved vendor keeps the value it already holds.
+  const codedOpts = (dropdown: string, all: { value: string; label: string }[], current: string | undefined) => {
+    const kept = vis.options(dropdown, all, (o) => o.value)
+    const held = editingVendor && current ? all.find((o) => o.value === current) : undefined
+    return held && !kept.includes(held) ? [...kept, held] : kept
+  }
+  const gstTypeOpts = codedOpts('gst_registration_type', Object.entries(GST_REG_LABELS).map(([k, l]) => ({ value: k, label: l })), editingVendor?.gst_registration_type || undefined)
+  const statusOpts = codedOpts('status', VENDOR_STATUS_OPTS, editingVendor?.status)
+  // A new vendor starts on the first allowed value when the form default is not allowed.
+  const newVendorForm = () => {
+    const f = emptyVendor()
+    const gst = vis.options('gst_registration_type', Object.keys(GST_REG_LABELS), (k) => k)
+    const st = vis.options('status', VENDOR_STATUS_OPTS, (o) => o.value).map((o) => o.value)
+    if (gst.length && !gst.includes(f.gst_registration_type)) f.gst_registration_type = gst[0]
+    if (st.length && !st.includes(f.status)) f.status = st[0]
+    return f
+  }
 
   return (
     <div style={sectionStyle} data-tour="fin-masters-vendors">
-      <SectionHeader title="Vendors" action={canCreate && <button type="button" data-tour="fin-vendors-new-btn" style={primaryBtnStyle} onClick={() => { setEditingId(null); setEditingVendor(null); setReferral(EMPTY_REFERRAL); setForm(emptyVendor()); setBankWritable(canFeature('accounts', 'vendors', 'bank_details', 'create')); setFormOpen(true) }}>+ New Vendor</button>} />
+      <SectionHeader title="Vendors" action={canCreate && !vis.preview && <button type="button" data-tour="fin-vendors-new-btn" style={primaryBtnStyle} onClick={() => { setEditingId(null); setEditingVendor(null); setReferral(EMPTY_REFERRAL); setForm(newVendorForm()); setBankWritable(canFeature('accounts', 'vendors', 'bank_details', 'create')); setFormOpen(true) }}>+ New Vendor</button>} />
       {!formOpen && <ErrorBanner error={error} />}
       <ConfirmDialog open={!!deleteTarget} title="Delete this vendor?" message={`Delete "${deleteTarget?.name}"? A vendor with invoices or ledger entries can't be deleted — set it to inactive or blocked instead.`} onConfirm={doDelete} onCancel={() => setDeleteTarget(null)} />
 
@@ -1250,23 +1283,28 @@ function VendorsSection() {
         <MasterSheet tour="fin-vendors-form" formId="fin-vendors-form-el" icon="truck" editing={!!editingId} error={error}
           title={editingId ? `Edit vendor '${form.name}'` : 'New vendor'}
           subtitle="Vendors are a sub-ledger: their bills post through the Sundry Creditors control account."
-          onClose={() => { setError([]); close() }} onSubmit={submit} saving={saving} label={editingId ? 'Save Changes' : 'Create Vendor'}>
+          onClose={() => { setError([]); close() }} onSubmit={submit} saving={saving} label={editingId ? 'Save Changes' : 'Create Vendor'} preview={vis.preview}>
           <SheetColumns
             left={<>
+              <VisSection vis={vis} k="vendor">
               <SheetSection icon="building" title="Vendor">
                 <div style={sheetRow}>
                   <SF label="Code" req style={fixedW(130)} tour="fin-vendors-code"><input style={sheetInput} value={form.code} onChange={set('code')} /></SF>
                   <SF label="Name" req style={growW(240, 380)} tour="fin-vendors-name"><input style={sheetInput} value={form.name} onChange={set('name')} /></SF>
                 </div>
                 <SF label="Status" style={fixedW(170)} tour="fin-vendors-status">
-                  <SearchableSelect value={form.status} onChange={(v: string) => setForm((f) => ({ ...f, status: v }))} options={VENDOR_STATUS_OPTS} placeholder="Status" />
+                  <SearchableSelect value={form.status} onChange={(v: string) => setForm((f) => ({ ...f, status: v }))} options={statusOpts} placeholder="Status" />
+                  <VisOptionValues vis={vis} dropdown="status" />
                 </SF>
               </SheetSection>
+              </VisSection>
+              <VisSection vis={vis} k="gst_pan">
               <SheetSection icon="shield" title="GST & PAN">
                 <div style={sheetRow}>
                   <SF label="GST registration" style={fixedW(180)} tour="fin-vendors-gst-type">
                     <SearchableSelect value={form.gst_registration_type} onChange={(v: string) => setForm((f) => ({ ...f, gst_registration_type: v }))}
-                      options={Object.entries(GST_REG_LABELS).map(([k, l]) => ({ value: k, label: l }))} placeholder="GST registration" />
+                      options={gstTypeOpts} placeholder="GST registration" />
+                    <VisOptionValues vis={vis} dropdown="gst_registration_type" />
                   </SF>
                   <SF label="GSTIN" req={needsGstin} style={fixedW(200)} tour="fin-vendors-gstin">
                     <input style={sheetInput} value={form.gstin} maxLength={15} onChange={(e) => setForm((f) => ({ ...f, gstin: e.target.value.toUpperCase() }))} placeholder="15 characters" />
@@ -1280,7 +1318,8 @@ function VendorsSection() {
                   suppliers; composition and unregistered vendors charge no GST you can take credit for.
                 </p>
               </SheetSection>
-              <SheetSection icon="building" title="Address">
+              </VisSection>
+              <VisSection vis={vis} k="address"><SheetSection icon="building" title="Address">
                 <SF label="Address" style={{ marginBottom: 12 }} tour="fin-vendors-address"><input style={sheetInput} value={form.address} onChange={set('address')} /></SF>
                 <div style={sheetRow}>
                   <SF label="City" style={fixedW(160)} tour="fin-vendors-city"><input style={sheetInput} value={form.city} onChange={set('city')} /></SF>
@@ -1289,24 +1328,27 @@ function VendorsSection() {
                   </SF>
                   <SF label="PIN" style={fixedW(100)} tour="fin-vendors-pin"><input style={sheetInput} value={form.pin_code} maxLength={6} onChange={set('pin_code')} /></SF>
                 </div>
-              </SheetSection>
+              </SheetSection></VisSection>
             </>}
             right={<>
-              <SheetSection icon="user" title="Contact" extra={<Optional />}>
+              <VisSection vis={vis} k="contact"><SheetSection icon="user" title="Contact" extra={<Optional />}>
                 <SF label="Contact name" style={{ marginBottom: 12 }} tour="fin-vendors-contact-name"><input style={sheetInput} value={form.contact_name} onChange={set('contact_name')} /></SF>
                 <div style={sheetRow}>
                   <SF label="Phone" style={fixedW(150)} tour="fin-vendors-contact-phone"><input style={sheetInput} value={form.contact_phone} onChange={set('contact_phone')} /></SF>
                   <SF label="Email" style={growW(180, 300)} tour="fin-vendors-contact-email"><input style={sheetInput} value={form.contact_email} onChange={set('contact_email')} /></SF>
                 </div>
-              </SheetSection>
+              </SheetSection></VisSection>
+              <VisSection vis={vis} k="referral">
               <VendorReferralSection value={referral} onChange={setReferral} required={!editingVendor || !!editingVendor.referral_type} tour="fin-vendors-referred-by"
                 current={editingVendor?.referred_by_user_id ? { id: editingVendor.referred_by_user_id, name: editingVendor.referred_by_user_name || 'Former employee' } : null} />
+              </VisSection>
               {editingVendor && (
                 <SheetSection icon="clock" title="Record">
                   <p style={{ ...sheetHint, margin: 0 }}>Created by {editingVendor.created_by_name || '—'}{editingVendor.created_at ? ` on ${new Date(editingVendor.created_at).toLocaleDateString('en-GB')}` : ''}</p>
                 </SheetSection>
               )}
-              {seeBank && (
+              {(seeBank || vis.preview) && (
+              <VisSection vis={vis} k="bank_details">
               <SheetSection icon="rupee" title="Bank details" extra={<Optional />}>
                 <div style={sheetRow}>
                   <SF label="Bank name" style={growW(160, 260)} tour="fin-vendors-bank-name"><input style={sheetInput} value={form.bank_name} disabled={!bankWritable} onChange={set('bank_name')} /></SF>
@@ -1320,8 +1362,9 @@ function VendorsSection() {
                 </div>
                 {!bankWritable && <p style={sheetHint}>Your role can see but not change vendor bank details (Vendors › Vendor bank details). Ask a Finance admin to update them.</p>}
               </SheetSection>
+              </VisSection>
               )}
-              <SheetSection icon="clock" title="Terms & posting">
+              <VisSection vis={vis} k="terms"><SheetSection icon="clock" title="Terms & posting">
                 <div style={sheetRow}>
                   <SF label="Credit limit (₹)" style={fixedW(150)} tour="fin-vendors-credit-limit"><input type="number" min={0} style={sheetInput} value={form.credit_limit} onChange={set('credit_limit')} /></SF>
                   <SF label="Payment days" style={fixedW(120)} tour="fin-vendors-payment-days"><input type="number" min={0} style={sheetInput} value={form.payment_days} onChange={set('payment_days')} /></SF>
@@ -1329,12 +1372,13 @@ function VendorsSection() {
                 <SF label="Default expense ledger" tour="fin-vendors-expense-ledger">
                   <SearchableSelect value={form.default_expense_gl_account_id} onChange={(v: string) => setForm((f) => ({ ...f, default_expense_gl_account_id: v }))} options={expenseOpts} placeholder="— None —" />
                 </SF>
-              </SheetSection>
+              </SheetSection></VisSection>
             </>}
           />
         </MasterSheet>
       )}
 
+      {!(vis.preview && previewScreen === 'form') && <>
       <div style={{ display: 'flex', gap: 12, marginBottom: 14, alignItems: 'flex-end' }}>
         <Field label="Search" style={growW(240, 320)} tour="fin-vendors-search">
           <input style={inputStyle} value={search} placeholder="Code, name, GSTIN or city" onChange={(e) => setSearch(e.target.value)} />
@@ -1344,33 +1388,37 @@ function VendorsSection() {
       <TableWrap minWidth={1200} tour="fin-vendors-table">
         <thead>
           <tr>
-            <th style={thStyle}>Code <RowCount count={visible.length} /></th><th style={thStyle}>Name</th><th style={thStyle}>GST type</th><th style={thStyle}>GSTIN</th>
-            <th style={thStyle}>City / State</th><th style={numTh}>Payment days</th><th style={thStyle}>Referred by</th><th style={thStyle}>Created by</th><th style={thStyle}>Status</th><th style={thStyle}></th>
+            <th style={thStyle}>Code <RowCount count={visible.length} /></th><th style={thStyle}>Name</th>
+            <VisTh vis={vis} table="vendors" k="gst_type" style={thStyle}>GST type</VisTh><VisTh vis={vis} table="vendors" k="gstin" style={thStyle}>GSTIN</VisTh>
+            <VisTh vis={vis} table="vendors" k="city_state" style={thStyle}>City / State</VisTh><VisTh vis={vis} table="vendors" k="payment_days" style={numTh}>Payment days</VisTh>
+            <VisTh vis={vis} table="vendors" k="referred_by" style={thStyle}>Referred by</VisTh><VisTh vis={vis} table="vendors" k="created_by" style={thStyle}>Created by</VisTh>
+            <th style={thStyle}>Status</th><th style={thStyle}></th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <EmptyRow colSpan={10} text="Loading…" /> : visible.length === 0 ? <EmptyRow colSpan={10} text={vendors.length ? 'No vendors match the search — clear it to see all.' : 'No vendors yet — use + New Vendor.'} /> :
+          {loading ? <EmptyRow colSpan={vendorCols} text="Loading…" /> : visible.length === 0 ? <EmptyRow colSpan={vendorCols} text={vendors.length ? 'No vendors match the search — clear it to see all.' : 'No vendors yet — use + New Vendor.'} /> :
             visible.map((v) => (
               <tr key={v.id}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{v.code}</td>
                 <td style={tdStyle}>{v.name}</td>
-                <td style={tdStyle}>{GST_REG_LABELS[v.gst_registration_type || ''] || '—'}</td>
-                <td style={{ ...tdStyle, fontFamily: 'monospace' }}>{v.gstin || '—'}</td>
-                <td style={tdStyle}>{[v.city, v.state].filter(Boolean).join(', ') || '—'}</td>
-                <td style={numTd}>{v.payment_days ?? '—'}</td>
-                <td style={tdStyle}>{v.referred_by_label || '—'}</td>
-                <td style={tdStyle} title={v.created_at ? new Date(v.created_at).toLocaleDateString('en-GB') : undefined}>{v.created_by_name || '—'}</td>
+                <VisTd vis={vis} table="vendors" k="gst_type" style={tdStyle}>{GST_REG_LABELS[v.gst_registration_type || ''] || '—'}</VisTd>
+                <VisTd vis={vis} table="vendors" k="gstin" style={{ ...tdStyle, fontFamily: 'monospace' }}>{v.gstin || '—'}</VisTd>
+                <VisTd vis={vis} table="vendors" k="city_state" style={tdStyle}>{[v.city, v.state].filter(Boolean).join(', ') || '—'}</VisTd>
+                <VisTd vis={vis} table="vendors" k="payment_days" style={numTd}>{v.payment_days ?? '—'}</VisTd>
+                <VisTd vis={vis} table="vendors" k="referred_by" style={tdStyle}>{v.referred_by_label || '—'}</VisTd>
+                <VisTd vis={vis} table="vendors" k="created_by" style={tdStyle} title={v.created_at ? new Date(v.created_at).toLocaleDateString('en-GB') : undefined}>{v.created_by_name || '—'}</VisTd>
                 <td style={tdStyle}><StatusPill status={v.status} colors={STATUS_HEX} labels={STATUS_LABELS} /></td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                   <div style={{ display: 'flex', gap: 10 }}>
-                    {canEdit && <button type="button" style={linkBtnStyle} onClick={() => startEdit(v)}>Edit</button>}
-                    {canDelete('accounts', 'vendors', v.created_by_id ?? null) && <button type="button" style={dangerLinkStyle} onClick={() => setDeleteTarget(v)}>Delete</button>}
+                    {canEdit && !vis.preview && <button type="button" style={linkBtnStyle} onClick={() => startEdit(v)}>Edit</button>}
+                    {canDelete('accounts', 'vendors', v.created_by_id ?? null) && !vis.preview && <button type="button" style={dangerLinkStyle} onClick={() => setDeleteTarget(v)}>Delete</button>}
                   </div>
                 </td>
               </tr>
             ))}
         </tbody>
       </TableWrap>
+      </>}
     </div>
   )
 }

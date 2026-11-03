@@ -120,9 +120,11 @@ async def maintenance_dashboard(
 @router.get("/lookups")
 async def maintenance_lookups(
     db: Session = Depends(get_db),
-    _user: User = Depends(require_any_app_access("maintenance", "production")),
+    user: User = Depends(require_any_app_access("maintenance", "production")),
 ):
-    """Enums + picker lists. Readable by requesters too (for the raise form)."""
+    """Enums + picker lists. Readable by requesters too (for the raise form).
+    `*_options` carry every coded value with `allowed` = the user's roles offer it
+    (role visibility, core/features/maintenance.py) — the form filters, the server enforces."""
     technicians = [u for u in db.query(User).filter(User.is_active == True).order_by(User.name).all() if "maintenance" in u.get_apps() and u.role != "admin"]  # noqa: E712
     from app.modules.organization.models.department import Department
 
@@ -157,7 +159,28 @@ async def maintenance_lookups(
             for l in db.query(StoreLocation).filter(StoreLocation.is_active == True).order_by(StoreLocation.name).all()  # noqa: E712
         ],
         "vendors": [{"id": v.id, "name": v.name} for v in db.query(Vendor).order_by(Vendor.name).all()],
+        **_visibility_options(user),
     }
+
+
+def _visibility_options(user: User) -> dict:
+    """Every coded value of the role-restrictable dropdowns with `allowed` (never filtered:
+    an older record keeps showing its value)."""
+    from app.core.visibility import allowed_values, catalog
+
+    cat = catalog()
+    out = {}
+    for name, key, dropdown in (
+        ("request_type_options", "maintenance:requests", "request_type"),
+        ("request_priority_options", "maintenance:requests", "priority"),
+        ("wo_type_options", "maintenance:work_orders", "wo_type"),
+        ("wo_priority_options", "maintenance:work_orders", "priority"),
+        ("failure_category_options", "maintenance:work_orders", "failure_category"),
+    ):
+        allowed = allowed_values(user, key, dropdown)
+        out[name] = [{"code": code, "label": label, "allowed": allowed is None or code in allowed}
+                     for code, label in cat[key]["options"][dropdown]["values"].items()]
+    return out
 
 
 @router.get("/lookups/assets")

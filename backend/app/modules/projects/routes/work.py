@@ -20,6 +20,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core import assignee_rules
+from app.core import visibility
 from app.core.priority import parse_priority
 from app.core.permission_registry import can_perform, can_view_tab
 from app.db.session import get_db
@@ -66,11 +67,9 @@ _VISIBLE_PROJECT_STATUSES = ("active", "on_hold", "technically_complete")
 # The same screens are embedded as "Ongoing Projects" in each department
 # module, so that tab's grant there counts too — those users may not have
 # Project Management at all.
-_DEPT_WORK_TABS = (
-    ("design", "ongoing_projects"), ("rnd", "project_work"), ("electrical", "project_work"),
-    ("hydraulic", "project_work"), ("maintenance", "project_work"), ("production", "project_work"),
-    ("store", "project_work"), ("quality", "project_work"),
-)
+# The department "Ongoing Projects" rows were removed from the matrix (2026-11-03); their stored
+# grants alias to My Tasks + Department Work (permission_registry.legacy_grant_aliases).
+_DEPT_WORK_TABS: tuple[tuple[str, str], ...] = ()
 _PM_TAB_LABELS = {"my_tasks": "My Tasks", "department_work": "Department Work"}
 
 
@@ -85,8 +84,8 @@ def _work_access(pm_tabs: tuple[str, ...], action: str):
             tabs = " or ".join(f"Project Management › {_PM_TAB_LABELS[t]}" for t in pm_tabs)
             raise HTTPException(
                 status_code=403,
-                detail=f"You don't have '{action.capitalize()}' permission on {tabs}, nor on 'Ongoing Projects' in your "
-                       f"department's module. Ask an admin to add it to one of your roles in Organization › Role & Permissions.",
+                detail=f"You don't have '{action.capitalize()}' permission on {tabs}. "
+                       f"Ask an admin to add it to one of your roles in Organization › Role & Permissions.",
             )
         return user
     return _dependency
@@ -240,8 +239,13 @@ def _check_due(m: PmProjectMilestone, due) -> None:
         raise HTTPException(status_code=422, detail=f"Due date {due:%d-%m-%Y} is after the WBS date {m.target_date:%d-%m-%Y}. A task must finish on or before its WBS.")
 
 
-def _check_priority(priority: str) -> str:
-    return parse_priority(priority)
+def _check_priority(priority: str, user: User, current: str | None = None) -> str:
+    """Standard / Urgent, and — when it is new or changed — one the user's roles offer on the
+    task form (role-wise visibility of projects:overview.tasks, core/features/projects.py)."""
+    value = parse_priority(priority)
+    if value != current:
+        visibility.ensure_option_allowed(user, "projects:overview.tasks", "priority", value)
+    return value
 
 
 # ── Who am I ───────────────────────────────────────────────────────────
@@ -400,7 +404,7 @@ async def create_task(milestone_id: int, payload: PmTaskCreate, db: Session = De
     _require_milestone_open(m, "add tasks")
     if not payload.title.strip():
         raise HTTPException(status_code=422, detail="Task name is required.")
-    payload.priority = _check_priority(payload.priority)
+    payload.priority = _check_priority(payload.priority, user)
     _check_due(m, payload.due_date)
     if payload.estimated_hours is not None and payload.estimated_hours < 0:
         raise HTTPException(status_code=422, detail="Estimated hours can't be negative.")
@@ -434,7 +438,7 @@ async def create_own_task(milestone_id: int, payload: PmSelfTaskCreate, db: Sess
     _require_milestone_open(m, "add tasks")
     if not payload.title.strip():
         raise HTTPException(status_code=422, detail="Task name is required.")
-    payload.priority = _check_priority(payload.priority)
+    payload.priority = _check_priority(payload.priority, user)
     _check_due(m, payload.due_date)
     if payload.estimated_hours is not None and payload.estimated_hours < 0:
         raise HTTPException(status_code=422, detail="Estimated hours can't be negative.")
@@ -503,7 +507,7 @@ async def update_task(task_id: int, payload: PmTaskUpdatePayload, db: Session = 
     if "title" in updates and not (updates["title"] or "").strip():
         raise HTTPException(status_code=422, detail="Task name can't be empty.")
     if "priority" in updates:
-        updates["priority"] = _check_priority(updates["priority"])
+        updates["priority"] = _check_priority(updates["priority"], user, t.priority)
     if "due_date" in updates:
         if not updates["due_date"]:
             raise HTTPException(status_code=422, detail="Due date is required.")

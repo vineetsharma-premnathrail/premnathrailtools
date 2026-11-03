@@ -35,7 +35,7 @@ const config: TourConfig = {
         { value: 'On Hand (Free)', meaning: 'Usable quantity physically in the store.' },
         { value: 'Reserved', meaning: 'Part of On Hand earmarked for a project or order (see Reservations) — cannot be issued to anyone else.' },
         { value: 'Available', meaning: 'On Hand minus Reserved — what you can actually issue now.' },
-        { value: 'Quality', meaning: 'Received but waiting for a Quality inspection decision — cannot be issued yet.' },
+        { value: 'Quality', meaning: 'Received but waiting for the quality check decision (inspection lot) — cannot be issued yet.' },
         { value: 'Blocked', meaning: 'Quarantine: damaged/rejected returned material held apart. Use "Clear" to record it as Scrap, Returned to vendor, or Released to usable stock after re-inspection.' },
       ],
       why: 'Keeping Quality and Blocked stock separate stops untested or damaged material from being issued to production.',

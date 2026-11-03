@@ -11,7 +11,7 @@ const config: TourConfig = {
       required: true,
       options: [
         { value: 'Project', meaning: 'For a project in Project Management › All Projects; pick the project.' },
-        { value: 'Service', meaning: 'Service work on a project already delivered to the customer: spares, repair, warranty, commissioning support. Pick the delivered project; every line is for it.' },
+        { value: 'Service', meaning: 'Service work on a project: spares, repair, warranty, commissioning support. Pick the project (any stage); every line is for it.' },
         { value: 'New development', meaning: 'R&D / new product work.' },
         { value: 'Department running cost', meaning: 'Cleaning material, stationery, small tools, office repairs, AMC, housekeeping.' },
         { value: 'Asset / capital purchase', meaning: 'Things used for years: machine, laptop, AC, welding set.' },

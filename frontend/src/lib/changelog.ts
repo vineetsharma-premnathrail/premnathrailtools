@@ -10,6 +10,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: '2026-11-02',
+    title: 'Organization: choose what each role sees',
+    items: [
+      'Admins can now decide, role by role, which form sections, dropdown values and list columns people see. Open Organization › Role & Permissions and click the "Visibility" chip on a tab.',
+      'First use is Procurement › Purchase Requisitions: for example, a Store Keeper can be limited to the Purpose "Store stock refill".',
+      'Someone whose role does not allow a value gets a clear message naming the values they can pick and where an admin can widen it.',
+      'Sections holding a required field can never be hidden; admins and Partners always see everything.',
+    ],
+  },
+  {
     date: '2026-08-05',
     title: 'CRM Activities: photos & fixes',
     items: [

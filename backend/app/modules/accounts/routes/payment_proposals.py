@@ -204,7 +204,9 @@ async def proposal_bank_file(proposal_id: int, db: Session = Depends(get_db),
 
 @router.patch("/vendor-invoices/{invoice_id}/payment-block")
 async def set_payment_block(invoice_id: int, payload: PaymentBlockPayload, db: Session = Depends(get_db),
-                            user: User = Depends(require_feature_action("accounts", "payments", "payment_block", "edit"))):
+                            # No screen blocks a bill yet: the "Block invoices for payment" feature was removed from the
+                            # matrix (2026-11-03, no UI), so the endpoint keeps the tab action it inherited from.
+                            user: User = Depends(require_tab_action("accounts", "payments", "edit"))):
     inv = db.query(VendorInvoice).filter(VendorInvoice.id == invoice_id).first()
     if not inv:
         raise HTTPException(status_code=404, detail=f"Vendor invoice #{invoice_id} doesn't exist — refresh Finance > Purchase.")

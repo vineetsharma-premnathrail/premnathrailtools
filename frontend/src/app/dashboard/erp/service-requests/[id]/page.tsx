@@ -23,9 +23,13 @@ import Link from 'next/link'
 import { inputStyle, Field, Card, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, smallPrimaryBtnStyle, smallSecondaryBtnStyle, smallDangerBtnStyle, RowCount, Pill, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import SearchableSelect from '@/components/erp/SearchableSelect'
+import { itemOptionDetail } from '@/lib/itemOptions'
 import { extractErrorMessages } from '@/lib/validation'
 import { SERVICE_TYPES } from '@/components/erp/serviceTypes'
 import { recordPath, useRecordId } from '@/lib/recordRef'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection } from '@/lib/visibilityComponents'
+import { sampleMachine, sampleServiceRequest } from '@/lib/erpPreviewSamples'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { IssueSpareDialog, ReturnSpareDialog } from '@/components/erp/SrSpareDialogs'
 import ServiceVisitsTab from '@/components/erp/ServiceVisitsTab'
@@ -74,11 +78,13 @@ export default function ServiceRequestDetailPage() {
   const params = useParams()
   const router = useRouter()
   const ref = params.id as string
-  const { id: srId, error: linkError } = useRecordId(ref)
+  // Role editor "Preview & choose" (lib/visibility.ts): a sample request, Overview tab only, nothing loaded or saved.
+  const vis = useVisibility('erp:service_requests')
+  const { id: srId, error: linkError } = useRecordId(vis.preview ? null : ref)
 
-  const [sr, setSr] = useState<ServiceRequest | null>(null)
-  const [project, setProject] = useState<Project | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [sr, setSr] = useState<ServiceRequest | null>(() => (vis.preview ? sampleServiceRequest : null))
+  const [project, setProject] = useState<Project | null>(() => (vis.preview ? sampleMachine : null))
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState<string | string[]>('')
   const [tab, setTab] = useState<typeof TABS[number]>('Overview')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -119,7 +125,7 @@ export default function ServiceRequestDetailPage() {
   const canEdit = !!sr && !!user && (user.role === 'admin' || isEngineer || (sr.created_by_id === user.id && hasErpPermission(user, 'sr_edit')))
   const { canDelete: canDeleteOwn, canFeature } = useCan()
   const feat = (key: string, action: PermissionAction = 'view') => canFeature('erp', 'service_requests', key, action)
-  const visibleTabs = TABS.filter((t) => !TAB_FEATURE[t] || feat(TAB_FEATURE[t]!))
+  const visibleTabs = vis.preview ? (['Overview'] as typeof TABS[number][]) : TABS.filter((t) => !TAB_FEATURE[t] || feat(TAB_FEATURE[t]!))
   const showCharges = feat('charges')
   // Deleting the SR: Delete on Service Requests AND you created it (admins: any).
   const canDelete = !!sr && canDeleteOwn('erp', 'service_requests', sr.created_by_id ?? null)
@@ -170,12 +176,13 @@ export default function ServiceRequestDetailPage() {
 
   return (
     <div>
-      <ErpNav />
+      {!vis.preview && <ErpNav />}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <p data-tour="erp-srd-number" style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45', margin: '0 0 4px' }}>{sr.request_number}</p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{sr.issue_title}</h1>
         </div>
+        {!vis.preview && (
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {canEdit && (
             <Link
@@ -193,6 +200,7 @@ export default function ServiceRequestDetailPage() {
             ← Back
           </button>
         </div>
+        )}
       </div>
 
       <MessageDialog open={!!error} variant="error" title="Action Failed" message={error} onClose={() => setError('')} />
@@ -206,15 +214,17 @@ export default function ServiceRequestDetailPage() {
           onApprove={async (r) => setSr(await erpApi.approveSrClose(sr.id, r || undefined))}
           onReject={async (r) => setSr(await erpApi.rejectSrClose(sr.id, r))} />
       )}
-      <ApprovalPanel title="Closure approval" entityType="service_request" entityId={sr.id} onChanged={() => { load() }} />
+      {!vis.preview && <ApprovalPanel title="Closure approval" entityType="service_request" entityId={sr.id} onChanged={() => { load() }} />}
 
-      {(sr.sla_resolution_due_at || sr.project_id) && (
+      {(sr.sla_resolution_due_at || sr.project_id) && !vis.preview && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
           <ContractChip projectId={sr.project_id} />
           {sr.sla_resolution_due_at && !sr.resolution_at && <span style={{ fontSize: 12, color: '#78716c' }}>Resolve by {formatDateTime(sr.sla_resolution_due_at)}</span>}
         </div>
       )}
-      <WorkflowSteps status={sr.status} canModify={canEdit && !sr.is_locked} onRequestChange={setPendingStatus} />
+      <VisSection vis={vis} k="detail_workflow">
+        <WorkflowSteps status={sr.status} canModify={canEdit && !sr.is_locked} onRequestChange={setPendingStatus} />
+      </VisSection>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
         {visibleTabs.map((t) => (
@@ -377,9 +387,12 @@ function OverviewTab({ sr, project, projectError, canModify, onPatch, onRequestS
 }) {
   const d = (v?: string | null) => (v ? formatDate(v) : null)
   const machineLabel = project ? `${project.serial_number}${project.model_name ? ` — ${project.model_name}` : ''}` : null
+  // Role Visibility (core/features/erp.py, screen "Service Request page"): the Overview blocks a role may hide.
+  const vis = useVisibility('erp:service_requests')
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <DetailCard style={{ marginBottom: 0 }}>
+        <VisSection vis={vis} k="detail_summary">
         <DetailSummary
           title={sr.issue_category ? `${sr.issue_category} issue` : 'Reported issue'}
           text={sr.issue_description || 'No description was given when this request was raised.'}
@@ -390,7 +403,9 @@ function OverviewTab({ sr, project, projectError, canModify, onPatch, onRequestS
             {sr.is_locked && <><span>·</span><Pill label="Locked" hex="#64748b" /></>}
           </>}
         />
+        </VisSection>
 
+        <VisSection vis={vis} k="detail_machine_site">
         <DetailGroup title="Machine & site">
           <DetailRow label="Machine">
             {project ? <Link href={recordPath('/dashboard/projects/service-projects', project)} style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'none' }}>{machineLabel}</Link>
@@ -399,13 +414,17 @@ function OverviewTab({ sr, project, projectError, canModify, onPatch, onRequestS
           <DetailRow label="Customer">{project?.client_company}</DetailRow>
           <DetailRow label="Site / location">{project ? [project.site_name, project.site_location].filter(Boolean).join(', ') : null}</DetailRow>
         </DetailGroup>
+        </VisSection>
 
+        <VisSection vis={vis} k="detail_reported_by">
         <DetailGroup title="Reported by">
           <DetailRow label="Name">{sr.reported_by_name}</DetailRow>
           <DetailRow label="Phone">{sr.reported_by_phone}</DetailRow>
           <DetailRow label="Email">{sr.reported_by_email}</DetailRow>
         </DetailGroup>
+        </VisSection>
 
+        <VisSection vis={vis} k="detail_assignment_dates">
         <DetailGroup title="Assignment & dates">
           <DetailRow label="Engineer">{sr.assigned_to_name}</DetailRow>
           <DetailRow label="Opened">{d(sr.opened_at)}</DetailRow>
@@ -413,13 +432,17 @@ function OverviewTab({ sr, project, projectError, canModify, onPatch, onRequestS
           <DetailRow label="Expected to close">{d(sr.expected_completion_date)}</DetailRow>
           <DetailRow label="Closed">{d(sr.closed_at)}</DetailRow>
         </DetailGroup>
+        </VisSection>
 
+        <VisSection vis={vis} k="detail_service_notes">
         <DetailGroup title="Service notes" last>
           <DetailRow label="Engineer's report">{sr.service_report_notes}</DetailRow>
         </DetailGroup>
+        </VisSection>
       </DetailCard>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: 16, alignItems: 'start' }}>
+        <VisSection vis={vis} k="detail_status_card">
         <Card title="Status, Type & Priority">
           <Field label="Status">
             <Select
@@ -461,10 +484,20 @@ function OverviewTab({ sr, project, projectError, canModify, onPatch, onRequestS
             </Select>
           </Field>
         </Card>
+        </VisSection>
 
-        <BillingCard key={sr.updated_at || sr.id} sr={sr} canModify={canModify && !sr.is_locked} onPatch={onPatch} showCharges={showCharges} />
-        {invoiceView && <WarrantyInvoiceCard key={`wi-${sr.updated_at || sr.id}`} sr={sr} canModify={canModify && !sr.is_locked} onPatch={onPatch}
-          canInvoiceFeature={invoiceCreate} showCharges={showCharges} />}
+        <VisSection vis={vis} k="detail_billing">
+          <BillingCard key={sr.updated_at || sr.id} sr={sr} canModify={canModify && !sr.is_locked} onPatch={onPatch} showCharges={showCharges} />
+        </VisSection>
+        {/* The invoice card loads from Finance; the Role editor preview shows a stand-in. */}
+        {(invoiceView || vis.preview) && (
+          <VisSection vis={vis} k="detail_warranty_invoice">
+            {vis.preview
+              ? <Card title="Warranty & Invoice"><InfoRow label="Machine cover (reported date)" value={WARRANTY_LABELS[sr.warranty_status || ''] || 'Not checked'} /></Card>
+              : <WarrantyInvoiceCard key={`wi-${sr.updated_at || sr.id}`} sr={sr} canModify={canModify && !sr.is_locked} onPatch={onPatch}
+                  canInvoiceFeature={invoiceCreate} showCharges={showCharges} />}
+          </VisSection>
+        )}
       </div>
     </div>
   )
@@ -1105,7 +1138,7 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
                           value={line.itemId}
                           onChange={(v) => setLine(idx, { itemId: v })}
                           disabled={!itemReady}
-                          options={shown.map((i) => ({ value: String(i.id), label: `${i.item_name}${i.part_number ? ` · ${i.part_number}` : ''}` }))}
+                          options={shown.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, description: itemOptionDetail(i) }))}
                           placeholder={loadingMaster ? 'Loading items…' : !itemReady ? (lineType ? 'Pick the category first' : 'Pick the type first') : 'Search item name or part no…'}
                         />
                       </td>

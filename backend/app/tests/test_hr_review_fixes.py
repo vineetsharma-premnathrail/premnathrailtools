@@ -13,6 +13,7 @@ from app.modules.main.models.notification import Notification
 from app.modules.main.models.user import User
 from app.tasks.hr_reminders import APPROVAL_PENDING, run_hr_reminders
 from app.tests.test_cov_hr_support import *  # noqa: F401,F403
+from app.core.permission_registry import MODULES  # labels follow the registry
 
 LC = f"{HR}/lifecycle"
 
@@ -87,7 +88,7 @@ def test_reception_only_matrix_user_is_limited_to_visitors(client, db, world):
     w = world
     reception = make_user(db, "reception.only@premnathrail.com", granular_permissions=["hr:visitors:view"])
     r = client.get(f"{HR}/employees/{w['emp'].id}", headers=hdr(reception))
-    assert r.status_code == 403 and "HR & Administration › Employees" in r.json()["detail"]
+    assert r.status_code == 403 and f"{MODULES['hr']['label']} › Employees" in r.json()["detail"]
     assert "Permission Matrix" in r.json()["detail"]
     assert client.get(f"{HR}/masters/lookups", headers=hdr(reception)).status_code == 200  # form dropdowns stay open
     assert client.get(f"{HR}/masters/grades", headers=hdr(reception)).status_code == 403

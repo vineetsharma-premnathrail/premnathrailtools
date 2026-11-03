@@ -22,6 +22,12 @@ SR_SERVICE_TYPES = (
     "inspection_maintenance",
     "paid_service",
 )
+# Labels of SR_SERVICE_TYPES as the form shows them (bulk import accepts either).
+SR_SERVICE_TYPE_LABELS = {
+    "installation_commissioning": "Installation & Commissioning", "warranty": "Warranty", "amc": "AMC",
+    "repair_breakdown": "Repair / Breakdown", "inspection_maintenance": "Inspection / Maintenance", "paid_service": "Paid Service",
+}
+assert set(SR_SERVICE_TYPE_LABELS) == set(SR_SERVICE_TYPES)
 # Machine cover on the SR's reported date (erp/warranty.py).
 SR_WARRANTY_STATUSES = ("in_warranty", "extended_warranty", "amc", "out_of_warranty", "unknown")
 # not_billable: free job · to_bill: chargeable, no live invoice yet ·

@@ -13,6 +13,12 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleAdjustments } from '@/lib/storePreviewSamples'
+
+// Columns a role may hide (Store › Adjustments › Visibility); Adjustment # and Status are always shown.
+const HIDEABLE: Record<string, string> = { Store: 'store', Date: 'date', Approver: 'approver', Items: 'items' }
 
 const STATUS_LABELS: Record<string, string> = { pending_approval: 'Pending Approval', approved: 'Approved', rejected: 'Rejected', cancelled: 'Withdrawn' }
 const STATUS_HEX: Record<string, string> = { pending_approval: '#f59e0b', approved: '#22c55e', rejected: '#dc2626', cancelled: '#78716c' }
@@ -20,22 +26,29 @@ const STATUS_HEX: Record<string, string> = { pending_approval: '#f59e0b', approv
 export default function StoreStockAdjustmentsPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
   const { can } = useCan()
+  const vis = useVisibility('store:adjustments')
   const router = useRouter()
-  const [adjustments, setAdjustments] = useState<StoreStockAdjustment[]>([])
-  const [loading, setLoading] = useState(true)
+  // Role editor preview: made-up rows, nothing is loaded.
+  const [adjustments, setAdjustments] = useState<StoreStockAdjustment[]>(vis.preview ? sampleAdjustments : [])
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState('')
 
   useEffect(() => {
     if (!isAuthorized) return
+    if (vis.preview) return
     setLoading(true)
     storeApi.listStockAdjustments().then(setAdjustments).catch((err) => setError(extractErrorMessages(err, 'Could not load stock adjustments — check your connection and reload; if it persists your account may lack access to this module.').join(' '))).finally(() => setLoading(false))
   }, [isAuthorized])
 
   if (isLoading || !isAuthorized) return null
 
+  // The preview draws every column (hidden ones dimmed, with a toggle); normal use drops the hidden ones.
+  const showCol = (h: string) => !HIDEABLE[h] || vis.preview || vis.showColumn('adjustments', HIDEABLE[h])
+  const headers = ['Adjustment #', 'Store', 'Date', 'Status', 'Approver', 'Items'].filter(showCol)
+
   return (
     <div>
-      <StoreNav />
+      {!vis.preview && <StoreNav />}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <div>
@@ -58,26 +71,29 @@ export default function StoreStockAdjustmentsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead>
             <tr>
-              {['Adjustment #', 'Store', 'Date', 'Status', 'Approver', 'Items'].map((h, hi) => (
-                <th key={h} style={h === 'Items' ? numThStyle : thStyle}>{h}{hi === 0 && <RowCount count={adjustments.length} />}</th>
-              ))}
+              {headers.map((h, hi) => {
+                const head = <>{h}{hi === 0 && <RowCount count={adjustments.length} />}</>
+                return HIDEABLE[h]
+                  ? <VisTh key={h} vis={vis} table="adjustments" k={HIDEABLE[h]} style={h === 'Items' ? numThStyle : thStyle}>{head}</VisTh>
+                  : <th key={h} style={thStyle}>{head}</th>
+              })}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
+            {loading && <tr><td colSpan={headers.length} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && adjustments.length === 0 && (
-              <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No stock adjustments yet{can('store', 'adjustments', 'create') ? ' — use + New Adjustment when a count differs from the books.' : '.'}</td></tr>
+              <tr><td colSpan={headers.length} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No stock adjustments yet{can('store', 'adjustments', 'create') ? ' — use + New Adjustment when a count differs from the books.' : '.'}</td></tr>
             )}
             {adjustments.map((a) => (
               <tr key={a.id} onClick={() => router.push(recordPath('/dashboard/store/adjustments', a))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, whiteSpace: 'nowrap' }}>{a.adjustment_number}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{a.location_name || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(a.adjustment_date)}</td>
+                <VisTd vis={vis} table="adjustments" k="store" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{a.location_name || '—'}</VisTd>
+                <VisTd vis={vis} table="adjustments" k="date" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(a.adjustment_date)}</VisTd>
                 <td style={{ padding: '12px 16px' }}>
                   <Pill label={STATUS_LABELS[a.status] || a.status} hex={STATUS_HEX[a.status] || '#78716c'} />
                 </td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{a.approved_by_name || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, textAlign: 'right' }}>{a.items.length}</td>
+                <VisTd vis={vis} table="adjustments" k="approver" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{a.approved_by_name || '—'}</VisTd>
+                <VisTd vis={vis} table="adjustments" k="items" style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, textAlign: 'right' }}>{a.items.length}</VisTd>
               </tr>
             ))}
           </tbody>

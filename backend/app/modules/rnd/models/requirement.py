@@ -21,8 +21,8 @@ from app.db.mixins import TimestampMixin
 
 RND_REQUIREMENT_SOURCES = ("inquiry", "tender")
 # Requirement status mirrors the latest revision's status.
-RND_REQUIREMENT_STATUSES = ("submitted", "accepted", "returned", "responded")
-RND_REVISION_STATUSES = ("submitted", "accepted", "returned", "responded", "superseded")
+RND_REQUIREMENT_STATUSES = ("submitted", "accepted", "returned", "responded", "closed", "withdrawn")
+RND_REVISION_STATUSES = ("submitted", "accepted", "returned", "responded", "closed", "superseded", "withdrawn")
 
 
 class RndRequirement(Base, TimestampMixin):

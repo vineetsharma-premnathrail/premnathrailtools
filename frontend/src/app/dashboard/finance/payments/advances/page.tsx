@@ -43,8 +43,10 @@ const WO_STATUS_HEX: Record<string, string> = { posted: '#22c55e', cancelled: '#
 
 export default function AdvancesWriteOffsPage() {
   const { isAuthorized, isLoading } = useRequireApp('accounts')
-  const { canFeature } = useCan()
+  const { can, canFeature } = useCan()
   const router = useRouter()
+  // The page itself = feature Payments › Advances & write-offs page (the advances API also lets Outstanding viewers in).
+  const seePage = canFeature('accounts', 'payments', 'advances', 'view') || can('accounts', 'outstanding', 'view')
   // Payments features: Allocate payments to bills (Adjust), Write-offs & short payments.
   const canAllocate = canFeature('accounts', 'payments', 'allocation', 'edit')
   const seeWriteOffs = canFeature('accounts', 'payments', 'write_offs', 'view')
@@ -94,7 +96,7 @@ export default function AdvancesWriteOffsPage() {
   }
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || !seePage) return
     loadAdvances()
     if (seeWriteOffs) loadWriteOffs()
     Promise.all([
@@ -155,6 +157,14 @@ export default function AdvancesWriteOffsPage() {
   }
 
   if (isLoading || !isAuthorized) return null
+  if (!seePage) return (
+    <div>
+      <FinanceNav />
+      <p style={{ fontSize: 13, color: TEXT.muted }}>
+        Advances &amp; write-offs needs &apos;View&apos; on Finance &amp; Accounting › Payments &amp; Receipts › Advances &amp; write-offs page — ask an admin to add it to one of your roles in Organization › Role &amp; Permissions.
+      </p>
+    </div>
+  )
 
   const partyOptions = partyType === 'vendor'
     ? vendors.map((v) => ({ value: String(v.id), label: `${v.code} — ${v.name}` }))

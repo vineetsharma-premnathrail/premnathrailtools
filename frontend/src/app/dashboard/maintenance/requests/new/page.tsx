@@ -16,14 +16,22 @@ import { ASSET_STATUS_LABELS, PRIORITY_LABELS, REQUEST_TYPE_LABELS, localInputTo
 import Select from '@/components/shared/Select'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
+import { useVisibility } from '@/lib/visibility'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
+
+const REQUEST_TYPE_CHOICES = Object.entries(REQUEST_TYPE_LABELS)
+const PRIORITY_CHOICES = Object.entries(PRIORITY_LABELS)
 
 export default function NewMaintenanceRequestPage() {
   const { isAuthorized, isLoading } = useRequireAnyApp('maintenance', 'production')
   const router = useRouter()
   const searchParams = useSearchParams()
+  // What the user's roles let them see here (Role editor > Maintenance > Requests > Visibility).
+  // In the Role editor's "Preview & choose" nothing is loaded by link, saved or kept as a draft.
+  const vis = useVisibility('maintenance:requests')
 
   // ?asset=<signed ref> pre-selects the asset (from its detail page / QR scan).
-  const { id: presetAsset, error: linkError, loading: presetLoading } = useRecordId(searchParams.get('asset'))
+  const { id: presetAsset, error: linkError, loading: presetLoading } = useRecordId(vis.preview ? null : searchParams.get('asset'))
   const [assetId, setAssetId] = useState<number | null>(presetAsset)
   useEffect(() => { if (presetAsset) setAssetId(presetAsset) }, [presetAsset])
   const [selected, setSelected] = useState<MaintenanceAssetOption | null>(null)
@@ -35,7 +43,7 @@ export default function NewMaintenanceRequestPage() {
   const [photos, setPhotos] = useState<File[]>([])
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
-  const draft = useFormDraft(presetLoading ? null : 'maintenance-request-new',
+  const draft = useFormDraft(presetLoading || vis.preview ? null : 'maintenance-request-new',
     { assetId, requestType, machineDown, reportedAt, problem, priority, photos },
     (d) => {
       if (d.assetId) setAssetId(d.assetId)
@@ -44,6 +52,22 @@ export default function NewMaintenanceRequestPage() {
       if (d.reportedAt) setReportedAt(d.reportedAt)
       setProblem(d.problem || ''); setPriority(d.priority ? normalizePriority(d.priority) : '')
     })
+  // Coded values the role offers. A restricted Priority drops "Auto (from criticality)" (the server
+  // then needs a value); a value the role doesn't offer is moved to the first one it does.
+  const typeChoices = vis.options('request_type', REQUEST_TYPE_CHOICES, ([k]) => k)
+  const priorityChoices = vis.options('priority', PRIORITY_CHOICES, ([k]) => k)
+  const priorityRestricted = priorityChoices.length < PRIORITY_CHOICES.length
+  const typeKey = typeChoices.map(([k]) => k).join(',')
+  const priorityKey = priorityChoices.map(([k]) => k).join(',')
+  useEffect(() => {
+    const allowed = typeKey.split(',').filter(Boolean)
+    if (allowed.length && !allowed.includes(requestType)) { setRequestType(allowed[0]); setMachineDown(allowed[0] === 'breakdown') }
+  }, [typeKey, requestType])
+  useEffect(() => {
+    const allowed = priorityKey.split(',').filter(Boolean)
+    if (priorityRestricted && allowed.length && !allowed.includes(priority)) setPriority(allowed[0])
+  }, [priorityKey, priorityRestricted, priority])
+  const showPhotos = vis.anySection(['photos'])
   const takeRef = useRef<HTMLInputElement>(null)
   const chooseRef = useRef<HTMLInputElement>(null)
 
@@ -61,6 +85,7 @@ export default function NewMaintenanceRequestPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (vis.preview) return
     setError('')
     if (!assetId) { setError('Pick the machine or equipment that has the problem.'); return }
     if (!problem.trim()) { setError('Describe the problem — what happened, and any noise, leak, alarm or error code.'); return }
@@ -106,8 +131,8 @@ export default function NewMaintenanceRequestPage() {
   }
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><MaintenanceNav /><InvalidRecordLink message={linkError} listHref="/dashboard/maintenance/requests" listLabel="Back to requests" /></div>)
-  if (presetLoading) return <div><MaintenanceNav /></div>
+  if (linkError && !vis.preview) return (<div><MaintenanceNav /><InvalidRecordLink message={linkError} listHref="/dashboard/maintenance/requests" listLabel="Back to requests" /></div>)
+  if (presetLoading && !vis.preview) return <div><MaintenanceNav /></div>
 
   return (
     <form onSubmit={handleSubmit} className="mt-req-form">
@@ -119,21 +144,22 @@ export default function NewMaintenanceRequestPage() {
       `}</style>
       <FormPage tour="maint-reqf-page" icon="alert" iconColor="#DC2626" title="Report a Problem"
         subtitle="Tell Maintenance what is wrong — they are notified at once and the request is tracked until the machine is confirmed working."
-        nav={<MaintenanceNav />} onBack={() => router.push('/dashboard/maintenance/requests')} backTour="maint-reqf-back"
+        nav={vis.preview ? undefined : <MaintenanceNav />} onBack={vis.preview ? undefined : () => router.push('/dashboard/maintenance/requests')} backTour="maint-reqf-back"
         footer={<>
-          <button type="button" onClick={() => router.push('/dashboard/maintenance/requests')} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
-          <button data-tour="maint-reqf-submit" type="submit" disabled={saving} className="mt-req-submit" style={sheetBtn('primary', '#DC2626', saving)}>
+          <button type="button" onClick={() => router.push('/dashboard/maintenance/requests')} disabled={saving || vis.preview} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+          <button data-tour="maint-reqf-submit" type="submit" disabled={saving || vis.preview} className="mt-req-submit" style={sheetBtn('primary', '#DC2626', saving)}>
             <SheetIcon name="send" size={16} />{saving ? 'Sending…' : 'Raise Request'}
           </button>
         </>}>
-        <SheetColumns
-          left={<>
+        {(() => {
+          const left = <>
             {error && (
               <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
                 {Array.isArray(error) ? error.join(' ') : error}
               </div>
             )}
             <DraftBanner draft={draft} />
+            <VisSection vis={vis} k="machine">
             <SheetSection icon="tool" title="Machine">
               <div data-tour="maint-reqf-asset">
                 <label style={sheetLabel}>Machine / Equipment <Req /></label>
@@ -155,13 +181,16 @@ export default function NewMaintenanceRequestPage() {
                 </span>
               </label>
             </SheetSection>
+            </VisSection>
+            <VisSection vis={vis} k="problem">
             <SheetSection icon="alert" title="Problem">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ flex: '0 1 240px', minWidth: 200 }}>
                   <label style={sheetLabel}>Type</label>
                   <Select data-tour="maint-reqf-type" style={sheetInput} value={requestType} onChange={(e) => handleTypeChange(e.target.value)}>
-                    {Object.entries(REQUEST_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    {typeChoices.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </Select>
+                  <VisOptionValues vis={vis} dropdown="request_type" />
                 </div>
                 <div style={{ flex: '0 1 220px', minWidth: 200 }}>
                   <label style={sheetLabel}>When did it happen?</label>
@@ -170,17 +199,20 @@ export default function NewMaintenanceRequestPage() {
                 <div style={{ flex: '0 1 170px', minWidth: 150 }}>
                   <label style={sheetLabel}>Priority</label>
                   <Select data-tour="maint-reqf-priority" style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value)}>
-                    <option value="">Auto (from criticality)</option>
-                    {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    {!priorityRestricted && <option value="">Auto (from criticality)</option>}
+                    {priorityChoices.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </Select>
+                  <VisOptionValues vis={vis} dropdown="priority" />
                 </div>
               </div>
               <label style={{ ...sheetLabel, marginTop: 14 }}>What&apos;s wrong? <Req /></label>
               <textarea data-tour="maint-reqf-problem" style={{ ...sheetInput, minHeight: 110, resize: 'vertical' }} value={problem} onChange={(e) => setProblem(e.target.value)}
                 placeholder="What happened, what you saw or heard, any alarm or error code on the panel…" />
             </SheetSection>
-          </>}
-          right={
+            </VisSection>
+          </>
+          const right = (
+            <VisSection vis={vis} k="photos">
             <SheetSection icon="clip" title="Photos" extra={<Optional />}>
               <div data-tour="maint-reqf-photos">
                 <input ref={takeRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
@@ -207,8 +239,10 @@ export default function NewMaintenanceRequestPage() {
                 <p style={sheetHint}>{photos.length ? `${photos.length} photo${photos.length > 1 ? 's' : ''} will be attached.` : 'A photo of the fault, panel alarm or leak helps the technician come prepared.'}</p>
               </div>
             </SheetSection>
-          }
-        />
+            </VisSection>
+          )
+          return showPhotos ? <SheetColumns left={left} right={right} /> : <div style={{ padding: '20px 24px' }}>{left}</div>
+        })()}
       </FormPage>
     </form>
   )

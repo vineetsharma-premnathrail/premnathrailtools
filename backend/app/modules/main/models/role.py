@@ -42,6 +42,10 @@ class Role(Base, TimestampMixin):
     # "Assign to" restrictions: "<module>:<tab>.<feature>" -> rule (who this
     # role's members may pick there) — see core/assignee_rules.py.
     assignee_rules: Mapped[dict[str, dict]] = mapped_column(JSON, default=dict, nullable=False, server_default="{}")
+    # UI visibility overrides: "<module>:<tab>" or "<module>:<tab>.<feature>" ->
+    # {"hidden_sections": [...], "options": {dropdown: [allowed values]}, "hidden_columns": {table: [...]}}
+    # — see core/visibility.py; only overrides stored, no rule = everything visible.
+    visibility_rules: Mapped[dict[str, dict]] = mapped_column(JSON, default=dict, nullable=False, server_default="{}")
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

@@ -14,6 +14,7 @@ from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseO
 from app.modules.p2p.models.rfq import RFQ
 from app.modules.store.services.reorder import on_order
 from app.tests.p2p_workflow_helpers import master_item
+from app.tests.test_grn_quality_check_flag import decide_grn_lots
 from app.tests.test_p2p_requests import (  # noqa: F401 — _sqlite_number_series is an autouse fixture
     _approve_pr, _create_pr, _purchaser, _receiving_store, _requester, _sqlite_number_series, auth_header,
 )
@@ -77,14 +78,11 @@ def split(client, db):
 
 
 def _receive(client, po, user, qty):
-    grn = client.post(GRNS, json={
+    """Record a GRN. The items carry no "Quality check on receipt" flag, so it goes straight into Free stock and
+    is completed at once (no separate inspection step)."""
+    return client.post(GRNS, json={
         "purchase_order_id": po.id, "store_location_id": _receiving_store(client),
         "items": [{"po_item_id": po.items[0].id, "received_quantity": qty}]}, headers=auth_header(user))
-    if grn.status_code != 200:
-        return grn
-    grn = grn.json()
-    return client.post(f"{GRNS}/{grn['id']}/inspect", json={"items": [
-        {"item_id": grn["items"][0]["id"], "accepted_quantity": qty, "quality_status": "passed"}]}, headers=auth_header(user))
 
 
 # ── receiving ───────────────────────────────────────────────────────────────
@@ -137,15 +135,17 @@ def test_requester_gets_a_bell_per_completed_grn_not_teams(client, db, split, mo
     teams = []
     monkeypatch.setattr("app.utils.notifications._notify_teams", lambda *a, **k: teams.append(a))
     assert _receive(client, s["po1"], s["b1"], 6).status_code == 200
-    # A recorded-but-not-yet-inspected GRN tells the requester nothing yet.
+    assert db.query(Notification).filter_by(notification_type="p2p_grn_completed").count() == 1  # completed on receipt: one bell
+    # The item is then flagged "Quality check on receipt": a recorded GRN waiting for Quality's lot decision tells the requester nothing yet.
+    s["a"].inspection_on_receipt = True
+    db.commit()
     recorded = client.post(GRNS, json={"purchase_order_id": s["po1"].id, "store_location_id": _receiving_store(client),
                                        "items": [{"po_item_id": s["po1"].items[0].id, "received_quantity": 4}]}, headers=auth_header(s["b1"]))
     assert recorded.status_code == 200, recorded.text
     assert db.query(Notification).filter_by(notification_type="p2p_grn_completed").count() == 1
     grn = recorded.json()
-    done = client.post(f"{GRNS}/{grn['id']}/inspect", json={"items": [
-        {"item_id": grn["items"][0]["id"], "accepted_quantity": 4, "quality_status": "passed"}]}, headers=auth_header(s["b1"]))
-    assert done.status_code == 200, done.text
+    assert grn["status"] == "draft"
+    decide_grn_lots(db, grn["id"], "accept")
     rows = db.query(Notification).filter_by(user_id=s["requester"].id, notification_type="p2p_grn_completed").order_by(Notification.id).all()
     assert len(rows) == 2 and teams == []
     pr_no = s["pr"].p2p_number

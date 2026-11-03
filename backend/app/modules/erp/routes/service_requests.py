@@ -10,7 +10,7 @@ from app.core.permissions import (
     require_feature_action, require_tab_access,
 )
 from app.core.permission_registry import can_access_module, is_admin_user
-from app.core import assignee_rules
+from app.core import assignee_rules, visibility
 from app.db.session import SessionLocal, get_db
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
@@ -112,6 +112,10 @@ _TRACKED_FIELDS = {
     "expected_completion_date": "Expected Close Date",
     "service_report_notes": "Service Notes",
 }
+
+
+# Role-wise UI visibility entry of this screen (core/features/erp.py register_visibility).
+SR_VISIBILITY_KEY = "erp:service_requests"
 
 
 def _write_audit(
@@ -505,6 +509,11 @@ async def create_service_request(
 
     sr_number = _generate_sr_number(db)
     values = data.model_dump()
+    # Role-wise visibility (core/features/erp.py): a service type / priority the role does not
+    # offer is refused here too, so it can't be sent by hand. The schema's default priority
+    # (Standard) is checked as a value: leaving it out is not a way round the restriction.
+    visibility.ensure_option_allowed(user, SR_VISIBILITY_KEY, "service_type", values.get("service_type"))
+    visibility.ensure_option_allowed(user, SR_VISIBILITY_KEY, "priority", values.get("priority"))
     chargeable, chargeable_reason = values.pop("is_chargeable", None), values.pop("chargeable_reason", None)
     values["assigned_service_person_id"] = user.id  # the person raising the SR is its engineer; reassign later via edit
     _apply_engineer(db, user, values)  # active + permitted engineer; name comes from the user record
@@ -692,6 +701,12 @@ async def update_service_request(
     chargeable_in = changes.pop("is_chargeable", None)
     chargeable_reason_in = changes.pop("chargeable_reason", None)
     type_changed = "service_type" in changes and changes["service_type"] != sr.service_type
+    # Role-wise visibility: only a CHANGED service type / priority is checked, so an SR raised
+    # before the role was narrowed stays editable.
+    if type_changed:
+        visibility.ensure_option_allowed(user, SR_VISIBILITY_KEY, "service_type", changes["service_type"])
+    if "priority" in changes and changes["priority"] != sr.priority:
+        visibility.ensure_option_allowed(user, SR_VISIBILITY_KEY, "priority", changes["priority"])
     # Invoice no. / payment status mirror the Finance (AR) invoice — they are
     # not typed here any more (unchanged values from the form are fine).
     typed_billing = [label for f, label in (("invoice_number", "Invoice no."), ("payment_status", "Payment status"))

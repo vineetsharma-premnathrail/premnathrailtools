@@ -1,5 +1,5 @@
 from __future__ import annotations
-from sqlalchemy import String, Integer, Text, ForeignKey
+from sqlalchemy import CheckConstraint, String, Integer, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin, SoftDeleteMixin
@@ -34,9 +34,12 @@ class RndDocument(Base, TimestampMixin, SoftDeleteMixin):
     metadata live here, same pattern as QualityDocument / CrmDocument."""
 
     __tablename__ = "rnd_documents"
+    __table_args__ = (CheckConstraint("project_id IS NOT NULL OR pm_project_id IS NOT NULL", name="ck_rnd_documents_parent"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("rnd_projects.id"), index=True, nullable=False)
+    # NULL only on files of an R&D task given on a Project Management project (pm_project_id set).
+    project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_projects.id"), index=True, nullable=True)
+    pm_project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("pm_projects.id"), index=True, nullable=True)
     experiment_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_experiments.id"), index=True, nullable=True)
     prototype_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_prototypes.id"), index=True, nullable=True)
     # Set when the file belongs to a project task (project_tasks.py): "brief"

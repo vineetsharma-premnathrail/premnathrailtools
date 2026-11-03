@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.config import settings
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.core.permissions import require_app_access, require_tab_action
@@ -233,6 +234,10 @@ async def schedule_call(call_id: int, payload: QualityInspectionCallSchedulePayl
 async def record_result(call_id: int, payload: QualityInspectionCallResultPayload, db: Session = Depends(get_db),
                         user: User = Depends(_CAN_EDIT)):
     call = _get(db, call_id, user, lock=True)
+    if payload.result != "accepted":
+        # A rejected quantity raises an NCR with the severity picked here, so the NCR form's
+        # Severity visibility rule (core/features/quality.py) applies to this pick too.
+        visibility.ensure_option_allowed(user, "quality:ncr", "severity", payload.severity)
     _run(db, lambda: call_service.record_result(
         db, call, result=payload.result, accepted_qty=payload.accepted_qty, rejected_qty=payload.rejected_qty,
         certificate_number=payload.certificate_number, result_date=payload.result_date, inspector_name=payload.inspector_name,

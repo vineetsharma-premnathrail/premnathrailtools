@@ -82,7 +82,7 @@ export default function StoreSerialsPage() {
       setDetail(await storeSerialsApi.setQualityResult(detail.id, to, reason))
       setPage((p) => p)
     } catch (err) {
-      setError(extractErrorMessages(err, 'Could not record the inspection result for this unit.'))
+      setError(extractErrorMessages(err, 'Could not record the quality check result for this unit.'))
     }
   }
 

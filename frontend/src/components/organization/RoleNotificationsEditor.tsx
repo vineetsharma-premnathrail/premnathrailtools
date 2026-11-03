@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { PermissionRegistry } from '@/types'
 import Checkbox from '@/components/Checkbox'
 import { SHEET, SheetIcon, sheetInput } from '@/components/shared/FormSheet'
@@ -19,10 +19,15 @@ import { RowCount, pillStyle } from '@/components/shared/ui'
 export interface NotificationEventSpec {
   label: string
   trigger: string
-  /** permission id a member needs to receive it */
-  access: string
+  /** permission id a member needs to receive it (null for a direct notification) */
+  access: string | null
   kind: 'approval' | 'assignment' | 'reminder' | 'info'
   default_channels: string[]
+  /** direct = the code names the person (assignee, requester …), the role only picks channels;
+   * watchers = role members are told about everyone's records */
+  audience?: 'direct' | 'watchers'
+  /** who receives it, in plain words */
+  recipient?: string
 }
 
 export interface NotificationEventCatalog {
@@ -58,15 +63,28 @@ export default function RoleNotificationsEditor({ catalog, registry, permissions
   const granted = useMemo(() => expandGrants(registry, permissions), [registry, permissions])
   const channels = catalog.channels
 
+  const specOf = (key: string): NotificationEventSpec | undefined => {
+    const [mk, ek] = [key.slice(0, key.indexOf('.')), key.slice(key.indexOf('.') + 1)]
+    return catalog.modules[mk]?.events[ek]
+  }
+  const isDirect = (key: string) => specOf(key)?.audience === 'direct'
   const setEvent = (key: string, chans: string[]) => {
     if (readOnly) return
     const next = { ...value }
-    if (chans.length || personal) next[key] = channels.map((c) => c.key).filter((c) => chans.includes(c))
+    // A direct notification keeps an empty entry = "off" (no entry = its default channels).
+    if (chans.length || personal || isDirect(key)) next[key] = channels.map((c) => c.key).filter((c) => chans.includes(c))
     else delete next[key]
     onChange?.(next)
   }
-  // What applies for an event: the personal entry if there is one, else the roles'.
-  const shown = (key: string) => (key in value ? value[key] : personal ? (fromRoles?.[key] || []) : [])
+  // What applies for an event: the personal entry if there is one, else the roles',
+  // else (direct notifications only) the event's default channels.
+  const shown = (key: string) => {
+    if (key in value) return value[key]
+    if (personal && fromRoles && key in fromRoles) return fromRoles[key]
+    return isDirect(key) ? (specOf(key)?.default_channels || []) : []
+  }
+  /** true when a direct notification follows its default channels here */
+  const onDefault = (key: string) => isDirect(key) && !(key in value) && !(personal && fromRoles && key in fromRoles)
   const toggle = (key: string, channel: string) => {
     const cur = shown(key)
     setEvent(key, cur.includes(channel) ? cur.filter((c) => c !== channel) : [...cur, channel])
@@ -93,14 +111,20 @@ export default function RoleNotificationsEditor({ catalog, registry, permissions
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search module or event…" style={{ ...sheetInput, maxWidth: 280 }} />
         <span style={{ fontSize: 12, color: SHEET.MUTED }}>
           {personal
-            ? `${Object.keys(value).length} personal change${Object.keys(value).length === 1 ? '' : 's'} · faded ticks come from this user's roles`
-            : `${Object.keys(value).length} event${Object.keys(value).length === 1 ? '' : 's'} subscribed`}
+            ? `${Object.keys(value).length} personal change${Object.keys(value).length === 1 ? '' : 's'} · faded ticks come from this user's roles or the default`
+            : `${Object.keys(value).length} setting${Object.keys(value).length === 1 ? '' : 's'} changed · faded ticks are the default`}
         </span>
       </div>
+      <p style={{ fontSize: 12, color: SHEET.MUTED, margin: '0 0 12px', lineHeight: 1.6 }}>
+        <b style={{ color: SHEET.INK }}>Sent to a person directly</b>: the portal picks who gets it (the assignee, the requester, the approver …).
+        Ticks here only choose how those people are told; they never add people. <b style={{ color: SHEET.INK }}>Watch everyone&apos;s activity</b>: every
+        member of this role is told about other people&apos;s records too. Use it only for supervisors.
+      </p>
       {modules.map(([mk, m]) => {
         const evs = Object.entries(m.events)
         const shownEvs = evs.filter(([, e]) => !q || e.label.toLowerCase().includes(q) || m.label.toLowerCase().includes(q))
-        const on = evs.filter(([ek]) => shown(`${mk}.${ek}`).length).length
+        // Changed here = an explicit entry in this role / for this user (defaults don't count).
+        const on = evs.filter(([ek]) => `${mk}.${ek}` in value).length
         const isOpen = !!open[mk] || !!q
         return (
           <div key={mk} style={{ marginBottom: 12, borderRadius: 12, border: `1px solid ${SHEET.LINE}`, overflow: 'hidden', background: '#fff' }}>
@@ -110,7 +134,7 @@ export default function RoleNotificationsEditor({ catalog, registry, permissions
               <span style={{ fontSize: 11, color: SHEET.MUTED, width: 10 }}>{isOpen ? '▾' : '▸'}</span>
               <span style={{ fontSize: 13, fontWeight: 700, color: SHEET.INK }}>{m.label}</span>
               <span style={{ ...pillStyle(on ? '#047857' : '#64748b'), fontWeight: 600 }}>
-                {on ? `${on} / ${evs.length}` : 'None'}
+                {on ? `${on} changed` : 'Default'}
               </span>
             </button>
             {isOpen && (
@@ -123,19 +147,33 @@ export default function RoleNotificationsEditor({ catalog, registry, permissions
                     </tr>
                   </thead>
                   <tbody>
-                    {shownEvs.map(([ek, e]) => {
+                    {(['direct', 'watchers'] as const).map((aud) => {
+                      const rows = shownEvs.filter(([, e]) => (e.audience || 'watchers') === aud)
+                      if (!rows.length) return null
+                      return (
+                        <Fragment key={aud}>
+                          <tr style={{ borderTop: `1px solid ${SHEET.LINE}`, background: 'rgba(0,0,0,0.015)' }}>
+                            <td colSpan={channels.length + 1} style={{ padding: '7px 14px', fontSize: 11, fontWeight: 700, color: SHEET.MUTED, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                              {aud === 'direct' ? 'Sent to a person directly' : 'Watch everyone’s activity (supervisors)'}
+                            </td>
+                          </tr>
+                    {rows.map(([ek, e]) => {
                       const key = `${mk}.${ek}`
                       const cur = shown(key)
                       const own = personal && key in value
                       const kind = KIND[e.kind] || KIND.info
-                      const canReceive = granted.has(e.access)
+                      const canReceive = !e.access || granted.has(e.access)
+                      const dflt = onDefault(key)
+                      const direct = e.audience === 'direct'
+                      // An approval request always reaches the bell (backend utils/notifications._deliver).
+                      const bellLocked = direct && e.kind === 'approval'
                       return (
                         <tr key={ek} style={{ borderTop: `1px solid ${SHEET.LINE}` }}>
                           <td style={{ padding: '8px 14px', fontSize: 12.5, color: SHEET.BODY }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                               <span style={{ fontWeight: 600, color: SHEET.INK }}>{e.label}</span>
                               <span style={{ ...pillStyle(kind.c), background: kind.bg, fontSize: 10.5, padding: '1px 7px' }}>{kind.text}</span>
-                              {!readOnly && !cur.length && !own && (
+                              {!readOnly && !direct && !cur.length && !own && (
                                 <button type="button" onClick={() => setEvent(key, e.default_channels)} style={{ fontSize: 11.5, fontWeight: 600, color: SHEET.BLUE, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
                                   + Subscribe
                                 </button>
@@ -151,7 +189,17 @@ export default function RoleNotificationsEditor({ catalog, registry, permissions
                                 </button>
                               )}
                             </div>
-                            <div style={{ fontSize: 11.5, color: SHEET.MUTED, marginTop: 2 }}>Sent when {e.trigger}. Needs: {permLabel(e.access)}.</div>
+                            {direct && dflt && (
+                              <div style={{ marginTop: 3 }}><span style={{ ...pillStyle('#64748b'), fontSize: 10.5, padding: '1px 7px' }}>Default</span></div>
+                            )}
+                            {direct && !personal && !readOnly && key in value && (
+                              <button type="button" onClick={() => followRoles(key)} style={{ fontSize: 11.5, fontWeight: 600, color: SHEET.BLUE, background: 'none', border: 'none', padding: 0, cursor: 'pointer', marginTop: 3 }}>
+                                Reset to default
+                              </button>
+                            )}
+                            {direct
+                              ? <div style={{ fontSize: 11.5, color: SHEET.MUTED, marginTop: 2 }}>To: <b style={{ color: SHEET.BODY }}>{e.recipient || 'The person concerned'}</b>. Sent when {e.trigger}.{bellLocked ? ' The portal bell is always on for approvals.' : !cur.length ? ' Switched off: they will not be told.' : ''}</div>
+                              : <div style={{ fontSize: 11.5, color: SHEET.MUTED, marginTop: 2 }}>To: every member of this role. Sent when {e.trigger}. Needs: {e.access ? permLabel(e.access) : '—'}.</div>}
                             {cur.length > 0 && !canReceive && (
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: '#b45309', marginTop: 3 }}>
                                 <SheetIcon name="alert" size={13} color="#b45309" />
@@ -161,12 +209,15 @@ export default function RoleNotificationsEditor({ catalog, registry, permissions
                           </td>
                           {channels.map((c) => (
                             <td key={c.key} style={{ padding: 6, textAlign: 'center' }}>
-                              <div style={{ display: 'inline-flex', opacity: personal && !own && cur.includes(c.key) ? 0.55 : 1 }} title={personal && !own && cur.includes(c.key) ? 'From this user’s roles — click to change it for this user only' : undefined}>
-                                <Checkbox checked={cur.includes(c.key)} disabled={readOnly} onChange={() => toggle(key, c.key)} />
+                              <div style={{ display: 'inline-flex', opacity: ((personal && !own) || dflt) && cur.includes(c.key) ? 0.55 : 1 }} title={dflt && cur.includes(c.key) ? 'Default — click to change it' : personal && !own && cur.includes(c.key) ? 'From this user’s roles — click to change it for this user only' : undefined}>
+                                <Checkbox checked={cur.includes(c.key) || (bellLocked && c.key === 'bell')} disabled={readOnly || (bellLocked && c.key === 'bell')} onChange={() => toggle(key, c.key)} />
                               </div>
                             </td>
                           ))}
                         </tr>
+                      )
+                    })}
+                        </Fragment>
                       )
                     })}
                   </tbody>

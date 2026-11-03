@@ -11,6 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.audit import record_audit
 from app.core.config import settings
 from app.core.sequential_id import next_sequential_id
@@ -476,6 +477,9 @@ async def apply_leave(
     background_tasks: BackgroundTasks = None,
 ):
     applicant = _resolve_applicant(db, user, user_id)
+    # Role-wise visibility (core/features/hr.py): half-day sessions the actor's roles may pick.
+    for session in (from_session, to_session):
+        visibility.ensure_option_allowed(user, "hr:leave", "session", session)
     if attachment is not None and not attachment.filename:
         attachment = None
     if not (reason or "").strip():

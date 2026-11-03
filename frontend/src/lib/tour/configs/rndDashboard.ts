@@ -44,7 +44,7 @@ const config: TourConfig = {
     {
       target: 'rnd-dash-requirements',
       title: 'Recently Received Requirements',
-      purpose: 'The latest requirements sent to R&D, with R&D ID, customer, product, date received and where the review stands (awaiting review, accepted, returned, responded). Click one to open it.',
+      purpose: 'The latest requirements sent to R&D, with R&D ID, customer, product, date received and where the review stands (awaiting review, accepted, returned, responded, closed by R&D). Click one to open it.',
     },
     {
       target: 'rnd-dash-recent',

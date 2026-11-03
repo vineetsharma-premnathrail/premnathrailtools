@@ -151,7 +151,7 @@ export default function RndTaskAnalyticsView({ rows, total, analytics, view, onV
                         {r.title}
                         {r.requirement_changed && r.status === 'open' && <div style={{ fontSize: 11.5, color: '#9a3412', fontWeight: 600 }}>Requirement changed since this task was created</div>}
                       </td>
-                      <td style={tdStyle}><Pill label={r.type === 'requirement' ? 'Requirement' : 'Prototype'} hex={r.type === 'requirement' ? '#FF6A2A' : '#2563EB'} /></td>
+                      <td style={tdStyle}><Pill label={r.type === 'requirement' ? 'Requirement' : r.type === 'project' ? 'Project' : 'Prototype'} hex={r.type === 'requirement' ? '#FF6A2A' : r.type === 'project' ? '#047857' : '#2563EB'} /></td>
                       <td style={tdStyle}>
                         <div style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{r.parent.ref}</div>
                         {r.parent.title && <div style={{ fontSize: 12, color: TEXT.muted }}>{r.parent.title}</div>}

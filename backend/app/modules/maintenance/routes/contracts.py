@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access, require_tab_access, require_tab_action
+from app.core.permissions import require_app_access, require_feature_action, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.organization.models.branch import Branch
@@ -51,6 +51,7 @@ async def list_contracts(
     search: str | None = None,
     db: Session = Depends(get_db),
     _tab: User = Depends(require_tab_access("maintenance", "assets")),
+    _feat: User = Depends(require_feature_action("maintenance", "assets", "contracts", "view")),  # AMC & Warranty tab
 ):
     """Summary counts ignore the status filter (so the tiles always show the
     full picture for the chosen plant / cover type / search)."""
@@ -68,6 +69,7 @@ async def export_contracts(
     db: Session = Depends(get_db),
     _tab: User = Depends(require_tab_access("maintenance", "assets")),
     _exp: User = Depends(require_tab_action("maintenance", "assets", "export")),
+    _feat: User = Depends(require_feature_action("maintenance", "assets", "contracts", "export")),  # AMC & Warranty tab
 ):
     today, rows, summary = _query(db, branch_id, kind, window_days, status, search)
 

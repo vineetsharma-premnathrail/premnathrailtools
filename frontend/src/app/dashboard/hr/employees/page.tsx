@@ -5,6 +5,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleEmployees } from '@/lib/hrPreviewSamples'
 import { hrApi } from '@/lib/api'
 import { HrEmployeeListItem, HrEmployeeListResponse, HrLookups } from '@/types'
 import { TEXT, BORDER, GLASS, SHADOWS } from '@/lib/theme'
@@ -33,14 +36,16 @@ const statCardStyle: React.CSSProperties = {
 
 type SortKey = 'name' | 'employee_code' | 'department' | 'designation' | 'branch' | 'date_of_joining' | 'employment_status'
 
-const COLUMNS: { key: SortKey | null; label: string }[] = [
+// `col` = the column's key in the role-wise visibility catalogue (core/features/hr.py, table "employees");
+// Employee, Code and Status are always shown.
+const COLUMNS: { key: SortKey | null; label: string; col?: string }[] = [
   { key: 'name', label: 'Employee' },
   { key: 'employee_code', label: 'Code' },
-  { key: 'department', label: 'Department' },
-  { key: 'designation', label: 'Designation' },
-  { key: 'branch', label: 'Plant' },
-  { key: null, label: 'Manager' },
-  { key: 'date_of_joining', label: 'Joined' },
+  { key: 'department', label: 'Department', col: 'department' },
+  { key: 'designation', label: 'Designation', col: 'designation' },
+  { key: 'branch', label: 'Plant', col: 'plant' },
+  { key: null, label: 'Manager', col: 'manager' },
+  { key: 'date_of_joining', label: 'Joined', col: 'joined' },
   { key: 'employment_status', label: 'Status' },
   { key: null, label: '' },
 ]
@@ -49,10 +54,18 @@ export default function HrEmployeesPage() {
   const { isAuthorized, isLoading } = useRequireApp('hr')
   const { can } = useCan()
   const router = useRouter()
+  // Role-wise visibility (Organization › Role & Permissions › HR › Employees › Visibility): hidden list columns.
+  // In the Role editor's "Preview & choose" (vis.preview) the list draws 3 made-up rows and every column, with toggles.
+  const vis = useVisibility('hr:employees')
+  const showCol = (col?: string) => !col || vis.preview || vis.showColumn('employees', col)
+  const columns = COLUMNS.filter((c) => showCol(c.col))
 
   const [lookups, setLookups] = useState<HrLookups | null>(null)
-  const [data, setData] = useState<HrEmployeeListResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [data, setData] = useState<HrEmployeeListResponse | null>(vis.preview ? {
+    items: sampleEmployees, total: sampleEmployees.length, page: 1, page_size: PAGE_SIZE,
+    total_users: sampleEmployees.length, with_profile: sampleEmployees.length, without_profile: 0,
+  } : null)
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState<string[]>([])
 
   const [searchText, setSearchText] = useState('')
@@ -76,12 +89,12 @@ export default function HrEmployeesPage() {
   }, [searchText])
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     hrApi.getLookups({ include_inactive: true }).then(setLookups).catch((err) => setError(extractErrorMessages(err, "Couldn't load the filter lists.")))
-  }, [isAuthorized])
+  }, [isAuthorized, vis.preview])
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     let cancelled = false
     setLoading(true)
     const params: Record<string, unknown> = { page, page_size: PAGE_SIZE, sort, order, user_status: userStatus }
@@ -98,7 +111,7 @@ export default function HrEmployeesPage() {
       .catch((err) => { if (!cancelled) setError(extractErrorMessages(err, "Couldn't load employees.")) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [isAuthorized, page, sort, order, search, departmentId, branchId, designationId, employmentStatus, employmentType, workerType, hasProfile, userStatus])
+  }, [isAuthorized, vis.preview, page, sort, order, search, departmentId, branchId, designationId, employmentStatus, employmentType, workerType, hasProfile, userStatus])
 
   const resetPage = <T,>(setter: (v: T) => void) => (v: T) => { setter(v); setPage(1) }
 
@@ -128,7 +141,7 @@ export default function HrEmployeesPage() {
 
   return (
     <div>
-      <HrNav />
+      {!vis.preview && <HrNav />}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <div>
@@ -136,9 +149,9 @@ export default function HrEmployeesPage() {
             HR &amp; Administration
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Employees</h1>
-          <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>Every portal user with their HR profile, plus workshop and contract staff who have no portal login. Open someone to view or edit their record.</p>
+          <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>{vis.preview ? 'Columns are shown with sample data.' : 'Every portal user with their HR profile, plus workshop and contract staff who have no portal login. Open someone to view or edit their record.'}</p>
         </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        {!vis.preview && <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           {can('hr', 'employees', 'create') && (
             <button type="button" data-tour="hr-emp-add-worker-btn" style={primaryBtnStyle} onClick={() => router.push('/dashboard/hr/employees/workers/new')}
               title="Dynamic workforce form — office, workshop, housekeeping or contract labour, with or without a portal account">
@@ -146,7 +159,7 @@ export default function HrEmployeesPage() {
             </button>
           )}
           <button type="button" data-tour="hr-emp-orgchart-btn" style={secondaryBtnStyle} onClick={() => router.push('/dashboard/hr/org-chart')}>View Org Chart</button>
-        </div>
+        </div>}
       </div>
 
       {data && (
@@ -205,11 +218,18 @@ export default function HrEmployeesPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr>
-              {COLUMNS.map((c, ci) => (
+              {columns.map((c, ci) => c.col ? (
+                // A hideable column: VisTh draws the show / hide toggle in "Preview & choose".
+                <VisTh key={c.label} vis={vis} table="employees" k={c.col}
+                  style={{ ...thStyle, cursor: c.key ? 'pointer' : 'default', userSelect: 'none' }}
+                  onClick={() => c.key && !vis.preview && toggleSort(c.key)} title={c.key ? 'Sort' : undefined}>
+                  {c.label}{c.key && sort === c.key ? (order === 'asc' ? ' ▲' : ' ▼') : ''}
+                </VisTh>
+              ) : (
                 <th
                   key={c.label || 'view'}
                   style={{ ...thStyle, cursor: c.key ? 'pointer' : 'default', userSelect: 'none' }}
-                  onClick={() => c.key && toggleSort(c.key)}
+                  onClick={() => c.key && !vis.preview && toggleSort(c.key)}
                   title={c.key ? 'Sort' : undefined}
                 >
                   {c.label}{c.key && sort === c.key ? (order === 'asc' ? ' ▲' : ' ▼') : ''}{ci === 0 && <RowCount count={total} />}
@@ -218,9 +238,9 @@ export default function HrEmployeesPage() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={COLUMNS.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted, padding: 24 }}>Loading…</td></tr>}
+            {loading && <tr><td colSpan={columns.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted, padding: 24 }}>Loading…</td></tr>}
             {!loading && items.length === 0 && (
-              <tr><td colSpan={COLUMNS.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted, padding: 24 }}>
+              <tr><td colSpan={columns.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted, padding: 24 }}>
                 {filtersActive ? 'Nobody matches these filters.' : 'No employees found. People appear here once they sign in to the portal or an admin runs "Sync Azure Users".'}
               </td></tr>
             )}
@@ -228,7 +248,7 @@ export default function HrEmployeesPage() {
               // People with no portal account are opened by their HR profile id.
               const href = e.has_login === false ? recordPath('/dashboard/hr/employees/workers', e, 'profile_id') : recordPath('/dashboard/hr/employees', e, 'user_id')
               return (
-              <tr key={e.user_id ?? `w${e.profile_id}`} onClick={() => router.push(href)} style={{ cursor: 'pointer', opacity: e.is_active ? 1 : 0.6 }}>
+              <tr key={e.user_id ?? `w${e.profile_id}`} onClick={() => { if (!vis.preview) router.push(href) }} style={{ cursor: vis.preview ? 'default' : 'pointer', opacity: e.is_active ? 1 : 0.6 }}>
                 <td style={tdStyle}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <Avatar name={e.name} url={e.profile_photo_url} id={e.user_id ?? e.profile_id ?? undefined} />
@@ -243,11 +263,11 @@ export default function HrEmployeesPage() {
                   </div>
                 </td>
                 <td style={{ ...tdStyle, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{e.employee_code || '—'}</td>
-                <td style={{ ...tdStyle, color: TEXT.secondary }}>{e.department_name || '—'}</td>
-                <td style={{ ...tdStyle, color: TEXT.secondary }}>{e.designation_name || '—'}{e.grade_name && <div style={{ fontSize: 11, color: TEXT.muted }}>{e.grade_name}</div>}</td>
-                <td style={{ ...tdStyle, color: TEXT.secondary }}>{e.branch_name || '—'}</td>
-                <td style={{ ...tdStyle, color: TEXT.secondary }}>{e.reporting_manager_name || '—'}</td>
-                <td style={{ ...tdStyle, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(e.date_of_joining)}</td>
+                <VisTd vis={vis} table="employees" k="department" style={{ ...tdStyle, color: TEXT.secondary }}>{e.department_name || '—'}</VisTd>
+                <VisTd vis={vis} table="employees" k="designation" style={{ ...tdStyle, color: TEXT.secondary }}>{e.designation_name || '—'}{e.grade_name && <div style={{ fontSize: 11, color: TEXT.muted }}>{e.grade_name}</div>}</VisTd>
+                <VisTd vis={vis} table="employees" k="plant" style={{ ...tdStyle, color: TEXT.secondary }}>{e.branch_name || '—'}</VisTd>
+                <VisTd vis={vis} table="employees" k="manager" style={{ ...tdStyle, color: TEXT.secondary }}>{e.reporting_manager_name || '—'}</VisTd>
+                <VisTd vis={vis} table="employees" k="joined" style={{ ...tdStyle, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(e.date_of_joining)}</VisTd>
                 <td style={tdStyle} data-tour="hr-emp-status-badge">
                   {!e.has_profile
                     ? <StatusPill label="No HR profile" hex="#D97706" />

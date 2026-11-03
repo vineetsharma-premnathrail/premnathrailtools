@@ -6,7 +6,8 @@ class RndDocumentResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
-    project_id: int
+    project_id: int | None = None
+    pm_project_id: int | None = None
     experiment_id: int | None = None
     prototype_id: int | None = None
     doc_type: str

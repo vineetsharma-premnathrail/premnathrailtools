@@ -2,7 +2,8 @@
 
 import SearchableSelect from '@/components/erp/SearchableSelect'
 
-export interface ItemTypeOption { value: string; label: string; prefix: string }
+/** `allowed` comes from /store/items/meta: false = this user's roles don't let them pick it (role visibility). */
+export interface ItemTypeOption { value: string; label: string; prefix: string; allowed?: boolean }
 
 /** Item Type dropdown — pick only. Item types are master data, added/edited
  *  under Store → Settings → Item Types, not from the item form. */

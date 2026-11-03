@@ -13,6 +13,7 @@ import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
+import { itemOptionDetail } from '@/lib/itemOptions'
 import Select from '@/components/shared/Select'
 import { CONTROL } from '@/lib/theme'
 
@@ -152,7 +153,7 @@ export default function NewStockTransferPage() {
                 {idx === 0 && <label style={sheetLabel}>Item <Req /></label>}
                 <div {...(idx === 0 ? { 'data-tour': 'transfer-item' } : {})}>
                   <SearchableSelect value={line.itemId} onChange={(v) => updateLine(idx, { itemId: v })} placeholder="Search item code or name…"
-                    options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
+                    options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, description: itemOptionDetail(i) }))} />
                 </div>
               </div>
               <div style={{ flex: '0 0 130px' }}>

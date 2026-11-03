@@ -4,6 +4,8 @@ import { HrEmployeeProfile } from '@/types'
 import { TEXT } from '@/lib/theme'
 import { DetailCard, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { useCan } from '@/lib/permissions'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection } from '@/lib/visibilityComponents'
 import {
   sectionStyle, formatDate, titleCase, EMPLOYMENT_TYPE_LABELS, WORKER_TYPE_LABELS,
   RECORD_STATUS_LABELS, RECORD_STATUS_HEX, ATTENDANCE_POLICY_LABELS, PROBATION_STATUS_LABELS, LOGIN_STATUS_LABELS,
@@ -73,6 +75,9 @@ export default function EmployeeProfileView({ p, audience, personalAction }: { p
   // HR › Employees features: how much of someone else's record a role sees
   // (the server blanks the same fields). An employee always sees their own.
   const { canFeature } = useCan()
+  // Role-wise visibility of the Employee page blocks (HR > Employees > Visibility, screen "Employee page").
+  // Only HR's view of someone's record takes it; My HR (audience "self") reads a key no role sets, so it shows everything.
+  const vis = useVisibility(audience === 'hr' ? 'hr:employees' : 'hr:me.profile')
   const see = (feature: 'personal' | 'statutory_ids' | 'hr_notes') => audience === 'self' || canFeature('hr', 'employees', feature, 'view')
   const seePersonal = see('personal')
   const seeStatutory = see('statutory_ids')
@@ -86,7 +91,7 @@ export default function EmployeeProfileView({ p, audience, personalAction }: { p
   const order = [
     'employment', exited && 'exit', audience === 'hr' && 'attendance', showContractor && 'contractor',
     showContact && 'personal', seePersonal && 'emergency', showCompliance && 'compliance', audience === 'hr' && 'hr',
-  ].filter(Boolean) as string[]
+  ].filter((k) => k && vis.showSection(`detail_${k === 'hr' ? 'hr_notes' : k}`)) as string[]
   const isLast = (k: string) => order[order.length - 1] === k
 
   return (
@@ -102,7 +107,8 @@ export default function EmployeeProfileView({ p, audience, personalAction }: { p
       )}
 
       <DetailCard style={{ paddingTop: 10, marginBottom: 0 }}>
-        <Group title="Employment" tour="hr-profile-employment" last={isLast('employment')}>
+        <VisSection vis={vis} k="detail_employment">
+          <Group title="Employment" tour="hr-profile-employment" last={isLast('employment')}>
           <DetailRow label="Worker category">{WORKER_TYPE_LABELS[p.worker_type || 'office']}</DetailRow>
           <DetailRow label="Employment type">{EMPLOYMENT_TYPE_LABELS[p.employment_type || '']}</DetailRow>
           <DetailRow label="Grade">{p.grade_code ? `${p.grade_code} · ${p.grade_name}` : null}</DetailRow>
@@ -115,24 +121,30 @@ export default function EmployeeProfileView({ p, audience, personalAction }: { p
           {(p.contract_start_date || p.contract_end_date) && <DetailRow label="Contract period">{`${formatDate(p.contract_start_date)} → ${formatDate(p.contract_end_date)}`}</DetailRow>}
           {p.has_login !== false && <DetailRow label="Direct reports">{String(p.direct_reports_count || 0)}</DetailRow>}
         </Group>
+          </VisSection>
 
         {exited && (
+          <VisSection vis={vis} k="detail_exit">
           <Group title="Exit" last={isLast('exit')}>
             <DetailRow label="Last working day">{p.date_of_exit ? formatDate(p.date_of_exit) : null}</DetailRow>
             <DetailRow label="Exit reason">{p.exit_reason}</DetailRow>
             {p.has_login === false && p.employment_status === 'exited' && <DetailRow label="Clearance">{p.exit_clearance_done ? 'Complete' : 'Pending'}</DetailRow>}
           </Group>
+          </VisSection>
         )}
 
         {audience === 'hr' && (
+          <VisSection vis={vis} k="detail_attendance">
           <Group title="Attendance setup" tour="hr-profile-attendance" last={isLast('attendance')}>
             <DetailRow label="Attendance policy">{ATTENDANCE_POLICY_LABELS[p.attendance_policy || '']}</DetailRow>
             <DetailRow label="Weekly off">{p.weekly_off ? p.weekly_off.split(',').map((d) => d[0].toUpperCase() + d.slice(1)).join(', ') : 'As per plant calendar'}</DetailRow>
             <DetailRow label="Overtime eligible">{p.ot_eligible === true ? 'Yes' : p.ot_eligible === false ? 'No' : 'Not set (treated as eligible)'}</DetailRow>
           </Group>
+          </VisSection>
         )}
 
         {showContractor && (
+          <VisSection vis={vis} k="detail_contractor">
           <Group title="Contractor" tour="hr-profile-contractor" last={isLast('contractor')}>
             <DetailRow label="Contractor company">{p.contractor_name}</DetailRow>
             <DetailRow label="Contractor worker ID">{p.contractor_worker_id}</DetailRow>
@@ -140,9 +152,11 @@ export default function EmployeeProfileView({ p, audience, personalAction }: { p
             <DetailRow label="Agreement / work order">{p.contractor_agreement_ref}</DetailRow>
             <DetailRow label="Verification">{p.contractor_verification ? titleCase(p.contractor_verification) : null}</DetailRow>
           </Group>
+          </VisSection>
         )}
 
         {showContact && (
+          <VisSection vis={vis} k="detail_personal">
           <Group title="Contact & personal details" tour="hr-profile-personal" action={personalAction} last={isLast('personal')}>
             {p.has_login !== false && <DetailRow label="Work email">{p.email}</DetailRow>}
             {p.has_login !== false && <DetailRow label="Work phone">{p.phone}</DetailRow>}
@@ -159,18 +173,22 @@ export default function EmployeeProfileView({ p, audience, personalAction }: { p
               </DetailRow>
             </>}
           </Group>
+          </VisSection>
         )}
 
         {seePersonal && (
+          <VisSection vis={vis} k="detail_emergency">
           <Group title="Emergency contact" tour="hr-profile-emergency" last={isLast('emergency')}>
             <DetailRow label="Name">
               {p.emergency_contact_name ? `${p.emergency_contact_name}${p.emergency_contact_relation ? ` (${p.emergency_contact_relation})` : ''}` : null}
             </DetailRow>
             <DetailRow label="Phone">{p.emergency_contact_phone}</DetailRow>
           </Group>
+          </VisSection>
         )}
 
         {showCompliance && (
+          <VisSection vis={vis} k="detail_compliance">
           <Group title={seeStatutory ? 'Statutory IDs & compliance' : 'Compliance'} tour="hr-profile-statutory" last={isLast('compliance')}>
             {seeStatutory && <>
               <DetailRow label="PAN">{p.pan_number}</DetailRow>
@@ -182,9 +200,11 @@ export default function EmployeeProfileView({ p, audience, personalAction }: { p
             {nonOffice && <DetailRow label="Medical clearance">{[statusText(p.medical_clearance_status), p.medical_fitness_date ? formatDate(p.medical_fitness_date) : ''].filter(Boolean).join(' · ')}</DetailRow>}
             {audience === 'hr' && <DetailRow label="Documents received">{String(p.documents_received?.length || 0)}</DetailRow>}
           </Group>
+          </VisSection>
         )}
 
         {audience === 'hr' && (
+          <VisSection vis={vis} k="detail_hr_notes">
           <Group title="HR notes & account" tour="hr-profile-hr-notes" last={isLast('hr')}>
             {p.has_login === false
               ? <>
@@ -201,6 +221,7 @@ export default function EmployeeProfileView({ p, audience, personalAction }: { p
             <DetailRow label="Created">{p.created_at ? `${formatDate(p.created_at)}${p.created_by_name ? ` · ${p.created_by_name}` : ''}` : null}</DetailRow>
             <DetailRow label="Last updated">{p.updated_at ? `${formatDate(p.updated_at)}${p.updated_by_name ? ` · ${p.updated_by_name}` : ''}` : null}</DetailRow>
           </Group>
+          </VisSection>
         )}
       </DetailCard>
     </div>

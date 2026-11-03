@@ -9,10 +9,17 @@ class DepartmentMemberResponse(BaseModel):
     email: str
     designation: str | None = None
     is_head: bool = False
+    reporting_manager_id: int | None = None
+    reporting_manager_name: str | None = None
 
 
 class DepartmentAddMemberPayload(BaseModel):
     user_id: int
+
+
+class DepartmentMemberManagerPayload(BaseModel):
+    """None clears the reporting manager."""
+    reporting_manager_id: int | None = None
 
 
 class DepartmentCreate(BaseModel):

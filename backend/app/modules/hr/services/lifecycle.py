@@ -584,6 +584,7 @@ def complete_joining(db: Session, event: HrLifecycleEvent, payload, actor: User)
                 "hires or rehires — use a transfer or promotion event to change their department, designation or manager."
             ),
         )
+    # Not bound by the Employees > Employment Type visibility rule (owner decision pending).
     employment_type = payload.employment_type or (profile.employment_type if profile else None) or "permanent"
     if employment_type not in EMPLOYMENT_TYPES:
         raise HTTPException(status_code=400, detail=f"Employment type '{employment_type}' isn't valid. Use one of: {', '.join(EMPLOYMENT_TYPES)}.")

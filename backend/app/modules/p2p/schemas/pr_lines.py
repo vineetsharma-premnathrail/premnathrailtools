@@ -138,6 +138,9 @@ class MyLineRow(BaseModel):
     charged_to: str | None = None
     item_code: str | None = None
     item_name: str
+    # Item Master category of the line (snapshot on the line, else the master's). My Lines shows one row per
+    # requisition + category + buyer; lines inside it expand.
+    category: str | None = None
     unit: str | None = None
     buy_qty: float
     short_closed_qty: float

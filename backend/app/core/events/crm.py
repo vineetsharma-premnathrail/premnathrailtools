@@ -56,6 +56,11 @@ register_event(
     ("inquiries_tenders", "send_tor", "view"), default_channels=("bell",), kind="info",
 )
 register_event(
+    "crm", "tor_closed", "R&D closed a Technical Requirement without a response",
+    "R&D closes a Technical Requirement (TOR) without a response — nothing to deliver; BD continues and can re-send it later",
+    ("inquiries_tenders", "send_tor", "view"), default_channels=("bell",), kind="info",
+)
+register_event(
     "crm", "rnd_accepted", "R&D accepted a requirement",
     "R&D accepts a requirement (or a new revision of it) that BD sent", ("inquiries_tenders", "send_tor", "view"),
     default_channels=("bell",), kind="info",

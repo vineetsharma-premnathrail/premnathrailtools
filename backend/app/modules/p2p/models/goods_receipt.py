@@ -120,10 +120,14 @@ class P2PGoodsReceiptItem(Base, TimestampMixin, OrderProjectLineMixin):
 
     quality_status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     # How this line reached the stock ledger (SAP 101):
-    #   "quality" — received into QUALITY stock when the GRN was recorded; the
-    #               GRN inspection then releases accepted to Free and moves
-    #               rejected to Blocked (until it goes back to the vendor);
-    #   "lot"     — a Quality inspection lot took it into QUALITY stock;
+    #   "free"    — item without the "Quality check on receipt" flag: received
+    #               straight into FREE stock when the GRN was recorded and
+    #               accepted as received (since 2026-11-03);
+    #   "quality" — before 2026-11-03: received into QUALITY stock when the GRN
+    #               was recorded; the GRN check then releases accepted to Free
+    #               and moves rejected to Blocked (until it goes back to the vendor);
+    #   "lot"     — item flagged "Quality check on receipt": a Quality
+    #               inspection lot took it into QUALITY stock;
     #   "none"    — service / asset line: never store stock;
     #   NULL      — GRNs recorded before 2026-10-13: nothing posted at
     #               receipt, the accepted quantity is posted at inspection.

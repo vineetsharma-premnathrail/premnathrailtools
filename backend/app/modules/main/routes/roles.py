@@ -39,6 +39,16 @@ class RolePayload(BaseModel):
     notification_events: dict[str, list[str]] | None = None
     # "<module>:<tab>.<feature>" -> assign-to rule (core/assignee_rules.py). None = leave unchanged.
     assignee_rules: dict[str, dict] | None = None
+    # "<module>:<tab>[.<feature>]" -> UI visibility rule (core/visibility.py). None = leave unchanged.
+    visibility_rules: dict[str, dict] | None = None
+
+
+def _clean_visibility_rules(value) -> dict[str, dict]:
+    from app.core.visibility import clean_rules
+    try:
+        return clean_rules(value)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 def _clean_assignee_rules(value) -> dict[str, dict]:
@@ -73,6 +83,7 @@ def _role_out(role: Role, user_count: int) -> dict:
         "permissions": sorted(role.permissions or []), "data_scopes": role.data_scopes or {}, "is_system": role.is_system,
         "notification_events": role.notification_events or {},
         "assignee_rules": role.assignee_rules or {},
+        "visibility_rules": role.visibility_rules or {},
         "is_default": role.is_default, "is_active": role.is_active, "user_count": user_count,
         "created_at": role.created_at, "updated_at": role.updated_at,
     }
@@ -93,6 +104,15 @@ def _get_role(db: Session, role_id: int) -> Role:
 def validate_grants(grants: list[str], actor: User) -> list[str]:
     """Reject unknown ids, and stop a non-admin role manager from handing out
     access they don't hold themselves (no privilege escalation)."""
+    # Ids of matrix rows removed since the role was saved are dropped, not refused (matrix cleanup).
+    # A department "Ongoing Projects" grant is stored as its My Tasks / Department Work ids, so saving
+    # the role keeps that access instead of losing it.
+    from app.core.permission_registry import ONGOING_PROJECTS_ROWS, is_retired_grant, legacy_grant_aliases
+    grants = list(dict.fromkeys(
+        a for g in grants
+        for a in (legacy_grant_aliases(g) if ":".join(g.split(":")[:2]).split(".", 1)[0] in ONGOING_PROJECTS_ROWS else [g])
+        if not is_retired_grant(a)
+    ))
     bad = [g for g in grants if not is_valid_grant(g)]
     if bad:
         raise HTTPException(
@@ -149,6 +169,30 @@ def validate_scope_escalation(scopes: dict[str, str], actor: User, old: dict[str
             )
 
 
+def ensure_visibility_not_self_loosened(actor: User, role: Role | None, is_default: bool, old: dict, new: dict) -> None:
+    """A non-admin may not change the visibility rules of a role they hold
+    themselves, or of a role that applies to everyone: dropping a restriction
+    there would lift it for the person making the change. `role` is None for a
+    role being created. Unchanged rules are not re-checked (the editor sends
+    everything back on every save)."""
+    if is_admin_user(actor):
+        return
+    # Compare against the old rules as they would save today (a rule for a screen no longer in the
+    # catalogue is dropped by clean_rules), so an unchanged save isn't refused.
+    from app.core.visibility import clean_rules
+    try:
+        old = clean_rules(old or {})
+    except ValueError:
+        pass
+    if (old or {}) == (new or {}):
+        return
+    holds = role is not None and any(r.id == role.id for r in actor.roles or [])
+    if holds or is_default or (role is not None and role.is_default):
+        raise HTTPException(
+            status_code=403,
+            detail="You can't change the visibility of a role you hold yourself or of a role that applies to everyone — ask an admin.")
+
+
 def _ensure_unique_name(db: Session, name: str, exclude_id: int | None = None) -> str:
     name = name.strip()
     q = db.query(Role).filter(func.lower(Role.name) == name.lower())
@@ -182,11 +226,17 @@ async def get_catalog(_user: User = Depends(_can_view)):
     has — what the role editor renders."""
     return {"modules": MODULES, "actions": ACTIONS, "action_labels": ACTION_LABELS,
             "scope_levels": list(SCOPE_LEVELS), "scope_labels": SCOPE_LABELS,
-            "default_scope": default_scope(), "assignee_rules": _assignee_catalog()}
+            "default_scope": default_scope(), "assignee_rules": _assignee_catalog(),
+            "visibility": _visibility_catalog()}
 
 
 def _assignee_catalog() -> dict:
     from app.core.assignee_rules import catalog
+    return catalog()
+
+
+def _visibility_catalog() -> dict:
+    from app.core.visibility import catalog
     return catalog()
 
 
@@ -227,18 +277,22 @@ async def create_role(payload: RolePayload, db: Session = Depends(get_db), actor
         ensure_feature_action(actor, "organization", "roles", "data_access", "edit")
     if payload.notification_events and _clean_events(payload.notification_events):
         ensure_feature_action(actor, "organization", "roles", "notifications", "edit")
+    visibility_rules = _clean_visibility_rules(payload.visibility_rules)
+    ensure_visibility_not_self_loosened(actor, None, payload.is_default, {}, visibility_rules)
     role = Role(
         name=_ensure_unique_name(db, payload.name), description=payload.description,
         permissions=validate_grants(payload.permissions, actor), is_default=payload.is_default,
         is_active=payload.is_active, created_by_id=actor.id, data_scopes=validate_scopes(payload.data_scopes),
         notification_events=_clean_events(payload.notification_events),
         assignee_rules=_clean_assignee_rules(payload.assignee_rules),
+        visibility_rules=visibility_rules,
     )
     validate_scope_escalation(role.data_scopes, actor)
     db.add(role)
     db.flush()
     _audit(db, actor, role, "created", f"{actor.name} created role '{role.name}' ({len(role.permissions)} grant(s))",
-           new={"permissions": role.permissions, "is_default": role.is_default})
+           new={"permissions": role.permissions, "is_default": role.is_default,
+                "assignee_rules": role.assignee_rules, "visibility_rules": role.visibility_rules})
     db.commit()
     db.refresh(role)
     return _role_out(role, 0)
@@ -252,7 +306,8 @@ async def update_role(role_id: int, payload: RolePayload, background_tasks: Back
     old = {"name": role.name, "description": role.description, "permissions": sorted(role.permissions or []),
            "data_scopes": dict(role.data_scopes or {}), "is_default": role.is_default, "is_active": role.is_active,
            "notification_events": dict(role.notification_events or {}),
-           "assignee_rules": dict(role.assignee_rules or {})}
+           "assignee_rules": dict(role.assignee_rules or {}),
+           "visibility_rules": dict(role.visibility_rules or {})}
     # Data access / Notifications tabs (features): changing them needs their Edit;
     # sending them back unchanged (the editor always sends everything) is fine.
     if validate_scopes(payload.data_scopes) != old["data_scopes"]:
@@ -270,17 +325,22 @@ async def update_role(role_id: int, payload: RolePayload, background_tasks: Back
         role.notification_events = _clean_events(payload.notification_events)
     if payload.assignee_rules is not None:
         role.assignee_rules = _clean_assignee_rules(payload.assignee_rules)
+    if payload.visibility_rules is not None:
+        new_visibility = _clean_visibility_rules(payload.visibility_rules)
+        ensure_visibility_not_self_loosened(actor, role, role.is_default or old["is_default"], old["visibility_rules"], new_visibility)
+        role.visibility_rules = new_visibility
     new = {"name": role.name, "description": role.description, "permissions": role.permissions,
            "data_scopes": role.data_scopes, "is_default": role.is_default, "is_active": role.is_active,
            "notification_events": dict(role.notification_events or {}),
-           "assignee_rules": dict(role.assignee_rules or {})}
+           "assignee_rules": dict(role.assignee_rules or {}),
+           "visibility_rules": dict(role.visibility_rules or {})}
     added = sorted(set(new["permissions"]) - set(old["permissions"]))
     removed = sorted(set(old["permissions"]) - set(new["permissions"]))
     changed = [k for k in new if new[k] != old[k]]
-    access_changed = [k for k in ("permissions", "data_scopes", "assignee_rules", "is_default", "is_active") if new[k] != old[k]]
+    access_changed = [k for k in ("permissions", "data_scopes", "assignee_rules", "visibility_rules", "is_default", "is_active") if new[k] != old[k]]
     if access_changed:
         what = (f"+{len(added)} / -{len(removed)} permission(s)" if added or removed else "") or ", ".join(
-            {"data_scopes": "data access", "assignee_rules": "assign-to rules", "is_default": "'applies to everyone'", "is_active": "active flag"}.get(k, k) for k in access_changed)
+            {"data_scopes": "data access", "assignee_rules": "assign-to rules", "visibility_rules": "visibility rules", "is_default": "'applies to everyone'", "is_active": "active flag"}.get(k, k) for k in access_changed)
         notify_event(db, background_tasks, "organization", "role_changed", title=f"Role '{role.name}' changed",
                      message=f"{actor.name} changed role '{role.name}' ({what}). Its holders get the new access on their next page load.",
                      entity_type="role", entity_id=role.id, actor=actor)
@@ -302,12 +362,14 @@ async def copy_role(role_id: int, payload: RoleCopyPayload, db: Session = Depend
         data_scopes=dict(source.data_scopes or {}),
         notification_events=dict(source.notification_events or {}),
         assignee_rules=dict(source.assignee_rules or {}),
+        visibility_rules=dict(source.visibility_rules or {}),
     )
     validate_scope_escalation(role.data_scopes, actor)
     db.add(role)
     db.flush()
     _audit(db, actor, role, "created", f"{actor.name} created role '{role.name}' as a copy of '{source.name}'",
-           new={"permissions": role.permissions})
+           new={"permissions": role.permissions, "assignee_rules": role.assignee_rules,
+                "visibility_rules": role.visibility_rules})
     db.commit()
     db.refresh(role)
     return _role_out(role, 0)

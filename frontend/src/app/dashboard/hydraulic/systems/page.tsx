@@ -13,6 +13,9 @@ import { primaryBtnStyle, segmentBtnStyle, RowCount, Pill } from '@/components/s
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
 import { SYSTEM_TYPE_LABELS, SYSTEM_TYPE_HEX, SYSTEM_STATUS_LABELS, withUnit } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleSystems } from '@/lib/hydraulicPreviewSamples'
 
 const STATUS_HEX: Record<string, string> = {
   design: '#78716c', under_build: '#2563EB', testing: '#7C3AED', commissioned: '#0f766e',
@@ -30,21 +33,29 @@ const inputStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
 }
 const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
+const thCell: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }
+// Columns a role may hide (Role & Permissions › Hydraulic & Pneumatic › Systems › Visibility); number, name and status always show.
+const COLS: { label: string; key?: string }[] = [
+  { label: 'System No.' }, { label: 'Name' }, { label: 'Type', key: 'type' }, { label: 'Application', key: 'application' },
+  { label: 'Project', key: 'project' }, { label: 'Working Pressure', key: 'working_pressure' }, { label: 'Status' },
+]
 
 export default function HydSystemsPage() {
   const { isAuthorized, isLoading } = useRequireApp('hydraulic')
   const router = useRouter()
   const { can } = useCan()
+  // Role editor "Preview & choose": three made-up systems, nothing is loaded.
+  const vis = useVisibility('hydraulic:systems')
 
-  const [systems, setSystems] = useState<HydSystem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [systems, setSystems] = useState<HydSystem[]>(vis.preview ? sampleSystems : [])
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState<string | string[]>('')
   const [search, setSearch] = useState('')
   const [systemType, setSystemType] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     const params: Record<string, unknown> = {}
     if (systemType) params.system_type = systemType
     if (statusFilter) params.status = statusFilter
@@ -53,16 +64,17 @@ export default function HydSystemsPage() {
       .then((data) => { setSystems(Array.isArray(data) ? data : []); setError('') })
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load systems.')))
       .finally(() => setLoading(false))
-  }, [isAuthorized, systemType, statusFilter, search])
+  }, [isAuthorized, systemType, statusFilter, search, vis.preview])
 
   if (isLoading || !isAuthorized) return null
 
   const newHref = `/dashboard/hydraulic/systems/new${systemType ? `?type=${systemType}` : ''}`
   const filtered = Boolean(search.trim() || statusFilter)
+  const colCount = COLS.filter((c) => !c.key || vis.preview || vis.showColumn('systems', c.key)).length
 
   return (
     <div>
-      <HydraulicNav />
+      {!vis.preview && <HydraulicNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
@@ -71,7 +83,7 @@ export default function HydSystemsPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Systems</h1>
         </div>
-        {can('hydraulic', 'systems', 'create') && (
+        {can('hydraulic', 'systems', 'create') && !vis.preview && (
           <button
             data-tour="hyd-sys-new-btn"
             onClick={() => router.push(newHref)}
@@ -120,33 +132,31 @@ export default function HydSystemsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['System No.', 'Name', 'Type', 'Application', 'Project', 'Working Pressure', 'Status'].map((h, hi) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }}>
-                  {h}{hi === 0 && <RowCount count={systems.length} />}
-                </th>
-              ))}
+              {COLS.map((c, hi) => c.key
+                ? <VisTh key={c.label} vis={vis} table="systems" k={c.key} style={thCell}>{c.label}</VisTh>
+                : <th key={c.label} style={thCell}>{c.label}{hi === 0 && <RowCount count={systems.length} />}</th>)}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={colCount} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : systems.length === 0 ? (
-              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={colCount} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 {filtered
                   ? 'No systems match these filters — clear the search or status filter.'
                   : `No ${systemType ? `${SYSTEM_TYPE_LABELS[systemType].toLowerCase()} ` : ''}systems yet. Add a system (a power pack, brake unit or actuation circuit) to hang its circuits, BOMs and tests on.`}
               </td></tr>
             ) : (
               systems.map((s) => (
-                <tr key={s.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/systems', s))} style={{ cursor: 'pointer' }}>
+                <tr key={s.id} onClick={() => { if (!vis.preview) router.push(recordPath('/dashboard/hydraulic/systems', s)) }} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{s.system_number}</td>
                   <td style={cellStyle}>{s.name}</td>
-                  <td style={cellStyle}>
+                  <VisTd vis={vis} table="systems" k="type" style={cellStyle}>
                     <Pill label={SYSTEM_TYPE_LABELS[s.system_type] || s.system_type} hex={SYSTEM_TYPE_HEX[s.system_type] || '#78716c'} />
-                  </td>
-                  <td style={cellStyle}>{s.application || '—'}</td>
-                  <td style={cellStyle}>{s.project_label || '—'}</td>
-                  <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{withUnit(s.working_pressure_bar, 'bar')}</td>
+                  </VisTd>
+                  <VisTd vis={vis} table="systems" k="application" style={cellStyle}>{s.application || '—'}</VisTd>
+                  <VisTd vis={vis} table="systems" k="project" style={cellStyle}>{s.project_label || '—'}</VisTd>
+                  <VisTd vis={vis} table="systems" k="working_pressure" style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{withUnit(s.working_pressure_bar, 'bar')}</VisTd>
                   <td style={cellStyle}>
                     <Pill label={SYSTEM_STATUS_LABELS[s.status] || s.status} hex={STATUS_HEX[s.status] || '#78716c'} />
                   </td>

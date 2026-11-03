@@ -11,6 +11,7 @@ from app.modules.store.models.bin import StoreBin
 from app.modules.store.models.serial_number import StoreSerialEvent, StoreSerialNumber
 from app.modules.store.models.stock_transaction import StoreStockTransaction
 from app.tests.p2p_workflow_helpers import master_item
+from app.tests.test_grn_quality_check_flag import decide_grn_lots
 from app.tests.test_p2p_item_master_link import _po_for, _store
 from app.tests.test_p2p_requests import (  # noqa: F401 — _sqlite_number_series is an autouse fixture
     _approve_and_raise_po, _create_pr, _purchaser, _requester, _sqlite_number_series, auth_header,
@@ -32,9 +33,10 @@ def _no_rate_limit(monkeypatch):
     monkeypatch.setitem(owasp.RATE_CONFIG["write"], "limit", 100000)
 
 
-def _po(client, db, tag, qty=3, serial=False):
+def _po(client, db, tag, qty=3, serial=False, flagged=False):
     item = master_item(db, f"Hydraulic pump {tag}", code=f"BO-PMP-{tag}")
     item.serial_controlled = serial
+    item.inspection_on_receipt = flagged  # "Quality check on receipt"
     db.commit()
     loc = _store(db, f"S{tag}")
     pr = _create_pr(client, _requester(db, f"req.s{tag.lower()}@premnathrail.com"),
@@ -85,8 +87,9 @@ def test_grn_documents_gate_entry_blind_receipt_and_duplicate_invoice(client, db
     assert r.status_code == 409 and g["grn_number"] in r.json()["detail"]
 
 
-def test_serials_from_grn_through_inspection_issue_return_with_history(client, db):
-    item, loc, buyer, po = _po(client, db, "S1", qty=3, serial=True)
+def test_serials_from_grn_through_quality_lot_issue_return_with_history(client, db):
+    # A flagged item: units wait in Quality; the lot's partial decision leaves them there and the store names the failed one.
+    item, loc, buyer, po = _po(client, db, "S1", qty=3, serial=True, flagged=True)
     r = _grn(client, buyer, po, loc, 3)
     assert r.status_code == 422 and "serial" in r.json()["detail"]
     r = _grn(client, buyer, po, loc, 3, serials=["P-1", "P-2"])
@@ -97,18 +100,21 @@ def test_serials_from_grn_through_inspection_issue_return_with_history(client, d
     assert r.status_code == 200, r.text
     grn = r.json()
     assert grn["items"][0]["serial_numbers"] == ["P-1", "P-2", "P-3"]
+    assert grn["status"] == "draft"
     assert {u.status for u in db.query(StoreSerialNumber).filter_by(item_id=item.id)} == {"quality"}
 
-    # Partly rejected: the rejected unit must be named.
-    r = _inspect(client, buyer, grn, 2, 1)
-    assert r.status_code == 422 and "name the rejected" in r.json()["detail"]
-    r = _inspect(client, buyer, grn, 2, 1, rejected_serials=["P-3"])
-    assert r.status_code == 200, r.text
+    # Quality accepts 2 and rejects 1 but doesn't say which unit failed: the units stay in Quality until the store names it.
+    decide_grn_lots(db, grn["id"], "partial", accepted_qty=2, rejected_qty=1)
+    assert {u.status for u in db.query(StoreSerialNumber).filter_by(item_id=item.id)} == {"quality"}
+    keeper = make_user(db, "keeper.s1@x.com", apps=("store",), role="admin")
+    for serial_no, status in (("P-1", "in_stock"), ("P-2", "in_stock"), ("P-3", "blocked")):
+        unit = db.query(StoreSerialNumber).filter_by(item_id=item.id, serial_no=serial_no).one()
+        r = client.post(f"{SERIALS}/{unit.id}/quality-result", json={"status": status, "reason": "Lot IL result"}, headers=auth_header(keeper))
+        assert r.status_code == 200, r.text
     db.expire_all()
     st = {u.serial_no: u.status for u in db.query(StoreSerialNumber).filter_by(item_id=item.id)}
     assert st == {"P-1": "in_stock", "P-2": "in_stock", "P-3": "blocked"}
 
-    keeper = make_user(db, "keeper.s1@x.com", apps=("store",))
     avail = client.get(f"{SERIALS}/available", params={"item_id": item.id, "location_id": loc.id}, headers=auth_header(keeper)).json()
     assert [a["serial_no"] for a in avail] == ["P-1", "P-2"]
     # Issue: the blocked unit can't go; serials are required.
@@ -128,7 +134,7 @@ def test_serials_from_grn_through_inspection_issue_return_with_history(client, d
     assert p2.status == "issued" and "WO-9" in (p2.issued_to or "")
 
     detail = client.get(f"{SERIALS}/{p2.id}", headers=auth_header(keeper)).json()
-    assert [h["event"] for h in detail["history"]] == ["received", "inspection_accepted", "issued"]
+    assert [h["event"] for h in detail["history"]] == ["received", "quality_result", "issued"]
     assert detail["grn_number"] == grn["grn_number"] and detail["issue_number"] == issue["issue_number"]
 
     listed = client.get(SERIALS, params={"status": "in_stock", "item_id": item.id}, headers=auth_header(keeper))
@@ -140,16 +146,18 @@ def test_serials_from_grn_through_inspection_issue_return_with_history(client, d
         check_new_for_grn(db, item, 1, ["P-1"])
 
 
-def test_serial_return_to_vendor_and_grn_reversal(client, db):
+def test_serial_return_to_vendor_of_a_direct_posted_unit(client, db):
+    # Unflagged item: both units are accepted into stock on receipt; one is sent back to the vendor by serial number.
     item, loc, buyer, po = _po(client, db, "S2", qty=2, serial=True)
     grn = _grn(client, buyer, po, loc, 2, serials=["G-1", "G-2"]).json()
-    assert _inspect(client, buyer, grn, 1, 1, rejected_serials=["G-2"]).status_code == 200
-    r = client.post("/api/v1/p2p/vendor-returns", json={"goods_receipt_id": grn["id"], "reason": "quality_rejection",
-                                                        "items": [{"grn_item_id": grn["items"][0]["id"], "source": "rejected", "quantity": 1}]},
+    assert grn["status"] == "completed"
+    r = client.post("/api/v1/p2p/vendor-returns", json={"goods_receipt_id": grn["id"], "reason": "damaged",
+                                                        "items": [{"grn_item_id": grn["items"][0]["id"], "source": "accepted", "quantity": 1,
+                                                                   "serials": ["G-2"]}]},
                     headers=auth_header(buyer))
     assert r.status_code == 201, r.text
     db.expire_all()
-    assert db.query(StoreSerialNumber).filter_by(item_id=item.id, serial_no="G-2").one().status == "returned_to_vendor"
+    assert {u.serial_no: u.status for u in db.query(StoreSerialNumber).filter_by(item_id=item.id)} == {"G-1": "in_stock", "G-2": "returned_to_vendor"}
 
 
 def test_grn_reversal_cancels_serials(client, db):
@@ -172,7 +180,7 @@ def test_bin_putaway_pick_move_count_and_mb51(client, db):
     assert r.status_code == 422 and "another store" in r.json()["detail"]
     grn = _grn(client, buyer, po, loc, 10, bin_id=a.id, vendor_invoice_number="BIN-1", vendor_invoice_date=YESTERDAY).json()
     assert grn["items"][0]["bin_code"] == "A-01"
-    assert _inspect(client, buyer, grn, 10).status_code == 200
+    assert grn["status"] == "completed"  # unflagged item: in Free stock, in its bin, when the GRN is saved
 
     keeper = make_user(db, "keeper.b1@x.com", apps=("store",), is_store_manager=True)
     rows = client.get(BINSTOCK, params={"location_id": loc.id}, headers=auth_header(keeper)).json()
@@ -205,9 +213,9 @@ def test_bin_putaway_pick_move_count_and_mb51(client, db):
 
     # MB51: filters, paging header, export.
     r = client.get(MOVES, params={"item_id": item.id, "reference_number": grn["grn_number"], "limit": 1}, headers=auth_header(keeper))
-    assert r.status_code == 200 and int(r.headers["X-Total-Count"]) >= 2 and len(r.json()) == 1
-    r = client.get(MOVES, params={"item_id": item.id, "transaction_type": "issue,quality_in", "bin_id": a.id}, headers=auth_header(keeper))
-    assert {t["transaction_type"] for t in r.json()} == {"issue", "quality_in"}
+    assert r.status_code == 200 and int(r.headers["X-Total-Count"]) >= 1 and len(r.json()) == 1
+    r = client.get(MOVES, params={"item_id": item.id, "transaction_type": "issue,receipt", "bin_id": a.id}, headers=auth_header(keeper))
+    assert {t["transaction_type"] for t in r.json()} == {"issue", "receipt"}
     r = client.get(MOVES, params={"date_from": date.today().isoformat(), "date_to": YESTERDAY}, headers=auth_header(keeper))
     assert r.status_code == 422
     r = client.get(f"{MOVES}/export", params={"item_id": item.id}, headers=auth_header(keeper))
@@ -216,9 +224,10 @@ def test_bin_putaway_pick_move_count_and_mb51(client, db):
 
 
 def test_po_open_items_and_history(client, db):
-    item, loc, buyer, po = _po(client, db, "P1", qty=10)
+    # Flagged item: one of the 4 received is rejected by Quality's lot decision.
+    item, loc, buyer, po = _po(client, db, "P1", qty=10, flagged=True)
     grn = _grn(client, buyer, po, loc, 4, invoice_quantity=5).json()
-    assert _inspect(client, buyer, grn, 3, 1).status_code == 200
+    decide_grn_lots(db, grn["id"], "partial", accepted_qty=3, rejected_qty=1)
     r = client.get(f"{POREP}/open-items", params={"po_number": po["po_number"]}, headers=auth_header(buyer))
     assert r.status_code == 200, r.text
     row = r.json()["rows"][0]

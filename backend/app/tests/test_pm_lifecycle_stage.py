@@ -216,7 +216,8 @@ def test_pr_project_picker_lists_only_machines_before_dispatch(client, db):
                 Machine(serial_number="PEW-902", lifecycle_stage="dispatched"),
                 Machine(serial_number="PEW-903", lifecycle_stage="closed")])
     db.commit()
-    r = client.get(f"{API}/p2p/requests/projects", headers=auth(req))
+    # Default is every stage since owner 2026-11-02; include_delivered=false narrows to machines in build.
+    r = client.get(f"{API}/p2p/requests/projects", params={"include_delivered": "false"}, headers=auth(req))
     assert r.status_code == 200, r.text
     labels = [x["label"] for x in r.json()]
     assert "PEW-901" in labels and "PEW-902" not in labels and "PEW-903" not in labels

@@ -44,7 +44,10 @@ export default function ProductionReportsPage() {
   const { isAuthorized, isLoading } = useRequireApp('production')
   const router = useRouter()
   // Cost table, cost KPIs and WIP valuation: Production › Reports › costs switch.
-  const seeCosts = useCan().canFeature('production', 'reports', 'costs', 'view')
+  const { can, canFeature } = useCan()
+  const seeCosts = canFeature('production', 'reports', 'costs', 'view')
+  // The three "Export CSV" buttons: Production › Reports › Export.
+  const canExport = can('production', 'reports', 'export')
   const [dateFrom, setDateFrom] = useState(isoDaysAgo(29))
   const [dateTo, setDateTo] = useState(isoDaysAgo(0))
   const [report, setReport] = useState<ProductionReport | null>(null)
@@ -116,9 +119,9 @@ export default function ProductionReportsPage() {
           <div data-tour="production-rpt-output" style={sectionStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <p style={sectionTitle}>Finished Goods Output</p>
-              <button data-tour="production-rpt-output-csv-btn" type="button" style={secondaryBtnStyle} disabled={!report.output.length}
+              {canExport && <button data-tour="production-rpt-output-csv-btn" type="button" style={secondaryBtnStyle} disabled={!report.output.length}
                 onClick={() => downloadCsv(`production_output_${range}.csv`, ['Item Code', 'Item', 'UOM', 'Quantity', 'Work Orders'],
-                  report.output.map((r) => [r.item_code, r.item_name, r.uom, r.quantity, r.work_orders]))}>Export CSV</button>
+                  report.output.map((r) => [r.item_code, r.item_name, r.uom, r.quantity, r.work_orders]))}>Export CSV</button>}
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
@@ -142,10 +145,10 @@ export default function ProductionReportsPage() {
           {seeCosts && <div data-tour="production-rpt-cost" style={sectionStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <p style={sectionTitle}>Work Order Cost — Estimated vs Actual</p>
-              <button data-tour="production-rpt-cost-csv-btn" type="button" style={secondaryBtnStyle} disabled={!report.costs.length}
+              {canExport && <button data-tour="production-rpt-cost-csv-btn" type="button" style={secondaryBtnStyle} disabled={!report.costs.length}
                 onClick={() => downloadCsv(`production_cost_${range}.csv`,
                   ['WO Number', 'Product', 'Planned', 'Completed', 'Scrapped', 'Estimated Cost', 'Actual Cost', 'Variance', 'Variance %', 'Cost per Unit'],
-                  report.costs.map((c) => [c.wo_number, c.product_name, c.quantity_planned, c.quantity_completed, c.quantity_scrapped, c.estimated_total_cost, c.actual_total_cost, c.variance, c.variance_percent, c.cost_per_unit]))}>Export CSV</button>
+                  report.costs.map((c) => [c.wo_number, c.product_name, c.quantity_planned, c.quantity_completed, c.quantity_scrapped, c.estimated_total_cost, c.actual_total_cost, c.variance, c.variance_percent, c.cost_per_unit]))}>Export CSV</button>}
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
@@ -175,9 +178,9 @@ export default function ProductionReportsPage() {
           <div data-tour="production-rpt-utilization" style={sectionStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <p style={sectionTitle}>Workstation Utilization</p>
-              <button data-tour="production-rpt-utilization-csv-btn" type="button" style={secondaryBtnStyle} disabled={!report.utilization.length}
+              {canExport && <button data-tour="production-rpt-utilization-csv-btn" type="button" style={secondaryBtnStyle} disabled={!report.utilization.length}
                 onClick={() => downloadCsv(`production_utilization_${range}.csv`, ['Workstation', 'Hours Logged', 'Capacity Hours', 'Utilization %', 'Good Qty', 'Scrap Qty'],
-                  report.utilization.map((u) => [u.workstation_name, u.hours_logged, u.capacity_hours, u.utilization_percent, u.qty_good, u.qty_scrap]))}>Export CSV</button>
+                  report.utilization.map((u) => [u.workstation_name, u.hours_logged, u.capacity_hours, u.utilization_percent, u.qty_good, u.qty_scrap]))}>Export CSV</button>}
             </div>
             <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }}>Hours booked ÷ (daily capacity × working days, Monday–Saturday).</p>
             <div style={{ overflowX: 'auto' }}>

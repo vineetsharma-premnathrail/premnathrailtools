@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.audit import register_audited
 from app.core.permission_registry import can_view_tab
 from app.core.permissions import ensure_feature_action, require_feature_action
@@ -52,7 +53,12 @@ def _item(db: Session, item_id: int) -> StoreItem:
     return item
 
 
-def _payload(db: Session, item: StoreItem) -> dict:
+PLANT_KEY = "store:items.plant_data"  # role visibility of the coded MRP type / make-or-buy dropdowns
+
+
+def _payload(db: Session, item: StoreItem, user: User | None = None) -> dict:
+    mrp_allowed = visibility.allowed_values(user, PLANT_KEY, "mrp_type") if user is not None else None
+    proc_allowed = visibility.allowed_values(user, PLANT_KEY, "procurement_type") if user is not None else None
     branches = {b.id: b for b in db.query(Branch).order_by(Branch.name).all()}
     locs = {l.id: l for l in db.query(StoreLocation).all()}
     rows = []
@@ -73,8 +79,10 @@ def _payload(db: Session, item: StoreItem) -> dict:
         "company_defaults": plant_view(db, item, None),
         "plants": rows,
         "meta": {
-            "mrp_types": [{"value": k, "label": v} for k, v in STORE_MRP_TYPES.items()],
-            "procurement_types": [{"value": k, "label": v} for k, v in STORE_PROCUREMENT_TYPES.items()],
+            # Every coded value, each flagged `allowed` for this user (the grid filters, a saved row keeps its value).
+            "mrp_types": [{"value": k, "label": v, "allowed": mrp_allowed is None or k in mrp_allowed} for k, v in STORE_MRP_TYPES.items()],
+            "procurement_types": [{"value": k, "label": v, "allowed": proc_allowed is None or k in proc_allowed}
+                                  for k, v in STORE_PROCUREMENT_TYPES.items()],
             "plants": [{"id": b.id, "name": b.name, "code": b.code} for b in branches.values()],
             "stores": [{"id": l.id, "name": l.name, "code": l.code, "branch_id": l.branch_id} for l in locs.values() if l.is_active],
         },
@@ -86,7 +94,7 @@ async def get_item_plants(item_id: int, db: Session = Depends(get_db), user: Use
     # A cross-module lookup; Store users additionally need Items › Plant data.
     if can_view_tab(user, "store", "items"):
         ensure_feature_action(user, "store", "items", "plant_data", "view")
-    return _payload(db, _item(db, item_id))
+    return _payload(db, _item(db, item_id), user)
 
 
 @router.put("/{item_id}/plants")
@@ -94,16 +102,22 @@ async def put_item_plants(
     item_id: int,
     payload: StoreItemPlantsUpdatePayload,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_feature_action("store", "items", "plant_data", "edit")),
+    user: User = Depends(require_feature_action("store", "items", "plant_data", "edit")),
 ):
     item = _item(db, item_id)
     seen: set[int] = set()
     clean = []
+    current = {r.branch_id: r for r in plant_rows(db, item.id)}
     for p in payload.plants:
         try:
             c = validate_plant_payload(db, item, p.model_dump())
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
+        # Role visibility: a new row's MRP type / make-or-buy, or a CHANGED one, must be a value this role may pick.
+        row = current.get(c["branch_id"])
+        for field in ("mrp_type", "procurement_type"):
+            if row is None or getattr(row, field) != c.get(field):
+                visibility.ensure_option_allowed(user, PLANT_KEY, field, c.get(field))
         if c["branch_id"] in seen:
             b = db.get(Branch, c["branch_id"])
             raise HTTPException(status_code=422, detail=f"Plant {b.name if b else c['branch_id']} is listed twice — keep one row per plant.")
@@ -122,4 +136,4 @@ async def put_item_plants(
                 if getattr(row, k) != v:
                     setattr(row, k, v)
     db.commit()
-    return _payload(db, item)
+    return _payload(db, item, user)

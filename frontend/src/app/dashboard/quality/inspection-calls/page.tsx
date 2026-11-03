@@ -3,8 +3,11 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { recordPath } from '@/lib/recordRef'
-import { useRequireApp } from '@/hooks/useAuth'
 import { qualityApi } from '@/lib/api'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { useQualityScreen } from '@/components/quality/useQualityScreen'
+import { sampleCalls } from '@/lib/qualityPreviewSamples'
 import { QualityContract, QualityInspectionCall } from '@/types'
 import { TEXT, BORDER } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
@@ -29,7 +32,9 @@ type Tab = typeof TABS[number][0]
 
 function CallsTab() {
   const router = useRouter()
-  const [rows, setRows] = useState<QualityInspectionCall[]>([])
+  // Columns the user's roles hide; in the Role editor's preview the list shows sample rows and loads nothing.
+  const vis = useVisibility('quality:inspection_calls')
+  const [rows, setRows] = useState<QualityInspectionCall[]>(vis.preview ? sampleCalls : [])
   const [error, setError] = useState<string | string[]>('')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
@@ -44,17 +49,22 @@ function CallsTab() {
   }
   const filterKey = JSON.stringify(params)
   const [loadedKey, setLoadedKey] = useState<string | null>(null)
-  const loading = loadedKey !== filterKey
+  const loading = !vis.preview && loadedKey !== filterKey
 
   useEffect(() => {
+    if (vis.preview) return  // sample rows from the first render, nothing is loaded
     const params = JSON.parse(filterKey) as Record<string, unknown>
     qualityApi.listInspectionCalls(params)
       .then((d) => setRows(Array.isArray(d) ? d : []))
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load inspection calls.')))
       .finally(() => setLoadedKey(filterKey))
-  }, [filterKey])
+  }, [filterKey, vis.preview])
 
-  const cols = ['Call', 'Agency', 'Order / contract', 'Item', 'Qty', 'Call date', 'Inspector', 'Status', 'Certificate']
+  // [label, hideable column key]: number and status are never hideable.
+  const cols: [string, string | null][] = [['Call', null], ['Agency', 'agency'], ['Order / contract', 'order'], ['Item', 'item'], ['Qty', 'qty'],
+    ['Call date', 'call_date'], ['Inspector', 'inspector'], ['Status', null], ['Certificate', 'certificate']]
+  // The preview draws every column (hidden ones dimmed, with a toggle); normal use drops the hidden ones.
+  const colCount = cols.filter(([, k]) => !k || vis.preview || vis.showColumn('calls', k)).length
   return (
     <>
       <ErrorBanner error={error} />
@@ -70,28 +80,31 @@ function CallsTab() {
       </div>
       <div style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
-          <thead><tr>{cols.map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
+          <thead><tr>{cols.map(([h, k], i) => {
+            const head = <>{h}{i === 0 && <RowCount count={rows.length} />}</>
+            return k ? <VisTh key={h} vis={vis} table="calls" k={k} style={thStyle}>{head}</VisTh> : <th key={h} style={thStyle}>{head}</th>
+          })}</tr></thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={colCount} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No inspection calls yet.</td></tr>
+              <tr><td colSpan={colCount} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No inspection calls yet.</td></tr>
             ) : rows.map((c) => {
               const soon = c.days_to_call != null && c.days_to_call <= 2
               return (
-                <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/quality/inspection-calls', c))} style={{ cursor: 'pointer' }}>
+                <tr key={c.id} onClick={vis.preview ? undefined : () => router.push(recordPath('/dashboard/quality/inspection-calls', c))} style={{ cursor: vis.preview ? 'default' : 'pointer' }}>
                   <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{c.call_number}</td>
-                  <td style={tdStyle}>{c.agency_label || c.agency}</td>
-                  <td style={tdStyle}>
+                  <VisTd vis={vis} table="calls" k="agency" style={tdStyle}>{c.agency_label || c.agency}</VisTd>
+                  <VisTd vis={vis} table="calls" k="order" style={tdStyle}>
                     {c.order_reference || '—'}<div style={{ fontSize: 11.5, color: TEXT.muted }}>{c.project_label || c.customer_name || ''}</div>
                     {c.op_number && <div style={{ marginTop: 4 }}><OrderProjectChip opNumber={c.op_number} elementNo={c.element_no} label={c.element_label} /></div>}
-                  </td>
-                  <td style={tdStyle}>{c.item_code ? `${c.item_code} — ` : ''}{c.item_name}</td>
-                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtQty(c.quantity, c.uom)}</td>
-                  <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: soon ? '#DC2626' : TEXT.body, fontWeight: soon ? 700 : 400 }}>{fmtDate(c.call_date)}</td>
-                  <td style={tdStyle}>{c.inspector_name || '—'}</td>
+                  </VisTd>
+                  <VisTd vis={vis} table="calls" k="item" style={tdStyle}>{c.item_code ? `${c.item_code} — ` : ''}{c.item_name}</VisTd>
+                  <VisTd vis={vis} table="calls" k="qty" style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtQty(c.quantity, c.uom)}</VisTd>
+                  <VisTd vis={vis} table="calls" k="call_date" style={{ ...tdStyle, whiteSpace: 'nowrap', color: soon ? '#DC2626' : TEXT.body, fontWeight: soon ? 700 : 400 }}>{fmtDate(c.call_date)}</VisTd>
+                  <VisTd vis={vis} table="calls" k="inspector" style={tdStyle}>{c.inspector_name || '—'}</VisTd>
                   <td style={tdStyle}><Pill text={STATUS_LABELS[c.status] || c.status} hex={STATUS_HEX[c.status]} /></td>
-                  <td style={tdStyle}>{c.certificate_number || '—'}</td>
+                  <VisTd vis={vis} table="calls" k="certificate" style={tdStyle}>{c.certificate_number || '—'}</VisTd>
                 </tr>
               )
             })}
@@ -230,18 +243,20 @@ function DispatchTab() {
 }
 
 export default function InspectionCallsPage() {
-  const { isAuthorized, isLoading } = useRequireApp('quality')
+  // In the Role editor's preview only the calls list is drawn (sample rows), without nav, tabs or actions.
+  const { vis, isAuthorized, isLoading } = useQualityScreen('quality:inspection_calls')
   const router = useRouter()
   const { can } = useCan()
   const [tab, setTab] = useState<Tab>('calls')
   const [agencies, setAgencies] = useState<{ value: string; label: string }[]>([])
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     qualityApi.getInspectionCallMeta().then((m) => setAgencies(m.agencies || [])).catch(() => setAgencies([]))
-  }, [isAuthorized])
+  }, [isAuthorized, vis.preview])
 
   if (isLoading || !isAuthorized) return null
+  if (vis.preview) return (<div><PageHeader title="Customer / Third-party Inspection" /><CallsTab /></div>)
   return (
     <div>
       <QualityNav />

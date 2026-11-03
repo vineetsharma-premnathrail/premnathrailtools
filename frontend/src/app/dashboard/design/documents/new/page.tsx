@@ -9,7 +9,7 @@ import { designApi } from '@/lib/api'
 import { DesignLookupOption, DesignRequest } from '@/types'
 import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
-import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, Req, Optional, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
+import { FormPage, SheetSection, SheetIcon, SHEET, Req, Optional, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { DANGER_RED } from '@/components/design/DesignSheets'
 import { useDesignMe } from '@/components/design/useDesignMe'
 import { DOC_TYPE_LABELS, DISCIPLINE_LABELS, FILE_ROLE_LABELS, DESIGN_FILE_ACCEPT, formatBytes, toOptions } from '@/components/design/designMeta'
@@ -18,6 +18,9 @@ import { recordPath, useRecordId } from '@/lib/recordRef'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { useVisibility } from '@/lib/visibility'
+import { VisColumns } from '@/components/quality/VisColumns'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
 
 type Staged = { file: File; role: string }
 
@@ -30,8 +33,12 @@ export default function NewDesignDocumentPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('design')
   const router = useRouter()
   const searchParams = useSearchParams()
-  const me = useDesignMe(isAuthorized)
-  const { id: requestParamId, error: linkError, loading: requestLinkLoading } = useRecordId(searchParams.get('request_id'))
+  // Role visibility (Role & Permissions › Design › Drawings › Visibility). In the Role editor's "Preview & choose"
+  // the form draws every section, loads and saves nothing.
+  const vis = useVisibility('design:documents')
+  const preview = vis.preview
+  const me = useDesignMe(isAuthorized && !preview)
+  const { id: requestParamId, error: linkError, loading: requestLinkLoading } = useRecordId(preview ? null : searchParams.get('request_id'))
 
   const [users, setUsers] = useState<DesignLookupOption[]>([])
   const [projects, setProjects] = useState<DesignLookupOption[]>([])
@@ -44,8 +51,13 @@ export default function NewDesignDocumentPage() {
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [documentType, setDocumentType] = useState('part_drawing')
-  const [discipline, setDiscipline] = useState('mechanical')
+  const [pickedType, setDocumentType] = useState('part_drawing')
+  const [pickedDiscipline, setDiscipline] = useState('mechanical')
+  // Type / discipline values the role offers; a new form shows the first offered value when its default isn't one.
+  const typeChoices = vis.options('document_type', Object.entries(DOC_TYPE_LABELS), ([k]) => k)
+  const disciplineChoices = vis.options('discipline', Object.entries(DISCIPLINE_LABELS), ([k]) => k)
+  const documentType = !preview && typeChoices.length && !typeChoices.some(([k]) => k === pickedType) ? typeChoices[0][0] : pickedType
+  const discipline = !preview && disciplineChoices.length && !disciplineChoices.some(([k]) => k === pickedDiscipline) ? disciplineChoices[0][0] : pickedDiscipline
   const [pmProjectId, setPmProjectId] = useState('')
   const [erpProjectId, setErpProjectId] = useState('')
   const [storeItemId, setStoreItemId] = useState('')
@@ -68,7 +80,7 @@ export default function NewDesignDocumentPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
 
-  const draft = useFormDraft(requestLinkLoading ? null : `design-document-new-${requestParamId ?? 0}`,
+  const draft = useFormDraft(requestLinkLoading || preview ? null : `design-document-new-${requestParamId ?? 0}`,
     { title, description, documentType, discipline, pmProjectId, erpProjectId, storeItemId, departmentId, customerId, customerApproval, standardId, requestId, legacyNumber, ownerChoice, reviewerId, approverId, changeSummary, staged, nextRole, submitNow },
     (d) => {
       setTitle(d.title ?? ''); setDescription(d.description ?? ''); setDocumentType(d.documentType ?? 'part_drawing'); setDiscipline(d.discipline ?? 'mechanical')
@@ -86,7 +98,7 @@ export default function NewDesignDocumentPage() {
   }
 
   useEffect(() => {
-    if (!isAuthorized || requestLinkLoading) return
+    if (!isAuthorized || requestLinkLoading || preview) return
     Promise.all([
       designApi.lookupUsers(), designApi.lookupProjects(), designApi.lookupMachines(),
       designApi.lookupItems(), designApi.lookupDepartments(),
@@ -107,7 +119,7 @@ export default function NewDesignDocumentPage() {
       })
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load customers, standards or design requests.')))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthorized, requestLinkLoading])
+  }, [isAuthorized, requestLinkLoading, preview])
 
   // The item list loads only the first 200 Item Master codes — search for the rest.
   const searchItems = async () => {
@@ -152,8 +164,12 @@ export default function NewDesignDocumentPage() {
     [users, user, allowChecker],
   )
 
+  // "Submit R0 now" needs a checker, an approver and a file: not offered when the role hides those sections.
+  const canSubmitNow = preview || (vis.showSection('signoff') && vis.showSection('files'))
+  const submitting = submitNow && canSubmitNow
+
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><DesignNav /><InvalidRecordLink message={linkError} listHref="/dashboard/design/documents" listLabel="Back to drawings" /></div>)
+  if (linkError && !preview) return (<div><DesignNav /><InvalidRecordLink message={linkError} listHref="/dashboard/design/documents" listLabel="Back to drawings" /></div>)
 
   const addFiles = (list: FileList | null) => {
     if (!list) return
@@ -163,10 +179,11 @@ export default function NewDesignDocumentPage() {
 
   const handleSubmit = async () => {
     setError('')
+    if (preview) return
     if (title.trim().length < 2) { setError('Give the document a title (at least 2 characters).'); return }
     if (customerApproval && !customerId) { setError('“Customer approval required” needs a customer — pick the customer who must approve this drawing, or untick the box.'); return }
     if (reviewerId && reviewerId === approverId) { setError('The checker and the approver must be two different people.'); return }
-    if (submitNow) {
+    if (submitting) {
       if (!reviewerId || !approverId) { setError('To submit for check right away, name both a checker and an approver — or untick “Submit for check now”.'); return }
       if (!staged.length) { setError('To submit for check right away, attach at least one file — or untick “Submit for check now”.'); return }
     }
@@ -213,7 +230,7 @@ export default function NewDesignDocumentPage() {
           problems.push(...extractErrorMessages(err, `Uploading ${FILE_ROLE_LABELS[role]} files failed.`))
         }
       }
-      if (submitNow && !problems.length) {
+      if (submitting && !problems.length) {
         try {
           await designApi.submitRevision(revisionId)
         } catch (err) {
@@ -231,22 +248,22 @@ export default function NewDesignDocumentPage() {
 
   return (
     <FormPage
-      nav={<DesignNav />}
+      nav={preview ? undefined : <DesignNav />}
       tour="design-docnew-form" backTour="design-docnew-back-btn"
       icon="doc"
       title="New Document"
       subtitle="Creates the document with its first revision (R0). The number is assigned automatically from the type."
-      onBack={goBack}
+      onBack={preview ? undefined : goBack}
       footer={<>
-        {!isViewer && (
+        {!isViewer && canSubmitNow && (
           <label data-tour="design-docnew-submit-now" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: SHEET.BODY, cursor: 'pointer', marginRight: 'auto' }}>
             <input type="checkbox" checked={submitNow} onChange={(e) => setSubmitNow(e.target.checked)} /> Submit R0 for check now
           </label>
         )}
         <button data-tour="design-docnew-cancel-btn" type="button" onClick={goBack} style={sheetBtn('secondary', SHEET.INK, saving)} disabled={saving}>Cancel</button>
         {!isViewer && (
-          <button data-tour="design-docnew-save-btn" type="button" onClick={handleSubmit} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
-            <SheetIcon name={submitNow ? 'send' : 'check'} size={16} />{saving ? 'Saving…' : submitNow ? 'Create & Submit' : 'Create Draft'}
+          <button data-tour="design-docnew-save-btn" type="button" onClick={handleSubmit} disabled={saving || preview} style={sheetBtn('primary', SHEET.BLUE, saving || preview)}>
+            <SheetIcon name={submitting ? 'send' : 'check'} size={16} />{saving ? 'Saving…' : submitting ? 'Create & Submit' : 'Create Draft'}
           </button>
         )}
       </>}
@@ -263,8 +280,9 @@ export default function NewDesignDocumentPage() {
         </div>
       )}
 
-      <SheetColumns
+      <VisColumns vis={vis} rightKeys={['signoff', 'files']}
         left={<>
+          <VisSection vis={vis} k="document">
           <SheetSection icon="doc" title="Document">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div data-tour="design-docnew-title" style={{ flex: '1 1 320px', maxWidth: 560 }}>
@@ -274,14 +292,16 @@ export default function NewDesignDocumentPage() {
               <div data-tour="design-docnew-type" style={{ flex: '0 1 200px', minWidth: 180 }}>
                 <label style={sheetLabel}>Type <Req /></label>
                 <Select style={sheetInput} value={documentType} onChange={(e) => setDocumentType(e.target.value)}>
-                  {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  {typeChoices.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </Select>
+                <VisOptionValues vis={vis} dropdown="document_type" />
               </div>
               <div data-tour="design-docnew-discipline" style={{ flex: '0 1 180px', minWidth: 160 }}>
                 <label style={sheetLabel}>Discipline <Req /></label>
                 <Select style={sheetInput} value={discipline} onChange={(e) => setDiscipline(e.target.value)}>
-                  {Object.entries(DISCIPLINE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  {disciplineChoices.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </Select>
+                <VisOptionValues vis={vis} dropdown="discipline" />
               </div>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
@@ -300,7 +320,9 @@ export default function NewDesignDocumentPage() {
               <textarea style={{ ...sheetInput, minHeight: 70, resize: 'vertical' }} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Scope, applicable variant, key notes…" />
             </div>
           </SheetSection>
+          </VisSection>
 
+          <VisSection vis={vis} k="associations">
           <SheetSection icon="link" title="Associations" extra={<Optional />}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div data-tour="design-docnew-project" style={{ flex: '1 1 240px', maxWidth: 380 }}>
@@ -335,7 +357,9 @@ export default function NewDesignDocumentPage() {
             </div>
             <p style={sheetHint}>Linking a design request makes this drawing one of its deliverables. Only open, accepted, in-progress and on-hold requests are listed.</p>
           </SheetSection>
+          </VisSection>
 
+          <VisSection vis={vis} k="customer">
           <SheetSection icon="building" title="Customer" extra={<Optional />}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
               <div data-tour="design-docnew-customer" style={{ flex: '1 1 280px', maxWidth: 400 }}>
@@ -348,8 +372,10 @@ export default function NewDesignDocumentPage() {
             </div>
             <p style={sheetHint}>When ticked, internal approval stops at “Approved · awaiting customer”. The revision is released only after the customer approves it on a submission (transmittal).</p>
           </SheetSection>
+          </VisSection>
         </>}
         right={<>
+          <VisSection vis={vis} k="signoff">
           <SheetSection icon="users" title="R0 — sign-off">
             <div data-tour="design-docnew-owner" style={{ marginBottom: 12 }}>
               <label style={sheetLabel}>Owner (responsible engineer)</label>
@@ -369,7 +395,9 @@ export default function NewDesignDocumentPage() {
               <input style={sheetInput} value={changeSummary} onChange={(e) => setChangeSummary(e.target.value)} placeholder="Initial issue" />
             </div>
           </SheetSection>
+          </VisSection>
 
+          <VisSection vis={vis} k="files">
           <SheetSection icon="clip" title="Files">
             <div data-tour="design-docnew-file-role" style={{ marginBottom: 12 }}>
               <label style={sheetLabel}>Add as</label>
@@ -401,6 +429,7 @@ export default function NewDesignDocumentPage() {
               </div>
             )}
           </SheetSection>
+          </VisSection>
         </>}
       />
     </FormPage>

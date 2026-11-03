@@ -183,7 +183,7 @@ async def get_bom(
 @router.get("/{bom_id}/export")
 async def export_bom_csv(
     bom_id: int, db: Session = Depends(get_db),
-    _tab: User = Depends(require_tab_access("hydraulic", "bom")),
+    _tab: User = Depends(require_tab_action("hydraulic", "bom", "export")),
 ):
     bom = _shown(_to_responses(db, [_get_or_404(db, bom_id, _tab)])[0], _tab)
     buf = io.StringIO()

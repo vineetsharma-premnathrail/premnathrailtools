@@ -25,6 +25,7 @@ import ContractChip from '@/components/erp/ContractChip'
 import Select from '@/components/shared/Select'
 import { LIFECYCLE_HEX, LIFECYCLE_LABELS, LIFECYCLE_ORDER, inputStyle } from '@/components/projects/work/pmUi'
 import PromptDialog from '@/components/erp/PromptDialog'
+import { PurchasesHistory, StoreIssuesHistory, TaskHistory, projectHistoryApi } from '@/components/projects/ProjectHistoryTables'
 
 // Machine status pill: in service = green, service / build stages = amber / blue, parked or retired = grey.
 const MACHINE_STATUS_HEX: Record<string, string> = {
@@ -32,12 +33,12 @@ const MACHINE_STATUS_HEX: Record<string, string> = {
   standby: '#78716c', inactive: '#64748b', decommissioned: '#78716c', cancel: '#78716c',
 }
 
-const TABS = ['Overview','Technical Specs', 'Maintenance History', 'Production', 'Documents', 'Audit Trail'] as const
+const TABS = ['Overview','Technical Specs', 'Maintenance History', 'Store Issues', 'Purchases', 'Tasks', 'Production', 'Documents', 'Audit Trail'] as const
 
-// Feature (projects:service_projects.<key>) each machine sub-tab needs — core/features/projects.py. Documents
+// Feature (projects:all_projects.<key>) each machine sub-tab needs — core/features/projects.py. Documents
 // shows when the user may see either uploaded files or created letters.
 const TAB_FEATURES: Partial<Record<typeof TABS[number], string[]>> = {
-  'Technical Specs': ['technical_specs'], 'Maintenance History': ['service_history'], Production: ['production'],
+  'Technical Specs': ['technical_specs'], 'Maintenance History': ['service_history'], 'Store Issues': ['store_issues'], Purchases: ['purchases'], Tasks: ['task_history'], Production: ['production'],
   Documents: ['documents', 'letters'], 'Audit Trail': ['audit_trail'],
 }
 
@@ -50,10 +51,10 @@ export default function ProjectDetailPage() {
   const { user, isAuthorized, isLoading } = useRequireAnyApp('erp', 'projects')  // SR users open a machine from their SR (server allows SR viewers on the detail)
   const canEdit = hasErpPermission(user, 'project_edit')
   const { can, canDelete: canDeleteOwn, canFeature } = useCan()
-  const feat = (key: string, action: PermissionAction = 'view') => canFeature('projects', 'service_projects', key, action)
+  const feat = (key: string, action: PermissionAction = 'view') => canFeature('projects', 'all_projects', key, action)
   // Company rule: Delete on Machines AND only records you created (admins: any).
-  const canDeleteRecord = (ownerId?: number | null) => canDeleteOwn('projects', 'service_projects', ownerId ?? null)
-  const canPrint = can('projects', 'service_projects', 'print')
+  const canDeleteRecord = (ownerId?: number | null) => canDeleteOwn('projects', 'all_projects', ownerId ?? null)
+  const canPrint = can('projects', 'all_projects', 'print')
   const visibleTabs = TABS.filter((t) => !TAB_FEATURES[t] || TAB_FEATURES[t]!.some((k) => feat(k)))
   const docAccess: MachineDocAccess = {
     seeUploaded: feat('documents'), upload: canEdit && feat('documents', 'create'),
@@ -138,7 +139,7 @@ export default function ProjectDetailPage() {
             <ContractChip projectId={project.id} />
           </div>
           <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{[project.model_name || 'Model not provided', project.client_company].filter(Boolean).join(' · ')}</p>
-          <MachineStage machine={project} canSet={can('projects', 'service_projects', 'edit')} onChanged={setProject} />
+          <MachineStage machine={project} canSet={can('projects', 'all_projects', 'edit')} onChanged={setProject} />
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {canEdit && (
@@ -215,6 +216,9 @@ export default function ProjectDetailPage() {
       {tab === 'Overview' && <OverviewTab project={project} showContacts={feat('client_contacts')} showWarranty={feat('warranty')} />}
       {tab === 'Technical Specs' && <TechnicalSpecsTab project={project} />}
       {tab === 'Maintenance History' && <MaintenanceHistoryTab projectId={project.id} />}
+      {tab === 'Store Issues' && <StoreIssuesHistory reloadKey={project.id} load={() => projectHistoryApi.storeIssues('machine', project.id)} />}
+      {tab === 'Purchases' && <PurchasesHistory reloadKey={project.id} load={() => projectHistoryApi.purchases('machine', project.id)} />}
+      {tab === 'Tasks' && <TaskHistory reloadKey={project.id} load={() => projectHistoryApi.tasks('machine', project.id)} />}
       {tab === 'Production' && <ProductionTab projectId={project.id} canOpen={!!user?.apps?.includes('production')} />}
       {tab === 'Documents' && <DocumentsTab project={project} signatory={{ name: user?.name, designation: user?.designation }} access={docAccess} />}
       {tab === 'Audit Trail' && <AuditTab projectId={project.id} />}
@@ -247,7 +251,7 @@ function MachineStage({ machine, canSet, onChanged }: { machine: Project; canSet
     try {
       onChanged(await erpApi.setProjectLifecycleStage(machine.id, next, reason))
     } catch (err) {
-      setError(extractErrorMessages(err, `Could not set the stage of ${machine.serial_number}. Check your connection and that you may edit Past Projects, then try again.`).join(' '))
+      setError(extractErrorMessages(err, `Could not set the stage of ${machine.serial_number}. Check your connection and that you may edit All Projects, then try again.`).join(' '))
     } finally {
       setBusy(false)
     }

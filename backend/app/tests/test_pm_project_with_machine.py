@@ -250,8 +250,11 @@ def test_linked_machine_visible_to_project_viewers_only_inside_scope(client, db,
     e = client.patch(f"{API}/erp/projects/{mid}", headers=auth(manager), json={"site_name": "New site"})
     assert e.status_code == 200 and e.json()["site_name"] == "New site"
 
+    # Since Past Projects merged into All Projects (2026-11-02) a Project Management user opens the
+    # machine list too, but the data scope (own) still hides a machine of someone else's project.
+    lst = client.get(f"{API}/erp/projects", headers=auth(outsider), params={"pm_project_id": p["id"]})
+    assert lst.status_code in (403, 404) or (lst.status_code == 200 and lst.json() == []), lst.text[:200]
     for call in (
-        lambda: client.get(f"{API}/erp/projects", headers=auth(outsider), params={"pm_project_id": p["id"]}),
         lambda: client.get(f"{API}/erp/projects/{mid}", headers=auth(outsider)),
         lambda: client.get(f"{API}/erp/projects/{mid}/attachments", headers=auth(outsider)),
         lambda: client.patch(f"{API}/erp/projects/{mid}", headers=auth(outsider), json={"site_name": "x"}),
@@ -322,7 +325,10 @@ def test_demo_project_full_details_then_milestone_and_task(client, db, partner):
     department milestone inside it, then a task inside that milestone."""
     from app.modules.organization.models.department import Department
 
-    head = make_user(db, "wm.head@x.com", apps=("design",), department="Design")
+    # Design's "Ongoing Projects" row was removed (matrix cleanup 2026-11-03): a milestone head plans
+    # tasks through Project Management > Department Work, granted explicitly.
+    head = make_user(db, "wm.head@x.com", apps=("design",), department="Design",
+                     granular_permissions=["projects:department_work:edit"])
     member = make_user(db, "wm.member@x.com", apps=("design",), department="Design")
     dept = Department(name="Design", code="DES", head_user_id=head.id)
     db.add(dept)

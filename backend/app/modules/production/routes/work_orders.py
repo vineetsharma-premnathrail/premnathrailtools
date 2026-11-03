@@ -3,7 +3,7 @@ from datetime import date, datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
-from app.core import assignee_rules
+from app.core import assignee_rules, visibility
 from app.core.data_scope import apply_scope
 from app.core.priority import parse_priority, priority_label
 from app.core.permission_registry import can_feature
@@ -61,6 +61,7 @@ router = APIRouter(
 _EDITABLE_STATUSES = ("draft", "released", "in_progress")
 
 SUPERVISOR_RULE = "production:work_orders.supervisor"  # core/assignee_rules.PICKERS
+WO_VISIBILITY_KEY = "production:work_orders"  # core/features/production.py register_visibility
 
 # Permission Matrix actions (opt-in per user — see can_perform).
 _CAN_CREATE = require_tab_action("production", "work_orders", "create")
@@ -338,6 +339,9 @@ async def create_work_order(
         elif build.order_project_id and not data.get("order_project_id"):
             data["order_project_id"] = build.order_project_id  # project-level build (one project = one machine)
     _validate_refs(db, data, user)
+    # Role visibility (Role & Permissions › Production › Work Orders › Visibility): a priority the role
+    # may not pick is refused with the reason, also when the default was sent by a conversion.
+    visibility.ensure_option_allowed(user, WO_VISIBILITY_KEY, "priority", parse_priority(data.get("priority")))  # blank = Standard
     _validate_dates(payload.planned_start_date, payload.planned_end_date)
     try:
         effectivity.check_bom_for_order(db, bom, payload.planned_start_date, data.get("erp_project_id"))
@@ -392,6 +396,12 @@ async def update_work_order(
     if "priority" in updates and updates["priority"] is None:
         raise HTTPException(status_code=400, detail="Priority can't be empty — choose Standard or Urgent.")
     _validate_refs(db, updates, user, wo.supervisor_id)
+    if "priority" in updates:
+        updates["priority"] = parse_priority(updates["priority"])  # normalise before the role's Priority list is checked
+    if "priority" in updates and updates["priority"] != wo.priority:
+        # Role visibility: only a CHANGED priority is checked, so an order that already holds
+        # a value outside the role can still be edited.
+        visibility.ensure_option_allowed(user, WO_VISIBILITY_KEY, "priority", updates["priority"])
     _validate_dates(updates.get("planned_start_date", wo.planned_start_date), updates.get("planned_end_date", wo.planned_end_date))
     if "sales_order_id" in updates or "sales_order_line_id" in updates:
         so_data = {"sales_order_id": updates.get("sales_order_id", wo.sales_order_id),
@@ -1052,6 +1062,9 @@ async def create_sub_orders(
     (sub-assembly with its own valid BOM) in this order's tree."""
     wo = _get_or_404(db, wo_id, lock=True)
     _require_status(wo, ("draft", *_EXECUTING_STATUSES), "explode sub-assemblies for it")
+    # The sub-orders inherit this order's priority without asking, so a role that may not
+    # pick that priority is refused here (role visibility) instead of getting round it.
+    visibility.ensure_option_allowed(user, WO_VISIBILITY_KEY, "priority", wo.priority)
     created = explosion.create_dependent_orders(db, wo, user, payload.levels, payload.net_free_stock)
     if not created and not explosion.dependent_tree(db, wo):
         db.rollback()

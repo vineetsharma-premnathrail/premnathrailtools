@@ -56,7 +56,7 @@ def test_testing_grants_allow_test_records_without_jobs_edit(client, db, h, job)
     r = client.delete(f"{API}/tests/{tid}", headers=tester)
     assert r.status_code == 403
     detail = r.json()["detail"]
-    assert "'Edit' on Electrical › RRV Electrical Jobs" in detail and "'Delete' on Electrical › Testing" in detail
+    assert "'Edit' on Electrical › RRV Jobs" in detail and "'Delete' on Electrical › Testing" in detail
     # Testing grants don't open up issues.
     assert client.post(f"{API}/jobs/{job['id']}/issues", json={"title": "x"}, headers=tester).status_code == 403
 

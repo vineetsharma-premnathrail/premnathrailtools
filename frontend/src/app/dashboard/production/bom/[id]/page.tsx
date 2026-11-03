@@ -15,6 +15,9 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDateTime } from '@/lib/format'
 import { useCan } from '@/lib/permissions'
 import { recordHref, recordPath, useRecordId } from '@/lib/recordRef'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleBom } from '@/lib/productionPreviewSamples'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { DesignDiffSection } from '@/components/production/DesignBomLink'
 import { DisciplineMergeSection, ExplosionSection } from '@/components/production/BomEngineeringSections'
@@ -54,11 +57,21 @@ export default function BomDetailPage() {
   const seeExplosion = canFeature('production', 'bom', 'explosion', 'view')
   const router = useRouter()
   const params = useParams()
-  const { id: bomIdResolved, error: linkError } = useRecordId(params.id as string)
+  // What the user's roles let them see here (Role & Permissions › Production › BOM & Routing › Visibility). In the
+  // Role editor's "Preview & choose" a sample BOM is drawn: no record id, nothing loaded, no actions.
+  const vis = useVisibility('production:bom')
+  const { id: bomIdResolved, error: linkError } = useRecordId(vis.preview ? null : (params.id as string))
   const bomId = bomIdResolved ?? 0
 
-  const [bom, setBom] = useState<ProductionBom | null>(null)
+  const [bom, setBom] = useState<ProductionBom | null>(vis.preview ? sampleBom : null)
   const [editing, setEditing] = useState(false)
+  // Table columns a role may hide (header and cells use the same key); the colSpan follows the shown ones.
+  const keepCol = (table: string) => ([, k]: [string, string | null]) => !k || vis.preview || vis.showColumn(table, k)
+  const componentCols = ([['Item', null], ['Category', 'category'], ['Qty', null], ['UOM', 'uom'], ['Make / Buy', 'make_buy'], ['Scrap %', 'scrap'],
+    ...(seeCosts ? [['Unit Cost', null], ['Line Cost', null]] : []), ['Remarks', 'remarks']] as [string, string | null][]).filter(keepCol('detail_components'))
+  const routingCols = ([['Seq', null], ['Operation', null], ['Control key', 'control_key'], ['Workstation / Vendor', 'workstation'], ['Setup hrs', 'setup'],
+    ['Run hrs / unit', 'run'], ['Confirmation', 'confirmation'], ['Quality Gate', 'quality_gate'], ['Print', 'print'], ['Instructions', 'instructions']] as [string, string | null][])
+    .filter(keepCol('detail_routing'))
   const [error, setError] = useState<string | string[]>('')
   const [pending, setPending] = useState<PendingAction>(null)
   const [busy, setBusy] = useState(false)
@@ -103,12 +116,12 @@ export default function BomDetailPage() {
   }, 'Failed to create a new version.')
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><ProductionNav /><InvalidRecordLink message={linkError} listHref="/dashboard/production/bom" listLabel="Back to BOMs" /></div>)
-  if (!bomId) return <div><ProductionNav /></div>
+  if (linkError && !vis.preview) return (<div><ProductionNav /><InvalidRecordLink message={linkError} listHref="/dashboard/production/bom" listLabel="Back to BOMs" /></div>)
+  if (!bomId && !vis.preview) return <div><ProductionNav /></div>
 
   const unitCost = bom ? ((bom.standard_material_cost ?? 0) + (bom.standard_labour_cost ?? 0)) / (bom.base_quantity || 1) : 0
 
-  if (bom && editing) return (
+  if (bom && editing && !vis.preview) return (
     <BomForm
       initial={bom}
       title={`Edit ${bom.bom_number} · v${bom.version}`}
@@ -127,7 +140,7 @@ export default function BomDetailPage() {
 
   return (
     <div>
-      <ProductionNav />
+      {!vis.preview && <ProductionNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
@@ -138,7 +151,7 @@ export default function BomDetailPage() {
             <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{bom ? `${bom.bom_number} · v${bom.version}` : 'BOM'}</h1>
           </div>
         </div>
-        <button data-tour="production-bom-detail-back-btn" onClick={() => router.push('/dashboard/production/bom')} type="button" style={secondaryBtnStyle}>← Back</button>
+        {!vis.preview && <button data-tour="production-bom-detail-back-btn" onClick={() => router.push('/dashboard/production/bom')} type="button" style={secondaryBtnStyle}>← Back</button>}
       </div>
 
       {error && (
@@ -147,7 +160,7 @@ export default function BomDetailPage() {
         </div>
       )}
 
-      {bom && (
+      {bom && !vis.preview && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
           {bom.status === 'draft' && (
             <>
@@ -173,6 +186,7 @@ export default function BomDetailPage() {
         <>
           {/* One record card: what the BOM makes, its key facts, then details grouped. */}
           <DetailCard tour="production-bom-summary">
+            <VisSection vis={vis} k="detail_summary">
             <DetailSummary
               title={`${bom.product_code} — ${bom.product_name}`}
               text={bom.description || `Material list${seeRouting ? ' and routing' : ''} to make ${bom.base_quantity} ${bom.product_uom || 'unit(s)'} of this product — ${bom.items.length} component(s)${seeRouting ? `, ${bom.operations.length} operation(s)` : ''}.`}
@@ -188,11 +202,14 @@ export default function BomDetailPage() {
                 Approved, in force from {bom.valid_from ? formatDate(bom.valid_from) : '—'}. Until then the current active version is used; work orders starting on or after that date use this one.
               </p>
             )}
+            </VisSection>
+            <VisSection vis={vis} k="detail_quantity_change">
             <DetailGroup title="Quantity & change control">
               <DetailRow label="Base quantity">{`${bom.base_quantity} ${bom.product_uom || ''}`}</DetailRow>
               <DetailRow label="Change number">{bom.ecn_number || bom.change_number}</DetailRow>
               {bom.effective_serial && <DetailRow label="Effective from serial">{bom.effective_serial}</DetailRow>}
             </DetailGroup>
+            </VisSection>
             {seeCosts && (
               <DetailGroup title="Standard cost">
                 <DetailRow label="Material">{inr(bom.standard_material_cost ?? 0)}</DetailRow>
@@ -203,25 +220,30 @@ export default function BomDetailPage() {
                 </p>
               </DetailGroup>
             )}
+            <VisSection vis={vis} k="detail_record">
             <DetailGroup title="Record" last>
               <DetailRow label="Created by">{bom.created_by_name}</DetailRow>
               <DetailRow label="Activated">{bom.activated_at ? `${formatDateTime(bom.activated_at)} by ${bom.activated_by_name || '—'}` : null}</DetailRow>
               {bom.remarks && <DetailRow label="Remarks">{bom.remarks}</DetailRow>}
             </DetailGroup>
+            </VisSection>
           </DetailCard>
 
-          {bom.design_bom_id && seeDesignLink && (
+          {bom.design_bom_id && seeDesignLink && !vis.preview && (
             <DesignDiffSection bom={bom} canTransfer={canFeature('production', 'bom', 'design_link', 'create')} onChanged={setBom} />
           )}
 
+          <VisSection vis={vis} k="detail_components">
           <div data-tour="production-bom-components" style={sectionStyle}>
             <p style={sectionTitle}>Components ({bom.items.length})</p>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
-                <thead><tr>{['Item', 'Category', 'Qty', 'UOM', 'Make / Buy', 'Scrap %', ...(seeCosts ? ['Unit Cost', 'Line Cost'] : []), 'Remarks'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={bom.items.length} />}</th>)}</tr></thead>
+                <thead><tr>{componentCols.map(([h, k], i) => (k
+                  ? <VisTh key={h} vis={vis} table="detail_components" k={k} style={thStyle}>{h}</VisTh>
+                  : <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={bom.items.length} />}</th>))}</tr></thead>
                 <tbody>
                   {bom.items.length === 0 ? (
-                    <tr><td colSpan={9} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No components on this BOM yet.</td></tr>
+                    <tr><td colSpan={componentCols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No components on this BOM yet.</td></tr>
                   ) : bom.items.map((i) => (
                     <tr key={i.id}>
                       <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>
@@ -231,59 +253,62 @@ export default function BomDetailPage() {
                         {i.has_bom && <span style={{ fontSize: 10.5, fontWeight: 700, marginLeft: 6, color: '#2563eb' }}>SUB-ASSEMBLY</span>}
                         {i.source_tag && <div style={{ fontSize: 11, fontWeight: 500, color: TEXT.muted }}>{i.source_tag}</div>}
                       </td>
-                      <td style={tdStyle}>{CATEGORY_LABELS[i.item_category || 'stock'] || i.item_category}</td>
+                      <VisTd vis={vis} table="detail_components" k="category" style={tdStyle}>{CATEGORY_LABELS[i.item_category || 'stock'] || i.item_category}</VisTd>
                       <td style={tdStyle}>{i.quantity}</td>
-                      <td style={tdStyle}>{i.uom || '—'}</td>
-                      <td style={tdStyle}>{i.make_buy ? (i.make_buy === 'make' ? 'Make' : 'Buy') : '—'}</td>
-                      <td style={tdStyle}>{i.scrap_percent}%</td>
+                      <VisTd vis={vis} table="detail_components" k="uom" style={tdStyle}>{i.uom || '—'}</VisTd>
+                      <VisTd vis={vis} table="detail_components" k="make_buy" style={tdStyle}>{i.make_buy ? (i.make_buy === 'make' ? 'Make' : 'Buy') : '—'}</VisTd>
+                      <VisTd vis={vis} table="detail_components" k="scrap" style={tdStyle}>{i.scrap_percent}%</VisTd>
                       {seeCosts && <td style={tdStyle}>{i.unit_cost ? inr(i.unit_cost) : <span style={{ color: '#b45309' }}>not set</span>}</td>}
                       {seeCosts && <td style={tdStyle}>{inr(i.quantity * (1 + i.scrap_percent / 100) * (i.unit_cost ?? 0))}</td>}
-                      <td style={tdStyle}>{i.remarks || '—'}</td>
+                      <VisTd vis={vis} table="detail_components" k="remarks" style={tdStyle}>{i.remarks || '—'}</VisTd>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </div>
+          </VisSection>
 
-          {seeRouting && <div data-tour="production-bom-routing" style={sectionStyle}>
+          {seeRouting && <VisSection vis={vis} k="detail_routing"><div data-tour="production-bom-routing" style={sectionStyle}>
             <p style={sectionTitle}>Routing ({bom.operations.length})</p>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-                <thead><tr>{['Seq', 'Operation', 'Control key', 'Workstation / Vendor', 'Setup hrs', 'Run hrs / unit', 'Confirmation', 'Quality Gate', 'Print', 'Instructions'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={bom.operations.length} />}</th>)}</tr></thead>
+                <thead><tr>{routingCols.map(([h, k], i) => (k
+                  ? <VisTh key={h} vis={vis} table="detail_routing" k={k} style={thStyle}>{h}</VisTh>
+                  : <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={bom.operations.length} />}</th>))}</tr></thead>
                 <tbody>
                   {bom.operations.length === 0 ? (
-                    <tr><td colSpan={10} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No routing operations — a work order needs at least one before it can be released.</td></tr>
+                    <tr><td colSpan={routingCols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No routing operations — a work order needs at least one before it can be released.</td></tr>
                   ) : bom.operations.map((o) => (
                     <tr key={o.id}>
                       <td style={{ ...tdStyle, fontWeight: 600 }}>{o.sequence}</td>
                       <td style={{ ...tdStyle, color: TEXT.heading }}>{o.operation_name}</td>
-                      <td style={tdStyle}>{o.control_key === 'external'
+                      <VisTd vis={vis} table="detail_routing" k="control_key" style={tdStyle}>{o.control_key === 'external'
                         ? <Pill label="External" hex="#9333ea" />
-                        : 'Internal'}</td>
-                      <td style={tdStyle}>{o.control_key === 'external' ? `${o.vendor_name || '—'}${seeCosts && o.external_cost ? ` · ${inr(o.external_cost)}/unit` : ''}` : (o.workstation_name || '—')}</td>
-                      <td style={tdStyle}>{o.setup_hours}</td>
-                      <td style={tdStyle}>{o.run_hours_per_unit}</td>
-                      <td style={tdStyle}>{CONFIRM_LABELS[o.confirmation || 'optional']}</td>
-                      <td style={tdStyle}>{o.requires_inspection ? <Pill label="Inspection" hex="#0d9488" /> : '—'}</td>
-                      <td style={tdStyle}>{o.print_on_job_card === false ? 'No' : 'Yes'}</td>
-                      <td style={tdStyle}>{o.instructions || '—'}</td>
+                        : 'Internal'}</VisTd>
+                      <VisTd vis={vis} table="detail_routing" k="workstation" style={tdStyle}>{o.control_key === 'external' ? `${o.vendor_name || '—'}${seeCosts && o.external_cost ? ` · ${inr(o.external_cost)}/unit` : ''}` : (o.workstation_name || '—')}</VisTd>
+                      <VisTd vis={vis} table="detail_routing" k="setup" style={tdStyle}>{o.setup_hours}</VisTd>
+                      <VisTd vis={vis} table="detail_routing" k="run" style={tdStyle}>{o.run_hours_per_unit}</VisTd>
+                      <VisTd vis={vis} table="detail_routing" k="confirmation" style={tdStyle}>{CONFIRM_LABELS[o.confirmation || 'optional']}</VisTd>
+                      <VisTd vis={vis} table="detail_routing" k="quality_gate" style={tdStyle}>{o.requires_inspection ? <Pill label="Inspection" hex="#0d9488" /> : '—'}</VisTd>
+                      <VisTd vis={vis} table="detail_routing" k="print" style={tdStyle}>{o.print_on_job_card === false ? 'No' : 'Yes'}</VisTd>
+                      <VisTd vis={vis} table="detail_routing" k="instructions" style={tdStyle}>{o.instructions || '—'}</VisTd>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </div>}
+          </div></VisSection>}
 
-          {seeMerges && (
+          {seeMerges && !vis.preview && (
             <DisciplineMergeSection bom={bom} canEdit={canFeature('production', 'bom', 'discipline_merge', 'create')}
               canRemove={canFeature('production', 'bom', 'discipline_merge', 'delete')} onChanged={setBom} />
           )}
-          {seeExplosion && <ExplosionSection bom={bom} showCosts={seeCosts} />}
+          {seeExplosion && !vis.preview && <ExplosionSection bom={bom} showCosts={seeCosts} />}
         </>
       )}
 
-      {bom && (
+      {bom && !vis.preview && (
         <div data-tour="production-bom-approval-panel">
           <ApprovalPanel entityType="production_bom" entityId={bom.id} title="Activation approval" onChanged={load} />
         </div>

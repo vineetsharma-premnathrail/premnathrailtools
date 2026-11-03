@@ -4,9 +4,12 @@ from app.utils.notifications import notify_user
 
 
 def make_user(db, email, role="user", assigned_apps=("erp",), erp_permissions=()):
+    # Legacy project_create no longer carries projects:all_projects:create (an authority grant since
+    # Past Projects merged into All Projects, 2026-11-02), so it is given explicitly, as an admin would.
+    extra = ["projects:all_projects:create"] if "project_create" in erp_permissions else []
     user = User(
         email=email, name=email.split("@")[0], role=role, is_active=True,
-        assigned_apps=list(assigned_apps), erp_permissions=list(erp_permissions),
+        assigned_apps=list(assigned_apps), erp_permissions=list(erp_permissions), granular_permissions=extra,
     )
     db.add(user)
     db.commit()

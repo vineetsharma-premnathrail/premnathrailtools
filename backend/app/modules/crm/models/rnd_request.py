@@ -33,7 +33,7 @@ class CrmRndRequest(Base, TimestampMixin):
     crm_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
     requested_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
 
-    # open → responded, or open → superseded (by a re-send)
+    # open → responded, open → closed (R&D closed it without a response; reason in response_remarks), or open → superseded (by a re-send); open → withdrawn (BD moved the record back before R&D started)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="open", server_default="open")
     response_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
     delay_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

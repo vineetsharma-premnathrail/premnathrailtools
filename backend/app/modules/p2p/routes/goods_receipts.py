@@ -24,7 +24,7 @@ from app.modules.store.models.location import StoreLocation
 from app.modules.store.services.plant_access import ensure_location_allowed, filter_by_location, visible_location_ids
 from app.modules.store.services.stock_ledger import post_stock_transaction
 from app.modules.store.services.posting_period import stock_posting_block_reason
-from app.modules.p2p.grn_posting import post_quality_inspection, receive_into_quality, reverse_quality_line
+from app.modules.p2p.grn_posting import post_quality_inspection, receive_into_free, reverse_quality_line
 from app.modules.store.services.valuation import ledger_sort_key
 from app.utils.notifications import notify_user
 from app.modules.quality.services.lots import needs_inspection_on_receipt, create_lot_for_grn_line, LotError
@@ -189,6 +189,9 @@ def _sync_stock_for_grn(db: Session, grn: P2PGoodsReceipt, user_id: int, items: 
             if (it.accepted_quantity or 0) > 0:
                 notes.append(f"'{it.item_name}' is an asset line — it is not taken into store stock; Finance capitalises it "
                              "under Finance › Fixed Assets when the vendor's invoice is booked.")
+            continue
+        if it.receipt_posting == "free":
+            # Went straight into Free stock when the GRN was recorded.
             continue
         if it.receipt_posting == "quality":
             # Already in Quality stock since the GRN was recorded: release / block it.
@@ -573,10 +576,12 @@ async def create_goods_receipt(
             receive_on_grn(db, grn=grn, line=line, item=db.get(StoreItem, line.store_item_id), serials=line.serial_numbers,
                            vendor_name=po.vendor_name, user_id=user.id, warranty_until=item_payload.vendor_warranty_until)
 
-    # Items flagged "inspection on receipt" in the Item Master go to QUALITY
+    # Items flagged "Quality check on receipt" in the Item Master go to QUALITY
     # stock now and get an incoming inspection lot; Quality's usage decision
     # later writes the accepted/rejected split back onto the line
     # (apply_quality_decision below) — the lot is the single source of truth.
+    # Every other stock item goes straight into FREE stock and counts as
+    # accepted: the Item Master flag alone decides who needs a quality check.
     for line in db.query(P2PGoodsReceiptItem).filter(P2PGoodsReceiptItem.goods_receipt_id == grn.id).all():
         store_item = db.get(StoreItem, line.store_item_id)
         if po_items_by_id[line.po_item_id].category == "asset":
@@ -598,13 +603,34 @@ async def create_goods_receipt(
             line.quality_status = "in_quality"
             line.remarks = ("Incoming inspection lot " if len(lots) == 1 else "Incoming inspection lots ") + ", ".join(l.lot_number for l in lots)
         else:
-            # SAP 101: into Quality stock now, so the goods show in Store at
-            # once; the GRN inspection releases / blocks them (grn_posting.py).
+            # No quality check for this item: straight into Free stock, line
+            # accepted as received (grn_posting.py). Serial units go in stock too.
             try:
-                receive_into_quality(db, grn, line, user.id)
+                receive_into_free(db, grn, line, user.id)
+                if line.serial_numbers:
+                    from app.modules.store.services.serials import inspect_grn_line
+                    inspect_grn_line(db, grn=grn, line=line, item=store_item, rejected_serials=None, user_id=user.id)
             except ValueError as e:
                 db.rollback()
                 raise HTTPException(status_code=409, detail=f"'{line.item_name}' can't be received into stock, so the GRN was not saved: {e}")
+
+    # Nothing left to decide (no asset line to accept/reject, no Quality lot):
+    # the GRN is complete the moment it is saved — PO / PR receipt status
+    # rolls up now and the requester hears that the goods are in stock.
+    done_now = not any(i.quality_status in ("pending", "in_quality") for i in grn.items)
+    if done_now:
+        # Nobody inspected anything: inspected_by stays empty so the record
+        # never claims a check that did not happen (the screen says
+        # "completed on receipt — no quality check needed").
+        grn.status = "completed"
+        db.flush()
+        _sync_po_and_pr_status(db, po, user.id)
+        _notify_requester_grn_completed(db, po, grn)
+        if po.p2p_request_id:
+            direct = ", ".join(i.item_name for i in grn.items if i.receipt_posting == "free")
+            _write_audit(db, po.p2p_request_id, "grn_completed_on_receipt", user,
+                         summary=f"Goods receipt '{grn.grn_number}' completed on receipt by {user.name or user.email} — "
+                                 f"no quality check needed for these items, taken straight into Free stock: {direct}.")
 
     if po.p2p_request_id:
         _write_audit(db, po.p2p_request_id, "grn_recorded", user,
@@ -625,21 +651,22 @@ async def create_goods_receipt(
             notify_user(
                 db, user_id=po.created_by_id,
                 title="Goods Receipt Recorded — Short Supply" if short_lines else "Goods Receipt Recorded",
-                message=f"Goods receipt '{grn.grn_number}' was recorded against PO '{po.po_number}' — pending quality inspection.{pending_note}",
+                message=f"Goods receipt '{grn.grn_number}' was recorded against PO '{po.po_number}' — "
+                        + ("the goods are in Free stock." if done_now else "some lines wait for a quality check.") + pending_note,
                 notification_type="p2p_grn_recorded", entity_type="p2p_goods_receipt", entity_id=grn.id,
             )
 
-    # Store role event: lines waiting for the GRN inspection decision.
+    # Store role event: asset lines waiting for the accept / reject decision on the GRN.
     waiting = [i.item_name for i in grn.items if i.quality_status == "pending"]
     if waiting:
         from app.core.notification_events import notify_event
         from app.modules.store.services.store_events import location_opener
         notify_event(
             db, None, "store", "grn_awaiting_inspection",
-            title=f"GRN {grn.grn_number} waiting for inspection",
+            title=f"GRN {grn.grn_number} waiting for a quality check",
             message=f"{user.name or user.email} received goods on GRN {grn.grn_number} (PO {po.po_number}, {po.vendor_name or 'vendor'}): "
-                    f"{', '.join(waiting[:5])}{' …' if len(waiting) > 5 else ''}. They sit in Quality stock until the inspection is "
-                    "completed in Store › GRN & Inspection.",
+                    f"{', '.join(waiting[:5])}{' …' if len(waiting) > 5 else ''}. Record accepted / rejected for them in "
+                    "Store › GRN & Quality check.",
             entity_type="p2p_goods_receipt", entity_id=grn.id, actor=user,
             can_open=location_opener(db, grn.store_location_id), skip_user_ids={po.created_by_id} - {None},
         )

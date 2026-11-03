@@ -24,6 +24,9 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { useCan } from '@/lib/permissions'
 import Select from '@/components/shared/Select'
+import { useVisibility } from '@/lib/visibility'
+import { VisOptionValues, VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleItem } from '@/lib/storePreviewSamples'
 
 const STATUSES = [
   { value: 'active', label: 'Active' },
@@ -43,20 +46,23 @@ export default function StoreItemDetailPage() {
   const seeStandardCost = seeValues || can('store', 'items', 'edit')
   const seePlantData = canFeature('store', 'items', 'plant_data', 'view')
   const seeVendors = canFeature('store', 'items', 'vendor_suggestions', 'view')
+  // Role visibility (Store › Items › Visibility): hidden sections, allowed item types.
+  const vis = useVisibility('store:items')
   const params = useParams()
   const ref = params.id as string
-  const { id: resolvedItemId, error: linkError } = useRecordId(ref)
-  const itemId = resolvedItemId ?? 0
+  // Role editor preview: a sample item, no link resolution, nothing loaded or saved.
+  const { id: resolvedItemId, error: linkError } = useRecordId(vis.preview ? null : ref)
+  const itemId = vis.preview ? sampleItem.id : (resolvedItemId ?? 0)
 
-  const [item, setItem] = useState<StoreItem | null>(null)
+  const [item, setItem] = useState<StoreItem | null>(vis.preview ? sampleItem : null)
   const [categories, setCategories] = useState<StoreItemCategory[]>([])
   const [itemTypes, setItemTypes] = useState<ItemTypeOption[]>([])
   const [uoms, setUoms] = useState<{ value: string; label: string }[]>([])
   const [meta, setMeta] = useState<StoreItemMeta | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!vis.preview)
   const [loadError, setLoadError] = useState('')
   const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState<Partial<StoreItem>>({})
+  const [form, setForm] = useState<Partial<StoreItem>>(vis.preview ? sampleItem : {})
   const [busy, setBusy] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
@@ -76,7 +82,7 @@ export default function StoreItemDetailPage() {
 
   useEffect(() => {
     if (isAuthorized && itemId) {
-      load()
+      if (!vis.preview) load()
       storeApi.listCategories().then(setCategories).catch(() => setCategories([]))
       storeApi.getItemMeta().then((m) => { setMeta(m); setUoms(m.uoms); setItemTypes(m.item_types) }).catch(() => setUoms([]))
     }
@@ -156,22 +162,24 @@ export default function StoreItemDetailPage() {
   if (editing && item) {
     const cancelEdit = () => { setEditing(false); setForm(item) }
     return (
-      <FormPage nav={<StoreNav />} icon="edit" title={`Edit ${item.item_name}`} subtitle={`${item.item_code} · changes apply from now on; posted documents keep their values.`}
+      <FormPage nav={vis.preview ? undefined : <StoreNav />} icon="edit" title={`Edit ${item.item_name}`} subtitle={`${item.item_code} · changes apply from now on; posted documents keep their values.`}
         onBack={cancelEdit} backLabel="← Back" backTour="item-edit-back-btn"
         footer={<>
           <button type="button" data-tour="item-edit-cancel-btn" disabled={busy} onClick={cancelEdit} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
-          <button type="button" data-tour="item-edit-save-btn" disabled={busy} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Save Changes'}</button>
+          <button type="button" data-tour="item-edit-save-btn" disabled={busy || vis.preview} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Save Changes'}</button>
         </>}>
         <MessageDialog open={errors.length > 0} variant="error" title="Cannot Save Item" message={errors} onClose={() => setErrors([])} />
         <SheetColumns
           left={<>
-            <SheetSection icon="list" title="Item Details">
+            <VisSection vis={vis} k="item_details"><SheetSection icon="list" title="Item Details">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 14 }}>
                 <div style={{ flex: '1 1 180px' }}>
                   <label style={sheetLabel}>Item Type</label>
                   <div data-tour="item-edit-type">
-                    <ItemTypeSelect value={form.item_type || ''} types={itemTypes}
+                    {/* Types this role may pick, plus the one the item already holds (the server checks only a CHANGED type). */}
+                    <ItemTypeSelect value={form.item_type || ''} types={itemTypes.filter((t) => vis.preview || t.allowed !== false || t.value === item.item_type)}
                       onChange={(v) => { if (v !== form.item_type) setForm({ ...form, item_type: v, category: null, subcategory: null }) }} />
+                    <VisOptionValues vis={vis} dropdown="item_type" />
                   </div>
                 </div>
                 <div style={{ flex: '1 1 180px' }}>
@@ -206,9 +214,9 @@ export default function StoreItemDetailPage() {
               </div>
               <label style={{ ...sheetLabel, marginTop: 14 }}>Technical Specification</label>
               <textarea data-tour="item-edit-description" style={{ ...sheetInput, minHeight: 70, resize: 'vertical' }} value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            </SheetSection>
+            </SheetSection></VisSection>
 
-            <SheetSection icon="calendar" title="Planning & Cost">
+            <VisSection vis={vis} k="planning"><SheetSection icon="calendar" title="Planning & Cost">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
                 <div style={{ flex: '0 1 220px', minWidth: 180 }}>
                   <label style={sheetLabel}>Purchase lead time (days)</label>
@@ -224,7 +232,7 @@ export default function StoreItemDetailPage() {
                 </div>
               </div>
               <p style={sheetHint}>Lead time = calendar days from PO to goods in store. Used by MRP and the Engineering long-lead list.</p>
-            </SheetSection>
+            </SheetSection></VisSection>
 
             <div data-tour="item-edit-erp">
               <ItemErpForm values={form} onChange={(patch) => setForm({ ...form, ...patch })} meta={meta}
@@ -243,11 +251,11 @@ export default function StoreItemDetailPage() {
                 <p style={sheetHint}>Read-only — kept by priced receipts.</p>
               </SheetSection>
             )}
-            <SheetSection icon="clip" title="Photo">
+            <VisSection vis={vis} k="photo"><SheetSection icon="clip" title="Photo">
               <div data-tour="item-detail-photo">
                 <ItemPhoto itemId={item.id} hasPhoto={!!item.has_photo} editable={can('store', 'items', 'edit')} onChanged={(has) => setItem({ ...item, has_photo: has })} />
               </div>
-            </SheetSection>
+            </SheetSection></VisSection>
           </>}
         />
       </FormPage>
@@ -255,7 +263,7 @@ export default function StoreItemDetailPage() {
   }
   return (
     <div>
-      <StoreNav />
+      {!vis.preview && <StoreNav />}
 
       <MessageDialog open={!!loadError} variant="error" title="Failed to Load Item" message={loadError} onClose={() => setLoadError('')} actionLabel="Back to Items" onAction={() => router.push('/dashboard/store')} />
       <MessageDialog open={errors.length > 0} variant="error" title="Cannot Save Item" message={errors} onClose={() => setErrors([])} />
@@ -279,17 +287,17 @@ export default function StoreItemDetailPage() {
               <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{item.item_code}</h1>
             </div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              {can('store', 'items', 'edit') && <button type="button" data-tour="item-detail-edit-btn" onClick={startEdit} style={secondaryBtnStyle}>Edit</button>}
+              {can('store', 'items', 'edit') && <button type="button" data-tour="item-detail-edit-btn" disabled={vis.preview} onClick={startEdit} style={secondaryBtnStyle}>Edit</button>}
               {/* Items carry no creator, so anyone holding Items › Delete may delete. */}
-              {canDelete('store', 'items', null) && <button type="button" data-tour="item-detail-delete-btn" onClick={() => setDeleteConfirmOpen(true)} style={dangerBtnStyle}>Delete</button>}
-              <button type="button" data-tour="item-detail-back-btn" onClick={() => router.push('/dashboard/store')} style={secondaryBtnStyle}>← Back</button>
+              {canDelete('store', 'items', null) && <button type="button" data-tour="item-detail-delete-btn" disabled={vis.preview} onClick={() => setDeleteConfirmOpen(true)} style={dangerBtnStyle}>Delete</button>}
+              {!vis.preview && <button type="button" data-tour="item-detail-back-btn" onClick={() => router.push('/dashboard/store')} style={secondaryBtnStyle}>← Back</button>}
             </div>
           </div>
 
           {/* One record view: name + what it is on top, then every fact as label–value rows. */}
           <DetailCard>
             <div data-tour="item-detail-info">
-              <DetailSummary
+              <VisSection vis={vis} k="detail_summary"><DetailSummary
                 title={item.item_name}
                 text={`${typeLabel(item.item_type)}${item.category ? ` · ${item.category}${item.subcategory ? ` › ${item.subcategory}` : ''}` : ''} — stocked, bought and issued in ${item.uom || 'units'}.`}
                 meta={<>
@@ -298,30 +306,30 @@ export default function StoreItemDetailPage() {
                   {item.part_number && <span>· Part code <strong style={{ color: TEXT.heading }}>{item.part_number}</strong></span>}
                 </>}
                 actions={
-                  <div data-tour="item-detail-photo">
-                    <ItemPhoto itemId={item.id} hasPhoto={!!item.has_photo} editable={can('store', 'items', 'edit')} onChanged={(has) => setItem({ ...item, has_photo: has })} />
-                  </div>
+                  <VisSection vis={vis} k="detail_photo"><div data-tour="item-detail-photo">
+                    <ItemPhoto itemId={item.id} hasPhoto={!!item.has_photo} editable={can('store', 'items', 'edit') && !vis.preview} onChanged={(has) => setItem({ ...item, has_photo: has })} />
+                  </div></VisSection>
                 }
-              />
-              <DetailGroup title="Item Details">
+              /></VisSection>
+              <VisSection vis={vis} k="detail_details"><DetailGroup title="Item Details">
                 <DetailRow label="Item Type">{typeLabel(item.item_type)}</DetailRow>
                 <DetailRow label="Category">{item.category ? `${item.category}${item.subcategory ? ` › ${item.subcategory}` : ''}` : null}</DetailRow>
                 <DetailRow label="UOM">{item.uom}</DetailRow>
                 <DetailRow label="Technical Specification">{item.description}</DetailRow>
-              </DetailGroup>
+              </DetailGroup></VisSection>
             </div>
-            <div data-tour="item-detail-planning">
+            <VisSection vis={vis} k="detail_planning"><div data-tour="item-detail-planning">
               <DetailGroup title="Planning & Cost">
                 <DetailRow label="Purchase lead time">{item.lead_time_days != null ? `${item.lead_time_days.toLocaleString('en-IN')} calendar day(s)` : 'Not set — MRP will assume one'}</DetailRow>
                 <DetailRow label="Legacy code (v3 / Tally)">{item.legacy_code}</DetailRow>
                 {seeStandardCost && <DetailRow label="Standard cost">{item.standard_cost != null ? `₹${item.standard_cost.toLocaleString('en-IN')}` : null}</DetailRow>}
                 {seeValues && <DetailRow label="Weighted average">{averageText(item)}</DetailRow>}
               </DetailGroup>
-            </div>
+            </div></VisSection>
             <ItemErpInfo item={item} />
           </DetailCard>
-          {seePlantData && <ItemPlantData itemId={item.id} canEdit={canFeature('store', 'items', 'plant_data', 'edit')} />}
-          {seeVendors && <ItemVendorSuggestions itemId={item.id} />}
+          {(seePlantData || vis.preview) && <VisSection vis={vis} k="detail_plant_data"><ItemPlantData itemId={item.id} canEdit={canFeature('store', 'items', 'plant_data', 'edit')} preview={vis.preview} /></VisSection>}
+          {(seeVendors || vis.preview) && <VisSection vis={vis} k="detail_vendors"><ItemVendorSuggestions itemId={item.id} preview={vis.preview} /></VisSection>}
         </>
       )}
     </div>

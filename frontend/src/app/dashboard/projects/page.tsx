@@ -12,7 +12,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import ProjectsNav from '@/components/projects/ProjectsNav'
 import { recordPath } from '@/lib/recordRef'
 import { ErrorBanner, PROJECT_HEX, PROJECT_LABELS, Pill, sectionStyle, tdStyle, thStyle, todayIso } from '@/components/projects/work/pmUi'
-import { RowCount, primaryBtnStyle } from '@/components/shared/ui'
+import { RowCount } from '@/components/shared/ui'
 
 // Management view: every live project and which handovers are due or late.
 // WBS elements are no longer used, so nothing here is WBS-based.
@@ -21,11 +21,9 @@ export default function ProjectsDashboardPage() {
   const router = useRouter()
   const [data, setData] = useState<PmDashboard | null>(null)
   const [error, setError] = useState<string | string[]>('')
-  const [canCreate, setCanCreate] = useState(false)
 
   useEffect(() => {
     if (!isAuthorized) return
-    projectsApi.meta().then((m) => setCanCreate(m.can_create)).catch(() => setCanCreate(false))
     projectsApi.dashboard().then(setData).catch((err) => setError(extractErrorMessages(err, 'Failed to load the dashboard.')))
   }, [isAuthorized])
 
@@ -51,11 +49,7 @@ export default function ProjectsDashboardPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Projects Dashboard</h1>
           <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>Every open project, nearest closing date first.</p>
         </div>
-        {canCreate && (
-          <button type="button" data-tour="pm-dash-new-btn" onClick={() => router.push('/dashboard/projects/new')} style={primaryBtnStyle}>
-            + Create Project
-          </button>
-        )}
+        {/* Projects are created only from All Projects › + Create Project (owner, 2026-10-31). */}
       </div>
       <ErrorBanner error={error} />
       {!data ? (!error && <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>) : (

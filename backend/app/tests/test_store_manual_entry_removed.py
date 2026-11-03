@@ -70,8 +70,10 @@ def test_admin_opening_stock_import_posts_opening_stock(client, db, env):
     assert _on_hand(db, env) == 27
 
 
-def test_non_admin_opening_stock_import_is_refused(client, db, env):
+def test_store_manager_opening_stock_import_is_allowed(client, db, env):
+    # 2026-11-02 (25713a97): no longer admin only — Store › Adjustments › Create is the gate.
+    # A user without Store access is still refused (test_store_stock_import.py).
     csv = "item_code,warehouse,quantity,reference_number,remarks\nMT-GEN-0901,MS,7,OPENING-STOCK-2026,Opening balance\n"
     r = client.post(f"{API}/import", files={"file": ("s.csv", csv, "text/csv")}, headers=_h(env["manager"]))
-    assert r.status_code == 403 and "Opening Stock Import is for an admin only" in r.json()["detail"]
-    assert _on_hand(db, env) == 20
+    assert r.status_code == 200 and r.json()["errors"] == [], r.text
+    assert _on_hand(db, env) == 27

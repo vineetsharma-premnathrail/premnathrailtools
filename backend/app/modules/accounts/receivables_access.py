@@ -50,7 +50,7 @@ def _credit_release_decided(db: Session, req: ApprovalRequest, outcome: str, act
         msg = (f"Released until {rel.valid_until:%d-%m-%Y} — the order / dispatch can go ahead now."
                if rel.status == "released" else f"Not released: {comment or 'no reason given'}.")
         notify_user(db, rel.requested_by_id, f"Credit release {rel.release_number} {rel.status}", msg,
-                    "credit_release_decided", ET_CREDIT_RELEASE, rel.id)
+                    "credit_release_decision", ET_CREDIT_RELEASE, rel.id)
     # Role event (core/events/accounts_b.py); the requester was told above.
     from app.modules.accounts import role_events_b
     role_events_b.fire(

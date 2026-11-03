@@ -32,7 +32,8 @@ from app.modules.erp.importing import (
     text, validation_reason, xlsx_response, check_date_range, in_range, ist_date, parse_export_ids,
 )
 from app.modules.erp.models.project import Project
-from app.modules.erp.models.service_request import SR_PRIORITIES, SR_SERVICE_TYPES, ServiceRequest
+from app.core import visibility
+from app.modules.erp.models.service_request import SR_PRIORITIES, SR_SERVICE_TYPE_LABELS, SR_SERVICE_TYPES, ServiceRequest
 from app.modules.erp.routes.service_requests import _generate_sr_number, _recompute_billing, _write_audit
 from app.modules.erp.sensitive import SR_MONEY, sees_charges
 from app.modules.erp.schemas.service_request import SR_PAYMENT_STATUSES, SR_STATUSES, ServiceRequestCreate
@@ -65,10 +66,7 @@ COLUMNS: list[tuple[str, str]] = [
     ("tax_percentage", "Tax Percentage"), ("payment_status", "Payment Status"), ("invoice_number", "Invoice Number"),
 ]
 LABELS = dict(COLUMNS) | {"project_id": "Machine Serial Number", "resolution_description": "Corrective Action"}
-SERVICE_TYPE_CHOICES = {
-    "installation_commissioning": "Installation & Commissioning", "warranty": "Warranty", "amc": "AMC",
-    "repair_breakdown": "Repair / Breakdown", "inspection_maintenance": "Inspection / Maintenance", "paid_service": "Paid Service",
-}
+SERVICE_TYPE_CHOICES = dict(SR_SERVICE_TYPE_LABELS)  # the form's labels; the sheet may carry the value or the label
 assert set(SERVICE_TYPE_CHOICES) == set(SR_SERVICE_TYPES)
 PRIORITY_CHOICES = {p: enum_label(p) for p in SR_PRIORITIES}
 STATUS_CHOICES = {s: enum_label(s) for s in SR_STATUSES}
@@ -127,6 +125,15 @@ async def import_service_requests(
 ):
     # Importing raises new SRs, so it needs Create as well as Import.
     ensure_tab_action(user, "erp", "service_requests", "create")
+    narrowed = [label for dropdown, label in (("service_type", "Service Type"), ("priority", "Priority"))
+                if visibility.allowed_values(user, "erp:service_requests", dropdown) is not None]
+    if narrowed:
+        # A role that offers only some values raises requests one by one from the form, where
+        # the restriction applies; a sheet would let every row skip it.
+        raise HTTPException(status_code=422, detail=(
+            f"Your role limits the {' and '.join(narrowed)} of service requests, so a bulk import isn't available to you — "
+            "raise them from the New Service Request form, or ask an admin to widen it in Organization › Role & Permissions "
+            "› Service & Commissioning › Service Requests › Visibility."))
     rows = read_rows(file.filename, await file.read())
     check_rows(rows, ["machine_serial_number", "issue_title", "service_type"])
 

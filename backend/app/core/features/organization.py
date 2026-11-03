@@ -7,15 +7,15 @@ from app.core.permission_registry import _feature, register_features
 
 register_features(
     "organization", "info",
-    _feature("statutory", "Legal, registration & tax", "section", {
+    _feature("statutory", "Legal & Registration and Tax Configuration tabs", "subtab", {
         "view": "view", "edit": "edit",
     }, "The Legal & Registration and Tax Configuration tabs of Company Info (CIN, PAN, TAN, GSTIN, "
        "registrations, capital, tax set-up). Without View they are blanked for this role."),
-    _feature("partners", "Partners", "section", {
+    _feature("partners", "Partners", "subtab", {
         "view": "view", "edit": "edit",
     }, "The Partners tab of Company Info — who is a Partner (the top approval level). Edit changes the list "
        "(nobody but an admin can add or remove themselves)."),
-    _feature("financial_years", "Financial years", "section", {
+    _feature("financial_years", "Financial Year", "subtab", {
         "view": "view", "edit": "edit",
     }, "The Financial Year tab of Company Info: see, add, change and remove financial years."),
     _feature("documents", "Company documents", "subtab", {
@@ -25,13 +25,13 @@ register_features(
 
 register_features(
     "organization", "branches",
-    _feature("user_assignments", "Plant › Users", "subtab", {
+    _feature("user_assignments", "Branch › Users", "subtab", {
         "view": "view", "edit": "edit",
-    }, "The Branch Users tab of a plant: who works at the plant, and adding / changing / removing them "
+    }, "The Branch Users tab of a branch: who works at the branch, and adding / changing / removing them "
        "(a user's own Assignments tab is granted under Users)."),
-    _feature("documents", "Plant › Documents", "subtab", {
+    _feature("documents", "Branch › Documents", "subtab", {
         "view": "view", "create": "edit", "delete": "edit", "export": "view",
-    }, "The Branch Documents tab of a plant: see the list, upload, delete and download documents."),
+    }, "The Branch Documents tab of a branch: see the list, upload, delete and download documents."),
 )
 
 register_features(

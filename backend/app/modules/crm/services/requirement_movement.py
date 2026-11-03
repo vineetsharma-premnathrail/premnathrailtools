@@ -75,9 +75,83 @@ def customer_requirements(ctx: dict) -> list[str]:
     return [" ".join(str(t).split()) for t in texts if t and str(t).strip()]
 
 
+def rnd_work_started(db: Session, *, module: str, record_id: int) -> list[str]:
+    """What R&D already did on this requirement: tasks (any but cancelled), files it
+    uploaded (requirement-level or on a task), technical offers it drafted. Empty =
+    R&D has not started, so BD may still take the requirement back."""
+    from app.modules.rnd.models.requirement_work import RndRequirementTask
+    from app.modules.rnd.models.technical_offer import RndTechnicalOffer
+
+    out: list[str] = []
+    tasks = db.query(RndRequirementTask.id).filter(
+        RndRequirementTask.source == module, RndRequirementTask.record_id == record_id,
+        RndRequirementTask.status != "cancelled").count()
+    if tasks:
+        out.append(f"{tasks} R&D task{'s' if tasks != 1 else ''}")
+    docs = db.query(CrmDocument.id).filter(
+        CrmDocument.related_module == module, CrmDocument.related_id == record_id,
+        CrmDocument.related_sub_module.in_(("rnd_requirement", "rnd_task")), CrmDocument.is_deleted == False).count()  # noqa: E712
+    if docs:
+        out.append(f"{docs} document{'s' if docs != 1 else ''} uploaded by R&D")
+    offers = db.query(RndTechnicalOffer.id).filter(
+        RndTechnicalOffer.source == module, RndTechnicalOffer.record_id == record_id).count()
+    if offers:
+        out.append(f"{offers} technical offer{'s' if offers != 1 else ''}")
+    return out
+
+
+def take_back_on_move_back(db: Session, *, module: str, record, user: User, reason: str | None, label: str) -> str | None:
+    """BD moved the record's status / stage back while R&D still holds the requirement
+    (owner, 2026-11-03): the requirement is taken back from R&D — but only while R&D has
+    not started (no tasks, no uploaded documents, no technical offer); otherwise the
+    move back is refused. Returns a timeline note when something was taken back.
+    Caller commits."""
+    req = db.query(CrmRndRequest).filter(
+        CrmRndRequest.source == module, CrmRndRequest.record_id == record.id,
+    ).order_by(CrmRndRequest.id.desc()).first()
+    if req is None or req.status != "open":
+        return None
+    ref = req.offer_number or record.technical_offer_number or "the R&D requirement"
+    work = rnd_work_started(db, module=module, record_id=record.id)
+    if work:
+        raise HTTPException(status_code=409, detail=(
+            f"This {label} can't move back: R&D has already started on {ref} ({', '.join(work)}). "
+            f"Let R&D finish and respond, or ask the R&D head to close the request without a response — then move the {label} back."))
+    from app.modules.rnd.services import requirements as rnd_requirements
+    why = (reason or "").strip() or f"{label} moved back"
+    req.status = "withdrawn"
+    req.response_remarks = f"Taken back by BD: {why}"
+    req.responded_by_id = user.id
+    req.responded_at = datetime.now(timezone.utc)
+    rnd_requirements.on_withdrawn(db, req, user)
+    # Off R&D › Requirements (the list is every record with a send date); a later send re-opens it as the next revision.
+    record.technical_offer_sent_at = None
+    who = user.name or user.email
+    db.add(AuditLog(
+        entity_type=module, entity_id=record.id, action="rnd_withdrawn", module_key="crm",
+        summary=f"{who} took {ref} back from R&D ({label} moved back): {why}", performed_by_id=user.id,
+    ))
+    for head in rnd_team(db):
+        if head.id != user.id:
+            notify_user(
+                db, head.id, title=f"{ref} taken back by BD",
+                message=f"{who} moved {label} {record.universal_id} back, so {ref} is no longer with R&D: {why} "
+                        "Nothing is needed from R&D unless BD sends it again.",
+                notification_type="rnd_request_withdrawn", entity_type=module, entity_id=record.id,
+            )
+    return f"{ref} taken back from R&D"
+
+
 def ensure_requirement_changed(db: Session, *, module: str, record, ctx: dict) -> None:
     """A requirement goes to R&D again only when its Customer Requirement changed
-    since the last send (owner, 2026-10-31) — nothing else re-opens it for R&D."""
+    since the last send (owner, 2026-10-31) — nothing else re-opens it for R&D.
+    Exception: R&D closed the last request without a response ("nothing to share");
+    BD may then send the same requirement again when R&D work turns out to be needed."""
+    latest = db.query(CrmRndRequest).filter(
+        CrmRndRequest.source == module, CrmRndRequest.record_id == record.id,
+    ).order_by(CrmRndRequest.id.desc()).first()
+    if latest is not None and latest.status in ("closed", "withdrawn"):
+        return
     last = db.query(AuditLog).filter(
         AuditLog.entity_type == _entity_type(module), AuditLog.entity_id == record.id, AuditLog.action == ACTION,
     ).order_by(AuditLog.performed_at.desc(), AuditLog.id.desc()).first()
@@ -178,8 +252,8 @@ def today_ist() -> date:
 
 def rnd_team(db: Session) -> list[User]:
     """Who a new request goes to: the R&D head(s) from Organization › Department, R&D head.
-    They accept or return it and hand out tasks. Before the team is
-    set up, every R&D user (admins only when nobody else has R&D)."""
+    They accept or return it and hand out tasks. With no R&D head set, the
+    admins only — never every R&D user (2026-11-03)."""
     from app.modules.rnd.services.requirement_access import heads  # rnd imports crm models
     return heads(db)
 
@@ -194,8 +268,8 @@ def validate_request(db: Session, due_date: date | None) -> list[User]:
     if not team:
         raise HTTPException(
             status_code=400,
-            detail="Nobody could receive this request: there is no active R&D head (Organization › Department, R&D head) and no active user "
-                   "with R&D access. Ask an admin to set up the R&D team or grant R&D access in User Management, then send again.",
+            detail="Nobody could receive this request: no active R&D head is set (Organization › Department, R&D department › Head) "
+                   "and there is no active admin to receive it instead. Ask an admin to set the R&D department head, then send again.",
         )
     return team
 
@@ -252,6 +326,8 @@ def create_rnd_request(
 
 
 def is_late(req: CrmRndRequest) -> bool:
+    if req.status == "closed":
+        return False  # nothing was delivered, so there is no late delivery
     if req.responded_at:
         return req.responded_at.astimezone(IST).date() > req.due_date
     return req.status == "open" and today_ist() > req.due_date
@@ -382,6 +458,11 @@ def mark_responded(
         )
     if req.status == "responded":
         raise HTTPException(status_code=409, detail="This request has already been answered. Ask CRM to re-send it if a revised answer is needed.")
+    if req.status == "closed":
+        raise HTTPException(
+            status_code=409,
+            detail="R&D closed this request without a response — ask BD to re-send it if R&D work is needed now.",
+        )
     # R&D answers only what it accepted (rnd/services/requirements.py).
     from app.modules.rnd.services import requirements as rnd_requirements
     rnd_requirements.require_accepted_for_request(db, req)
@@ -425,6 +506,75 @@ def mark_responded(
             title=f"R&D answered {req.offer_number or 'the Technical Requirement'} ({ref})",
             message=f"{user.name or user.email} sent R&D's response for {ref}" + (" — late, with a delay reason." if late else ".")
                     + " Open the record's Documents / Discussion to review it and prepare the quotation.",
+            entity_type=req.source, entity_id=req.record_id, actor=user, can_open=can_open_record(db, record),
+            skip_user_ids={req.requested_by_id} if req.requested_by_id else None,
+        )
+
+
+MIN_CLOSE_REASON = 10
+
+
+def mark_closed(db: Session, *, req: CrmRndRequest, user: User, reason: str | None) -> None:
+    """R&D closes the request WITHOUT a response (owner, 2026-11-02): nothing to deliver, BD
+    continues on its own. A reason is mandatory (audit: why no R&D work was needed). The
+    request must be open; BD can re-send the requirement later, which opens a new revision.
+    Caller commits."""
+    ref = req.offer_number or "This request"
+    if req.status == "returned":
+        raise HTTPException(
+            status_code=409,
+            detail=f"{ref} was returned to BD — it can't be closed until BD fixes it and sends it again.",
+        )
+    if req.status == "superseded":
+        raise HTTPException(
+            status_code=409,
+            detail=f"CRM re-sent this requirement after {req.offer_number or 'this request'} — close the latest request instead, "
+                   "since the requirement may have changed.",
+        )
+    if req.status == "responded":
+        raise HTTPException(status_code=409, detail="R&D already answered this request, so it can't be closed without a response. Ask CRM to re-send it if R&D work is needed again.")
+    if req.status == "closed":
+        raise HTTPException(status_code=409, detail="R&D already closed this request without a response — ask BD to re-send it if R&D work is needed now.")
+    if req.status != "open":
+        raise HTTPException(status_code=409, detail=f"{ref} is {req.status}, so it can't be closed — only an open request can be closed.")
+    if req.assigned_to_id and user.role != "admin" and req.assigned_to_id != user.id:
+        assignee = db.query(User).filter(User.id == req.assigned_to_id).first()
+        who = (assignee.name or assignee.email) if assignee else "the assigned engineer"
+        raise HTTPException(status_code=403, detail=f"Only {who} can close this request — CRM assigned it to them.")
+    reason = (reason or "").strip()
+    if len(reason) < MIN_CLOSE_REASON:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Write why R&D is closing this without a response (at least {MIN_CLOSE_REASON} characters) — "
+                   "e.g. \"Standard product, no R&D input needed\".",
+        )
+    from app.modules.rnd.services import requirements as rnd_requirements
+    req.status = "closed"
+    req.response_remarks = reason
+    req.delay_reason = None
+    req.responded_by_id = user.id
+    req.responded_at = datetime.now(timezone.utc)
+    rnd_requirements.on_closed(db, req, user)
+    who_name = user.name or user.email
+    if req.requested_by_id:
+        notify_user(
+            db, req.requested_by_id,
+            title=f"R&D closed {req.offer_number or 'your Technical Offer Request'} without a response",
+            message=f"{who_name} closed it — no R&D input needed: {reason} You can continue on the record; "
+                    "send the requirement to R&D again if R&D work is needed later.",
+            notification_type="rnd_request_closed", entity_type=req.source, entity_id=req.record_id,
+        )
+    # Role event for the rest of BD (core/events/crm.py); the requester was told directly above.
+    from app.core.notification_events import notify_event
+    from app.modules.crm.access import can_open_record, parent_record
+    record = parent_record(db, req.source, req.record_id)
+    if record is not None:
+        rec_ref = record.universal_id or f"{req.source} #{req.record_id}"
+        notify_event(
+            db, None, "crm", "tor_closed",
+            title=f"R&D closed {req.offer_number or 'the Technical Requirement'} without a response ({rec_ref})",
+            message=f"{who_name} closed the requirement for {rec_ref} — no R&D input needed: {reason} "
+                    "BD can continue; send it to R&D again if R&D work is needed later.",
             entity_type=req.source, entity_id=req.record_id, actor=user, can_open=can_open_record(db, record),
             skip_user_ids={req.requested_by_id} if req.requested_by_id else None,
         )

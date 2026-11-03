@@ -10,7 +10,7 @@ from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseO
 from app.modules.projects import so_projects as ops
 from app.modules.projects.models.project import PmProject
 from app.tests.p2p_workflow_helpers import master_item, set_pr_workflow
-from app.tests.test_p2p_item_master_link import GRN, _inspect_all, _po_for, _store
+from app.tests.test_p2p_item_master_link import GRN, _po_for, _store
 from app.tests.test_p2p_requests import (  # noqa: F401 — _sqlite_number_series is an autouse fixture
     BASE, _approve_and_raise_po, _create_payload, _pr_approvers, _purchaser, _requester, _sqlite_number_series, auth_header,
 )
@@ -173,7 +173,7 @@ def test_element_travels_pr_to_po_to_grn_and_provider_tones(client, db):
     grn = r.json()
     assert grn["items"][0]["order_project_element_id"] == els[1].id
     assert grn["items"][0]["order_project_number"] == project.project_code
-    assert _inspect_all(client, buyer, grn).status_code == 200
+    assert grn["status"] == "completed"  # no Quality-check flag: completed (and in Free stock) when recorded
     db.expire_all()
     cells = links.purchase_cells(db, db.get(PmProject, project.id), list(db.get(PmProject, project.id).elements))
     assert cells[els[1].id]["status"] == "received" and cells[els[1].id]["tone"] == "success"

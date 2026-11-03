@@ -10,6 +10,7 @@ import { p2pApi, rfqApi, purchaseOrdersApi, storeApi } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { P2PRequest, RFQ, P2PPurchaseOrder, P2PRequestItemStockCheck, StoreItem } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
+import { itemOptionDetail } from '@/lib/itemOptions'
 import Select from '@/components/shared/Select'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -24,6 +25,9 @@ import PoDeliveryCostsPanel from '@/components/p2p/PoDeliveryCostsPanel'
 import UploadPODialog from '@/components/p2p/UploadPODialog'
 import DiscardPoDraftDialog, { DiscardPoDraftTarget } from '@/components/p2p/DiscardPoDraftDialog'
 import PrTracker from '@/components/p2p/PrTracker'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleHistory, sampleRequisition } from '@/lib/p2pPreviewSamples'
 import { useRecordId, recordHref, recordPath } from '@/lib/recordRef'
 import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -101,6 +105,9 @@ function displayStatus(pr: P2PRequest): { label: string; hex: string } {
 }
 
 
+// Item Details columns a role may hide (Role editor > Visibility > Requisition page): header label -> column key.
+const LINE_COLUMNS: Record<string, string> = { Make: 'make', 'Part Code': 'part_code', UOM: 'uom', Buyer: 'buyer', 'Ship To': 'ship_to', Stock: 'in_stock' }
+
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
@@ -143,13 +150,17 @@ export default function MyP2PRequestDetailPage() {
   const searchParams = useSearchParams()
   const fromApproval = searchParams.get('from') === 'approval'
   const fromPoApproval = searchParams.get('from') === 'po-approval'
-  const { id: resolvedPrId, error: linkError } = useRecordId(params.id as string)
+  // Role editor "Preview & choose" (lib/visibility.ts): the page draws a made-up requisition, loads and saves nothing.
+  const vis = useVisibility('p2p:purchase_requisitions')
+  const { id: resolvedPrId, error: linkError } = useRecordId(vis.preview ? null : (params.id as string))
   const prId = resolvedPrId ?? 0
   // PO Tracking / PO notifications open ONE purchase order of a split requisition: ?po=<signed ref>.
   const { id: wantedPoId } = useRecordId(searchParams.get('po'))
 
-  const [pr, setPr] = useState<P2PRequestDetail | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [pr, setPr] = useState<P2PRequestDetail | null>(vis.preview ? (sampleRequisition as unknown as P2PRequestDetail) : null)
+  const [loading, setLoading] = useState(!vis.preview)
+  // Item Details has 13 columns; the ones a role hides are not drawn, so full-width rows span only what shows.
+  const lineColCount = 13 - Object.values(LINE_COLUMNS).filter((c) => !vis.preview && !vis.showColumn('detail_lines', c)).length
   const [error, setError] = useState<string | string[]>('')
   const [busy, setBusy] = useState(false)
 
@@ -181,7 +192,7 @@ export default function MyP2PRequestDetailPage() {
   const [discardPoTarget, setDiscardPoTarget] = useState<DiscardPoDraftTarget | null>(null)
   const [poNotice, setPoNotice] = useState('')
   // The requisition's timeline; an uploaded Tally PO keeps its own PDF on its entry.
-  const [history, setHistory] = useState<AuditEntry[]>([])
+  const [history, setHistory] = useState<AuditEntry[]>(vis.preview ? (sampleHistory as AuditEntry[]) : [])
 
   const isPurchaseTeam = !!user?.apps?.includes('purchase')
   const { can, canFeature } = useCan()
@@ -372,7 +383,7 @@ export default function MyP2PRequestDetailPage() {
 
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><P2PNav /><InvalidRecordLink message={linkError} listHref="/dashboard/p2p" listLabel="Back to purchase requisitions" /></div>)
+  if (linkError && !vis.preview) return (<div><P2PNav /><InvalidRecordLink message={linkError} listHref="/dashboard/p2p" listLabel="Back to purchase requisitions" /></div>)
   if (loading) return <p style={{ fontSize: 13, color: TEXT.secondary }}>Loading…</p>
   if (error && !pr) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{error}</p>
   if (!pr) return <p style={{ fontSize: 13, color: '#b91c1c' }}>Not found.</p>
@@ -587,6 +598,7 @@ export default function MyP2PRequestDetailPage() {
       )}
 
       <DetailCard tour="pr-detail-request-info">
+        <VisSection vis={vis} k="detail_header">
         <DetailSummary
           title={(pr.purpose && PURPOSE_LABELS[pr.purpose]) || pr.category_label || pr.category_code}
           text={`${pr.requested_by_name || 'Someone'}${pr.department ? ` (${pr.department})` : ''} asked for ${pr.items.length} item${pr.items.length === 1 ? '' : 's'}${pr.project_label ? ` for ${pr.project_label}` : ''}${pr.required_date ? `, needed by ${formatDate(pr.required_date)}` : ''}.`}
@@ -605,19 +617,25 @@ export default function MyP2PRequestDetailPage() {
           {pr.order_project_number && <DetailRow label="Project">{pr.order_project_number}</DetailRow>}
           <DetailRow label="Requirement type">{pr.requirement_type || null}</DetailRow>
         </DetailGroup>
+        </VisSection>
+        <VisSection vis={vis} k="detail_people_dates">
         <DetailGroup title="People & dates" last={!pr.remarks}>
           <DetailRow label="Requested by">{pr.requested_by_name ? `${pr.requested_by_name}${pr.department ? ` · ${pr.department}` : ''}` : null}</DetailRow>
           <DetailRow label={lineBuyers.length > 1 ? 'Buyers' : 'Buyer'}>{lineBuyers.length > 1 ? lineBuyers.join(', ') : pr.assigned_buyer_name || null}</DetailRow>
           <DetailRow label="Request date">{formatDate(pr.request_date)}</DetailRow>
           <DetailRow label="Required by">{pr.required_date ? formatDate(pr.required_date) : null}</DetailRow>
         </DetailGroup>
+        </VisSection>
         {pr.remarks && (
-          <DetailGroup last>
-            <DetailRow label="Remarks">{pr.remarks}</DetailRow>
-          </DetailGroup>
+          <VisSection vis={vis} k="detail_remarks">
+            <DetailGroup last>
+              <DetailRow label="Remarks">{pr.remarks}</DetailRow>
+            </DetailGroup>
+          </VisSection>
         )}
       </DetailCard>
 
+      <VisSection vis={vis} k="detail_approval_flow">
       {prViaEngine ? (
         <div data-tour="pr-detail-approval">
           <ApprovalPanel entityType="p2p_request" entityId={pr.id} onChanged={load} title="Approval" />
@@ -659,7 +677,9 @@ export default function MyP2PRequestDetailPage() {
         </div>
       </div>
       )}
+      </VisSection>
 
+      <VisSection vis={vis} k="detail_lines">
       <div data-tour="pr-detail-items" style={{ ...sectionStyle, overflow: 'hidden' }}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Item Details</h2>
         {pr.items.some((it) => it.stock_status) && (
@@ -673,9 +693,13 @@ export default function MyP2PRequestDetailPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
           <thead>
             <tr>
-              {['SL', 'Item Description', 'Make', 'Part Code', 'UOM', 'Qty', 'Project / Inhouse', 'Category', 'Buyer', 'Ship To', 'Stock', 'Attachments', 'Fulfillment'].map((h, i) => (
-                <th key={h} style={h === 'Qty' ? numThStyle : thStyle}>{h}{i === 0 && <RowCount count={pr.items.length} />}</th>
-              ))}
+              {['SL', 'Item Description', 'Make', 'Part Code', 'UOM', 'Qty', 'Project / Inhouse', 'Category', 'Buyer', 'Ship To', 'Stock', 'Attachments', 'Fulfillment'].map((h, i) => {
+                // Columns a role may hide (VisTh here, VisTd in the rows, same keys).
+                const col = LINE_COLUMNS[h]
+                return col
+                  ? <VisTh key={h} vis={vis} table="detail_lines" k={col} style={thStyle}>{h}</VisTh>
+                  : <th key={h} style={h === 'Qty' ? numThStyle : thStyle}>{h}{i === 0 && <RowCount count={pr.items.length} />}</th>
+              })}
             </tr>
           </thead>
           <tbody>
@@ -688,9 +712,9 @@ export default function MyP2PRequestDetailPage() {
                 <tr>
                 <td style={{ ...tdStyle, color: TEXT.secondary }}>{idx + 1}</td>
                 <td style={{ ...tdStyle, minWidth: 200 }}>{it.item_code && <span style={{ fontWeight: 700, color: TEXT.heading }}>{it.item_code} — </span>}{it.item_name}</td>
-                <td style={{ ...tdStyle, color: TEXT.secondary }}>{it.make || '—'}</td>
-                <td style={{ ...tdStyle, color: TEXT.secondary }}>{it.part_code || '—'}</td>
-                <td style={{ ...tdStyle, color: TEXT.secondary }}>{it.unit || '—'}</td>
+                <VisTd vis={vis} table="detail_lines" k="make" style={{ ...tdStyle, color: TEXT.secondary }}>{it.make || '—'}</VisTd>
+                <VisTd vis={vis} table="detail_lines" k="part_code" style={{ ...tdStyle, color: TEXT.secondary }}>{it.part_code || '—'}</VisTd>
+                <VisTd vis={vis} table="detail_lines" k="uom" style={{ ...tdStyle, color: TEXT.secondary }}>{it.unit || '—'}</VisTd>
                 <td style={numTdStyle}>{it.quantity.toLocaleString('en-IN')}</td>
                 <td style={{ ...tdStyle, color: TEXT.secondary }}>
                   {it.project_inhouse || '—'}
@@ -703,9 +727,9 @@ export default function MyP2PRequestDetailPage() {
                   )}
                 </td>
                 <td style={{ ...tdStyle, color: TEXT.secondary }}>{it.category || '—'}</td>
-                <td style={{ ...tdStyle, color: TEXT.secondary }}>{it.buyer_name || pr.assigned_buyer_name || '—'}</td>
-                <td style={{ ...tdStyle, color: TEXT.secondary }}>{it.ship_to || '—'}</td>
-                <td style={{ ...tdStyle, fontSize: 12.5 }}>
+                <VisTd vis={vis} table="detail_lines" k="buyer" style={{ ...tdStyle, color: TEXT.secondary }}>{it.buyer_name || pr.assigned_buyer_name || '—'}</VisTd>
+                <VisTd vis={vis} table="detail_lines" k="ship_to" style={{ ...tdStyle, color: TEXT.secondary }}>{it.ship_to || '—'}</VisTd>
+                <VisTd vis={vis} table="detail_lines" k="in_stock" style={{ ...tdStyle, fontSize: 12.5 }}>
                   {it.stock_status ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
                       <Pill label={STOCK_LABELS[it.stock_status] || it.stock_status} hex={STOCK_HEX[it.stock_status] || '#64748b'} />
@@ -716,7 +740,7 @@ export default function MyP2PRequestDetailPage() {
                   ) : (
                     <span style={{ color: TEXT.muted }}>—</span>
                   )}
-                </td>
+                </VisTd>
                 <td style={{ ...tdStyle, fontSize: 12.5 }}>
                   {(it.attachments.length === 0 || !seeAttachments) && <span style={{ color: TEXT.muted }}>—</span>}
                   {seeAttachments && it.attachments.map((a) => (
@@ -744,7 +768,7 @@ export default function MyP2PRequestDetailPage() {
                 </tr>
                 {showActions && (
                   <tr key={`${it.id}-stock`}>
-                    <td colSpan={13} style={{ ...tdStyle, padding: '10px 14px', background: 'rgba(148,163,184,0.06)' }}>
+                    <td colSpan={lineColCount} style={{ ...tdStyle, padding: '10px 14px', background: 'rgba(148,163,184,0.06)' }}>
                       {stockCheckLoading[it.id] ? (
                         <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>Checking store stock…</p>
                       ) : stockCheckErrors[it.id] ? (
@@ -857,16 +881,25 @@ export default function MyP2PRequestDetailPage() {
         </table>
         </div>
       </div>
+      </VisSection>
 
-
-
+      <VisSection vis={vis} k="detail_tracker">
       {!isDraft && (
+        vis.preview ? (
+          <div data-tour="pr-detail-tracker" style={sectionStyle}>
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 6px' }}>Progress</h2>
+            <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>The buying progress of every line (RFQ, order, goods received) shows here once the requisition is approved.</p>
+          </div>
+        ) : (
         <PrTracker prId={pr.id} refreshKey={trackerKey} rfqLinkable={canOpenRfq} meId={user?.id} allLines={allLines} onChanged={load}
           canReassign={isPurchaseTeam && allLines && procurementOpen && canEditPr && canFeature('p2p', 'purchase_requisitions', 'buyer', 'edit')}
           canShortClose={isPurchaseTeam && procurementOpen && canEditPr && canFeature('p2p', 'purchase_requisitions', 'close', 'edit')} />
+        )
       )}
+      </VisSection>
 
-      {(rfqs.length > 0 || canRaiseRfq) && (
+      <VisSection vis={vis} k="detail_rfqs">
+      {(rfqs.length > 0 || canRaiseRfq || vis.preview) && (
         <div data-tour="pr-detail-rfqs" style={sectionStyle}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
             <div style={{ minWidth: 0 }}>
@@ -943,6 +976,7 @@ export default function MyP2PRequestDetailPage() {
           )}
         </div>
       )}
+      </VisSection>
 
       {canFeature('p2p', 'rfq', 'vendor_quotes', 'view') && rfqs.filter((r) => (r.attachments || []).length > 0 && rfqIsMine(r)).map((r) => (
         <div key={r.id} data-tour="pr-detail-vendor-quotations" style={sectionStyle}>
@@ -965,7 +999,9 @@ export default function MyP2PRequestDetailPage() {
         </div>
       ))}
 
-      {po && seePoBlock && (
+      {seePoBlock && (po || vis.preview) && (
+        <VisSection vis={vis} k="detail_purchase_order">
+        {po ? (
         <DetailCard tour="pr-detail-po-info">
           {allPos.length > 1 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 14 }}>
@@ -1066,6 +1102,12 @@ export default function MyP2PRequestDetailPage() {
             </div>
           )}
         </DetailCard>
+        ) : (
+          <DetailCard>
+            <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>The Purchase Order card (vendor, PO lines, PO document) shows here once the requisition has an order.</p>
+          </DetailCard>
+        )}
+        </VisSection>
       )}
 
       {poViaEngine && engine?.po_id ? (
@@ -1185,6 +1227,7 @@ export default function MyP2PRequestDetailPage() {
       )}
 
       {pr.attachments.length > 0 && seeAttachments && (
+        <VisSection vis={vis} k="detail_attachments">
         <div data-tour="pr-detail-attachments" style={sectionStyle}>
           <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Attachments</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1200,9 +1243,11 @@ export default function MyP2PRequestDetailPage() {
             ))}
           </div>
         </div>
+        </VisSection>
       )}
 
       {seeHistory && history.length > 0 && (
+        <VisSection vis={vis} k="detail_history">
         <div data-tour="pr-detail-history" style={sectionStyle}>
           <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>History</h2>
           <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1225,6 +1270,7 @@ export default function MyP2PRequestDetailPage() {
             ))}
           </ol>
         </div>
+        </VisSection>
       )}
 
       <DiscardPoDraftDialog target={discardPoTarget} onClose={() => setDiscardPoTarget(null)}
@@ -1259,7 +1305,7 @@ export default function MyP2PRequestDetailPage() {
             {sheetError && <div style={sheetErr}>{sheetError}</div>}
             <label style={sheetLabel}>Item Master item <Req /></label>
             <SearchableSelect value={linkChoice} onChange={setLinkChoice} placeholder="Search item code, name or part no…"
-              options={linkItems.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}${i.part_number ? ` · ${i.part_number}` : ''}` }))} />
+              options={linkItems.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, description: itemOptionDetail(i) }))} />
             <p style={sheetHint}>The line then carries the Item Master id — the GRN receives it into that item&apos;s stock.</p>
           </div>
         </FormSheet>

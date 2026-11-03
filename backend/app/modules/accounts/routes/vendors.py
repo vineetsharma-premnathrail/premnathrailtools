@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.permission_registry import can_feature, can_view_tab
 from app.core.permissions import require_any_app_access, require_tab_access, require_tab_action, ensure_feature_action, ensure_can_delete
 from app.db.session import get_db
@@ -13,6 +14,10 @@ from app.modules.accounts.services.vendor_referral import REFERRAL_FIELDS, clean
 from app.modules.accounts.schemas.vendor import VendorCreate, VendorUpdate, VendorResponse
 
 router = APIRouter(prefix="/accounts/vendors", tags=["Accounts"])
+
+
+# Role-wise UI visibility entry of this screen (core/features/accounts.py register_visibility).
+VENDORS_VISIBILITY_KEY = "accounts:vendors"
 
 
 def _clean_tax_fields(data: dict) -> dict:
@@ -114,6 +119,11 @@ async def create_vendor(
     data = payload.model_dump()
     clean_referral(db, data)
     _ensure_bank_change_allowed(user, data, None)
+    # Role-wise visibility (core/features/accounts.py): a GST registration type or status the role
+    # may not pick is refused; a role that narrows the registration type must send one (no silent default).
+    visibility.ensure_option_given(user, VENDORS_VISIBILITY_KEY, "gst_registration_type", data.get("gst_registration_type"))
+    visibility.ensure_option_allowed(user, VENDORS_VISIBILITY_KEY, "gst_registration_type", data.get("gst_registration_type"))
+    visibility.ensure_option_allowed(user, VENDORS_VISIBILITY_KEY, "status", data.get("status"))
     if not data.get("gst_registration_type"):
         data["gst_registration_type"] = "regular" if data.get("gstin") else "unregistered"
     vendor = Vendor(**_clean_tax_fields(data), created_by_id=user.id)
@@ -141,6 +151,10 @@ async def update_vendor(
             raise HTTPException(status_code=409, detail=f"Vendor code '{payload.code}' already exists")
     changes = payload.model_dump(exclude_unset=True)
     _ensure_bank_change_allowed(user, changes, vendor)
+    # Visibility checks only a value that CHANGES — an older vendor keeps a type / status the role no longer offers.
+    for field in ("gst_registration_type", "status"):
+        if field in changes and changes[field] != getattr(vendor, field):
+            visibility.ensure_option_allowed(user, VENDORS_VISIBILITY_KEY, field, changes[field])
     clean_referral(db, changes, vendor)
     changes = _clean_tax_fields(changes)
     changed = [f for f, value in changes.items() if getattr(vendor, f, None) != value]

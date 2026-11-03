@@ -13,20 +13,32 @@ const config: TourConfig = {
       autoActivateOnAdvance: true,
     },
     {
-      target: 'res-item',
-      title: 'Item',
-      required: true,
-    },
-    {
       target: 'res-location',
       title: 'Store',
       required: true,
+      purpose: 'The store every line is held in. Picking it shows live available stock on each line.',
+    },
+    {
+      target: 'res-item',
+      title: 'Item',
+      required: true,
+      purpose: 'Search by code or name — the second line shows make, part no. and specification so look-alike items can be told apart.',
     },
     {
       target: 'res-quantity',
       title: 'Quantity',
       required: true,
       why: 'Rejected if it exceeds what\'s currently available (on-hand minus already-reserved) at that store.',
+    },
+    {
+      target: 'res-add-line',
+      title: '+ Add Item',
+      purpose: 'Adds another item line — one reservation can hold many items for the same store and purpose.',
+    },
+    {
+      target: 'res-import-btn',
+      title: 'Import from Excel',
+      purpose: 'Loads item lines (item_code, quantity, remarks) from a file — use Download template for the right columns. Rows with unknown codes are listed so you can fix them.',
     },
     {
       target: 'res-required-date',
@@ -36,7 +48,7 @@ const config: TourConfig = {
     {
       target: 'res-save-btn',
       title: 'Reserve Stock',
-      purpose: 'Creates the reservation and immediately moves the quantity from Available to Reserved on the Stock page.',
+      purpose: 'Reserves every line at once — all or nothing: if one line is short of stock, nothing is reserved and the line is named. Each line gets its own reservation number so it can be fulfilled or cancelled on its own.',
     },
     {
       target: 'res-modal-cancel-btn',

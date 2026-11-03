@@ -6,11 +6,14 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hrApi } from '@/lib/api'
 import { useCan } from '@/lib/permissions'
+import { useVisibility } from '@/lib/visibility'
+import { VisColumns } from '@/components/quality/VisColumns'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
 import { HrEmployeeProfile, HrFormField, HrFormRules, HrLookups, HrRuleCondition } from '@/types'
 import { TEXT } from '@/lib/theme'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
-import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import { FormPage, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -99,6 +102,9 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
   const { id: idResolved, error: linkError } = useRecordId(isNewWorker ? undefined : params?.id)
   const id = idResolved ?? 0
   const { canFeature } = useCan()
+  // Role-wise visibility (Organization › Role & Permissions › HR › Employees › Visibility): which coded
+  // dropdown values this user may pick and which optional sections show. The server refuses the rest.
+  const vis = useVisibility('hr:employees')
 
   const [emp, setEmp] = useState<HrEmployeeProfile | null>(null)
   const [lookups, setLookups] = useState<HrLookups | null>(null)
@@ -115,8 +121,12 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
 
   const viewHref = isNewWorker ? '/dashboard/hr/employees' : `/dashboard/hr/employees/${isWorker ? 'workers/' : ''}${params?.id}`
 
-  const freshForm = (rl: HrFormRules) => {
+  // Worker categories the role may pick (coded list, so it is known before the rules load), as a stable key.
+  const allowedWorkerKey = vis.options('worker_type', Object.keys(WORKER_TYPE_LABELS), (k) => k).join(',')
+  const freshForm = (rl: HrFormRules, allowedWorkerTypes: string[]) => {
     const f = toForm(null)
+    // A new record starts on the first worker category the role may pick when the usual default is not allowed.
+    if (allowedWorkerTypes.length && !allowedWorkerTypes.includes(f.worker_type)) f.worker_type = allowedWorkerTypes[0]
     for (const [k, v] of Object.entries(rl.defaults[f.worker_type] || {})) (f as Record<string, unknown>)[k] = String(v)
     return f
   }
@@ -125,7 +135,7 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
     if (!isAuthorized) return
     if (isNewWorker) {
       Promise.all([hrApi.getLookups({ include_inactive: true }), hrApi.getWorkforceFormRules()])
-        .then(([lk, rl]) => { setLookups(lk); setRules(rl); const f = freshForm(rl); setForm(f); setInitial(f) })
+        .then(([lk, rl]) => { setLookups(lk); setRules(rl); const f = freshForm(rl, allowedWorkerKey.split(',').filter(Boolean)); setForm(f); setInitial(f) })
         .catch((err) => setLoadError(extractErrorMessages(err, "Couldn't load the form.")))
       return
     }
@@ -148,7 +158,7 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
         setInitial(f)
       })
       .catch((err) => setLoadError(extractErrorMessages(err, "Couldn't load this employee.")))
-  }, [isAuthorized, id, isWorker, isNewWorker])
+  }, [isAuthorized, id, isWorker, isNewWorker, allowedWorkerKey])
 
   const set = (k: FieldKey | BoolKey) => (v: string) => setForm((f) => (f ? { ...f, [k]: v } : f))
   const inp = (k: FieldKey) => ({ value: form?.[k] ?? '', onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => set(k)(e.target.value) })
@@ -178,7 +188,7 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
   }
   // New employee only. PAN / Aadhaar / UAN / ESIC numbers are never kept in the draft.
   const formDraft = useFormDraft(
-    isNewWorker && form ? 'hr-employee-new' : null,
+    isNewWorker && form && !vis.preview ? 'hr-employee-new' : null,
     form ? Object.fromEntries(Object.entries(form).filter(([k]) => !STATUTORY_KEYS.includes(k))) : {},
     (d: Record<string, unknown>) => setForm((f) => (f ? { ...f, ...d } as FormState : f)),
   )
@@ -194,6 +204,12 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
     })
   }
 
+  // Coded dropdowns narrowed to the values the user's roles allow; a saved record keeps the value it already holds.
+  const codedChoices = (dropdown: string, all: Record<string, string>, current: string): Record<string, string> => {
+    const kept = vis.options(dropdown, Object.entries(all), ([k]) => k)
+    const keepCurrent = !isNewWorker && !!current && all[current] && !kept.some(([k]) => k === current)
+    return Object.fromEntries(keepCurrent ? [...kept, [current, all[current]]] : kept)
+  }
   // Active options, plus the currently-selected one even if it's been deactivated.
   const opts = (list: { id: number; name: string; code?: string | null; is_active: boolean }[] | undefined, current: string, withCode = false) =>
     (list || []).filter((o) => o.is_active || String(o.id) === current).map((o) => ({
@@ -296,7 +312,7 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
         }
       }
       if (how === 'another') {
-        const f = freshForm(rules)
+        const f = freshForm(rules, allowedWorkerKey.split(',').filter(Boolean))
         setForm(f)
         setInitial(f)
         setStaged([])
@@ -376,17 +392,17 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
 
   const footer = (
     <>
-      <button type="button" data-tour="hr-prof-cancel-btn" style={sheetBtn('secondary', SHEET.INK, !!saving)} disabled={!!saving} onClick={cancel}>Cancel</button>
-      <button type="button" data-tour="hr-prof-draft-btn" style={sheetBtn('secondary', SHEET.INK, !!saving)} disabled={!!saving} onClick={() => save('draft')}
+      <button type="button" data-tour="hr-prof-cancel-btn" style={sheetBtn('secondary', SHEET.INK, !!saving)} disabled={!!saving || vis.preview} onClick={cancel}>Cancel</button>
+      <button type="button" data-tour="hr-prof-draft-btn" style={sheetBtn('secondary', SHEET.INK, !!saving)} disabled={!!saving || vis.preview} onClick={() => save('draft')}
         title="Save without the required-field checks — the record shows as Draft until saved normally">
         <SheetIcon name="doc" size={15} />{saving === 'draft' ? 'Saving…' : 'Save Draft'}
       </button>
       {isNewWorker && (
-        <button type="button" data-tour="hr-prof-another-btn" style={sheetBtn('secondary', SHEET.BLUE, !!saving)} disabled={!!saving} onClick={() => save('another')}>
+        <button type="button" data-tour="hr-prof-another-btn" style={sheetBtn('secondary', SHEET.BLUE, !!saving)} disabled={!!saving || vis.preview} onClick={() => save('another')}>
           <SheetIcon name="plus" size={15} />{saving === 'another' ? 'Saving…' : 'Create & Add Another'}
         </button>
       )}
-      <button type="button" data-tour="hr-prof-save-btn" style={sheetBtn('primary', SHEET.BLUE, !!saving)} disabled={!!saving} onClick={() => save('save')}>
+      <button type="button" data-tour="hr-prof-save-btn" style={sheetBtn('primary', SHEET.BLUE, !!saving)} disabled={!!saving || vis.preview} onClick={() => save('save')}>
         <SheetIcon name="check" size={16} />{saving === 'save' ? 'Saving…' : isNewWorker ? 'Create Employee' : emp?.has_profile ? 'Save Changes' : 'Create Record'}
       </button>
     </>
@@ -394,7 +410,7 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
 
   return (
     <div>
-      <FormPage nav={<HrNav />} tour="hr-prof-form" icon={isNewWorker ? 'plus' : 'user'} title={title} subtitle={subtitle || ''} onBack={cancel} backTour="hr-prof-back"
+      <FormPage nav={vis.preview ? undefined : <HrNav />} tour="hr-prof-form" icon={isNewWorker ? 'plus' : 'user'} title={title} subtitle={subtitle || ''} onBack={vis.preview ? undefined : cancel} backTour="hr-prof-back"
         footer={form && rules && (emp || isNewWorker) ? footer : <button type="button" data-tour="hr-prof-cancel-btn" style={sheetBtn('secondary', SHEET.INK)} onClick={cancel}>Cancel</button>}>
         {(notice || loadError.length > 0 || errors.length > 0 || emp?.record_status) && (
           <div style={{ padding: '16px 24px 0' }}>
@@ -412,24 +428,28 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
 
         {form && rules && (emp || isNewWorker) && (
           <>
-            <SheetColumns
+            <VisColumns vis={vis} rightKeys={['admin']}
               left={<>
                 <DraftBanner draft={formDraft} />
                 <p style={{ ...sheetHint, margin: '0 0 16px' }}><Req /> required to save · ◦ needed for a Complete record · hover ⓘ to see why a field is asked for and what uses it.</p>
           {/* 1. Workforce information */}
+          <VisSection vis={vis} k="classification">
           <SheetSection icon="user" title={secTitle('classification', 1)}>
             <div style={row}>
               {field('employee_code', <input style={sheetInput} {...inp('employee_code')} onChange={(e) => set('employee_code')(e.target.value.toUpperCase())} placeholder="Auto: WF-00001" />, short,
                 form.employee_code ? undefined : 'Left blank, the next WF- number is assigned.')}
               {field('full_name', <input style={sheetInput} {...inp('full_name')} placeholder="As on Aadhaar" autoFocus={isNewWorker} />, { flex: '1 1 240px', maxWidth: 340 })}
               {field('worker_type', (
+                <>
                 <Select style={sheetInput} value={form.worker_type} onChange={(e) => onWorkerTypeChange(e.target.value)}>
-                  {Object.entries(rules.worker_types).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  {Object.entries(codedChoices('worker_type', rules.worker_types, form.worker_type)).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </Select>
+                <VisOptionValues vis={vis} dropdown="worker_type" />
+                </>
               ), { flex: '0 1 220px', minWidth: 200 })}
             </div>
             <div style={row}>
-              {field('employment_type', choice('employment_type', typeOptions), { flex: '0 1 200px', minWidth: 180 })}
+              {field('employment_type', <>{choice('employment_type', codedChoices('employment_type', typeOptions, form.employment_type))}<VisOptionValues vis={vis} dropdown="employment_type" /></>, { flex: '0 1 200px', minWidth: 180 })}
               {field('designation_id', <SearchableSelect value={form.designation_id} onChange={onDesignationChange} options={[{ value: '', label: '— Select —' }, ...opts(lookups?.designations, form.designation_id)]} placeholder="— Select —" />, med,
                 !form.designation_id && emp?.user_designation ? `Account currently says "${emp.user_designation}". Add it under Masters > Designations if it's missing.` : undefined)}
               {field('employment_status', choice('employment_status', statusOptions, ''), short, isWorker ? undefined : form.employment_status === 'exited'
@@ -441,8 +461,10 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
               Worker category, employment type, designation, employment status and probation status are separate on purpose — each answers one question. A contract labourer is a contractor&apos;s worker; someone on our own rolls for a fixed period is Fixed-term.
             </p>
           </SheetSection>
+          </VisSection>
 
           {/* 2. Employment & organisation */}
+          <VisSection vis={vis} k="organization">
           <SheetSection icon="building" title={secTitle('organization', 2)}>
             <div style={row}>
               {field('branch_id', choice('branch_id', Object.fromEntries(opts(lookups?.branches, form.branch_id).map((o) => [o.value, o.label]))), short)}
@@ -465,7 +487,8 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
             <div style={row}>
               {field('shift_id', choice('shift_id', Object.fromEntries(opts(lookups?.shifts, form.shift_id, true).map((o) => [o.value, o.label])), '— None —'), short,
                 lookups && !lookups.shifts?.length ? 'No shifts yet — add them under HR > Masters > Shifts.' : undefined)}
-              {field('attendance_policy', choice('attendance_policy', Object.fromEntries(Object.keys(rules.attendance_policies).map((k) => [k, ATTENDANCE_POLICY_LABELS[k] || rules.attendance_policies[k]]))), { flex: '0 1 210px', minWidth: 190 })}
+              {field('attendance_policy', <>{choice('attendance_policy', codedChoices('attendance_policy',
+                Object.fromEntries(Object.keys(rules.attendance_policies).map((k) => [k, ATTENDANCE_POLICY_LABELS[k] || rules.attendance_policies[k]])), form.attendance_policy))}<VisOptionValues vis={vis} dropdown="attendance_policy" /></>, { flex: '0 1 210px', minWidth: 190 })}
               {field('ot_eligible', yesNo('ot_eligible', true), { flex: '0 1 150px', minWidth: 130 })}
               {field('weekly_off', (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -485,9 +508,10 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
             </div>
             {!isWorker && <p style={{ ...sheetHint, margin: 0 }}>Department, designation and plant are copied to the person&apos;s portal account, so approvals in other modules (e.g. P2P department-head routing) follow them.</p>}
           </SheetSection>
+          </VisSection>
 
           {/* 3. Contact & personal */}
-          {anyVisible(...PERSONAL_KEYS) && <SheetSection icon="users" title={secTitle('personal', 3)}>
+          {anyVisible(...PERSONAL_KEYS) && <VisSection vis={vis} k="personal"><SheetSection icon="users" title={secTitle('personal', 3)}>
             <div style={row}>
               {field('personal_phone', <input style={sheetInput} {...inp('personal_phone')} placeholder="+91 98765 43210" />, short)}
               {field('personal_email', <input style={sheetInput} {...inp('personal_email')} placeholder="name@gmail.com" />, { flex: '1 1 240px', maxWidth: 320 })}
@@ -507,10 +531,11 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
               {field('emergency_contact_relation', choice('emergency_contact_relation', relationOptions), short, undefined, 'Relationship')}
               {field('emergency_contact_phone', <input style={sheetInput} {...inp('emergency_contact_phone')} />, short, undefined, 'Emergency Phone')}
             </div>
-          </SheetSection>}
+          </SheetSection></VisSection>}
 
           {/* 4. Portal access (records without an account) */}
           {anyVisible('portal_access') && (
+            <VisSection vis={vis} k="access">
             <SheetSection icon="shield" title={secTitle('access', 4)}>
               <div style={row}>
                 {field('portal_access', yesNo('portal_access'), short)}
@@ -533,10 +558,12 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
                 <span style={{ color: TEXT.muted }}>(system-managed)</span>
               </div>
             </SheetSection>
+            </VisSection>
           )}
 
           {/* 5. Contractor */}
           {anyVisible('contractor_name') && (
+            <VisSection vis={vis} k="contractor">
             <SheetSection icon="truck" title={secTitle('contractor', 5)}>
               <div style={row}>
                 {field('contractor_name', <input style={sheetInput} {...inp('contractor_name')} placeholder="Contractor firm name" />, med,
@@ -551,16 +578,19 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
               </div>
               {form.worker_type === 'contract' && <p style={{ ...sheetHint, margin: 0 }}>Contract dates, assigned plant / site and internal supervisor are in section 2.</p>}
             </SheetSection>
+            </VisSection>
           )}
 
           {/* 7. Statutory & compliance */}
+          <VisSection vis={vis} k="compliance">
           <SheetSection icon="flag" title={secTitle('compliance', 7)}>
-            <div style={row}>
+            {/* Statutory IDs row: hideable per role on screen (Visibility); the 'Statutory IDs' feature blanks the data itself. */}
+            <VisSection vis={vis} k="statutory_ids"><div style={row}>
               {field('pan_number', <input style={sheetInput} {...inp('pan_number')} onChange={(e) => set('pan_number')(e.target.value.toUpperCase())} placeholder="ABCDE1234F" />, short)}
               {field('aadhaar_last4', <input style={sheetInput} {...inp('aadhaar_last4')} onChange={(e) => set('aadhaar_last4')(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="1234" inputMode="numeric" />, short)}
               {field('uan_number', <input style={sheetInput} {...inp('uan_number')} />, short)}
               {field('esic_number', <input style={sheetInput} {...inp('esic_number')} />, short)}
-            </div>
+            </div></VisSection>
             <div style={row}>
               {field('safety_induction_status', choice('safety_induction_status', rules.clearance_statuses.safety_induction_status), short)}
               {field('safety_induction_date', <DateField value={form.safety_induction_date} onChange={set('safety_induction_date')} />, short)}
@@ -569,9 +599,11 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
             </div>
             <p style={{ ...sheetHint, margin: 0 }}>Statutory IDs are visible to HR and the employee only. Payroll stays in ADP — these are kept for reference and compliance checks.</p>
           </SheetSection>
+          </VisSection>
 
           {/* Exit */}
           {anyVisible('date_of_exit', 'exit_reason') && (
+            <VisSection vis={vis} k="exit">
             <SheetSection icon="undo" title={secTitle('exit')}>
               <div style={row}>
                 {/* Account holders: the Last Working Day is set when the Exit event completes in HR > Lifecycle. */}
@@ -582,12 +614,13 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
                 {field('exit_clearance_done', yesNo('exit_clearance_done'), short)}
               </div>
             </SheetSection>
+            </VisSection>
           )}
 
               </>}
               right={<>
           {/* 8. HR administration */}
-          <SheetSection icon="gear" title={secTitle('admin', 8)}>
+          <VisSection vis={vis} k="admin"><SheetSection icon="gear" title={secTitle('admin', 8)}>
             <div style={row}>
               {field('notes', <textarea style={{ ...sheetInput, minHeight: 70, resize: 'vertical' }} {...inp('notes')} />, { flex: '1 1 420px', maxWidth: 720 })}
             </div>
@@ -604,11 +637,11 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
               Record status: <b>{RECORD_STATUS_LABELS[emp?.record_status || ''] || (isNewWorker ? 'set on save' : '—')}</b>
               {emp?.has_profile && <> · Created {formatDate(emp.created_at?.slice(0, 10))}{emp.created_by_name ? ` by ${emp.created_by_name}` : ''} · Last updated {formatDate(emp.updated_at?.slice(0, 10))}{emp.updated_by_name ? ` by ${emp.updated_by_name}` : ''}. Every change is in the audit log.</>}
             </p>
-          </SheetSection>
+          </SheetSection></VisSection>
 
               </>}
             />
-            <div style={{ padding: '20px 24px 4px', borderTop: `1px solid ${SHEET.LINE}` }}>
+            <VisSection vis={vis} k="documents" frame={{ padding: '20px 24px 4px', borderTop: `1px solid ${SHEET.LINE}` }}>
           {/* 6. Documents */}
           <SheetSection icon="doc" title={secTitle('documents', 6)}>
             {canFeature('hr', 'employees', 'documents', 'view')
@@ -616,7 +649,7 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
               : <p style={{ ...sheetHint, margin: 0 }}>Your role doesn&apos;t include HR › Employees › Documents, so employee documents aren&apos;t shown here. Ask an admin to add it in Organization › Role &amp; Permissions if you need them.</p>}
           </SheetSection>
 
-            </div>
+            </VisSection>
           </>
         )}
       </FormPage>

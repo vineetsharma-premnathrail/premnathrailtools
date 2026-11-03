@@ -1,10 +1,13 @@
 'use client'
 
 import Select from '@/components/shared/Select'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, Fragment, ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection } from '@/lib/visibilityComponents'
+import { sampleContact, sampleOrganizations, sampleTenders } from '@/lib/crmPreviewSamples'
 import { crmApi } from '@/lib/api'
 import { recordVisit } from '@/lib/crmShortcuts'
 import { Tender, Organization, OrgContact, CrmActivity, CrmDocument, CrmStageLogEntry, RndRequestAssignment } from '@/types'
@@ -34,19 +37,25 @@ const tabFromUrl = (): 'Technical Offers' | 'Info' =>
   typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'technical-offers' ? 'Technical Offers' : 'Info'
 
 const TABS = ['Info', 'Documents', 'Technical Offers', 'Dates', 'Follow Ups', 'Timeline'] as const
+// Role-wise visibility section of each sub-tab (core/features/crm.py); 'Info' always shows.
+const TAB_SECTION: Partial<Record<typeof TABS[number], string>> = { 'Dates': 'tnd_detail_dates', 'Technical Offers': 'tnd_detail_technical_offers', 'Documents': 'tnd_detail_documents', 'Follow Ups': 'tnd_detail_followups', 'Timeline': 'tnd_detail_timeline' }
 
 export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: number; onDeleted?: () => void }) {
   const { user } = useAuth()
   const { can, canDelete, canFeature } = useCan()
+  // Role-wise visibility (Organization › Role & Permissions › CRM › Inquiries & Tenders › Visibility › Tender page):
+  // optional blocks and sub-tabs a role hides. In the Role editor's preview (vis.preview) the page draws a sample
+  // tender, loads nothing and offers no action.
+  const vis = useVisibility('crm:inquiries_tenders')
   const router = useRouter()
   const searchParams = useSearchParams()
   const backParam = searchParams.get('back')
   const backHref = backParam && backParam.startsWith('/dashboard/') ? backParam : '/dashboard/crm/inquiries'
 
-  const [tender, setTender] = useState<Tender | null>(null)
-  const [org, setOrg] = useState<Organization | null>(null)
-  const [contact, setContact] = useState<OrgContact | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [tender, setTender] = useState<Tender | null>(vis.preview ? sampleTenders[0] : null)
+  const [org, setOrg] = useState<Organization | null>(vis.preview ? sampleOrganizations[0] : null)
+  const [contact, setContact] = useState<OrgContact | null>(vis.preview ? sampleContact : null)
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState<string | string[]>('')
   const [tab, setTab] = useState<typeof TABS[number]>(tabFromUrl)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -90,20 +99,21 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
 
   useEffect(() => {
     // Deferred so the effect itself sets no state.
-    if (tenderId) Promise.resolve().then(() => { setTab(tabFromUrl()); setEditing(false); load() })
+    if (tenderId && !vis.preview) Promise.resolve().then(() => { setTab(tabFromUrl()); setEditing(false); load() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenderId])
 
   // Creator-or-admin (backend rule) AND Inquiries & Tenders › Edit in the Permission Matrix.
-  const canModify = !!tender && !!user && (user.role === 'admin' || tender.created_by_id === user.id) && can('crm', 'inquiries_tenders', 'edit')
-  const canDeleteRecord = !!tender && canDelete('crm', 'inquiries_tenders', tender.created_by_id ?? null)
+  const canModify = !!tender && !!user && (user.role === 'admin' || tender.created_by_id === user.id) && can('crm', 'inquiries_tenders', 'edit') && !vis.preview
+  const canDeleteRecord = !!tender && canDelete('crm', 'inquiries_tenders', tender.created_by_id ?? null) && !vis.preview
   // Tenders share the Inquiries & Tenders tab, so they share its features (core/features/crm.py).
-  const seeTab = (t: typeof TABS[number]) => t === 'Info'
+  // A sub-tab needs its feature grant; role-wise visibility then hides it on screen (the preview draws every tab).
+  const seeTab = (t: typeof TABS[number]) => (vis.preview || !TAB_SECTION[t] || vis.showSection(TAB_SECTION[t]!)) && (t === 'Info'
     || (t === 'Dates' && canFeature('crm', 'inquiries_tenders', 'tender_dates', 'view'))
     || (t === 'Technical Offers' && canFeature('crm', 'inquiries_tenders', 'technical_offer', 'view'))
     || (t === 'Documents' && canFeature('crm', 'inquiries_tenders', 'documents', 'view'))
     || (t === 'Follow Ups' && canFeature('crm', 'inquiries_tenders', 'followups', 'view'))
-    || (t === 'Timeline' && canFeature('crm', 'inquiries_tenders', 'timeline', 'view'))
+    || (t === 'Timeline' && canFeature('crm', 'inquiries_tenders', 'timeline', 'view')))
   const isAdmin = user?.role === 'admin'
   const movingBack = !!pendingStage && !!tender && TND_STAGES.indexOf(pendingStage) < TND_STAGES.indexOf(tender.current_stage)
 
@@ -172,7 +182,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
+      <VisSection vis={vis} k="tnd_detail_header"><div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45' }}>{tender.universal_id}</span>
@@ -207,10 +217,10 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
           />
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              <button onClick={() => router.push(backHref)} type="button" data-tour="tender-back-btn" style={secondaryBtnStyle}>
+              {!vis.preview && <button onClick={() => router.push(backHref)} type="button" data-tour="tender-back-btn" style={secondaryBtnStyle}>
                 ← Back
-              </button>
-              {canFeature('crm', 'inquiries_tenders', 'send_tor', 'create') && <button
+              </button>}
+              {!vis.preview && canFeature('crm', 'inquiries_tenders', 'send_tor', 'create') && <button
                 onClick={() => setShowTorPicker(true)}
                 disabled={!canSendAgain || sendingTOR}
                 data-tour="tender-tor-btn"
@@ -230,13 +240,17 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
             )}
           </div>
         </div>
-      )}
+      )}</VisSection>
 
-      {!editing && <RndIntakeCard rnd={rnd} tourId="tender-rnd-status" canResend={canFeature('crm', 'inquiries_tenders', 'send_tor', 'create')} sending={sendingTOR} onResend={() => setShowTorPicker(true)} />}
+      {!editing && <VisSection vis={vis} k="tnd_detail_rnd"><RndIntakeCard rnd={rnd} tourId="tender-rnd-status" canResend={canFeature('crm', 'inquiries_tenders', 'send_tor', 'create') && !vis.preview} sending={sendingTOR} onResend={() => setShowTorPicker(true)} /></VisSection>}
 
       <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, overflowX: 'auto', overflowY: 'visible' }}>
-        {TABS.filter((t) => seeTab(t)).map((t) => (
-          <div key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+        {TABS.filter((t) => seeTab(t)).map((t) => {
+          const section = TAB_SECTION[t]
+          const wrap = (node: ReactNode) => section ? <VisSection vis={vis} k={section}>{node}</VisSection> : node
+          return (
+          <Fragment key={t}>{wrap(
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             <button
               onClick={() => setTab(t)}
               data-tour={`tender-tab-${t}`}
@@ -253,7 +267,9 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
               <RevisionSelector revisions={revisions} selectedId={selectedRevId} onSelect={setSelectedRevId} tourId="tender-revision-selector" />
             )}
           </div>
-        ))}
+          )}</Fragment>
+          )
+        })}
       </div>
 
       {(tab === 'Info' || !seeTab(tab)) && editing && (
@@ -270,11 +286,13 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
       {(tab === 'Info' || !seeTab(tab)) && !editing && (
         <InfoTab tender={tender} org={org} contact={contact} revisions={revisions} selectedRevId={selectedRevId} canModify={canModify} onChangeLeadInfo={patchLeadInfo} />
       )}
+      {/* Role editor preview: Dates draws the sample tender; the other sub-tabs load their own records, so the preview only shows a note. */}
       {tab === 'Dates' && seeTab('Dates') && <DatesTab tender={tender} />}
-      {tab === 'Technical Offers' && seeTab('Technical Offers') && <BdTechnicalOffers kind="tender" recordId={tender.id} />}
-      {tab === 'Documents' && seeTab('Documents') && <DocumentsTab tender={tender} canModify={canModify && canFeature('crm', 'inquiries_tenders', 'documents', 'create')} isAdmin={isAdmin} />}
-      {tab === 'Follow Ups' && seeTab('Follow Ups') && <ActivitiesTab tender={tender} org={org} />}
-      {tab === 'Timeline' && seeTab('Timeline') && <TimelineTab tenderId={tender.id} />}
+      {tab !== 'Info' && tab !== 'Dates' && seeTab(tab) && vis.preview && <p style={{ fontSize: 13, color: '#78716c', padding: '14px 16px', borderRadius: 12, background: '#fff', border: '1px dashed rgba(0,0,0,0.12)', margin: 0 }}>Shown with the real records on the page; the preview only decides whether this tab is offered.</p>}
+      {tab === 'Technical Offers' && seeTab('Technical Offers') && !vis.preview && <BdTechnicalOffers kind="tender" recordId={tender.id} />}
+      {tab === 'Documents' && seeTab('Documents') && !vis.preview && <DocumentsTab tender={tender} canModify={canModify && canFeature('crm', 'inquiries_tenders', 'documents', 'create')} isAdmin={isAdmin} />}
+      {tab === 'Follow Ups' && seeTab('Follow Ups') && !vis.preview && <ActivitiesTab tender={tender} org={org} />}
+      {tab === 'Timeline' && seeTab('Timeline') && !vis.preview && <TimelineTab tenderId={tender.id} />}
 
       <TechnicalOfferPickerDialog
         open={showTorPicker}
@@ -320,10 +338,14 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
   )
 }
 
+/** A role's allowed choices, plus the record's own current value so an existing record never shows a blank. */
+const keepCurrent = (choices: string[], current?: string | null) => (current && !choices.includes(current) ? [...choices, current] : choices)
+
 function InfoTab({ tender, org, contact, revisions, selectedRevId, canModify, onChangeLeadInfo }: { tender: Tender; org: Organization | null; contact: OrgContact | null; revisions: SpecRevision[]; selectedRevId: number | null; canModify: boolean; onChangeLeadInfo: (payload: Record<string, unknown>) => void }) {
   const selectedRev = revisions.find((r) => r.id === selectedRevId) || null
   const changeFor = (field: string) => selectedRev?.changes.find((c) => c.field === field)
   const { canFeature } = useCan()
+  const vis = useVisibility('crm:inquiries_tenders')
   const seeCustomer = canFeature('crm', 'inquiries_tenders', 'customer_contact', 'view')
   const seePrices = canFeature('crm', 'inquiries_tenders', 'prices', 'view')
 
@@ -347,12 +369,12 @@ function InfoTab({ tender, org, contact, revisions, selectedRevId, canModify, on
           </>}
         />
 
-        <DetailGroup title="Tender Information" last={!seeCustomer}>
+        <VisSection vis={vis} k="tnd_detail_info"><DetailGroup title="Tender Information" last={!seeCustomer}>
           <DetailRow label="Status">
             {canModify ? (
               <div style={{ maxWidth: 320 }}>
                 <Select data-tour="tnd-info-status" value={tender.status} onChange={(e) => onChangeLeadInfo({ status: e.target.value })} style={{ ...inputStyle, width: '100%' }}>
-                  {TENDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  {keepCurrent(vis.options('tender_status', TENDER_STATUSES, (s) => s), tender.status).map((s) => <option key={s} value={s}>{s}</option>)}
                 </Select>
               </div>
             ) : <Pill label={tender.status} hex={hex} />}
@@ -364,17 +386,17 @@ function InfoTab({ tender, org, contact, revisions, selectedRevId, canModify, on
           {seePrices && <SpecDetailRow label="Tender value" value={tender.tender_value != null ? `${tender.currency} ${tender.tender_value.toLocaleString('en-IN')}` : null} change={changeFor('tender_value') || changeFor('currency')} />}
           <DetailRow label="Lead source">{tender.lead_source}</DetailRow>
           {changeFor('tender_number') && <SpecDetailRow label="Tender number" value={tender.tender_number} change={changeFor('tender_number')} />}
-        </DetailGroup>
+        </DetailGroup></VisSection>
 
         {seeCustomer && (
-          <DetailGroup title="Customer" last>
+          <VisSection vis={vis} k="tnd_detail_customer"><DetailGroup title="Customer" last>
             <DetailRow label="Customer organization">{org?.name}</DetailRow>
             <SpecDetailRow label="Railway zone" value={tender.railway_zone} change={changeFor('railway_zone')} />
             <SpecDetailRow label="Division" value={tender.division} change={changeFor('division')} />
             <DetailRow label="Contact person">{contact ? join(contact.name, contact.designation, contact.department) : null}</DetailRow>
             <DetailRow label="Mobile">{contact ? join(contact.mobile, ...(contact.additional_mobiles || [])) : null}</DetailRow>
             <DetailRow label="Email">{contact ? join(contact.email, ...(contact.additional_emails || [])) : null}</DetailRow>
-          </DetailGroup>
+          </DetailGroup></VisSection>
         )}
       </DetailCard>
     </div>

@@ -43,6 +43,12 @@ const config: TourConfig = {
       ],
     },
     {
+      target: 'rnd-reqd-close-btn',
+      title: 'Close without response',
+      purpose: 'Use it when R&D has nothing to share for this requirement (for example a standard product). A reason is required; the request becomes "Closed by R&D", BD is notified and carries on without R&D input.',
+      why: 'BD can re-send the requirement later if R&D work is needed after all. Before the requirement is accepted, only the R&D head can close it.',
+    },
+    {
       target: 'rnd-reqd-edited',
       title: 'Edited in CRM',
       purpose: 'Appears when sales changed the requirement after sending it. The Requirement tab shows the current CRM values.',

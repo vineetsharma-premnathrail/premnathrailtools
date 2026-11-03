@@ -18,7 +18,7 @@ import RequirementReviewBar from '@/components/rnd/RequirementReviewBar'
 import RequirementRevisionList from '@/components/rnd/RequirementRevisionList'
 import { secondaryBtnStyle, primaryBtnStyle, pillStyle, DetailCard, DetailGroup, DetailRow } from '@/components/shared/ui'
 import { SheetIcon } from '@/components/shared/FormSheet'
-import { rndRequestBadge } from '@/components/crm/RndRequestBlock'
+import { rndRequestBadge, RndRequestCloseSheet } from '@/components/crm/RndRequestBlock'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { priorityLabel } from '@/lib/priority'
@@ -52,6 +52,7 @@ export default function RndRequirementDetailPage() {
 
   const [data, setData] = useState<RndRequirementDetailV2 | null>(null)
   const [error, setError] = useState<string | string[]>('')
+  const [closeOpen, setCloseOpen] = useState(false)
   // ?tab=tasks|documents|technical-offers|timeline (e.g. from a notification) opens that tab.
   const [tab, setTab] = useState<Tab>(() => (typeof window !== 'undefined' && TAB_PARAMS[new URLSearchParams(window.location.search).get('tab') || '']) || 'Requirement')
 
@@ -146,8 +147,9 @@ export default function RndRequirementDetailPage() {
         const today = new Date(); today.setHours(0, 0, 0, 0)
         const daysLeft = Math.round((new Date(currentReq.due_date + 'T00:00:00').getTime() - today.getTime()) / 86400000)
         const open = currentReq.status === 'open'
-        const title = !open
-          ? 'Response sent to CRM'
+        const closed = currentReq.status === 'closed'
+        const title = closed ? 'Closed by R&D — no response needed'
+          : !open ? 'Response sent to CRM'
           : acceptFirst ? 'Waiting for R&D to accept this requirement'
           : mine ? 'CRM is waiting for your response'
           : team ? 'Waiting for the R&D head to respond'
@@ -175,7 +177,7 @@ export default function RndRequirementDetailPage() {
                 </p>
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <span style={pillStyle(badge.hex)}>{badge.label}</span>
               {mine && open && see('crm_request') && (
                 acceptFirst ? (
@@ -196,6 +198,17 @@ export default function RndRequirementDetailPage() {
                     )}
                   />
                 )
+              )}
+              {mine && open && see('crm_request') && (
+                <>
+                  <button data-tour="rnd-reqd-close-btn" type="button" onClick={() => setCloseOpen(true)}
+                    disabled={!!acceptFirst && !data.my_access.can_review}
+                    title={acceptFirst && !data.my_access.can_review ? 'Only the R&D head can close a requirement before it is accepted.' : 'Close this requirement without a response — R&D has nothing to share.'}
+                    style={{ ...secondaryBtnStyle, ...(acceptFirst && !data.my_access.can_review ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}>
+                    <SheetIcon name="check" size={15} />Close without response
+                  </button>
+                  <RndRequestCloseSheet request={currentReq} open={closeOpen} onClose={() => setCloseOpen(false)} onClosed={() => { setCloseOpen(false); load() }} />
+                </>
               )}
             </div>
           </div>

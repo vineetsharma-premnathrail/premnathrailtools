@@ -45,3 +45,5 @@ class CurrentUserResponse(BaseModel):
     # who may do everything — the frontend's can() checks role first.
     permissions: list[str] = []
     roles: list[str] = []
+    # Effective UI-visibility restrictions (core/visibility.py); {} = everything shown.
+    visibility: dict = {}

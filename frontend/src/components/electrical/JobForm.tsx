@@ -7,11 +7,14 @@ import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { ElectricalJob, ElectricalLookupOption } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetHint, Optional } from '@/components/shared/FormSheet'
+import { FormPage, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetHint, Optional } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/ProjectUnitPicker'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
+import { useVisibility } from '@/lib/visibility'
+import { VisColumns } from '@/components/quality/VisColumns'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
 import {
   ErrorBanner, useLookupErrors, F, rowStyle, PRIORITY_LABELS, toOptions, strOrNull,
 } from '@/components/electrical/shared'
@@ -51,6 +54,10 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel, titl
   onSubmit: (payload: Record<string, unknown>) => Promise<void>
   onCancel: () => void
 }) {
+  // Role visibility (Role & Permissions › Electrical › RRV Electrical Jobs › Visibility); in the Role editor's
+  // "Preview & choose" the form draws every section, loads and saves nothing.
+  const vis = useVisibility('electrical:jobs')
+  const preview = vis.preview
   const [values, setValues] = useState<Values>(() => initialValues(initial))
   const [orderProject, setOrderProject] = useState<OrderProjectValue | null>(() =>
     initial?.order_project_id ? { projectId: initial.order_project_id, elementId: initial.order_project_element_id ?? null } : null)
@@ -68,7 +75,7 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel, titl
   // the search text (and so the option list) changes.
   const [pickedProjectLabel, setPickedProjectLabel] = useState('')
 
-  const draft = useFormDraft(initial ? null : 'elec-job-new',
+  const draft = useFormDraft(initial || preview ? null : 'elec-job-new',
     { values, orderProject },
     (d) => {
       setValues((v) => ({ ...v, ...(d.values || {}) }))
@@ -76,13 +83,15 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel, titl
     })
 
   useEffect(() => {
+    if (preview) return
     electricalApi.lookupBranches().then(setBranches).catch((err) => addLookupError(extractErrorMessages(err,
       "Couldn't load branches for the Branch picker — you can still save the job without one, or refresh to try again.")))
     electricalApi.lookupUsers().then(setUsers).catch((err) => addLookupError(extractErrorMessages(err,
       "Couldn't load users for the Lead Engineer picker — you can still save the job without one, or refresh to try again.")))
-  }, [])
+  }, [preview])
 
   useEffect(() => {
+    if (preview) return
     let cancelled = false
     const q = projectSearch.trim()
     const t = setTimeout(() => {
@@ -92,7 +101,14 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel, titl
           "Couldn't load ERP machines for the RRV picker — you can still save the job without linking one, or refresh to try again.")) })
     }, q ? 300 : 0)
     return () => { cancelled = true; clearTimeout(t) }
-  }, [projectSearch])
+  }, [projectSearch, preview])
+
+  // Priority values the role offers; an edit keeps the job's saved priority, a new job starts on the first offered one.
+  const priorityChoices = vis.options('priority', Object.entries(PRIORITY_LABELS), ([k]) => k)
+  const priorityOptions: [string, string][] = initial && !priorityChoices.some(([k]) => k === values.priority)
+    ? [...priorityChoices, [values.priority, PRIORITY_LABELS[values.priority] || values.priority]] : priorityChoices
+  const priority = !initial && !preview && priorityChoices.length && !priorityChoices.some(([k]) => k === values.priority)
+    ? priorityChoices[0][0] : values.priority
 
   const set = (key: string) => (value: string) => setValues((v) => ({ ...v, [key]: value }))
   const bind = (key: string) => ({ value: values[key], onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => set(key)(e.target.value) })
@@ -126,6 +142,7 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel, titl
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    if (preview) return
     if (!values.title.trim()) { setError('Enter a title for the job, e.g. "RRV-450 electrical — Northern Railway".'); return }
     if (values.planned_start_date && values.target_handover_date && values.target_handover_date < values.planned_start_date) {
       setError('Target handover date can\'t be before the planned start date.')
@@ -136,7 +153,8 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel, titl
       const raw = values[f]
       if (ID_FIELDS.has(f)) payload[f] = raw ? Number(raw) : null
       else if (DATE_FIELDS.has(f)) payload[f] = raw || null
-      else if (f === 'priority' || f === 'title') payload[f] = raw.trim()
+      else if (f === 'priority') payload[f] = priority
+      else if (f === 'title') payload[f] = raw.trim()
       else payload[f] = strOrNull(raw)
     }
     payload.order_project_id = orderProject?.projectId ?? null
@@ -154,28 +172,30 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel, titl
   return (
     <form onSubmit={submit}>
       <FormPage
-        tour="elec-job-form" icon={initial ? 'edit' : 'gear'} title={title} subtitle={subtitle} nav={nav} onBack={onBack} backTour="elec-job-form-back-btn"
+        tour="elec-job-form" icon={initial ? 'edit' : 'gear'} title={title} subtitle={subtitle} nav={preview ? undefined : nav} onBack={preview ? undefined : onBack} backTour="elec-job-form-back-btn"
         footer={<>
           <button data-tour="elec-job-form-cancel" type="button" onClick={onCancel} style={sheetBtn('secondary', SHEET.INK, saving)} disabled={saving}>Cancel</button>
-          <button data-tour="elec-job-form-submit" type="submit" style={sheetBtn('primary', SHEET.BLUE, saving)} disabled={saving}>
+          <button data-tour="elec-job-form-submit" type="submit" style={sheetBtn('primary', SHEET.BLUE, saving || preview)} disabled={saving || preview}>
             <SheetIcon name={initial ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : submitLabel}
           </button>
         </>}
       >
-        <SheetColumns
+        <VisColumns vis={vis} rightKeys={['requirement', 'remarks']}
           left={<>
             <ErrorBanner error={error} />
             <DraftBanner draft={draft} />
             <ErrorBanner error={lookupErrors} />
+            <VisSection vis={vis} k="rrv_job">
             <SheetSection icon="truck" title="RRV & Job">
               <div style={rowStyle}>
                 <F tour="elec-job-title" label="Job Title" req basis={300} grow>
                   <input style={sheetInput} {...bind('title')} placeholder="e.g. RRV-450 electrical — Northern Railway" />
                 </F>
                 <F tour="elec-job-priority" label="Priority" basis={130}>
-                  <Select style={sheetInput} {...bind('priority')}>
-                    {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  <Select style={sheetInput} {...bind('priority')} value={priority}>
+                    {priorityOptions.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </Select>
+                  <VisOptionValues vis={vis} dropdown="priority" />
                 </F>
               </div>
               <div style={rowStyle}>
@@ -207,6 +227,8 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel, titl
                 </F>
               </div>
             </SheetSection>
+            </VisSection>
+            <VisSection vis={vis} k="ownership_schedule">
             <SheetSection icon="calendar" title="Ownership & Schedule">
               <div style={rowStyle}>
                 <F tour="elec-job-plant" label="Plant" basis={200} grow max={280}>
@@ -228,8 +250,10 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel, titl
                 </F>
               </div>
             </SheetSection>
+            </VisSection>
           </>}
           right={<>
+            <VisSection vis={vis} k="requirement">
             <SheetSection icon="gear" title="Electrical Requirement">
               <div style={rowStyle}>
                 <F tour="elec-job-voltage" label="System Voltage" basis={130}>
@@ -259,9 +283,12 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel, titl
                 </F>
               </div>
             </SheetSection>
+            </VisSection>
+            <VisSection vis={vis} k="remarks">
             <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
               <textarea data-tour="elec-job-remarks" style={{ ...sheetInput, minHeight: 60, resize: 'vertical' }} {...bind('remarks')} aria-label="Remarks" />
             </SheetSection>
+            </VisSection>
           </>}
         />
       </FormPage>

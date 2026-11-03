@@ -14,6 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Up
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
+from app.core import visibility
 from app.core.permissions import ensure_tab_action, require_app_access, require_tab_action
 from app.db.session import get_db
 from app.modules.erp.importing import (
@@ -129,6 +130,11 @@ async def import_requisitions(
     user: User = Depends(require_app_access("p2p")),
 ):
     ensure_tab_action(user, "p2p", "purchase_requisitions", "create")
+    if visibility.allowed_values(user, "p2p:purchase_requisitions", "purpose") is not None:
+        # The file has no Purpose column, so every row would skip the restriction.
+        raise HTTPException(status_code=422, detail=(
+            "Your role limits the Purpose of requisitions, and the import file has no Purpose column — raise them from "
+            "the New Requisition form, or ask an admin to widen Purpose for your role."))
     rows = _rekey(read_rows(file.filename, await file.read()), IMPORT_COLUMNS)
     check_rows(rows, ["pr_ref", "category_code", "project_type", "project", "item_code", "quantity", "project_inhouse"])
     groups: dict[str, list[tuple[int, dict]]] = {}

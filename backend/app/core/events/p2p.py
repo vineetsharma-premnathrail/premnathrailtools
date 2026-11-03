@@ -18,7 +18,9 @@ register_event(
 )
 register_event(
     "p2p", "rfq_evaluation_waiting", "RFQ quotations waiting for evaluation",
-    "an RFQ moves to technical or commercial evaluation of its vendor quotations", ("rfq", "evaluation", "approve"),
+    # Audience was the retired RFQ › evaluation feature (no screen since the RFQ flow moved to award); the
+    # tab's Edit is what starting an evaluation needed. Not fired today — kept so stored role subscriptions stay valid.
+    "an RFQ moves to technical or commercial evaluation of its vendor quotations", ("rfq", "edit"),
     default_channels=("bell", "teams"), kind="approval",
 )
 register_event(

@@ -13,6 +13,9 @@ import { useCan } from '@/lib/permissions'
 import { DesignSourcesPanel } from '@/components/production/DesignBomLink'
 import Select from '@/components/shared/Select'
 import { primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleBoms } from '@/lib/productionPreviewSamples'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', active: 'Active', obsolete: 'Obsolete' }
 const STATUS_HEX: Record<string, string> = { draft: '#F59E0B', active: '#16A34A', obsolete: '#78716c' }
@@ -21,6 +24,7 @@ const inputStyle: React.CSSProperties = {
   padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
 }
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }
 const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
 const inr = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 
@@ -29,6 +33,12 @@ export default function ProductionBomListPage() {
   const { can, canFeature } = useCan()
   const seeCosts = canFeature('production', 'bom', 'costs', 'view')
   const router = useRouter()
+  // Columns a role may hide (Role & Permissions › Production › BOM & Routing › Visibility); BOM Number, Product, cost and
+  // Status always show. In the Role editor's "Preview & choose": sample rows, nothing loaded, no nav / create / Design panel.
+  const vis = useVisibility('production:bom')
+  const columns = ([['BOM Number', null], ['Product', null], ['Version', 'version'], ['Components', 'components'], ['Operations', 'operations'],
+    ...(seeCosts ? [['Std Cost / Unit', null]] : []), ['Work Orders', 'work_orders'], ['Status', null]] as [string, string | null][])
+    .filter(([, k]) => !k || vis.preview || vis.showColumn('boms', k))
 
   const [boms, setBoms] = useState<ProductionBom[]>([])
   const [loading, setLoading] = useState(true)
@@ -38,6 +48,7 @@ export default function ProductionBomListPage() {
 
   useEffect(() => {
     if (!isAuthorized) return
+    if (vis.preview) { setBoms(sampleBoms); setLoading(false); return }
     const params: Record<string, unknown> = {}
     if (statusFilter) params.status = statusFilter
     if (search.trim()) params.search = search.trim()
@@ -50,13 +61,13 @@ export default function ProductionBomListPage() {
         .finally(() => { if (!ignore) setLoading(false) })
     }, 250)
     return () => { ignore = true; clearTimeout(t) }
-  }, [isAuthorized, statusFilter, search])
+  }, [isAuthorized, statusFilter, search, vis.preview])
 
   if (isLoading || !isAuthorized) return null
 
   return (
     <div>
-      <ProductionNav />
+      {!vis.preview && <ProductionNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
@@ -65,7 +76,7 @@ export default function ProductionBomListPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>BOM &amp; Routing</h1>
         </div>
-        {can('production', 'bom', 'create') && <button
+        {can('production', 'bom', 'create') && !vis.preview && <button
           data-tour="production-bom-new-btn"
           onClick={() => router.push('/dashboard/production/bom/new')}
           style={primaryBtnStyle}
@@ -80,7 +91,7 @@ export default function ProductionBomListPage() {
         </div>
       )}
 
-      {canFeature('production', 'bom', 'design_link', 'view') && <DesignSourcesPanel canTransfer={canFeature('production', 'bom', 'design_link', 'create')} />}
+      {canFeature('production', 'bom', 'design_link', 'view') && !vis.preview && <DesignSourcesPanel canTransfer={canFeature('production', 'bom', 'design_link', 'create')} />}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <input data-tour="production-bom-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search by BOM number or product…" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -97,21 +108,20 @@ export default function ProductionBomListPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 950 }}>
           <thead>
             <tr>
-              {['BOM Number', 'Product', 'Version', 'Components', 'Operations', ...(seeCosts ? ['Std Cost / Unit'] : []), 'Work Orders', 'Status'].map((h, i) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}{i === 0 && <RowCount count={boms.length} />}
-                </th>
+              {columns.map(([h, k], i) => (k
+                ? <VisTh key={h} vis={vis} table="boms" k={k} style={thStyle}>{h}</VisTh>
+                : <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={boms.length} />}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={columns.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : boms.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No BOMs match this view — change the filters, or use “+ New BOM” to set up a product’s material list and routing.</td></tr>
+              <tr><td colSpan={columns.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No BOMs match this view — change the filters, or use “+ New BOM” to set up a product’s material list and routing.</td></tr>
             ) : (
               boms.map((b) => (
-                <tr key={b.id} onClick={() => router.push(recordPath('/dashboard/production/bom', b))} style={{ cursor: 'pointer' }}>
+                <tr key={b.id} onClick={() => { if (!vis.preview) router.push(recordPath('/dashboard/production/bom', b)) }} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading }}>
                     {b.bom_number}
                     {b.design_bom_number && (
@@ -121,11 +131,11 @@ export default function ProductionBomListPage() {
                     )}
                   </td>
                   <td style={cellStyle}>{b.product_code} — {b.product_name}</td>
-                  <td style={cellStyle}>v{b.version}</td>
-                  <td style={cellStyle}>{b.items.length}</td>
-                  <td style={cellStyle}>{b.operations.length}</td>
+                  <VisTd vis={vis} table="boms" k="version" style={cellStyle}>v{b.version}</VisTd>
+                  <VisTd vis={vis} table="boms" k="components" style={cellStyle}>{b.items.length}</VisTd>
+                  <VisTd vis={vis} table="boms" k="operations" style={cellStyle}>{b.operations.length}</VisTd>
                   {seeCosts && <td style={cellStyle}>{inr(((b.standard_material_cost ?? 0) + (b.standard_labour_cost ?? 0)) / (b.base_quantity || 1))}</td>}
-                  <td style={cellStyle}>{b.work_order_count}</td>
+                  <VisTd vis={vis} table="boms" k="work_orders" style={cellStyle}>{b.work_order_count}</VisTd>
                   <td style={cellStyle}>
                     <Pill label={STATUS_LABELS[b.status] || b.status} hex={STATUS_HEX[b.status]} />
                   </td>

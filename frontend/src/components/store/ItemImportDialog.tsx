@@ -12,6 +12,9 @@ interface ImportResult {
   created: { row: number; item_code: string; item_name: string; item_type: string; category: string | null }[]
   existing: { row: number; item_name: string; existing_code: string | null; existing_name: string; reason: string }[]
   errors: { row: number; item_name: string; reason: string }[]
+  // Masters created from the file (2026-11-02): units and categories / subcategories not in Settings yet.
+  new_units?: string[]
+  new_categories?: { category: string; subcategory: string | null; item_type: string }[]
 }
 
 const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6', position: 'sticky', top: 0, whiteSpace: 'nowrap' }
@@ -94,7 +97,7 @@ export default function ItemImportDialog({ open, onClose, onImported }: { open: 
             <SheetSection icon="doc" title="File Format">
               <p style={{ fontSize: 13, color: SHEET.BODY, margin: '0 0 12px', lineHeight: 1.6 }}>
                 Columns: item_type, category, subcategory, <b>item_name</b>, <b>uom</b>, technical_specification.
-                Item codes are generated automatically. Items whose name and technical specification both already exist are <b>not saved</b> — you&apos;ll see them listed after the import.
+                Item codes are generated automatically. A unit, category or subcategory that is not in Settings yet is <b>created from the file</b> (you can rename it later in Store settings). Items whose name and technical specification both already exist are <b>not saved</b> — you&apos;ll see them listed after the import.
               </p>
               <button type="button" onClick={downloadTemplate} style={sheetBtn('secondary')}><SheetIcon name="doc" size={15} />Download template</button>
             </SheetSection>
@@ -115,6 +118,15 @@ export default function ItemImportDialog({ open, onClose, onImported }: { open: 
               {result.created.length} new item{result.created.length === 1 ? '' : 's'} saved · {result.existing.length} already existed (not saved)
               {result.errors.length ? ` · ${result.errors.length} with problems (not saved)` : ''}
             </p>
+            {((result.new_units?.length ?? 0) > 0 || (result.new_categories?.length ?? 0) > 0) && (
+              <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(37,99,235,0.06)', border: '1px solid rgba(37,99,235,0.18)', color: TEXT.body, fontSize: 13, lineHeight: 1.6 }}>
+                <b>Added to Store settings from this file:</b>
+                {(result.new_units?.length ?? 0) > 0 && <div>Units: {result.new_units!.join(', ')} — rename or add a full name in Settings › Units of Measure.</div>}
+                {(result.new_categories?.length ?? 0) > 0 && (
+                  <div>Categories: {result.new_categories!.map((c) => c.subcategory ? `${c.category} › ${c.subcategory}` : c.category).join(', ')} — set ledgers or rename in Settings › Categories.</div>
+                )}
+              </div>
+            )}
 
             <Block title="New items saved" color="#15803d" count={result.created.length}>
               <thead><tr><th style={th}>Row <RowCount count={result.created.length} /></th><th style={th}>Item Code</th><th style={th}>Name</th><th style={th}>Type</th><th style={th}>Category</th></tr></thead>

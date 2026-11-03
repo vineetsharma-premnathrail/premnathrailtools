@@ -9,6 +9,13 @@ from app.db.mixins import TimestampMixin, SoftDeleteMixin
 if TYPE_CHECKING:
     from app.modules.crm.models.organization import Organization
 
+# Coded inquiry statuses — mirrors INQUIRY_STATUSES in frontend/src/components/crm/constants.ts.
+# Lives on the model so the routes AND the visibility catalogue (core/features/crm.py) share one list.
+INQ_STATUSES = [
+    "Lead", "Requirement Received", "R&D / Technical Review", "Qualified Inquiry", "Quotation Sent",
+    "Order Received", "Closed - Ordered", "Closed - Not Ordered",
+]
+
 
 class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "crm_inquiries"

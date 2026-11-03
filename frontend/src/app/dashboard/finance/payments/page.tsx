@@ -3,10 +3,13 @@
 /** Payments & Receipts — one voucher model for vendor payments, customer
  *  receipts, expense payments, other receipts and contra, with bill-wise
  *  allocation of party money and later allocation of advances. */
-import { Fragment, Suspense, useEffect, useMemo, useState } from 'react'
+import { Fragment, Suspense, useContext, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
+import { useVisibility, VisibilityPreviewContext } from '@/lib/visibility'
+import { VisOptionValues, VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleVouchers } from '@/lib/accountsPreviewSamples'
 import Link from 'next/link'
 import { accountsApi, crmApi, costCentersApi, purchaseOrdersApi } from '@/lib/api'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
@@ -97,6 +100,21 @@ function PaymentsPage() {
   const { isAuthorized, isLoading } = useRequireApp('accounts')
   const { can, canFeature } = useCan()
   const searchParams = useSearchParams()
+  // Role-wise visibility (Organization › Role & Permissions › Finance › Payments & Receipts › Visibility):
+  // voucher types / modes this role may pick (the server refuses the rest), optional form sections, list columns.
+  const vis = useVisibility('accounts:payments')
+  // Role editor "Preview & choose": the previewed screen decides what opens — the voucher form, or the list with 3 made-up rows.
+  // Nothing is loaded or saved, no link is resolved, the module nav / Back are left out and the draft is off.
+  const previewScreen = useContext(VisibilityPreviewContext)?.screen
+  const typeChoices = vis.options('payment_type', CREATE_TYPES, (t) => t.value)
+  const allowedModes = vis.options('payment_mode', [...MODES] as string[], (m) => m)
+  const showCol = (col: string) => vis.preview || vis.showColumn('vouchers', col)
+  const COLS = 12 - ['type', 'party', 'bank', 'mode', 'bank_reco'].filter((c) => !showCol(c)).length
+  // The first allowed type / mode a new voucher starts on when the usual default is not allowed.
+  const allowedType = (wanted: PaymentType): PaymentType =>
+    typeChoices.some((t) => t.value === wanted) || !typeChoices.length ? wanted : typeChoices[0].value
+  const allowedMode = (wanted: string): string =>
+    allowedModes.includes(wanted) || !allowedModes.length ? wanted : (allowedModes.find((m) => m !== 'cash') || allowedModes[0])
 
   // ── masters ──
   const [vendors, setVendors] = useState<Vendor[]>([])
@@ -112,7 +130,7 @@ function PaymentsPage() {
   const [fromDate, setFromDate] = useState(fyStartIso())
   const [toDate, setToDate] = useState(todayIso())
   const [statusFilter, setStatusFilter] = useState('')
-  const [payments, setPayments] = useState<PaymentTransaction[]>([])
+  const [payments, setPayments] = useState<PaymentTransaction[]>(vis.preview ? sampleVouchers : [])
   // Filters whose result is on screen; differs from listKey while loading.
   const [loadedKey, setLoadedKey] = useState('')
   const [expanded, setExpanded] = useState<number | null>(null)
@@ -126,14 +144,14 @@ function PaymentsPage() {
 
   // ── create form ──
   // ?vendor_id= / ?customer_id= carry a signed record ref (lib/recordRef.ts).
-  const presetVendor = searchParams.get('vendor_id') || ''
-  const presetCustomer = searchParams.get('customer_id') || ''
+  const presetVendor = vis.preview ? '' : searchParams.get('vendor_id') || ''
+  const presetCustomer = vis.preview ? '' : searchParams.get('customer_id') || ''
   const presetType: PaymentType = presetCustomer && !presetVendor ? 'customer' : 'vendor'
   const presetRef = presetVendor || presetCustomer
   const { id: presetPartyId, error: partyLinkError } = useRecordId(presetRef || null)
   const presetParty = presetPartyId ? String(presetPartyId) : ''
-  const [showForm, setShowForm] = useState(!!presetRef)
-  const [ptype, setPtype] = useState<PaymentType>(presetType)
+  const [showForm, setShowForm] = useState(!!presetRef || (vis.preview && previewScreen === 'form'))
+  const [ptype, setPtype] = useState<PaymentType>(() => allowedType(presetType))
   const [partyId, setPartyId] = useState('')
   const [openDocs, setOpenDocs] = useState<OpenDocument[]>([])
   const [openCredits, setOpenCredits] = useState<OpenCredit[]>([])
@@ -143,7 +161,7 @@ function PaymentsPage() {
   const [lines, setLines] = useState<SplitLine[]>([newSplitLine()])
   const [bankId, setBankId] = useState('')
   const [counterBankId, setCounterBankId] = useState('')
-  const [mode, setMode] = useState<string>('neft')
+  const [mode, setMode] = useState<string>(() => allowedMode('neft'))
   const [payDate, setPayDate] = useState(todayIso())
   const docCur = useDocCurrency(payDate, { withAmount: true })
   // Foreign-currency voucher: the ₹ amount follows FC amount x rate.
@@ -165,13 +183,13 @@ function PaymentsPage() {
   const [orderNote, setOrderNote] = useState('')
   // A new voucher's typed data survives a refresh / network failure (lib/formDraft.ts).
   // Off when the form was opened with a preset party from Outstanding.
-  const draft = useFormDraft(showForm && !presetRef ? 'finance-voucher-new' : null,
+  const draft = useFormDraft(showForm && !presetRef && !vis.preview ? 'finance-voucher-new' : null,
     { ptype, partyId, settle, amount, lines, bankId, counterBankId, mode, payDate, chequeNo, chequeDate, referenceNo, narration, deductions, isAdvance, orderId, advanceReason,
       cur: { currency: docCur.currency, rate: docCur.rate, amountFc: docCur.amountFc } },
     (d) => {
-      const t: PaymentType = d.ptype || 'vendor'
+      const t: PaymentType = allowedType(d.ptype || 'vendor')
       setPtype(t); setPartyId(d.partyId || ''); setSettle(d.settle || {}); setAmount(d.amount || ''); setLines(d.lines?.length ? d.lines : [newSplitLine()])
-      setBankId(d.bankId || ''); setCounterBankId(d.counterBankId || ''); setMode(d.mode || 'neft'); setPayDate(d.payDate || todayIso())
+      setBankId(d.bankId || ''); setCounterBankId(d.counterBankId || ''); setMode(allowedMode(d.mode || 'neft')); setPayDate(d.payDate || todayIso())
       setChequeNo(d.chequeNo || ''); setChequeDate(d.chequeDate || ''); setReferenceNo(d.referenceNo || ''); setNarration(d.narration || '')
       setDeductions(d.deductions || []); setIsAdvance(!!d.isAdvance); setOrderId(d.orderId || ''); setAdvanceReason(d.advanceReason || ''); docCur.restore(d.cur)
       setOpenDocs([]); setOpenCredits([])
@@ -182,7 +200,7 @@ function PaymentsPage() {
     })
 
   const listKey = `${tab}|${fromDate}|${toDate}|${statusFilter}`
-  const loading = loadedKey !== listKey
+  const loading = !vis.preview && loadedKey !== listKey
   const loadPayments = () => {
     const key = listKey
     accountsApi.listPayments({
@@ -205,7 +223,7 @@ function PaymentsPage() {
   const loadBanks = () => accountsApi.listBankAccounts({ status: 'active' }).then(setBanks)
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     Promise.all([
       accountsApi.listVendors().then(setVendors),
       crmApi.listOrganizations({ picker: true }).then(setCustomers),
@@ -221,14 +239,14 @@ function PaymentsPage() {
   // Opened from Outstanding ("Record payment / receipt") — preset the form's
   // party from the query string once its ref resolves; load its open bills.
   useEffect(() => {
-    if (!isAuthorized || !presetParty) return
+    if (!isAuthorized || vis.preview || !presetParty) return
     setPartyId(presetParty)
     fetchOpenItems(presetType, presetParty)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, presetParty])
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     loadPayments()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, tab, fromDate, toDate, statusFilter])
@@ -239,7 +257,7 @@ function PaymentsPage() {
   const isSplit = ptype === 'expense' || ptype === 'other_receipt'
   const amountNum = r2(Number(amount || 0))
   const proofRequired = paymentProofRequired(proofRules, ptype, amountNum)
-  const proofCounts = useProofCounts('payment', useMemo(() => payments.map((p) => p.id), [payments]), 'payments')
+  const proofCounts = useProofCounts('payment', useMemo(() => (vis.preview ? [] : payments.map((p) => p.id)), [payments, vis.preview]), 'payments')
   const allocated = r2(Object.values(settle).reduce((s, v) => s + Number(v || 0), 0))
   const onAccount = r2(amountNum - allocated)
   const deductionTotal = r2(deductions.reduce((s, d) => s + Number(d.amount || 0), 0))
@@ -250,7 +268,8 @@ function PaymentsPage() {
     [ledgers, bankGlIds],
   )
   const bankOptions = banks.map((b) => ({ value: String(b.id), label: `${bankLabel(b)} · bal ${inr(b.book_balance)}` }))
-  const modeOptions = bank ? (bank.account_kind === 'cash' ? ['cash'] : MODES.filter((m) => m !== 'cash')) : MODES.filter((m) => m !== 'cash')
+  const modeOptions = (bank ? (bank.account_kind === 'cash' ? ['cash'] : MODES.filter((m) => m !== 'cash')) : MODES.filter((m) => m !== 'cash'))
+    .filter((m) => allowedModes.includes(m))
   const partyOptions = ptype === 'vendor'
     ? vendors.filter((v) => v.status !== 'blocked').map((v) => ({ value: String(v.id), label: `${v.code} — ${v.name}` }))
     : customers.map((c) => ({ value: String(c.id), label: c.org_code ? `${c.org_code} — ${c.name}` : c.name }))
@@ -287,8 +306,8 @@ function PaymentsPage() {
     setBankId(id)
     const b = banks.find((x) => String(x.id) === id)
     if (!b) return
-    if (b.account_kind === 'cash') setMode('cash')
-    else if (mode === 'cash') setMode('neft')
+    if (b.account_kind === 'cash') setMode('cash')  // the only mode a cash box takes; a role without Cash can't post from it (the server says so)
+    else if (mode === 'cash') setMode(allowedMode('neft'))
   }
 
   function changeType(t: PaymentType) {
@@ -472,7 +491,7 @@ function PaymentsPage() {
   }
 
   if (isLoading || !isAuthorized) return null
-  if (partyLinkError) return (<div><FinanceNav /><InvalidRecordLink message={partyLinkError} listHref="/dashboard/finance/payments" listLabel="Back to payments" /></div>)
+  if (partyLinkError && !vis.preview) return (<div><FinanceNav /><InvalidRecordLink message={partyLinkError} listHref="/dashboard/finance/payments" listLabel="Back to payments" /></div>)
 
   // Recording a voucher replaces the list with the voucher form ("← Back" returns to the list).
   if (showForm) {
@@ -480,13 +499,13 @@ function PaymentsPage() {
     const tcell: React.CSSProperties = { padding: '6px', borderTop: `1px solid ${BORDER.normal}`, verticalAlign: 'top' }
     return (
       <div>
-        <FormPage nav={<FinanceNav />} tour="fin-pay-form" icon="rupee" title="New voucher"
+        <FormPage nav={vis.preview ? undefined : <FinanceNav />} tour="fin-pay-form" icon="rupee" title="New voucher"
           subtitle="Vendor payment, customer receipt, expense payment, other receipt or contra — settled bill-wise against open invoices."
-          onBack={closeForm} backTour="fin-pay-back"
+          onBack={vis.preview ? undefined : closeForm} backTour="fin-pay-back"
           footer={<>
-            <button type="button" data-tour="fin-pay-clear" style={sheetBtn('ghost', SHEET.MUTED)} onClick={resetForm}>Clear</button>
-            <button type="button" data-tour="fin-pay-close" style={sheetBtn('secondary', SHEET.INK, saving)} disabled={saving} onClick={closeForm}>Cancel</button>
-            <button type="button" data-tour="fin-pay-save" style={sheetBtn('primary', SHEET.BLUE, saving)} disabled={saving} onClick={submit}>
+            <button type="button" data-tour="fin-pay-clear" style={sheetBtn('ghost', SHEET.MUTED)} disabled={vis.preview} onClick={resetForm}>Clear</button>
+            <button type="button" data-tour="fin-pay-close" style={sheetBtn('secondary', SHEET.INK, saving)} disabled={saving || vis.preview} onClick={closeForm}>Cancel</button>
+            <button type="button" data-tour="fin-pay-save" style={sheetBtn('primary', SHEET.BLUE, saving)} disabled={saving || vis.preview} onClick={submit}>
               <SheetIcon name={ptype === 'vendor' ? 'send' : 'check'} size={16} />{saving ? 'Saving…' : ptype === 'vendor' ? 'Record & send for approval' : 'Post voucher'}
             </button>
           </>}>
@@ -517,12 +536,14 @@ function PaymentsPage() {
 
           <SheetColumns
             left={<>
+              <VisSection vis={vis} k="voucher">
               <SheetSection icon="doc" title="Voucher">
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
                   <SField label="Voucher type" req style={{ flex: '0 1 260px', minWidth: 220 }} tour="fin-pay-type">
                     <Select style={sheetInput} value={ptype} onChange={(e) => changeType(e.target.value as PaymentType)}>
-                      {CREATE_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                      {typeChoices.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </Select>
+                    <VisOptionValues vis={vis} dropdown="payment_type" />
                   </SField>
                   {isParty && (
                     <SField label={ptype === 'vendor' ? 'Vendor' : 'Customer'} req style={{ flex: '1 1 260px', maxWidth: 380 }} tour="fin-pay-party">
@@ -541,7 +562,9 @@ function PaymentsPage() {
                   {(ptype === 'vendor' || ptype === 'customer') && docCur.fields}
                 </div>
               </SheetSection>
+              </VisSection>
 
+              <VisSection vis={vis} k="bank_mode">
               <SheetSection icon="building" title="Bank & mode">
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
                   <SField label={ptype === 'contra' ? 'From (paying) account' : ptype === 'customer' || ptype === 'other_receipt' ? 'Received into (bank/cash)' : 'Paid from (bank/cash)'} req
@@ -560,6 +583,7 @@ function PaymentsPage() {
                     <Select style={sheetInput} value={mode} onChange={(e) => setMode(e.target.value)}>
                       {modeOptions.map((m) => <option key={m} value={m}>{MODE_LABELS[m]}</option>)}
                     </Select>
+                    <VisOptionValues vis={vis} dropdown="payment_mode" />
                   </SField>
                   {mode === 'cheque' && (
                     <>
@@ -584,8 +608,10 @@ function PaymentsPage() {
                   </p>
                 )}
               </SheetSection>
+              </VisSection>
 
               {isParty && (
+                <VisSection vis={vis} k="advance">
                 <SheetSection icon="flag" title="Advance (down payment)" extra={<Optional />}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: SHEET.BODY, cursor: 'pointer' }}>
                     <input type="checkbox" checked={isAdvance} onChange={(e) => {
@@ -611,20 +637,23 @@ function PaymentsPage() {
                     </div>
                   )}
                 </SheetSection>
+                </VisSection>
               )}
             </>}
             right={<>
-              <SheetSection icon="doc" title="Narration">
+              <VisSection vis={vis} k="narration"><SheetSection icon="doc" title="Narration">
                 <SField label="Narration" optional tour="fin-pay-narration">
                   <textarea style={{ ...sheetInput, minHeight: 64, resize: 'vertical' }} value={narration} onChange={(e) => setNarration(e.target.value)} placeholder="What this money is for" />
                 </SField>
-              </SheetSection>
+              </SheetSection></VisSection>
               {ptype !== 'contra' && (
+                <VisSection vis={vis} k="documents">
                 <SheetSection icon="doc" title="Supporting documents" extra={proofRequired ? undefined : <Optional />}>
                   <ProofPicker entityType="payment" value={proof} onChange={setProof} required={proofRequired} hint="Bill, bank advice or UTR screenshot." />
                 </SheetSection>
+                </VisSection>
               )}
-              <SheetSection icon="rupee" title="Summary">
+              <VisSection vis={vis} k="summary"><SheetSection icon="rupee" title="Summary">
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', rowGap: 6, fontSize: 13, color: SHEET.BODY, fontVariantNumeric: 'tabular-nums' }}>
                   <span>Voucher amount</span><b style={{ textAlign: 'right' }}>{inr(amountNum)}</b>
                   {isParty && !isAdvance && <>
@@ -639,7 +668,7 @@ function PaymentsPage() {
                   </>}
                 </div>
                 {isParty && !isAdvance && onAccount < 0 && <p style={{ ...sheetHint, color: '#b91c1c' }}>Allocations exceed the amount.</p>}
-              </SheetSection>
+              </SheetSection></VisSection>
             </>}
           />
 
@@ -811,17 +840,15 @@ function PaymentsPage() {
     )
   }
 
-  const COLS = 12
-
   return (
     <div>
-      <FinanceNav />
+      {!vis.preview && <FinanceNav />}
       <PageHeader
         title="Payments & Receipts"
         subtitle="Vendor payments, customer receipts, expense payments, other receipts and contra transfers — settled bill-wise against open invoices."
-        actions={<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        actions={vis.preview ? undefined : <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {can('accounts', 'payment_runs', 'view') && <Link href="/dashboard/finance/payments/runs" style={{ ...secondaryBtnStyle, textDecoration: 'none' }}>Payment runs</Link>}
-          {can('accounts', 'payments', 'view') && <Link href="/dashboard/finance/payments/advances" style={{ ...secondaryBtnStyle, textDecoration: 'none' }}>Advances & write-offs</Link>}
+          {canFeature('accounts', 'payments', 'advances', 'view') && <Link href="/dashboard/finance/payments/advances" style={{ ...secondaryBtnStyle, textDecoration: 'none' }}>Advances & write-offs</Link>}
           {!showForm && can('accounts', 'payments', 'create') && <button data-tour="fin-pay-new-btn" style={primaryBtnStyle} onClick={() => { setShowForm(true); setFormError(null) }}>+ New voucher</button>}
         </div>}
       />
@@ -850,13 +877,13 @@ function PaymentsPage() {
             <th style={thStyle}></th>
             <th style={thStyle}>Number <RowCount count={loading ? 0 : payments.length} /></th>
             <th style={thStyle}>Date</th>
-            <th style={thStyle}>Type</th>
-            <th style={thStyle}>Party / ledgers</th>
-            <th style={thStyle}>Bank / cash</th>
-            <th style={thStyle}>Mode / ref</th>
+            <VisTh vis={vis} table="vouchers" k="type" style={thStyle}>Type</VisTh>
+            <VisTh vis={vis} table="vouchers" k="party" style={thStyle}>Party / ledgers</VisTh>
+            <VisTh vis={vis} table="vouchers" k="bank" style={thStyle}>Bank / cash</VisTh>
+            <VisTh vis={vis} table="vouchers" k="mode" style={thStyle}>Mode / ref</VisTh>
             <th style={numTh}>Amount (₹)</th>
             <th style={numTh}>Unallocated (₹)</th>
-            <th style={thStyle}>Bank reco</th>
+            <VisTh vis={vis} table="vouchers" k="bank_reco" style={thStyle}>Bank reco</VisTh>
             <th style={thStyle}>Status</th>
             <th style={thStyle}></th>
           </tr>
@@ -870,37 +897,37 @@ function PaymentsPage() {
               const canAllocate = p.status === 'posted' && (p.payment_type === 'vendor' || p.payment_type === 'customer') && p.unallocated_amount > 0.005
               return (
                 <Fragment key={p.id}>
-                  <tr style={{ cursor: 'pointer' }} onClick={() => setExpanded(isOpen ? null : p.id)}>
+                  <tr style={{ cursor: vis.preview ? 'default' : 'pointer' }} onClick={() => { if (!vis.preview) setExpanded(isOpen ? null : p.id) }}>
                     <td style={{ ...tdStyle, width: 24, color: TEXT.muted }}>{isOpen ? '▾' : '▸'}</td>
                     <td style={{ ...tdStyle, fontWeight: 700, whiteSpace: 'nowrap' }}>{p.payment_number}<ProofClip count={proofCounts[p.id]} /></td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(p.payment_date)}</td>
-                    <td style={tdStyle}><StatusPill status={p.payment_type} labels={TYPE_LABELS} colors={TYPE_HEX} /></td>
-                    <td style={{ ...tdStyle, maxWidth: 260 }}>{partyCell(p)}</td>
-                    <td style={{ ...tdStyle, maxWidth: 260 }}>
+                    <VisTd vis={vis} table="vouchers" k="type" style={tdStyle}><StatusPill status={p.payment_type} labels={TYPE_LABELS} colors={TYPE_HEX} /></VisTd>
+                    <VisTd vis={vis} table="vouchers" k="party" style={{ ...tdStyle, maxWidth: 260 }}>{partyCell(p)}</VisTd>
+                    <VisTd vis={vis} table="vouchers" k="bank" style={{ ...tdStyle, maxWidth: 260 }}>
                       {p.bank_account_label || '—'}
                       {p.payment_type === 'contra' && p.counter_bank_account_label && <> → {p.counter_bank_account_label}</>}
-                    </td>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                    </VisTd>
+                    <VisTd vis={vis} table="vouchers" k="mode" style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                       {MODE_LABELS[p.payment_mode] || p.payment_mode}
                       {(p.cheque_number || p.reference_no) && <div style={{ fontSize: 11, color: TEXT.muted }}>{p.cheque_number ? `Chq ${p.cheque_number}` : p.reference_no}</div>}
-                    </td>
+                    </VisTd>
                     <td style={numTd}>{inr(p.amount)}</td>
                     <td style={{ ...numTd, color: p.unallocated_amount > 0.005 ? '#b45309' : TEXT.muted }}>{inr(p.unallocated_amount, { blankZero: true })}</td>
-                    <td style={tdStyle}><StatusPill status={p.reconciliation_status} labels={RECON_LABELS} colors={RECON_HEX} /></td>
+                    <VisTd vis={vis} table="vouchers" k="bank_reco" style={tdStyle}><StatusPill status={p.reconciliation_status} labels={RECON_LABELS} colors={RECON_HEX} /></VisTd>
                     <td style={tdStyle}>
                       <StatusPill status={p.status} labels={STATUS_LABELS} colors={STATUS_HEX} />
                       {p.is_advance && <div style={{ fontSize: 11, color: '#7c3aed', marginTop: 2 }}>Advance{p.sales_order_number ? ` · ${p.sales_order_number}` : p.purchase_order_number ? ` · ${p.purchase_order_number}` : ''}</div>}
                       {p.status === 'pending_approval' && p.approval_stage && <div style={{ fontSize: 11, color: TEXT.muted, marginTop: 2 }}>{p.approval_stage}</div>}
                     </td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                      <div style={{ display: 'flex', gap: 12 }}>
+                      {!vis.preview && <div style={{ display: 'flex', gap: 12 }}>
                         {canAllocate && canFeature('accounts', 'payments', 'allocation', 'edit') && <button style={linkBtnStyle} onClick={() => setAllocTarget(p)}>Allocate</button>}
                         {p.status === 'posted' && (
                           reconciled
                             ? <span style={{ fontSize: 11, color: TEXT.muted }} title="This voucher has been matched to the bank statement, so it really went through the bank — record a reverse voucher instead of cancelling.">Reconciled</span>
                             : canFeature('accounts', 'payments', 'cancellation', 'cancel') && <button style={dangerLinkStyle} onClick={() => setCancelTarget(p)}>Cancel</button>
                         )}
-                      </div>
+                      </div>}
                     </td>
                   </tr>
                   {isOpen && (

@@ -7,7 +7,7 @@ import { AppModule, User } from '@/types'
 
 /** Legacy ERP id check (project_create, sr_edit, etc.) — admins implicitly
  * hold every permission. /auth/me derives `erp_permissions` from the user's
- * roles (projects:service_projects:* / erp:service_requests:*), so this stays in sync with
+ * roles (projects:all_projects:* / erp:service_requests:*), so this stays in sync with
  * the server's has_erp_permission. New code should use can() from
  * '@/lib/permissions'. */
 export function hasErpPermission(user: User | null | undefined, permission: string): boolean {

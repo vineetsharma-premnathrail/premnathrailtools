@@ -449,7 +449,7 @@ def test_export_workbook_and_audit(db, api):
     c = api(u)
     r, wb = _export(c, group_by="priority", group_by2="customer", measures="count,hours.sum,bill.sum",
                     compare="previous_period", f_priority="urgent,standard", columns="request_no,title,opened,priority,hours,bill")
-    assert 'filename="Service_Toy_pivot_2026-10-01_to_2026-10-31.xlsx"' in r.headers["content-disposition"]
+    assert 'filename="Service_Module_Toy_pivot_2026-10-01_to_2026-10-31.xlsx"' in r.headers["content-disposition"]
     assert wb.sheetnames == ["Summary", "Toy pivot - summary", "Toy pivot - records", "Definitions"]
     sm = wb["Toy pivot - summary"]
     assert sm.cell(7, 2).value == "Records - this period" and sm.cell(7, 4).value == "Records - change %"

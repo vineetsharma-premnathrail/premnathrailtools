@@ -6,6 +6,9 @@ import { TEXT, BORDER, BRAND } from '@/lib/theme'
 import { inputStyle, chipBtnStyle, smallSecondaryBtnStyle, RowCount, pillStyle } from '@/components/shared/ui'
 import Checkbox from '@/components/Checkbox'
 import AssigneeRuleDialog, { AssigneeOption, AssigneeRule, describeRule } from '@/components/organization/AssigneeRuleDialog'
+import VisibilityRuleDialog from '@/components/organization/VisibilityRuleDialog'
+import { describeVisibilityRule } from '@/lib/visibility'
+import type { VisibilityRule } from '@/types'
 
 /**
  * The Role & Permission matrix: one card per module, one row per tab (grouped
@@ -34,9 +37,8 @@ const PRESETS: { key: Preset; label: string; hint: string }[] = [
   { key: 'full', label: 'Full access', hint: 'Every tab and every action, including approvals and settings' },
 ]
 
-/** Tabs a module wildcard / preset never covers (backend EXPLICIT_ONLY_TABS): Purchase Desk, and
- * Service Projects (machines) so a Project Management preset doesn't hand out the machine register. */
-const EXPLICIT_ONLY_TABS = new Set(['p2p:purchase_desk', 'projects:service_projects'])
+/** Tabs a module wildcard / preset never covers (backend EXPLICIT_ONLY_TABS): Purchase Desk. */
+const EXPLICIT_ONLY_TABS = new Set(['p2p:purchase_desk'])
 
 /** Concrete ids for ONE grant list — the client mirror of the backend's
  * permission_registry.expand_grants, including features: a tab's features
@@ -111,11 +113,40 @@ interface Props {
   assigneeRules?: Record<string, AssigneeRule>
   onAssigneeRulesChange?: (next: Record<string, AssigneeRule>) => void
   assigneeOptions?: { departments: AssigneeOption[]; roles: AssigneeOption[]; users: AssigneeOption[] }
+  /** Role editor only: "<module>:<tab>" / "<module>:<tab>.<feature>" -> what the role hides (sections, dropdown values, columns);
+   * a tab/feature with a catalogue entry (registry.visibility) gets a "Visibility: …" chip that opens VisibilityRuleDialog. */
+  visibilityRules?: Record<string, VisibilityRule>
+  onVisibilityRulesChange?: (next: Record<string, VisibilityRule>) => void
+  /** Role editor only: shown in the Visibility preview title ("… preview for role X"). */
+  roleName?: string
 }
 
-export default function PermissionMatrixEditor({ registry, value, onChange, readOnly, inherited, onlyGranted, assigneeRules, onAssigneeRulesChange, assigneeOptions }: Props) {
+export default function PermissionMatrixEditor({ registry, value, onChange, readOnly, inherited, onlyGranted, assigneeRules, onAssigneeRulesChange, assigneeOptions, visibilityRules, onVisibilityRulesChange, roleName }: Props) {
   const [query, setQuery] = useState('')
   const [ruleKey, setRuleKey] = useState<string | null>(null)
+  const [visKey, setVisKey] = useState<string | null>(null)
+  const visCatalog = visibilityRules ? registry.visibility || {} : {}
+  const visKeyLabel = (key: string) => {
+    const [mk, rest] = key.split(':')
+    const [tk, fk] = rest.split('.')
+    const mod = registry.modules[mk]
+    if (fk) return mod?.features?.[tk]?.[fk]?.label || key
+    return mod?.subtabs?.[tk] || key
+  }
+  // Customised text is #C2410C (not BRAND.primaryActive): 4.8:1 on the tint at 11.5px.
+  const visChip = (key: string) => visCatalog[key] ? (
+    <button type="button" onClick={() => setVisKey(key)} data-tour="perm-matrix-visibility"
+      title={`${visCatalog[key].label} — ${describeVisibilityRule(visibilityRules?.[key], visCatalog[key])}`}
+      aria-haspopup="dialog"
+      style={{ ...smallSecondaryBtnStyle, marginLeft: 8, maxWidth: 340, overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', verticalAlign: 'middle',
+        border: `1px solid ${visibilityRules?.[key] ? BRAND.primary : BORDER.normal}`,
+        background: visibilityRules?.[key] ? 'rgba(244,113,59,0.08)' : '#fff',
+        color: visibilityRules?.[key] ? '#C2410C' : TEXT.secondary }}>
+      Visibility: {describeVisibilityRule(visibilityRules?.[key], visCatalog[key])}
+      <span style={srOnly}> for {visKeyLabel(key)}</span>
+      <span aria-hidden="true"> ▾</span>
+    </button>
+  ) : null
   const pickers = assigneeRules ? registry.assignee_rules?.pickers || {} : {}
   const ruleModes = registry.assignee_rules?.modes || {}
   const [open, setOpen] = useState<Record<string, boolean>>({})
@@ -294,6 +325,7 @@ export default function PermissionMatrixEditor({ registry, value, onChange, read
                                 {featsOpen ? '▾' : '▸'} {feats.length} feature{feats.length === 1 ? '' : 's'}{customisedTab ? ' · customised' : ''}
                               </button>
                             )}
+                            {visChip(fKey)}
                           </td>
                           {actions.map((a) => {
                             if (!tabActions.includes(a)) {
@@ -336,6 +368,7 @@ export default function PermissionMatrixEditor({ registry, value, onChange, read
                                   {pickers[`${moduleKey}:${tabKey}.${fk}`].label}: {describeRule(assigneeRules?.[`${moduleKey}:${tabKey}.${fk}`], ruleModes)} ▾
                                 </button>
                               )}
+                              {visChip(`${moduleKey}:${tabKey}.${fk}`)}
                             </td>
                             {actions.map((a) => {
                               if (!f.actions.includes(a)) return <td key={a} style={{ textAlign: 'center', color: '#d4d4d8', fontSize: 12 }}>—</td>
@@ -378,9 +411,25 @@ export default function PermissionMatrixEditor({ registry, value, onChange, read
           }}
         />
       )}
+      {visKey && visCatalog[visKey] && (
+        <VisibilityRuleDialog
+          open entry={visCatalog[visKey]} keyLabel={visKeyLabel(visKey)} entryKey={visKey} roleName={roleName}
+          rule={visibilityRules?.[visKey] || null} readOnly={readOnly || !onVisibilityRulesChange}
+          onClose={() => setVisKey(null)}
+          onApply={(rule) => {
+            const next = { ...(visibilityRules || {}) }
+            if (rule) next[visKey] = rule
+            else delete next[visKey]
+            onVisibilityRulesChange?.(next)
+            setVisKey(null)
+          }}
+        />
+      )}
     </div>
   )
 }
+
+const srOnly: React.CSSProperties = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }
 
 const linkBtn: React.CSSProperties = { fontSize: 11.5, fontWeight: 600, color: BRAND.primaryActive, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }
 

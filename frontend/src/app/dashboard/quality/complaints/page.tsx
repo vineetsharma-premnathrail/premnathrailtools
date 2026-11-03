@@ -3,8 +3,10 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { recordPath } from '@/lib/recordRef'
-import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { useQualityScreen } from '@/components/quality/useQualityScreen'
+import { sampleComplaints } from '@/lib/qualityPreviewSamples'
 import { qualityApi } from '@/lib/api'
 import { QualityCustomerComplaint } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
@@ -24,26 +26,28 @@ const kpiStyle: React.CSSProperties = {
 }
 
 export default function QualityComplaintsPage() {
-  const { isAuthorized, isLoading } = useRequireApp('quality')
+  // Columns the user's roles hide; in the Role editor's preview the list shows sample rows and loads nothing.
+  const { vis, isAuthorized, isLoading } = useQualityScreen('quality:complaints')
   const router = useRouter()
   const { can, canFeature } = useCan()
   // Complaint costs: Quality › Complaints › costs switch (binds roles holding the tab).
   const seeCosts = !can('quality', 'complaints', 'view') || canFeature('quality', 'complaints', 'costs', 'view')
-  const [rows, setRows] = useState<QualityCustomerComplaint[]>([])
+  const [rows, setRows] = useState<QualityCustomerComplaint[]>(vis.preview ? sampleComplaints : [])
   const [stats, setStats] = useState<Stats | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState<string | string[]>('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('live')
   const [severity, setSeverity] = useState('')
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     qualityApi.getComplaintStats().then(setStats).catch(() => setStats(null))
-  }, [isAuthorized])
+  }, [isAuthorized, vis.preview])
 
   useEffect(() => {
     if (!isAuthorized) return
+    if (vis.preview) return  // sample rows from the first render, nothing is loaded
     const params: Record<string, unknown> = {}
     if (statusFilter === 'live') params.open_only = true
     else if (statusFilter) params.status = statusFilter
@@ -59,16 +63,20 @@ export default function QualityComplaintsPage() {
         .finally(() => { if (!ignore) setLoading(false) })
     }, 250)
     return () => { ignore = true; clearTimeout(t) }
-  }, [isAuthorized, statusFilter, severity, search])
+  }, [isAuthorized, statusFilter, severity, search, vis.preview])
 
   if (isLoading || !isAuthorized) return null
-  const cols = ['Complaint', 'Customer', 'Item / serial-batch', 'Severity', 'NCR / CAPA', 'Response', ...(seeCosts ? ['Cost'] : []), 'Status', 'Date']
+  // [label, hideable column key]: number, status and cost are never hideable here (cost follows the Cost switch).
+  const cols: [string, string | null][] = [['Complaint', null], ['Customer', 'customer'], ['Item / serial-batch', 'item'], ['Severity', 'severity'],
+    ['NCR / CAPA', 'ncr_capa'], ['Response', 'response'], ...(seeCosts ? [['Cost', null] as [string, null]] : []), ['Status', null], ['Date', 'date']]
+  // The preview draws every column (hidden ones dimmed, with a toggle); normal use drops the hidden ones.
+  const colCount = cols.filter(([, k]) => !k || vis.preview || vis.showColumn('complaints', k)).length
 
   return (
     <div>
-      <QualityNav />
+      {!vis.preview && <QualityNav />}
       <PageHeader title="Customer Complaints">
-        {can('quality', 'complaints', 'create') && (<button type="button" onClick={() => router.push('/dashboard/quality/complaints/new')} style={primaryBtnStyle}>+ Log complaint</button>)}
+        {!vis.preview && can('quality', 'complaints', 'create') && (<button type="button" onClick={() => router.push('/dashboard/quality/complaints/new')} style={primaryBtnStyle}>+ Log complaint</button>)}
       </PageHeader>
       <ErrorBanner error={error} />
 
@@ -98,25 +106,28 @@ export default function QualityComplaintsPage() {
 
       <div style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
-          <thead><tr>{cols.map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={rows.length} />}</th>)}</tr></thead>
+          <thead><tr>{cols.map(([h, k], i) => {
+            const head = <>{h}{i === 0 && <RowCount count={rows.length} />}</>
+            return k ? <VisTh key={h} vis={vis} table="complaints" k={k} style={thStyle}>{head}</VisTh> : <th key={h} style={thStyle}>{head}</th>
+          })}</tr></thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={colCount} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No complaints found — use + Log complaint to record one.</td></tr>
+              <tr><td colSpan={colCount} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No complaints found — use + Log complaint to record one.</td></tr>
             ) : rows.map((c) => (
-              <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/quality/complaints', c))} style={{ cursor: 'pointer' }}>
+              <tr key={c.id} onClick={vis.preview ? undefined : () => router.push(recordPath('/dashboard/quality/complaints', c))} style={{ cursor: vis.preview ? 'default' : 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>
                   {c.complaint_number}{c.repeat_of_number ? <span style={{ color: '#DC2626', fontWeight: 600 }}> · repeat</span> : null}
                 </td>
-                <td style={tdStyle}>{c.customer_name}</td>
-                <td style={tdStyle}>{c.item_name || '—'}{(c.serial_number || c.batch_number) ? ` · ${c.serial_number || c.batch_number}` : ''}</td>
-                <td style={tdStyle}><Pill text={c.severity} hex={SEVERITY_HEX[c.severity]} /></td>
-                <td style={tdStyle}>{[c.ncr_number, c.capa_number].filter(Boolean).join(' / ') || '—'}</td>
-                <td style={tdStyle}>{c.response_days != null ? `${c.response_days} days` : `${c.age_days} days open`}</td>
+                <VisTd vis={vis} table="complaints" k="customer" style={tdStyle}>{c.customer_name}</VisTd>
+                <VisTd vis={vis} table="complaints" k="item" style={tdStyle}>{c.item_name || '—'}{(c.serial_number || c.batch_number) ? ` · ${c.serial_number || c.batch_number}` : ''}</VisTd>
+                <VisTd vis={vis} table="complaints" k="severity" style={tdStyle}><Pill text={c.severity} hex={SEVERITY_HEX[c.severity]} /></VisTd>
+                <VisTd vis={vis} table="complaints" k="ncr_capa" style={tdStyle}>{[c.ncr_number, c.capa_number].filter(Boolean).join(' / ') || '—'}</VisTd>
+                <VisTd vis={vis} table="complaints" k="response" style={tdStyle}>{c.response_days != null ? `${c.response_days} days` : `${c.age_days} days open`}</VisTd>
                 {seeCosts && <td style={tdStyle}>{c.total_cost ? fmtMoney(c.total_cost) : '—'}</td>}
                 <td style={tdStyle}><Pill text={COMPLAINT_STATUS_LABELS[c.status] || c.status} hex={COMPLAINT_STATUS_HEX[c.status]} /></td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtDate(c.complaint_date)}</td>
+                <VisTd vis={vis} table="complaints" k="date" style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtDate(c.complaint_date)}</VisTd>
               </tr>
             ))}
           </tbody>

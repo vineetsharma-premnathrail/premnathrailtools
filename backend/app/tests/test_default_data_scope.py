@@ -19,10 +19,12 @@ def test_unset_scope_refuses_a_colleagues_record_by_id(client, db):
     # Carol has nothing of Bob's.
     carol = _user(db, "ds.carol@premnathrail.com", "Carol Das")
     h = _auth(carol)
-    r = client.get(f"{API}/organizations/{rows[bob.id]['org']}/detail", headers=h)
+    # Organizations are a shared customer master (owner, 2026-10-27; crm/access.py shared=True):
+    # every CRM user opens them. Inquiries / tenders stay scoped.
+    assert client.get(f"{API}/organizations/{rows[bob.id]['org']}/detail", headers=h).status_code == 200
+    r = client.get(f"{API}/inquiries/{rows[bob.id]['inq']}", headers=h)
     assert r.status_code == 403
     assert "Own + assigned" in r.json()["detail"]
-    assert client.get(f"{API}/inquiries/{rows[bob.id]['inq']}", headers=h).status_code == 403
     assert client.get(f"{API}/organizations/{rows[bob.id]['org']}/detail", headers=_auth(bob)).status_code == 200
 
 

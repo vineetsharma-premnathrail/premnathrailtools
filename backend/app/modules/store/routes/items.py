@@ -3,6 +3,7 @@ from sqlalchemy import and_, case, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.permissions import ensure_can_delete, require_feature_action, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -40,14 +41,17 @@ def apply_item_search(query, search: str | None):
 
 
 def item_search_order(search: str | None):
-    """ORDER BY for the item list: by item code (serial order, e.g. MT-HYD-0001,
-    MT-HYD-0002 …). With a search, items whose NAME matches come first (exact,
-    then starts-with, then contains), then code matches, then the rest
-    (matched only in technical specification / category); by code within
-    each group."""
+    """ORDER BY for the item list: by item code in NUMERIC series order
+    (01, 02 … 09, 10, 11 … 99, 100, 101 …). Codes are one global number
+    series, so shorter codes come first, then plain code order inside the
+    same length (a plain text sort would put 100 and 1000 before 11).
+    With a search, items whose NAME matches come first (exact, then
+    starts-with, then contains), then code matches, then the rest (matched
+    only in technical specification / category); by code within each group."""
     q = " ".join((search or "").split()).lower()
+    code_order = [func.length(StoreItem.item_code).asc(), StoreItem.item_code.asc(), StoreItem.id.asc()]
     if not q:
-        return [StoreItem.item_code.asc(), StoreItem.id.asc()]
+        return code_order
     name = func.lower(StoreItem.item_name)
     words = q.split()
     rank = case(
@@ -58,7 +62,7 @@ def item_search_order(search: str | None):
         (func.lower(StoreItem.item_code).like(f"%{q}%"), 4),
         else_=5,
     )
-    return [rank, StoreItem.item_code.asc(), StoreItem.id.asc()]
+    return [rank, *code_order]
 
 
 def _to_response(item: StoreItem, db: Session, detail: bool = False, user: User | None = None) -> StoreItemResponse:
@@ -185,7 +189,7 @@ def _clean_erp_fields(db: Session, data: dict, item: StoreItem | None = None) ->
         if touched("safety_stock", "reorder_level") and ss is not None and rl is not None and float(ss) > float(rl):
             raise ValueError(f"Safety stock ({ss:g}) is above the reorder level ({rl:g}) — reorder must trigger before stock falls into the safety buffer. Raise the reorder level.")
         if touched("test_certificate_required", "inspection_on_receipt") and merged("test_certificate_required") and not merged("inspection_on_receipt"):
-            raise ValueError("'Test certificate required' only works with 'Inspection on receipt' — the certificate is checked when Quality accepts the inspection lot. Tick both, or untick the certificate.")
+            raise ValueError("'Test certificate required' only works with 'Quality check on receipt' — the certificate is checked when Quality accepts the inspection lot. Tick both, or untick the certificate.")
         if touched("expiry_controlled", "shelf_life_days") and merged("expiry_controlled") and not merged("shelf_life_days"):
             raise ValueError("Expiry-controlled items need a shelf life — enter the shelf life in days, or untick expiry control.")
     except ValueError as exc:
@@ -247,8 +251,9 @@ def _validate_type_and_uom(item_type: str | None, uom: str | None, db: Session |
 
 
 @router.get("/meta")
-async def item_meta(db: Session = Depends(get_db), _user: User = Depends(require_store_lookup())):
-    """Dropdown options for the item master form."""
+async def item_meta(db: Session = Depends(get_db), user: User = Depends(require_store_lookup())):
+    """Dropdown options for the item master form. Item types carry `allowed`
+    (role visibility) — the form filters, the list stays complete."""
     def ledgers(types):
         rows = (db.query(GLAccount).filter(GLAccount.account_type.in_(types), GLAccount.status == "active",
                                            GLAccount.is_posting_account.is_(True)).order_by(GLAccount.code).all())
@@ -256,7 +261,7 @@ async def item_meta(db: Session = Depends(get_db), _user: User = Depends(require
 
     vendors = db.query(Vendor).filter(Vendor.status == "active").order_by(Vendor.name).all()
     return {
-        "item_types": type_options(db),
+        "item_types": type_options(db, user),
         "uoms": uom_options(db),
         "gst_rates": [float(r) for (r,) in db.query(GSTRate.rate).filter(GSTRate.is_active.is_(True)).order_by(GSTRate.rate).all()],
         "purchase_ledgers": ledgers(LEDGER_PURPOSES["purchase"][2]),
@@ -378,6 +383,9 @@ async def create_item(
     if not data.get("uom"):
         raise HTTPException(status_code=400, detail="Pick the unit of measure (UOM) for this item.")
     data["uom"] = _validate_type_and_uom(data.get("item_type"), data["uom"], db)
+    # Role visibility: a restricted role must name an item type, and only one it is allowed (422 with the reason).
+    visibility.ensure_option_given(user, "store:items", "item_type", data.get("item_type"))
+    visibility.ensure_option_allowed(user, "store:items", "item_type", data.get("item_type"))
     data["part_number"] = (data.get("part_number") or "").strip() or None
     _clean_planning_fields(db, data)
     _clean_erp_fields(db, data)
@@ -419,10 +427,22 @@ async def update_item(
         normalised = _validate_type_and_uom(changes.get("item_type"), changes.get("uom"), db)
         if "uom" in changes:
             changes["uom"] = normalised
+    if "item_type" in changes and changes["item_type"] != item.item_type:
+        # Only a CHANGED type is checked: an item already of a type this role may not pick keeps it.
+        visibility.ensure_option_given(user, "store:items", "item_type", changes["item_type"])
+        visibility.ensure_option_allowed(user, "store:items", "item_type", changes["item_type"])
     if "part_number" in changes:
         changes["part_number"] = (changes["part_number"] or "").strip() or None
     _clean_planning_fields(db, changes, item.id)
     _clean_erp_fields(db, changes, item)
+    # The quality-check flags decide whether a GRN bypasses Quality, so every
+    # flip is on the audit trail with who / old / new.
+    for flag, label in (("inspection_on_receipt", "Quality check on receipt"), ("test_certificate_required", "Test certificate required")):
+        if flag in changes and bool(changes[flag]) != bool(getattr(item, flag)):
+            from app.modules.main.models.audit_log import AuditLog
+            db.add(AuditLog(entity_type="store_item", entity_id=item.id, action="quality_flag_changed", performed_by_id=user.id,
+                            summary=f"{user.name or user.email} changed '{label}' of item {item.item_code} ({item.item_name}) "
+                                    f"from {'Yes' if getattr(item, flag) else 'No'} to {'Yes' if changes[flag] else 'No'}."))
     for field, val in changes.items():
         setattr(item, field, val)
     db.commit()

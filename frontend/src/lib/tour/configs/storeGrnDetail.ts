@@ -7,18 +7,18 @@ const config: TourConfig = {
     {
       target: 'store-grn-detail-header',
       title: 'Receipt summary',
-      purpose: 'The PO, Purchase Request, vendor, received date, store and who received it. Once inspection is complete, "Inspected By" shows who did the quality check.',
+      purpose: 'The PO, Purchase Request, vendor, received date, store and who received it. "Quality check by" names who recorded the accept / reject decision; a GRN of items without the flag shows "Completed on receipt" instead, because nobody had to check it.',
     },
     {
       target: 'store-grn-detail-lines',
-      title: 'Quality Inspection',
-      purpose: 'One row per item received. While the GRN is "Pending Inspection", enter the result for each line here; once completed, this becomes the read-only Inspection Result.',
+      title: 'Quality check',
+      purpose: 'One row per item received. Items without the "Quality check on receipt" flag are already accepted and in Free stock when the GRN is saved. Lines still waiting (asset lines) take their accepted / rejected result here; once completed, this becomes the read-only Quality check result.',
       whatToEnter: 'Accepted + Rejected should add up to the Received quantity. Pick a Quality Status and, if anything was rejected, type the reason.',
       options: [
         { value: 'Passed', meaning: 'Everything received is good — all of it is accepted into stock.' },
         { value: 'Partially Accepted', meaning: 'Some is good, some is not — the accepted part goes to stock, the rejected part is recorded against the vendor. Give a reason.' },
         { value: 'Failed', meaning: 'Nothing is usable — the whole quantity is rejected. Give a reason.' },
-        { value: 'In Quality inspection', meaning: 'Shown (not selectable) for items flagged "inspection on receipt": Quality holds them in Quality stock under an inspection lot, and its usage decision fills in the accepted/rejected split.' },
+        { value: 'With Quality (inspection lot)', meaning: 'Shown (not selectable) for items flagged "Quality check on receipt": Quality holds them in Quality stock under an inspection lot, and its usage decision fills in the accepted/rejected split.' },
       ],
       validExample: 'Received 50 → Accepted 48, Rejected 2, Partially Accepted, reason "2 pcs thread damaged"',
       invalidExample: 'Received 50 → Accepted 50, Rejected 5 (more than received)',
@@ -26,8 +26,8 @@ const config: TourConfig = {
     },
     {
       target: 'store-grn-detail-complete-btn',
-      title: 'Complete Inspection',
-      purpose: 'Saves the inspection result for every line still pending. Only shown while the GRN is Pending Inspection.',
+      title: 'Complete quality check',
+      purpose: 'Saves the accepted / rejected result for every line still pending. Only shown while the GRN is Pending quality check.',
       after: 'Accepted quantity is added to the chosen store\'s stock at the PO price (visible in Stock and Movements) and the GRN moves to "Completed".',
     },
     {

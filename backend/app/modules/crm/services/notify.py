@@ -3,9 +3,8 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from app.modules.main.models.notification import Notification
 from app.modules.main.models.user import User
-from app.utils.notifications import _is_suppressed
+from app.utils.notifications import _deliver, _is_suppressed
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +17,9 @@ def broadcast_except(db: Session, skip: set[int], *, title: str, message: str, n
     if _is_suppressed(notification_type):
         return
     try:
-        for u in db.query(User).filter(User.is_active == True).all():  # noqa: E712
-            if u.id in skip or u.id == exclude_user_id or app_name not in u.get_apps() or not u.notifications_enabled:
-                continue
-            db.add(Notification(user_id=u.id, title=title, message=message, notification_type=notification_type,
-                                entity_type=entity_type, entity_id=entity_id))
+        users = [u for u in db.query(User).filter(User.is_active == True).all()  # noqa: E712
+                 if u.id not in skip and u.id != exclude_user_id and app_name in u.get_apps()]
+        # Channels from Organization › Roles › Notifications (direct notification settings).
+        _deliver(db, users, title, message, notification_type, entity_type, entity_id, teams=False)
     except Exception:
         logger.exception("Failed to broadcast notification '%s'", title)

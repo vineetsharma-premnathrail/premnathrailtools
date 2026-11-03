@@ -249,9 +249,8 @@ def _project_dict(db: Session, p: RndProject) -> dict:
 async def linked_projects(source: Source, record_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Prototype / Research projects this requirement is linked to."""
     _record(db, source, record_id)
+    # The old "Linked projects" feature row was retired (matrix cleanup 2026-11-03): the requirement's view rule decides.
     ra.ensure(db, user, source, record_id, "view")
-    if ra.is_rnd_side(user):
-        ensure_feature_action(user, "rnd", "requirements", "projects", "view")
     rows = db.query(RndRequirementProjectLink, RndProject).join(RndProject, RndProject.id == RndRequirementProjectLink.project_id).filter(
         RndRequirementProjectLink.source == source, RndRequirementProjectLink.record_id == record_id, RndProject.is_deleted == False,  # noqa: E712
     ).order_by(RndRequirementProjectLink.id.asc()).all()
@@ -634,7 +633,7 @@ async def create_requirement_task(
         assigned_to_id=assignee.id, created_by_id=user.id, original_due_date=due, due_date=due, status="open",
         revision_no=revision.revision_no if revision else None,
     )
-    task_fields.apply_create(task, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist)
+    task_fields.apply_create(task, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist, user=user)
     db.add(task)
     db.flush()
     await _store_files(db, source=source, record=record, files=files or [], sub_module=TASK_DOC, sub_id=task.id,
@@ -885,7 +884,7 @@ async def create_subtask(
         remarks=(remarks or "").strip() or None, assigned_to_id=assignee.id, created_by_id=user.id,
         original_due_date=due, due_date=due, status="open", revision_no=parent.revision_no,
     )
-    task_fields.apply_create(task, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist)
+    task_fields.apply_create(task, priority=priority, start_date=start_date, work_status=work_status, checklist=checklist, user=user)
     db.add(task)
     db.flush()
     await _store_files(db, source=task.source, record=record, files=files or [], sub_module=TASK_DOC, sub_id=task.id,
@@ -970,7 +969,7 @@ async def edit_task(task_id: int, payload: TaskEditPayload, db: Session = Depend
         prev = db.query(User).filter(User.id == task.assigned_to_id).first()
         changes.append(f"Assignee: {_name(prev)} → {_name(new_assignee)}")
         task.assigned_to_id = new_assignee.id
-    changes += task_fields.apply_edit(task, data, _name(user))
+    changes += task_fields.apply_edit(task, data, _name(user), user)
 
     if not changes:
         return _serialize_tasks(db, [task])[0]

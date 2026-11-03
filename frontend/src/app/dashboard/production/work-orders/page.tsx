@@ -14,6 +14,9 @@ import { recordPath } from '@/lib/recordRef'
 import { useCan } from '@/lib/permissions'
 import Select from '@/components/shared/Select'
 import { chipBtnStyle, primaryBtnStyle, RowCount, Pill } from '@/components/shared/ui'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleWorkOrders } from '@/lib/productionPreviewSamples'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', released: 'Released', in_progress: 'In Progress', completed: 'Completed', closed: 'Closed', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', released: '#2563EB', in_progress: '#F59E0B', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
@@ -35,12 +38,21 @@ const inputStyle: React.CSSProperties = {
   padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
 }
+// Columns a role may hide (Role & Permissions › Production › Work Orders › Visibility); WO Number, Product and Status always show.
+const COLUMNS: [string, string | null][] = [
+  ['WO Number', null], ['Product', null], ['Machine / Project', 'project'], ['Qty', 'qty'], ['Progress', 'progress'],
+  ['Priority', 'priority'], ['Planned End', 'planned_end'], ['Status', null],
+]
+const thStyle: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }
 const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
 
 export default function ProductionWorkOrdersPage() {
   const { isAuthorized, isLoading } = useRequireApp('production')
   const router = useRouter()
   const { can } = useCan()
+  // Role editor "Preview & choose": sample rows, nothing loaded, no module nav / create button.
+  const vis = useVisibility('production:work_orders')
+  const columns = COLUMNS.filter(([, k]) => !k || vis.preview || vis.showColumn('work_orders', k))
 
   const [orders, setOrders] = useState<ProductionWorkOrder[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,6 +64,7 @@ export default function ProductionWorkOrdersPage() {
 
   useEffect(() => {
     if (!isAuthorized) return
+    if (vis.preview) { setOrders(sampleWorkOrders); setLoading(false); return }
     const params: Record<string, unknown> = {}
     if (statusTab) params.status = statusTab
     if (priority) params.priority = priority
@@ -66,13 +79,13 @@ export default function ProductionWorkOrdersPage() {
         .finally(() => { if (!ignore) setLoading(false) })
     }, 250)
     return () => { ignore = true; clearTimeout(t) }
-  }, [isAuthorized, statusTab, priority, overdueOnly, search])
+  }, [isAuthorized, statusTab, priority, overdueOnly, search, vis.preview])
 
   if (isLoading || !isAuthorized) return null
 
   return (
     <div>
-      <ProductionNav />
+      {!vis.preview && <ProductionNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
@@ -81,7 +94,7 @@ export default function ProductionWorkOrdersPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Work Orders</h1>
         </div>
-        {can('production', 'work_orders', 'create') && <button
+        {can('production', 'work_orders', 'create') && !vis.preview && <button
           data-tour="production-wo-new-btn"
           onClick={() => router.push('/dashboard/production/work-orders/new')}
           style={primaryBtnStyle}
@@ -125,37 +138,36 @@ export default function ProductionWorkOrdersPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
           <thead>
             <tr>
-              {['WO Number', 'Product', 'Machine / Project', 'Qty', 'Progress', 'Priority', 'Planned End', 'Status'].map((h, i) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', whiteSpace: 'nowrap', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}{i === 0 && <RowCount count={orders.length} />}
-                </th>
+              {columns.map(([h, k], i) => (k
+                ? <VisTh key={h} vis={vis} table="work_orders" k={k} style={thStyle}>{h}</VisTh>
+                : <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={orders.length} />}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={columns.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : orders.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No work orders match this view — change the filters, or use “+ New Work Order” to raise one from an active BOM.</td></tr>
+              <tr><td colSpan={columns.length} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No work orders match this view — change the filters, or use “+ New Work Order” to raise one from an active BOM.</td></tr>
             ) : (
               orders.map((o) => (
-                <tr key={o.id} onClick={() => router.push(recordPath('/dashboard/production/work-orders', o))} style={{ cursor: 'pointer' }}>
+                <tr key={o.id} onClick={() => { if (!vis.preview) router.push(recordPath('/dashboard/production/work-orders', o)) }} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading }}>{o.wo_number}</td>
                   <td style={cellStyle}>{o.product_code} — {o.product_name}</td>
-                  <td style={cellStyle}>{o.project_label || '—'}</td>
-                  <td style={cellStyle}>{o.quantity_completed} / {o.quantity_planned} {o.product_uom || ''}</td>
-                  <td style={{ ...cellStyle, minWidth: 120 }}>
+                  <VisTd vis={vis} table="work_orders" k="project" style={cellStyle}>{o.project_label || '—'}</VisTd>
+                  <VisTd vis={vis} table="work_orders" k="qty" style={cellStyle}>{o.quantity_completed} / {o.quantity_planned} {o.product_uom || ''}</VisTd>
+                  <VisTd vis={vis} table="work_orders" k="progress" style={{ ...cellStyle, minWidth: 120 }}>
                     <div style={{ height: 6, borderRadius: 9999, background: 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
                       <div style={{ width: `${o.progress_percent}%`, height: '100%', background: '#16A34A' }} />
                     </div>
                     <span style={{ fontSize: 11, color: TEXT.muted }}>{o.progress_percent}%</span>
-                  </td>
-                  <td style={cellStyle}>
+                  </VisTd>
+                  <VisTd vis={vis} table="work_orders" k="priority" style={cellStyle}>
                     <Pill label={priorityLabel(o.priority)} hex={PRIORITY_HEX[normalizePriority(o.priority)]} />
-                  </td>
-                  <td style={{ ...cellStyle, color: o.is_overdue ? '#DC2626' : TEXT.body, fontWeight: o.is_overdue ? 600 : 400 }}>
+                  </VisTd>
+                  <VisTd vis={vis} table="work_orders" k="planned_end" style={{ ...cellStyle, color: o.is_overdue ? '#DC2626' : TEXT.body, fontWeight: o.is_overdue ? 600 : 400 }}>
                     {o.planned_end_date ? formatDate(o.planned_end_date) : '—'}{o.is_overdue ? ' · overdue' : ''}
-                  </td>
+                  </VisTd>
                   <td style={cellStyle}>
                     <Pill label={STATUS_LABELS[o.status] || o.status} hex={STATUS_HEX[o.status]} />
                   </td>

@@ -5,8 +5,9 @@
 - MMPV/OMSY: no goods movement dated in a closed Finance period;
 - ME21N item categories: service lines -> service entry sheet, asset lines ->
   GRN without store stock;
-- MIGO 101: every GRN stock line is in Quality stock from receipt, the GRN
-  inspection releases / blocks it;
+- MIGO 101: an item flagged "Quality check on receipt" is in Quality stock from
+  receipt and Quality's lot decision releases / blocks it; an unflagged item goes
+  straight into Free stock (2026-11-03);
 - MIRO: line-level 3-way match per PO line, same unit, price/qty tolerances."""
 from datetime import date, datetime, timezone
 
@@ -22,6 +23,7 @@ from app.modules.store.models.stock_balance import StoreStockBalance
 from app.modules.store.services.stock_ledger import post_stock_transaction
 from app.tests.p2p_workflow_helpers import master_item
 from app.tests.test_cov_controls_finance import books  # noqa: F401 — fixture
+from app.tests.test_grn_quality_check_flag import decide_grn_lots
 from app.tests.test_p2p_item_master_link import _inspect_all, _po_for, _store
 from app.tests.test_p2p_requests import (  # noqa: F401 — _sqlite_number_series is an autouse fixture
     _approve_and_raise_po, _create_pr, _purchaser, _requester, _sqlite_number_series, auth_header, make_user,
@@ -133,11 +135,12 @@ def test_grn_dated_in_a_closed_period_is_refused(client, db):
 
 # ── MIGO 101 ─────────────────────────────────────────────────────────────────
 
-def _po(client, db, tag, qty=10, item_type=None):
+def _po(client, db, tag, qty=10, item_type=None, flagged=False):
     item = master_item(db, f"Item {tag}", code=f"RM-{tag}", uom="NOS")
     if item_type:
         item.item_type = item_type
-        db.commit()
+    item.inspection_on_receipt = flagged  # "Quality check on receipt"
+    db.commit()
     loc = _store(db, tag)
     pr = _create_pr(client, _requester(db, f"req.{tag.lower()}@premnathrail.com"),
                     items=[{"store_item_id": item.id, "quantity": qty, "project_inhouse": "Project"}])
@@ -153,37 +156,54 @@ def test_grn_needs_a_store(client, db):
     assert r.status_code == 422 and "Pick the store" in r.json()["detail"]
 
 
-def test_grn_posts_into_quality_stock_at_once_and_inspection_releases_and_blocks(client, db):
-    buyer, po, loc = _po(client, db, "M101B")
+def test_grn_of_an_unflagged_item_posts_into_free_stock_at_once_and_completes(client, db):
+    buyer, po, loc = _po(client, db, "M101A2")
     item_id = po["items"][0]["store_item_id"]
     g = client.post(GRN, json={"purchase_order_id": po["id"], "store_location_id": loc.id,
                                "items": [{"po_item_id": po["items"][0]["id"], "received_quantity": 10}]}, headers=auth_header(buyer))
     assert g.status_code == 200, g.text
-    assert g.json()["items"][0]["receipt_posting"] == "quality"
+    assert g.json()["items"][0]["receipt_posting"] == "free" and g.json()["status"] == "completed"
+    b = _bal(db, item_id, loc.id)
+    assert (b.on_hand_qty, b.quality_qty, b.quarantine_qty) == (10, 0, 0)  # issuable at once, never in Quality
+    # No store-side accept / reject is left to do.
+    assert _inspect_all(client, buyer, g.json()).status_code == 409
+
+
+def test_flagged_grn_posts_into_quality_stock_at_once_and_the_lot_decision_releases_and_blocks(client, db):
+    buyer, po, loc = _po(client, db, "M101B", flagged=True)
+    item_id = po["items"][0]["store_item_id"]
+    g = client.post(GRN, json={"purchase_order_id": po["id"], "store_location_id": loc.id,
+                               "items": [{"po_item_id": po["items"][0]["id"], "received_quantity": 10}]}, headers=auth_header(buyer))
+    assert g.status_code == 200, g.text
+    assert g.json()["items"][0]["receipt_posting"] == "lot" and g.json()["status"] == "draft"
     b = _bal(db, item_id, loc.id)
     assert (b.on_hand_qty, b.quality_qty, b.quarantine_qty) == (0, 10, 0)  # visible at once, not issuable
-    r = client.post(f"{GRN}/{g.json()['id']}/inspect", json={"items": [
-        {"item_id": g.json()["items"][0]["id"], "accepted_quantity": 7, "rejected_quantity": 3, "quality_status": "partial",
-         "rejection_reason": "dented"}]}, headers=auth_header(buyer))
-    assert r.status_code == 200, r.text
+    decide_grn_lots(db, g.json()["id"], "partial", accepted_qty=7, rejected_qty=3)
     b = _bal(db, item_id, loc.id)
     assert (b.on_hand_qty, b.quality_qty, b.quarantine_qty) == (7, 0, 3)
-    # Rejected goods leave Blocked stock when they go back to the vendor.
-    rtv = client.post("/api/v1/p2p/vendor-returns", json={"goods_receipt_id": g.json()["id"], "reason": "quality_rejection", "items": [
+    # Quality-rejected goods go back through the NCR, not the store's Return to Vendor; accepted goods can be returned.
+    refused = client.post("/api/v1/p2p/vendor-returns", json={"goods_receipt_id": g.json()["id"], "reason": "quality_rejection", "items": [
         {"grn_item_id": g.json()["items"][0]["id"], "source": "rejected", "quantity": 3}]}, headers=auth_header(buyer))
+    assert refused.status_code == 409 and "NCR" in refused.json()["detail"]
+    assert _bal(db, item_id, loc.id).quarantine_qty == 3
+    rtv = client.post("/api/v1/p2p/vendor-returns", json={"goods_receipt_id": g.json()["id"], "reason": "quality_rejection", "items": [
+        {"grn_item_id": g.json()["items"][0]["id"], "source": "accepted", "quantity": 7}]}, headers=auth_header(buyer))
     assert rtv.status_code == 201, rtv.text
-    assert _bal(db, item_id, loc.id).quarantine_qty == 0
+    assert _bal(db, item_id, loc.id).on_hand_qty == 0
 
 
-def test_draft_grn_in_quality_stock_can_be_reversed(client, db):
-    buyer, po, loc = _po(client, db, "M101C")
+def test_flagged_grn_with_an_open_quality_lot_cannot_be_reversed_and_stock_stays_in_quality(client, db):
+    # An unflagged GRN completes at once (reversal is covered in test_grn_quality_check_flag); a flagged one
+    # is owned by Quality, so the store can't pull it back while the lot is open.
+    buyer, po, loc = _po(client, db, "M101C", flagged=True)
     item_id = po["items"][0]["store_item_id"]
     g = client.post(GRN, json={"purchase_order_id": po["id"], "store_location_id": loc.id,
                                "items": [{"po_item_id": po["items"][0]["id"], "received_quantity": 4}]}, headers=auth_header(buyer)).json()
+    assert g["status"] == "draft" and _bal(db, item_id, loc.id).quality_qty == 4
     r = client.post(f"{GRN}/{g['id']}/reverse", json={"reason": "wrong PO"}, headers=auth_header(buyer))
-    assert r.status_code == 200, r.text
+    assert r.status_code == 409 and "went through Quality inspection" in r.json()["detail"]
     b = _bal(db, item_id, loc.id)
-    assert (b.on_hand_qty, b.quality_qty, b.quarantine_qty) == (0, 0, 0)
+    assert (b.on_hand_qty, b.quality_qty, b.quarantine_qty) == (0, 4, 0)
 
 
 # ── ME21N item categories ────────────────────────────────────────────────────

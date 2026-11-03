@@ -13,7 +13,7 @@ from app.modules.store.models.stock_balance import StoreStockBalance
 from app.tests.p2p_po_helpers import post_upload_po, upload_po_details
 from app.tests.p2p_workflow_helpers import master_item, set_po_workflow
 from app.tests.test_mm_po_split_amend_quotes import _decide_all
-from app.tests.test_p2p_item_master_link import _grn, _inspect_all, _store
+from app.tests.test_p2p_item_master_link import _grn, _store
 from app.tests.test_p2p_requests import (  # noqa: F401 - _sqlite_number_series is an autouse fixture
     _purchaser, _sqlite_number_series, auth_header, make_user,
 )
@@ -210,7 +210,7 @@ def test_procurement_raises_the_requisition_uploads_the_po_it_is_approved_receiv
     body = client.get(f"/api/v1/p2p/purchase-orders/{po['id']}", headers=auth_header(buyer)).json()
     g = _grn(client, buyer, body, loc, 7)
     assert g.status_code == 200, g.text
-    assert _inspect_all(client, buyer, g.json()).status_code == 200
+    assert g.json()["status"] == "completed"  # no Quality-check flag: completes when it is recorded
     db.expire_all()
     assert db.get(StorePrePoReceipt, rec["id"]).status == "closed"
 

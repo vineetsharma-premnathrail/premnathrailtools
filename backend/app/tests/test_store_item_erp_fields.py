@@ -102,7 +102,7 @@ def test_stock_levels_and_quality_flags_must_be_consistent(client, setup):
     assert "already full" in create(client, s, reorder_level=60, maximum_stock=50).json()["detail"]
     assert "safety buffer" in create(client, s, safety_stock=20, reorder_level=10).json()["detail"]
     assert "can't be negative" in create(client, s, min_order_qty=-1).json()["detail"]
-    assert "Inspection on receipt" in create(client, s, test_certificate_required=True).json()["detail"]
+    assert "Quality check on receipt" in create(client, s, test_certificate_required=True).json()["detail"]
     assert "shelf life" in create(client, s, expiry_controlled=True).json()["detail"]
 
     # An edit that doesn't touch the stock levels isn't blocked by them.

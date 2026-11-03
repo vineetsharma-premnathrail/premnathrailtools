@@ -4,7 +4,7 @@
 // Kept apart from lib/api.ts so the shared client file only grows by imports.
 import { apiClient } from '@/lib/api'
 
-export interface Opt { value: string; label: string }
+export interface Opt { value: string; label: string; allowed?: boolean }
 
 export interface ItemPlantRow {
   id?: number

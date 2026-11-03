@@ -3,12 +3,14 @@
 Every stock line of a GRN is in the stock ledger from the moment the GRN is
 recorded — never only after someone inspects it:
 
-  * Item flagged inspection-on-receipt → a Quality inspection lot takes it
-    into QUALITY stock (quality/services/lots.py), receipt_posting = "lot".
-  * Any other stock line → received straight into QUALITY stock here
-    (receipt_posting = "quality"); the GRN inspection then releases the
-    accepted quantity to FREE stock and moves the rejected quantity to
-    BLOCKED stock, where it stays until it goes back to the vendor (RTV).
+  * Item flagged "Quality check on receipt" → a Quality inspection lot takes
+    it into QUALITY stock (quality/services/lots.py), receipt_posting = "lot".
+  * Any other stock line → received straight into FREE stock here
+    (receipt_posting = "free", 2026-11-03): the line counts as accepted the
+    moment the GRN is saved, no second "complete quality check" click.
+  * receipt_posting = "quality" is the pre-2026-11-03 path (into QUALITY
+    stock, then the GRN check releases / blocks): kept so those GRNs can
+    still be completed, returned and reversed.
   * Service / asset lines (PO item category) never touch store stock
     (receipt_posting = "none"): a service is confirmed on a service entry, an
     asset is capitalised by Finance.
@@ -65,6 +67,23 @@ def receive_into_quality(db: Session, grn, line, user_id: int) -> None:
             _post(db, grn, line, "quality_in", qty, batch_no, user_id,
                   f"GRN {grn.grn_number} received — in Quality stock until the GRN inspection")
     line.receipt_posting = "quality"
+
+
+def receive_into_free(db: Session, grn, line, user_id: int) -> None:
+    """Item without the Quality-check flag: the full received quantity goes
+    straight into Free stock (per heat) and the line is accepted as received."""
+    heats = _heats(db, line)
+    splits = [(h.batch_number, h.received_qty) for h in heats] if heats else [(None, line.received_quantity)]
+    for batch_no, qty in splits:
+        if qty > _EPS:
+            _post(db, grn, line, "receipt", qty, batch_no, user_id,
+                  f"GRN {grn.grn_number} received — no quality check needed for this item, straight to Free stock")
+    for h in heats:
+        h.accepted_qty = h.received_qty
+    line.accepted_quantity = line.received_quantity
+    line.rejected_quantity = 0.0
+    line.quality_status = "passed"
+    line.receipt_posting = "free"
 
 
 def _rejected_splits(db: Session, line, rejected: float) -> list[tuple[str | None, float]]:

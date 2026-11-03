@@ -88,13 +88,14 @@ def test_item_master_id_travels_pr_po_grn_and_stock_is_posted_at_po_rate(client,
     grn = _grn(client, buyer, po, loc, 5)
     assert grn.status_code == 200, grn.text
     assert grn.json()["items"][0]["store_item_id"] == item.id
-    done = _inspect_all(client, buyer, grn.json())
-    assert done.status_code == 200, done.text
+    # The item has no "Quality check on receipt" flag: the GRN is completed at once, no inspection step.
+    assert grn.json()["status"] == "completed"
+    assert _inspect_all(client, buyer, grn.json()).status_code == 409
 
-    # SAP 101 into Quality stock when the GRN is recorded, then 321 to Free at inspection — both at the PO rate.
+    # One receipt straight into Free stock when the GRN is recorded, at the PO rate.
     rows = db.query(StoreStockTransaction).filter(StoreStockTransaction.reference_type == "grn").order_by(StoreStockTransaction.id).all()
     assert [(r.item_id, r.location_id, r.quantity, r.transaction_type) for r in rows] == [
-        (item.id, loc.id, 5, "quality_in"), (item.id, loc.id, 5, "quality_release")]
+        (item.id, loc.id, 5, "receipt")]
     row = rows[0]
     assert row.unit_cost == 100 and row.cost_source == "po_rate"
 

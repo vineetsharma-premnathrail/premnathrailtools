@@ -32,9 +32,10 @@ def test_new_requisition_refuses_item_type_that_does_not_fit_the_purpose(client,
     d = r.json()["detail"]
     assert "Line 1" in d and "AST-LC-01" in d and "asset item" in d and "material, consumable, tool equipment" in d
 
-    # Fits a capital purchase (category / charge rules are checked after).
+    # Fits a capital purchase. Charged To is off the PR form for now (purpose.CHARGE_ON_PR = False),
+    # so no internal order is asked here; the charge rules are covered in test_p2p_pr_purpose.py.
     r = _post(client, db, req, asset, purpose="capital", category_code="CAP")
-    assert r.status_code == 400 and "internal order" in r.json()["detail"], r.text
+    assert r.status_code == 200, r.text
 
     # Items with no type, or a custom type, are never judged; a draft is never refused.
     assert _post(client, db, req, untyped, purpose="stock", category_code="HWC").status_code == 200

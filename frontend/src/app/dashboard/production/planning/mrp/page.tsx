@@ -23,6 +23,10 @@ import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, she
 import Select from '@/components/shared/Select'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
+import { PlannedOrderFormBody } from '@/components/production/PlannedOrderForm'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleMrpRun, samplePlannedOrders } from '@/lib/productionPreviewSamples'
 
 type Lookup = { id: number; label: string; code?: string | null; extra?: string | null }
 type Tab = 'orders' | 'list' | 'exceptions' | 'log'
@@ -59,8 +63,11 @@ function safePath(base: string, row: object, key: string): string | null {
 export default function MrpPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('production')
   const router = useRouter()
+  // What the user's roles let them see here (Role & Permissions › Production › Planning › Visibility). In the Role
+  // editor's "Preview & choose" sample orders / a sample run are drawn: nothing loads, no nav / Back, no actions.
+  const vis = useVisibility('production:planning')
   // Planning features (core/features/production.py) mirror each MRP route.
-  const pf = (feature: string, action: Parameters<typeof canFeature>[4]) => canFeature(user, 'production', 'planning', feature, action)
+  const pf = (feature: string, action: Parameters<typeof canFeature>[4]) => !vis.preview && canFeature(user, 'production', 'planning', feature, action)
   const canRunMrp = pf('mrp_run', 'edit')
   const canEdit = pf('planned_orders', 'edit')
   const canDeletePo = pf('planned_orders', 'delete')
@@ -77,9 +84,9 @@ export default function MrpPage() {
   const [running, setRunning] = useState(false)
 
   const [tab, setTab] = useState<Tab>('orders')
-  const [runs, setRuns] = useState<MrpRun[]>([])
-  const [runDetail, setRunDetail] = useState<MrpRun | null>(null)
-  const [orders, setOrders] = useState<PlannedOrder[]>([])
+  const [runs, setRuns] = useState<MrpRun[]>(vis.preview ? [sampleMrpRun] : [])
+  const [runDetail, setRunDetail] = useState<MrpRun | null>(vis.preview ? sampleMrpRun : null)
+  const [orders, setOrders] = useState<PlannedOrder[]>(vis.preview ? samplePlannedOrders : [])
   const [exceptions, setExceptions] = useState<MrpException[]>([])
   const [excCode, setExcCode] = useState('')
   const [excLabels, setExcLabels] = useState<Record<string, string>>({})
@@ -120,20 +127,20 @@ export default function MrpPage() {
   }, [branchId])
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     productionApi.lookupBranches().then(setBranches).catch(() => setBranches([]))
     mrpApi.parameters().then((p) => {
       setExcLabels(p.exception_labels)
       setHorizon(String(p.parameters.planning_horizon_days ?? 365))
       setIncludeDraft(!!p.parameters.include_draft_work_orders)
     }).catch(() => undefined)
-  }, [isAuthorized])
-  useEffect(() => { if (isAuthorized) loadOrders() }, [isAuthorized, loadOrders])
-  useEffect(() => { if (isAuthorized) loadRuns() }, [isAuthorized, loadRuns])
+  }, [isAuthorized, vis.preview])
+  useEffect(() => { if (isAuthorized && !vis.preview) loadOrders() }, [isAuthorized, loadOrders, vis.preview])
+  useEffect(() => { if (isAuthorized && !vis.preview) loadRuns() }, [isAuthorized, loadRuns, vis.preview])
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || vis.preview) return
     mrpApi.exceptions({ run_id: runDetail?.id, code: excCode || undefined }).then(setExceptions).catch((err) => fail(err, 'Failed to load exception messages.'))
-  }, [isAuthorized, runDetail, excCode])
+  }, [isAuthorized, runDetail, excCode, vis.preview])
 
   const runMrp = async () => {
     setRunning(true); setError(''); setNotice('')
@@ -214,14 +221,23 @@ export default function MrpPage() {
 
   if (isLoading || !isAuthorized) return null
 
-  const tabBtn = (key: Tab, label: string) => (
+  // Tabs the role hides are left out (the preview draws them all); Planned Orders always shows.
+  const TAB_SECTION: Record<Tab, string> = { orders: 'planned_orders', list: 'mrp_list', exceptions: 'exceptions', log: 'run_log' }
+  const tabShown = (key: Tab) => vis.preview || vis.showSection(TAB_SECTION[key])
+  const shownTab: Tab = tabShown(tab) ? tab : 'orders'
+  const orderCols = ([['', null], ['Planned Order', null], ['Item', null], ['Type', 'type'], ['Qty', null], ['Start', 'start'], ['Finish', 'finish'],
+    ['For (pegged demand)', 'pegged'], ['Status', null], ['', null]] as [string, string | null][]).filter(([, k]) => !k || vis.preview || vis.showColumn('planned_orders', k))
+  const listCols = ([['Level', 'level'], ['Item', null], ['Type', null], ['Stock', null], ['Safety', 'safety'], ['Requirements', null], ['Receipts', 'receipts'],
+    ['Planned', 'planned'], ['Ending Available', null], ['Exceptions', null]] as [string, string | null][]).filter(([, k]) => !k || vis.preview || vis.showColumn('mrp_list', k))
+
+  const tabBtn = (key: Tab, label: string) => !tabShown(key) ? null : (
     <button key={key} type="button" onClick={() => setTab(key)} style={{ padding: '8px 14px', fontSize: 12.5, fontWeight: 600, border: 'none', background: 'none', cursor: 'pointer',
-      color: tab === key ? '#FF6A2A' : TEXT.secondary, borderBottom: tab === key ? '2px solid #FF6A2A' : '2px solid transparent' }}>{label}</button>
+      color: shownTab === key ? '#FF6A2A' : TEXT.secondary, borderBottom: shownTab === key ? '2px solid #FF6A2A' : '2px solid transparent' }}>{label}</button>
   )
 
   return (
     <div>
-      <ProductionNav />
+      {!vis.preview && <ProductionNav />}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 20 }}>
         <div>
@@ -232,12 +248,13 @@ export default function MrpPage() {
             work-order receipts, level by level through the BOMs, and proposes planned orders: make → work order, buy → purchase requisition.
           </p>
         </div>
-        <button type="button" style={secondaryBtnStyle} onClick={() => router.push('/dashboard/production/planning')}>← Back</button>
+        {!vis.preview && <button type="button" style={secondaryBtnStyle} onClick={() => router.push('/dashboard/production/planning')}>← Back</button>}
       </div>
 
       {error && !popupOpen && errorBox(error)}
       {notice && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', color: '#15803d', fontSize: 13 }}>{notice}</div>}
 
+      <VisSection vis={vis} k="mrp_run">
       <div style={sectionStyle}>
         <p style={sectionTitle}>MRP Run</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
@@ -267,6 +284,7 @@ export default function MrpPage() {
           {' '}A run replaces the open planned orders of the previous run for the same plant; firmed and converted orders are kept.
         </p>
       </div>
+      </VisSection>
 
       <div style={sectionStyle}>
         <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${BORDER.light}`, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -276,8 +294,8 @@ export default function MrpPage() {
           {tabBtn('log', 'Run Log')}
         </div>
 
-        {tab === 'orders' && (
-          <>
+        {shownTab === 'orders' && (
+          <VisSection vis={vis} k="planned_orders">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 12 }}>
               <input placeholder="Search order, item or demand…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...inputStyle, flex: '1 1 220px', maxWidth: 300 }} />
               <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...inputStyle, flex: '0 1 140px' }}>
@@ -295,10 +313,12 @@ export default function MrpPage() {
             </div>
             <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
-                <thead><tr>{['', 'Planned Order', 'Item', 'Type', 'Qty', 'Start', 'Finish', 'For (pegged demand)', 'Status', ''].map((h, i) => <th key={i} style={thStyle}>{h}{i === 0 && <RowCount count={orders.length} />}</th>)}</tr></thead>
+                <thead><tr>{orderCols.map(([h, k], i) => (k
+                  ? <VisTh key={k} vis={vis} table="planned_orders" k={k} style={thStyle}>{h}</VisTh>
+                  : <th key={i} style={thStyle}>{h}{i === 0 && <RowCount count={orders.length} />}</th>))}</tr></thead>
                 <tbody>
                   {orders.length === 0 ? (
-                    <tr><td colSpan={10} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No planned orders — run MRP to plan the open demand.</td></tr>
+                    <tr><td colSpan={orderCols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No planned orders — run MRP to plan the open demand.</td></tr>
                   ) : orders.map((o) => {
                     const woPath = o.converted_type === 'work_order' ? safePath('/dashboard/production/work-orders', o, 'converted_ref_id') : null
                     const prPath = o.converted_type === 'purchase_requisition' ? safePath('/dashboard/p2p', o, 'converted_ref_id') : null
@@ -314,14 +334,14 @@ export default function MrpPage() {
                           <span onClick={() => setMd04Item(o.item_id)} style={{ cursor: 'pointer', color: '#2563EB' }} title="Stock / requirements list">{o.item_code} — {o.item_name}</span>
                           {o.parent_order_number && <div style={{ fontSize: 11, color: TEXT.muted }}>component of {o.parent_order_number}</div>}
                         </td>
-                        <td style={tdStyle}><span style={pill(PROC_HEX[o.procurement])}>{o.procurement === 'make' ? 'Make' : 'Buy'}</span></td>
+                        <VisTd vis={vis} table="planned_orders" k="type" style={tdStyle}><span style={pill(PROC_HEX[o.procurement])}>{o.procurement === 'make' ? 'Make' : 'Buy'}</span></VisTd>
                         <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmt(o.quantity)} {o.uom || ''}</td>
-                        <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: o.start_in_past ? '#DC2626' : TEXT.body, fontWeight: o.start_in_past ? 700 : 400 }} title={o.start_in_past ? 'Start / order date is in the past' : ''}>{formatDate(o.start_date)}</td>
-                        <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(o.finish_date)}</td>
-                        <td style={tdStyle}>
+                        <VisTd vis={vis} table="planned_orders" k="start" style={{ ...tdStyle, whiteSpace: 'nowrap', color: o.start_in_past ? '#DC2626' : TEXT.body, fontWeight: o.start_in_past ? 700 : 400 }} title={o.start_in_past ? 'Start / order date is in the past' : ''}>{formatDate(o.start_date)}</VisTd>
+                        <VisTd vis={vis} table="planned_orders" k="finish" style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(o.finish_date)}</VisTd>
+                        <VisTd vis={vis} table="planned_orders" k="pegged" style={tdStyle}>
                           {o.demand_label || '—'}
                           {o.order_project_label && <div style={{ fontSize: 11, color: '#1d4ed8', marginTop: 2 }} title="Project unit">{o.order_project_label}</div>}
-                        </td>
+                        </VisTd>
                         <td style={tdStyle}>
                           <span style={pill(STATUS_HEX[o.status] || '#78716c')}>{STATUS_LABELS[o.status] || o.status}</span>
                           {o.converted_number && (
@@ -347,26 +367,29 @@ export default function MrpPage() {
                 </tbody>
               </table>
             </div>
-          </>
+          </VisSection>
         )}
 
-        {tab === 'list' && (
+        {shownTab === 'list' && (
+          <VisSection vis={vis} k="mrp_list">
           <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-              <thead><tr>{['Level', 'Item', 'Type', 'Stock', 'Safety', 'Requirements', 'Receipts', 'Planned', 'Ending Available', 'Exceptions'].map((h, i) => <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={runDetail?.item_results?.length ?? 0} />}</th>)}</tr></thead>
+              <thead><tr>{listCols.map(([h, k], i) => (k
+                ? <VisTh key={h} vis={vis} table="mrp_list" k={k} style={thStyle}>{h}{i === 0 && <RowCount count={runDetail?.item_results?.length ?? 0} />}</VisTh>
+                : <th key={h} style={thStyle}>{h}{i === 0 && <RowCount count={runDetail?.item_results?.length ?? 0} />}</th>))}</tr></thead>
               <tbody>
                 {!runDetail?.item_results?.length ? (
-                  <tr><td colSpan={10} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No MRP run yet for this plant.</td></tr>
+                  <tr><td colSpan={listCols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No MRP run yet for this plant.</td></tr>
                 ) : runDetail.item_results.map((r) => (
                   <tr key={r.item_id} onClick={() => setMd04Item(r.item_id)} style={{ cursor: 'pointer' }}>
-                    <td style={tdStyle}>{r.low_level_code}</td>
+                    <VisTd vis={vis} table="mrp_list" k="level" style={tdStyle}>{r.low_level_code}</VisTd>
                     <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>{r.item_code} — {r.item_name}</td>
                     <td style={tdStyle}><span style={pill(PROC_HEX[r.procurement])}>{r.procurement === 'make' ? 'Make' : 'Buy'}</span></td>
                     <td style={tdStyle}>{fmt(r.stock)} {r.uom || ''}</td>
-                    <td style={tdStyle}>{fmt(r.safety_stock)}</td>
+                    <VisTd vis={vis} table="mrp_list" k="safety" style={tdStyle}>{fmt(r.safety_stock)}</VisTd>
                     <td style={tdStyle}>{fmt(r.requirements_qty)}</td>
-                    <td style={tdStyle}>{fmt(r.receipts_qty)}</td>
-                    <td style={tdStyle}>{r.planned_orders ? `${fmt(r.planned_qty)} (${r.planned_orders})` : '—'}</td>
+                    <VisTd vis={vis} table="mrp_list" k="receipts" style={tdStyle}>{fmt(r.receipts_qty)}</VisTd>
+                    <VisTd vis={vis} table="mrp_list" k="planned" style={tdStyle}>{r.planned_orders ? `${fmt(r.planned_qty)} (${r.planned_orders})` : '—'}</VisTd>
                     <td style={{ ...tdStyle, fontWeight: 700, color: r.ending_available < 0 ? '#DC2626' : TEXT.heading }}>{fmt(r.ending_available)}</td>
                     <td style={tdStyle}>{r.exceptions ? <span style={pill('#F59E0B')}>{r.exceptions}</span> : '—'}</td>
                   </tr>
@@ -374,10 +397,11 @@ export default function MrpPage() {
               </tbody>
             </table>
           </div>
+          </VisSection>
         )}
 
-        {tab === 'exceptions' && (
-          <>
+        {shownTab === 'exceptions' && (
+          <VisSection vis={vis} k="exceptions">
             <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
               <Select value={excCode} onChange={(e) => setExcCode(e.target.value)} style={{ ...inputStyle, maxWidth: 320 }}>
                 <option value="">All exception messages</option>
@@ -403,10 +427,11 @@ export default function MrpPage() {
                 </tbody>
               </table>
             </div>
-          </>
+          </VisSection>
         )}
 
-        {tab === 'log' && (
+        {shownTab === 'log' && (
+          <VisSection vis={vis} k="run_log">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {runs.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No MRP runs yet.</p>}
             {runs.map((r) => (
@@ -420,6 +445,7 @@ export default function MrpPage() {
               </div>
             ))}
           </div>
+          </VisSection>
         )}
       </div>
 
@@ -520,25 +546,7 @@ export default function MrpPage() {
           <div style={{ padding: '20px 24px' }}>
             <DraftBanner draft={newDraft} />
             {error && errorBox(error)}
-            <SheetSection icon="box" title="Item & Quantity">
-              <label style={sheetLabel}>Item <Req /></label>
-              <SearchableSelect value={newForm.item_id} onChange={(v) => setNewForm({ ...newForm, item_id: v })} placeholder="Search the Item Master…"
-                options={itemOptions.map((i) => ({ value: String(i.id), label: i.label }))} />
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
-                <div style={{ flex: '0 1 130px' }}><label style={sheetLabel}>Quantity <Req /></label><input type="number" min={0} value={newForm.quantity} onChange={(e) => setNewForm({ ...newForm, quantity: e.target.value })} style={sheetInput} /></div>
-                <div style={{ flex: '0 1 175px' }}><label style={sheetLabel}>Needed by (finish) <Req /></label><DateField value={newForm.finish_date} onChange={(v) => setNewForm({ ...newForm, finish_date: v })} /></div>
-                <div style={{ flex: '0 1 150px' }}>
-                  <label style={sheetLabel}>Procurement</label>
-                  <Select value={newForm.procurement} onChange={(e) => setNewForm({ ...newForm, procurement: e.target.value })} style={sheetInput}>
-                    <option value="">From BOM</option><option value="make">Make</option><option value="buy">Buy</option>
-                  </Select>
-                </div>
-              </div>
-              <p style={sheetHint}>Manual planned orders are firmed; the start date is back-scheduled from the lead time{branchId ? ' for the selected plant' : ''}.</p>
-            </SheetSection>
-            <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
-              <input value={newForm.remarks} onChange={(e) => setNewForm({ ...newForm, remarks: e.target.value })} style={sheetInput} />
-            </SheetSection>
+            <PlannedOrderFormBody form={newForm} onChange={setNewForm} itemOptions={itemOptions} plantPicked={!!branchId} />
           </div>
         </FormSheet>
       )}

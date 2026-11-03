@@ -8,7 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.data_scope import apply_scope, ensure_in_scope
-from app.core.permissions import require_app_access, require_tab_action
+from app.core.permissions import require_app_access, require_feature_action, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.quality.models.capa import QualityCapa
@@ -32,6 +32,10 @@ router = APIRouter(prefix="/quality/supplier-quality", tags=["Quality"], depende
 
 _CAN_CREATE = require_tab_action("quality", "supplier_quality", "create")
 _CAN_EDIT = require_tab_action("quality", "supplier_quality", "edit")
+# Vendor audits sub-tab = feature quality:supplier_quality.audits (inherits the tab's view / create / edit).
+_AUDITS_VIEW = require_feature_action("quality", "supplier_quality", "audits", "view")
+_AUDITS_CREATE = require_feature_action("quality", "supplier_quality", "audits", "create")
+_AUDITS_EDIT = require_feature_action("quality", "supplier_quality", "audits", "edit")
 
 
 def _avl_responses(db: Session, rows: list[QualityApprovedVendor], detail: bool = False) -> list[QualityApprovedVendorResponse]:
@@ -251,7 +255,7 @@ def _audit_responses(db: Session, rows: list[QualityVendorAudit]) -> list[Qualit
 
 @router.get("/audits", response_model=list[QualityVendorAuditResponse])
 async def list_audits(vendor: str | None = None, status_filter: str | None = Query(None, alias="status"), db: Session = Depends(get_db),
-                      user: User = Depends(require_app_access("quality"))):
+                      user: User = Depends(_AUDITS_VIEW)):
     q = apply_scope(db.query(QualityVendorAudit), user, QualityVendorAudit)
     if vendor:
         q = q.filter(QualityVendorAudit.vendor_key == sq.vendor_key(vendor))
@@ -261,7 +265,8 @@ async def list_audits(vendor: str | None = None, status_filter: str | None = Que
 
 
 @router.post("/audits", response_model=QualityVendorAuditResponse)
-async def schedule_audit(payload: QualityVendorAuditCreate, db: Session = Depends(get_db), user: User = Depends(_CAN_CREATE)):
+async def schedule_audit(payload: QualityVendorAuditCreate, db: Session = Depends(get_db), user: User = Depends(_CAN_CREATE),
+                         _f: User = Depends(_AUDITS_CREATE)):
     authz.ensure_may_assign(db, user, authz.AUDITOR_RULE, payload.auditor_id)
     audit = _run(db, lambda: sq.schedule_audit(db, vendor_name=payload.vendor_name, planned_date=payload.planned_date,
                                                 scope=payload.scope, auditor_id=payload.auditor_id, user=user))
@@ -270,7 +275,7 @@ async def schedule_audit(payload: QualityVendorAuditCreate, db: Session = Depend
 
 @router.post("/audits/{audit_id}/complete", response_model=QualityVendorAuditResponse)
 async def complete_audit(audit_id: int, payload: QualityVendorAuditCompletePayload, db: Session = Depends(get_db),
-                         user: User = Depends(_CAN_EDIT)):
+                         user: User = Depends(_CAN_EDIT), _f: User = Depends(_AUDITS_EDIT)):
     audit = db.query(QualityVendorAudit).filter(QualityVendorAudit.id == audit_id).with_for_update().first()
     if not audit:
         raise HTTPException(status_code=404, detail=f"Vendor audit #{audit_id} not found.")

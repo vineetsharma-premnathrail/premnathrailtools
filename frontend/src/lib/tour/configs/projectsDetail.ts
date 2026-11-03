@@ -86,6 +86,41 @@ const config: TourConfig = {
       autoActivate: true,
     },
     {
+      target: 'pm-proj-tab-store-issues',
+      title: 'Store Issues tab',
+      purpose: 'Every material issue made to this project from a store: issue number, date, type, who it was issued to and its status.',
+      why: 'Shows what material has already gone out for the project, without opening Store.',
+      autoActivate: true,
+    },
+    {
+      target: 'proj-hist-store-issues',
+      title: 'Material issues',
+      purpose: 'Click an issue number to open it. Click "N items" to list the item code, name and quantity issued on that line set.',
+    },
+    {
+      target: 'pm-proj-tab-purchases',
+      title: 'Purchases tab',
+      purpose: 'Purchase requisitions charged to this project, and under each one its purchase orders (vendor, date, amount) and the goods receipts booked against them.',
+      why: 'Follows an item from request to order to receipt in one place.',
+      autoActivate: true,
+    },
+    {
+      target: 'proj-hist-purchases',
+      title: 'Requisitions, orders and receipts',
+      purpose: 'One row per requisition. Orders sit indented under it, receipts under their order. A dash in the amount means the order has no value recorded yet. Click any number to open it.',
+    },
+    {
+      target: 'pm-proj-tab-tasks',
+      title: 'Tasks tab',
+      purpose: 'Every task on the project across all milestones and departments: milestone, department, assignee, due date, status and when it was completed.',
+      autoActivate: true,
+    },
+    {
+      target: 'proj-hist-tasks',
+      title: 'Task list',
+      purpose: 'A due date in red means the task is overdue and not yet done. Click a task to open it with its sub-tasks, remarks and files. Tasks are created inside a milestone (Milestones tab).',
+    },
+    {
       target: 'pm-proj-tab-documents',
       title: 'Documents tab',
       purpose: 'Every file on the project in one place.',

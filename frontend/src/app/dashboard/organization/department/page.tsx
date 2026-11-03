@@ -14,7 +14,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { placePopover } from '@/lib/popover'
-import { primaryBtnStyle, RowCount } from '@/components/shared/ui'
+import { pillStyle, primaryBtnStyle, RowCount } from '@/components/shared/ui'
 
 export default function OrganizationDepartmentPage() {
   const { isAuthorized, isLoading } = useRequireOrgTab('department')
@@ -185,6 +185,36 @@ export default function OrganizationDepartmentPage() {
       await refreshMembers(deptId)
     } catch {
       // swallow — member list simply won't reflect the change
+    }
+  }
+
+  // "Reports to" popup — sets User.reporting_manager_id: the reporting
+  // hierarchy approvals ("Requester's reporting manager") and task pickers follow.
+  const [managerFor, setManagerFor] = useState<{ dept: Department; member: DepartmentMember } | null>(null)
+  const [managerPick, setManagerPick] = useState<number | null>(null)
+  const [managerSearch, setManagerSearch] = useState('')
+  const [managerSaving, setManagerSaving] = useState(false)
+  const [managerError, setManagerError] = useState('')
+
+  const openManager = (dept: Department, member: DepartmentMember) => {
+    setManagerFor({ dept, member })
+    setManagerPick(member.reporting_manager_id ?? null)
+    setManagerSearch('')
+    setManagerError('')
+  }
+
+  const handleSaveManager = async () => {
+    if (!managerFor) return
+    setManagerSaving(true)
+    setManagerError('')
+    try {
+      await organizationApi.setDepartmentMemberManager(managerFor.dept.id, managerFor.member.id, managerPick)
+      await refreshMembers(managerFor.dept.id)
+      setManagerFor(null)
+    } catch (err) {
+      setManagerError(extractErrorMessages(err, 'Could not save who this person reports to. Reload the page and try again; if it keeps failing, check both people are still active users.').join(' '))
+    } finally {
+      setManagerSaving(false)
     }
   }
 
@@ -377,6 +407,78 @@ export default function OrganizationDepartmentPage() {
         )
       })()}
 
+      {managerFor && (() => {
+        const { dept, member } = managerFor
+        const q = managerSearch.trim().toLowerCase()
+        // Empty search suggests colleagues from this department; typing searches everyone
+        // (a head usually reports to someone outside the department).
+        const pool: { id: number; name: string; email: string }[] = q
+          ? directory.filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
+          : members[dept.id] || []
+        const matches = pool.filter((u) => u.id !== member.id && u.id !== managerPick).slice(0, 8)
+        const picked = managerPick
+          ? directory.find((u) => u.id === managerPick)?.name
+            || (members[dept.id] || []).find((m) => m.id === managerPick)?.name
+            || (managerPick === member.reporting_manager_id ? member.reporting_manager_name : null)
+            || `User #${managerPick}`
+          : null
+        const unchanged = managerPick === (member.reporting_manager_id ?? null)
+        return (
+          <FormSheet width={580} icon="users" title="Reports to" subtitle={`${member.name} · ${dept.name}`}
+            onClose={() => setManagerFor(null)} busy={managerSaving}
+            footer={<>
+              <button type="button" onClick={() => setManagerFor(null)} disabled={managerSaving} style={sheetBtn('secondary', SHEET.INK, managerSaving)}>Cancel</button>
+              <button type="button" onClick={handleSaveManager} disabled={managerSaving || unchanged} style={sheetBtn('primary', SHEET.BLUE, managerSaving || unchanged)}>
+                <SheetIcon name="check" size={16} />{managerSaving ? 'Saving…' : 'Save'}
+              </button>
+            </>}>
+            <div style={{ padding: '20px 24px' }}>
+              {managerError && (
+                <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+                  {managerError}
+                </div>
+              )}
+              <SheetSection icon="users" title="Reporting manager">
+                <label style={sheetLabel}>Reports to <Optional /></label>
+                {picked ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                    <span style={{ ...pillStyle(BRAND.primary), gap: 6, padding: '4px 10px', fontSize: 12.5, fontWeight: 600 }}>
+                      {picked}
+                      <button type="button" aria-label="Clear reporting manager" onClick={() => setManagerPick(null)} disabled={managerSaving}
+                        style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', fontWeight: 700, color: 'inherit', fontSize: 13 }}>×</button>
+                    </span>
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 8px' }}>No reporting manager.</p>
+                )}
+                <input
+                  style={sheetInput}
+                  value={managerSearch}
+                  onChange={(e) => setManagerSearch(e.target.value)}
+                  placeholder="Search name or email…"
+                  disabled={managerSaving}
+                  autoFocus
+                />
+                {matches.length > 0 && (
+                  <div style={{ marginTop: 6, border: `1px solid ${SHEET.LINE}`, borderRadius: 10, overflow: 'hidden' }}>
+                    {matches.map((u) => (
+                      <div
+                        key={u.id}
+                        onClick={() => { setManagerPick(u.id); setManagerSearch('') }}
+                        style={{ padding: '8px 12px', fontSize: 12.5, cursor: 'pointer', color: TEXT.secondary, borderTop: '1px solid rgba(0,0,0,0.04)' }}
+                      >
+                        <span style={{ fontWeight: 600 }}>{u.name}</span> · {u.email}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p style={sheetHint}>This builds the reporting hierarchy shown in the tree. Approval steps set to "Requester's reporting manager" go to this person, and where a role limits task assignment to the person's team, that team is everyone below them here.</p>
+              </SheetSection>
+            </div>
+          </FormSheet>
+        )
+      })()}
+
       <div data-tour="org-dept-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
        <div style={{ overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
@@ -467,15 +569,22 @@ export default function OrganizationDepartmentPage() {
                           <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 10px 0' }}>No users linked to this department yet.</p>
                         ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 10 }}>
-                            {[...list].sort((a, b) => Number(b.is_head) - Number(a.is_head)).map((m, i) => (
+                            {memberTree(list).map(({ m, guides, last, outsideManager }) => (
                               <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, padding: '4px 0', color: TEXT.secondary }}>
-                                <span style={{ color: TEXT.muted, fontFamily: 'monospace' }}>{i === list.length - 1 ? '└─' : '├─'}</span>
+                                <span style={{ color: TEXT.muted, fontFamily: 'monospace', whiteSpace: 'pre' }}>{guides.map((g) => (g ? '   ' : '│  ')).join('')}{last ? '└─' : '├─'}</span>
                                 <span style={{ fontWeight: m.is_head ? 700 : 500, color: m.is_head ? BRAND.primaryActive : TEXT.secondary }}>{m.name}</span>
                                 {m.is_head && (
                                   <span style={{ fontSize: 9.5, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(255,122,69,0.14)', color: BRAND.primaryActive, textTransform: 'uppercase' }}>Head</span>
                                 )}
                                 {m.designation && <span style={{ color: TEXT.muted }}>· {m.designation}</span>}
                                 <span style={{ color: TEXT.muted }}>· {m.email}</span>
+                                {outsideManager && <span style={{ color: TEXT.muted }}>· reports to <span style={{ fontWeight: 600, color: TEXT.secondary }}>{m.reporting_manager_name || `User #${m.reporting_manager_id}`}</span></span>}
+                                {canEdit && (
+                                  <button type="button" onClick={() => openManager(d, m)}
+                                    style={{ border: 'none', background: 'none', padding: 0, color: BRAND.primaryActive, cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
+                                    Reports to
+                                  </button>
+                                )}
                                 {!m.is_head && canEdit && (
                                   <span
                                     onClick={() => handleRemoveMember(d.id, m.id)}
@@ -506,4 +615,37 @@ export default function OrganizationDepartmentPage() {
       </div>
     </div>
   )
+}
+
+type TreeRow = { m: DepartmentMember; guides: boolean[]; last: boolean; outsideManager: boolean }
+
+// Department members as a reporting tree: someone whose reporting manager is in
+// this department sits under them; heads and everyone else (no manager, or a
+// manager outside the department) are top-level, heads first. `guides[i]` is
+// true when the ancestor at depth i was the last child (no "│" below it).
+function memberTree(list: DepartmentMember[]): TreeRow[] {
+  const ids = new Set(list.map((m) => m.id))
+  const byHeadThenName = (a: DepartmentMember, b: DepartmentMember) => Number(b.is_head) - Number(a.is_head) || a.name.localeCompare(b.name)
+  const children = new Map<number, DepartmentMember[]>()
+  const roots: DepartmentMember[] = []
+  for (const m of list) {
+    const mid = m.reporting_manager_id
+    if (mid && mid !== m.id && ids.has(mid)) children.set(mid, [...(children.get(mid) || []), m])
+    else roots.push(m)
+  }
+  const rows: TreeRow[] = []
+  const seen = new Set<number>()
+  const walk = (nodes: DepartmentMember[], guides: boolean[]) => {
+    const sorted = nodes.filter((n) => !seen.has(n.id)).sort(byHeadThenName)
+    sorted.forEach((m, i) => {
+      seen.add(m.id)
+      const last = i === sorted.length - 1
+      rows.push({ m, guides, last, outsideManager: !!m.reporting_manager_id && !ids.has(m.reporting_manager_id) })
+      walk(children.get(m.id) || [], [...guides, last])
+    })
+  }
+  walk(roots, [])
+  // An old reporting loop inside the department has no root — still list everyone.
+  walk(list.filter((m) => !seen.has(m.id)), [])
+  return rows
 }

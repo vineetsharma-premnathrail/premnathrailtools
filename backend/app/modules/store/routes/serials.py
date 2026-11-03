@@ -59,6 +59,7 @@ async def list_serials(
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
     user: User = Depends(require_tab_access("store", "stock")),
+    _feat: User = Depends(require_feature_action("store", "stock", "serials", "view")),  # Serial Nos. tab
 ):
     query = _scoped(db, user, db.query(StoreSerialNumber))
     if item_id is not None:

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.config import settings
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.core.permission_registry import can_feature, can_view_tab
@@ -34,6 +35,9 @@ router = APIRouter(prefix="/quality/complaints", tags=["Quality"], dependencies=
 
 _CAN_CREATE = require_tab_action("quality", "complaints", "create")
 _CAN_EDIT = require_tab_action("quality", "complaints", "edit")
+# Role-wise visibility key of the Log Complaint form (core/features/quality.py):
+# Source and Severity values a role may pick are also enforced here.
+COMPLAINT_VISIBILITY_KEY = "quality:complaints"
 MAX_PHOTO_BYTES = 8 * 1024 * 1024
 
 
@@ -123,13 +127,21 @@ def _run(db: Session, complaint_id: int, fn, user: User | None = None) -> Qualit
 
 
 @router.get("/meta")
-async def complaint_meta(db: Session = Depends(get_db)):
+async def complaint_meta(db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
     projects = db.query(Project).filter(Project.is_deleted == False).order_by(Project.serial_number).all()  # noqa: E712
     cats = _categories(db)
     active = set(active_master_values(db, "complaint_categories"))
+    # source_options / severity_options: every value, flagged `allowed` for this user (a role's
+    # Visibility rule may offer only some). Never filtered, so a saved complaint keeps its value.
+    src_allowed = visibility.allowed_values(user, COMPLAINT_VISIBILITY_KEY, "source")
+    sev_allowed = visibility.allowed_values(user, COMPLAINT_VISIBILITY_KEY, "severity")
     return {
         "sources": QUALITY_COMPLAINT_SOURCE_LABELS, "statuses": QUALITY_COMPLAINT_STATUS_LABELS,
         "severities": list(QUALITY_COMPLAINT_SEVERITIES),
+        "source_options": [{"value": v, "label": l, "allowed": src_allowed is None or v in src_allowed}
+                           for v, l in QUALITY_COMPLAINT_SOURCE_LABELS.items()],
+        "severity_options": [{"value": v, "label": v.capitalize(), "allowed": sev_allowed is None or v in sev_allowed}
+                             for v in QUALITY_COMPLAINT_SEVERITIES],
         "categories": [{"value": k, "label": v} for k, v in cats.items() if k in active],
         "projects": [{"id": p.id, "label": _project_label(p), "client_company": p.client_company} for p in projects],
     }
@@ -183,6 +195,8 @@ async def list_complaints(
 
 @router.post("", response_model=QualityCustomerComplaintResponse)
 async def create_complaint(payload: QualityCustomerComplaintCreate, db: Session = Depends(get_db), user: User = Depends(_CAN_CREATE)):
+    visibility.ensure_option_allowed(user, COMPLAINT_VISIBILITY_KEY, "source", payload.source)
+    visibility.ensure_option_allowed(user, COMPLAINT_VISIBILITY_KEY, "severity", payload.severity)
     authz.ensure_may_assign(db, user, authz.COMPLAINT_OWNER_RULE, payload.owner_id)
     try:
         c = complaint_service.create(db, payload.model_dump(), user)
@@ -216,6 +230,10 @@ async def update_complaint(complaint_id: int, payload: QualityCustomerComplaintU
     if {"replacement_cost", "travel_cost", "rework_cost", "other_cost"} & set(changes) and can_view_tab(user, "quality", "complaints"):
         ensure_feature_action(user, "quality", "complaints", "costs", "view")  # editing costs implies seeing them
     c = _get_or_404(db, complaint_id, user, lock=True)
+    # Only a changed coded value is checked, so an older complaint keeps a value the role no longer offers.
+    for dropdown in ("source", "severity"):
+        if changes.get(dropdown) and changes[dropdown] != getattr(c, dropdown):
+            visibility.ensure_option_allowed(user, COMPLAINT_VISIBILITY_KEY, dropdown, changes[dropdown])
     authz.ensure_may_assign(db, user, authz.COMPLAINT_OWNER_RULE, changes.get("owner_id"), c.owner_id)
     return _run(db, complaint_id, user=user, fn=lambda: complaint_service.update(db, c, payload.model_dump(exclude_unset=True), user))
 

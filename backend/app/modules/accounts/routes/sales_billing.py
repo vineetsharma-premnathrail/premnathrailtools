@@ -20,6 +20,9 @@ from app.modules.main.models.user import User
 
 router = APIRouter(prefix="/accounts/sales-billing", tags=["Accounts"])
 
+# Billing Due sub-tab (Finance › Sales) = feature sales_invoices.billing_due; the list also needs Bill from sales order.
+_BILLING_DUE = require_feature_action("accounts", "sales_invoices", "billing_due", "view")
+
 
 class SalesBillingInvoiceCreate(BaseModel):
     so_id: int
@@ -36,7 +39,8 @@ class SalesBillingInvoiceCreate(BaseModel):
 
 @router.get("/orders")
 async def billable_orders(db: Session = Depends(get_db),
-                          _user: User = Depends(require_feature_action("accounts", "sales_invoices", "bill_from_so", "create"))):
+                          _user: User = Depends(require_feature_action("accounts", "sales_invoices", "bill_from_so", "create")),
+                          _tab: User = Depends(_BILLING_DUE)):
     """Confirmed orders with something billable now — the SO picker."""
     from app.modules.sales.models.order import SalesOrder
     q = db.query(SalesOrder).options(selectinload(SalesOrder.lines), selectinload(SalesOrder.schedules),
@@ -55,7 +59,8 @@ async def billable_orders(db: Session = Depends(get_db),
 
 @router.get("/orders/{so_id}")
 async def billable_milestones(so_id: int, db: Session = Depends(get_db),
-                              _user: User = Depends(require_feature_action("accounts", "sales_invoices", "bill_from_so", "create"))):
+                              _user: User = Depends(require_feature_action("accounts", "sales_invoices", "bill_from_so", "create")),
+                              _tab: User = Depends(_BILLING_DUE)):
     from app.modules.sales.legacy import get_order
     so = get_order(db, so_id)
     billing.sync_order(db, so)

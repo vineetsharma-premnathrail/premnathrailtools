@@ -7,9 +7,12 @@ the item it matched, so the user sees new and existing items side by side.
 Optional columns: lead_time_days (purchase lead time, 0–730 calendar days),
 legacy_code (v3 / Tally code, unique), part_code, hsn_sac_code, gst_rate
 (an active Finance GST rate), preferred_vendor (vendor code or exact name),
-standard_cost, min_order_qty and reorder_level. Rows with a problem (missing name,
-unknown UOM/type/category, bad lead time, duplicate legacy code) come back in
-`errors` with the reason. Valid new rows are created with an auto code."""
+standard_cost, min_order_qty and reorder_level. A unit, category or
+subcategory that is not in the masters yet is created from the file
+(2026-11-02) and reported in `new_units` / `new_categories`. Rows with a
+problem (missing name, unknown type, bad lead time, duplicate legacy code)
+come back in `errors` with the reason. Valid new rows are created with an
+auto code."""
 import csv
 import io
 
@@ -18,15 +21,17 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.permissions import require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.store.models.category import StoreItemCategory
-from app.modules.store.models.item import StoreItem
+from app.modules.store.models.item import StoreItem, StoreUom
 from app.modules.store.routes.items import check_hsn_sac, check_lead_time, check_legacy_code
 from app.modules.accounts.models.settings import GSTRate
 from app.modules.accounts.models.vendor import Vendor
 from app.modules.store.routes.item_types import item_types
+from app.modules.store.routes.categories import _auto_code
 from app.modules.store.routes.uoms import uom_options
 from app.modules.store.service import generate_item_code
 
@@ -116,8 +121,15 @@ async def import_template(_user: User = Depends(require_tab_action("store", "ite
 async def import_items(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_tab_action("store", "items", "import")),
+    user: User = Depends(require_tab_action("store", "items", "import")),
 ):
+    # Role visibility: the file is not checked line by line against a restricted Item Type list.
+    if visibility.allowed_values(user, "store:items", "item_type") is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="Your role limits the Item Type of new items, and the Excel import is not checked line by line — add them "
+                   "from Add Item, or ask an admin to widen Item Type for your role "
+                   "(Organization › Role & Permissions › Store › Item Master › Visibility).")
     rows = _read_rows(file.filename, await file.read())
     if not rows:
         raise HTTPException(status_code=422, detail="The file has no data rows — fill in at least one item under the header row.")
@@ -136,6 +148,8 @@ async def import_items(
     vendors = db.query(Vendor.id, Vendor.code, Vendor.name).filter(Vendor.status == "active").all()
 
     created, existing, errors = [], [], []
+    new_units: list[str] = []
+    new_categories: list[dict] = []
     seen_names: dict[str, int] = {}
     seen_legacy: dict[str, int] = {}
 
@@ -164,8 +178,14 @@ async def import_items(
             errors.append({"row": idx, "item_name": name, "reason": "UOM is empty — fill in a unit like NOS, KG or MTR."})
             continue
         if uom not in uoms:
-            errors.append({"row": idx, "item_name": name, "reason": f"UOM '{uom}' isn't in the unit list — add it from the UOM dropdown first, or use a listed unit."})
-            continue
+            # New unit in the file → added to the unit master (label = code; rename it in Settings › Units of Measure).
+            if len(uom) > 20:
+                errors.append({"row": idx, "item_name": name, "reason": f"UOM '{uom}' is too long — a unit code is at most 20 characters (NOS, KG, MTR…)."})
+                continue
+            db.add(StoreUom(code=uom, label=uom))
+            db.flush()
+            uoms.add(uom)
+            new_units.append(uom)
         item_type = _type_value(r.get("item_type", ""), labels)
         if not item_type:
             errors.append({"row": idx, "item_name": name, "reason": f"Item type '{r.get('item_type')}' isn't valid — use one of: {', '.join(labels.values())}."})
@@ -173,20 +193,31 @@ async def import_items(
 
         category = subcategory = None
         if r.get("category"):
-            cat = next((c for c in top_cats if c.name.lower() == r["category"].lower() and c.item_type == item_type), None)
+            cat_name = r["category"].strip()
+            cat = next((c for c in top_cats if c.name.lower() == cat_name.lower() and c.item_type in (item_type, None)), None)
             if not cat:
-                allowed = ", ".join(c.name for c in top_cats if c.item_type == item_type)
-                errors.append({"row": idx, "item_name": name, "reason": f"Category '{r['category']}' isn't a {labels[item_type]} category — use one of: {allowed}."})
-                continue
+                # New category in the file → created for this item type (ledgers can be set later in Settings › Categories).
+                if len(cat_name) > 150:
+                    errors.append({"row": idx, "item_name": name, "reason": f"Category '{cat_name[:40]}…' is too long — keep it to 150 characters."})
+                    continue
+                cat = StoreItemCategory(name=cat_name, code=_auto_code(db, cat_name), parent_id=None, item_type=item_type)
+                db.add(cat)
+                db.flush()
+                top_cats.append(cat)
+                new_categories.append({"category": cat.name, "subcategory": None, "item_type": labels[item_type]})
             category = cat.name
             if r.get("subcategory"):
+                sub_name = r["subcategory"].strip()
                 sub = db.query(StoreItemCategory).filter(
-                    StoreItemCategory.parent_id == cat.id, func.lower(StoreItemCategory.name) == r["subcategory"].lower()).first()
+                    StoreItemCategory.parent_id == cat.id, func.lower(StoreItemCategory.name) == sub_name.lower()).first()
                 if not sub:
-                    from app.modules.store.routes.categories import _auto_code
-                    sub = StoreItemCategory(name=r["subcategory"], code=_auto_code(db, r["subcategory"]), parent_id=cat.id, item_type=item_type)
+                    if len(sub_name) > 150:
+                        errors.append({"row": idx, "item_name": name, "reason": f"Subcategory '{sub_name[:40]}…' is too long — keep it to 150 characters."})
+                        continue
+                    sub = StoreItemCategory(name=sub_name, code=_auto_code(db, sub_name), parent_id=cat.id, item_type=item_type)
                     db.add(sub)
                     db.flush()
+                    new_categories.append({"category": cat.name, "subcategory": sub.name, "item_type": labels[item_type]})
                 subcategory = sub.name
         elif r.get("subcategory"):
             errors.append({"row": idx, "item_name": name, "reason": "Subcategory given without a category — fill in the category too."})
@@ -233,7 +264,8 @@ async def import_items(
                         "item_type": labels[item_type], "category": category})
 
     db.commit()
-    return {"created": created, "existing": existing, "errors": errors}
+    return {"created": created, "existing": existing, "errors": errors,
+            "new_units": new_units, "new_categories": new_categories}
 
 
 @router.get("/export")

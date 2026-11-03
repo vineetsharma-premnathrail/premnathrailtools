@@ -9,7 +9,7 @@ import { TEXT, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import { smallSecondaryBtnStyle, RowCount } from '@/components/shared/ui'
-import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import { FormPage, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -20,8 +20,14 @@ import { OrderProjectChip } from '@/components/sales/ProjectUnitPicker'
 import Select from '@/components/shared/Select'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
+import { useVisibility } from '@/lib/visibility'
+import { VisColumns } from '@/components/quality/VisColumns'
+import { VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleReceivablePos } from '@/lib/storePreviewSamples'
 
 const inputStyle: React.CSSProperties = sheetInput
+// PO-line columns a role may hide (Store › GRN & Inspection › Visibility); Variance follows Invoice Qty.
+const LINE_HIDEABLE: Record<string, string> = { Unit: 'unit', 'Ordered Qty': 'ordered_qty', 'Already Received': 'already_received', 'Invoice Qty': 'invoice_qty', Variance: 'invoice_qty', Bin: 'bin' }
 const labelStyle: React.CSSProperties = sheetLabel
 // One vendor heat / batch of a batch-tracked line, with its mill TC.
 type HeatRow = { heat_number: string; quantity: string; tc_number: string; mfg_date: string; expiry_date: string; tc_file: File | null }
@@ -73,15 +79,18 @@ export default function NewStoreGrnPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('store')
   const router = useRouter()
   const searchParams = useSearchParams()
+  // Role visibility: hidden sections / line columns (no coded dropdown on this form).
+  const vis = useVisibility('store:grn')
   // ?po_id=<signed ref> pre-selects the purchase order ("Receive →" on the GRN list).
-  const { id: initialPoId, error: linkError, loading: poLoading } = useRecordId(searchParams.get('po_id'))
+  // Role editor preview: a sample PO, no link resolution, nothing saved.
+  const { id: initialPoId, error: linkError, loading: poLoading } = useRecordId(vis.preview ? null : searchParams.get('po_id'))
 
   // Store keepers and the Purchase team can both record a goods receipt.
   const isPurchaseTeam = user?.role === 'admin' || !!user?.apps?.some((a) => a === 'store' || a === 'purchase')
 
-  const [pos, setPos] = useState<P2PReceivablePurchaseOrder[]>([])
+  const [pos, setPos] = useState<P2PReceivablePurchaseOrder[]>(vis.preview ? sampleReceivablePos : [])
   const [locations, setLocations] = useState<StoreLocation[]>([])
-  const [poId, setPoId] = useState(initialPoId ? String(initialPoId) : '')
+  const [poId, setPoId] = useState(vis.preview ? String(sampleReceivablePos[0].id) : initialPoId ? String(initialPoId) : '')
   useEffect(() => { if (initialPoId) setPoId(String(initialPoId)) }, [initialPoId])
   const [storeLocationId, setStoreLocationId] = useState('')
   const [receivedDate, setReceivedDate] = useState(new Date().toLocaleDateString('en-CA')) // local date, not UTC
@@ -98,7 +107,7 @@ export default function NewStoreGrnPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
   // Kept per purchase order; waits until a PO is chosen (or opened from the list).
-  const draft = useFormDraft(poId ? `store-grn-new-${poId}` : null,
+  const draft = useFormDraft(poId && !vis.preview ? `store-grn-new-${poId}` : null,
     { poId, storeLocationId, receivedDate, remarks, receivedQty, invoiceQty, lineBin, lineSerials, docs, heats },
     (d) => {
       setStoreLocationId(d.storeLocationId ?? ''); setReceivedDate(d.receivedDate || new Date().toLocaleDateString('en-CA')); setRemarks(d.remarks ?? '')
@@ -109,7 +118,7 @@ export default function NewStoreGrnPage() {
 
   useEffect(() => {
     if (!isAuthorized) return
-    goodsReceiptsApi.listPendingPurchaseOrders().then(setPos).catch((err) => setError(extractErrorMessages(err, 'Failed to load purchase orders.')))
+    if (!vis.preview) goodsReceiptsApi.listPendingPurchaseOrders().then(setPos).catch((err) => setError(extractErrorMessages(err, 'Failed to load purchase orders.')))
     storeApi.listLocations().then(setLocations).catch((err) => setError(extractErrorMessages(err, 'Failed to load store locations.')))
   }, [isAuthorized])
 
@@ -135,6 +144,10 @@ export default function NewStoreGrnPage() {
   }
 
   const selectedPo = pos.find((p) => String(p.id) === poId)
+  // The preview draws every column (hidden ones dimmed, with a toggle); normal use drops the hidden ones.
+  const showLineCol = (h: string) => !LINE_HIDEABLE[h] || vis.preview || vis.showColumn('form_lines', LINE_HIDEABLE[h])
+  const lineHeaders = ['Item', 'Unit', 'Ordered Qty', 'Already Received', 'Pending', 'Invoice Qty', 'Received Now *', 'Variance', 'Bin'].filter(showLineCol)
+  const lineCell: React.CSSProperties = { padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }
 
   const save = async () => {
     setError('')
@@ -200,19 +213,19 @@ export default function NewStoreGrnPage() {
   }
 
   return (
-    <FormPage nav={<StoreNav />} icon="truck" title="Record Goods Receipt" subtitle="Goods received against a purchase order — count what arrived; Quality inspection follows."
-      onBack={() => router.push('/dashboard/store/grn')} backTour="store-grn-form-back-btn"
+    <FormPage nav={vis.preview ? undefined : <StoreNav />} icon="truck" title="Record Goods Receipt" subtitle="Goods received against a purchase order — count what arrived. Items flagged 'Quality check on receipt' go to Quality; everything else goes straight into stock."
+      onBack={vis.preview ? undefined : () => router.push('/dashboard/store/grn')} backTour="store-grn-form-back-btn"
       footer={<>
-        <button data-tour="store-grn-form-cancel-btn" type="button" disabled={busy} onClick={() => router.push('/dashboard/store/grn')} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
-        <button data-tour="store-grn-form-save-btn" type="button" disabled={busy || !selectedPo} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy || !selectedPo)}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Save Goods Receipt'}</button>
+        <button data-tour="store-grn-form-cancel-btn" type="button" disabled={busy || vis.preview} onClick={() => router.push('/dashboard/store/grn')} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+        <button data-tour="store-grn-form-save-btn" type="button" disabled={busy || !selectedPo || vis.preview} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy || !selectedPo)}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Save Goods Receipt'}</button>
       </>}>
       <DraftBanner draft={draft} />
       <MessageDialog open={!!error} variant="error" title="Cannot Save Goods Receipt" message={error} onClose={() => setError('')} />
       <MessageDialog open={!!tcNote} variant="error" title="Mill TC Not Uploaded" message={tcNote} onClose={() => { setTcNote(''); router.push('/dashboard/store/grn') }} />
 
-      <SheetColumns
+      <VisColumns vis={vis} rightKeys={['remarks', 'blind_receipt']}
         left={<>
-          <SheetSection icon="cart" title="Receipt">
+          <VisSection vis={vis} k="receipt"><SheetSection icon="cart" title="Receipt">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
           <div data-tour="store-grn-form-po" style={{ flex: '1 1 320px', minWidth: 260 }}>
             <label style={labelStyle}>Purchase Order <Req /></label>
@@ -235,9 +248,9 @@ export default function NewStoreGrnPage() {
             <DateField value={receivedDate} onChange={setReceivedDate} />
           </div>
             </div>
-          </SheetSection>
+          </SheetSection></VisSection>
           {selectedPo && (
-            <div data-tour="store-grn-form-docs">
+            <VisSection vis={vis} k="gate_documents"><div data-tour="store-grn-form-docs">
               <SheetSection icon="doc" title="Gate Entry & Vendor Documents">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ flex: '0 1 170px', minWidth: 150 }}>
@@ -279,28 +292,28 @@ export default function NewStoreGrnPage() {
           </div>
                 <p style={sheetHint}>A vendor invoice number can be received only once per vendor. The gate entry number is generated when left blank.</p>
               </SheetSection>
-            </div>
+            </div></VisSection>
           )}
         </>}
         right={<>
-          <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
+          <VisSection vis={vis} k="remarks"><SheetSection icon="chat" title="Remarks" extra={<Optional />}>
             <div data-tour="store-grn-form-remarks">
               <textarea style={{ ...inputStyle, minHeight: 72, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Condition on arrival, packing, etc." />
             </div>
-          </SheetSection>
-          <SheetSection icon="alert" title="Blind Receipt">
+          </SheetSection></VisSection>
+          <VisSection vis={vis} k="blind_receipt"><SheetSection icon="alert" title="Blind Receipt">
             <p style={{ fontSize: 12.5, color: SHEET.MUTED, margin: 0, lineHeight: 1.55 }}>
               Count the goods and enter what actually arrived — the Invoice Qty is what the vendor&apos;s bill says, and the difference shows as Variance.
               Anything less than pending stays open on the PO and Purchase is notified of the balance due from the vendor.
-              Quality inspection (accepted/rejected quantities) is recorded as a separate step after this receipt is saved.
+              Items flagged &lsquo;Quality check on receipt&rsquo; in the Item Master wait in Quality stock under an inspection lot; every other item goes straight into Free stock when this receipt is saved.
             </p>
-          </SheetSection>
+          </SheetSection></VisSection>
         </>}
       />
 
       {selectedPo && (
-        <div style={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
-          <SheetSection icon="box" title="Line Items" extra={
+        <VisSection vis={vis} k="line_items" frame={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
+          <SheetSection icon="box" title="Line Items" extra={showLineCol('Invoice Qty') &&
             <button
               type="button"
               data-tour="store-grn-form-fill-btn"
@@ -314,9 +327,13 @@ export default function NewStoreGrnPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
               <thead>
                 <tr>
-                  {['Item', 'Unit', 'Ordered Qty', 'Already Received', 'Pending', 'Invoice Qty', 'Received Now *', 'Variance', 'Bin'].map((h, hi) => (
-                    <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, background: SHEET.SOFT, borderBottom: `1px solid ${BORDER.normal}` }}>{h}{hi === 0 && <RowCount count={selectedPo.items.length} />}</th>
-                  ))}
+                  {lineHeaders.map((h, hi) => {
+                    const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, background: SHEET.SOFT, borderBottom: `1px solid ${BORDER.normal}` }
+                    const head = <>{h}{hi === 0 && <RowCount count={selectedPo.items.length} />}</>
+                    return LINE_HIDEABLE[h]
+                      ? <VisTh key={h} vis={vis} table="form_lines" k={LINE_HIDEABLE[h]} style={th}>{head}</VisTh>
+                      : <th key={h} style={th}>{head}</th>
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -333,20 +350,20 @@ export default function NewStoreGrnPage() {
                         <div style={{ marginTop: 4 }}><OrderProjectChip opNumber={it.order_project_number} elementNo={it.order_project_element_no} label={it.order_project_element_label} /></div>
                       )}
                     </td>
-                    <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>{it.unit || '—'}</td>
-                    <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>{it.quantity}</td>
-                    <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>{it.received_quantity}</td>
+                    <VisTd vis={vis} table="form_lines" k="unit" style={lineCell}>{it.unit || '—'}</VisTd>
+                    <VisTd vis={vis} table="form_lines" k="ordered_qty" style={lineCell}>{it.quantity}</VisTd>
+                    <VisTd vis={vis} table="form_lines" k="already_received" style={lineCell}>{it.received_quantity}</VisTd>
                     <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 600, color: it.pending_quantity > 0 ? '#d97706' : '#16a34a', borderBottom: `1px solid ${BORDER.normal}` }}>
                       {it.pending_quantity > 0 ? it.pending_quantity : 'Received'}
                     </td>
-                    <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
+                    <VisTd vis={vis} table="form_lines" k="invoice_qty" style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
                       <input
                         type="number" min={0} step="any" disabled={it.pending_quantity <= 0}
                         value={invoiceQty[it.id] || ''}
                         onChange={(e) => setInvoiceQty((q) => ({ ...q, [it.id]: e.target.value }))}
                         style={{ ...inputStyle, width: 95 }} placeholder="As billed"
                       />
-                    </td>
+                    </VisTd>
                     <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
                       <input
                         type="number" min={0} max={it.pending_quantity} step="any"
@@ -377,17 +394,17 @@ export default function NewStoreGrnPage() {
                         </div>
                       )}
                     </td>
-                    <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 600, borderBottom: `1px solid ${BORDER.normal}`,
+                    <VisTd vis={vis} table="form_lines" k="invoice_qty" style={{ padding: '8px 10px', fontSize: 13, fontWeight: 600, borderBottom: `1px solid ${BORDER.normal}`,
                       color: variance === null ? TEXT.muted : variance < 0 ? '#b91c1c' : variance > 0 ? '#d97706' : '#16a34a' }}>
                       {variance === null ? '—' : variance === 0 ? 'Matches' : variance < 0 ? `Short ${-variance}` : `Excess ${variance}`}
-                    </td>
-                    <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
+                    </VisTd>
+                    <VisTd vis={vis} table="form_lines" k="bin" style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
                       <Select style={{ ...inputStyle, width: 130 }} value={lineBin[it.id] || ''} disabled={!bins.length}
                         onChange={(e) => setLineBin((b) => ({ ...b, [it.id]: e.target.value }))}>
                         <option value="">{bins.length ? '— no bin —' : 'No bins'}</option>
                         {bins.map((b) => <option key={b.id} value={b.id}>{b.code}{b.name ? ` — ${b.name}` : ''}</option>)}
                       </Select>
-                    </td>
+                    </VisTd>
                   </tr>
                   )
                 })}
@@ -395,7 +412,7 @@ export default function NewStoreGrnPage() {
             </table>
           </div>
           </SheetSection>
-        </div>
+        </VisSection>
       )}
     </FormPage>
   )

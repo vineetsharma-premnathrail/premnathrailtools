@@ -57,6 +57,16 @@ def _get_or_404(db: Session, document_id: int, user: User | None = None) -> RndD
     if not doc:
         raise HTTPException(status_code=404, detail=f"R&D document #{document_id} not found (it may have been deleted).")
     if user is not None:
+        if doc.task_id and doc.pm_project_id:
+            # A file of an R&D task on a Project Management project: open to the task's
+            # assignee / creator and whoever reviews it (routes/project_tasks.py), not the R&D data scope.
+            from app.modules.rnd.models.project_task import RndProjectTask
+            from app.modules.rnd.routes.project_tasks import _pm_parent
+            task = db.query(RndProjectTask).filter(RndProjectTask.id == doc.task_id).first()
+            parent = _pm_parent(db, doc.pm_project_id, user)
+            if not task or (user.id not in (task.assigned_to_id, task.created_by_id) and not parent.can_manage(user)):
+                raise HTTPException(status_code=403, detail="This file belongs to an R&D task on a project that isn't yours — only the task's assignee, its creator, an R&D head or the project manager can open it.")
+            return doc
         ensure_in_scope(db, user, doc)
     return doc
 
@@ -90,6 +100,20 @@ async def list_documents(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("rnd")),
 ):
+    # The R&D › Documents tab lists every project's files and needs 'view' on it. The same list
+    # filtered to one project / experiment / prototype is the Documents card of that record's
+    # page, so 'view' on that record's tab is enough there.
+    if not (
+        can_perform(user, "rnd", "documents", "view")
+        or (project_id and can_perform(user, "rnd", "projects", "view"))
+        or (experiment_id and can_perform(user, "rnd", "experiments", "view"))
+        or (prototype_id and can_perform(user, "rnd", "prototypes", "view"))
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Seeing R&D documents needs 'View' on R&D › Documents (or on the project / experiment / prototype "
+                   "they belong to). Ask an admin to add it to your role in Organization › Role & Permissions.",
+        )
     # Task files are shown on their task, not in the document lists.
     query = db.query(RndDocument).filter(RndDocument.is_deleted == False, RndDocument.task_id.is_(None))  # noqa: E712
     query = apply_scope(query, user, RndDocument)
@@ -207,7 +231,14 @@ async def delete_document(
     # Project files: only the project's leads (and admins) delete — team
     # members can upload but never remove, even their own uploads.
     ensure_tab_action(user, "rnd", "documents", "delete")
-    project = db.query(RndProject).filter(RndProject.id == doc.project_id).first()
+    if doc.pm_project_id:
+        # A file of an R&D task on a Project Management project: only whoever manages
+        # R&D tasks on that project (admin, R&D head, project manager) removes it.
+        from app.modules.rnd.routes.project_tasks import _pm_parent
+        parent = _pm_parent(db, doc.pm_project_id, user)
+        if not parent.can_manage(user):
+            raise HTTPException(status_code=403, detail=f"Only an R&D head or the project manager of {parent.project_number} can delete this task's files — ask them to remove '{doc.title}'.")
+    project = db.query(RndProject).filter(RndProject.id == doc.project_id).first() if doc.project_id else None
     if project and not roles.can_manage(user, project):
         lead_names = ", ".join(n for n in user_names(db, roles.lead_ids(project)).values()) or "the project lead"
         raise HTTPException(

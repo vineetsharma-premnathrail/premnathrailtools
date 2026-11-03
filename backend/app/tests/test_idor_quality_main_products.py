@@ -11,6 +11,7 @@ from app.modules.main.models.user_document import UserDocument
 from app.modules.quality.models.inspection import QualityInspection
 from app.modules.quality.models.quality_standard import QualityStandard
 from app.tests.test_quality_phase1 import Q, hdr, make_user, setup_item
+from app.core.permission_registry import MODULES  # labels follow the registry
 
 
 @pytest.fixture(autouse=True)
@@ -104,7 +105,7 @@ def test_record_pdf_needs_view_on_the_records_tab(client, db):
     ncr_id = r.json()["id"]
     dash_only = make_user(db, "idor.q.dash@x.com", granular_permissions=["quality:dashboard:view"])
     r = client.get(f"{Q}/records/ncr/{ncr_id}/deviation-approval.pdf", headers=hdr(dash_only))
-    assert r.status_code == 403 and "'View' permission on Quality › Non-Conformance (NCR)" in r.json()["detail"]
+    assert r.status_code == 403 and f"'View' permission on Quality › {MODULES['quality']['subtabs']['ncr']}" in r.json()["detail"]
 
 
 # ── Main: user documents bound to the user in the URL ───────────────────

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
+from app.core import visibility
 from app.core.permissions import ensure_can_delete, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -24,6 +25,8 @@ router = APIRouter(prefix="/products", tags=["Products"], dependencies=[Depends(
 
 _CAN_CREATE = require_tab_action("crm", "products", "create")
 _CAN_EDIT = require_tab_action("crm", "products", "edit")
+# Role-wise visibility (core/features/products.py): the Type / Status values a role may pick.
+VIS_KEY = "crm:products"
 
 
 def _norm_code(code: str) -> str:
@@ -98,10 +101,14 @@ def _get(db: Session, product_id: int) -> FinishedProduct:
 
 
 @router.get("/meta")
-async def product_meta():
+async def product_meta(user: User = Depends(require_tab_access("crm", "products"))):
+    """Every type / status with `allowed` = the user's roles offer it (never filtered: a saved
+    product keeps showing its value; the form filters, the server enforces)."""
+    types = visibility.allowed_values(user, VIS_KEY, "product_type")
+    statuses = visibility.allowed_values(user, VIS_KEY, "status")
     return {
-        "types": [{"value": k, "label": PRODUCT_TYPE_LABELS[k]} for k in PRODUCT_TYPES],
-        "statuses": [{"value": k, "label": PRODUCT_STATUS_LABELS[k]} for k in PRODUCT_STATUSES],
+        "types": [{"value": k, "label": PRODUCT_TYPE_LABELS[k], "allowed": types is None or k in types} for k in PRODUCT_TYPES],
+        "statuses": [{"value": k, "label": PRODUCT_STATUS_LABELS[k], "allowed": statuses is None or k in statuses} for k in PRODUCT_STATUSES],
     }
 
 
@@ -144,6 +151,8 @@ async def create_product(payload: ProductCreate, db: Session = Depends(get_db), 
     if not name:
         raise HTTPException(status_code=422, detail="Product name is required, e.g. RRB Sanding Vehicle.")
     _check_choices(payload.product_type, payload.status)
+    visibility.ensure_option_allowed(user, VIS_KEY, "product_type", payload.product_type)
+    visibility.ensure_option_allowed(user, VIS_KEY, "status", payload.status)
     _check_numbers(payload.warranty_months)
     existing = db.query(FinishedProduct).filter(func.upper(FinishedProduct.code) == code).first()
     if existing:
@@ -172,10 +181,14 @@ async def get_product(product_id: int, db: Session = Depends(get_db), _user: Use
 
 
 @router.patch("/{product_id}", response_model=ProductResponse)
-async def update_product(product_id: int, payload: ProductUpdate, db: Session = Depends(get_db), _user: User = Depends(_CAN_EDIT)):
+async def update_product(product_id: int, payload: ProductUpdate, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
     p = _get(db, product_id)
     data = payload.model_dump(exclude_unset=True)
     _check_choices(data.get("product_type"), data.get("status"))
+    # Only a CHANGED value is checked, so a product saved with a value the role no longer offers stays editable.
+    for field in ("product_type", "status"):
+        if data.get(field) is not None and data[field] != getattr(p, field):
+            visibility.ensure_option_allowed(user, VIS_KEY, field, data[field])
     _check_numbers(data.get("warranty_months"))
     if "name" in data:
         data["name"] = (data["name"] or "").strip()

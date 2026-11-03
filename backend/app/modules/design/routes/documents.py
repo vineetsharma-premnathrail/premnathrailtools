@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
+from app.core import visibility
 from app.core.config import settings
 from app.core.permissions import ensure_can_delete, require_app_access, require_tab_access
 from app.db.session import get_db
@@ -53,6 +54,8 @@ VIEWER_REVISION_STATUSES = ("released", "superseded")
 # "Assign to" rules (core/features/design.py).
 OWNER_RULE = "design:documents.owner"
 CHECKER_RULE = "design:documents.check_release"
+# Role visibility catalogue entry (core/features/design.py): document type / discipline values per role.
+VISIBILITY_KEY = "design:documents"
 
 router = APIRouter(
     prefix="/design/documents", tags=["Design"],
@@ -392,6 +395,10 @@ async def create_document(
     require_team(db, user, "create drawings and documents")
     _require_choice(payload.document_type, list(DESIGN_DOCUMENT_TYPES), "document type")
     _require_choice(payload.discipline, DESIGN_DISCIPLINES, "discipline")
+    # Role visibility (Role & Permissions › Design › Drawings › Visibility): a type / discipline the role does
+    # not offer is refused with the reason, so the hidden values can't be sent by hand.
+    visibility.ensure_option_allowed(user, VISIBILITY_KEY, "document_type", payload.document_type)
+    visibility.ensure_option_allowed(user, VISIBILITY_KEY, "discipline", payload.discipline)
     validate_links(
         db, pm_project_id=payload.pm_project_id, erp_project_id=payload.erp_project_id,
         store_item_id=payload.store_item_id, department_id=payload.department_id, customer_id=payload.customer_id,
@@ -471,6 +478,9 @@ async def update_document(
         if not changes["discipline"]:
             raise HTTPException(status_code=400, detail="Discipline can't be empty.")
         _require_choice(changes["discipline"], DESIGN_DISCIPLINES, "discipline")
+        if changes["discipline"] != doc.discipline:
+            # Only a CHANGED discipline is checked: a document already in one this role may not pick keeps it.
+            visibility.ensure_option_allowed(user, VISIBILITY_KEY, "discipline", changes["discipline"])
     if "owner_id" in changes:
         if not changes["owner_id"]:
             raise HTTPException(status_code=400, detail=f"{doc.doc_number} must have an owner — pick the engineer responsible for it.")

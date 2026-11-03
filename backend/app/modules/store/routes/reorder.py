@@ -4,7 +4,7 @@ for a one-click purchase requisition."""
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_tab_access
+from app.core.permissions import require_feature_action, require_tab_access
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.store.services.reorder import reorder_rows
@@ -19,5 +19,6 @@ async def reorder_list(
     branch_id: int | None = Query(None, description="Plan one plant (material master plant views)"),
     db: Session = Depends(get_db),
     _user: User = Depends(require_tab_access("store", "stock")),
+    _feat: User = Depends(require_feature_action("store", "stock", "reorder", "view")),  # Reorder tab
 ):
     return reorder_rows(db, category=category, due_only=due_only, branch_id=branch_id)

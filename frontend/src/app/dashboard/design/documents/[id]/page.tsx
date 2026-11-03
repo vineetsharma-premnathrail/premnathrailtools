@@ -23,6 +23,9 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { recordHref, recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection, VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleDocumentDetail } from '@/lib/designPreviewSamples'
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Draft', in_review: 'In Review', in_approval: 'In Approval', approved: 'Approved · awaiting customer', released: 'Released', revising: 'Released · Revising',
@@ -37,6 +40,11 @@ const SUBMISSION_HEX: Record<string, string> = { draft: '#78716c', sent: '#2563E
 const RESULT_LABELS: Record<string, string> = { ok: 'OK', not_ok: 'Not OK', na: 'N/A' }
 const RESULT_HEX: Record<string, string> = { ok: '#16A34A', not_ok: '#DC2626', na: '#78716c' }
 const OPEN_STATUSES = ['draft', 'in_review', 'in_approval', 'approved']
+// Revision history columns a role may hide (Role & Permissions › Design › Drawings › Visibility); Rev and Status always show.
+const REV_COLS: { label: string; key?: string }[] = [
+  { label: 'Rev' }, { label: 'Status' }, { label: 'Change summary', key: 'change_summary' }, { label: 'Prepared', key: 'prepared' },
+  { label: 'Checked', key: 'checked' }, { label: 'Approved', key: 'approved' }, { label: 'Released', key: 'released' }, { label: 'Checklist', key: 'checklist' },
+]
 const EVENT_LABELS: Record<string, string> = {
   created: 'created the document', details_updated: 'updated the details', revision_started: 'started a new revision',
   revision_updated: 'edited the revision', revision_discarded: 'discarded the draft revision', file_added: 'added files', file_removed: 'removed a file',
@@ -99,7 +107,11 @@ export default function DesignDocumentDetailPage() {
   const router = useRouter()
   const params = useParams()
   const searchParams = useSearchParams()
-  const { id, error: linkError } = useRecordId(params.id as string)
+  // Role visibility (Role & Permissions › Design › Drawings › Visibility). In the Role editor's "Preview & choose"
+  // the page draws a made-up drawing and loads / saves nothing.
+  const vis = useVisibility('design:documents')
+  const preview = vis.preview
+  const { id, error: linkError } = useRecordId(preview ? null : params.id as string)
   // Role-level features (Design › Drawings); buttons follow the server's allowed_actions.
   const designFeature = useDesignFeature()
   const seeFiles = designFeature('documents', 'files', 'view')
@@ -107,7 +119,7 @@ export default function DesignDocumentDetailPage() {
   const seeWhereUsed = designFeature('documents', 'where_used', 'view')
   const seeTimeline = designFeature('documents', 'timeline', 'view')
 
-  const [doc, setDoc] = useState<DesignDocumentDetail | null>(null)
+  const [doc, setDoc] = useState<DesignDocumentDetail | null>(preview ? sampleDocumentDetail : null)
   const [users, setUsers] = useState<DesignLookupOption[]>([])
   const [projects, setProjects] = useState<DesignLookupOption[]>([])
   const [machines, setMachines] = useState<DesignLookupOption[]>([])
@@ -115,7 +127,7 @@ export default function DesignDocumentDetailPage() {
   const [itemSearch, setItemSearch] = useState('')
   const [itemMsg, setItemMsg] = useState('')
   const [departments, setDepartments] = useState<DesignLookupOption[]>([])
-  const [selectedRevId, setSelectedRevId] = useState<number | null>(null)
+  const [selectedRevId, setSelectedRevId] = useState<number | null>(preview ? sampleDocumentDetail.revisions[0].id : null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
   const [notice, setNotice] = useState<string>(searchParams.get('notice') || '')
@@ -150,7 +162,7 @@ export default function DesignDocumentDetailPage() {
   }
 
   useEffect(() => {
-    if (!isAuthorized || !id) return
+    if (!isAuthorized || !id || preview) return
     designApi.getDocument(id)
       .then((d) => apply(d))
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load the document.')))
@@ -161,7 +173,7 @@ export default function DesignDocumentDetailPage() {
       .then(([c, st, rq]) => { setCustomers(c); setStandards(st); setRequests(rq) })
       .catch(() => { /* pickers only */ })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthorized, id])
+  }, [isAuthorized, id, preview])
 
   const can = (action: string) => !!doc?.allowed_actions.includes(action)
   const openRev = useMemo(() => doc?.revisions.find((r) => OPEN_STATUSES.includes(r.status)) || null, [doc])
@@ -176,7 +188,9 @@ export default function DesignDocumentDetailPage() {
   const ownerOptions = useMemo(() => toOptions(users.filter((u) => u.id === doc?.owner_id || allowOwner(u.id))), [users, doc, allowOwner])
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><DesignNav /><InvalidRecordLink message={linkError} listHref="/dashboard/design/documents" listLabel="Back to drawings" /></div>)
+  if (linkError && !preview) return (<div><DesignNav /><InvalidRecordLink message={linkError} listHref="/dashboard/design/documents" listLabel="Back to drawings" /></div>)
+  const allowedDisciplines = vis.options('discipline', Object.keys(DISCIPLINE_LABELS), (k) => k)
+  const revColCount = REV_COLS.filter((c) => !c.key || preview || vis.showColumn('detail_revisions', c.key)).length
 
   const act = async (fn: () => Promise<DesignDocumentDetail>, fallback: string, done: string): Promise<boolean> => {
     setBusy(true)
@@ -389,7 +403,7 @@ export default function DesignDocumentDetailPage() {
 
   return (
     <div>
-      <DesignNav />
+      {!preview && <DesignNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
@@ -400,7 +414,7 @@ export default function DesignDocumentDetailPage() {
             {doc ? doc.doc_number : 'Document'}
           </h1>
         </div>
-        <button data-tour="design-doc-back-btn" onClick={() => router.push('/dashboard/design/documents')} type="button" style={secondaryBtnStyle}>← Back</button>
+        {!preview && <button data-tour="design-doc-back-btn" onClick={() => router.push('/dashboard/design/documents')} type="button" style={secondaryBtnStyle}>← Back</button>}
       </div>
 
       {error && !popupOpen && (
@@ -429,6 +443,7 @@ export default function DesignDocumentDetailPage() {
         <>
           {/* What this document is: summary on top, then every header detail as label–value rows. */}
           <DetailCard tour="design-doc-details">
+            <VisSection vis={vis} k="detail_summary">
             <DetailSummary
               title={doc.title}
               text={doc.description || `${DOC_TYPE_LABELS[doc.document_type] || doc.document_type} · ${DISCIPLINE_LABELS[doc.discipline] || doc.discipline}`}
@@ -442,16 +457,22 @@ export default function DesignDocumentDetailPage() {
                 <button data-tour="design-doc-details-edit-btn" type="button" style={smallSecondaryBtnStyle} onClick={startEditDetails}>Edit details</button>
               ) : undefined}
             />
+            </VisSection>
+            <VisSection vis={vis} k="detail_document">
             <DetailGroup title="Document">
               <DetailRow label="Type · Discipline">{`${DOC_TYPE_LABELS[doc.document_type] || doc.document_type} · ${DISCIPLINE_LABELS[doc.discipline] || doc.discipline}`}</DetailRow>
               <DetailRow label="Standard">{doc.standard_label}</DetailRow>
               <DetailRow label="Department">{doc.department_name}</DetailRow>
               {doc.legacy_number && <DetailRow label="Legacy number">{doc.legacy_number}</DetailRow>}
             </DetailGroup>
+            </VisSection>
+            <VisSection vis={vis} k="detail_customer">
             <DetailGroup title="Customer">
               <DetailRow label="Customer">{doc.customer_name}</DetailRow>
               <DetailRow label="Customer approval">{doc.customer_approval_required ? 'Required before release' : 'Not required'}</DetailRow>
             </DetailGroup>
+            </VisSection>
+            <VisSection vis={vis} k="detail_links">
             <DetailGroup title="Linked to" last>
               <DetailRow label="Project">{doc.pm_project_label}</DetailRow>
               <DetailRow label="Machine">{doc.erp_project_label}</DetailRow>
@@ -471,6 +492,7 @@ export default function DesignDocumentDetailPage() {
                 </DetailRow>
               )}
             </DetailGroup>
+            </VisSection>
             <p style={{ fontSize: 12, color: TEXT.muted, margin: '10px 0 0' }}>Created by {doc.created_by_name || '—'} on {formatDate(doc.created_at)}</p>
           </DetailCard>
 
@@ -494,7 +516,7 @@ export default function DesignDocumentDetailPage() {
             )}
           </div>
 
-          {!doc.viewer_only && (
+          {!doc.viewer_only && !preview && (
             // Check → approval of revisions submitted since the move to the central
             // approval engine (stages: Organization › Approval Workflows). The
             // checker still answers the review checklist with the button above.
@@ -518,6 +540,7 @@ export default function DesignDocumentDetailPage() {
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
             {/* Left: revision panel */}
             <div style={{ flex: '2 1 560px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+              <VisSection vis={vis} k="detail_revision">
               <div style={sectionStyle}>
                 <div data-tour="design-doc-rev-chips" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
                   <p style={{ ...sectionTitle, margin: 0, flex: '1 1 auto' }}>Revision</p>
@@ -607,13 +630,17 @@ export default function DesignDocumentDetailPage() {
                   </>
                 )}
               </div>
+              </VisSection>
 
+              <VisSection vis={vis} k="detail_history">
               <div style={sectionStyle}>
                 <p data-tour="design-doc-history" style={sectionTitle}>Revision history</p>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                     <thead>
-                      <tr>{['Rev', 'Status', 'Change summary', 'Prepared', 'Checked', 'Approved', 'Released', 'Checklist'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={doc.revisions.length} />}</th>)}</tr>
+                      <tr>{REV_COLS.map((c, hi) => c.key
+                        ? <VisTh key={c.label} vis={vis} table="detail_revisions" k={c.key} style={thStyle}>{c.label}</VisTh>
+                        : <th key={c.label} style={thStyle}>{c.label}{hi === 0 && <RowCount count={doc.revisions.length} />}</th>)}</tr>
                     </thead>
                     <tbody>
                       {doc.revisions.map((r) => {
@@ -625,26 +652,26 @@ export default function DesignDocumentDetailPage() {
                             <tr onClick={() => setSelectedRevId(r.id)} style={{ cursor: 'pointer', background: r.id === selectedRevId ? 'rgba(255,106,42,0.05)' : undefined }}>
                               <td style={{ ...tdStyle, fontWeight: 700 }}>{r.revision_label}</td>
                               <td style={tdStyle}>{pill(r.status)}</td>
-                              <td style={{ ...tdStyle, maxWidth: 280 }}>{r.change_summary || '—'}{r.ecn_number ? <span style={{ color: TEXT.muted }}> ({r.ecn_number})</span> : null}</td>
-                              <td style={tdStyle}>{r.created_by_name || '—'}</td>
-                              <td style={tdStyle}>{r.reviewed_at ? r.reviewed_by_name : '—'}</td>
-                              <td style={tdStyle}>{r.approved_at && r.status !== 'draft' ? r.approved_by_name : '—'}</td>
-                              <td style={tdStyle}>
+                              <VisTd vis={vis} table="detail_revisions" k="change_summary" style={{ ...tdStyle, maxWidth: 280 }}>{r.change_summary || '—'}{r.ecn_number ? <span style={{ color: TEXT.muted }}> ({r.ecn_number})</span> : null}</VisTd>
+                              <VisTd vis={vis} table="detail_revisions" k="prepared" style={tdStyle}>{r.created_by_name || '—'}</VisTd>
+                              <VisTd vis={vis} table="detail_revisions" k="checked" style={tdStyle}>{r.reviewed_at ? r.reviewed_by_name : '—'}</VisTd>
+                              <VisTd vis={vis} table="detail_revisions" k="approved" style={tdStyle}>{r.approved_at && r.status !== 'draft' ? r.approved_by_name : '—'}</VisTd>
+                              <VisTd vis={vis} table="detail_revisions" k="released" style={tdStyle}>
                                 {formatDate(r.released_at)}
                                 {r.released_by_name && r.released_by_name !== r.approved_by_name ? <div style={{ fontSize: 11, color: TEXT.muted }}>by {r.released_by_name}</div> : null}
                                 {r.superseded_at ? <div style={{ fontSize: 11, color: TEXT.muted }}>superseded {formatDate(r.superseded_at)}</div> : null}
-                              </td>
-                              <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
+                              </VisTd>
+                              <VisTd vis={vis} table="detail_revisions" k="checklist" style={tdStyle} onClick={(e) => e.stopPropagation()}>
                                 {results.length ? (
                                   <span onClick={() => setExpandedRevId(expanded ? null : r.id)} style={{ fontSize: 12, fontWeight: 600, color: notOk ? '#DC2626' : '#FF6A2A', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                                     {results.length} answer{results.length === 1 ? '' : 's'}{notOk ? ` · ${notOk} not OK` : ''} {expanded ? '▴' : '▾'}
                                   </span>
                                 ) : <span style={{ color: TEXT.muted }}>—</span>}
-                              </td>
+                              </VisTd>
                             </tr>
                             {expanded && results.length > 0 && (
                               <tr>
-                                <td colSpan={8} style={{ ...tdStyle, background: 'rgba(255,255,255,.5)', padding: '8px 14px' }}>
+                                <td colSpan={revColCount} style={{ ...tdStyle, background: 'rgba(255,255,255,.5)', padding: '8px 14px' }}>
                                   {Array.from(new Set(results.map((x) => x.cycle))).sort((a, b) => a - b).map((cycle) => {
                                     const rows = results.filter((x) => x.cycle === cycle)
                                     return (
@@ -676,8 +703,10 @@ export default function DesignDocumentDetailPage() {
                   </table>
                 </div>
               </div>
+              </VisSection>
 
               {!doc.viewer_only && (doc.customer_approval_required || doc.submissions.length > 0) && (
+                <VisSection vis={vis} k="detail_submissions">
                 <div style={sectionStyle}>
                   <p data-tour="design-doc-submissions" style={sectionTitle}>Customer submissions</p>
                   {doc.submissions.length === 0 ? (
@@ -715,9 +744,10 @@ export default function DesignDocumentDetailPage() {
                     </div>
                   )}
                 </div>
+                </VisSection>
               )}
 
-              {seeWhereUsed && (<div style={sectionStyle}>
+              {seeWhereUsed && (<VisSection vis={vis} k="detail_where_used"><div style={sectionStyle}>
                 <p data-tour="design-doc-where-used" style={sectionTitle}>Where used</p>
                 {doc.where_used.length === 0 ? (
                   <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>This drawing isn&apos;t referenced on any BOM line yet.</p>
@@ -744,12 +774,12 @@ export default function DesignDocumentDetailPage() {
                     </table>
                   </div>
                 )}
-              </div>)}
+              </div></VisSection>)}
             </div>
 
             {/* Right: timeline */}
             <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-              {seeTimeline && (<div style={sectionStyle}>
+              {seeTimeline && (<VisSection vis={vis} k="detail_timeline"><div style={sectionStyle}>
                 <p style={sectionTitle}>Timeline</p>
                 {can('comment') && (
                 <div data-tour="design-doc-comment" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
@@ -773,7 +803,7 @@ export default function DesignDocumentDetailPage() {
                     </div>
                   ))}
                 </div>
-              </div>)}
+              </div></VisSection>)}
             </div>
           </div>
         </>
@@ -954,7 +984,8 @@ export default function DesignDocumentDetailPage() {
                   <div data-tour="design-doc-edit-discipline" style={{ flex: '1 1 180px' }}>
                     <label style={sheetLabel}>Discipline</label>
                     <Select style={sheetInput} value={details.discipline} onChange={(e) => setDetails({ ...details, discipline: e.target.value })}>
-                      {Object.entries(DISCIPLINE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                      {/* The disciplines the role offers (Visibility), plus the document's own saved one. */}
+                      {Object.entries(DISCIPLINE_LABELS).filter(([k]) => k === doc.discipline || allowedDisciplines.includes(k)).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </Select>
                   </div>
                   <div data-tour="design-doc-edit-owner" style={{ flex: '1 1 200px' }}><label style={sheetLabel}>Owner</label><SearchableSelect value={details.owner_id} onChange={(v) => setDetails({ ...details, owner_id: v })} options={ownerOptions} /></div>

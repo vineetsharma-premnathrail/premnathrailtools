@@ -14,7 +14,6 @@ export default function AllProjectsPage() {
   const { isAuthorized, isLoading } = useRequireApp('projects')
   const { can } = useCan()
   const canCurrent = can('projects', 'all_projects', 'view')
-  const canPast = can('projects', 'service_projects', 'view')
   const [canCreate, setCanCreate] = useState(false)
   const router = useRouter()
 
@@ -24,7 +23,7 @@ export default function AllProjectsPage() {
 
   if (isLoading || !isAuthorized) return null
 
-  // One table: projects (All Projects › View) and past machines (Past Projects › View), each shown only with its permission.
+  // One table: current projects and past machines — both open with All Projects › View (one tab since 2026-11-02).
   return (
     <div>
       <ProjectsNav />
@@ -46,7 +45,7 @@ export default function AllProjectsPage() {
           )}
         </div>
       </div>
-      <ProjectListView showProjects={canCurrent} showMachines={canPast} />
+      <ProjectListView showProjects={canCurrent} showMachines={canCurrent} />
     </div>
   )
 }

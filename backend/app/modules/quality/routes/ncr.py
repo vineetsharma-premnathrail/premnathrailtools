@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
+from app.core import visibility
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.core.permission_registry import can_feature, can_view_tab
 from app.core.permissions import ensure_can_delete, ensure_feature_action, require_app_access, require_tab_action
@@ -27,6 +28,9 @@ from app.modules.store.models.location import StoreLocation
 router = APIRouter(prefix="/quality/ncr", tags=["Quality"], dependencies=[Depends(require_app_access("quality"))])
 
 _CAN_CREATE = require_tab_action("quality", "ncr", "create")
+# Role-wise visibility key of the NCR form (core/features/quality.py): the
+# Severity values a role may pick are also enforced here.
+NCR_VISIBILITY_KEY = "quality:ncr"
 
 
 def _mask_costs(resp: QualityNcrResponse, user: User | None) -> QualityNcrResponse:
@@ -114,8 +118,13 @@ def _detail(db: Session, ncr_id: int, user: User | None = None) -> QualityNcrRes
 
 
 @router.get("/meta")
-async def ncr_meta():
+async def ncr_meta(user: User = Depends(require_app_access("quality"))):
+    # severity_options: every value, flagged `allowed` for this user (a role's Visibility
+    # rule may offer only some). The list is never filtered, so a saved NCR keeps its value.
+    allowed = visibility.allowed_values(user, NCR_VISIBILITY_KEY, "severity")
     return {"statuses": list(QUALITY_NCR_STATUSES), "severities": list(QUALITY_NCR_SEVERITIES),
+            "severity_options": [{"value": v, "label": v.capitalize(), "allowed": allowed is None or v in allowed}
+                                 for v in QUALITY_NCR_SEVERITIES],
             "approval_roles": QUALITY_NCR_APPROVAL_ROLE_LABELS, "disposition_types": QUALITY_DISPOSITION_TYPE_LABELS}
 
 
@@ -147,6 +156,7 @@ async def list_ncrs(
 
 @router.post("", response_model=QualityNcrResponse)
 async def create_ncr(payload: QualityNcrCreate, db: Session = Depends(get_db), user: User = Depends(_CAN_CREATE)):
+    visibility.ensure_option_allowed(user, NCR_VISIBILITY_KEY, "severity", payload.severity)
     ncr = _run(db, lambda: ncr_service.create_manual(db, payload.model_dump(), user))
     return _detail(db, ncr.id, user)
 
@@ -167,6 +177,8 @@ async def update_ncr(ncr_id: int, payload: QualityNcrUpdate, db: Session = Depen
         raise HTTPException(status_code=422, detail=f"Invalid severity '{updates['severity']}' — use minor, major or critical.")
     if ncr.disposition_status == "pending_approval" and "severity" in updates and updates["severity"] != ncr.severity:
         raise HTTPException(status_code=409, detail="Severity can't change while a disposition is waiting for approval — the required approvals depend on it.")
+    if updates.get("severity") and updates["severity"] != ncr.severity:  # only a changed value is checked
+        visibility.ensure_option_allowed(_user, NCR_VISIBILITY_KEY, "severity", updates["severity"])
     for field, val in updates.items():
         setattr(ncr, field, val)
     db.commit()

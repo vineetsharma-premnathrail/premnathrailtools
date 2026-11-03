@@ -10,6 +10,7 @@ import { StoreItem } from '@/types'
 import { TEXT, BRAND, GLASS, SHADOWS, CONTROL } from '@/lib/theme'
 import { Field, primaryBtnStyle, secondaryBtnStyle, chipBtnStyle, RowCount, Pill } from '@/components/shared/ui'
 import { formatDate } from '@/lib/format'
+import { itemOptionDetail } from '@/lib/itemOptions'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -505,7 +506,7 @@ function ReceiveDialog({ challan, onClose, onDone }: {
                     <div style={{ flex: '1 1 240px' }}>
                       <label style={sheetLabel}>Processed item <Req /></label>
                       <SearchableSelect value={o.itemId} onChange={(v) => setOut(idx, { itemId: v })} placeholder="Search item code or name…"
-                        options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
+                        options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, description: itemOptionDetail(i) }))} />
                     </div>
                     <div style={{ flex: '0 1 110px', minWidth: 100 }}>
                       <label style={sheetLabel}>Qty received <Req /></label>

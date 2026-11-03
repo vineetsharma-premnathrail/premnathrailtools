@@ -9,6 +9,8 @@ import { CaretDown, PencilSimple } from '@phosphor-icons/react'
 export interface SearchableOption {
   value: string
   label: string
+  /** Muted second line under the label (technical details, make, part no.). Searched too. */
+  description?: string
   disabled?: boolean
   /** Options with the same group are listed under one small heading. */
   group?: string
@@ -192,7 +194,7 @@ export default function SearchableSelect({
   const filtered = useMemo(() => {
     if (onSearch || !query.trim()) return options
     const q = query.toLowerCase()
-    return options.filter((o) => o.label.toLowerCase().includes(q))
+    return options.filter((o) => `${o.label} ${o.description || ''}`.toLowerCase().includes(q))
   }, [options, query, onSearch])
 
   useEffect(() => {
@@ -370,7 +372,12 @@ export default function SearchableSelect({
                         fontWeight: isSel ? 700 : 500,
                       }}
                     >
-                      <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{o.label}</span>
+                      <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                        {o.label}
+                        {o.description && (
+                          <span style={{ display: 'block', marginTop: 2, fontSize: 11.5, lineHeight: '14px', fontWeight: 500, color: isSel ? '#C2410C' : '#78716c' }}>{o.description}</span>
+                        )}
+                      </span>
                       {onEdit && (
                         <button
                           type="button"

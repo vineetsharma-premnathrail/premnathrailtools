@@ -51,8 +51,9 @@ export default function DocTypeSettings({ kind, title, noun, intro }: { kind: St
   const { isAuthorized, isLoading } = useRequireApp('store')
   const perm = useCan()
   // Which Store › Settings tab manages this list (mirrors the backend's
-  // _KIND_TAB): return sources / conditions fall under General settings.
-  const tabKey = kind === 'stock_entry' ? 'entry_types' : kind === 'issue' ? 'issue_types' : 'settings'
+  // _KIND_TAB): return sources / conditions (and the read-only old stock entry
+  // types — their tab was retired 2026-10-12) fall under the Settings gear.
+  const tabKey = kind === 'issue' ? 'issue_types' : 'settings'
   const canCreate = tabKey === 'settings' ? perm.can('store', 'settings', 'edit') : perm.can('store', tabKey, 'create')
   const canEdit = perm.can('store', tabKey, 'edit')
   const [rows, setRows] = useState<StoreDocType[]>([])

@@ -91,7 +91,7 @@ def test_untracked_item_refuses_batches(client, db):
     assert r.status_code == 422 and "isn't batch-tracked" in r.json()["detail"]
 
 
-def test_two_heats_split_inspection_stock_by_batch_fifo_issue_and_trace(client, db):
+def test_two_heats_without_the_quality_flag_go_to_free_stock_by_batch_fifo_issue_and_trace(client, db):
     item, loc, buyer, po = _po_with_batch_item(client, db, "V2")
     r = _grn(client, buyer, po, loc, 100, [{"heat_number": "HT-501", "quantity": 60, "tc_number": "MTC-501"},
                                            {"heat_number": "HT-502", "quantity": 40, "tc_number": "MTC-502"}])
@@ -101,23 +101,17 @@ def test_two_heats_split_inspection_stock_by_batch_fifo_issue_and_trace(client, 
     assert [b["heat_number"] for b in line["batches"]] == ["HT-501", "HT-502"]
     b1, b2 = line["batches"]
 
-    # Partly accepted over two heats: say which heat passed.
-    bad = client.post(f"{GRN}/{grn['id']}/inspect", json={"items": [
-        {"item_id": line["id"], "accepted_quantity": 90, "rejected_quantity": 10, "quality_status": "partial"}]},
-        headers=auth_header(buyer))
-    assert bad.status_code == 422 and "per heat" in bad.json()["detail"]
-    ok = client.post(f"{GRN}/{grn['id']}/inspect", json={"items": [
-        {"item_id": line["id"], "accepted_quantity": 90, "rejected_quantity": 10, "quality_status": "partial",
-         "batches": [{"batch_id": b1["id"], "accepted_quantity": 60}, {"batch_id": b2["id"], "accepted_quantity": 30}]}]},
-        headers=auth_header(buyer))
-    assert ok.status_code == 200, ok.text
-    # GRN 101 puts each heat into Quality stock; the inspection releases the accepted part per heat.
-    rows = db.query(StoreStockTransaction).filter_by(item_id=item.id, transaction_type="quality_release").order_by(StoreStockTransaction.id).all()
-    assert [(t.batch_number, t.quantity) for t in rows] == [(b1["batch_number"], 60), (b2["batch_number"], 30)]
+    # No Quality-check flag: each heat is received straight into Free stock and accepted in full; the GRN is completed.
+    assert grn["status"] == "completed" and line["receipt_posting"] == "free"
+    from app.modules.store.services.batches import line_batches
+    assert [(h.received_qty, h.accepted_qty) for h in line_batches(db, line["id"])] == [(60, 60), (40, 40)]
+    rows = db.query(StoreStockTransaction).filter_by(item_id=item.id, transaction_type="receipt").order_by(StoreStockTransaction.id).all()
+    assert [(t.batch_number, t.quantity) for t in rows] == [(b1["batch_number"], 60), (b2["batch_number"], 40)]
+    assert db.query(StoreStockTransaction).filter_by(item_id=item.id, transaction_type="quality_in").count() == 0
 
     keeper = _keeper(db, "keeper.v2@x.com")
     listed = client.get(BATCHES, params={"item_id": item.id}, headers=auth_header(keeper)).json()
-    assert {b["heat_number"]: b["total"]["free"] for b in listed} == {"HT-501": 60, "HT-502": 30}
+    assert {b["heat_number"]: b["total"]["free"] for b in listed} == {"HT-501": 60, "HT-502": 40}
 
     avail = client.get(f"{BATCHES}/available", params={"item_id": item.id, "location_id": loc.id, "quantity": 70},
                        headers=auth_header(keeper)).json()
@@ -126,8 +120,8 @@ def test_two_heats_split_inspection_stock_by_batch_fifo_issue_and_trace(client, 
 
     # Named batch over its stock → refused with the batch's figure.
     r = client.post(ISSUES, json={"location_id": loc.id, "issue_type": "production", "items": [
-        {"item_id": item.id, "quantity": 35, "batch_number": b2["batch_number"]}]}, headers=auth_header(keeper))
-    assert r.status_code == 409 and "only 30" in r.json()["detail"]
+        {"item_id": item.id, "quantity": 45, "batch_number": b2["batch_number"]}]}, headers=auth_header(keeper))
+    assert r.status_code == 409 and "only 40" in r.json()["detail"]
     # No batch named → FIFO split, one issue line per heat.
     r = client.post(ISSUES, json={"location_id": loc.id, "issue_type": "production", "project_or_work_order": "WO-77",
                                   "items": [{"item_id": item.id, "quantity": 70}]}, headers=auth_header(keeper))
@@ -136,7 +130,7 @@ def test_two_heats_split_inspection_stock_by_batch_fifo_issue_and_trace(client, 
 
     trace = client.get(f"{BATCHES}/{b2['id']}", headers=auth_header(keeper)).json()
     assert trace["grn_number"] == grn["grn_number"] and trace["tc_number"] == "MTC-502"
-    assert trace["total"]["free"] == 20
+    assert trace["total"]["free"] == 30
     assert [(i["work_order"], i["quantity"]) for i in trace["issues"]] == [("WO-77", 10)]
 
     # A blocked batch can't be issued.

@@ -16,6 +16,7 @@ import {
   SUBMISSION_STATUS_LABELS, TEAM_ROLE_LABELS, toOptions,
 } from '@/components/design/designMeta'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 import { formatDate } from '@/lib/format'
 
 // Phase-4 report payloads (the API returns untyped JSON — shapes mirror
@@ -138,6 +139,8 @@ function monthLabel(ym: string) {
 
 export default function DesignReportsPage() {
   const { isAuthorized, isLoading } = useRequireApp('design')
+  const { can } = useCan()
+  const canExport = can('design', 'reports', 'export')
   const me = useDesignMe(isAuthorized)
   // Customer submissions (and their turnaround) are Design-team only.
   const isTeam = !!me && me.is_team
@@ -247,9 +250,11 @@ export default function DesignReportsPage() {
             <option value="">All disciplines</option>
             {Object.entries(DISCIPLINE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </Select>
-          <button type="button" data-tour="design-rep-mdl-export-btn" onClick={exportMdl} disabled={exporting} style={{ ...primaryBtnStyle, cursor: exporting ? 'wait' : 'pointer' }}>
-            {exporting ? 'Exporting…' : 'Download CSV'}
-          </button>
+          {canExport && (
+            <button type="button" data-tour="design-rep-mdl-export-btn" onClick={exportMdl} disabled={exporting} style={{ ...primaryBtnStyle, cursor: exporting ? 'wait' : 'pointer' }}>
+              {exporting ? 'Exporting…' : 'Download CSV'}
+            </button>
+          )}
         </div>
       </div>
 

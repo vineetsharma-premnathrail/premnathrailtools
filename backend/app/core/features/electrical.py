@@ -6,17 +6,20 @@ access they had.
 
 The RRV electrical job page opens for anyone with Electrical access (data
 scope still applies). These features only narrow it for people who hold
-Electrical › RRV Electrical Jobs › View; someone reaching a job from another
+Electrical › RRV Jobs › View; someone reaching a job from another
 Electrical tab (Testing, Troubleshooting, Drawings, Purchase) without Jobs ›
 View keeps today's read-only view of it. Tests, Troubleshooting, Drawings and
 the BOM's PR link also stay open through their own tabs' grants, as before."""
 from app.core.assignee_rules import register_pickers
 from app.core.permission_registry import _feature, register_features
+from app.core.visibility import register_visibility
+from app.modules.electrical.models.job import ELECTRICAL_JOB_PRIORITIES
+from app.modules.electrical.models.test_record import ELECTRICAL_TEST_PHASES, ELECTRICAL_TEST_TYPES
 
 register_features(
     "electrical", "jobs",
-    _feature("lead_engineer", "Lead engineer", "action", {"view": "view", "create": "create", "edit": "edit"},
-             "Name a job's lead engineer when creating it (create) and hand the job over to another lead engineer (edit)."),
+    _feature("lead_engineer", "Lead engineer", "picker", {"view": "view"},
+             "Only carries the role's 'Assign to' rule for the Lead engineer picker of a job (new job, hand-over). Setting it still needs Create / Edit on RRV Jobs."),
     _feature("stages", "Stages", "subtab", {"view": "view", "edit": "edit"},
              "The Stages sub-tab of a job: see the stage list, and plan / start / complete / mark not applicable / reopen stages."),
     _feature("requirement", "Electrical requirement", "section", {"view": "view", "edit": "edit"},
@@ -53,3 +56,63 @@ register_pickers("electrical", "jobs",
                  ("lead_engineer", "Assign lead engineer", "Who this role may make lead engineer of an RRV electrical job, when creating or editing it."),
                  ("stages", "Assign stages to", "Who this role may make owner of a job stage on the Stages sub-tab."),
                  ("issues", "Assign issues to", "Who this role may assign a troubleshooting issue to, when logging or editing it."))
+
+# UI visibility per role (core/visibility.py): what a member of a role sees on
+# the RRV Electrical Jobs screens and the test register / Record Test form.
+# Priority / phase / test type values are the coded ones (never retyped); a
+# value a role does not allow is also refused by the server (routes/jobs.py,
+# routes/testing.py). "RRV & Job" holds the required title, so it is locked.
+# Number / status / result columns and BOM costs are never offered here.
+register_visibility(
+    "electrical", "jobs",
+    label="RRV Electrical Jobs — form, page & list",
+    screens=(("form", "New Job form"), ("detail", "Job page"), ("list", "Jobs list")),
+    sections=(
+        # New / Edit Job form (components/electrical/JobForm)
+        ("rrv_job", "RRV & Job", "Title, priority, project / unit, ERP machine, model, serial and customer.", True, "form"),
+        ("ownership_schedule", "Ownership & Schedule", "Plant, lead engineer, planned start and target handover.", False, "form"),
+        ("requirement", "Electrical Requirement",
+         "Voltage, battery, alternator, standards, customer spec and requirement notes. "
+         "Access is still set by the Electrical requirement feature; this only hides the block on the form.", False, "form"),
+        ("remarks", "Remarks", "Free-text remarks on the job.", False, "form"),
+        # Job page (dashboard/electrical/jobs/[id])
+        ("detail_header", "Job summary", "Number, status, priority, title, model, serial and customer.", True, "detail"),
+        ("detail_phase_tracker", "Phase tracker", "Progress per phase and the next stage.", False, "detail"),
+        ("detail_rrv", "RRV & Job", "Project / unit, ERP machine, model, serial, customer and plant on the Details tab.", False, "detail"),
+        ("detail_requirement", "Electrical Requirement",
+         "The requirement block on the Details tab. Access is still set by the Electrical requirement feature; this only hides it on screen.", False, "detail"),
+        ("detail_remarks", "Remarks", "The job's remarks on the Details tab.", False, "detail"),
+    ),
+    options=(
+        ("priority", "Priority", {v: v.capitalize() for v in ELECTRICAL_JOB_PRIORITIES},
+         "Standard / Urgent on the job form. A value not allowed here is also refused by the server.", "form"),
+    ),
+    tables=(
+        ("jobs", "Jobs list", {"customer": "Customer", "lead_engineer": "Lead Engineer", "current_stage": "Current Stage",
+                               "progress": "Progress", "target_handover": "Target Handover", "priority": "Priority"}, "list"),
+    ),
+)
+
+register_visibility(
+    "electrical", "testing",
+    label="Electrical Tests — record form & register",
+    screens=(("form", "Record Test form"), ("list", "Test Register")),
+    sections=(
+        # Record Test popup on a job's Tests tab (components/electrical/TestsTab)
+        ("test", "Test", "Phase, test type and test date.", True, "form"),
+        ("what_tested", "What Was Tested", "Circuit, panel, cable and instrument.", False, "form"),
+        ("reading_result", "Reading & Result", "Expected / measured value, unit and the Pass / Fail result.", True, "form"),
+        ("tested_by", "Tested By", "Who carried out the test (defaults to the person recording it).", False, "form"),
+        ("remarks", "Remarks", "Free-text remarks on the test.", False, "form"),
+    ),
+    options=(
+        ("phase", "Phase", {v: v.capitalize() for v in ELECTRICAL_TEST_PHASES},
+         "Factory / Commissioning on the Record Test form. A value not allowed here is also refused by the server.", "form"),
+        ("test_type", "Test Type", dict(ELECTRICAL_TEST_TYPES),
+         "The test types a member may record. A value not allowed here is also refused by the server.", "form"),
+    ),
+    tables=(
+        ("tests", "Test Register", {"job": "Job", "phase": "Phase", "type": "Type", "circuit": "Circuit",
+                                    "measured": "Measured", "date": "Date", "tested_by": "Tested by"}, "list"),
+    ),
+)

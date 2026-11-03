@@ -21,6 +21,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.permissions import ensure_tab_action, require_app_access, require_feature_action, require_tab_access
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -275,6 +276,9 @@ async def create_planned_order(payload: ProductionPlannedOrderCreate, db: Sessio
     procurement = payload.procurement or ("make" if bom else "buy")
     if procurement not in PLANNED_ORDER_PROCUREMENT:
         raise HTTPException(status_code=400, detail="Procurement must be 'make' or 'buy'.")
+    # Role visibility (Role & Permissions › Production › Planning › Visibility): the procurement the
+    # order ends up with — picked, or decided "From BOM" — must be one the role may pick.
+    visibility.ensure_option_allowed(user, "production:planning", "procurement", procurement)
     if procurement == "make" and not bom:
         raise HTTPException(status_code=409, detail=f"{item.item_code} has no active Production BOM, so it can't be planned as 'make' — activate a BOM in BOM & Routing or plan it as 'buy'.")
     start = payload.start_date or (payload.finish_date - timedelta(

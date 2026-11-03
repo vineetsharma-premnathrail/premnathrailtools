@@ -92,6 +92,77 @@ def _is_suppressed(notification_type: str) -> bool:
     return notification_type.endswith(_SUPPRESSED_SUFFIXES)
 
 
+def _send_email_sync(module: str, title: str, message: str, email: str, name: str, user_id: int) -> None:
+    import asyncio
+    from app.core.notify_rules import _send_emails
+    try:
+        asyncio.run(_send_emails(module, title, message, [], {email.lower(): name}))
+    except Exception:
+        logger.exception("Failed to email notification '%s' to user %s", title, user_id)
+
+
+_AFTER_COMMIT = "_notification_emails_after_commit"
+
+
+def _email_after_commit(db: Session, job: tuple) -> None:
+    """Queue an email until the caller's transaction commits, so a rolled-back
+    action never mails anyone. Only plain values are queued (no ORM objects)."""
+    from sqlalchemy import event
+
+    pending = db.info.get(_AFTER_COMMIT)
+    if pending is None:
+        pending = db.info[_AFTER_COMMIT] = []
+
+        def _send(session) -> None:
+            for j in session.info.pop(_AFTER_COMMIT, []):
+                _teams_executor.submit(_send_email_sync, *j)
+
+        def _drop(session) -> None:
+            session.info.pop(_AFTER_COMMIT, None)
+            if event.contains(session, "after_commit", _send):
+                event.remove(session, "after_commit", _send)
+
+        event.listen(db, "after_commit", _send, once=True)
+        event.listen(db, "after_rollback", _drop, once=True)
+    pending.append(job)
+
+
+def _deliver(db: Session, users: list[User], title: str, message: str, notification_type: str,
+             entity_type: str | None, entity_id: int | None, teams: bool) -> None:
+    """Send one direct notification to `users` on their channels.
+
+    A notification_type registered with register_direct (app/core/events/direct_*.py)
+    takes its channels from Organization › Roles › Notifications and the
+    user's personal override, else the type's defaults. An unregistered type
+    keeps the old rule: bell, plus Teams when the caller passed teams=True."""
+    from app.core.notification_events import direct_spec, resolve_direct_channels
+    hit = direct_spec(notification_type)
+    if hit:
+        key, spec = hit
+        module = key.partition(".")[0]
+        channels = resolve_direct_channels(db, users, key, spec["default_channels"])
+    else:
+        module = "erp"
+        logger.debug("Notification type '%s' is not registered as a direct notification.", notification_type)
+        fallback = {"bell", "teams"} if teams else {"bell"}
+        channels = {u.id: set(fallback) for u in users}
+    for u in users:
+        if not u.notifications_enabled:
+            continue
+        chans = channels.get(u.id, set())
+        if hit and spec["kind"] == "approval":
+            chans = chans | {"bell"}  # an approval request can never be switched off completely
+        if "bell" in chans:
+            db.add(Notification(
+                user_id=u.id, title=title, message=message, notification_type=notification_type,
+                entity_type=entity_type, entity_id=entity_id,
+            ))
+        if "teams" in chans:
+            _notify_teams(u, title, message)
+        if "email" in chans and u.email:
+            _email_after_commit(db, (module, title, message, u.email, u.name or u.email, u.id))
+
+
 def broadcast_notification(
     db: Session,
     title: str,
@@ -103,24 +174,16 @@ def broadcast_notification(
     app_name: str = "erp",
     teams: bool = False,
 ) -> None:
-    """Notify every user with access to `app_name` (except the actor).
-    Bell only unless `teams=True` — see notify_user."""
+    """Notify every user with access to `app_name` (except the actor), on the
+    channels their roles / personal settings give this notification type."""
     if _is_suppressed(notification_type):
         return
     try:
-        for u in db.query(User).filter(User.is_active == True).all():  # noqa: E712
-            if app_name not in u.get_apps():
-                continue
-            if exclude_user_id and u.id == exclude_user_id:
-                continue
-            if not u.notifications_enabled:
-                continue
-            db.add(Notification(
-                user_id=u.id, title=title, message=message, notification_type=notification_type,
-                entity_type=entity_type, entity_id=entity_id,
-            ))
-            if teams:
-                _notify_teams(u, title, message)
+        users = [
+            u for u in db.query(User).filter(User.is_active == True).all()  # noqa: E712
+            if app_name in u.get_apps() and not (exclude_user_id and u.id == exclude_user_id)
+        ]
+        _deliver(db, users, title, message, notification_type, entity_type, entity_id, teams)
     except Exception:
         logger.exception("Failed to broadcast notification '%s'", title)
 
@@ -135,20 +198,15 @@ def notify_user(
     entity_id: int | None = None,
     teams: bool = False,
 ) -> None:
-    """In-app bell notification. Teams gets ONLY approval requests and
-    reminders (2026-10-01) — callers opt in with `teams=True`; raised /
-    review / issued / approved / result notices stay bell-only."""
+    """Direct notification to one person. Channels come from the type's
+    registration (register_direct) and the person's role / personal
+    notification settings; `teams` only matters for an unregistered type."""
     if _is_suppressed(notification_type):
         return
     try:
         user = db.query(User).filter(User.id == user_id).first()
-        if user and not user.notifications_enabled:
+        if not user:
             return
-        db.add(Notification(
-            user_id=user_id, title=title, message=message, notification_type=notification_type,
-            entity_type=entity_type, entity_id=entity_id,
-        ))
-        if user and teams:
-            _notify_teams(user, title, message)
+        _deliver(db, [user], title, message, notification_type, entity_type, entity_id, teams)
     except Exception:
         logger.exception("Failed to notify user %s: '%s'", user_id, title)

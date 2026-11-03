@@ -2,8 +2,10 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
+from app.core import visibility
 from app.core.data_scope import apply_scope, ensure_in_scope
-from app.core.permissions import require_tab_access, require_tab_action, require_feature_action
+from app.core.permission_registry import can_view_tab
+from app.core.permissions import ensure_feature_action, require_tab_access, require_tab_action, require_feature_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.accounts.models.bank_account import BankAccount
@@ -27,6 +29,10 @@ from app.modules.accounts.services.proof import payment_proof_required, staged_p
 from app.modules.accounts import access  # registers PaymentTransaction's data scope + payment approval
 
 router = APIRouter(prefix="/accounts/payments", tags=["Accounts"])
+
+# Role-wise UI visibility entry of this screen (core/features/accounts.py register_visibility):
+# voucher type and payment mode a role may pick are also refused here when sent by hand.
+PAYMENTS_VISIBILITY_KEY = "accounts:payments"
 
 
 def _ensure_source_in_scope(db: Session, user: User, source_type: str, source_id: int) -> None:
@@ -185,6 +191,9 @@ async def list_open_advances(
     _user: User = Depends(require_any_accounts_tab("payments", "outstanding")),
 ):
     """Down payments not yet adjusted against an invoice (per SO / PO)."""
+    # Payments people see them on the Advances & write-offs page = feature payments.advances (inherits Payments › View).
+    if not can_view_tab(_user, "accounts", "outstanding"):
+        ensure_feature_action(_user, "accounts", "payments", "advances", "view")
     if party_type not in (None, "vendor", "customer"):
         raise HTTPException(status_code=400, detail="party_type must be 'vendor' or 'customer'.")
     return open_advances(db, party_type=party_type, sales_order_id=sales_order_id, purchase_order_id=purchase_order_id)
@@ -294,6 +303,8 @@ async def create_voucher_route(payload: VoucherCreate, db: Session = Depends(get
     bills they settle (maker-checker), and wait for approval (Finance approver
     then Partner) before they post. A receipt with write-offs above the limit,
     and an expense payment above its limit, wait too."""
+    visibility.ensure_option_allowed(user, PAYMENTS_VISIBILITY_KEY, "payment_type", payload.payment_type)
+    visibility.ensure_option_allowed(user, PAYMENTS_VISIBILITY_KEY, "payment_mode", payload.payment_mode)
     if payload.payment_type == "vendor":
         _check_not_invoice_maker(db, user, [(a.target_type, a.target_id) for a in payload.allocations]
                                  + [(d.target_type or "vendor_invoice", d.target_id) for d in payload.deductions])
@@ -338,6 +349,8 @@ async def create_voucher_route(payload: VoucherCreate, db: Session = Depends(get
 @router.post("/pay-invoice", response_model=PaymentResponse, status_code=201)
 async def pay_invoice_route(payload: PaymentCreate, db: Session = Depends(get_db), user: User = Depends(require_tab_action("accounts", "payments", "create"))):
     """Pay one vendor bill — recorded and sent for payment approval."""
+    visibility.ensure_option_allowed(user, PAYMENTS_VISIBILITY_KEY, "payment_type", "vendor")  # this route always records a vendor payment
+    visibility.ensure_option_allowed(user, PAYMENTS_VISIBILITY_KEY, "payment_mode", payload.payment_mode)
     inv = db.query(VendorInvoice).filter(VendorInvoice.id == payload.vendor_invoice_id).first()
     if not inv:
         raise HTTPException(status_code=404, detail=f"Vendor invoice #{payload.vendor_invoice_id} doesn't exist — refresh Finance > Purchase.")

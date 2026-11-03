@@ -9,13 +9,16 @@ import { designApi } from '@/lib/api'
 import { DesignLookupOption } from '@/types'
 import DesignNav from '@/components/design/DesignNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
-import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
+import { FormPage, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { ECR_SOURCE_LABELS, ECR_URGENCY_LABELS, toOptions } from '@/components/design/designMeta'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import { useFormDraft } from '@/lib/formDraft'
 import DraftBanner from '@/components/shared/DraftBanner'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { useVisibility } from '@/lib/visibility'
+import { VisColumns } from '@/components/quality/VisColumns'
+import { VisOptionValues, VisSection } from '@/lib/visibilityComponents'
 
 const inputStyle = sheetInput
 const labelStyle = sheetLabel
@@ -28,8 +31,12 @@ export default function RaiseChangeRequestPage() {
   const { isAuthorized, isLoading } = useRequireApp('design')
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { id: docId, error: docLinkError, loading: docLinkLoading } = useRecordId(searchParams.get('document_id'))
-  const { id: bomId, error: bomLinkError, loading: bomLinkLoading } = useRecordId(searchParams.get('bom_id'))
+  // Role visibility (Role & Permissions › Design › Changes › Visibility). In the Role editor's "Preview & choose"
+  // the form draws every section, loads and saves nothing.
+  const vis = useVisibility('design:change_notices')
+  const preview = vis.preview
+  const { id: docId, error: docLinkError, loading: docLinkLoading } = useRecordId(preview ? null : searchParams.get('document_id'))
+  const { id: bomId, error: bomLinkError, loading: bomLinkLoading } = useRecordId(preview ? null : searchParams.get('bom_id'))
   const linkError = docLinkError || bomLinkError
 
   const [projects, setProjects] = useState<DesignLookupOption[]>([])
@@ -39,15 +46,20 @@ export default function RaiseChangeRequestPage() {
   const [qualityRecords, setQualityRecords] = useState<DesignLookupOption[]>([])
 
   const [title, setTitle] = useState('')
-  const [source, setSource] = useState('production')
+  const [pickedSource, setSource] = useState('production')
   const [qualityId, setQualityId] = useState('')
   const [sourceReference, setSourceReference] = useState('')
-  const [urgency, setUrgency] = useState('normal')
+  const [pickedUrgency, setUrgency] = useState('normal')
   const [reason, setReason] = useState('')
   const [proposed, setProposed] = useState('')
   const [pmProjectId, setPmProjectId] = useState('')
   const [erpProjectId, setErpProjectId] = useState('')
   const [items, setItems] = useState<ItemRow[]>([])
+  // Source / urgency values the role offers; a new request shows the first offered value when its default isn't one.
+  const sourceChoices = vis.options('source', Object.entries(ECR_SOURCE_LABELS), ([k]) => k)
+  const urgencyChoices = vis.options('urgency', Object.entries(ECR_URGENCY_LABELS), ([k]) => k)
+  const source = !preview && sourceChoices.length && !sourceChoices.some(([k]) => k === pickedSource) ? sourceChoices[0][0] : pickedSource
+  const urgency = !preview && urgencyChoices.length && !urgencyChoices.some(([k]) => k === pickedUrgency) ? urgencyChoices[0][0] : pickedUrgency
   const [docSearch, setDocSearch] = useState('')
   const [bomSearch, setBomSearch] = useState('')
   const prefilled = useRef(false)
@@ -55,7 +67,7 @@ export default function RaiseChangeRequestPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
 
-  const draft = useFormDraft(docLinkLoading || bomLinkLoading ? null : `design-ecr-new-${docId ?? 0}-${bomId ?? 0}`,
+  const draft = useFormDraft(docLinkLoading || bomLinkLoading || preview ? null : `design-ecr-new-${docId ?? 0}-${bomId ?? 0}`,
     { title, source, qualityId, sourceReference, urgency, reason, proposed, pmProjectId, erpProjectId, items },
     (d) => {
       setTitle(d.title ?? ''); setSource(d.source ?? 'production'); setQualityId(d.qualityId ?? ''); setSourceReference(d.sourceReference ?? '')
@@ -64,7 +76,7 @@ export default function RaiseChangeRequestPage() {
     })
 
   useEffect(() => {
-    if (!isAuthorized || docLinkLoading || bomLinkLoading) return
+    if (!isAuthorized || docLinkLoading || bomLinkLoading || preview) return
     Promise.all([designApi.lookupProjects(), designApi.lookupMachines(), designApi.lookupReleasedDocuments(), designApi.lookupBoms(true)])
       .then(([p, m, d, b]) => {
         setProjects(p); setMachines(m); setDrawings(d); setBoms(b)
@@ -86,14 +98,14 @@ export default function RaiseChangeRequestPage() {
       })
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load the form options — refresh the page to try again.')))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthorized, docLinkLoading, bomLinkLoading])
+  }, [isAuthorized, docLinkLoading, bomLinkLoading, preview])
 
   useEffect(() => {
-    if (!isAuthorized || (source !== 'ncr' && source !== 'capa')) return
+    if (!isAuthorized || preview || (source !== 'ncr' && source !== 'capa')) return
     designApi.lookupQualityRecords(source as 'ncr' | 'capa')
       .then(setQualityRecords)
       .catch((err) => setError(extractErrorMessages(err, `Failed to load ${source.toUpperCase()} records from Quality.`)))
-  }, [isAuthorized, source])
+  }, [isAuthorized, source, preview])
 
   const docMatches = useMemo(() => {
     const q = docSearch.trim().toLowerCase()
@@ -107,10 +119,11 @@ export default function RaiseChangeRequestPage() {
   }, [bomSearch, boms, items])
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return (<div><DesignNav /><InvalidRecordLink message={linkError} listHref="/dashboard/design/change-notices" listLabel="Back to changes" /></div>)
+  if (linkError && !preview) return (<div><DesignNav /><InvalidRecordLink message={linkError} listHref="/dashboard/design/change-notices" listLabel="Back to changes" /></div>)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (preview) return
     if (title.trim().length < 3) { setError('Give the change request a title (at least 3 characters).'); return }
     if (reason.trim().length < 3) { setError('Explain the reason for the change — what problem it solves.'); return }
     if (proposed.trim().length < 3) { setError('Describe the proposed change.'); return }
@@ -146,19 +159,20 @@ export default function RaiseChangeRequestPage() {
 
   return (
     <form onSubmit={submit}>
-      <FormPage nav={<DesignNav />} tour="design-ecrnew-form" backTour="design-ecrnew-back-btn" icon="send" title="Raise Change Request (ECR)"
+      <FormPage nav={preview ? undefined : <DesignNav />} tour="design-ecrnew-form" backTour="design-ecrnew-back-btn" icon="send" title="Raise Change Request (ECR)"
         subtitle="Ask Design to change a released drawing or BOM. Design checks the impact, then the change board decides."
-        onBack={() => router.push('/dashboard/design/change-notices')}
+        onBack={preview ? undefined : () => router.push('/dashboard/design/change-notices')}
         footer={<>
           <button type="button" data-tour="design-ecrnew-cancel-btn" onClick={() => router.push('/dashboard/design/change-notices')} style={sheetBtn('secondary', SHEET.INK, saving)} disabled={saving}>Cancel</button>
-          <button type="submit" data-tour="design-ecrnew-save-btn" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+          <button type="submit" data-tour="design-ecrnew-save-btn" disabled={saving || preview} style={sheetBtn('primary', SHEET.BLUE, saving || preview)}>
             <SheetIcon name="send" size={16} />{saving ? 'Raising…' : 'Raise ECR'}
           </button>
         </>}>
         {draft.restored && <div style={{ padding: '20px 24px 0' }}><DraftBanner draft={draft} style={{ marginBottom: 0 }} /></div>}
         {error && (Array.isArray(error) ? error.length > 0 : true) && <div style={{ padding: '20px 24px 0' }}><SheetError error={error} /></div>}
-        <SheetColumns
+        <VisColumns vis={vis} rightKeys={['source_details', 'associations']}
           left={
+            <VisSection vis={vis} k="request">
             <SheetSection icon="edit" title="Request">
               <div data-tour="design-ecrnew-title">
                 <label style={labelStyle}>Title <Req /></label>
@@ -168,14 +182,16 @@ export default function RaiseChangeRequestPage() {
                 <div data-tour="design-ecrnew-source" style={{ flex: '1 1 200px', maxWidth: 260 }}>
                   <label style={labelStyle}>Source</label>
                   <Select style={inputStyle} value={source} onChange={(e) => { setSource(e.target.value); setQualityId(''); setQualityRecords([]) }}>
-                    {Object.entries(ECR_SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    {sourceChoices.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </Select>
+                  <VisOptionValues vis={vis} dropdown="source" />
                 </div>
                 <div data-tour="design-ecrnew-urgency" style={{ flex: '0 1 140px', minWidth: 120 }}>
                   <label style={labelStyle}>Urgency</label>
                   <Select style={inputStyle} value={urgency} onChange={(e) => setUrgency(e.target.value)}>
-                    {Object.entries(ECR_URGENCY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    {urgencyChoices.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </Select>
+                  <VisOptionValues vis={vis} dropdown="urgency" />
                 </div>
               </div>
               <div data-tour="design-ecrnew-reason" style={{ marginTop: 14 }}>
@@ -187,8 +203,10 @@ export default function RaiseChangeRequestPage() {
                 <textarea style={{ ...inputStyle, minHeight: 90, resize: 'vertical' }} value={proposed} onChange={(e) => setProposed(e.target.value)} maxLength={8000} />
               </div>
             </SheetSection>
+            </VisSection>
           }
           right={<>
+            <VisSection vis={vis} k="source_details">
             <SheetSection icon="flag" title="Source details" extra={<Optional />}>
               {(source === 'ncr' || source === 'capa') && (
                 <div data-tour="design-ecrnew-quality-record" style={{ marginBottom: 14 }}>
@@ -201,6 +219,8 @@ export default function RaiseChangeRequestPage() {
                 <input style={inputStyle} value={sourceReference} onChange={(e) => setSourceReference(e.target.value)} maxLength={255} placeholder="e.g. customer letter no., field report no." />
               </div>
             </SheetSection>
+            </VisSection>
+            <VisSection vis={vis} k="associations">
             <SheetSection icon="link" title="Associations" extra={<Optional />}>
               <div data-tour="design-ecrnew-project">
                 <label style={labelStyle}>Project</label>
@@ -211,10 +231,12 @@ export default function RaiseChangeRequestPage() {
                 <SearchableSelect value={erpProjectId} onChange={setErpProjectId} options={toOptions(machines, 'None')} placeholder="Select machine…" />
               </div>
             </SheetSection>
+            </VisSection>
           </>}
         />
 
         <div style={{ padding: '20px 24px 0', borderTop: `1px solid ${SHEET.LINE}` }}>
+          <VisSection vis={vis} k="affected_items">
           <SheetSection icon="list" title="Affected drawings & BOMs" extra={<Req />}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ position: 'relative', flex: '1 1 300px', maxWidth: 460 }}>
@@ -260,6 +282,7 @@ export default function RaiseChangeRequestPage() {
               </div>
             )}
           </SheetSection>
+          </VisSection>
         </div>
       </FormPage>
     </form>

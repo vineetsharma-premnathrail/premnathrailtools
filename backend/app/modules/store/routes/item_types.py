@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core import visibility
 from app.core.permissions import ensure_can_delete, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -31,8 +32,18 @@ def item_types(db: Session) -> list[StoreItemType]:
     return rows
 
 
-def type_options(db: Session) -> list[dict]:
-    return [{"value": t.value, "label": t.label, "prefix": t.prefix} for t in item_types(db)]
+def type_options(db: Session, user: User | None = None) -> list[dict]:
+    """Every item type; when `user`'s roles restrict the Item Type dropdown
+    (core/visibility.py "store:items"), each row also says `allowed` (the rows
+    stay unchanged for unrestricted users — this is a cross-module lookup whose
+    consumers compare rows). The list is never filtered here: the form filters
+    it and keeps a saved item's type."""
+    allowed = visibility.allowed_values(user, "store:items", "item_type") if user is not None else None
+    rows = [{"value": t.value, "label": t.label, "prefix": t.prefix} for t in item_types(db)]
+    if allowed is not None:
+        for row in rows:
+            row["allowed"] = row["value"] in allowed
+    return rows
 
 
 def check_item_type(db: Session, item_type: str | None) -> None:
@@ -73,8 +84,8 @@ def _clean(db: Session, payload: ItemTypeIn, current: StoreItemType | None = Non
 
 # Cross-module lookup (item pickers in other modules read the type list).
 @router.get("")
-async def list_item_types(db: Session = Depends(get_db), _user: User = Depends(require_store_lookup())):
-    return type_options(db)
+async def list_item_types(db: Session = Depends(get_db), user: User = Depends(require_store_lookup())):
+    return type_options(db, user)
 
 
 @router.post("")

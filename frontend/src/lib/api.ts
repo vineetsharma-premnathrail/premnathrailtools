@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosError } from 'axios'
+import { previewBlocksWrites } from '@/lib/previewWriteGuard'
 import { useAuthStore, SIGNED_OUT_FLAG } from '@/store/authStore'
 import { beginRequest } from '@/lib/requestActivity'
 import { DIRECT_UPLOAD_THRESHOLD, uploadToSession } from '@/lib/largeUpload'
@@ -27,6 +28,17 @@ export const apiClient: AxiosInstance = axios.create({
 
 apiClient.interceptors.request.use(
   (config) => {
+    // Role editor preview open: refuse every write so a sample screen can never change data.
+    // Auth calls (silent token refresh) still pass, or a 401 during preview would sign the admin out.
+    // The error carries the config so the activity interceptor (which already ran — axios runs
+    // request interceptors last-registered first) can end its "Saving…" counter.
+    if (previewBlocksWrites() && !(config.url || '').includes('/auth/')
+        && !['get', 'head', 'options'].includes((config.method || 'get').toLowerCase())) {
+      return Promise.reject(Object.assign(
+        new Error('Preview only — nothing is saved while the Visibility preview is open. Close the preview to work normally.'),
+        { config },
+      ))
+    }
     const token = useAuthStore.getState().token
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
@@ -2402,6 +2414,23 @@ export const storeApi = {
     const { data } = await apiClient.post('/store/stock-reservations', payload)
     return data
   },
+  createStockReservationsBulk: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/store/stock-reservations/bulk', payload)
+    return data
+  },
+  importReservationLines: async (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await apiClient.post('/store/stock-reservations/import-lines', form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
+    return data as {
+      lines: { item_id: number; item_code: string; item_name: string; uom?: string | null; quantity: number; remarks?: string | null }[]
+      errors: { row: number; item_code: string; reason: string }[]
+    }
+  },
+  downloadReservationLinesTemplate: async () => {
+    const { data } = await apiClient.get('/store/stock-reservations/import-lines/template', { responseType: 'blob' })
+    return data as Blob
+  },
   cancelStockReservation: async (id: number) => {
     const { data } = await apiClient.post(`/store/stock-reservations/${id}/cancel`)
     return data
@@ -3230,6 +3259,10 @@ export const organizationApi = {
   removeDepartmentMember: async (id: number, userId: number) => {
     await apiClient.delete(`/organization/departments/${id}/members/${userId}`)
   },
+  setDepartmentMemberManager: async (id: number, userId: number, reportingManagerId: number | null) => {
+    const { data } = await apiClient.put(`/organization/departments/${id}/members/${userId}/manager`, { reporting_manager_id: reportingManagerId })
+    return data
+  },
 }
 
 const RND_TOOL_PATHS: Record<string, string> = {
@@ -3281,11 +3314,34 @@ export const rndApi = {
     if (p.source) form.append('source', p.source)
     if (p.record_id) form.append('record_id', String(p.record_id))
     if (p.rnd_project_id) form.append('rnd_project_id', String(p.rnd_project_id))
+    if (p.pm_project_id) form.append('pm_project_id', String(p.pm_project_id))
     if (p.remarks) form.append('remarks', p.remarks)
     if (p.start_date) form.append('start_date', p.start_date)
     if (p.checklist?.length) form.append('checklist', JSON.stringify(p.checklist))
     for (const f of p.files) form.append('files', f)
     const { data } = await apiClient.post('/rnd/tasks', form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Assigning' }); return data
+  },
+  /** Project Management (All Projects) projects the user may give R&D tasks on. */
+  pmProjectOptions: async (q?: string): Promise<{ id: number; project_code: string; name: string; label: string }[]> => { const { data } = await apiClient.get('/rnd/tasks/pm-project-options', { params: q ? { q } : undefined }); return data },
+  // R&D tasks on a Project Management project — same RndTask shape; task-level actions reuse the project-task methods below.
+  pmProjectTaskAccess: async (pmProjectId: number): Promise<{ can_manage: boolean; people: import('@/types').RndPerson[]; team: import('@/types').RndPerson[]; project: { id: number; project_code: string; name: string; client_name: string | null; status: string } }> => { const { data } = await apiClient.get(`/rnd/pm-projects/${pmProjectId}/task-access`); return data },
+  listPmProjectTasks: async (pmProjectId: number): Promise<import('@/types').RndTask[]> => { const { data } = await apiClient.get(`/rnd/pm-projects/${pmProjectId}/tasks`); return data },
+  createPmProjectTask: async (pmProjectId: number, p: import('@/types').RndTaskCreateInput, parentTaskId?: number): Promise<import('@/types').RndTask> => {
+    const form = new FormData()
+    form.append('title', p.title)
+    form.append('assigned_to_id', String(p.assigned_to_id))
+    form.append('due_date', p.due_date)
+    if (p.remarks) form.append('remarks', p.remarks)
+    appendTaskPlanning(form, p)
+    for (const f of p.files) form.append('files', f)
+    const url = parentTaskId ? `/rnd/project-tasks/${parentTaskId}/subtasks` : `/rnd/pm-projects/${pmProjectId}/tasks`
+    const { data } = await apiClient.post(url, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Assigning' })
+    return data
+  },
+  /** R&D closes the request without a response (nothing to share); `reason` is mandatory (≥ 10 chars). */
+  closeRequest: async (requestId: number, reason: string): Promise<RndRequest> => {
+    const { data } = await apiClient.post(`/rnd/requirements/requests/${requestId}/close`, { reason })
+    return data
   },
   /** `ask_details`: a question to BD in `remarks` — the request stays open (no files / delay reason). */
   respondToRequest: async (requestId: number, payload: { remarks?: string; delay_reason?: string; files?: File[]; ask_details?: boolean }): Promise<RndRequest> => {

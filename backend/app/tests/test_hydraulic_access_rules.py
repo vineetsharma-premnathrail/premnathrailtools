@@ -152,8 +152,11 @@ def test_detail_and_export_endpoints_need_their_tab(client, db, h):
     for tab, url in urls.items():
         viewer = auth(make_user(db, f"acc.hyd.{tab}@premnathrail.com", grants=[f"hydraulic:{tab}:view"]))
         assert client.get(url, headers=viewer).status_code == 200, url
+    # The CSV export needs BOM › Export (matrix cleanup 2026-11-03), not just View.
     bom_viewer = auth(make_user(db, "acc.hyd.bomx@premnathrail.com", grants=["hydraulic:bom:view"]))
-    assert client.get(f"{API}/boms/{bom['id']}/export", headers=bom_viewer).status_code == 200
+    assert client.get(f"{API}/boms/{bom['id']}/export", headers=bom_viewer).status_code == 403
+    bom_exporter = auth(make_user(db, "acc.hyd.bomxe@premnathrail.com", grants=["hydraulic:bom:view", "hydraulic:bom:export"]))
+    assert client.get(f"{API}/boms/{bom['id']}/export", headers=bom_exporter).status_code == 200
 
 
 def test_component_lookup_carries_unit_cost_for_bom_only_users(client, db, h):
@@ -181,7 +184,7 @@ def test_document_upload_needs_edit_on_the_parent_tab(client, db, h):
     ckt = client.post(f"{API}/circuits", json={"title": "Main"}, headers=h).json()
     viewer = auth(make_user(db, "acc.hyd.viewer@premnathrail.com", grants=["hydraulic:circuits:view"]))
     r = _upload(client, viewer, "circuit", ckt["id"])
-    assert r.status_code == 403 and "Circuits & Diagrams" in r.json()["detail"] and "Permission Matrix" in r.json()["detail"]
+    assert r.status_code == 403 and "Circuits" in r.json()["detail"] and "Permission Matrix" in r.json()["detail"]
 
     # Deleting needs it too, even for the uploader.
     doc = HydDocument(entity_type="circuit", entity_id=ckt["id"], doc_type="other", title="Old", file_name="o.pdf",

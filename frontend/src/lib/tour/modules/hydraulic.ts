@@ -107,7 +107,6 @@ export const ENTRIES: TourEntry[] = [
     pattern: /^\/dashboard\/hydraulic\/testing$/,
     load: () => import('../configs/hydTestsList'),
   },
-  // Maintenance plans, service records and spare parts are retired (plan
-  // rule R5, HY-0): their pages are hidden from the nav and read-only, so they
-  // carry no tour.
+  // Maintenance plans, service records and spare parts were retired (plan
+  // rule R5, HY-0); their pages were deleted in the matrix cleanup (2026-11-03).
 ]

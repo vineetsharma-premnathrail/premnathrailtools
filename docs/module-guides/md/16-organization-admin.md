@@ -584,6 +584,51 @@ All fields are locked on built-in presets.
 
 **Users** (disabled until the role is saved) — for an everyone role, a note only. Otherwise a search box "Add a user — type a name or email…", the list of holders (click a name to open the user page) with **Remove**, and **Save Users** (enabled when changed; needs Role & Permissions "Edit").
 
+#### Visibility (what the role sees inside a screen)
+
+Visibility is one level below the Permission Matrix. The matrix says what a role may **do** on a tab. Visibility says what a member **sees** on that screen. It only shows or hides things that already exist. Nobody can add a field, a section, a dropdown value or a column from here, and a required field never becomes optional.
+
+**What an admin can set (per role)**
+
+| Item | What it does | Enforced by |
+|---|---|---|
+| Sections | Hide a block of a form, for example "Remarks" or "Attachments" on the Purchase Requisition form | Screen only |
+| Dropdown values | Give the role only some of the values of a coded dropdown, for example only "Store stock refill" in Purpose | Screen and server |
+| Table columns | Hide columns of a list, for example "Priority" in the requisitions list, or "Ship To" on the item lines of the form | Screen only |
+
+At launch only Procurement > Purchase Requisitions has these items. Other modules are added by the developers, with no new screen needed.
+
+**How to set it**
+
+1. Open **Organization > Role & Permissions**, open the role (a built-in preset is read-only: use **Copy** first).
+2. On the **Permissions** tab, find the tab row, for example Procurement > Purchase Requisitions. Rows that have visibility options show a chip: **Visibility: shows everything**.
+3. Click the chip. A pop-up opens with three groups: **Sections** (a tick means shown), **Dropdowns** (switch **All values** off, then tick only the values this role should get; at least one must stay ticked) and **Tables** (untick a column to hide it).
+4. Click **Apply**. The chip now reads like "Visibility: 1 section hidden, Purpose: 1 of 6 values".
+5. Click **Save Role**. Members get the change on their next page load. **Reset to show everything** in the pop-up clears the rule.
+
+Saving the visibility needs the same Role & Permissions "Edit" permission as the matrix.
+
+**How roles combine.** Only the roles that open that screen (the member holds its View permission) are counted. A section or column is hidden only if **every** such role hides it. A dropdown is limited only if every such role limits it, and the member gets all values allowed by any of them. In short: the wider role wins, as with permissions. Admins and Partners always see everything. A role with no rule shows everything.
+
+**Locked sections.** A section that holds a required field (on the PR form: Purpose & Charging, and Item Details) shows ticked and greyed with the note "Always shown (has a required field)". It cannot be hidden.
+
+**What the server refuses**
+
+- Saving the role with a locked section hidden: "'Purpose & Charging' holds a required field, so it can't be hidden. Leave it visible." Fix: leave that section ticked.
+- Saving a dropdown with no value ticked: "Pick at least one Purpose value, or reset it to all values." Fix: tick at least one value or switch back to All values.
+- Saving a rule that points to something that no longer exists: "... isn't in the current catalogue - reload the page." Fix: reload the role page and set it again.
+- A member creating or editing a PR with a Purpose their role does not give: "Purpose 'Project' isn't available to your role - you can pick: Store stock refill. Ask an admin to widen it in Organization > Role & Permissions > Procurement > Purchase Requisitions > Visibility." Fix: pick an allowed value, or ask an admin. An old PR that already holds a value the role no longer gets can still be edited, as long as that value is not changed.
+
+**Worked example: Store Keeper sees Purpose = Store stock refill only**
+
+1. Open the role "Store Keeper" (make a copy if it is a built-in preset).
+2. Permissions tab > Procurement > Purchase Requisitions > click **Visibility: shows everything**.
+3. Under **Dropdowns > Purpose**, switch **All values** off and tick only **Store stock refill**. Click **Apply**, then **Save Role**.
+4. A Store Keeper now opens **New PR** and the Purpose dropdown offers only "Store stock refill". If the same person also holds another role that opens Purchase Requisitions with no Purpose limit, they get all six values (the wider role wins).
+5. If the Store Keeper's tool sends another Purpose anyway, the server refuses it with the message above.
+
+**What this is not.** It does not choose which records a person sees (that is **Data access**), does not make fields required or optional, and is not a way to protect secret data: hidden sections and columns are hidden on screen only. Use permissions or Data access to protect data.
+
 #### Statuses & workflow and server rules
 
 - Saving shows "Role saved. Users holding it get the new access on their next page load."

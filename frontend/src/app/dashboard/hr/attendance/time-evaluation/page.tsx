@@ -32,8 +32,10 @@ const dmy = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice
 
 export default function TimeEvaluationPage() {
   const { isAuthorized, isLoading } = useRequireApp('hr')
-  const { can } = useCan()
+  const { can, canFeature } = useCan()
   const router = useRouter()
+  // The page = feature Attendance › Time evaluation page (core/features/hr.py; the API checks it too).
+  const seePage = canFeature('hr', 'attendance', 'time_evaluation', 'view')
   const now = new Date()
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() + 1 })
   const [tab, setTab] = useState<'month' | 'overtime'>('month')
@@ -75,10 +77,10 @@ export default function TimeEvaluationPage() {
   }, [tab, params, ym, otStatus])
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || !seePage) return
     const t = setTimeout(load, 250)
     return () => clearTimeout(t)
-  }, [isAuthorized, load])
+  }, [isAuthorized, load, seePage])
 
   const openDetail = async (it: TimeMonthItem) => {
     setError([])
@@ -105,6 +107,14 @@ export default function TimeEvaluationPage() {
   }
 
   if (isLoading || !isAuthorized) return null
+  if (!seePage) return (
+    <div>
+      <HrNav />
+      <p style={{ fontSize: 13, color: TEXT.muted }}>
+        Time evaluation needs &apos;View&apos; on HR &amp; Administration › Attendance › Time evaluation page — ask an admin to add it to one of your roles in Organization › Role &amp; Permissions.
+      </p>
+    </div>
+  )
 
   return (
     <div>

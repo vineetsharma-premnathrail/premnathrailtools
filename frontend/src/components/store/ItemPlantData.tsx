@@ -10,6 +10,9 @@ import { TEXT } from '@/lib/theme'
 import { Section, inputStyle, secondaryBtnStyle, smallSecondaryBtnStyle, RowCount, TableScroll } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput } from '@/components/shared/FormSheet'
 import Select from '@/components/shared/Select'
+import { useVisibility } from '@/lib/visibility'
+import { VisOptionValues } from '@/lib/visibilityComponents'
+import { samplePlantData } from '@/lib/storePreviewSamples'
 
 const NUM_FIELDS: { key: keyof ItemPlantRow; label: string; width: number }[] = [
   { key: 'reorder_level', label: 'Reorder level', width: 90 },
@@ -25,18 +28,29 @@ const th: React.CSSProperties = { textAlign: 'left', fontSize: 11, fontWeight: 7
 const td: React.CSSProperties = { padding: '4px 6px', verticalAlign: 'top' }
 const cell: React.CSSProperties = { ...inputStyle, padding: '6px 8px', fontSize: 12.5 }
 
-function blankRow(branchId: number): ItemPlantRow {
+// Coded dropdown rows come flagged `allowed` from the server (role visibility, Store › Items › Plant data › Visibility):
+// a row keeps a saved value it may not pick again; a new row starts on the first allowed value.
+type Allowed = { value: string; label: string; allowed?: boolean }
+const pickable = (opts: Allowed[], current: string) => opts.filter((o) => o.allowed !== false || o.value === current)
+const firstAllowed = (opts: Allowed[], fallback: string) => (opts.find((o) => o.allowed !== false) || opts[0])?.value ?? fallback
+
+function blankRow(branchId: number, mrpType = 'reorder_point', procurementType = 'buy'): ItemPlantRow {
   return {
-    branch_id: branchId, mrp_type: 'reorder_point', procurement_type: 'buy', reorder_level: null, safety_stock: null,
+    branch_id: branchId, mrp_type: mrpType, procurement_type: procurementType, reorder_level: null, safety_stock: null,
     minimum_stock: null, maximum_stock: null, reorder_quantity: null, lead_time_days: null, inhouse_production_days: null,
     default_location_id: null, purchasing_blocked: false, remarks: null,
   }
 }
 
-export default function ItemPlantData({ itemId, canEdit }: { itemId: number; canEdit: boolean }) {
-  const [data, setData] = useState<ItemPlantsPayload | null>(null)
-  const [rows, setRows] = useState<ItemPlantRow[]>([])
-  const [editing, setEditing] = useState(false)
+export default function ItemPlantData({ itemId, canEdit, preview: previewProp = false }: { itemId: number; canEdit: boolean; preview?: boolean }) {
+  // Role visibility of the coded dropdowns (Store › Items › Plant data › Visibility). In the Role editor's
+  // "Preview & choose" (own key, or inside the item page preview) the block draws sample rows, opened for editing
+  // so the MRP type / make-or-buy values can be picked, and saves nothing.
+  const vis = useVisibility('store:items.plant_data')
+  const preview = previewProp || vis.preview
+  const [data, setData] = useState<ItemPlantsPayload | null>(preview ? samplePlantData : null)
+  const [rows, setRows] = useState<ItemPlantRow[]>(preview ? samplePlantData.plants : [])
+  const [editing, setEditing] = useState(preview)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [addPlant, setAddPlant] = useState('')
@@ -44,7 +58,7 @@ export default function ItemPlantData({ itemId, canEdit }: { itemId: number; can
   const load = () => itemPlantsApi.get(itemId)
     .then((d) => { setData(d); setRows(d.plants) })
     .catch((e) => setError(extractErrorMessages(e, 'Plant data could not be loaded.').join(' ')))
-  useEffect(() => { if (itemId) load() }, [itemId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (itemId && !preview) load() }, [itemId, preview]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!data) return error ? <Section title="Plant data" style={{ marginBottom: 20 }}><p style={{ fontSize: 13, color: '#b91c1c' }}>{error}</p></Section> : null
 
@@ -54,6 +68,7 @@ export default function ItemPlantData({ itemId, canEdit }: { itemId: number; can
   const num = (v: string) => (v.trim() === '' ? null : Number(v))
 
   const save = async () => {
+    if (preview) return
     setBusy(true); setError('')
     try {
       const d = await itemPlantsApi.save(itemId, rows)
@@ -83,18 +98,20 @@ export default function ItemPlantData({ itemId, canEdit }: { itemId: number; can
             <tr key={r.branch_id} style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
               <td style={{ ...td, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>{plantName(r.branch_id)}</td>
               <td style={td}>
-                {ed ? (
+                {ed ? (<>
                   <Select style={{ ...cell, width: 130 }} value={r.mrp_type} onChange={(e) => set(i, { mrp_type: e.target.value })}>
-                    {data.meta.mrp_types.map((o) => <option key={o.value} value={o.value}>{o.label.split(' — ')[0]}</option>)}
+                    {(preview ? data.meta.mrp_types : pickable(data.meta.mrp_types, r.mrp_type)).map((o) => <option key={o.value} value={o.value}>{o.label.split(' — ')[0]}</option>)}
                   </Select>
-                ) : <span style={{ fontSize: 13 }}>{data.meta.mrp_types.find((o) => o.value === r.mrp_type)?.label.split(' — ')[0]}</span>}
+                  {i === 0 && <VisOptionValues vis={vis} dropdown="mrp_type" />}
+                </>) : <span style={{ fontSize: 13 }}>{data.meta.mrp_types.find((o) => o.value === r.mrp_type)?.label.split(' — ')[0]}</span>}
               </td>
               <td style={td}>
-                {ed ? (
+                {ed ? (<>
                   <Select style={{ ...cell, width: 120 }} value={r.procurement_type} onChange={(e) => set(i, { procurement_type: e.target.value })}>
-                    {data.meta.procurement_types.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    {(preview ? data.meta.procurement_types : pickable(data.meta.procurement_types, r.procurement_type)).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </Select>
-                ) : <span style={{ fontSize: 13 }}>{data.meta.procurement_types.find((o) => o.value === r.procurement_type)?.label}</span>}
+                  {i === 0 && <VisOptionValues vis={vis} dropdown="procurement_type" />}
+                </>) : <span style={{ fontSize: 13 }}>{data.meta.procurement_types.find((o) => o.value === r.procurement_type)?.label}</span>}
               </td>
               {NUM_FIELDS.map((f) => (
                 <td key={f.key} style={td}>
@@ -161,7 +178,7 @@ export default function ItemPlantData({ itemId, canEdit }: { itemId: number; can
                     <option value="">Add a plant…</option>
                     {unused.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </Select>
-                  <button type="button" disabled={!addPlant} onClick={() => { setRows([...rows, blankRow(Number(addPlant))]); setAddPlant('') }}
+                  <button type="button" disabled={!addPlant} onClick={() => { setRows([...rows, blankRow(Number(addPlant), firstAllowed(data.meta.mrp_types, 'reorder_point'), firstAllowed(data.meta.procurement_types, 'buy'))]); setAddPlant('') }}
                     style={sheetBtn('secondary', SHEET.INK, !addPlant)}><SheetIcon name="plus" size={15} />Add</button>
                 </div>
               )}

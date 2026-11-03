@@ -6,11 +6,14 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import Response
 from sqlalchemy.orm import Session, selectinload
 
+from app.core import visibility
 from app.core.config import settings
 
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.core.permission_registry import can_view_tab
-from app.core.permissions import ensure_feature_action, require_app_access, require_feature_action, require_tab_action
+from app.core.permissions import (
+    GRANT_HINT, PermissionDenied, _tab_label, ensure_feature_action, require_app_access, require_feature_action, require_tab_action,
+)
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.quality.models.inspection_lot import (
@@ -35,6 +38,9 @@ router = APIRouter(prefix="/quality/inspection-lots", tags=["Quality"], dependen
 
 _CAN_CREATE = require_tab_action("quality", "inspection_lots", "create")
 _CAN_EDIT = require_tab_action("quality", "inspection_lots", "edit")
+# Role-wise visibility key of the manual lot form (core/features/quality.py): the
+# Inspection type values a role may raise by hand are also enforced here.
+LOT_VISIBILITY_KEY = "quality:inspection_lots"
 
 
 def _to_responses(db: Session, lots: list[QualityInspectionLot], detail: bool = False) -> list[QualityInspectionLotResponse]:
@@ -118,9 +124,32 @@ def _run(db: Session, fn):
 
 
 @router.get("/meta")
-async def lots_meta():
+async def lots_meta(user: User = Depends(require_app_access("quality"))):
+    from app.core.features.quality import MANUAL_LOT_TYPE_LABELS
+    # inspection_types: the kinds a person may raise by hand, each flagged `allowed` for this
+    # user (a role's Visibility rule may offer only some). Never filtered.
+    allowed = visibility.allowed_values(user, LOT_VISIBILITY_KEY, "inspection_type")
     return {"statuses": list(QUALITY_LOT_STATUSES),
-            "decisions": [{"value": k, "label": v} for k, v in QUALITY_LOT_DECISION_LABELS.items()]}
+            "decisions": [{"value": k, "label": v} for k, v in QUALITY_LOT_DECISION_LABELS.items()],
+            "inspection_types": [{"value": v, "label": l, "allowed": allowed is None or v in allowed}
+                                 for v, l in MANUAL_LOT_TYPE_LABELS.items()]}
+
+
+def _ensure_lot_list_view(user: User, *, mine: bool, inspection_type: str | None, status_filter: str | None) -> None:
+    """The lot list is shared by Inspection Lots, My Inspections (mine), In-process (in_process lots)
+    and the final-lot picker of a New Inspection Call (decided lots): 'View' on any of the tabs that
+    asked for it (matrix cleanup 2026-11-03 — those tabs were checked only at app level before)."""
+    tabs = ["inspection_lots"]
+    if mine:
+        tabs.append("my_inspections")
+    if inspection_type == "in_process":
+        tabs.append("in_process_inspection")
+    if status_filter == "decision_made":
+        tabs.append("inspection_calls")
+    if any(can_view_tab(user, "quality", t) for t in tabs):
+        return
+    names = " or ".join(f"Quality › {_tab_label('quality', t)}" for t in tabs)
+    raise PermissionDenied(f"You don't have 'View' permission on {names}. {GRANT_HINT}", f"quality:{tabs[-1]}:view")
 
 
 @router.get("", response_model=list[QualityInspectionLotResponse])
@@ -130,6 +159,7 @@ async def list_lots(
     order_project_id: int | None = None, order_project_element_id: int | None = None,
     db: Session = Depends(get_db), user: User = Depends(require_app_access("quality")),
 ):
+    _ensure_lot_list_view(user, mine=mine, inspection_type=inspection_type, status_filter=status_filter)
     q = apply_scope(db.query(QualityInspectionLot).options(selectinload(QualityInspectionLot.results)), user, QualityInspectionLot)
     if status_filter:
         q = q.filter(QualityInspectionLot.status == status_filter)
@@ -160,6 +190,7 @@ async def create_manual_lot(payload: QualityInspectionLotCreate, db: Session = D
         raise HTTPException(status_code=422, detail="Incoming lots are created automatically by the GRN for items flagged 'inspection on receipt' — record the GRN in Store instead.")
     if payload.inspection_type == "first_article":
         raise HTTPException(status_code=422, detail="Raise a first article from Quality → First Article — it opens the FAI record (rule 9) together with its lot.")
+    visibility.ensure_option_allowed(user, LOT_VISIBILITY_KEY, "inspection_type", payload.inspection_type)
     item = db.query(StoreItem).filter(StoreItem.id == payload.item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail=f"Item #{payload.item_id} isn't in the Item Master.")

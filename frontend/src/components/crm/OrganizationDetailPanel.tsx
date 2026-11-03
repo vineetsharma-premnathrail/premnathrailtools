@@ -1,10 +1,13 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, Fragment, ReactNode } from 'react'
 import { EnvelopeSimple, Phone } from '@phosphor-icons/react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
+import { useVisibility } from '@/lib/visibility'
+import { VisSection } from '@/lib/visibilityComponents'
+import { sampleOrganizationDetail } from '@/lib/crmPreviewSamples'
 import { crmApi } from '@/lib/api'
 import { recordVisit } from '@/lib/crmShortcuts'
 import { OrganizationDetail, Inquiry, Tender, OrgContact } from '@/types'
@@ -22,6 +25,8 @@ import { priorityLabel } from '@/lib/priority'
 import { segmentBtnStyle, RowCount, Pill, pillStyle, DetailCard, DetailSummary, DetailGroup, DetailRow } from '@/components/shared/ui'
 
 const TABS = ['Overview', 'Contacts', 'Inquiries', 'Tenders', 'Audit Trail'] as const
+// Role-wise visibility section of each sub-tab (core/features/crm.py); 'Overview' always shows.
+const TAB_SECTION: Partial<Record<typeof TABS[number], string>> = { 'Contacts': 'detail_contacts', 'Inquiries': 'detail_inquiries', 'Tenders': 'detail_tenders', 'Audit Trail': 'detail_audit' }
 
 // Links out to an inquiry/tender carry a `back` param so its Back button returns
 // here — to this organization, on the tab the link was clicked from.
@@ -36,10 +41,13 @@ function useBackSuffix(tab: typeof TABS[number]) {
 export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink = true }: { orgId: number; onDeleted?: () => void; showEditLink?: boolean }) {
   const { user } = useAuth()
   const { can, canDelete, canFeature } = useCan()
+  // Role-wise visibility (Organization › Role & Permissions › CRM › Customer Organizations › Visibility › page): optional
+  // blocks and sub-tabs a role hides. In the Role editor's preview (vis.preview) the page draws a sample organization.
+  const vis = useVisibility('crm:organizations')
   const router = useRouter()
 
-  const [org, setOrg] = useState<OrganizationDetail | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [org, setOrg] = useState<OrganizationDetail | null>(vis.preview ? sampleOrganizationDetail : null)
+  const [loading, setLoading] = useState(!vis.preview)
   const [error, setError] = useState<string | string[]>('')
   const searchParams = useSearchParams()
   const initialTab = (t: string | null): typeof TABS[number] =>
@@ -63,19 +71,20 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
 
   useEffect(() => {
     // Deferred so the effect itself sets no state.
-    if (orgId) Promise.resolve().then(() => { setTab(initialTab(searchParams.get('tab'))); load() })
+    if (orgId && !vis.preview) Promise.resolve().then(() => { setTab(initialTab(searchParams.get('tab'))); load() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId])
 
   // Creator-or-admin (backend rule) AND the Permission Matrix grant for the action.
   const isOwnerOrAdmin = !!org && !!user && (user.role === 'admin' || org.created_by_id === user.id)
-  const canModify = isOwnerOrAdmin && can('crm', 'organizations', 'edit')
+  const canModify = isOwnerOrAdmin && can('crm', 'organizations', 'edit') && !vis.preview
   // Organization sub-tabs are features of the Organizations tab (core/features/crm.py).
-  const seeTab = (t: typeof TABS[number]) => t === 'Overview'
+  // A sub-tab needs its feature grant; role-wise visibility then hides it on screen (the preview draws every tab).
+  const seeTab = (t: typeof TABS[number]) => (vis.preview || !TAB_SECTION[t] || vis.showSection(TAB_SECTION[t]!)) && (t === 'Overview'
     || (t === 'Contacts' && canFeature('crm', 'organizations', 'contacts', 'view'))
     || ((t === 'Inquiries' || t === 'Tenders') && canFeature('crm', 'organizations', 'linked_records', 'view'))
-    || (t === 'Audit Trail' && canFeature('crm', 'organizations', 'audit_trail', 'view'))
-  const canDeleteOrg = !!org && canDelete('crm', 'organizations', org.created_by_id ?? null)
+    || (t === 'Audit Trail' && canFeature('crm', 'organizations', 'audit_trail', 'view')))
+  const canDeleteOrg = !!org && canDelete('crm', 'organizations', org.created_by_id ?? null) && !vis.preview
 
   const handleDelete = async () => {
     try {
@@ -93,26 +102,28 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+      <VisSection vis={vis} k="detail_header"><div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <p style={{ fontSize: 11.5, fontWeight: 600, color: '#a8a29e', margin: '0 0 4px' }}>{org.org_type || 'Customer Organization'}{org.org_code ? ` · ${org.org_code}` : ''}</p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{org.name}</h1>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <button onClick={() => router.push('/dashboard/crm/organizations')} type="button" data-tour="orgdetail-back-btn" style={secondaryBtnStyle}>
+          {!vis.preview && <button onClick={() => router.push('/dashboard/crm/organizations')} type="button" data-tour="orgdetail-back-btn" style={secondaryBtnStyle}>
             ← Back
-          </button>
+          </button>}
           {canModify && showEditLink && <button type="button" onClick={() => router.push(`${recordPath('/dashboard/crm/organizations', org)}/edit`)} data-tour="orgdetail-edit-link" style={secondaryBtnStyle}>Edit</button>}
           {canDeleteOrg && <button onClick={() => setShowDeleteConfirm(true)} data-tour="orgdetail-delete-btn" style={dangerBtnStyle}>Delete</button>}
         </div>
-      </div>
+      </div></VisSection>
 
       <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, overflowX: 'auto', overflowY: 'visible' }}>
         {TABS.filter(seeTab).map((t) => {
           const count = t === 'Inquiries' ? org.inquiry_count : t === 'Tenders' ? org.tender_count : t === 'Contacts' ? org.contacts.length : null
+          const section = TAB_SECTION[t]
+          const wrap = (node: ReactNode) => section ? <VisSection vis={vis} k={section}>{node}</VisSection> : node
           return (
+            <Fragment key={t}>{wrap(
             <button
-              key={t}
               onClick={() => setTab(t)}
               data-tour={`orgdetail-tab-${t}`}
               className="org-detail-tab"
@@ -125,15 +136,18 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
                 </span>
               )}
             </button>
+            )}</Fragment>
           )
         })}
       </div>
 
       {(tab === 'Overview' || !seeTab(tab)) && <OverviewTab org={org} />}
-      {tab === 'Contacts' && seeTab(tab) && <ContactsTab org={org} canModify={isOwnerOrAdmin && canFeature('crm', 'organizations', 'contacts', 'edit')} canCreate={canFeature('crm', 'organizations', 'contacts', 'create')} onRefresh={load} />}
-      {tab === 'Inquiries' && seeTab(tab) && <InquiriesTab orgId={org.id} orgRef={refOf(org)} canModify={can('crm', 'inquiries_tenders', 'create')} contacts={org.contacts} />}
-      {tab === 'Tenders' && seeTab(tab) && <TendersTab orgId={org.id} orgRef={refOf(org)} canModify={can('crm', 'inquiries_tenders', 'create')} />}
-      {tab === 'Audit Trail' && seeTab(tab) && <AuditTab orgId={org.id} />}
+      {/* Role editor preview: the sub-tabs load their own records, so the preview only shows a note under them. */}
+      {tab !== 'Overview' && seeTab(tab) && vis.preview && <p style={{ fontSize: 13, color: '#78716c', padding: '14px 16px', borderRadius: 12, background: '#fff', border: '1px dashed rgba(0,0,0,0.12)', margin: 0 }}>Shown with the real records on the page; the preview only decides whether this tab is offered.</p>}
+      {tab === 'Contacts' && seeTab(tab) && !vis.preview && <ContactsTab org={org} canModify={isOwnerOrAdmin && canFeature('crm', 'organizations', 'contacts', 'edit')} canCreate={canFeature('crm', 'organizations', 'contacts', 'create')} onRefresh={load} />}
+      {tab === 'Inquiries' && seeTab(tab) && !vis.preview && <InquiriesTab orgId={org.id} orgRef={refOf(org)} canModify={can('crm', 'inquiries_tenders', 'create')} contacts={org.contacts} />}
+      {tab === 'Tenders' && seeTab(tab) && !vis.preview && <TendersTab orgId={org.id} orgRef={refOf(org)} canModify={can('crm', 'inquiries_tenders', 'create')} />}
+      {tab === 'Audit Trail' && seeTab(tab) && !vis.preview && <AuditTab orgId={org.id} />}
 
       <ConfirmDialog
         open={showDeleteConfirm}
@@ -148,6 +162,7 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
 }
 
 function OverviewTab({ org }: { org: OrganizationDetail }) {
+  const vis = useVisibility('crm:organizations')
   // Keep the rows for legacy records that carry a value under a non-railway type.
   const showRailwayFields = orgTypeHasRailwayFields(org.org_type) || !!org.railway_zone || !!org.division_workshop
   const place = [org.city, org.state].filter(Boolean).join(', ')
@@ -162,19 +177,19 @@ function OverviewTab({ org }: { org: OrganizationDetail }) {
           {org.created_at && <>{dot}<span>Added {formatDate(org.created_at)}{org.created_by_name ? ` by ${org.created_by_name}` : ''}</span></>}
         </>}
       />
-      <DetailGroup title="Customer Organization Details">
+      <VisSection vis={vis} k="detail_details"><DetailGroup title="Customer Organization Details">
         <DetailRow emptyText="Not added" label="Scope">{org.org_scope === 'international' ? 'International' : 'Domestic'}</DetailRow>
         <DetailRow emptyText="Not added" label="Type">{org.org_type}</DetailRow>
         {showRailwayFields && <DetailRow emptyText="Not added" label="Railway zone">{org.railway_zone}</DetailRow>}
         {showRailwayFields && <DetailRow emptyText="Not added" label="Division / Workshop">{org.division_workshop}</DetailRow>}
-      </DetailGroup>
-      <DetailGroup title="Address">
+      </DetailGroup></VisSection>
+      <VisSection vis={vis} k="detail_address"><DetailGroup title="Address">
         <DetailRow emptyText="Not added" label="Address">{org.address}</DetailRow>
         <DetailRow emptyText="Not added" label="City / State">{place || null}</DetailRow>
         <DetailRow emptyText="Not added" label={org.org_scope === 'international' ? 'ZIP / Postal code' : 'PIN code'}>{org.pin_code}</DetailRow>
         <DetailRow emptyText="Not added" label="Country">{org.country}</DetailRow>
-      </DetailGroup>
-      <DetailGroup title="Contact & Registration" last>
+      </DetailGroup></VisSection>
+      <VisSection vis={vis} k="detail_contact_registration"><DetailGroup title="Contact & Registration" last>
         <DetailRow emptyText="Not added" label="Official phone">{[org.official_phone, ...(org.additional_phones || [])].filter(Boolean).join(', ') || null}</DetailRow>
         <DetailRow emptyText="Not added" label="Official email">{[org.official_email, ...(org.additional_emails || [])].filter(Boolean).join(', ') || null}</DetailRow>
         <DetailRow emptyText="Not added" label="Website">{org.website}</DetailRow>
@@ -190,7 +205,7 @@ function OverviewTab({ org }: { org: OrganizationDetail }) {
             <DetailRow emptyText="Not added" label="GST state code (place of supply)">{org.gst_state_code}</DetailRow>
           </>
         )}
-      </DetailGroup>
+      </DetailGroup></VisSection>
     </DetailCard>
   )
 }

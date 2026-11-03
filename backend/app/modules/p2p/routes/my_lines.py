@@ -1,6 +1,6 @@
 """My Lines: the buyer's worklist (2026-10-31, multi-buyer split).
 
-    GET /p2p/my-lines    the requisition lines a buyer must still quote, order or chase, one row per line
+    GET /p2p/my-lines    the requisition lines a buyer must still quote, order or chase, one row per line (the page groups them by requisition + item category + buyer)
 
 A buyer sees the lines whose buyer they are (the line's own buyer, else the requisition's assigned buyer).
 Another buyer's lines, all lines, or the unassigned ones (buyer_id=0) need the Purchase head's grant
@@ -210,7 +210,8 @@ def my_lines(
             pr_item_id=it.id, p2p_request_id=pr.id, p2p_number=pr.p2p_number, pr_status=pr.status, priority=pr.priority,
             required_date=pr.required_date, requester_name=names.get(pr.requested_by_id),
             purpose_label=P2P_PURPOSES.get(pr.purpose) if pr.purpose else None, charged_to=pr.project_label,
-            item_code=it.item_code, item_name=it.item_name, unit=it.unit, buy_qty=lp.buy_qty,
+            item_code=it.item_code, item_name=it.item_name,
+            category=it.category or (it.store_item.category if it.store_item is not None else None), unit=it.unit, buy_qty=lp.buy_qty,
             short_closed_qty=lp.short_closed_qty, ordered_qty=lp.ordered_qty, released_qty=lp.released_qty,
             accepted_qty=lp.accepted_qty, open_to_order=lp.open_to_order, pending_receipt=lp.pending_receipt,
             state=lp.state, state_label=lp.state_label, buyer_id=buyer, buyer_name=names.get(buyer),

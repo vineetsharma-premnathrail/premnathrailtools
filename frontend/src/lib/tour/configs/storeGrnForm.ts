@@ -62,7 +62,7 @@ const config: TourConfig = {
       target: 'store-grn-form-save-btn',
       title: 'Save Goods Receipt',
       purpose: 'Records the receipt. Enabled once a PO is selected.',
-      after: 'A GRN number is generated and you land on its detail page with status "Pending Inspection". Stock is not added yet — the quality inspection on that page accepts or rejects the quantity first.',
+      after: 'A GRN number is generated and you land on its detail page. Items without the "Quality check on receipt" flag are already in Free stock and the GRN shows Completed; items with the flag wait with Quality under an inspection lot, so the GRN stays "Pending quality check" until Quality decides.',
     },
     {
       target: 'store-grn-form-cancel-btn',

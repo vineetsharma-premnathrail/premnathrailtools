@@ -51,6 +51,7 @@ export default function RoleDetailPage() {
   const [dataScopes, setDataScopes] = useState<Record<string, string>>({})
   const [notifyEvents, setNotifyEvents] = useState<Record<string, string[]>>({})
   const [assigneeRules, setAssigneeRules] = useState<NonNullable<Role['assignee_rules']>>({})
+  const [visibilityRules, setVisibilityRules] = useState<NonNullable<Role['visibility_rules']>>({})
   // Options for the "Assign to" rule popup (departments / roles / people).
   const [deptOptions, setDeptOptions] = useState<{ id: number; label: string; sub?: string | null }[]>([])
   const [roleOptions, setRoleOptions] = useState<{ id: number; label: string }[]>([])
@@ -80,7 +81,7 @@ export default function RoleDetailPage() {
 
   const applyRole = (r: Role) => {
     setRole(r); setName(r.name); setDescription(r.description || ''); setIsActive(r.is_active)
-    setIsDefault(r.is_default); setPermissions(r.permissions); setDataScopes(r.data_scopes || {}); setNotifyEvents(r.notification_events || {}); setAssigneeRules(r.assignee_rules || {}); setMemberIds((r.users || []).map((u) => u.id))
+    setIsDefault(r.is_default); setPermissions(r.permissions); setDataScopes(r.data_scopes || {}); setNotifyEvents(r.notification_events || {}); setAssigneeRules(r.assignee_rules || {}); setVisibilityRules(r.visibility_rules || {}); setMemberIds((r.users || []).map((u) => u.id))
   }
 
   useEffect(() => {
@@ -115,12 +116,12 @@ export default function RoleDetailPage() {
 
   const draft = useFormDraft(
     isNew ? 'org-role-new' : null,
-    { name, description, isActive, isDefault, permissions, dataScopes, notifyEvents, assigneeRules, memberIds },
-    (d: { name?: string; description?: string; isActive?: boolean; isDefault?: boolean; permissions?: string[]; dataScopes?: Record<string, string>; notifyEvents?: Record<string, string[]>; assigneeRules?: NonNullable<Role['assignee_rules']>; memberIds?: number[] }) => {
+    { name, description, isActive, isDefault, permissions, dataScopes, notifyEvents, assigneeRules, visibilityRules, memberIds },
+    (d: { name?: string; description?: string; isActive?: boolean; isDefault?: boolean; permissions?: string[]; dataScopes?: Record<string, string>; notifyEvents?: Record<string, string[]>; assigneeRules?: NonNullable<Role['assignee_rules']>; visibilityRules?: NonNullable<Role['visibility_rules']>; memberIds?: number[] }) => {
       setName(d.name || ''); setDescription(d.description || '')
       setIsActive(d.isActive ?? true); setIsDefault(d.isDefault ?? false)
       setPermissions(d.permissions || []); setDataScopes(d.dataScopes || {}); setNotifyEvents(d.notifyEvents || {})
-      setAssigneeRules(d.assigneeRules || {}); setMemberIds(d.memberIds || [])
+      setAssigneeRules(d.assigneeRules || {}); setVisibilityRules(d.visibilityRules || {}); setMemberIds(d.memberIds || [])
     },
   )
 
@@ -132,7 +133,7 @@ export default function RoleDetailPage() {
   if (linkError) return (<div><OrganizationNav /><InvalidRecordLink message={linkError} listHref="/dashboard/organization/roles" listLabel="Back to roles" /></div>)
   if (!isNew && !roleId) return <div><OrganizationNav /></div>
 
-  const payload = () => ({ name: name.trim(), description: description.trim() || null, permissions, data_scopes: dataScopes, notification_events: notifyEvents, assignee_rules: assigneeRules, is_default: isDefault, is_active: isActive })
+  const payload = () => ({ name: name.trim(), description: description.trim() || null, permissions, data_scopes: dataScopes, notification_events: notifyEvents, assignee_rules: assigneeRules, visibility_rules: visibilityRules, is_default: isDefault, is_active: isActive })
   // Modules this role opens — only those can carry a data scope.
   const grantedModules = catalog
     ? Array.from(new Set(Array.from(expandGrants(catalog, permissions)).map((g) => g.split(':')[0])))
@@ -356,6 +357,7 @@ export default function RoleDetailPage() {
               </p>
               <PermissionMatrixEditor registry={catalog} value={permissions} onChange={setPermissions} readOnly={locked}
                 assigneeRules={assigneeRules} onAssigneeRulesChange={locked ? undefined : setAssigneeRules}
+                visibilityRules={visibilityRules} onVisibilityRulesChange={locked ? undefined : setVisibilityRules} roleName={name.trim() || undefined}
                 assigneeOptions={{ departments: deptOptions, roles: roleOptions, users: directory.map((u) => ({ id: u.id, label: u.name || u.email, sub: u.department || null })) }} />
             </SheetSection>
           </div>

@@ -15,6 +15,9 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
 import { priorityLabel, priorityTone } from '@/lib/priority'
+import { useVisibility } from '@/lib/visibility'
+import { VisTd, VisTh } from '@/lib/visibilityComponents'
+import { sampleChangeRequests } from '@/lib/designPreviewSamples'
 
 const ECN_STATUS_HEX: Record<string, string> = { draft: '#78716c', submitted: '#F59E0B', approved: '#2563EB', rejected: '#DC2626', implemented: '#16A34A', closed: '#0f766e', cancelled: '#a8a29e' }
 const ECR_STATUS_HEX: Record<string, string> = { open: '#F59E0B', impact_checked: '#7C3AED', approved: '#16A34A', rejected: '#DC2626', deferred: '#78716c', withdrawn: '#a8a29e' }
@@ -49,6 +52,11 @@ const tableWrap: React.CSSProperties = {
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 380px)',
 }
 const bigBtn: React.CSSProperties = primaryBtnStyle
+// Change request columns a role may hide (Role & Permissions › Design › Changes › Visibility); number, title and status always show.
+const ECR_COLS: { label: string; key?: string }[] = [
+  { label: 'ECR' }, { label: 'Title' }, { label: 'Source', key: 'source' }, { label: 'Urgency', key: 'urgency' }, { label: 'Items', key: 'items' },
+  { label: 'Raised by', key: 'raised_by' }, { label: 'Status' }, { label: 'Votes', key: 'votes' }, { label: 'Days open', key: 'days_open' }, { label: 'ECN', key: 'ecn' },
+]
 
 function pill(label: string, hex: string) {
   return <span style={pillStyle(hex)}>{label}</span>
@@ -66,13 +74,15 @@ export default function DesignChangesPage() {
   const { isAuthorized, isLoading } = useRequireApp('design')
   const router = useRouter()
   const searchParams = useSearchParams()
-  const me = useDesignMe(isAuthorized)
-  const [section, setSection] = useState<'ecr' | 'ecn'>(searchParams.get('tab') === 'ecn' ? 'ecn' : 'ecr')
+  // Role editor "Preview & choose": the change requests list with three made-up requests, nothing is loaded.
+  const vis = useVisibility('design:change_notices')
+  const me = useDesignMe(isAuthorized && !vis.preview)
+  const [section, setSection] = useState<'ecr' | 'ecn'>(!vis.preview && searchParams.get('tab') === 'ecn' ? 'ecn' : 'ecr')
   const [error, setError] = useState<string | string[]>('')
 
   // ECR list
-  const [ecrs, setEcrs] = useState<DesignChangeRequest[]>([])
-  const [ecrLoading, setEcrLoading] = useState(true)
+  const [ecrs, setEcrs] = useState<DesignChangeRequest[]>(vis.preview ? sampleChangeRequests : [])
+  const [ecrLoading, setEcrLoading] = useState(!vis.preview)
   const [ecrTab, setEcrTab] = useState(ECR_TABS[0].key)
   const [ecrSource, setEcrSource] = useState('')
   const [mine, setMine] = useState(false)
@@ -85,7 +95,7 @@ export default function DesignChangesPage() {
   const [ecnSearch, setEcnSearch] = useState('')
 
   useEffect(() => {
-    if (!isAuthorized || section !== 'ecr') return
+    if (!isAuthorized || section !== 'ecr' || vis.preview) return
     const params: Record<string, unknown> = {}
     if (ecrTab) params.status = ecrTab
     if (ecrSource) params.source = ecrSource
@@ -99,10 +109,10 @@ export default function DesignChangesPage() {
         .finally(() => setEcrLoading(false))
     }, ecrSearch ? 250 : 0)
     return () => clearTimeout(handle)
-  }, [isAuthorized, section, ecrTab, ecrSource, mine, ecrSearch])
+  }, [isAuthorized, section, ecrTab, ecrSource, mine, ecrSearch, vis.preview])
 
   useEffect(() => {
-    if (!isAuthorized || section !== 'ecn') return
+    if (!isAuthorized || section !== 'ecn' || vis.preview) return
     const params: Record<string, unknown> = {}
     if (ecnTab) params.status = ecnTab
     if (ecnSearch.trim()) params.search = ecnSearch.trim()
@@ -114,9 +124,10 @@ export default function DesignChangesPage() {
         .finally(() => setEcnLoading(false))
     }, ecnSearch ? 250 : 0)
     return () => clearTimeout(handle)
-  }, [isAuthorized, section, ecnTab, ecnSearch])
+  }, [isAuthorized, section, ecnTab, ecnSearch, vis.preview])
 
   if (isLoading || !isAuthorized) return null
+  const ecrColCount = ECR_COLS.filter((c) => !c.key || vis.preview || vis.showColumn('change_requests', c.key)).length
 
   const switchSection = (s: 'ecr' | 'ecn') => {
     setSection(s)
@@ -126,7 +137,7 @@ export default function DesignChangesPage() {
 
   return (
     <div>
-      <DesignNav />
+      {!vis.preview && <DesignNav />}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
@@ -136,13 +147,13 @@ export default function DesignChangesPage() {
             Anyone raises a change request (ECR) against a released drawing or BOM → Design checks the impact → the change board votes → an approved ECR becomes a change notice (ECN).
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {!vis.preview && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button data-tour="design-changes-raise-ecr-btn" onClick={() => router.push('/dashboard/design/change-requests/new')} style={bigBtn}>+ Raise ECR</button>
-        </div>
+        </div>}
       </div>
 
       {/* Section switch */}
-      <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(255,255,255,.6)', border: `1px solid ${BORDER.normal}`, marginBottom: 16 }}>
+      {!vis.preview && <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(255,255,255,.6)', border: `1px solid ${BORDER.normal}`, marginBottom: 16 }}>
         {([['ecr', 'Change requests (ECR)'], ['ecn', 'Change notices (ECN)']] as const).map(([k, label]) => {
           const active = section === k
           return (
@@ -151,7 +162,7 @@ export default function DesignChangesPage() {
             </button>
           )
         })}
-      </div>
+      </div>}
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
@@ -178,33 +189,35 @@ export default function DesignChangesPage() {
           <div data-tour="design-ecrs-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
               <thead>
-                <tr>{['ECR', 'Title', 'Source', 'Urgency', 'Items', 'Raised by', 'Status', 'Votes', 'Days open', 'ECN'].map((h, hi) => <th key={h} style={thStyle}>{h}{hi === 0 && <RowCount count={ecrs.length} />}</th>)}</tr>
+                <tr>{ECR_COLS.map((c, hi) => c.key
+                  ? <VisTh key={c.label} vis={vis} table="change_requests" k={c.key} style={thStyle}>{c.label}</VisTh>
+                  : <th key={c.label} style={thStyle}>{c.label}{hi === 0 && <RowCount count={ecrs.length} />}</th>)}</tr>
               </thead>
               <tbody>
                 {ecrLoading ? (
-                  <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+                  <tr><td colSpan={ecrColCount} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
                 ) : ecrs.length === 0 ? (
-                  <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No change requests here — use + Raise ECR to ask for a change to a released drawing or BOM.</td></tr>
+                  <tr><td colSpan={ecrColCount} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No change requests here — use + Raise ECR to ask for a change to a released drawing or BOM.</td></tr>
                 ) : (
                   ecrs.map((r) => (
-                    <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/design/change-requests', r))} style={{ cursor: 'pointer' }}>
+                    <tr key={r.id} onClick={() => { if (!vis.preview) router.push(recordPath('/dashboard/design/change-requests', r)) }} style={{ cursor: 'pointer' }}>
                       <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{r.ecr_number}</td>
                       <td style={{ ...cellStyle, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</td>
-                      <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
+                      <VisTd vis={vis} table="change_requests" k="source" style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
                         {ECR_SOURCE_LABELS[r.source] || r.source}
                         {(r.ncr_number || r.capa_number) && <span style={{ color: TEXT.muted }}> · {r.ncr_number || r.capa_number}</span>}
-                      </td>
-                      <td style={cellStyle}>{pill(ECR_URGENCY_LABELS[r.urgency] || r.urgency, URGENCY_HEX[r.urgency] || '#78716c')}</td>
-                      <td style={cellStyle}>{r.items.length}</td>
-                      <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.raised_by_name || '—'}</td>
+                      </VisTd>
+                      <VisTd vis={vis} table="change_requests" k="urgency" style={cellStyle}>{pill(ECR_URGENCY_LABELS[r.urgency] || r.urgency, URGENCY_HEX[r.urgency] || '#78716c')}</VisTd>
+                      <VisTd vis={vis} table="change_requests" k="items" style={cellStyle}>{r.items.length}</VisTd>
+                      <VisTd vis={vis} table="change_requests" k="raised_by" style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.raised_by_name || '—'}</VisTd>
                       <td style={cellStyle}>{pill(ECR_STATUS_LABELS[r.status] || r.status, ECR_STATUS_HEX[r.status] || '#78716c')}</td>
-                      <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.votes_needed ? `${r.votes_cast} / ${r.votes_needed}` : '—'}</td>
-                      <td style={cellStyle}>{['open', 'impact_checked'].includes(r.status) ? r.days_open : '—'}</td>
-                      <td style={cellStyle} onClick={(ev) => { if (r.ecn_id) ev.stopPropagation() }}>
+                      <VisTd vis={vis} table="change_requests" k="votes" style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.votes_needed ? `${r.votes_cast} / ${r.votes_needed}` : '—'}</VisTd>
+                      <VisTd vis={vis} table="change_requests" k="days_open" style={cellStyle}>{['open', 'impact_checked'].includes(r.status) ? r.days_open : '—'}</VisTd>
+                      <VisTd vis={vis} table="change_requests" k="ecn" style={cellStyle} onClick={(ev) => { if (r.ecn_id) ev.stopPropagation() }}>
                         {r.ecn_id ? (
-                          <span onClick={() => router.push(recordPath('/dashboard/design/change-notices', r, 'ecn_id'))} style={{ fontWeight: 600, color: '#FF6A2A', cursor: 'pointer', whiteSpace: 'nowrap' }}>{r.ecn_number}</span>
+                          <span onClick={() => { if (!vis.preview) router.push(recordPath('/dashboard/design/change-notices', r, 'ecn_id')) }} style={{ fontWeight: 600, color: '#FF6A2A', cursor: 'pointer', whiteSpace: 'nowrap' }}>{r.ecn_number}</span>
                         ) : '—'}
-                      </td>
+                      </VisTd>
                     </tr>
                   ))
                 )}

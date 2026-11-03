@@ -4,6 +4,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
+from app.core import visibility
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.core.permissions import ensure_feature_action, require_app_access, require_feature_action, require_tab_action
 from app.db.session import get_db
@@ -11,6 +12,7 @@ from app.modules.main.models.user import User
 from app.modules.quality.models.capa import (
     QualityCapa, QualityCapaAction, QUALITY_CAPA_STATUSES, QUALITY_CAPA_STATUS_LABELS, QUALITY_CAPA_TRIGGER_LABELS,
     QUALITY_CAPA_PREVENTION_LABELS, QUALITY_FISHBONE_CATEGORIES, QUALITY_CAPA_TEAM_ROLES, QUALITY_CAPA_OPEN_STATUSES,
+    QUALITY_CAPA_ACTION_TYPES,
 )
 from app.modules.quality.models.customer_complaint import QualityCustomerComplaint
 from app.modules.quality.models.masters import QualityDefectCode
@@ -26,6 +28,9 @@ router = APIRouter(prefix="/quality/capa", tags=["Quality"], dependencies=[Depen
 
 _CAN_CREATE = require_tab_action("quality", "capa", "create")
 _CAN_EDIT = require_tab_action("quality", "capa", "edit")
+# Role-wise visibility key of the CAPA form (core/features/quality.py): Type and
+# Severity values a role may pick are also enforced here.
+CAPA_VISIBILITY_KEY = "quality:capa"
 
 _OPTIONS = (selectinload(QualityCapa.team), selectinload(QualityCapa.actions), selectinload(QualityCapa.ncr_links))
 
@@ -91,8 +96,16 @@ def _run(db: Session, capa_id: int, fn) -> QualityCapaResponse:
 
 
 @router.get("/meta")
-async def capa_meta():
+async def capa_meta(user: User = Depends(require_app_access("quality"))):
+    # action_types / severity_options: every value, flagged `allowed` for this user (a role's
+    # Visibility rule may offer only some). Never filtered, so a saved CAPA keeps its value.
+    types_allowed = visibility.allowed_values(user, CAPA_VISIBILITY_KEY, "action_type")
+    sev_allowed = visibility.allowed_values(user, CAPA_VISIBILITY_KEY, "severity")
     return {"statuses": QUALITY_CAPA_STATUS_LABELS, "triggers": QUALITY_CAPA_TRIGGER_LABELS,
+            "action_types": [{"value": v, "label": v.capitalize(), "allowed": types_allowed is None or v in types_allowed}
+                             for v in QUALITY_CAPA_ACTION_TYPES],
+            "severity_options": [{"value": v, "label": v.capitalize(), "allowed": sev_allowed is None or v in sev_allowed}
+                                 for v in ("minor", "major", "critical")],
             "prevention_types": QUALITY_CAPA_PREVENTION_LABELS, "fishbone_categories": list(QUALITY_FISHBONE_CATEGORIES),
             "team_roles": list(QUALITY_CAPA_TEAM_ROLES)}
 
@@ -130,6 +143,8 @@ async def list_capas(
 
 @router.post("", response_model=QualityCapaResponse)
 async def create_capa(payload: QualityCapaCreate, db: Session = Depends(get_db), user: User = Depends(_CAN_CREATE)):
+    visibility.ensure_option_allowed(user, CAPA_VISIBILITY_KEY, "action_type", payload.action_type)
+    visibility.ensure_option_allowed(user, CAPA_VISIBILITY_KEY, "severity", payload.severity)
     authz.ensure_may_assign(db, user, authz.CAPA_OWNER_RULE, payload.responsible_user_id)
     try:
         capa = capa_service.create_manual(db, payload.model_dump(), user)
@@ -148,8 +163,13 @@ async def get_capa(capa_id: int, db: Session = Depends(get_db), user: User = Dep
 @router.patch("/{capa_id}", response_model=QualityCapaResponse)
 async def update_capa(capa_id: int, payload: QualityCapaUpdate, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
     capa = _get_or_404(db, capa_id, user, lock=True)
+    changes = payload.model_dump(exclude_unset=True)
+    # Only a changed coded value is checked, so an older CAPA keeps a value the role no longer offers.
+    for dropdown in ("action_type", "severity"):
+        if changes.get(dropdown) and changes[dropdown] != getattr(capa, dropdown):
+            visibility.ensure_option_allowed(user, CAPA_VISIBILITY_KEY, dropdown, changes[dropdown])
     authz.ensure_may_assign(db, user, authz.CAPA_OWNER_RULE, payload.responsible_user_id, capa.responsible_user_id)
-    return _run(db, capa_id, lambda: capa_service.update(db, capa, payload.model_dump(exclude_unset=True), user))
+    return _run(db, capa_id, lambda: capa_service.update(db, capa, changes, user))
 
 
 @router.put("/{capa_id}/team", response_model=QualityCapaResponse)

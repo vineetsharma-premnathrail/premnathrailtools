@@ -117,14 +117,14 @@ const config: TourConfig = {
     },
     {
       target: 'item-inspection',
-      title: 'Inspection on receipt',
+      title: 'Quality check on receipt',
       purpose: 'Tick when every incoming lot of this item must be checked by Quality.',
       why: 'When ticked, GRN quantity goes to Quality stock with an inspection lot; it becomes usable (Free stock) only after Quality accepts it.',
     },
     {
       target: 'item-mtc',
       title: 'Test certificate (MTC) required',
-      purpose: 'Tick when the supplier must send a mill test certificate with each lot (steel, castings, critical parts). Needs Inspection on receipt.',
+      purpose: 'Tick when the supplier must send a mill test certificate with each lot (steel, castings, critical parts). Needs Quality check on receipt.',
       why: 'Quality cannot accept the lot until the certificate is marked received — this prevents using uncertified material.',
     },
     {
