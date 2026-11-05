@@ -153,12 +153,17 @@ def test_decide_rules_defer_reopen_and_admin_override(client, board):
     r = client.post(f"{API}/change-requests/{ecr['id']}/reopen", headers=head)
     assert r.status_code == 409 and "only a deferred ECR" in r.json()["detail"]
 
-    # Admin may decide even while board votes are missing.
+    # Admin is not the Design head: being an admin never lets someone decide an ECR,
+    # and nobody (head included) can decide while board votes are missing.
     other = _ecr(client, team, [{"document_id": doc["id"]}]).json()
     client.post(f"{API}/change-requests/{other['id']}/impact",
                 json={"impact_summary": "Minor", "board_member_ids": [team["qa"].id]}, headers=auth(team["author"]))
     r = client.post(f"{API}/change-requests/{other['id']}/decide", json={"decision": "rejected", "comment": "Not worth it"}, headers=auth(team["admin"]))
-    assert r.status_code == 200 and r.json()["status"] == "rejected"
+    assert r.status_code == 403 and "being an admin is not enough" in r.json()["detail"]
+    detail = client.get(f"{API}/change-requests/{other['id']}", headers=auth(team["admin"])).json()
+    assert "decide" not in detail["allowed_actions"]
+    r = client.post(f"{API}/change-requests/{other['id']}/decide", json={"decision": "rejected", "comment": "Not worth it"}, headers=head)
+    assert r.status_code == 409 and "Waiting for the change board" in r.json()["detail"]
 
 
 def test_withdraw_rules(client, board):

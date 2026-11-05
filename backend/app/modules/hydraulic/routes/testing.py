@@ -274,11 +274,7 @@ async def submit_test_result(
     req = access.submit(db, access.TEST_KEY, access.TEST_PERM, entity_id=test.id, user=user, title=s["title"],
                         reference=s["reference"], context=s["context"])
     if req is None:
-        raise HTTPException(
-            status_code=422,
-            detail="Nobody else can sign off test results yet — grant 'Hydraulic & Pneumatic › Testing & Inspection › Approve' "
-                   "to a reviewer in Organization › Role & Permissions, or ask an admin to complete the test.",
-        )
+        raise access.nobody_approves(access.TEST_PERM)
     access.notify_hyd_event(
         db, background_tasks, "test_result_submitted", test, access.TEST_ENTITY,
         title=f"Test {test.test_number} waiting for sign-off",

@@ -132,9 +132,6 @@ def test_c02_requester_not_named_cannot_approve_own_pr(client, db):
     assert client.get(f"{BASE}/{pr['id']}", headers=_h(requester)).json()["status"] == "submitted"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "OPEN: C-02 an admin can stand in on their OWN requisition — "
-    "app/modules/organization/services/approval_engine.py decide() skips the four-eyes check for via='admin'"))
 def test_c02_admin_override_never_applies_to_own_pr(client, db):
     admin = _user(db, "c02.admin@premnathrail.com")
     admin.role = "admin"
@@ -156,6 +153,56 @@ def test_c02_requester_cannot_self_approve_a_slot_they_hold(client, db):
     assert created.status_code == 200, created.text
     r = client.post(f"{BASE}/{created.json()['id']}/approve", json={"comment": "self"}, headers=_h(requester))
     assert r.status_code == 403
+
+
+# ── Admin is not an approver (owner decision 2026-11-04) ────────────────────
+
+def _admin(db, email):
+    admin = _user(db, email)
+    admin.role = "admin"
+    db.commit()
+    return admin
+
+
+def test_admin_not_named_cannot_approve_or_reject_pr(client, db):
+    requester = _user(db, "noadm.req1@premnathrail.com")
+    pr = _create_pr(client, requester)
+    admin = _admin(db, "noadm.admin1@premnathrail.com")
+    r = client.post(f"{BASE}/{pr['id']}/approve", json={"comment": "as admin"}, headers=_h(admin))
+    assert r.status_code == 403, r.text
+    r = client.post(f"{BASE}/{pr['id']}/reject", json={"reason": "as admin"}, headers=_h(admin))
+    assert r.status_code == 403, r.text
+    got = client.get(f"{BASE}/{pr['id']}", headers=_h(requester)).json()
+    assert got["status"] == "submitted"
+    # The named approver still can.
+    first = next(iter(pr["_approvers"].values()))
+    assert client.post(f"{BASE}/{pr['id']}/approve", json={"comment": "ok"}, headers=_h(first)).status_code == 200
+
+
+def test_admin_not_named_cannot_approve_or_reject_po(client, db):
+    requester = _user(db, "noadm.req2@premnathrail.com")
+    pr = _create_pr(client, requester)
+    buyer = _user(db, "noadm.buyer2@premnathrail.com", apps=("purchase", "p2p"), is_director=True)
+    set_po_workflow(db, [u.id for u in pr["_po_approvers"].values()], buyer)
+    raised = _raise_po(client, pr, buyer, "PO-NOADM-2")
+    assert raised["status"] == "po_raised", raised["status"]
+    admin = _admin(db, "noadm.admin2@premnathrail.com")
+    r = client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": "as admin"}, headers=_h(admin))
+    assert r.status_code == 403, r.text
+    r = client.post(f"{BASE}/{pr['id']}/reject", json={"reason": "as admin"}, headers=_h(admin))
+    assert r.status_code == 403, r.text
+    assert client.get(f"{BASE}/{pr['id']}", headers=_h(buyer)).json()["status"] == raised["status"]
+
+
+def test_admin_has_no_approval_queue_or_approver_flag(client, db):
+    requester = _user(db, "noadm.req3@premnathrail.com")
+    pr = _create_pr(client, requester)
+    admin = _admin(db, "noadm.admin3@premnathrail.com")
+    queue = client.get(BASE, params={"queue": "pr-approval"}, headers=_h(admin))
+    assert queue.status_code == 200, queue.text
+    assert pr["id"] not in [row["id"] for row in queue.json()]
+    flags = client.get(f"{BASE}/approver-flags", headers=_h(admin)).json()
+    assert flags == {"is_pr_approver": False, "is_po_approver": False}
 
 
 def test_c02_po_creator_cannot_approve_own_po(client, db):

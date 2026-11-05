@@ -24,7 +24,7 @@ export default function PeriodsPanel() {
   // HR › Attendance › Payroll periods feature (lock = create, unlock = cancel, ADP file = export)
   const canLock = canFeature('hr', 'attendance', 'periods', 'create')
   const canExport = canFeature('hr', 'attendance', 'periods', 'export')
-  const isPartner = (!!(user as { is_partner?: boolean } | null)?.is_partner || user?.role === 'admin') && canFeature('hr', 'attendance', 'periods', 'cancel')
+  const isPartner = !!(user as { is_partner?: boolean } | null)?.is_partner && canFeature('hr', 'attendance', 'periods', 'cancel')
   const now = new Date()
   // Default = last month (the one usually locked) — in January that's December of last year.
   const [year, setYear] = useState(now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear())

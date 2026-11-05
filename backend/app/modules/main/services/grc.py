@@ -245,8 +245,8 @@ def decide_line(db: Session, line: AccessReviewLine, actor: User, decision: str,
         raise HTTPException(status_code=409, detail="This access review is closed — decisions can no longer be changed.")
     if line.reviewer_id != actor.id and not can_manage_reviews(actor):
         raise HTTPException(status_code=403, detail="Only the user's reporting manager (the assigned reviewer) or an Organization › Access Reviews editor can decide this line.")
-    if line.user_id == actor.id and not is_admin_user(actor):
-        raise HTTPException(status_code=403, detail="You can't recertify your own access — your reporting manager or an admin must decide it.")
+    if line.user_id == actor.id:
+        raise HTTPException(status_code=403, detail="You can't recertify your own access, even as an admin. The user's reporting manager (the assigned reviewer) or another Access Reviews editor must decide it. Ask them to open this review and decide your line.")
     if line.decision == "revoke":
         raise HTTPException(status_code=409, detail="This access was already revoked. To give it back, assign the role again in Organization › Users.")
     if decision == "revoke" and not (comment or "").strip():

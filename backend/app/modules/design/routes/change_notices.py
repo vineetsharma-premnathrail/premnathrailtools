@@ -143,8 +143,8 @@ def _cancel_refs(db: Session, ecn: DesignChangeNotice) -> dict:
 
 
 def can_acknowledge(db: Session, user: User, department: str) -> bool:
-    if user.role == "admin":
-        return True
+    # No admin shortcut: acknowledging is a department's sign-off, so only the
+    # named acknowledger (or, with none named, someone holding that department's app).
     named = (get_settings(db).ecn_acknowledger_ids or {}).get(department) or []
     if named:
         return user.id in named
@@ -717,7 +717,8 @@ async def acknowledge_change_notice(
         raise HTTPException(
             status_code=403,
             detail=f"You can't acknowledge {ecn.ecn_number} for {ACK_LABELS.get(ack.department, ack.department)} — "
-                   "that's for the people named in Design › Settings (or holders of that department's app).",
+                   "that's for the people named in Design › Settings (or holders of that department's app); being an admin is not enough. "
+                   "An admin can name the right person in Design › Settings.",
         )
     ack.acknowledged_by_id, ack.acknowledged_at = user.id, utcnow()
     ack.remarks = (payload.remarks or "").strip() or None

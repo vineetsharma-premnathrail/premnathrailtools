@@ -39,10 +39,10 @@ type Row =
 // The project number and the stage always show.
 const COLUMNS: { key: string; label: string }[] = [
   { key: 'code', label: 'Project No.' }, { key: 'name', label: 'Project / Model' }, { key: 'client', label: 'Client' },
-  { key: 'site', label: 'Site' }, { key: 'stage', label: 'Stage' }, { key: 'project_manager', label: 'Project manager' },
+  { key: 'site', label: 'Site' }, { key: 'stage', label: 'Stage' },
   { key: 'closing_dispatch', label: 'Closing / Dispatch' },
 ]
-const HIDEABLE = new Set(['client', 'site', 'project_manager', 'closing_dispatch'])
+const HIDEABLE = new Set(['client', 'site', 'closing_dispatch'])
 
 function addDaysIso(days: number) {
   const t = new Date(); t.setDate(t.getDate() + days)
@@ -246,7 +246,6 @@ function ProjectListViewInner({ showProjects, showMachines }: { showProjects: bo
                   <VisTd vis={vis} table="all_projects" k="client" style={tdStyle}>{r.p.client_name || '—'}</VisTd>
                   <VisTd vis={vis} table="all_projects" k="site" style={tdStyle}>—</VisTd>
                   <td style={tdStyle}><StagePills stage={r.p.lifecycle_stage} label={r.p.lifecycle_stage_label} status={r.p.status} /></td>
-                  <VisTd vis={vis} table="all_projects" k="project_manager" style={tdStyle}>{r.p.project_manager_name || '—'}</VisTd>
                   <VisTd vis={vis} table="all_projects" k="closing_dispatch" style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{r.p.target_handover_date ? formatDate(r.p.target_handover_date) : '—'}</VisTd>
                 </tr>
               ) : (
@@ -259,7 +258,6 @@ function ProjectListViewInner({ showProjects, showMachines }: { showProjects: bo
                   <td style={tdStyle}>
                     <Pill label={r.m.lifecycle_stage_label || LIFECYCLE_LABELS[r.m.lifecycle_stage || 'planned'] || '—'} hex={LIFECYCLE_HEX[r.m.lifecycle_stage || 'planned'] || '#64748b'} title={r.m.pm_project_id ? 'Follows its project' : 'Change it on the machine page'} />
                   </td>
-                  <VisTd vis={vis} table="all_projects" k="project_manager" style={tdStyle}>—</VisTd>
                   <VisTd vis={vis} table="all_projects" k="closing_dispatch" style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{r.m.delivery_date ? formatDate(r.m.delivery_date) : '—'}</VisTd>
                 </tr>
               ))}

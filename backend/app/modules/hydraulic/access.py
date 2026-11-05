@@ -28,10 +28,13 @@ Approvals (central engine, Organization › Approval Workflows):
 In-flight items: circuits already 'under_review' before the cut-over have no
 engine request; the old /approve and /return routes decide them with the old
 rules (`latest_request` is None). BOMs and tests had no pending state before.
-When nobody but the submitter / admins holds the approve permission (and the
-workflow is still permission-based), the engine can't route the request; the
-record then goes the pre-engine way (a circuit waits for an admin on the old
-route, an approver's release / completion is applied directly).
+Admins never approve / release / sign off just because they are admins (owner
+decision 2026-11-04): they are not approvers in the engine and the approve
+permission is not implied for them. When nobody but the submitter holds the
+approve permission (and the workflow is still permission-based), the engine
+can't route the request: submitting is refused with a message naming the
+permission to grant; an approver who holds it themselves still releases /
+completes in one step (applied directly).
 """
 from __future__ import annotations
 
@@ -41,7 +44,6 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.data_scope import register_scoped
-from app.core.permission_registry import is_admin_user
 from app.modules.hydraulic.models.bom import HydBom
 from app.modules.hydraulic.models.circuit import HydCircuit
 from app.modules.hydraulic.models.maintenance import HydMaintenancePlan, HydServiceRecord
@@ -102,7 +104,8 @@ def approver_ids(req: ApprovalRequest | None) -> set[int]:
 
 def no_engine_approver(db: Session, key: str, perm: str, user: User) -> bool:
     """True when the engine has nobody to route to: the workflow is still the
-    permission-based default and nobody except `user` (and admins) holds it."""
+    permission-based default and nobody except `user` holds it (admins never
+    count as approvers)."""
     wf = engine.ensure_workflow(db, key)
     default_shape = wf.is_active and all(
         s.approver_rule == "permission" and (s.rule_config or {}).get("permission") == perm for s in wf.stages
@@ -126,14 +129,27 @@ def live_request_ids(db: Session, entity_type: str, ids) -> dict[int, int]:
     return {e: r for e, r in rows}
 
 
+def nobody_approves(perm: str) -> HTTPException:
+    """422 for a record that nobody can approve. Admins never approve just
+    because they are admins, so an unrouteable request is refused up front."""
+    label = {
+        CIRCUIT_PERM: "Hydraulic & Pneumatic › Circuits › Approve",
+        BOM_PERM: "Hydraulic & Pneumatic › BOM › Approve",
+        TEST_PERM: "Hydraulic & Pneumatic › Testing & Inspection › Approve",
+    }.get(perm, perm)
+    return HTTPException(
+        status_code=422,
+        detail=f"Nobody other than you holds '{label}', and an admin can't approve just by being an admin. "
+               "Give that permission to a role or person who will review it in Organization › Role & Permissions "
+               "(or name the approvers in Organization › Approval Workflows), then submit again.",
+    )
+
+
 def decide_live(db: Session, req: ApprovalRequest, user: User, decision: str, comment: str | None) -> None:
     """Old approve/return routes on a record with an engine request: decide it
-    there. An admin who isn't the stage approver stands in; the old routes
-    didn't ask admins for a reason, so a default one is written."""
-    comment = (comment or "").strip() or None
-    if not comment and is_admin_user(user) and not engine.can_act_on_entity(db, user, req.entity_type, req.entity_id):
-        comment = f"Decided by admin {user.name or user.email} from the Hydraulic page"
-    engine.decide(db, req.id, user, decision, comment)
+    there. Only the people the workflow names (or their delegate / escalation
+    target) can decide; being an admin does not count — the engine refuses."""
+    engine.decide(db, req.id, user, decision, (comment or "").strip() or None)
 
 
 def submit(db: Session, key: str, perm: str, *, entity_id: int, user: User, title: str, reference: str,
@@ -151,18 +167,21 @@ def submit(db: Session, key: str, perm: str, *, entity_id: int, user: User, titl
 def submit_and_approve(db: Session, key: str, perm: str, *, entity_id: int, user: User, title: str, reference: str,
                        context: dict | None, direct, comment: str | None = None, amount: float | None = None) -> None:
     """An approver acting in one step (the pre-engine behaviour): submit and
-    approve at once when they're an approver of the first stage (or an
-    admin). With no routable approver at all, `direct()` applies it the old way."""
+    approve at once when they're an approver of the first stage. With no
+    routable approver at all, `direct()` applies it the old way, but only when
+    `user` really holds the approve permission themselves; an admin never
+    approves just by being an admin."""
     req = submit(db, key, perm, entity_id=entity_id, user=user, title=title, reference=reference, context=context, amount=amount)
     if req is None:
+        if user.id not in engine.permission_holders(db, perm):
+            raise nobody_approves(perm)
         direct()
         return
     if req.status != "pending":
         return
     if engine.can_act_on_entity(db, user, req.entity_type, entity_id):
         engine.decide(db, req.id, user, "approve", comment)
-    elif is_admin_user(user):
-        engine.decide(db, req.id, user, "approve", comment or f"Approved directly by admin {user.name or user.email}")
+    # else: the request stays with the people the workflow names
 
 
 def cancel_live(db: Session, entity_type: str, entity_id: int, user: User, reason: str) -> None:

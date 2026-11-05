@@ -25,7 +25,7 @@ from app.modules.organization.services.provisioning import sync_user_org_links
 from app.modules.hr.services.employee_sync import is_org_locked
 from app.modules.hr.services.exit_guard import is_exited, exited_login_message
 from app.core.config import settings
-from app.core.permission_registry import is_admin_user, legacy_erp_permissions, restricted_subtabs
+from app.core.permission_registry import legacy_erp_permissions, restricted_subtabs
 from app.core import visibility
 
 logger = logging.getLogger(__name__)
@@ -242,9 +242,9 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
 
 async def _refresh_azure_admin(db: Session, user: User) -> None:
     """Re-reads whether this user is an Azure tenant Global Administrator
-    and stores it on is_azure_admin (Azure admins see every module and are
-    portal admins). Best-effort: if Graph can't be asked, the last known
-    value stays — a failed lookup must never strip someone's access."""
+    and stores it on is_azure_admin — information only, it grants nothing in
+    the portal (owner, 2026-11-04). Best-effort: if Graph can't be asked, the
+    last known value stays."""
     if not user.azure_id:
         return
     try:
@@ -252,10 +252,22 @@ async def _refresh_azure_admin(db: Session, user: User) -> None:
     except Exception as e:  # noqa: BLE001 — login must not fail on this
         logger.warning("Azure admin lookup failed for %s: %s", user.email, e)
         return
+    # Stored for information only: a tenant Global Administrator is NOT made a
+    # portal admin — portal admin is set in Users (owner, 2026-11-04).
     changed = user.is_azure_admin != is_admin
     user.is_azure_admin = is_admin
-    if is_admin and user.role == "user":
+    # First-install bootstrap only: with NO portal admin row at all (fresh or
+    # emptied database — active or not), the first active Global Administrator
+    # who signs in becomes portal admin, so someone can set up Users. Once any
+    # admin exists (even deactivated) this never fires again.
+    if is_admin and user.is_active and user.role != "admin" and not (
+        db.query(User.id).filter(User.role == "admin").first()
+    ):
+        from app.modules.main.models.audit_log import AuditLog
         user.role = "admin"
+        db.add(AuditLog(entity_type="user", entity_id=user.id, action="role_changed", module_key="organization",
+                        summary=f"{user.name} made portal admin: no portal admin existed yet and they are a "
+                                "Microsoft tenant Global Administrator (first-install bootstrap)"))
         changed = True
     if changed:
         db.commit()
@@ -570,12 +582,11 @@ def _p2p_approver_flags(db: Session, user: User) -> tuple[bool, bool]:
     """(is_pr_approver, is_po_approver) for the P2P approval-queue tabs:
     a PR approver is anyone named in an approver slot on at least one PR
     (matrix approval rows or the legacy head columns); a PO approver is any
-    holder of a PO-approval role flag. Admins count as both."""
+    holder of a PO-approval role flag. Admins are not approvers by being
+    admin (owner, 2026-11-04) — same rules as everyone."""
     from app.modules.p2p.models.p2p_request import P2PRequest, P2P_PO_APPROVER_FLAGS
     from app.modules.p2p.models.p2p_request_approval import P2PRequestApproval
 
-    if user.role == "admin":
-        return True, True
     # New PRs / POs are routed by the central approval engine.
     from app.modules.p2p.approvals import is_approver_user
 
@@ -632,7 +643,8 @@ async def get_current_user_info(user: User = Depends(get_current_user), db: Sess
         is_po_approver=is_po_approver,
         notifications_enabled=user.notifications_enabled,
         tab_access=restricted_subtabs(user),
-        permissions=[] if is_admin_user(user) else sorted(user.effective_permissions),
+        # Admins too: their real grants decide approve / reject (has_grant, 2026-11-04).
+        permissions=sorted(user.effective_permissions),
         roles=sorted(r.name for r in user.roles or [] if r.is_active),
         # Role-wise UI visibility: only the effective restrictions (core/visibility.py).
         visibility=visibility.effective(user),

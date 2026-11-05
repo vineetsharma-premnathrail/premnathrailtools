@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.data_scope import ensure_in_scope
 from app.modules.maintenance.role_events import role_event
-from app.core.permission_registry import can_perform, is_admin_user
+from app.core.permission_registry import can_perform
 from app.core.permissions import (
     ensure_feature_action, ensure_tab_action, require_app_access, require_feature_action, require_tab_access, require_tab_action,
 )
@@ -167,7 +167,7 @@ async def activate_permit(permit_id: int, db: Session = Depends(get_db),
         raise HTTPException(status_code=409, detail=f"{p.permit_number} expired at {_aware(p.valid_to):%d-%m-%Y %H:%M}. Cancel it and have a new permit issued.")
     if p.valid_from and _aware(p.valid_from) > now:
         raise HTTPException(status_code=409, detail=f"{p.permit_number} is valid only from {_aware(p.valid_from):%d-%m-%Y %H:%M}.")
-    if p.issued_by_id == user.id and not is_admin_user(user):
+    if p.issued_by_id == user.id:
         raise HTTPException(status_code=409, detail="The permit issuer can't also accept it — the technician doing the job accepts it at site (two-person rule).")
     p.status, p.accepted_by_id, p.accepted_at = "active", user.id, now
     p.document_revision = (p.document_revision or 0) + 1

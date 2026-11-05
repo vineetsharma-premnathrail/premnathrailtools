@@ -54,6 +54,27 @@ def is_head(db: Session, user: User) -> bool:
     return role_of(db, user) in ("admin", "head") or not team_configured(db)
 
 
+def is_head_for_decision(db: Session, user: User) -> bool:
+    """The Design head for DECISIONS (ECR approve/reject/defer, releasing a
+    revision held for the customer, recording the customer's answer).
+    Admin is deliberately NOT a head here: being an admin never lets someone
+    decide. A real head on the team does; with no team set up yet, any Design
+    user acts as head (the pre-team behaviour), admin or not."""
+    roles = team_roles(db)
+    if not roles:
+        return True
+    return roles.get(user.id) == "head"
+
+
+def require_head_for_decision(db: Session, user: User, what: str) -> None:
+    if not is_head_for_decision(db, user):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Only the Design head can {what} — being an admin is not enough. Ask the Design head to do it; "
+                   "an admin can make someone the Design head in Design › Settings.",
+        )
+
+
 def head_ids(db: Session) -> list[int]:
     """Who gets "Design head" alerts: heads on the team, else the default
     approver from Settings."""
@@ -90,8 +111,8 @@ def check_signatory_role(db: Session, user_id: int | None, role: str, label: str
     if not roles:
         return
     person = db.query(User).filter(User.id == user_id).first()
-    if person and person.role == "admin":
-        return
+    # No admin exemption: an admin signs only as a real reviewer / head on the team,
+    # because being admin gives no right to check or approve.
     held = roles.get(user_id, VIEWER)
     allowed = ("reviewer", "head") if role == "checker" else ("head",)
     if held not in allowed:

@@ -11,7 +11,7 @@ from app.core.permissions import ensure_can_delete, require_app_access, require_
 from app.db.session import get_db
 from app.modules.crm.models.organization import Organization
 from app.modules.design.order_project_links import on_customer_approval
-from app.modules.design.access import get_settings, head_ids, is_head, next_number, require_head, require_team, year_prefix
+from app.modules.design.access import get_settings, head_ids, is_head, is_head_for_decision, next_number, require_head, require_team, year_prefix
 from app.modules.design.files import remove_file, store_file, stream_file
 from app.modules.design.models.document import DesignDocument, DesignDocumentRevision
 from app.modules.design.models.event import DesignEvent
@@ -85,7 +85,8 @@ def check_record(user: User, sub: DesignCustomerSubmission, head: bool) -> Denie
     if sub.status != "sent":
         return Denied(409, f"{sub.submission_number} is {_phrase(sub)} — responses are recorded on a sent submission.")
     if not head:
-        return Denied(403, "Only the Design head records the customer's response.")
+        return Denied(403, "Only the Design head records the customer's response (it releases or rejects the drawings) — being an admin is not enough. "
+                           "Ask the Design head to record it.")
     return None
 
 
@@ -97,7 +98,10 @@ def check_cancel(user: User, sub: DesignCustomerSubmission, head: bool) -> Denie
     return None
 
 
-def allowed_actions(user: User, sub: DesignCustomerSubmission, head: bool) -> list[str]:
+def allowed_actions(user: User, sub: DesignCustomerSubmission, head: bool, decision_head: bool | None = None) -> list[str]:
+    """`head` = Design head or admin (management); `decision_head` = a real Design head
+    (admin does not count) — needed for recording the customer's answer."""
+    decision_head = head if decision_head is None else decision_head
     out = ["comment"]
     if not check_edit(user, sub, head):
         out.append("edit")
@@ -105,7 +109,7 @@ def allowed_actions(user: User, sub: DesignCustomerSubmission, head: bool) -> li
             out.append("delete")
     if not check_send(user, sub, head):
         out.append("send")
-    if not check_record(user, sub, head):
+    if not check_record(user, sub, decision_head):
         out.append("record_response")
     if not check_cancel(user, sub, head):
         out.append("cancel")
@@ -180,7 +184,7 @@ def _detail(db: Session, sub: DesignCustomerSubmission, user: User) -> DesignCus
         resp.events.append(er)
     if not has(user, "reviews", "comment_actions"):
         resp.comments = []
-    resp.allowed_actions = gate_actions(user, "reviews", allowed_actions(user, sub, is_head(db, user)))
+    resp.allowed_actions = gate_actions(user, "reviews", allowed_actions(user, sub, is_head(db, user), is_head_for_decision(db, user)))
     return resp
 
 
@@ -357,7 +361,7 @@ async def record_response(submission_id: int, payload: DesignSubmissionResponseP
                           db: Session = Depends(get_db), user: User = Depends(require_app_access("design"))):
     ensure_design_feature(user, "reviews", "customer_response", "edit")
     sub = _get(db, submission_id, lock=True, user=user)
-    ensure(check_record(user, sub, is_head(db, user)))
+    ensure(check_record(user, sub, is_head_for_decision(db, user)))
     if payload.response_date > date.today():
         raise HTTPException(status_code=400, detail="The response date can't be in the future.")
     if sub.sent_date and payload.response_date < sub.sent_date:

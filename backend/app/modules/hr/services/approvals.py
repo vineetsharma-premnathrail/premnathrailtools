@@ -28,7 +28,6 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.data_scope import ensure_in_scope, register_scoped
-from app.core.permission_registry import is_admin_user
 from app.modules.hr.models.asset import HrAsset
 from app.modules.hr.models.attendance import HrAttendance, HrAttendanceRegularization
 from app.modules.hr.models.employee_profile import HrEmployeeProfile
@@ -263,10 +262,9 @@ def inbox_ids(db: Session, user: User, entity_type: str) -> set[int]:
 def can_decide_engine(db: Session, user: User, req: ApprovalRequest | None) -> bool:
     if req is None or req.status != "pending":
         return False
-    if engine.can_act_on_entity(db, user, req.entity_type, req.entity_id):
-        return True
-    # Admin stand-in (the engine asks them for a comment).
-    return is_admin_user(user) and req.requester_id != user.id
+    # Only a named approver (or delegate / escalation target) decides. An admin
+    # does not decide just by being admin; they reassign a stuck step instead.
+    return engine.can_act_on_entity(db, user, req.entity_type, req.entity_id)
 
 
 def decide(db: Session, entity_type: str, entity_id: int, user: User, approve: bool, comment: str | None,
@@ -403,7 +401,7 @@ def hand_over_engine_steps(db: Session, from_user: User, to_user: User, actor: U
     own = [s for s in open_steps if s["requester_id"] == to_user.id]
     conflicts = [
         f"{s['type_label']} {s['ref']}: {to_user.name} raised it, so its '{s['stage']}' approval can't be handed to them — "
-        "decide it in Organization › My Approvals (another approver, or an admin standing in)."
+        "another approver decides it in My Approvals, or an admin uses 'Reassign approver' on it."
         for s in own
     ]
     if not open_steps:

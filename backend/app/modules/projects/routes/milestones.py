@@ -349,7 +349,7 @@ async def accept_milestone(project_id: int, milestone_id: int, payload: PmMilest
         db.refresh(m)
         return views.milestone_response(db, m)
     # In-flight milestone submitted before the engine: the old management check.
-    wf.require_manage(project, user, "accept WBS elements")
+    wf.require_decision(project, user, "accept WBS elements")
     m.status, m.actual_date, m.achieved_by_id, m.achieved_at, m.return_reason = "achieved", actual, user.id, wf.now(), None
     late = (actual - m.target_date).days
     wf.audit(db, project_id, user, "milestone_achieved",
@@ -385,7 +385,7 @@ async def reject_milestone(project_id: int, milestone_id: int, payload: PmReason
         db.commit()
         db.refresh(m)
         return views.milestone_response(db, m)
-    wf.require_manage(project, user, "reject WBS elements")
+    wf.require_decision(project, user, "reject WBS elements")
     m.status, m.return_reason = "in_progress", reason
     wf.audit(db, project_id, user, "milestone_rejected", f"WBS '{m.title}' rejected by {wf.user_label(user)}. Reason: {reason}")
     wf.notify_department_heads(db, m, user, "WBS rejected",

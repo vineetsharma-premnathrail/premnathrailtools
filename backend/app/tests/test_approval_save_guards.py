@@ -132,9 +132,10 @@ def test_requester_delegate_and_admin_cannot_self_approve(db, team):
     db.commit()
     admin_req = engine.submit(db, KEY, entity_id=2, requester=team["admin"], title="Doc 2", reference="SG-2")
     db.commit()
+    # An admin can't decide their own request — nor anyone's, without being an approver (2026-11-04).
     with pytest.raises(HTTPException) as e2:
         engine.decide(db, admin_req.id, team["admin"], "approve", "standing in")
-    assert e2.value.status_code == 403 and "four-eyes" in e2.value.detail
+    assert e2.value.status_code == 403 and "not an approver" in e2.value.detail
 
 
 def test_plus_permission_holder_who_is_requester_is_dropped(db, team):

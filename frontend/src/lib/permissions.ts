@@ -4,7 +4,8 @@ import { useAuthStore } from '@/store/authStore'
 export type PermissionAction = 'view' | 'create' | 'edit' | 'delete' | 'submit' | 'approve' | 'reject' | 'cancel' | 'export' | 'print' | 'import'
 
 function isAdmin(user: User | null | undefined): boolean {
-  return !!user && (user.role === 'admin' || !!(user as { is_azure_admin?: boolean }).is_azure_admin)
+  // Portal admin = the portal's own role only; Microsoft tenant admin grants nothing (2026-11-04).
+  return !!user && user.role === 'admin'
 }
 
 /**
@@ -16,8 +17,10 @@ function isAdmin(user: User | null | undefined): boolean {
  */
 export function can(user: User | null | undefined, moduleKey: string, tabKey: string, action: PermissionAction): boolean {
   if (!user) return false
-  if (isAdmin(user)) return true
-  return !!user.permissions?.includes(`${moduleKey}:${tabKey}:${action}`)
+  if (user.permissions?.includes(`${moduleKey}:${tabKey}:${action}`)) return true
+  // Admins may do everything except decide (approve / reject) — that needs a
+  // real grant like anyone else (owner, 2026-11-04; backend has_grant).
+  return isAdmin(user) && action !== 'approve' && action !== 'reject'
 }
 
 /**

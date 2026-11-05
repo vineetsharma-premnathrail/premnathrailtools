@@ -226,3 +226,28 @@ def test_pm_project_scope(client, db):
     viewer.data_access_scopes = {"projects": "assigned"}
     db.commit()
     assert sorted(r["project_code"] for r in client.get(f"{API}/projects", headers=h(viewer)).json()) == ["OTH-1", "OWN-1"]
+
+
+def test_pm_accept_reject_on_old_path_excludes_admin_only(db):
+    """Owner decision 2026-11-04: accepting / rejecting a WBS is for the project manager, a Partner, a
+    Director or an All Projects › Create holder - an admin keeps the other management actions."""
+    import pytest
+    from fastapi import HTTPException
+    from types import SimpleNamespace
+    from app.modules.projects import workflow as wf
+
+    project = SimpleNamespace(project_manager_id=7, project_code="PEW-1")
+
+    def u(uid, **kw):
+        base = dict(id=uid, role="user", is_partner=False, is_director=False, effective_permissions=set())
+        base.update(kw)
+        return SimpleNamespace(**base)
+
+    admin, pm, partner = u(1, role="admin"), u(7), u(3, is_partner=True)
+    granted = u(4, effective_permissions={wf.MANAGE_GRANT})
+    assert wf.can_manage(project, admin) is True and wf.can_decide(project, admin) is False
+    with pytest.raises(HTTPException) as exc:
+        wf.require_decision(project, admin, "accept WBS elements")
+    assert exc.value.status_code == 403 and "admin does not decide" in exc.value.detail
+    for ok in (pm, partner, granted):
+        wf.require_decision(project, ok, "accept WBS elements")

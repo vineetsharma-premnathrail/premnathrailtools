@@ -163,15 +163,28 @@ def test_circuit_return_and_resubmit(client, db, h):
     assert client.post(f"{API}/circuits/{c['id']}/approve", json={}, headers=hr).json()["status"] == "approved"
 
 
-def test_admin_submitter_may_approve_and_matrix_gates_approve(client, db, h):
-    admin = make_user(db, "cov.hyd.admin@premnathrail.com", role="admin")
+def test_admin_never_approves_and_matrix_gates_approve(client, db, h):
+    # Owner decision 2026-11-04: admin is not an approver just by being admin.
+    # No assigned apps: the test shim would otherwise hand the admin the legacy
+    # "Standard access" grants, Approve included — a real grant, not "being admin".
+    admin = make_user(db, "cov.hyd.admin@premnathrail.com", apps=(), role="admin")
     ha = auth(admin)
     c = client.post(f"{API}/circuits", json={"title": "Admin"}, headers=ha).json()
     attach_diagram(db, c["id"])
-    client.post(f"{API}/circuits/{c['id']}/submit", headers=ha)
-    # Four-eyes binds admins too (central approval engine, 2026-10-08).
+    assert client.post(f"{API}/circuits/{c['id']}/submit", headers=ha).status_code == 200
     own = client.post(f"{API}/circuits/{c['id']}/approve", json={"comment": "self"}, headers=ha)
-    assert own.status_code == 403 and "four-eyes" in own.json()["detail"]
+    assert own.status_code == 403 and "'Approve' permission" in own.json()["detail"]
+    assert client.post(f"{API}/circuits/{c['id']}/return", json={"remarks": "x"}, headers=ha).status_code == 403
+    # ... nor a colleague's circuit, a BOM release or a test sign-off.
+    c3 = client.post(f"{API}/circuits", json={"title": "Eng's"}, headers=h).json()
+    attach_diagram(db, c3["id"])
+    client.post(f"{API}/circuits/{c3['id']}/submit", headers=h)
+    assert client.post(f"{API}/circuits/{c3['id']}/approve", json={}, headers=ha).status_code == 403
+    bom = client.post(f"{API}/boms", json={"title": "Pack"}, headers=h).json()
+    assert client.post(f"{API}/boms/{bom['id']}/release", headers=ha).status_code == 403
+    system = new_system(client, h)
+    test = client.post(f"{API}/tests", json={"title": "Proof", "test_type": "proof_test", "system_id": system["id"]}, headers=h).json()
+    assert client.post(f"{API}/tests/{test['id']}/complete", json={"result": "pass"}, headers=ha).status_code == 403
 
     editor = make_user(db, "cov.hyd.editor@premnathrail.com", grants=["hydraulic:circuits:view", "hydraulic:circuits:create", "hydraulic:circuits:edit"])
     c2 = client.post(f"{API}/circuits", json={"title": "Other"}, headers=h).json()

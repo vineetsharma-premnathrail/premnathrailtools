@@ -264,7 +264,7 @@ async def release_technical_offer(offer_id: int, background_tasks: BackgroundTas
     quotes against, and the previously released R&D revision is superseded."""
     offer = _offer(db, offer_id)
     _ensure_rnd_offer(offer, "release")
-    ra.ensure_head(db, user, "release a Technical Offer to the BD team")
+    ra.ensure_head_for_decision(db, user, "release a Technical Offer to the BD team")
     if ra.is_rnd_side(user):
         ensure_feature_action(user, "rnd", "requirements", "technical_offers", "approve")
     if offer.status != "submitted":
@@ -307,7 +307,7 @@ async def return_technical_offer(offer_id: int, payload: TechnicalOfferReturn, d
     """R&D head sends an uploaded offer back with the reason; the uploader uploads a corrected file (next revision)."""
     offer = _offer(db, offer_id)
     _ensure_rnd_offer(offer, "return")
-    ra.ensure_head(db, user, "return a Technical Offer for changes")
+    ra.ensure_head_for_decision(db, user, "return a Technical Offer for changes")
     if ra.is_rnd_side(user):
         ensure_feature_action(user, "rnd", "requirements", "technical_offers", "approve")
     if offer.status != "submitted":

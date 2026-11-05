@@ -182,10 +182,10 @@ class User(Base, TimestampMixin):
         self.__dict__.pop("_effective_permissions_cache", None)
 
     def get_apps(self) -> list[str]:
-        """Modules this user can see: portal admins and Azure tenant admins get
-        every module; everyone else gets each module they can view at least
-        one tab of (through a role or an extra grant)."""
-        if self.role == "admin" or self.is_azure_admin:
+        """Modules this user can see: portal admins get every module; everyone
+        else gets each module they can view at least one tab of (through a role
+        or an extra grant). Azure tenant admin grants nothing here."""
+        if self.role == "admin":
             return sorted(AVAILABLE_APPS)
         from app.core.permission_registry import PURCHASE_DESK_GRANT
         perms = self.effective_permissions

@@ -158,10 +158,10 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
   }, [statuses, queue, opFilter])
 
   // "Pending" in the P.R Approval queue means pending on THE VIEWER: their
-  // own slot unsigned (matrix rows, or the legacy head columns). Admins see
-  // every pending PR.
+  // own slot unsigned (matrix rows, or the legacy head columns). Admins get
+  // no queue of their own: they only see what is addressed to them.
   const pendingOnViewer = (pr: P2PRequest): boolean => {
-    if (!onlyPendingForViewer || user?.role === 'admin') return true
+    if (!onlyPendingForViewer) return true
     // Approval engine (Organization › Approval Workflows): the backend says
     // whether the viewer can act on the live step (incl. as a delegate).
     if (pr.engine_approval) return pr.engine_approval.status === 'pending' && pr.engine_approval.can_decide
@@ -203,7 +203,6 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statTotal, statPending, statProgress, statClosed])
 
-  const isAdmin = user?.role === 'admin'
   // Matrix PRs: the PO goes to the people picked per role plus every Director,
   // and ALL roles must approve (any one Director clears the Director slot);
   // legacy PRs keep the Purchase Head / Director / Partner chain.
@@ -220,7 +219,7 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
       : userPoRoles(user, pr).some((r) => (pr.pending_po_approval_roles || []).includes(r)))
   const canRejectPoInline = (pr: P2PRequest) =>
     context === 'po-approval' && pr.status === 'po_raised'
-    && (enginePo(pr) ? !!pr.engine_approval?.can_decide : (userPoRoles(user, pr).length > 0 || isAdmin))
+    && (enginePo(pr) ? !!pr.engine_approval?.can_decide : (userPoRoles(user, pr).length > 0))
   const rowById = (id: number | null) => prs.find((p) => p.id === id)
 
   const openDecision = (kind: 'approve' | 'reject', id: number) => {

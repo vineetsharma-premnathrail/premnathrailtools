@@ -311,8 +311,9 @@ def check_review(user: User, doc: DesignDocument, rev: DesignDocumentRevision, r
         return Denied(403, f"You wrote {ref(doc, rev)}, so you can't check it yourself — {user_name(reviewer) or 'the named checker'} must.")
     if user.id == rev.approver_id:
         return Denied(403, f"You're the named approver of {ref(doc, rev)}, so checking it too would put both signatures under one name — {user_name(reviewer) or 'the named checker'} must check it.")
-    if user.id != rev.reviewer_id and not is_admin(user):
-        return Denied(403, f"{ref(doc, rev)} is with {user_name(reviewer) or 'its named checker'} for checking — only they or an admin can pass or return it.")
+    if user.id != rev.reviewer_id:
+        return Denied(403, f"{ref(doc, rev)} is with {user_name(reviewer) or 'its named checker'} for checking — only they can pass or return it. "
+                           "If they are away, an admin can reassign the approval in My Approvals.")
     return None
 
 
@@ -323,8 +324,9 @@ def check_approve(user: User, doc: DesignDocument, rev: DesignDocumentRevision, 
         return Denied(403, f"You wrote {ref(doc, rev)}, so you can't approve it yourself — {user_name(approver) or 'the named approver'} must.")
     if user.id == rev.reviewed_by_id:
         return Denied(403, f"You checked {ref(doc, rev)}, so the approval has to come from someone else — {user_name(approver) or 'the named approver'}.")
-    if user.id != rev.approver_id and not is_admin(user):
-        return Denied(403, f"{ref(doc, rev)} is waiting on {user_name(approver) or 'its named approver'} — only they or an admin can approve or return it.")
+    if user.id != rev.approver_id:
+        return Denied(403, f"{ref(doc, rev)} is waiting on {user_name(approver) or 'its named approver'} — only they can approve or return it. "
+                           "If they are away, an admin can reassign the approval in My Approvals.")
     return None
 
 
@@ -343,11 +345,12 @@ def check_new_revision(user: User, doc: DesignDocument) -> Denied | None:
 def check_release(user: User, doc: DesignDocument, rev: DesignDocumentRevision, can_release: bool) -> Denied | None:
     """Releasing a revision that stopped at `approved` because the customer
     must approve it first. `can_release`: the user is the Design head, the
-    revision's approver or an admin (resolved by the caller)."""
+    revision's approver (resolved by the caller; an admin is not enough)."""
     if rev.status != "approved":
         return Denied(409, f"{ref(doc, rev)} is {REVISION_STATUS_PHRASE.get(rev.status, rev.status)} — only an approved revision waiting on the customer can be released here.")
     if not can_release:
-        return Denied(403, f"Only the Design head, the approver of {ref(doc, rev)} or an admin can release it.")
+        return Denied(403, f"Only the Design head or the approver of {ref(doc, rev)} can release it — being an admin is not enough. "
+                           "Ask the Design head (or set one in Design › Settings) to release it.")
     return None
 
 
@@ -431,7 +434,7 @@ def allowed_document_actions(user: User, doc: DesignDocument, *, viewer: bool = 
             actions.append("review")
         if current.status == "in_approval" and not check_approve(user, doc, current, None):
             actions.append("approve")
-        if current.status == "approved" and not check_release(user, doc, current, head or is_admin(user) or user.id == current.approver_id):
+        if current.status == "approved" and not check_release(user, doc, current, head or user.id == current.approver_id):
             actions.append("release")
     return actions
 
@@ -457,8 +460,9 @@ def check_ecn_decide(user: User, ecn: DesignChangeNotice, approver: User | None)
         return Denied(409, f"{ecn.ecn_number} is {_phrase(ecn)}, not awaiting approval.")
     if user.id == ecn.created_by_id:
         return Denied(403, f"You raised {ecn.ecn_number}, so you can't approve or reject it — {user_name(approver) or 'the named approver'} must.")
-    if user.id != ecn.approver_id and not is_admin(user):
-        return Denied(403, f"{ecn.ecn_number} is waiting on {user_name(approver) or 'its named approver'} — only they or an admin can decide it.")
+    if user.id != ecn.approver_id:
+        return Denied(403, f"{ecn.ecn_number} is waiting on {user_name(approver) or 'its named approver'} — only they can decide it. "
+                           "If they are away, an admin can reassign the approval in My Approvals.")
     return None
 
 

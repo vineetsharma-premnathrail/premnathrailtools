@@ -7,6 +7,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
+from app.core.permission_registry import is_admin_user
 from app.modules.erp.models.project import Project
 from app.modules.production.models.bom import ProductionBom
 from app.modules.production.models.work_order import (
@@ -647,7 +648,15 @@ def rrv_stage_gate_problems(db: Session, build: ProductionRrvBuild, key: str, wo
 
 
 def rrv_can_sign_off(user: User, build: ProductionRrvBuild) -> bool:
-    return user.role == "admin" or bool(getattr(user, "is_production_manager", False)) or user.id == build.build_manager_id
+    """Who may DECIDE an RRV sign-off: the build manager or a production manager.
+    A portal admin is not a signer just because they are admin (owner, 2026-11-04)."""
+    return bool(getattr(user, "is_production_manager", False)) or user.id == build.build_manager_id
+
+
+def rrv_can_manage(user: User, build: ProductionRrvBuild) -> bool:
+    """Management actions on a build (cancel, reopen a stage, cancel rework): the
+    sign-off people plus a portal admin. These are not approvals."""
+    return is_admin_user(user) or rrv_can_sign_off(user, build)
 
 
 def rrv_notify(db: Session, build: ProductionRrvBuild, title: str, message: str, notification_type: str, actor_id: int | None, extra: set | None = None) -> None:

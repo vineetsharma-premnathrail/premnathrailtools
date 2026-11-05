@@ -62,7 +62,7 @@ def is_store_manager(user, location=None) -> bool:
     """Store Manager authority: the user flag, the store's own manager, or an admin."""
     if user is None:
         return False
-    return bool(user.role == "admin" or getattr(user, "is_azure_admin", False) or getattr(user, "is_store_manager", False)
+    return bool(user.role == "admin" or getattr(user, "is_store_manager", False)
                 or (location is not None and location.manager_user_id and location.manager_user_id == user.id))
 
 
@@ -224,7 +224,8 @@ def resolve_issue_project(db: Session, issue_type: str | None, payload) -> dict:
         _p, picked_el = resolve_element(db, payload.order_project_element_id, project_id=picked_project_id)
         picked_project = _p
     elif picked_project_id:
-        picked_project, _none = resolve_link(db, picked_project_id, None, what="material issue")
+        # Any project status: Store issues material to closed / on-hold projects too (owner, 2026-11-05).
+        picked_project, _none = resolve_link(db, picked_project_id, None, what="material issue", allow_closed=True)
 
     # What the issue's own references say.
     derived_el, derived_project, source = None, None, None

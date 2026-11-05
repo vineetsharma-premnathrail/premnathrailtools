@@ -345,7 +345,7 @@ export default function RrvBuildDetailPage() {
             </button>
           )}
           {canWork && !done && s.na_allowed && <button data-tour="production-rrv-stage-na-btn" type="button" disabled={busy} style={smallBtn} onClick={() => setPrompt({ kind: 'stage_na', key: s.stage_key, label: s.label })}>N/A</button>}
-          {done && can('sign_off') && b?.status !== 'handed_over' && <button data-tour="production-rrv-stage-reopen-btn" type="button" disabled={busy} style={smallBtn} onClick={() => setPrompt({ kind: 'stage_reopen', key: s.stage_key, label: s.label })}>Reopen</button>}
+          {done && can('manage') && b?.status !== 'handed_over' && <button data-tour="production-rrv-stage-reopen-btn" type="button" disabled={busy} style={smallBtn} onClick={() => setPrompt({ kind: 'stage_reopen', key: s.stage_key, label: s.label })}>Reopen</button>}
         </div>
       </div>
     )
@@ -645,7 +645,7 @@ export default function RrvBuildDetailPage() {
                       {(rw.status === 'open' || rw.status === 'in_progress') && rf('rework', 'edit') && <button disabled={busy} style={smallBtn} onClick={() => { setPopupError(''); setDoneForm({ id: rw.id, corrective_action: '', root_cause: rw.root_cause || '', hours_spent: '' }) }}>Mark Done</button>}
                       {rw.status === 'done' && rf('rework', 'approve') && <button disabled={busy} style={smallPrimaryBtnStyle} onClick={() => setPrompt({ kind: 'rework_verify', rw })}>Verify</button>}
                       {rw.status === 'done' && rf('rework', 'reject') && <button disabled={busy} style={smallBtn} onClick={() => setPrompt({ kind: 'rework_reject', rw })}>Send Back</button>}
-                      {can('sign_off') && rf('rework', 'cancel') && ['open', 'in_progress', 'done'].includes(rw.status) && <button disabled={busy} style={smallDangerBtnStyle} onClick={() => setPrompt({ kind: 'rework_cancel', rw })}>Cancel</button>}
+                      {can('manage') && rf('rework', 'cancel') && ['open', 'in_progress', 'done'].includes(rw.status) && <button disabled={busy} style={smallDangerBtnStyle} onClick={() => setPrompt({ kind: 'rework_cancel', rw })}>Cancel</button>}
                     </div>
                   ) : null}
                 </div>

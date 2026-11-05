@@ -758,13 +758,14 @@ async def update_service_request(
             )
     closing = changes.get("status") == "closed" and (sr.status or "").lower() != "closed"
     close_needs_approval = bool(get_erp_setting(db, "sr_close_approval_required"))
-    # Closing goes through the approval workflow; only an admin may still
-    # close directly (the admin stand-in of the approval engine).
-    if closing and close_needs_approval and not is_admin_user(user):
+    # Closing goes through the approval workflow for everyone, admins included: an admin
+    # does not close around the approvers (owner decision 2026-11-04).
+    if closing and close_needs_approval:
         raise HTTPException(
             status_code=403,
-            detail="Closing a service request needs approval. Set the status to 'Review' instead — the approvers in "
-                   "Organization › Approval Workflows › Service request closure are asked to approve the closure.",
+            detail="Closing a service request needs approval, and an admin cannot close it around the approvers. Set the status "
+                   "to 'Review' instead — the approvers in Organization › Approval Workflows › Service request closure are asked "
+                   "to approve the closure.",
         )
     sent_for_review = (close_needs_approval and changes.get("status") == "review"
                        and (sr.status or "").lower() != "review")

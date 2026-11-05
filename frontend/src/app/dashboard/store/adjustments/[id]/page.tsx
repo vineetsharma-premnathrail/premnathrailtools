@@ -53,11 +53,11 @@ export default function StoreStockAdjustmentDetailPage() {
   }, [isAuthorized, adjustmentId, load])
 
   // Maker-checker: the creator can never decide their own adjustment; the
-  // approver named on it (or an admin standing in) can. The backend enforces
+  // approver named on it can (an admin cannot, just for being admin). The backend enforces
   // the same rule — this only avoids showing buttons that would be refused.
   const isPending = adjustment?.status === 'pending_approval' && onEngine === false
   const isCreator = !!adjustment && adjustment.created_by_id === user?.id
-  const canDecide = !!adjustment && isPending && !isCreator && (adjustment.approved_by_id === user?.id || user?.role === 'admin')
+  const canDecide = !!adjustment && isPending && !isCreator && adjustment.approved_by_id === user?.id
 
   const decide = async (fn: () => Promise<StoreStockAdjustment>) => {
     setBusy(true)

@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, column_property
 
 from app.core.data_scope import ensure_in_scope, register_scoped
-from app.core.permission_registry import can_feature, can_perform, is_admin_user
+from app.core.permission_registry import can_feature, can_perform
 from app.modules.main.models.user import User
 from app.modules.organization.models.approval import ApprovalRequest
 from app.modules.organization.services import approval_engine as engine
@@ -100,14 +100,14 @@ def ensure_not_pending(db: Session, entity_type: str, entity_id: int, what: str,
 
 
 def submit_and_self_approve(db: Session, key: str, *, entity_id: int, requester: User, title: str,
-                            reference: str | None, context: dict | None = None, branch_id: int | None = None,
-                            admin_note: str = "Done directly by an admin") -> ApprovalRequest:
+                            reference: str | None, context: dict | None = None,
+                            branch_id: int | None = None) -> ApprovalRequest:
     """Submit to the engine; when the requester is themselves an approver of
     the stage now open (and the workflow allows self-approval, the default for
     these permission-based flows), approve that stage at once — so someone who
     could do it directly before still does it in one click, and someone who
-    couldn't now sends it to the approvers instead of getting a 403. An admin
-    stands in (recorded as an admin stand-in with `admin_note`)."""
+    couldn't now sends it to the approvers instead of getting a 403. An admin is
+    NOT an approver: with no approver configured the engine's 422 is raised as is."""
     tt = engine.get_type(key)
     open_req = pending_request(db, tt.entity_type, entity_id)
     if open_req is not None and open_req.workflow_key == key and engine.can_act_on_entity(db, requester, tt.entity_type, entity_id):
@@ -115,18 +115,10 @@ def submit_and_self_approve(db: Session, key: str, *, entity_id: int, requester:
         # Release / Complete on someone else's request): that click decides it.
         engine.decide(db, open_req.id, requester, "approve")
         return open_req
-    try:
-        req = engine.submit(db, key, entity_id=entity_id, requester=requester, title=title, reference=reference,
-                            context=context, branch_id=branch_id)
-    except HTTPException as e:
-        # Nobody else to route it to (e.g. no one holds the approve grant yet):
-        # an admin still does it directly, exactly as before the engine.
-        if e.status_code != 422 or not is_admin_user(requester) or tt.on_decided is None:
-            raise
-        direct = ApprovalRequest(workflow_key=key, module_key=tt.module_key, entity_type=tt.entity_type, entity_id=entity_id,
-                                 title=title, reference=reference, context=dict(context or {}), status="approved")
-        tt.on_decided(db, direct, "approved", requester)
-        return direct
+    # No approver configured -> the engine's 422 (who to configure where) goes
+    # straight to the caller. An admin is not an approver and never bypasses it.
+    req = engine.submit(db, key, entity_id=entity_id, requester=requester, title=title, reference=reference,
+                        context=context, branch_id=branch_id)
     if req.status != "pending":
         return req
     wf = engine.ensure_workflow(db, key)
@@ -138,6 +130,4 @@ def submit_and_self_approve(db: Session, key: str, *, entity_id: int, requester:
                  else can_perform(requester, tt.module_key, tt.subtab_key, "approve"))
         if not wf.require_permission or holds:
             engine.decide(db, req.id, requester, "approve")
-    elif is_admin_user(requester):
-        engine.decide(db, req.id, requester, "approve", admin_note)
     return req

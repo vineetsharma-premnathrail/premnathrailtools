@@ -119,11 +119,11 @@ def unlock(db: Session, period: HrAttendancePeriod, user: User, reason: str) -> 
         raise HTTPException(status_code=409, detail=f"{label(period.year, period.month)} isn't locked, so there is nothing to unlock.")
     if not (reason or "").strip():
         raise HTTPException(status_code=400, detail="Enter why the period is being unlocked — it is kept with the payroll history.")
-    if not (user.is_partner or user.role == "admin"):
+    if not user.is_partner:
         raise HTTPException(
             status_code=403,
-            detail=("Only a Partner can unlock an attendance period that was sent to ADP payroll. Ask a Partner "
-                    "(Company Info › Partners) to unlock it, with the reason."),
+            detail=("Only a Partner can unlock a closed period (set Partners in Organization › Company Info › "
+                    "Partners). Admin access alone does not unlock it. Ask a Partner to unlock it, with the reason."),
         )
     period.status = "open"
     period.unlocked_by_id = user.id

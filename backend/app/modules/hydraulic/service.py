@@ -9,7 +9,7 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.core import assignee_rules
-from app.core.permission_registry import holds_deliberately, permission_id
+from app.core.permission_registry import holds_deliberately, is_admin_user, permission_id
 from app.modules.hydraulic.models.bom import HydBom
 from app.modules.hydraulic.models.calculation import HydCalculation
 from app.modules.hydraulic.models.circuit import HydCircuit
@@ -122,12 +122,12 @@ def raise_retired(what: str) -> None:
 def circuit_approvers(db: Session) -> list[User]:
     """Active users deliberately given hydraulic › circuits › approve (a role
     or extra grant — not just the blanket migrated access every hydraulic user
-    got); admins when nobody holds it, so a review request is never sent to
-    no one."""
+    got). Admins are never approvers just because they are admins, so there is
+    no admin fallback: an empty list means nobody can review yet and the
+    caller must say so (grant the permission in Role & Permissions)."""
     pid = permission_id("hydraulic", "circuits", "approve")
     active = db.query(User).filter(User.is_active.is_(True)).all()
-    holders = [u for u in active if holds_deliberately(u, pid)]
-    return holders or [u for u in active if u.role == "admin"]
+    return [u for u in active if not is_admin_user(u) and holds_deliberately(u, pid)]
 
 
 # ---------------------------------------------------------------------------

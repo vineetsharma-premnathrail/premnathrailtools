@@ -24,7 +24,7 @@ from app.modules.design.schemas.revision import (
     DesignDocumentRevisionResponse, DesignRevisionCreate, DesignRevisionFileResponse,
 )
 from app.modules.crm.models.organization import Organization
-from app.modules.design.access import get_settings, is_head, is_team, require_team
+from app.modules.design.access import get_settings, is_head_for_decision, is_team, require_team
 from app.modules.design.approvals import DOC_ENTITY, can_decide, pending_request
 from app.modules.design.scope import apply_scope, ensure_in_scope
 from app.modules.design.checklists import active_checklist
@@ -229,11 +229,11 @@ def document_detail(db: Session, doc: DesignDocument, user: User) -> DesignDocum
         DesignChangeNotice.is_deleted == False,  # noqa: E712
     ).order_by(DesignChangeNotice.id.desc()).all()
     resp.open_ecns = [DesignDocumentEcnRef(id=e.id, ecn_number=e.ecn_number, title=e.title, status=e.status) for e in ecns]
-    resp.allowed_actions = allowed_document_actions(user, doc, viewer=viewer, head=is_head(db, user))
+    resp.allowed_actions = allowed_document_actions(user, doc, viewer=viewer, head=is_head_for_decision(db, user))
     current = open_revision(doc)
     if current and not viewer and pending_request(db, DOC_ENTITY, doc.id) is not None:
         # Submitted through the approval engine: whoever the engine lets act
-        # on the current stage (approver, delegate, escalation target, admin)
+        # on the current stage (approver, delegate, escalation target; not an admin by role alone)
         # gets the Check / Approve actions — not only the named person.
         resp.approval_engine = True
         resp.allowed_actions = [a for a in resp.allowed_actions if a not in ("review", "approve")]

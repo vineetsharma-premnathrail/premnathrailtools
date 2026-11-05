@@ -42,7 +42,6 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.data_scope import register_scoped
-from app.core.permission_registry import is_admin_user
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.user import User
 from app.modules.organization.models.approval import ApprovalRequest, ApprovalRequestStep, ApprovalWorkflow
@@ -232,14 +231,6 @@ def pending_request(db: Session, entity_type: str, entity_id: int) -> ApprovalRe
     return req if req is not None and req.status == "pending" else None
 
 
-def _admin_comment(user: User, comment: str | None) -> str | None:
-    """The engine lets an admin stand in only with a reason; an admin acting
-    from the Finance screen (as they always could) gets one recorded for them."""
-    if comment or not is_admin_user(user):
-        return comment
-    return f"Approved by {_who(user)} (admin) from the Finance screen."
-
-
 def submit_document(db: Session, key: str, *, entity_id: int, requester: User, title: str, reference: str | None,
                     amount: float | None, context: dict | None = None, background_tasks=None) -> ApprovalRequest:
     """Start (or restart, after a return / rejection / withdrawal) approval of a document."""
@@ -272,7 +263,7 @@ def approve_now(db: Session, key: str, *, entity_id: int, maker_id: int | None, 
         req = engine.submit(db, key, entity_id=entity_id, requester=requester or actor, title=title, reference=reference,
                             amount=amount, context=context or {})
     if req.status == "pending":
-        engine.decide(db, req.id, actor, "approve", _admin_comment(actor, comment))
+        engine.decide(db, req.id, actor, "approve", comment)
     return req
 
 
@@ -287,8 +278,8 @@ def submit_process(db: Session, key: str, *, entity_id: int, actor: User, title:
     if req is None:
         req = engine.submit(db, key, entity_id=entity_id, requester=actor, title=title, reference=reference,
                             amount=None, context=context)
-    if req.status == "pending" and (engine.can_act_on_entity(db, actor, tt.entity_type, entity_id) or is_admin_user(actor)):
-        engine.decide(db, req.id, actor, "approve", _admin_comment(actor, comment))
+    if req.status == "pending" and engine.can_act_on_entity(db, actor, tt.entity_type, entity_id):
+        engine.decide(db, req.id, actor, "approve", comment)
     return req
 
 

@@ -29,10 +29,12 @@ engine request; the old /approve and /reject routes decide it with the old
 rules (`latest_request` is None). There were no pending BOM approvals before
 (approval was a one-step edit), so nothing needs migrating.
 
-When nobody but the submitter / admins holds the approve permission (and the
-workflow is still permission-based), the engine can't route the request; the
-record then goes the pre-engine way (submitted for an admin to approve via
-the old route, or approved directly by an approving user) instead of failing.
+Admins never approve / reject just because they are admins (owner decision
+2026-11-04). When nobody but the submitter holds the approve permission (and
+the workflow is still permission-based), the engine can't route the request:
+submitting a drawing revision is refused with a message naming the permission
+to grant; an approving user who holds it themselves still approves a BOM line
+directly.
 """
 from __future__ import annotations
 
@@ -43,7 +45,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.data_scope import ensure_in_scope, register_scoped, scope_filter
-from app.core.permission_registry import can_perform, is_admin_user
+from app.core.permission_registry import can_perform
 from app.modules.electrical.models.bom import ElectricalBomItem
 from app.modules.electrical.models.drawing import ElectricalDrawing, ElectricalDrawingRevision
 from app.modules.electrical.models.job import ElectricalJob, ElectricalJobStage, ELECTRICAL_WORKING_STATUSES
@@ -147,8 +149,27 @@ def _only_permission_stages(db: Session, key: str, perm: str) -> bool:
 
 def no_engine_approver(db: Session, key: str, perm: str, user: User) -> bool:
     """True when the engine has nobody to route to: the workflow is still the
-    permission-based default and nobody except `user` (and admins) holds it."""
+    permission-based default and nobody except `user` holds it (admins never
+    count as approvers)."""
     return _only_permission_stages(db, key, perm) and not [i for i in engine.permission_holders(db, perm) if i != user.id]
+
+
+_PERM_LABELS = {
+    "electrical:drawings:approve": "Electrical › Drawings › Approve",
+    "electrical:jobs:approve": "Electrical › RRV Electrical Jobs › BOM › Approve",
+}
+
+
+def nobody_approves(perm: str) -> HTTPException:
+    """422 for a record that nobody can approve. Admins never approve just
+    because they are admins, so an unrouteable request is refused up front."""
+    label = _PERM_LABELS.get(perm, perm)
+    return HTTPException(
+        status_code=422,
+        detail=f"Nobody other than you holds '{label}', and an admin can't approve just by being an admin. "
+               "Give that permission to a role or person who will review it in Organization › Role & Permissions "
+               "(or name the approvers in Organization › Approval Workflows), then try again.",
+    )
 
 
 def live_request(db: Session, entity_type: str, entity_id: int) -> ApprovalRequest | None:
@@ -158,25 +179,25 @@ def live_request(db: Session, entity_type: str, entity_id: int) -> ApprovalReque
 
 def decide_live(db: Session, req: ApprovalRequest, user: User, decision: str, comment: str | None) -> None:
     """Old approve/reject routes on a record with an engine request: decide it
-    there. An admin who isn't the stage approver stands in; the old routes
-    didn't ask admins for a reason, so a default one is written."""
-    comment = (comment or "").strip() or None
-    if not comment and is_admin_user(user) and not engine.can_act_on_entity(db, user, req.entity_type, req.entity_id):
-        comment = f"Decided by admin {user.name or user.email} from the Electrical page"
-    engine.decide(db, req.id, user, decision, comment)
+    there. Only the people the workflow names (or their delegate / escalation
+    target) can decide; being an admin does not count — the engine refuses."""
+    engine.decide(db, req.id, user, decision, (comment or "").strip() or None)
 
 
 def submit_and_approve(db: Session, key: str, *, entity_id: int, user: User, title: str, reference: str,
                        context: dict, perm: str, direct, amount: float | None = None) -> None:
     """An approver acting in one step (the pre-engine behaviour): submit to the
-    engine and approve at once when they're an approver of the first stage
-    (or an admin). With no routable approver at all, `direct()` applies the
-    approval the old way."""
+    engine and approve at once when they're an approver of the first stage.
+    With no routable approver at all, `direct()` applies the approval the old
+    way, but only when `user` really holds the approve permission themselves;
+    an admin never approves just by being an admin."""
     try:
         req = engine.submit(db, key, entity_id=entity_id, requester=user, title=title, reference=reference,
                             amount=amount, context=context)
     except HTTPException as e:
         if e.status_code == 422 and no_engine_approver(db, key, perm, user):
+            if user.id not in engine.permission_holders(db, perm):
+                raise nobody_approves(perm)
             direct()
             return
         raise
@@ -184,8 +205,7 @@ def submit_and_approve(db: Session, key: str, *, entity_id: int, user: User, tit
         return
     if engine.can_act_on_entity(db, user, req.entity_type, entity_id):
         engine.decide(db, req.id, user, "approve", None)
-    elif is_admin_user(user):
-        engine.decide(db, req.id, user, "approve", f"Approved directly by admin {user.name or user.email}")
+    # else: the request stays with the people the workflow names
 
 
 def cancel_live(db: Session, entity_type: str, entity_id: int, user: User, reason: str) -> None:
@@ -292,10 +312,10 @@ register_transaction(TransactionType(
 ))
 
 
-def submit_revision(db: Session, revision: ElectricalDrawingRevision, job: ElectricalJob, user: User) -> ApprovalRequest | None:
+def submit_revision(db: Session, revision: ElectricalDrawingRevision, job: ElectricalJob, user: User) -> ApprovalRequest:
     """Start engine approval of a revision (caller sets status + commits).
-    Returns None when the engine has no approver and the revision waits for
-    an admin through the old route."""
+    Refuses (422, naming the permission to grant) when nobody but the
+    submitter holds Drawings › Approve: admins never approve by being admins."""
     drawing = revision.drawing
     try:
         return engine.submit(
@@ -308,7 +328,7 @@ def submit_revision(db: Session, revision: ElectricalDrawingRevision, job: Elect
         )
     except HTTPException as e:
         if e.status_code == 422 and no_engine_approver(db, REVISION_KEY, "electrical:drawings:approve", user):
-            return None
+            raise nobody_approves("electrical:drawings:approve")
         raise
 
 

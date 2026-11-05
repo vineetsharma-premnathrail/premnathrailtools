@@ -170,7 +170,8 @@ def can_decide(user: User, approver_id: int | None, requester_id: int, action: s
     hr:approvals:approve to clear their reportees' requests. Anyone else is
     deciding as HR and needs `action` ("approve"/"reject") on HR › Approvals
     or on one of `tabs` (the request's own tab, e.g. "leave"/"travel", when
-    the registry declares that action there). Admins pass."""
+    the registry declares that action there). Admins do NOT pass by being admin
+    (has_grant withholds approve / reject from them; they reassign instead)."""
     if user is None or user.id == requester_id:
         return False
     if approver_id is not None and user.id == approver_id:

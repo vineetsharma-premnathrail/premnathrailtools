@@ -504,7 +504,8 @@ def approval_info(db: Session, pr: P2PRequest, user: User | None) -> dict | None
         "request_id": req.id, "entity_type": req.entity_type, "entity_id": req.entity_id, "status": req.status,
         "stage": waiting[0][1] if waiting else None,
         "waiting_on": [u.name or u.email for u, _ in waiting],
-        "can_decide": bool(out.get("can_decide")), "can_stand_in": bool(out.get("can_stand_in")),
+        "can_decide": bool(out.get("can_decide")), "can_stand_in": False,
+        "can_reassign": bool(out.get("can_reassign")),
         "pr_request_id": pr_req.id if pr_req else None,
         "po_id": po.id if po_req is not None and po is not None and req is po_req else None,
         # Every PO of the requisition waiting for approval, so the page can list them all.

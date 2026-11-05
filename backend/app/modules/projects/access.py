@@ -105,7 +105,7 @@ register_scoped(PmProjectTask, "projects", owner=("assignee_id", "created_by_id"
 
 def acceptor_ids(db: Session, project: PmProject) -> list[int]:
     """Who accepted WBS elements before the engine (workflow.is_management +
-    the project manager), minus admins (they use the admin stand-in)."""
+    the project manager), minus admins (an admin is not an approver just because they are admin — owner decision 2026-11-04)."""
     from app.modules.projects import workflow as wf
 
     out: list[int] = []

@@ -459,7 +459,7 @@ function RolesPermissionsTab({ user, registry, onRefresh }: { user: User; regist
   const isAdminRole = user.role === 'admin'
   const { can, user: me } = useCan()
   // Mirrors the backend: nobody but an admin changes their own roles, extras or approval flags.
-  const meIsAdmin = me?.role === 'admin' || !!(me as { is_azure_admin?: boolean } | null)?.is_azure_admin
+  const meIsAdmin = me?.role === 'admin'
   const selfLocked = !meIsAdmin && me?.id === user.id
   // Roles / Extra permissions are features of Role & Permissions (core/features/organization.py).
   const { canFeature } = useCan()

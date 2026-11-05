@@ -53,6 +53,7 @@ async def lookup_units(
     kind: str | None = Query(None, description="vehicle / lot — only that unit kind (project rows without units are still offered)"),
     include_projects: bool = Query(False, description="also return one row per project that HAS units (whole-project rows)"),
     project_id: int | None = None,
+    any_status: bool = Query(False, description="every project whatever its status (closed / cancelled too) — Store material issues"),
     db: Session = Depends(get_db),
     _user: User = Depends(require_any_app_access(*_LOOKUP_APPS)),
 ):
@@ -66,8 +67,15 @@ async def lookup_units(
     if kind and kind not in ("vehicle", "lot"):
         raise HTTPException(status_code=422, detail=f"kind '{kind}' is unknown — use vehicle or lot.")
     base = (db.query(PmProject, SalesOrder.so_number)
-            .outerjoin(SalesOrder, SalesOrder.id == PmProject.sales_order_id)  # historic display only
-            .filter(PmProject.status.in_(op_core.PICKABLE_PROJECT_STATUSES)))
+            .outerjoin(SalesOrder, SalesOrder.id == PmProject.sales_order_id))  # historic display only
+    if not any_status:
+        base = base.filter(PmProject.status.in_(op_core.PICKABLE_PROJECT_STATUSES))
+    cap = 500 if any_status else 30
+
+    def _status(p: PmProject) -> str:
+        # A project that is no longer live says so in the picker (any_status only).
+        return "" if p.status in op_core.PICKABLE_PROJECT_STATUSES else \
+            f" · {op_core.PROJECT_STATUS_LABEL.get(p.status, p.status)}"
     if project_id:
         base = base.filter(PmProject.id == project_id)
     like = f"%{q.strip()}%" if q and q.strip() else None
@@ -80,7 +88,7 @@ async def lookup_units(
         pq = pq.filter(or_(PmProject.project_code.ilike(like), PmProject.client_name.ilike(like),
                            PmProject.name.ilike(like), SalesOrder.so_number.ilike(like),
                            SalesOrder.customer_po_number.ilike(like), machine_hit))
-    prows = pq.order_by(PmProject.id.desc()).limit(30).all()
+    prows = pq.order_by(PmProject.id.desc()).limit(cap).all()
     machines = _machines(db, [p.id for p, _ in prows])
     unit_less = {p.id for p, _ in prows if not op_core.project_has_units(db, p.id)}
     for p, so_number in prows:
@@ -90,6 +98,7 @@ async def lookup_units(
             display, level = " · ".join(b for b in bits if b), True
         else:
             display, level = f"{p.project_code} · whole project · {p.client_name or ''}".rstrip(" ·"), False
+        display += _status(p)
         out.append(ProjectUnitLookupItem(
             project_id=p.id, project_code=p.project_code, client_name=p.client_name, so_number=so_number,
             project_level=level, machine_id=m[0] if m else None, machine_serial=m[1] if m else None, display=display))
@@ -103,11 +112,11 @@ async def lookup_units(
         eq = eq.filter(or_(PmProject.project_code.ilike(like), PmProject.client_name.ilike(like),
                            SalesOrder.so_number.ilike(like), SalesOrder.customer_po_number.ilike(like),
                            PmProjectElement.element_no.ilike(like), PmProjectElement.label.ilike(like), machine_hit))
-    rows = eq.order_by(PmProject.id.desc(), PmProjectElement.id.asc()).limit(max(0, 30 - len(out))).all()
+    rows = eq.order_by(PmProject.id.desc(), PmProjectElement.id.asc()).limit(max(0, cap - len(out))).all()
     machines.update(_machines(db, [p.id for p, _, _ in rows if p.id not in machines]))
     for p, so_number, el in rows:
         m = machines.get(p.id)
-        disp = op_core.element_display(p, el) + (f" · {p.client_name}" if p.client_name else "")
+        disp = op_core.element_display(p, el) + (f" · {p.client_name}" if p.client_name else "") + _status(p)
         out.append(ProjectUnitLookupItem(
             project_id=p.id, project_code=p.project_code, element_id=el.id, element_no=el.element_no, label=el.label,
             kind=el.kind, client_name=p.client_name, so_number=so_number,

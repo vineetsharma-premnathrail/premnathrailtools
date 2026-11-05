@@ -104,7 +104,9 @@ def public_standard() -> dict:
             "remarks_label": spec.get("remarks_label"),
             # project element picker (store/services/project_stock.py —
             # validated there, not by validate_issue): shown for these types.
-            "order_project": t in PROJECT_ISSUE_TYPES,
+            # Not on Project / Site: the project comes from the machine picked
+            # above and no unit is required there (owner, 2026-11-05).
+            "order_project": t in PROJECT_ISSUE_TYPES and t != "project",
             "fields": [{"key": k, "rule": rule, **FIELDS[k]} for k, rule in spec["fields"].items()],
         }
     return out

@@ -463,9 +463,10 @@ def _check_view_access(pr: P2PRequest, user: User) -> None:
 
 
 def _check_approve_access(pr: P2PRequest, user: User) -> list[str] | None:
-    """Every approval slot `user` is acting as (None means either an admin
-    override or the legacy no-heads-assigned purchase-team-wide path — the
-    caller distinguishes those by role/assigned_approver_ids). Returns all
+    """Every approval slot `user` is acting as (None means the legacy
+    no-heads-assigned purchase-team-wide path — the caller distinguishes it
+    by assigned_approver_ids). An admin has no say just for being admin
+    (owner decision 2026-11-04): only named approvers decide. Returns all
     still-pending roles assigned to this user, not just the first one, so a
     user holding multiple approver roles on the same PR clears every one of
     their slots in a single click.
@@ -474,8 +475,7 @@ def _check_approve_access(pr: P2PRequest, user: User) -> list[str] | None:
     who named THEMSELVES in a slot may sign that slot — the business accepted
     waiving the PR-level four-eyes control. That consent only covers slots
     they were explicitly named in: on a PR with no assigned approvers at all
-    (legacy fallback) the requester still can't wave their own PR through,
-    and the admin override below never applies to the admin's own PR."""
+    (legacy fallback) the requester still can't wave their own PR through."""
     assigned = pr.assigned_approver_ids
     if not assigned:
         if pr.requested_by_id is not None and pr.requested_by_id == user.id:
@@ -483,8 +483,12 @@ def _check_approve_access(pr: P2PRequest, user: User) -> list[str] | None:
                 status_code=403,
                 detail="You raised this requisition and no approvers are assigned to it, so you can't approve it yourself.",
             )
-        if user.role != "admin" and not _is_purchase_team(user):
-            raise HTTPException(status_code=403, detail="Purchase module access required to approve or reject this PR.")
+        if not _is_purchase_team(user):
+            raise HTTPException(
+                status_code=403,
+                detail="No approver is named on this PR, so only the purchase team can decide it, and an admin cannot approve just by being admin. "
+                       "Add a PR approver in Procurement › Settings › PR approvers, or ask an admin to reassign the approval step.",
+            )
         # No named approvers to route to — the decision falls to the purchase
         # team, so the matrix 'Approve' grant is what authorises it.
         _ensure_pr_action(user, "approve")
@@ -499,22 +503,15 @@ def _check_approve_access(pr: P2PRequest, user: User) -> list[str] | None:
     if roles:
         return roles
 
-    # If user is not an assigned approver but is admin, they can do an
-    # override — except on their own PR (self-signing is only allowed for
-    # slots the requester was explicitly named in).
-    if user.role == "admin" and pr.requested_by_id != user.id:
-        return None
-
+    # Admins get no override: only a named approver can approve.
     # Otherwise, user is not authorized to approve this PR.
     raise HTTPException(status_code=403, detail="You are not an assigned approver for this PR, or you have already approved it.")
 
 
 def _check_reject_access(pr: P2PRequest, user: User) -> str:
     """Who is rejecting, for `rejected_by_role` — any assigned head (approved
-    or not) or an admin may reject; falls back to purchase-team-wide when no
-    heads are assigned at all."""
-    if user.role == "admin":
-        return "admin"
+    or not) may reject; falls back to purchase-team-wide when no heads are
+    assigned at all. Admins have no say by role."""
     assigned = pr.assigned_approver_ids
     if not assigned:
         if not _is_purchase_team(user):
@@ -525,21 +522,19 @@ def _check_reject_access(pr: P2PRequest, user: User) -> str:
     for role, assigned_id in assigned.items():
         if assigned_id == user.id:
             return role
-    raise HTTPException(status_code=403, detail="Only an assigned approver (or admin) can reject this PR.")
+    raise HTTPException(status_code=403, detail="Only an assigned approver of this PR can reject it. Being an admin does not allow it; ask an admin to reassign the approval step if the approver is away.")
 
 
 def _check_po_reject_access(pr: P2PRequest, user: User) -> str:
     """Who is rejecting a PO-raised request — any holder of one of this PR's
-    PO approval roles, or an admin."""
-    if user.role == "admin":
-        return "admin"
+    PO approval roles. Admins have no say by role."""
     if pr.approval_scheme == SETTINGS_SCHEME:
         row = next((a for a in pr.po_approvers if a.approver_id == user.id), None)
         if row:
             return row.role
         if user.is_partner:
             return "partner"
-        raise HTTPException(status_code=403, detail="Only this PO's approvers (Procurement → Settings), a Partner or an admin can reject this PO.")
+        raise HTTPException(status_code=403, detail="Only this PO's approvers (Procurement → Settings), or a Partner can reject this PO. Being an admin does not allow it; ask an admin to reassign the approval step if they are away.")
     if pr.project_type in PO_APPROVAL_ROLE_SETS:
         # Matrix PRs: the PO goes to the people picked on this PR plus every
         # Director — role flags are irrelevant (picked approvers needn't hold
@@ -551,13 +546,13 @@ def _check_po_reject_access(pr: P2PRequest, user: User) -> str:
             return "director"
         names = ", ".join(f"{a.approver_name} ({P2P_ROLE_LABELS.get(a.role, a.role)})" for a in pr.po_approvers)
         who = f" — {names}" if names else ""
-        raise HTTPException(status_code=403, detail=f"Only the PO approvers picked on this requisition{who}, a Director or an admin can reject this PO.")
+        raise HTTPException(status_code=403, detail=f"Only the PO approvers picked on this requisition{who}, or a Director can reject this PO. Being an admin does not allow it; ask an admin to reassign the approval step if they are away.")
     role_set = ("purchase_head", "director", "partner")
     for role in role_set:
         if getattr(user, _PO_APPROVAL_ROLE_FLAGS[role], False):
             return role
     labels = ", ".join(P2P_ROLE_LABELS.get(r, r) for r in role_set)
-    raise HTTPException(status_code=403, detail=f"Only one of {labels} (or an admin) can reject this PO.")
+    raise HTTPException(status_code=403, detail=f"Only one of {labels} can reject this PO. Being an admin does not allow it; ask an admin to reassign the approval step if they are away.")
 
 
 def _check_po_approve_access(pr: P2PRequest, user: User) -> list[str]:
@@ -1064,10 +1059,10 @@ async def list_p2p_requests(
     )
     if queue is None and not _can_view_prs(user):
         query = query.filter(P2PRequest.status.in_(_PO_STAGE_STATUSES))
-    if queue == "pr-approval" and user.role != "admin":
+    if queue == "pr-approval":
         # The P.R Approval queue: ONLY PRs where the viewer holds an approver
         # slot — even for the purchase team, whose monitoring view is the
-        # main list. Admins see the full queue.
+        # main list, and for admins (no approving by role).
         query = query.filter(
             P2PRequest.approvals.any(P2PRequestApproval.approver_id == user.id)
             | (P2PRequest.approver_id == user.id)
@@ -1075,7 +1070,7 @@ async def list_p2p_requests(
             | (P2PRequest.plant_head_id == user.id)
             | P2PRequest.id.in_(p2p_approvals.pr_engine_party_pr_ids(user))
         )
-    elif queue == "po-approval" and user.role != "admin":
+    elif queue == "po-approval":
         # The P.O Approval queue: ONLY PRs whose PO this viewer is eligible
         # to approve — their role flags intersected with each PR's role set
         # (matrix by project_type, legacy PH/Director/Partner otherwise) — anyone
@@ -1154,8 +1149,6 @@ async def my_approver_flags(db: Session = Depends(get_db), user: User = Depends(
     """Whether the viewer approves requisitions / POs at all — shows the
     Approvals views. /auth/me's is_pr_approver / is_po_approver only know the
     old routing tables; this adds the approval engine's steps."""
-    if user.role == "admin":
-        return {"is_pr_approver": True, "is_po_approver": True}
     engine_pr, engine_po = p2p_approvals.is_approver_user(db, user)
     legacy_pr = db.query(P2PRequest.id).filter(
         P2PRequest.approvals.any(P2PRequestApproval.approver_id == user.id)
@@ -1327,7 +1320,7 @@ async def approve_p2p_request(
         raise HTTPException(status_code=409, detail=f"Only a submitted PR can be approved (current status: {pr.status})")
 
     # Submitted through the approval engine: the engine decides who may act
-    # (approver, delegate, escalation target, admin stand-in with a comment).
+    # (approver, delegate or escalation target; an admin only reassigns).
     req = p2p_approvals.pr_request(db, pr.id)
     if req is not None:
         engine.decide(db, req.id, user, "approve", payload.comment)
@@ -1337,8 +1330,7 @@ async def approve_p2p_request(
 
     # ── In-flight PR from before the engine (no approval request): old path.
     # An approval comment is mandatory (2026-09-30) — it's the approver's
-    # recorded reasoning on the requisition's approval trail. Applies to the
-    # admin override too. Rejections keep their own separate reason field.
+    # recorded reasoning on the requisition's approval trail. Rejections keep their own separate reason field.
     comment = (payload.comment or "").strip()
     if not comment:
         raise HTTPException(status_code=400, detail="Add a comment before approving — it is recorded on the requisition's approval trail.")
@@ -1365,12 +1357,6 @@ async def approve_p2p_request(
         role_labels = " & ".join(P2P_ROLE_LABELS.get(role, role) for role in roles)
         _write_audit(db, pr.id, "approved", user,
                      summary=f"{user.name or user.email} approved P2P request {pr.p2p_number} as {role_labels}.{comment_note}")
-    elif user.role == "admin" and pr.pending_approval_roles:
-        # Admin override: signs off every still-pending slot at once.
-        for pending_role in list(pr.pending_approval_roles):
-            _stamp(pending_role)
-        _write_audit(db, pr.id, "approved", user,
-                     summary=f"{user.name or user.email} approved P2P request {pr.p2p_number} (admin override).{comment_note}")
 
     if not pr.pending_approval_roles:
         old_status = pr.status

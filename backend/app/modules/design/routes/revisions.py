@@ -15,7 +15,7 @@ from app.modules.design.models.change_notice import DesignChangeNotice
 from app.modules.design.models.document import (
     DesignDocument, DesignDocumentRevision, DesignRevisionFile, DESIGN_FILE_ROLES,
 )
-from app.modules.design.access import head_ids, is_head, is_team
+from app.modules.design.access import head_ids, is_head_for_decision, is_team
 from app.modules.design.approvals import DOC_ENTITY, DOC_KEY, mark_checklist_done, pending_request
 from app.modules.design.features import ensure_design_feature
 from app.modules.design.scope import ensure_in_scope
@@ -31,7 +31,7 @@ from app.modules.design.schemas.revision import (
 )
 from app.modules.design.service import (
     add_event, check_approve, check_discard_revision, check_manage_draft, check_recall, check_release, check_review,
-    ensure, ensure_assignee_rule, is_admin, notify, ref, released_revision, user_name, utcnow, validate_signatories,
+    ensure, ensure_assignee_rule, notify, ref, released_revision, user_name, utcnow, validate_signatories,
 )
 from app.modules.main.models.user import User
 from app.modules.organization.services import approval_engine as engine
@@ -464,7 +464,7 @@ def _engine_decide(db: Session, req, doc: DesignDocument, rev: DesignDocumentRev
     comment = (payload.comment or "").strip() or None
     if payload.decision == "return" and not comment:
         raise HTTPException(status_code=400, detail=f"Say what needs fixing when returning {ref(doc, rev)} — the author sees your comment.")
-    if not engine.can_act_on_entity(db, user, DOC_ENTITY, doc.id) and not is_admin(user):
+    if not engine.can_act_on_entity(db, user, DOC_ENTITY, doc.id):
         # Not an approver / delegate of the current stage: say why in Design's
         # own words (author, the other signatory…), else the engine's reason.
         if stage == "in_review":
@@ -528,7 +528,7 @@ async def release_customer_approved(
     for exactly this revision (plan rule 6)."""
     ensure_design_feature(user, "documents", "check_release", "approve")
     doc, rev = _load(db, revision_id, lock=True, user=user)
-    ensure(check_release(user, doc, rev, is_head(db, user) or is_admin(user) or user.id == rev.approver_id))
+    ensure(check_release(user, doc, rev, is_head_for_decision(db, user) or user.id == rev.approver_id))
     approval = db.query(DesignSubmissionLine).join(
         DesignCustomerSubmission, DesignCustomerSubmission.id == DesignSubmissionLine.submission_id
     ).filter(

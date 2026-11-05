@@ -93,8 +93,9 @@ def check_bom_review(user: User, bom: DesignBom, rev: DesignBomRevision) -> Deni
         return Denied(403, f"You wrote {bom_ref(bom, rev)}, so you can't check it yourself.")
     if user.id == rev.approver_id:
         return Denied(403, f"You're the named approver of {bom_ref(bom, rev)}, so you can't also be its checker.")
-    if user.id != rev.reviewer_id and not is_admin(user):
-        return Denied(403, f"{bom_ref(bom, rev)} is with its named checker — only they or an admin can pass or return it.")
+    if user.id != rev.reviewer_id:
+        return Denied(403, f"{bom_ref(bom, rev)} is with its named checker — only they can pass or return it. "
+                           "If they are away, an admin can reassign the approval in My Approvals.")
     return None
 
 
@@ -105,8 +106,9 @@ def check_bom_approve(user: User, bom: DesignBom, rev: DesignBomRevision) -> Den
         return Denied(403, f"You wrote {bom_ref(bom, rev)}, so you can't release it yourself.")
     if user.id == rev.reviewed_by_id:
         return Denied(403, f"You checked {bom_ref(bom, rev)}, so the release has to come from someone else.")
-    if user.id != rev.approver_id and not is_admin(user):
-        return Denied(403, f"{bom_ref(bom, rev)} is waiting on its named approver — only they or an admin can release or return it.")
+    if user.id != rev.approver_id:
+        return Denied(403, f"{bom_ref(bom, rev)} is waiting on its named approver — only they can release or return it. "
+                           "If they are away, an admin can reassign the approval in My Approvals.")
     return None
 
 

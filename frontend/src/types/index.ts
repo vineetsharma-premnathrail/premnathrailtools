@@ -10375,7 +10375,9 @@ export interface P2PEngineApproval {
   stage?: string | null
   waiting_on: string[]
   can_decide: boolean
+  /** Always false since 2026-11-04; admins reassign instead (can_reassign). */
   can_stand_in: boolean
+  can_reassign?: boolean
   pr_request_id?: number | null
   po_id?: number | null
   /** Every PO of the requisition waiting for approval (several buyers → several POs). */
@@ -10482,7 +10484,10 @@ export interface ApprovalRequestInfo {
   steps: ApprovalStep[]
   can_decide: boolean
   can_cancel: boolean
+  /** Always false since 2026-11-04 (admins no longer decide by being admin); kept for older payloads. */
   can_stand_in?: boolean
+  /** Admin may hand an open step to another person (they never decide it themselves). */
+  can_reassign?: boolean
   acting_for?: string | null
 }
 

@@ -878,7 +878,7 @@ def _engine_decide(db: Session, req, bom: DesignBom, rev: DesignBomRevision, use
     comment = (payload.comment or "").strip() or None
     if payload.decision == "return" and not comment:
         raise HTTPException(status_code=400, detail=f"Say what needs fixing when returning {bom_ref(bom, rev)} — the author sees your comment.")
-    if not engine.can_act_on_entity(db, user, BOM_ENTITY, bom.id) and user.role != "admin":
+    if not engine.can_act_on_entity(db, user, BOM_ENTITY, bom.id):
         # Not an approver / delegate of the current stage: Design's own reason first.
         ensure(check_bom_review(user, bom, rev) if stage == "in_review" else check_bom_approve(user, bom, rev))
     if stage == "in_review":

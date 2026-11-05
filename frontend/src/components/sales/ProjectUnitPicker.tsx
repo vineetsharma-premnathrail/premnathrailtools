@@ -30,6 +30,7 @@ export default function ProjectUnitPicker({
   kind,
   placeholder,
   disabled = false,
+  anyStatus = false,
 }: {
   value: ProjectUnitValue | null
   /** Gets the picked value and its lookup row (labels for display / snapshots). */
@@ -41,6 +42,8 @@ export default function ProjectUnitPicker({
   kind?: 'vehicle' | 'lot'
   placeholder?: string
   disabled?: boolean
+  /** Every project whatever its status (closed / cancelled too) — Store material issues only. */
+  anyStatus?: boolean
 }) {
   const [items, setItems] = useState<ProjectUnitLookupItem[]>([])
   const [error, setError] = useState('')
@@ -48,13 +51,13 @@ export default function ProjectUnitPicker({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const load = useCallback((q: string) => {
-    projectsApi.unitsLookup({ q: q || undefined, kind, include_projects: !requireElement })
+    projectsApi.unitsLookup({ q: q || undefined, kind, include_projects: !requireElement, any_status: anyStatus || undefined })
       .then((rows) => { setItems(rows); setError('') })
       .catch((err) => {
         const msg = extractErrorMessages(err, 'Could not load projects. Check your connection and reload the page.')
         setError(Array.isArray(msg) ? msg.join(' ') : msg)
       })
-  }, [kind, requireElement])
+  }, [kind, requireElement, anyStatus])
 
   useEffect(() => { load('') }, [load])
 
@@ -65,7 +68,7 @@ export default function ProjectUnitPicker({
   useEffect(() => {
     if (!value || valueKey === pickedKey) return
     let ignore = false
-    projectsApi.unitsLookup({ project_id: value.projectId, include_projects: true })
+    projectsApi.unitsLookup({ project_id: value.projectId, include_projects: true, any_status: anyStatus || undefined })
       .then((rows) => {
         const row = rows.find((i) => keyOf(i.project_id, i.element_id) === valueKey)
         if (row && !ignore) setPicked(row)

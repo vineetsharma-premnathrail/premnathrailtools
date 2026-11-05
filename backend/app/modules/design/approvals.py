@@ -68,10 +68,11 @@ def pending_request(db: Session, entity_type: str, entity_id: int) -> ApprovalRe
 
 def can_decide(db: Session, user: User, entity_type: str, entity_id: int) -> bool:
     """The user is an approver (or delegate / escalation target) of the
-    current stage, or an admin who may stand in."""
+    current stage. An admin is not an approver just by being admin — they
+    reassign a stuck step in My Approvals instead."""
     if pending_request(db, entity_type, entity_id) is None:
         return False
-    return user.role == "admin" or engine.can_act_on_entity(db, user, entity_type, entity_id)
+    return engine.can_act_on_entity(db, user, entity_type, entity_id)
 
 
 def mark_checklist_done(db: Session, revision_id: int) -> None:
@@ -200,8 +201,8 @@ def _doc_decided(db: Session, req: ApprovalRequest, outcome: str, actor: User) -
 
 
 def _ensure_second_signature(req: ApprovalRequest, label: str) -> None:
-    """Checker and approver are two different people — also when an admin
-    stands in (the engine's distinct-approvers rule skips admin stand-ins)."""
+    """Checker and approver are two different people — also when a step was
+    reassigned (kept as a second guard next to the engine's distinct-approvers rule)."""
     if len({s.sequence for s in req.steps}) < 2:
         return
     first, last = _first_stage_decision(req), _last_decision(req)
@@ -209,7 +210,7 @@ def _ensure_second_signature(req: ApprovalRequest, label: str) -> None:
         raise HTTPException(
             status_code=403,
             detail=f"You checked {label}, so the approval has to come from someone else — the second signature can't be "
-                   "the checker's, even standing in as admin.",
+                   "the checker's. An admin can reassign the approval to another person in My Approvals.",
         )
 
 

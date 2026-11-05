@@ -88,7 +88,7 @@ export default function WorkflowEditorPage() {
   const { isAuthorized, isLoading } = useRequireOrgTab('workflows')
   const { can, canFeature, user: me } = useCan()
   // Switches that remove an approval control are admin-only (the server refuses anyone else).
-  const isAdminUser = !!me && (me.role === 'admin' || !!(me as { is_azure_admin?: boolean }).is_azure_admin)
+  const isAdminUser = !!me && me.role === 'admin'
   // Workflow features (core/features/organization.py): check & preview, reset, change history.
   const maySimulate = canFeature('organization', 'workflows', 'simulate', 'view')
   const mayReset = canFeature('organization', 'workflows', 'reset', 'edit')

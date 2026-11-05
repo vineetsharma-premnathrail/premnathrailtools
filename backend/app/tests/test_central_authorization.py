@@ -94,7 +94,7 @@ def test_reject_needs_comment_and_self_approval_blocked(db, team):
     assert e.value.status_code == 422 and "Department head" in e.value.detail
 
 
-def test_permission_required_and_admin_stand_in(db, team):
+def test_permission_required_and_admin_only_reassigns(db, team):
     team["head"].granular_permissions = []
     team["head"].invalidate_permissions()
     db.commit()
@@ -102,11 +102,62 @@ def test_permission_required_and_admin_stand_in(db, team):
     with pytest.raises(HTTPException) as e:
         engine.decide(db, r.id, team["head"], "approve")
     assert place("quality:ncr:approve").split(" › ")[-1] in e.value.detail
+
+    # An admin never decides by being admin (owner, 2026-11-04) — not even with a reason.
     admin = _user(db, "ca.admin@premnathrail.com", role="admin")
-    with pytest.raises(HTTPException):
-        engine.decide(db, r.id, admin, "approve")  # stand-in needs a reason
-    engine.decide(db, r.id, admin, "approve", "Head on leave, urgent")
-    assert r.status == "approved" and r.steps[0].via == "admin"
+    with pytest.raises(HTTPException) as e:
+        engine.decide(db, r.id, admin, "approve", "Head on leave, urgent")
+    assert e.value.status_code == 403 and "Reassign approver" in e.value.detail
+    assert engine.request_out(db, r, admin)["can_stand_in"] is False
+    assert engine.request_out(db, r, admin)["can_reassign"] is True
+
+    step = r.steps[0]
+    # Reason required; never to yourself; target must be able to approve.
+    with pytest.raises(HTTPException) as e:
+        engine.reassign_step(db, r.id, step.id, team["partner"].id, admin, "  ")
+    assert e.value.status_code == 422
+    with pytest.raises(HTTPException) as e:
+        engine.reassign_step(db, r.id, step.id, admin.id, admin, "on leave")
+    assert e.value.status_code == 422 and "yourself" in e.value.detail
+    with pytest.raises(HTTPException) as e:
+        engine.reassign_step(db, r.id, step.id, team["req"].id, admin, "on leave")  # the requester (four-eyes)
+    assert e.value.status_code == 422
+    no_perm = _user(db, "ca.noperm@premnathrail.com")
+    with pytest.raises(HTTPException) as e:
+        engine.reassign_step(db, r.id, step.id, no_perm.id, admin, "on leave")
+    assert e.value.status_code == 422 and "Approve" in e.value.detail
+
+    # A non-admin can't reassign at all.
+    with pytest.raises(HTTPException) as e:
+        engine.reassign_step(db, r.id, step.id, team["partner"].id, team["partner"], "on leave")
+    assert e.value.status_code == 403
+
+    engine.reassign_step(db, r.id, step.id, team["partner"].id, admin, "Head on leave till Monday")
+    db.commit()
+    assert r.steps[0].approver_id == team["partner"].id and r.status == "pending"
+    engine.decide(db, r.id, team["partner"], "approve")
+    assert r.status == "approved" and r.steps[0].via == "direct" and r.steps[0].decided_by_id == team["partner"].id
+
+
+def test_reassign_route_and_admin_decide_route(client, db, team):
+    r = engine.submit(db, KEY, entity_id=55, requester=team["req"], title="NCR 55", amount=10)
+    db.commit()
+    admin = _user(db, "ca.admin2@premnathrail.com", role="admin")
+    refused = client.post(f"/api/v1/approvals/requests/{r.id}/decide", json={"decision": "approve", "comment": "x"},
+                          headers=_auth(admin))
+    assert refused.status_code == 403
+    ok = client.post(f"/api/v1/approvals/requests/{r.id}/steps/{r.steps[0].id}/reassign",
+                     json={"to_user_id": team["partner"].id, "reason": "Head on leave"}, headers=_auth(admin))
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["steps"][0]["approver_id"] == team["partner"].id
+
+
+def test_admin_cannot_make_themselves_someone_elses_delegate(client, db, team):
+    admin = _user(db, "ca.admin3@premnathrail.com", role="admin")
+    today = date.today().isoformat()
+    r = client.post("/api/v1/organization/delegations", headers=_auth(admin), json={
+        "delegator_id": team["head"].id, "delegate_id": admin.id, "start_date": today, "end_date": today})
+    assert r.status_code == 403 and "yourself" in r.json()["detail"]
 
 
 def test_delegation_and_inbox(db, team):

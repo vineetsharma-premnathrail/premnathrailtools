@@ -373,7 +373,7 @@ def _approve_via_engine(db: Session, ncr: QualityNcr, req, *, role: str | None, 
     if role not in needed:
         raise NcrError(f"'{label}' approval isn't pending on {ncr.ncr_number} "
                        f"(pending: {', '.join(QUALITY_NCR_APPROVAL_ROLE_LABELS.get(r, r) for r in needed) or 'none'}).", 422)
-    if role in QUALITY_NCR_APPROVAL_ROLE_LABELS and not _role_holder(user, role) and user.role != "admin":
+    if role in QUALITY_NCR_APPROVAL_ROLE_LABELS and not _role_holder(user, role):
         raise NcrError(f"You can't approve as {label} — "
                        + ("Partner approval is limited to Partners (Company Info → Partners)." if role == "partner"
                           else "ask an admin for that authority."), 403)

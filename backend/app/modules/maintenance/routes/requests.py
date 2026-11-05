@@ -66,7 +66,7 @@ def _to_response(db: Session, req: MaintenanceRequest, user: User) -> Maintenanc
         )
         resp.can_confirm = (
             wo.status == "completed" and wo.requester_confirmed_at is None
-            and (user.id == req.raised_by_id or user.role == "admin")
+            and user.id == req.raised_by_id  # acceptance is the requester's own; admin has no stand-in
         )
     return resp
 
@@ -337,8 +337,9 @@ async def confirm_repair(
     """The requester confirms the machine is OK after repair (ok=True), or
     sends the job back (ok=False, comment required) — which reopens it."""
     req = _get_or_404(db, request_id, user)
-    if user.id != req.raised_by_id and user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only the person who raised this request can confirm the repair.")
+    if user.id != req.raised_by_id:
+        raise HTTPException(status_code=403, detail="Only the person who raised this request can confirm the repair — an admin can't confirm it on their behalf. "
+                                                    "Ask the requester to confirm it, or raise a new request if they have left.")
     wo = db.query(MaintenanceWorkOrder).filter(MaintenanceWorkOrder.request_id == req.id).order_by(MaintenanceWorkOrder.id.desc()).first()
     if not wo or wo.status != "completed":
         raise HTTPException(status_code=409, detail="There's nothing to confirm yet — the work order isn't marked Completed.")

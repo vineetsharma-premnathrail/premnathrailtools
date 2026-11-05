@@ -272,7 +272,7 @@ export default function DrawingsTab({ job, meta, canEdit, onChanged }: { job: El
         </button>,
       )
     }
-    if (rev.status === 'submitted' && !approvalRequestId(rev) && canApproveDrawings && (isAdmin || !isPreparer)) {
+    if (rev.status === 'submitted' && !approvalRequestId(rev) && canApproveDrawings && !isPreparer) {
       out.push(<button key="approve" data-tour="elec-rev-approve-btn" type="button" style={{ ...smallBtn, color: '#15803d', borderColor: 'rgba(22,163,74,0.35)' }} disabled={busy} onClick={() => { setDecisionHint(''); setDecision({ kind: 'approve', drawing: d, rev }) }}>Approve</button>)
       out.push(<button key="reject" data-tour="elec-rev-reject-btn" type="button" style={smallDangerBtn} disabled={busy} onClick={() => { setDecisionHint(''); setDecision({ kind: 'reject', drawing: d, rev }) }}>Reject</button>)
     }

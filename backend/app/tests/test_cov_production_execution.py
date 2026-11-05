@@ -768,7 +768,9 @@ def test_admin_bypasses_the_matrix(client, db, s):
     db.add(admin)
     db.commit()
     wo = new_wo(client, s, qty=1, release=False)
-    assert client.post(f"{API}/work-orders/{wo['id']}/release", headers=auth(admin)).status_code == 200
+    r = client.post(f"{API}/work-orders/{wo['id']}/release", headers=auth(admin))
+    # Admin passes the matrix (may submit), but is not an approver: the order waits for the approver.
+    assert r.status_code == 200 and r.json()["status"] == "draft"
 
 
 def test_work_orders_follow_the_production_data_scope(client, db, s):

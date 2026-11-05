@@ -17,7 +17,8 @@ Approvals (central engine, Organization › Approval Workflows):
   The approver lists that used to live in Service → Settings
   (project_approvers / sr_close_approvers) seed the workflow the first time
   it is used (`seed_workflow`, `migrate_erp_approval_workflows`); a blank list
-  meant "admins only", which is the registered default stage. The on/off
+  falls back to the registered default stage: the company Partners (an admin is
+  not an approver just because they are admin — owner decision 2026-11-04). The on/off
   switches stay in Service → Settings because they change the process
   (status flow), not who approves.
 
@@ -87,18 +88,17 @@ def legacy_approver_ids(db: Session, key: str) -> list[int]:
 
 
 def legacy_is_approver(db: Session, user: User, key: str) -> bool:
-    """Old rule for in-flight items: admins, or a user in the old setting list."""
-    if user.role == "admin" or getattr(user, "is_azure_admin", False):
-        return True
+    """Old rule for in-flight items: a user in the old setting list. An admin is not an
+    approver just because they are admin (owner decision 2026-11-04)."""
     return user.id in legacy_approver_ids(db, key)
 
 
 def legacy_approver_names(db: Session, key: str) -> str:
     ids = legacy_approver_ids(db, key)
-    q = db.query(User).filter(User.is_active == True)  # noqa: E712
-    q = q.filter(User.id.in_(ids)) if ids else q.filter(User.role == "admin")
-    names = [u.name or u.email for u in q.all()]
-    return ", ".join(names) if names else "an admin"
+    if not ids:
+        return "nobody (no approver was named in the old Service settings) — ask an admin to send it for approval again so it goes through the Partners"
+    names = [u.name or u.email for u in db.query(User).filter(User.is_active == True, User.id.in_(ids)).all()]  # noqa: E712
+    return ", ".join(names) if names else "nobody active (the people named in the old Service settings are deactivated) — ask an admin to send it for approval again"
 
 
 def seed_workflow(db: Session, key: str) -> None:
@@ -109,7 +109,7 @@ def seed_workflow(db: Session, key: str) -> None:
         return
     ids = legacy_approver_ids(db, key)
     if not ids:
-        engine.ensure_workflow(db, key)  # registered default: admins
+        engine.ensure_workflow(db, key)  # registered default: the company Partners
         return
     tt = engine.get_type(key)
     wf = ApprovalWorkflow(key=key, module_key=tt.module_key, name=tt.label, allow_self_approval=tt.allow_self_approval,
@@ -145,12 +145,14 @@ def cancel_live(db: Session, entity_type: str, entity_id: int, user: User, reaso
         pass
 
 
-def admin_ids(db: Session) -> list[int]:
-    return [u.id for u in db.query(User.id).filter(User.role == "admin", User.is_active == True).order_by(User.id).all()]  # noqa: E712
-
-
 def _context(db: Session) -> dict:
-    return {"admin_ids": admin_ids(db)}
+    # Older stored workflows still have a "Person named on the record: Portal admins"
+    # stage. An admin is never an approver just because they are admin (owner,
+    # 2026-11-04), so that field now resolves to the company Partners — the same
+    # people the new default stage names. Edit the workflow to name others.
+    partners = [u.id for u in db.query(User.id).filter(User.is_partner == True, User.is_active == True)  # noqa: E712
+                .order_by(User.id).all()]
+    return {"admin_ids": partners}
 
 
 def decision_comment(req, actor: User) -> str:
@@ -265,11 +267,14 @@ register_transaction(TransactionType(
     entity_type=MACHINE_ENTITY, url="/dashboard/projects/service-projects/{id}",
     description="A newly registered machine, when Service → Settings › 'New machines need approval' is on. "
                 "Service requests can't be raised on the machine until it is approved.",
-    context_fields={"admin_ids": {"label": "Portal admins", "type": "user"}},
-    # Before the engine: Service → Settings 'Machine approvers'; blank = admins.
-    # seed_workflow() turns a non-blank old list into a 'Specific users' stage.
-    default_stages=[StageDef("Machine approvers", "record_field", {"field": "admin_ids"}, skip_if_no_approver=True)],
-    allow_all_skipped=True,  # nobody configured = this approval isn't in use
+    context_fields={"admin_ids": {"label": "Partners (was: Portal admins)", "type": "user"}},
+    # Before the engine: Service → Settings 'Machine approvers'. seed_workflow() turns a non-blank
+    # old list into a 'Specific users' stage; otherwise the default names the company Partners, never
+    # the admins (an admin is not an approver just because they are admin - owner, 2026-11-04). With no
+    # Partner set the submit fails with "add partners in Organization › Info › Partners" instead of
+    # approving without anyone. `admin_ids` stays a context field only so older stored workflows that
+    # still point at it keep resolving.
+    default_stages=[StageDef("Machine approval (Partner)", "partner")],
     require_permission=False,  # the Machines tab has no 'approve' action; the stage names the people
     on_decided=_machine_decided,
 ))
@@ -279,9 +284,9 @@ register_transaction(TransactionType(
     entity_type=SR_ENTITY, url="/dashboard/erp/service-requests/{id}",
     description="Closing a service request, when Service → Settings › 'Closing a service request needs approval' is on. "
                 "Approved = the SR closes; rejected / returned = it goes back to In Progress.",
-    context_fields={"admin_ids": {"label": "Portal admins", "type": "user"}},
-    default_stages=[StageDef("SR closure approvers", "record_field", {"field": "admin_ids"}, skip_if_no_approver=True)],
-    allow_all_skipped=True,  # nobody configured = this approval isn't in use
+    context_fields={"admin_ids": {"label": "Partners (was: Portal admins)", "type": "user"}},
+    # Default names the company Partners, never the admins (owner, 2026-11-04); see the machine type above.
+    default_stages=[StageDef("SR closure approval (Partner)", "partner")],
     require_permission=False,
     on_decided=_sr_closure_decided,
 ))

@@ -11,7 +11,10 @@ from app.core import visibility
 from app.core.permissions import require_app_access, require_tab_access
 from app.core.priority import map_legacy_priority
 from app.db.session import get_db
-from app.modules.design.access import get_settings, head_ids, is_head, is_team, next_number, require_head, require_team, year_prefix
+from app.modules.design.access import (
+    get_settings, head_ids, is_head, is_head_for_decision, is_team, next_number, require_head, require_head_for_decision,
+    require_team, year_prefix,
+)
 from app.modules.design.bom_service import released_bom_revision
 from app.modules.design.events import notify_design_event
 from app.modules.design.features import ensure_design_feature, gate_actions, has
@@ -111,7 +114,8 @@ def check_decide(user: User, ecr: DesignChangeRequest, head: bool) -> Denied | N
     if ecr.status != "impact_checked":
         return Denied(409, f"{ecr.ecr_number} is {_ph(ecr)} — it needs its impact checked before the board can decide.")
     if not head:
-        return Denied(403, "Only the Design head (chair of the change board) or an admin decides an ECR.")
+        return Denied(403, "Only the Design head (chair of the change board) decides an ECR — being an admin is not enough. "
+                           "Ask the Design head to decide it; an admin can make someone the Design head in Design › Settings.")
     return None
 
 
@@ -125,6 +129,7 @@ def check_withdraw(user: User, ecr: DesignChangeRequest) -> Denied | None:
 
 def allowed_actions(db: Session, user: User, ecr: DesignChangeRequest, ecn_id: int | None) -> list[str]:
     head = is_head(db, user)
+    decision_head = is_head_for_decision(db, user)
     team = is_team(db, user)
     out = ["comment"]
     if not check_edit(user, ecr, head):
@@ -133,9 +138,9 @@ def allowed_actions(db: Session, user: User, ecr: DesignChangeRequest, ecn_id: i
         out.append("impact")
     if not check_vote(user, ecr):
         out.append("vote")
-    if not check_decide(user, ecr, head):
+    if not check_decide(user, ecr, decision_head):
         out.append("decide")
-    if ecr.status == "deferred" and head:
+    if ecr.status == "deferred" and decision_head:
         out.append("reopen")
     if not check_withdraw(user, ecr):
         out.append("withdraw")
@@ -454,7 +459,7 @@ async def vote(ecr_id: int, payload: DesignEcrVotePayload, background_tasks: Bac
 async def decide(ecr_id: int, payload: DesignEcrDecisionPayload, background_tasks: BackgroundTasks,
                  db: Session = Depends(get_db), user: User = Depends(require_app_access("design"))):
     ecr = _get(db, ecr_id, lock=True, user=user)
-    ensure(check_decide(user, ecr, is_head(db, user)))
+    ensure(check_decide(user, ecr, is_head_for_decision(db, user)))
     if payload.decision not in ("approved", "rejected", "deferred"):
         raise HTTPException(status_code=400, detail="Decide Approved, Rejected or Deferred.")
     if payload.decision == "approved":
@@ -466,9 +471,10 @@ async def decide(ecr_id: int, payload: DesignEcrDecisionPayload, background_task
         raise HTTPException(status_code=400, detail=f"Give the reason the ECR is {payload.decision} — the person who raised it sees it.")
     voted = {v.user_id for v in ecr.votes}
     missing = [uid for uid in (ecr.board_member_ids or []) if uid not in voted]
-    if missing and not is_admin(user):
+    if missing:
         names = ", ".join(user_name(u) or f"#{u.id}" for u in users_by_id(db, missing).values())
-        raise HTTPException(status_code=409, detail=f"Waiting for the change board: {names} haven't voted on {ecr.ecr_number} yet.")
+        raise HTTPException(status_code=409, detail=f"Waiting for the change board: {names} haven't voted on {ecr.ecr_number} yet. "
+                                                    "Ask them to vote, or remove them from the change board in Design › Settings, then decide.")
     ecr.status, ecr.decided_by_id, ecr.decided_at, ecr.decision_comment = payload.decision, user.id, utcnow(), comment
     add_event(db, f"ecr_{payload.decision}", user, ecr_id=ecr.id, comment=comment)
     notify(db, ecr.raised_by_id, user, f"ECR {payload.decision}: {ecr.ecr_number}",
@@ -488,7 +494,7 @@ async def decide(ecr_id: int, payload: DesignEcrDecisionPayload, background_task
 async def reopen(ecr_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("design"))):
     ensure_design_feature(user, "change_notices", "ecr_decision", "approve")
     ecr = _get(db, ecr_id, lock=True, user=user)
-    require_head(db, user, "reopen a deferred ECR")
+    require_head_for_decision(db, user, "reopen a deferred ECR")
     if ecr.status != "deferred":
         raise HTTPException(status_code=409, detail=f"{ecr.ecr_number} is {_ph(ecr)} — only a deferred ECR can be reopened.")
     ecr.status, ecr.decided_by_id, ecr.decided_at = "impact_checked", None, None

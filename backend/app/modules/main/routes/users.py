@@ -451,7 +451,7 @@ async def get_user_effective_permissions(
             sources.setdefault(g, []).append(role.name + (" (everyone)" if role.is_default else ""))
     for g in expand_grants(target.granular_permissions):
         sources.setdefault(g, []).append("Extra")
-    return {"is_admin": target.role == "admin" or target.is_azure_admin, "apps": target.get_apps(), "grants": sources}
+    return {"is_admin": target.role == "admin", "apps": target.get_apps(), "grants": sources}
 
 
 @router.get("/{user_id}/permission-history", response_model=list[UserActivityResponse])

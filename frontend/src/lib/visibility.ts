@@ -142,7 +142,7 @@ export function useVisibility(key: string): VisibilityApi {
   const user = useAuthStore((s) => s.user)
   const ctx = useContext(VisibilityPreviewContext)
   const previewing = !!ctx && ctx.key === key
-  const isAdmin = !!user && (user.role === 'admin' || !!(user as { is_azure_admin?: boolean }).is_azure_admin)
+  const isAdmin = !!user && user.role === 'admin'
   // In the preview the rule being edited applies live (even for an admin); otherwise the user's own merged rule.
   const rule: VisibilityRule | undefined = previewing
     ? ctx!.rule || undefined

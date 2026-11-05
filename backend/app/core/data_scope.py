@@ -85,7 +85,7 @@ def scoped_models() -> dict[type, ScopedModel]:
 
 
 def _is_admin(user) -> bool:
-    return user is not None and (user.role == "admin" or bool(getattr(user, "is_azure_admin", False)))
+    return user is not None and user.role == "admin"
 
 
 def default_scope() -> str:

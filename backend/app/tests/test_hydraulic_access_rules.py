@@ -16,9 +16,9 @@ API = "/api/v1/hydraulic"
 YEAR = date.today().year
 
 
-def make_user(db, email, role="user", grants=None):
+def make_user(db, email, role="user", grants=None, apps=("hydraulic",)):
     user = User(email=email, name=email.split("@")[0], role=role, is_active=True,
-                assigned_apps=["hydraulic"], granular_permissions=list(grants or []))
+                assigned_apps=list(apps), granular_permissions=list(grants or []))
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -113,15 +113,21 @@ def test_submit_notifies_approve_grant_holders_on_teams(client, db, h, eng, monk
     assert db.query(Notification).filter_by(user_id=eng.id).count() == 0
 
 
-def test_submit_falls_back_to_admins_and_skips_the_submitter(client, db):
-    admin = make_user(db, "acc.hyd.admin2@premnathrail.com", role="admin")
-    other_admin = make_user(db, "acc.hyd.admin3@premnathrail.com", role="admin")
-    ha = auth(admin)
-    ckt = client.post(f"{API}/circuits", json={"title": "Main"}, headers=ha).json()
+def test_submit_does_not_fall_back_to_admins(client, db):
+    # Admins are never approvers just by being admins: with nobody else
+    # holding Circuits › Approve the submit is refused and tells what to grant.
+    make_user(db, "acc.hyd.admin2@premnathrail.com", apps=(), role="admin")
+    other_admin = make_user(db, "acc.hyd.admin3@premnathrail.com", apps=(), role="admin")
+    # The only deliberate holder is the submitter, so nobody else can review.
+    solo = auth(make_user(db, "acc.hyd.solo@premnathrail.com", grants=[
+        "hydraulic:circuits:view", "hydraulic:circuits:create", "hydraulic:circuits:edit",
+        "hydraulic:circuits:submit_review", "hydraulic:circuits:approve",
+    ]))
+    ckt = client.post(f"{API}/circuits", json={"title": "Main"}, headers=solo).json()
     attach_diagram(db, ckt["id"])
-    client.post(f"{API}/circuits/{ckt['id']}/submit", headers=ha)
-    notes = db.query(Notification).filter_by(notification_type="hyd_circuit_review").all()
-    assert [n.user_id for n in notes] == [other_admin.id]
+    r = client.post(f"{API}/circuits/{ckt['id']}/submit", headers=solo)
+    assert r.status_code == 422 and "Hydraulic & Pneumatic › Circuits › Approve" in r.json()["detail"]
+    assert db.query(Notification).filter_by(user_id=other_admin.id).count() == 0
 
 
 # ---------------------------------------------------------------------------

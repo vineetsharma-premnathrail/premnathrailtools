@@ -187,8 +187,17 @@ async def dispatch_project_options(
     """Customer machines / orders (ERP) a dispatch issue can go against,
     with their Quality inspection requirement (rule 8)."""
     from app.modules.erp.models.project import Project
+    from app.modules.projects.models.project import PmProject
     rows = db.query(Project).filter(Project.is_deleted == False).order_by(Project.id.desc()).limit(1000).all()  # noqa: E712
-    return [{"id": p.id, "label": _project_label(p), "third_party_inspection_required": bool(p.third_party_inspection_required),
+    pm_names = dict(db.query(PmProject.id, PmProject.name).filter(
+        PmProject.id.in_({p.pm_project_id for p in rows if p.pm_project_id})).all()) if rows else {}
+
+    # The picker shows only the project: number + name (owner, 2026-11-05) — not customer / PO.
+    def short(p) -> str:
+        name = pm_names.get(p.pm_project_id) or p.model_name
+        return " — ".join(x for x in (p.serial_number, name) if x)
+
+    return [{"id": p.id, "label": short(p), "third_party_inspection_required": bool(p.third_party_inspection_required),
              "inspection_agency": p.inspection_agency} for p in rows]
 
 
@@ -314,7 +323,7 @@ async def create_material_issue(
     spec = ISSUE_FORMS.get(issue_type_row.value, {}) if issue_type_row else {}
     if spec.get("remarks_label") and not (payload.remarks or "").strip():
         raise HTTPException(status_code=422, detail=f"Issue type '{issue_type_row.label}' needs Remarks: {spec['remarks_label'].lower()}.")
-    if spec.get("manager_only") and not (user.role == "admin" or getattr(user, "is_azure_admin", False)
+    if spec.get("manager_only") and not (user.role == "admin"
                                          or getattr(user, "is_store_manager", False)
                                          or (location.manager_user_id and location.manager_user_id == user.id)):
         raise HTTPException(status_code=403, detail=f"'{issue_type_row.label}' writes stock off, so only a Store Manager (or {location.name}'s "

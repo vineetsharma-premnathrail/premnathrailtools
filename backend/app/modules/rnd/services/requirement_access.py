@@ -4,8 +4,10 @@ R&D rework 2026-10-30 — need-to-know now comes from roles, not per-record tick
 
 * R&D head(s) — the heads of the R&D department in Organization › Department
   — and portal admins can do everything on every requirement: see it,
-  open/download its documents, upload documents, respond to CRM, accept or
-  return it to BD and hand out tasks. Until an R&D department head is set,
+  open/download its documents, upload documents, respond to CRM and hand out
+  tasks. DECISIONS (accept / return to BD, review a task, release a Technical
+  Offer) are for the head or a Review-right holder only: an admin does not
+  decide just because they are admin (owner, 2026-11-04). Until an R&D department head is set,
   every R&D user acts as head, so the module keeps working.
 * Everyone on the R&D side (R&D app + View on R&D › Requirements) sees every
   requirement, downloads its files and uploads documents. The role's features
@@ -79,6 +81,18 @@ def is_head(db: Session, user: User, roles: dict[int, str] | None = None) -> boo
     return roles.get(user.id) == "head"
 
 
+def is_head_for_decision(db: Session, user: User, roles: dict[int, str] | None = None) -> bool:
+    """Head for DECISIONS (accept / return a requirement, review a task, release or
+    return a Technical Offer). A portal admin is not an approver just because they are
+    admin (owner decision 2026-11-04): an admin decides only when they are a named R&D
+    head in Organization › Department. With no head set, the R&D people (not admins) act
+    as head so the module keeps working. Management actions keep using is_head."""
+    roles = team_roles(db) if roles is None else roles
+    if user.role == "admin":
+        return roles.get(user.id) == "head"
+    return is_head(db, user, roles)
+
+
 def can_create_technical_offer(db: Session, user: User) -> bool:
     """Heads always; others with R&D › Requirements › Technical Offer team ›
     Create (Organization › Role & Permissions — a role or the user's extras)."""
@@ -92,13 +106,15 @@ def can_view_technical_offer(db: Session, user: User) -> bool:
 
 
 def can_accept(db: Session, user: User) -> bool:
-    """Accept a requirement: the R&D head, an admin, or R&D › Requirements › Review › Approve."""
-    return is_head(db, user) or can_feature(user, "rnd", "requirements", "review", "approve")
+    """Accept a requirement: the R&D head, or R&D › Requirements › Review › Approve. Not an
+    admin just because they are admin (an admin who is a named head still can)."""
+    return is_head_for_decision(db, user) or can_feature(user, "rnd", "requirements", "review", "approve")
 
 
 def can_return(db: Session, user: User) -> bool:
-    """Return a requirement to BD: the R&D head, an admin, or R&D › Requirements › Review › Reject."""
-    return is_head(db, user) or can_feature(user, "rnd", "requirements", "review", "reject")
+    """Return a requirement to BD: the R&D head, or R&D › Requirements › Review › Reject. Not an
+    admin just because they are admin (an admin who is a named head still can)."""
+    return is_head_for_decision(db, user) or can_feature(user, "rnd", "requirements", "review", "reject")
 
 
 def rnd_users(db: Session) -> list[User]:
@@ -122,7 +138,7 @@ def heads(db: Session) -> list[User]:
     if not _warned_no_head:
         _warned_no_head = True
         logger.warning("No R&D department head is set in Organization › Department — R&D head notices go to admins only.")
-    return [u for u in rnd_users(db) if u.role == "admin" or u.is_azure_admin]
+    return [u for u in rnd_users(db) if u.role == "admin"]
 
 
 def head_ids(db: Session) -> list[int]:
@@ -210,7 +226,6 @@ def access_for(db: Session, user: User, source: str, record_id: int) -> dict:
     }
     if head:
         out.update({p: True for p in PERMS})
-        out["can_review"] = True
         return out
     row = _row(db, user, source, record_id)
     if rnd_side:
@@ -265,14 +280,25 @@ def ensure_head(db: Session, user: User, what: str) -> None:
         )
 
 
+def ensure_head_for_decision(db: Session, user: User, what: str) -> None:
+    """Like ensure_head, but an admin passes only as a named R&D head."""
+    if not is_head_for_decision(db, user):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Only the R&D head ({_head_names(db)}) can {what}. A portal admin does not decide for them — "
+                   "R&D heads are the R&D department's heads in Organization › Department; an admin can name or change them there.",
+        )
+
+
 def ensure_can_review(db: Session, user: User, action: str) -> None:
     """403 with who can accept / return a requirement (AC-14)."""
     ok = can_accept(db, user) if action == "accept" else can_return(db, user)
     if not ok:
         raise HTTPException(
             status_code=403,
-            detail=f"Only the R&D head ({_head_names(db)}) or someone with R&D › Requirements › Review can accept a "
-                   "requirement — an admin grants it in Organization › Role & Permissions.",
+            detail=f"Only the R&D head ({_head_names(db)}) or someone with R&D › Requirements › Review can {action} a "
+                   "requirement — an admin does not decide just because they are admin; an admin can grant the Review right "
+                   "in Organization › Role & Permissions.",
         )
 
 

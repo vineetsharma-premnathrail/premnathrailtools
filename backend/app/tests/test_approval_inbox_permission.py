@@ -112,11 +112,12 @@ def test_approver_without_approve_permission_is_flagged_and_hidden(db, team):
     out = engine.check_workflow(db, KEY, {"stages": [_stage([nobody.id])], "is_active": True})
     assert any("doesn't hold Approve" in i["message"] for i in out["issues"] if i["level"] == "error")
 
-    # Submitting still works (an admin can stand in) but the named person gets no dead button.
+    # Submitting still works (an admin can reassign the step) but the named person gets no dead button.
     r = _submit(db, req, 1)
     assert engine.request_out(db, r, nobody)["can_decide"] is False
     assert engine.inbox(db, nobody) == []
-    assert engine.request_out(db, r, admin)["can_stand_in"] is True
+    assert engine.request_out(db, r, admin)["can_stand_in"] is False
+    assert engine.request_out(db, r, admin)["can_reassign"] is True
 
     # With the permission requirement switched off, the named person is the approver and sees it.
     _point_at(db, admin, [nobody.id], require_permission=False)

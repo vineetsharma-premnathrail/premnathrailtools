@@ -593,7 +593,7 @@ async def list_assignees(source: Source, record_id: int, db: Session = Depends(g
         ensure_feature_action(user, "rnd", "requirements", "tasks", "view")
     roles = ra.team_roles(db)
     active = db.query(User).filter(User.is_active == True).order_by(User.name.asc()).all()  # noqa: E712
-    people = [u for u in active if u.role != "admin" and not u.is_azure_admin] or active
+    people = [u for u in active if u.role != "admin"] or active
     out = [{"id": u.id, "name": _name(u), "email": u.email, "designation": u.designation,
             "team_role": roles.get(u.id), "department": u.department, "in_rnd": "rnd" in u.get_apps()} for u in people]
     # The role's assign-to rule (Role & Permissions › R&D › Requirements › Tasks).
@@ -688,10 +688,14 @@ def _after_assign(db: Session, task: RndRequirementTask, assignee: User, user: U
     )
 
 
-def _ensure_reviewer(db: Session, task: RndRequirementTask, user: User, what: str) -> None:
-    """The task's creator reviews it (a sub-task's creator is the main task's assignee); the R&D head reviews any task."""
-    if task.created_by_id != user.id and not ra.is_head(db, user):
-        raise HTTPException(status_code=403, detail=f"Only the person who gave this task (or the R&D head) can {what}.")
+def _ensure_reviewer(db: Session, task: RndRequirementTask, user: User, what: str, *, decision: bool = False) -> None:
+    """The task's creator reviews it (a sub-task's creator is the main task's assignee); the R&D head reviews any task.
+    `decision=True` (deciding an approval request): a portal admin is not the reviewer just because they are admin —
+    only the giver or a named R&D head (owner decision 2026-11-04)."""
+    is_reviewer = ra.is_head_for_decision(db, user) if decision else ra.is_head(db, user)
+    if task.created_by_id != user.id and not is_reviewer:
+        raise HTTPException(status_code=403, detail=f"Only the person who gave this task (or the R&D head) can {what}."
+                            + (" A portal admin does not decide for them." if decision and user.role == "admin" else ""))
 
 
 def _ensure_assignee(task: RndRequirementTask, user: User, what: str) -> None:
@@ -820,7 +824,7 @@ class ApprovalDecision(BaseModel):
 async def decide_approval(approval_id: int, payload: ApprovalDecision, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     row = task_approvals.get(db, KIND, approval_id)
     task = _task(db, row.task_id)
-    _ensure_reviewer(db, task, user, "decide its approval requests")
+    _ensure_reviewer(db, task, user, "decide its approval requests", decision=True)
     if ra.is_rnd_side(user):
         ensure_feature_action(user, "rnd", "requirements", "tasks", "approve")
     task_approvals.ensure_task_open(task)

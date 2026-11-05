@@ -255,3 +255,34 @@ def test_task_priority_is_standard_or_urgent_only(client, db, tor_env):
     assert client.patch(f"{WORK}/tasks/{task_id}", json={"priority": "critical"}, headers=auth(head)).status_code == 422
     start_after_due = _new_task(client, inq, head, eng, start_date=(date.today() + timedelta(days=9)).isoformat())
     assert start_after_due.status_code == 422 and "after the due date" in start_after_due.json()["detail"]
+
+
+def test_admin_does_not_decide_task_approval_requests(client, db, tor_env):
+    """Owner decision 2026-11-04: an admin manages tasks but is not the reviewer just because they are admin."""
+    bd, head, eng, other, inq = _setup(client, db)
+    admin = make_user(db, "w.admin@premnathrail.com", role="admin", apps=("rnd",))
+    task_id = _new_task(client, inq, head, eng).json()["id"]
+    approval_id = client.post(f"{WORK}/tasks/{task_id}/approvals", data={"request": "Use EN8 for axle"}, headers=auth(eng)).json()["approvals"][0]["id"]
+    resp = client.post(f"{WORK}/approvals/{approval_id}/decide", json={"decision": "approve"}, headers=auth(admin))
+    assert resp.status_code == 403 and "admin does not decide" in resp.json()["detail"]
+    # The head still decides.
+    assert client.post(f"{WORK}/approvals/{approval_id}/decide", json={"decision": "approve"}, headers=auth(head)).status_code == 200
+
+
+def test_project_task_parent_decides_without_admin(db):
+    from app.modules.rnd.routes.project_tasks import TaskParent, _ensure_reviewer
+    from fastapi import HTTPException
+    import pytest
+    admin = make_user(db, "w.admin2@premnathrail.com", role="admin", apps=("rnd",))
+    lead = make_user(db, "w.lead2@premnathrail.com", apps=("rnd",))
+    parent = TaskParent(kind="rnd", id=1, project_number="RND-1", title="t", lead_ids=[lead.id], members_fn=lambda: [],
+                        manager_label="a project lead", managers={lead.id})
+    assert parent.can_manage(admin) is True and parent.can_decide(admin) is False and parent.can_decide(lead) is True
+
+    class _Task:
+        created_by_id = 0
+    with pytest.raises(HTTPException) as exc:
+        _ensure_reviewer(admin, parent, _Task(), "decide its approval requests", decision=True)
+    assert exc.value.status_code == 403 and "admin does not decide" in exc.value.detail
+    _ensure_reviewer(admin, parent, _Task(), "edit it")  # management stays
+    _ensure_reviewer(lead, parent, _Task(), "decide its approval requests", decision=True)

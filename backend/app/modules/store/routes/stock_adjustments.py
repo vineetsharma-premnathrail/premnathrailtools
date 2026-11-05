@@ -117,8 +117,8 @@ def _engine_decide(db: Session, adjustment_id: int, user: User, decision: str, c
         return None
     if req.status != "pending":
         raise HTTPException(status_code=409, detail=f"This adjustment's approval is already {req.status} — nothing left to decide. Reload the page.")
-    # Maker-checker (C-09) holds for admins too: the engine lets an admin
-    # stand in for an approver, but never on their own document.
+    # Maker-checker (C-09) holds for admins too: the engine never lets an admin
+    # decide by role, and nobody may approve their own document.
     if decision == "approve" and req.requester_id == user.id and not engine.ensure_workflow(db, ADJUSTMENT_KEY).allow_self_approval:
         raise HTTPException(status_code=403, detail=f"You raised {req.reference or 'this adjustment'}, so you can't approve it — someone else has to (four-eyes rule).")
     try:
@@ -134,7 +134,7 @@ def _engine_decide(db: Session, adjustment_id: int, user: User, decision: str, c
 def _get_pending_for_decision(db: Session, adjustment_id: int, user: User, verb: str) -> StoreStockAdjustment:
     """Loads (and row-locks, so a double-click can't post it twice) an
     adjustment that `user` is allowed to approve or reject: it must still be
-    pending, the user must be its named approver (or an admin standing in),
+    pending, the user must be its named approver (admins have no say by role),
     and never its creator."""
     adjustment = db.query(StoreStockAdjustment).options(selectinload(StoreStockAdjustment.items)).filter(
         StoreStockAdjustment.id == adjustment_id
@@ -145,10 +145,10 @@ def _get_pending_for_decision(db: Session, adjustment_id: int, user: User, verb:
         raise HTTPException(status_code=409, detail=f"Adjustment {adjustment.adjustment_number} has already been {adjustment.status.replace('_', ' ')} — it can't be {verb}d again.")
     if adjustment.created_by_id == user.id:
         raise HTTPException(status_code=403, detail=f"You created adjustment {adjustment.adjustment_number}, so you can't {verb} it — the approver named on it must.")
-    if adjustment.approved_by_id != user.id and user.role != "admin":
+    if adjustment.approved_by_id != user.id:
         approver = db.query(User).filter(User.id == adjustment.approved_by_id).first()
         approver_name = (approver.name or approver.email) if approver else "the named approver"
-        raise HTTPException(status_code=403, detail=f"Only {approver_name} (the approver named on {adjustment.adjustment_number}) or an admin can {verb} it.")
+        raise HTTPException(status_code=403, detail=f"Only {approver_name} (the approver named on {adjustment.adjustment_number}) can {verb} it. Being an admin does not allow it; if they are away, ask the Store manager to raise the adjustment again with another approver.")
     return adjustment
 
 

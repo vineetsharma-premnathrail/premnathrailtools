@@ -140,7 +140,7 @@ register_visibility(
          "The machine's operational status on the form. A value not allowed here is also refused by the server.", "form"),
     ),
     tables=(
-        ("all_projects", "All Projects list", {"client": "Client", "site": "Site", "project_manager": "Project manager",
+        ("all_projects", "All Projects list", {"client": "Client", "site": "Site",
                                                "closing_dispatch": "Closing / Dispatch"}, "list"),
     ),
 )

@@ -168,7 +168,7 @@ async def _fake_get_azure_admin_ids():
     return {"az-1"}
 
 
-def test_sync_azure_creates_and_promotes_users(client, db, monkeypatch):
+def test_sync_azure_creates_users_without_making_azure_admins_portal_admins(client, db, monkeypatch):
     admin = make_user(db, "admin9@premnathrail.com", role="admin")
 
     monkeypatch.setattr(users_routes, "list_azure_org_users", _fake_list_azure_org_users)
@@ -178,7 +178,8 @@ def test_sync_azure_creates_and_promotes_users(client, db, monkeypatch):
     assert response.status_code == 200
     body = response.json()
     new_person = next(u for u in body if u["email"] == "newperson@premnathrail.com")
-    assert new_person["role"] == "admin"  # promoted: Azure Global Admin
+    # Azure Global Admin is not portal admin (owner, 2026-11-04): flag only, role stays user.
+    assert new_person["role"] == "user" and new_person["is_azure_admin"] is True
     assert new_person["designation"] == "Engineer"
     assert new_person["department"] == "R&D"
 

@@ -34,7 +34,7 @@ SCOPE_HINT = ("Ask an admin to widen your Store data access in Organization › 
 
 
 def is_unrestricted_user(user: User) -> bool:
-    return user.role == "admin" or bool(getattr(user, "is_azure_admin", False))
+    return user.role == "admin"
 
 
 def user_plant_ids(db: Session, user: User, config: dict | None = None) -> set[int] | None:

@@ -1606,7 +1606,7 @@ export const projectsApi = {
   /** Vehicles / lots of a project made from a sales order, with the department 360 cells. */
   units: async (id: number): Promise<import('@/types').ProjectUnitsResponse> => { const { data } = await apiClient.get(`/projects/${id}/units`); return data },
   /** Server search behind <ProjectUnitPicker> (other modules link their records to a project / unit). */
-  unitsLookup: async (params: { q?: string; kind?: 'vehicle' | 'lot'; include_projects?: boolean; project_id?: number } = {}): Promise<import('@/types').ProjectUnitLookupItem[]> => { const { data } = await apiClient.get('/projects/units/lookup', { params }); return data },
+  unitsLookup: async (params: { q?: string; kind?: 'vehicle' | 'lot'; include_projects?: boolean; project_id?: number; any_status?: boolean } = {}): Promise<import('@/types').ProjectUnitLookupItem[]> => { const { data } = await apiClient.get('/projects/units/lookup', { params }); return data },
   remove: async (id: number) => { const { data } = await apiClient.delete(`/projects/${id}`); return data },
   audit: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/audit`); return data },
   breakdown: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/breakdown`); return data },
@@ -4950,6 +4950,8 @@ export const approvalsApi = {
   entity: async (entityType: string, entityId: number): Promise<import('@/types').ApprovalEntityStatus> => { const { data } = await apiClient.get(`/approvals/entity/${entityType}/${entityId}`); return data },
   decide: async (requestId: number, decision: 'approve' | 'reject' | 'return', comment?: string): Promise<import('@/types').ApprovalRequestInfo> => { const { data } = await apiClient.post(`/approvals/requests/${requestId}/decide`, { decision, comment }); return data },
   cancel: async (requestId: number, reason?: string): Promise<import('@/types').ApprovalRequestInfo> => { const { data } = await apiClient.post(`/approvals/requests/${requestId}/cancel`, { reason }); return data },
+  // Admin hands one open step to another person (admins never decide by being admin).
+  reassign: async (requestId: number, stepId: number, toUserId: number, reason: string): Promise<import('@/types').ApprovalRequestInfo> => { const { data } = await apiClient.post(`/approvals/requests/${requestId}/steps/${stepId}/reassign`, { to_user_id: toUserId, reason }); return data },
 
   // Organization › Approval Workflows
   workflowMeta: async (): Promise<import('@/types').ApprovalWorkflowMeta> => { const { data } = await apiClient.get('/organization/workflows/meta'); return data },

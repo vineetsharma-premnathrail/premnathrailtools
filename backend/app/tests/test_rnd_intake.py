@@ -170,6 +170,36 @@ def test_review_needs_head_or_review_grant(client, db, tor_env):
     assert _accept(client, inq, reviewer).status_code == 200
 
 
+def test_admin_who_is_not_head_cannot_accept_or_return(client, db, tor_env):
+    """Owner decision 2026-11-04: an admin does not decide just because they are admin."""
+    bd, head, member, inq = _setup(client, db)
+    admin = make_user(db, "i.admin@premnathrail.com", role="admin", apps=("rnd",))
+    resp = _accept(client, inq, admin)
+    assert resp.status_code == 403 and "admin" in resp.json()["detail"] and "Role & Permissions" in resp.json()["detail"]
+    assert _revs(db, inq)[0].status == "submitted"
+    # Not offered in the UI flags either.
+    my = client.get(f"{RND}/requirements/inquiry/{inq.id}", headers=auth(admin)).json()["my_access"]
+    assert my["can_review"] is False
+    from app.modules.crm.models.inquiry import Inquiry
+    from app.modules.rnd.services import requirements as intake
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        intake.return_to_bd(db, source="inquiry", record=db.get(Inquiry, inq.id), user=admin, reason=LONG_REASON, revision_no=None)
+    assert exc.value.status_code == 403
+    # The named head still accepts.
+    assert _accept(client, inq, head).status_code == 200
+
+
+def test_admin_who_is_the_named_head_can_still_accept(client, db, tor_env):
+    bd, head, member, inq = _setup(client, db)
+    from app.modules.organization.models.department import Department
+    dept = db.query(Department).first()
+    admin = make_user(db, "i.adminhead@premnathrail.com", role="admin", apps=("rnd",))
+    dept.secondary_head_user_id = admin.id
+    db.commit()
+    assert _accept(client, inq, admin).status_code == 200
+
+
 def test_ask_bd_for_details_keeps_the_request_open(client, db, tor_env):
     # Owner, 2026-10-30: R&D can ask BD for more details without closing the requirement.
     bd, head, member, inq = _setup(client, db)

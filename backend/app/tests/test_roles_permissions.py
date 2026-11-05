@@ -66,9 +66,11 @@ def test_inactive_role_gives_nothing_and_default_role_applies_to_everyone(db):
     assert can_perform(u, "hr", "me", "create") and "hr" in u.get_apps()
 
 
-def test_admin_passes_everything(db):
+def test_admin_passes_everything_but_decisions(db):
     a = _user(db, "admin@premnathrail.com", role="admin")
-    assert can_perform(a, "accounts", "year_end_close", "approve")
+    assert can_perform(a, "accounts", "year_end_close", "edit")
+    # Approve / reject need a real grant, admins included (owner, 2026-11-04).
+    assert not can_perform(a, "accounts", "year_end_close", "approve")
     assert restricted_subtabs(a) == {}
 
 

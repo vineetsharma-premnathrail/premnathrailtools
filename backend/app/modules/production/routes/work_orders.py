@@ -572,7 +572,7 @@ async def release_work_order(
     try:
         req = submit_and_self_approve(
             db, WO_KEY, entity_id=wo.id, requester=user, title=f"Release {wo.wo_number} ({wo.quantity_planned:g} × {product})",
-            reference=wo.wo_number, branch_id=wo.branch_id, admin_note="Released directly by an admin",
+            reference=wo.wo_number, branch_id=wo.branch_id,
         )
     except HTTPException:
         db.rollback()

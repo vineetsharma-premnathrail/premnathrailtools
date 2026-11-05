@@ -402,7 +402,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
               } else if (f.kind === 'date') {
                 input = <DateField value={(v as string) || ''} onChange={(d) => setVal(f.key, d)} />
               } else if (f.kind === 'erp_project') {
-                input = <SearchableSelect value={(v as string) || ''} onChange={(x) => setVal(f.key, x)} placeholder="Search serial, model, customer, PO…"
+                input = <SearchableSelect value={(v as string) || ''} onChange={(x) => setVal(f.key, x)} placeholder="Search project number or name…"
                   options={projects.map((p) => ({ value: String(p.id), label: `${p.label}${isDispatch && p.third_party_inspection_required ? ' · inspection required' : ''}` }))} />
               } else if (LOOKUP_OF[f.kind]) {
                 input = <SearchableSelect value={(v as string) || ''} onChange={(x) => setVal(f.key, x)} placeholder={`Search ${f.label.toLowerCase()}…`}
@@ -422,7 +422,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
                 <Field label={<>Project unit {isDispatch
                   ? <span style={{ fontWeight: 400, color: SHEET.MUTED }}>(the vehicle / lot being dispatched)</span>
                   : <span style={{ fontWeight: 400, color: SHEET.MUTED }}>(required for an RRV order)</span>}</>}>
-                  <OrderProjectPicker value={orderProject} onChange={(v) => setOrderProject(v)}
+                  <OrderProjectPicker value={orderProject} onChange={(v) => setOrderProject(v)} anyStatus
                     placeholder="Vehicle / lot this material goes to" />
                   <div style={sheetHint}>
                     Filled from the RRV build / work order no. when it has one. The vehicle&apos;s project stock is issued first.

@@ -6,6 +6,8 @@ import { ApprovalEntityStatus, ApprovalRequestInfo, ApprovalStep } from '@/types
 import { BORDER, TEXT } from '@/lib/theme'
 import { Section, dangerBtnStyle, inputStyle, primaryBtnStyle, secondaryBtnStyle, pillStyle } from '@/components/shared/ui'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import ReassignApproverForm from '@/components/shared/ReassignApproverForm'
+import { useAuth } from '@/hooks/useAuth'
 import { extractErrorMessages } from '@/lib/validation'
 
 const REQ_LABEL: Record<string, string> = { pending: 'Waiting for approval', approved: 'Approved', rejected: 'Rejected', returned: 'Returned for changes', cancelled: 'Cancelled' }
@@ -74,6 +76,8 @@ export default function ApprovalPanel({ entityType, entityId, onChanged, title =
   const [busy, setBusy] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  const [showReassign, setShowReassign] = useState(false)
+  const { user } = useAuth()
 
   const load = useCallback(() => {
     approvalsApi.entity(entityType, entityId).then(setData).catch((e) => setError(extractErrorMessages(e, 'Failed to load the approval status.')))
@@ -97,7 +101,8 @@ export default function ApprovalPanel({ entityType, entityId, onChanged, title =
       setBusy(false)
     }
   }
-  const canAct = !!req && req.status === 'pending' && (req.can_decide || req.can_stand_in)
+  // Only named approvers / delegates decide; an admin may only reassign (2026-11-04).
+  const canAct = !!req && req.status === 'pending' && req.can_decide
 
   return (
     <Section title={title} style={{ marginBottom: 16 }}>
@@ -122,7 +127,6 @@ export default function ApprovalPanel({ entityType, entityId, onChanged, title =
       {req && canAct && (
         <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
           {req.acting_for && <div style={{ fontSize: 12.5, color: TEXT.muted }}>You are deciding on behalf of {req.acting_for}.</div>}
-          {!req.can_decide && req.can_stand_in && <div style={{ fontSize: 12.5, color: TEXT.muted }}>You are not an approver of this stage — as an admin you can stand in; a comment is required.</div>}
           <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={comment} onChange={(e) => setComment(e.target.value)}
             placeholder="Comment (required to reject or return)" />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -133,10 +137,19 @@ export default function ApprovalPanel({ entityType, entityId, onChanged, title =
         </div>
       )}
 
-      {req && req.status === 'pending' && req.can_cancel && (
-        <div style={{ marginTop: 12 }}>
-          <button type="button" style={secondaryBtnStyle} disabled={busy} onClick={() => setConfirmCancel(true)}>Withdraw approval request</button>
+      {req && req.status === 'pending' && (req.can_cancel || req.can_reassign) && (
+        <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          {req.can_reassign && (
+            <button type="button" style={secondaryBtnStyle} disabled={busy} onClick={() => setShowReassign(true)}
+              title="Approver away or left? Hand this step to someone else — an admin never decides it">Reassign approver</button>
+          )}
+          {req.can_cancel && <button type="button" style={secondaryBtnStyle} disabled={busy} onClick={() => setConfirmCancel(true)}>Withdraw approval request</button>}
         </div>
+      )}
+      {showReassign && req && (
+        <ReassignApproverForm req={req} currentUserId={user?.id}
+          onClose={() => setShowReassign(false)}
+          onDone={(out) => { setShowReassign(false); load(); onChanged?.(out) }} />
       )}
 
       {data.history.length > 0 && (

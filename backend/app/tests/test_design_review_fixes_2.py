@@ -144,6 +144,10 @@ def test_viewers_get_no_customer_submission_data(client, team):
     r = client.post(f"{API}/submissions/{sub['id']}/response", json={
         "response_date": date.today().isoformat(), "lines": [{"line_id": sent["lines"][0]["id"], "response": "approved"}],
     }, headers=h)
+    assert r.status_code == 403 and "being an admin is not enough" in r.json()["detail"]  # admin can't record the customer's answer
+    r = client.post(f"{API}/submissions/{sub['id']}/response", json={
+        "response_date": date.today().isoformat(), "lines": [{"line_id": sent["lines"][0]["id"], "response": "approved"}],
+    }, headers=auth(team["approver"]))
     assert r.status_code == 200, r.text
     r = client.post(f"{API}/revisions/{r0}/release", json={}, headers=auth(team["approver"]))
     assert r.status_code == 200, r.text

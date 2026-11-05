@@ -87,7 +87,7 @@ def test_catalogue_entries_resolve_and_match_the_coded_values():
     assert machine["sections"]["machine_identity"]["locked"] and machine["sections"]["client_details"]["locked"]
     assert machine["sections"]["procurement_delivery"]["locked"]
     assert not machine["sections"]["warranty"]["locked"] and not machine["sections"]["attachments"]["locked"]
-    assert set(machine["tables"]["all_projects"]["columns"]) == {"client", "site", "project_manager", "closing_dispatch"}
+    assert set(machine["tables"]["all_projects"]["columns"]) == {"client", "site", "closing_dispatch"}
 
     task = cat[TASK_KEY]
     assert list(task["options"]["priority"]["values"]) == list(PRIORITIES)

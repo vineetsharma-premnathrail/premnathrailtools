@@ -14,19 +14,18 @@ let cached: Promise<Flags> | null = null
 
 export function useP2PApproverFlags(): Flags {
   const { user } = useAuth()
-  const admin = user?.role === 'admin'
   const [engineFlags, setEngineFlags] = useState<Flags>({ is_pr_approver: false, is_po_approver: false })
 
   useEffect(() => {
-    if (!user || admin) return
+    if (!user) return
     let alive = true
     if (!cached) cached = p2pApi.approverFlags().catch(() => ({ is_pr_approver: false, is_po_approver: false }))
     cached.then((f) => { if (alive) setEngineFlags(f) })
     return () => { alive = false }
-  }, [user, admin])
+  }, [user])
 
   return {
-    is_pr_approver: admin || !!user?.is_pr_approver || engineFlags.is_pr_approver,
-    is_po_approver: admin || !!user?.is_po_approver || engineFlags.is_po_approver,
+    is_pr_approver: !!user?.is_pr_approver || engineFlags.is_pr_approver,
+    is_po_approver: !!user?.is_po_approver || engineFlags.is_po_approver,
   }
 }

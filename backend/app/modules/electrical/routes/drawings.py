@@ -380,10 +380,10 @@ async def submit_revision(revision_id: int, background_tasks: BackgroundTasks, d
     revision.decision_comment = None
     db.flush()
     # The engine routes it to the approvers (Organization › Approval Workflows)
-    # and notifies them; None = nobody but admins can approve, so it waits
-    # for an admin on the old route as before.
+    # and notifies them; nobody else holding Drawings › Approve is refused
+    # (422) — admins never approve just by being admins.
     req = access.submit_revision(db, revision, job, user)
-    approvers = {s.approver_id for s in req.steps} if req is not None else set()
+    approvers = {s.approver_id for s in req.steps}
     if job.lead_engineer_id and job.lead_engineer_id != user.id and job.lead_engineer_id not in approvers:
         notify_user(
             db, job.lead_engineer_id, title="Electrical Drawing Awaiting Approval",
@@ -413,12 +413,12 @@ async def approve_revision(
     require_working(job, "approve drawings")
     if revision.status != "submitted":
         raise HTTPException(status_code=409, detail=f"{drawing.drawing_number} {revision.revision_label} is {revision.status} — only a submitted revision can be approved.")
-    if revision.prepared_by_id == user.id and user.role != "admin":
-        raise HTTPException(status_code=403, detail="You prepared this revision, so someone else has to approve it.")
+    if revision.prepared_by_id == user.id:
+        raise HTTPException(status_code=403, detail="You prepared this revision, so someone else has to approve it (four-eyes check). Ask another approver, or have the pending step reassigned in Organization › Approval Workflows.")
     req = access.live_request(db, access.REVISION_ENTITY, revision.id)
     if req is not None:
         access.decide_live(db, req, user, "approve", payload.comment)
-    else:  # submitted before the approval engine (or no engine approver): old rules
+    else:  # submitted before the approval engine: old rules
         access.apply_revision_approval(db, revision, user, payload.comment)
     db.commit()
     db.refresh(drawing)
@@ -442,7 +442,7 @@ async def reject_revision(
     req = access.live_request(db, access.REVISION_ENTITY, revision.id)
     if req is not None:
         access.decide_live(db, req, user, "reject", comment)
-    else:  # submitted before the approval engine (or no engine approver): old rules
+    else:  # submitted before the approval engine: old rules
         access.apply_revision_rejection(db, revision, user, comment)
     db.commit()
     db.refresh(drawing)

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.permissions import require_app_access, require_tab_access
 from app.core.record_ref import encode_ref
 from app.db.session import get_db
-from app.modules.design.access import get_settings, is_head, role_of, team_roles
+from app.modules.design.access import get_settings, is_head, is_head_for_decision, role_of, team_roles
 from app.modules.design.models.bom import DesignBom, DesignBomRevision
 from app.modules.design.models.change_notice import DesignChangeNotice, DesignEcnAcknowledgement
 from app.modules.design.models.change_request import DesignChangeRequest
@@ -87,6 +87,7 @@ def _extend_my_tasks(db: Session, user: User, tasks: DesignMyTasks) -> None:
             tasks.boms_returned_to_me.append(_bom_task("bom_returned", rev, bom, users, rev.approval_comment or rev.review_comment))
 
     head = is_head(db, user)
+    decision_head = is_head_for_decision(db, user)  # admin is not a head for decisions
     for ecr in db.query(DesignChangeRequest).filter(
         DesignChangeRequest.is_deleted == False, DesignChangeRequest.status.in_(("open", "impact_checked"))  # noqa: E712
     ).all():
@@ -95,8 +96,10 @@ def _extend_my_tasks(db: Session, user: User, tasks: DesignMyTasks) -> None:
         voted = {v.user_id for v in ecr.votes}
         if ecr.status == "impact_checked" and user.id in (ecr.board_member_ids or []) and user.id not in voted:
             tasks.ecrs_to_vote.append(item.model_copy(update={"kind": "ecr_vote"}))
-        elif head and (ecr.status == "open" or set(ecr.board_member_ids or []) <= voted):
-            tasks.ecrs_to_decide.append(item.model_copy(update={"kind": "ecr_impact" if ecr.status == "open" else "ecr_decide"}))
+        elif ecr.status == "open" and head:
+            tasks.ecrs_to_decide.append(item.model_copy(update={"kind": "ecr_impact"}))
+        elif ecr.status != "open" and decision_head and set(ecr.board_member_ids or []) <= voted:
+            tasks.ecrs_to_decide.append(item.model_copy(update={"kind": "ecr_decide"}))
 
     pending_acks = db.query(DesignEcnAcknowledgement, DesignChangeNotice).join(
         DesignChangeNotice, DesignChangeNotice.id == DesignEcnAcknowledgement.ecn_id
@@ -121,7 +124,7 @@ def _extend_my_tasks(db: Session, user: User, tasks: DesignMyTasks) -> None:
     ).all()
     seen: set[int] = set()  # a revision sent on several submissions is one release task
     for rev, doc in approved:
-        if rev.id not in seen and (head or rev.approver_id == user.id):
+        if rev.id not in seen and (decision_head or rev.approver_id == user.id):
             seen.add(rev.id)
             tasks.to_release.append(_task("release", rev, doc, {}, "Customer approved — release it"))
 

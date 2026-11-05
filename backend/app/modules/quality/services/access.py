@@ -7,7 +7,10 @@ Users → Permission Matrix). Ordinary actions (view, record results, raise
 an NCR, draft a plan) follow the app-wide opt-in matrix rule (a user with
 no Quality grants at all is unrestricted). *Authority* actions — usage
 decisions, plan approval, NCR disposition approvals, settings — need an
-explicit grant (or admin), so nobody becomes a Quality head by default."""
+explicit grant, so nobody becomes a Quality head by default. An admin holds
+every non-decision grant but never approve / reject (has_grant), so an admin
+cannot decide a lot, approve a plan / FAI / CAPA closure / vendor or sign an
+NCR disposition just by being admin (owner, 2026-11-04)."""
 from sqlalchemy.orm import Session
 
 from app.core.permission_registry import has_grant, permission_id
@@ -104,12 +107,24 @@ def can_edit_settings(user: User) -> bool:
     return _explicit(user, "settings", "edit")
 
 
+def _real_apps(user: User) -> set[str]:
+    """Modules the user holds through a role / extra grant. Unlike
+    `User.get_apps()` an admin gets no free module here: being admin makes
+    nobody the Design / Purchase authority on an NCR (owner, 2026-11-04)."""
+    from app.core.permission_registry import PURCHASE_DESK_GRANT
+    perms = user.effective_permissions
+    modules = {g.split(":", 1)[0] for g in perms if g.endswith(":view")}
+    if PURCHASE_DESK_GRANT in perms:
+        modules.add("purchase")
+    return modules
+
+
 def is_design_authority(user: User) -> bool:
-    return user.role == "admin" or "design" in user.get_apps()
+    return "design" in _real_apps(user)
 
 
 def is_purchase_authority(user: User) -> bool:
-    return user.role == "admin" or bool(getattr(user, "is_purchase_head", False)) or "purchase" in user.get_apps()
+    return bool(getattr(user, "is_purchase_head", False)) or "purchase" in _real_apps(user)
 
 
 def is_partner(user: User) -> bool:

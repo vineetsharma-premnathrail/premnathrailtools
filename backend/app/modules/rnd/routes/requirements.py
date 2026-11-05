@@ -345,7 +345,7 @@ def _review_out(db: Session, source: str, record_id: int, user: User) -> dict:
 @router.post("/{source}/{record_id}/accept")
 async def accept_requirement(source: Source, record_id: int, payload: AcceptPayload | None = None,
                              db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Accept the latest revision (R&D head, admin, or R&D › Requirements › Review › Approve)."""
+    """Accept the latest revision (R&D head, or R&D › Requirements › Review › Approve; not an admin just because they are admin)."""
     payload = payload or AcceptPayload()
     record = _live_record(db, source, record_id)
     ra.ensure(db, user, source, record_id, "view")

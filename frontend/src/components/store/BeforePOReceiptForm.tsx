@@ -59,7 +59,7 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
   // A store person books into their own store only (owner, 2026-10-28; the server
   // enforces the same in store/routes/pre_po_receipts.py _own_store_id): the stores
   // they manage, else the stores of their plant. Admins may pick any store.
-  const isAdmin = user?.role === 'admin' || !!(user as { is_azure_admin?: boolean } | null)?.is_azure_admin
+  const isAdmin = user?.role === 'admin'
   const managed = locations.filter((l) => !!user && l.manager_user_id === user.id)
   const ownStores = isAdmin ? locations : managed.length ? managed : locations
   const lockedStore = !isAdmin && ownStores.length === 1 ? ownStores[0] : null

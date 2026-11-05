@@ -52,7 +52,9 @@ def env(client, db):
     bom = client.post(f"{API}/boms", json={"product_item_id": product.id, "items": [{"component_item_id": part.id, "quantity": 2}],
                                           "operations": [{"sequence": 10, "operation_name": "Weld"}]}, headers=auth(admin))
     assert bom.status_code == 200, bom.text
-    assert client.post(f"{API}/boms/{bom.json()['id']}/activate", headers=auth(admin)).status_code == 200
+    # An admin is not a BOM approver: the named approver activates it.
+    approver = make_user(db, "vis.prod.approver@premnathrail.com")
+    assert client.post(f"{API}/boms/{bom.json()['id']}/activate", headers=auth(approver)).status_code == 200
     planner = make_user(db, "vis.prod.planner@premnathrail.com")
     _give(db, planner, _role(db, "Restricted planner", {
         WO_KEY: {"options": {"priority": ["standard"]}, "hidden_sections": ["remarks"]},

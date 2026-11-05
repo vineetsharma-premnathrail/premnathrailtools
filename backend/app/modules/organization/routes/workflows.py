@@ -1,7 +1,7 @@
 """Organization › Approval Workflows (definitions) and the central approval
 endpoints every module's UI uses (inbox, decide, cancel, status)."""
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.data_scope import scoped_models
@@ -59,6 +59,11 @@ class DecisionPayload(BaseModel):
 
 class CancelPayload(BaseModel):
     reason: str | None = None
+
+
+class ReassignPayload(BaseModel):
+    to_user_id: int
+    reason: str = Field(max_length=500)
 
 
 def _type_out(tt: engine.TransactionType) -> dict:
@@ -323,6 +328,15 @@ async def entity_approval_status(entity_type: str, entity_id: int, db: Session =
 async def decide_request(request_id: int, payload: DecisionPayload, db: Session = Depends(get_db),
                          user: User = Depends(get_current_user)):
     req = engine.decide(db, request_id, user, payload.decision, payload.comment)
+    db.commit()
+    return engine.request_out(db, req, user)
+
+
+@approvals_router.post("/requests/{request_id}/steps/{step_id}/reassign")
+async def reassign_request_step(request_id: int, step_id: int, payload: ReassignPayload, db: Session = Depends(get_db),
+                                user: User = Depends(get_current_user)):
+    """Admin hands one open approval step to another person; the admin never decides it."""
+    req = engine.reassign_step(db, request_id, step_id, payload.to_user_id, user, payload.reason)
     db.commit()
     return engine.request_out(db, req, user)
 

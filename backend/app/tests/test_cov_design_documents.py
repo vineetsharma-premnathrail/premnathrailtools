@@ -161,9 +161,9 @@ def test_team_roles_restrict_checker_and_approver(client, team):
     # Approver (who releases) must be the head.
     r = client.post(f"{API}/documents", json={**base, "reviewer_id": team["approver"].id, "approver_id": team["checker"].id}, headers=h)
     assert r.status_code == 400 and "is a reviewer" in r.json()["detail"] and "the Design head" in r.json()["detail"]
-    # An admin may sign without being on the team.
+    # An admin is not exempt: they sign only as a real reviewer / head on the team.
     r = client.post(f"{API}/documents", json={**base, "reviewer_id": team["checker"].id, "approver_id": team["admin"].id}, headers=h)
-    assert r.status_code == 201, r.text
+    assert r.status_code == 400 and "cov.admin is not on the Design team" in r.json()["detail"]
 
 
 def test_head_releases_with_team_configured(client, team):
@@ -188,14 +188,21 @@ def test_team_change_after_draft_blocks_submit_to_non_head(client, team):
 # Customer approval gate
 # ---------------------------------------------------------------------------
 
+def team_has_head(client, team):
+    return client.get(f"{API}/settings/me", headers=auth(team["approver"])).json().get("team_configured", False)
+
+
 def _customer_approved(client, team, doc):
     r0 = rev(doc, "R0")["id"]
     h = auth(team["admin"])
     sub = client.post(f"{API}/submissions", json={"customer_name": "RDSO", "lines": [{"revision_id": r0}]}, headers=h).json()
     sent = client.post(f"{API}/submissions/{sub['id']}/send", json={}, headers=h).json()
-    r = client.post(f"{API}/submissions/{sub['id']}/response", json={
-        "response_date": date.today().isoformat(), "lines": [{"line_id": sent["lines"][0]["id"], "response": "approved"}],
-    }, headers=h)
+    # Recording the customer's answer is a decision: the Design head does it, an admin does not.
+    body = {"response_date": date.today().isoformat(), "lines": [{"line_id": sent["lines"][0]["id"], "response": "approved"}]}
+    if team_has_head(client, team):
+        denied = client.post(f"{API}/submissions/{sub['id']}/response", json=body, headers=h)
+        assert denied.status_code == 403 and "being an admin is not enough" in denied.json()["detail"]
+    r = client.post(f"{API}/submissions/{sub['id']}/response", json=body, headers=auth(team["approver"]))
     assert r.status_code == 200, r.text
     return r0
 
@@ -212,6 +219,10 @@ def test_customer_gate_release_rights(client, team):
     # A reviewer who isn't the approver or head can't release.
     r = client.post(f"{API}/revisions/{r0}/release", json={}, headers=auth(team["checker"]))
     assert r.status_code == 403 and "Only the Design head" in r.json()["detail"]
+    # An admin is not the Design head either.
+    r = client.post(f"{API}/revisions/{r0}/release", json={}, headers=auth(team["admin"]))
+    assert r.status_code == 403 and "being an admin is not enough" in r.json()["detail"]
+    assert "release" not in client.get(f"{API}/documents/{doc['id']}", headers=auth(team["admin"])).json()["allowed_actions"]
     r = client.post(f"{API}/revisions/{r0}/release", json={"comment": "Customer OK"}, headers=auth(team["approver"]))
     assert r.status_code == 200 and r.json()["display_status"] == "released"
 

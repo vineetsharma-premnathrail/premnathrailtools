@@ -115,9 +115,8 @@ def apply_azure_sync(db: Session, azure_users: list[dict], admin_ids: set | list
                         entity_type="user", entity_id=target.id, action="activated", module_key="organization",
                         summary=f"{target.name} re-activated by Azure AD sync (back in the tenant)",
                     ))
+            # Information only — never makes anyone a portal admin (owner, 2026-11-04).
             target.is_azure_admin = is_az_admin
-            if is_az_admin and target.role == "user":
-                target.role = "admin"
         else:
             target = User(
                 email=email,
@@ -127,7 +126,7 @@ def apply_azure_sync(db: Session, azure_users: list[dict], admin_ids: set | list
                 designation=au.get("jobTitle"),
                 phone=au.get("mobilePhone"),
                 office_location=au.get("officeLocation"),
-                role="admin" if is_az_admin else "user",
+                role="user",
                 is_active=True,
                 is_azure_admin=is_az_admin,
                 assigned_apps=[],

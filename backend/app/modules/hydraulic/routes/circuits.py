@@ -18,7 +18,6 @@ from app.modules.hydraulic.schemas.circuit import (
 )
 from app.modules.hydraulic.service import (
     generate_circuit_number, check_system_type, get_system_or_404, next_revision, systems_by_id, user_names,
-    circuit_approvers,
 )
 from app.modules.main.models.user import User
 from app.utils.notifications import notify_user
@@ -172,20 +171,12 @@ async def submit_circuit(
     circuit.review_remarks = None
     db.flush()
     # The approval engine routes and notifies the reviewers (Organization ›
-    # Approval Workflows). None = nobody but admins can approve: the circuit
-    # waits for an admin on the old route, notified as before (Teams too).
+    # Approval Workflows). None = nobody else holds Circuits › Approve (admins
+    # never approve by being admins), so it can't be reviewed: refuse now.
     req = access.submit_circuit(db, circuit, user)
-    skip = access.approver_ids(req)
     if req is None:
-        skip = {a.id for a in circuit_approvers(db)}
-        for approver in circuit_approvers(db):
-            if approver.id == user.id:
-                continue
-            notify_user(
-                db, user_id=approver.id, title=f"Circuit {circuit.circuit_number} Rev {circuit.revision} needs review",
-                message=f"{user.name or user.email} submitted \"{circuit.title}\" for approval.",
-                notification_type="hyd_circuit_review", entity_type="hyd_circuit", entity_id=circuit.id, teams=True,
-            )
+        raise access.nobody_approves(access.CIRCUIT_PERM)
+    skip = access.approver_ids(req)
     access.notify_hyd_event(
         db, background_tasks, "circuit_submitted", circuit, access.CIRCUIT_ENTITY,
         title=f"Circuit {circuit.circuit_number} Rev {circuit.revision} needs review",
@@ -206,8 +197,8 @@ async def approve_circuit(
 ):
     circuit = _get_or_404(db, circuit_id, user, lock=True)
     _require_status(circuit, ("under_review",), "approve")
-    if circuit.submitted_by_id == user.id and user.role != "admin":
-        raise HTTPException(status_code=403, detail="You submitted this circuit, so someone else has to approve it (four-eyes check). Ask another approver or an admin.")
+    if circuit.submitted_by_id == user.id:
+        raise HTTPException(status_code=403, detail="You submitted this circuit, so someone else has to approve it (four-eyes check). Ask another approver, or have the pending step reassigned in Organization › Approval Workflows.")
     req = access.live_request(db, access.CIRCUIT_ENTITY, circuit.id)
     if req is not None:  # decided on the approval engine, which notifies the submitter
         access.decide_live(db, req, user, "approve", payload.remarks)

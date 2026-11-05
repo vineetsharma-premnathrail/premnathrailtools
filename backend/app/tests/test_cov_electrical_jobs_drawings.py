@@ -277,17 +277,53 @@ def test_four_eyes_on_revision_approval(client, db, people, job):
     assert client.post(f"{API}/revisions/{r0}/approve", json={}, headers=chk).status_code == 409
 
 
-def test_admin_cannot_approve_own_revision(client, db, job):
-    # Four-eyes binds admins too (central approval engine, 2026-10-08); an
-    # admin may switch "Requester may approve own document" on per workflow.
-    admin = make_user(db, "cov.admin@premnathrail.com", role="admin")
+def test_admin_never_approves_or_rejects_a_revision(client, db, people, job):
+    # Owner decision 2026-11-04: an admin does not approve / reject anything
+    # just because they are an admin — neither their own drawing nor a
+    # colleague's. Only the people holding Drawings › Approve decide.
+    # No assigned apps: the test shim would otherwise hand the admin the legacy
+    # "Standard access" grants, Approve included — a real grant, not "being admin".
+    admin = make_user(db, "cov.admin@premnathrail.com", apps=(), role="admin")
     h = auth(admin)
     d = new_drawing(client, job["id"], h, title="Admin drawn")
     r0 = d["revisions"][0]["id"]
     attach_file(db, r0)
-    client.post(f"{API}/revisions/{r0}/submit", headers=h)
+    assert client.post(f"{API}/revisions/{r0}/submit", headers=h).status_code == 200
     r = client.post(f"{API}/revisions/{r0}/approve", json={"comment": "self"}, headers=h)
-    assert r.status_code == 403 and "four-eyes" in r.json()["detail"]
+    assert r.status_code == 403 and "Approve" in r.json()["detail"]
+    r = client.post(f"{API}/revisions/{r0}/reject", json={"comment": "no"}, headers=h)
+    assert r.status_code == 403 and "Approve" in r.json()["detail"]
+
+    # A colleague's revision, submitted for a real approver, is just as closed to the admin.
+    d2 = new_drawing(client, job["id"], auth(people["engineer"]), title="Engineer drawn")
+    r1 = d2["revisions"][0]["id"]
+    attach_file(db, r1)
+    assert client.post(f"{API}/revisions/{r1}/submit", headers=auth(people["engineer"])).status_code == 200
+    assert client.post(f"{API}/revisions/{r1}/approve", json={}, headers=h).status_code == 403
+
+    # The real approver still decides both (the admin's own one was routed to a holder, not to the admin).
+    assert client.post(f"{API}/revisions/{r0}/approve", json={"comment": "ok"}, headers=auth(people["checker"])).status_code == 200
+
+
+def test_submit_refused_when_nobody_but_the_preparer_can_approve(client, db):
+    # A lone approver can't review their own drawing and an admin never
+    # stands in: the submit is refused up front with what to grant.
+    lone = make_user(db, "cov.lone@premnathrail.com", grants=[
+        "electrical:jobs:view", "electrical:jobs:create", "electrical:jobs:edit",
+        "electrical:drawings:view", "electrical:drawings:create", "electrical:drawings:edit",
+        "electrical:drawings:submit", "electrical:drawings:approve",
+    ])
+    make_user(db, "cov.admin2@premnathrail.com", apps=(), role="admin")
+    h = auth(lone)
+    j = client.post(f"{API}/jobs", json={"title": "Solo", "rrv_model": "RRV-300"}, headers=h)
+    assert j.status_code == 200, j.text
+    d = new_drawing(client, j.json()["id"], h, title="Solo drawn")
+    r0 = d["revisions"][0]["id"]
+    attach_file(db, r0)
+    r = client.post(f"{API}/revisions/{r0}/submit", headers=h)
+    assert r.status_code == 422 and "Electrical › Drawings › Approve" in r.json()["detail"] and "admin can't approve" in r.json()["detail"]
+    db.rollback()  # the test shares one session with the app; production closes (rolls back) it per request
+    assert db.query(ElectricalDrawingRevision).filter_by(id=r0).first().status == "draft"
 
 
 def test_reject_then_raise_next_revision(client, db, people, job):

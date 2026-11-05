@@ -102,6 +102,12 @@ class TaskParent:
     def can_manage(self, user: User) -> bool:
         return is_admin_user(user) or user.id in self.managers
 
+    def can_decide(self, user: User) -> bool:
+        """Decide an approval request: a named lead / R&D head / project manager only. A portal
+        admin manages (gives, edits, cancels) but does not decide just because they are admin
+        (owner decision 2026-11-04) — `managers` never holds an admin who is only an admin."""
+        return user.id in self.managers
+
     def fk(self) -> dict:
         """Keyword for RndProjectTask / RndDocument: which parent column to set."""
         return {"project_id": self.id} if self.kind == "rnd" else {"pm_project_id": self.id}
@@ -126,16 +132,20 @@ def _rnd_people_ids(db: Session) -> list[int]:
     when nobody else qualifies. Like the requirement task assignees."""
     active = db.query(User).filter(User.is_active == True).order_by(User.name.asc()).all()  # noqa: E712
     people = [u for u in active if "rnd" in u.get_apps() and can_view_tab(u, "rnd", "projects")]
-    return [u.id for u in people if u.role != "admin" and not u.is_azure_admin] or [u.id for u in people]
+    return [u.id for u in people if u.role != "admin"] or [u.id for u in people]
 
 
-def pm_manages(db: Session, user: User, p: PmProject) -> bool:
+def pm_manages(db: Session, user: User, p: PmProject, *, decision: bool = False) -> bool:
     """Who gives / reviews R&D tasks on a PM project: admins, the R&D department head(s)
     set in Organization › Department (no "everyone" fallback here), the project manager,
     and management (Partners / Directors / All Projects › Create) when the project is
-    inside their Project Management data scope. Shared with the picker (routes/tasks.py)."""
-    if is_admin_user(user) or user.id in ra.org_head_ids(db) or user.id == p.project_manager_id:
+    inside their Project Management data scope. Shared with the picker (routes/tasks.py).
+    `decision=True` (who may DECIDE approval requests): the same list without the admin
+    shortcut — an admin who is only an admin manages but does not decide."""
+    if user.id in ra.org_head_ids(db) or user.id == p.project_manager_id:
         return True
+    if is_admin_user(user):
+        return not decision
     return pm_wf.can_manage(p, user) and pm_in_scope(db, user, p)
 
 
@@ -150,8 +160,10 @@ def _pm_parent(db: Session, pm_project_id: int, user: User) -> TaskParent:
     if not p:
         raise not_found
     managers = {*ra.org_head_ids(db), *([p.project_manager_id] if p.project_manager_id else [])}
-    if pm_manages(db, user, p):
+    if pm_manages(db, user, p, decision=True):
         managers.add(user.id)
+    elif pm_manages(db, user, p):
+        pass  # a portal admin: manages through can_manage, never counted as a lead / decider
     elif db.query(RndProjectTask.id).filter(RndProjectTask.pm_project_id == p.id,
                                             or_(RndProjectTask.assigned_to_id == user.id, RndProjectTask.created_by_id == user.id)).first() is None:
         raise not_found
@@ -179,10 +191,13 @@ def _ensure_manager(user: User, project: TaskParent, what: str) -> None:
         raise HTTPException(status_code=403, detail=f"Only {project.manager_label} of {project.project_number} can {what}.{hint}")
 
 
-def _ensure_reviewer(user: User, project: TaskParent, task: RndProjectTask, what: str) -> None:
-    """The task's creator reviews it; project leads (R&D heads / the project manager on a PM project) and admins can review any task."""
-    if task.created_by_id != user.id and not project.can_manage(user):
-        raise HTTPException(status_code=403, detail=f"Only the person who created this task (or {project.manager_label} of {project.project_number}) can {what}.")
+def _ensure_reviewer(user: User, project: TaskParent, task: RndProjectTask, what: str, *, decision: bool = False) -> None:
+    """The task's creator reviews it; project leads (R&D heads / the project manager on a PM project) and admins can review any task.
+    `decision=True` (deciding an approval request): admins are left out — only the creator or a named lead decides."""
+    allowed = project.can_decide(user) if decision else project.can_manage(user)
+    if task.created_by_id != user.id and not allowed:
+        raise HTTPException(status_code=403, detail=f"Only the person who created this task (or {project.manager_label} of {project.project_number}) can {what}."
+                            + (" A portal admin does not decide for them." if decision and is_admin_user(user) else ""))
 
 
 def _team_ids(project: TaskParent) -> list[int]:
@@ -758,7 +773,7 @@ async def decide_approval(approval_id: int, payload: ApprovalDecision, db: Sessi
     row = task_approvals.get(db, KIND, approval_id)
     task = _task(db, row.task_id)
     project = _parent_of(db, task, user)
-    _ensure_reviewer(user, project, task, "decide its approval requests")
+    _ensure_reviewer(user, project, task, "decide its approval requests", decision=True)
     ensure_feature_action(user, "rnd", "projects", "tasks", "approve")
     task_approvals.ensure_task_open(task)
     task_approvals.decide(row, user, payload.decision, payload.remarks)

@@ -12,7 +12,7 @@ from app.core import assignee_rules
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.core.priority import parse_priority
 from app.core.permission_registry import can_feature, can_perform, is_admin_user
-from app.core.permissions import ensure_can_delete, ensure_feature_action, require_app_access, require_feature_action, require_tab_access, require_tab_action
+from app.core.permissions import ensure_can_delete, ensure_tab_action, ensure_feature_action, require_app_access, require_feature_action, require_tab_access, require_tab_action
 from app.modules.production.sensitive import mask_consumption, sees_costs
 from app.modules.production import notify as prod_notify
 from app.db.session import get_db
@@ -46,7 +46,7 @@ from app.modules.production.schemas.rrv_build import (
 )
 from app.modules.production.service import (
     RRV_STAGE_META, apply_rrv_handover, generate_rrv_build_number, item_unit_cost, outstanding_qty, project_label,
-    raise_rework, register_rrv_machine, rework_verification_problem, rrv_can_sign_off, rrv_latest_tests, rrv_log,
+    raise_rework, register_rrv_machine, rework_verification_problem, rrv_can_manage, rrv_can_sign_off, rrv_latest_tests, rrv_log,
     rrv_notify, rrv_open_rework, rrv_stage_gate_problems, rrv_work_orders, seed_rrv_stages,
 )
 from app.modules.quality.models.inspection import QualityInspection
@@ -272,6 +272,7 @@ def _rework_responses(db: Session, rows: list[ProductionReworkOrder]) -> list[Pr
 def _allowed(db: Session, user: User, build: ProductionRrvBuild) -> list[str]:
     edit = can_perform(user, "production", "rrv_builds", "edit")
     approve = can_perform(user, "production", "rrv_builds", "approve") and rrv_can_sign_off(user, build)
+    can_cancel = approve or (is_admin_user(user) and rrv_can_manage(user, build))
     actions: list[str] = []
     open_ = build.status in ("planned", "in_progress")
     if edit and build.status in ("planned", "in_progress", "on_hold", "completed"):
@@ -284,9 +285,11 @@ def _allowed(db: Session, user: User, build: ProductionRrvBuild) -> list[str]:
         actions.append("resume")
     if approve:
         actions.append("sign_off")
-        if build.status in PRODUCTION_RRV_OPEN_STATUSES:
-            actions.append("cancel")
-    elif edit and build.status in ("planned", "in_progress", "completed"):
+    if can_cancel and build.status in PRODUCTION_RRV_OPEN_STATUSES:
+        actions.append("cancel")
+    if can_cancel:
+        actions.append("manage")  # reopen a stage / cancel rework: build manager, production manager (with Approve) or admin
+    if not approve and edit and build.status in ("planned", "in_progress", "completed"):
         # Sign-off stages go through the central approval engine: a user who
         # can't sign off sends the stage to the build manager / production managers.
         actions.append("request_sign_off")
@@ -557,12 +560,15 @@ async def resume_build(build_id: int, db: Session = Depends(get_db),
 
 @router.post("/{build_id}/cancel", response_model=ProductionRrvBuildDetail)
 async def cancel_build(build_id: int, payload: ProductionRrvReasonPayload, db: Session = Depends(get_db),
-                       user: User = Depends(require_app_access("production")),
-                       _perm: User = Depends(require_tab_action("production", "rrv_builds", "approve"))):
+                       user: User = Depends(require_app_access("production"))):
+    # Cancelling is a management action, not an approval: a portal admin may do it;
+    # everyone else needs RRV Builds › Approve and to be the build manager / a production manager.
+    if not is_admin_user(user):
+        ensure_tab_action(user, "production", "rrv_builds", "approve")
     build = _get_build(db, build_id, lock=True)
     if build.status not in PRODUCTION_RRV_OPEN_STATUSES:
         raise HTTPException(status_code=409, detail=f"{build.build_number} is {build.status.replace('_', ' ')} — only an open build can be cancelled.")
-    if not rrv_can_sign_off(user, build):
+    if not rrv_can_manage(user, build):
         raise HTTPException(status_code=403, detail=f"Only the build manager of {build.build_number}, a production manager or an admin can cancel it.")
     linked = rrv_work_orders(db, build.id)
     running = [w.wo_number for w in linked if w.status in ("released", "in_progress")]
@@ -848,7 +854,7 @@ async def complete_stage(build_id: int, stage_key: str, payload: ProductionRrvSt
         try:
             submit_and_self_approve(
                 db, RRV_KEY, entity_id=build.id, requester=user, title=f"{label} sign-off — {build.build_number} ({build.rrv_model})",
-                reference=build.build_number, branch_id=build.branch_id, admin_note=f"{label} signed off directly by an admin",
+                reference=build.build_number, branch_id=build.branch_id,
                 context={"stage_key": stage_key, "build_manager_id": build.build_manager_id,
                          "signer_ids": _signer_ids(db, build), "remarks": payload.remarks},
             )
@@ -891,7 +897,7 @@ async def reopen_stage(build_id: int, stage_key: str, payload: ProductionRrvReas
     _require_workable(build, "reopen stages")
     stage = _stage(build, stage_key)
     label = RRV_STAGE_META[stage_key][0]
-    if not rrv_can_sign_off(user, build):
+    if not rrv_can_manage(user, build):
         raise HTTPException(status_code=403, detail=f"Only the build manager, a production manager or an admin can reopen a stage of {build.build_number}.")
     if stage.status not in PRODUCTION_RRV_DONE_STAGE_STATUSES:
         raise HTTPException(status_code=409, detail=f"{label} isn't completed, so there's nothing to reopen.")
@@ -1117,7 +1123,7 @@ async def cancel_rework(rework_id: int, payload: ProductionRrvReasonPayload, db:
         _require_workable(build, "cancel rework")
     if rw.status not in PRODUCTION_REWORK_OPEN_STATUSES:
         raise HTTPException(status_code=409, detail=f"{rw.rework_number} is {rw.status.replace('_', ' ')} — it can't be cancelled.")
-    if not rrv_can_sign_off(user, build):
+    if not rrv_can_manage(user, build):
         raise HTTPException(status_code=403, detail=f"Cancelling rework skips its verification, so only the build manager, a production manager or an admin can cancel {rw.rework_number}.")
     rw.status, rw.cancel_reason = "cancelled", payload.reason.strip()
     rrv_log(db, build.id, "rework_cancelled", user, f"{rw.rework_number}: {rw.cancel_reason}")

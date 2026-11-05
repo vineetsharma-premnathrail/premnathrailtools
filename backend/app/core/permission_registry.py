@@ -706,14 +706,25 @@ def _grants_of(user) -> set[str]:
 
 
 def is_admin_user(user) -> bool:
-    return user is not None and (user.role == "admin" or bool(getattr(user, "is_azure_admin", False)))
+    # Portal admin is the portal's own role only. Being a Global Administrator
+    # of the Microsoft tenant (is_azure_admin) grants nothing here (owner, 2026-11-04).
+    return user is not None and user.role == "admin"
+
+
+# Decision actions an admin does NOT get just by being admin (owner, 2026-11-04):
+# approving / rejecting someone's document needs a real grant (role or extra)
+# like everyone else. Admins still get every other action.
+DECISION_ACTIONS = frozenset({"approve", "reject"})
 
 
 def has_grant(user, grant: str) -> bool:
-    """True if `user` holds this exact `module:tab:action` id (admins always)."""
+    """True if `user` holds this exact `module:tab:action` id. Admins hold
+    every grant except the decision actions (approve / reject)."""
     if user is None:
         return False
-    return is_admin_user(user) or grant in _grants_of(user)
+    if grant in _grants_of(user):
+        return True
+    return is_admin_user(user) and grant.rsplit(":", 1)[-1] not in DECISION_ACTIONS
 
 
 def can_view_tab(user, module_key: str, subtab_key: str) -> bool:

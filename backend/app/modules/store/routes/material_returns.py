@@ -85,7 +85,7 @@ def _to_response(db: Session, ret: StoreMaterialReturn, viewer: User | None = No
         a_resp.acted_by_name = name(a.acted_by_id)
     if viewer and ret.approvals:  # returns raised before the central approval engine (old approval steps)
         resp.can_act = ret.status == "pending_approval" and viewer.id != ret.returned_by_id and any(
-            a.status == "pending" and (viewer.id in (a.approver_user_ids or []) or viewer.role == "admin") for a in ret.approvals
+            a.status == "pending" and viewer.id in (a.approver_user_ids or []) for a in ret.approvals
         )
     return resp
 
@@ -430,8 +430,8 @@ def _engine_decide(db: Session, return_id: int, user: User, decision: str, comme
         return None
     if req.status != "pending":
         raise HTTPException(status_code=409, detail=f"This return's approval is already {req.status} — nothing left to decide. Reload the page.")
-    # Maker-checker (C-09) holds for admins too: the engine lets an admin
-    # stand in for an approver, but never on their own document.
+    # Maker-checker (C-09) holds for admins too: the engine never lets an admin
+    # decide by role, and nobody may approve their own document.
     if decision == "approve" and req.requester_id == user.id and not engine.ensure_workflow(db, RETURN_KEY).allow_self_approval:
         raise HTTPException(status_code=403, detail=f"You raised {req.reference or 'this return'}, so you can't approve it — someone else has to (four-eyes rule).")
     try:
@@ -453,10 +453,8 @@ def _pending_step_for(db: Session, return_id: int, user: User, verb: str) -> tup
         raise HTTPException(status_code=403, detail=f"You raised return {ret.return_number}, so you can't {verb} it — one of its approvers must.")
     pending = [a for a in ret.approvals if a.status == "pending"]
     step = next((a for a in pending if user.id in (a.approver_user_ids or [])), None)
-    if not step and user.role == "admin" and pending:
-        step = pending[0]
     if not step:
-        raise HTTPException(status_code=403, detail=f"You're not an approver on any pending step of return {ret.return_number}.")
+        raise HTTPException(status_code=403, detail=f"You're not an approver on any pending step of return {ret.return_number}. Being an admin does not allow it; ask an admin to reassign the step to the right person.")
     return ret, step
 
 

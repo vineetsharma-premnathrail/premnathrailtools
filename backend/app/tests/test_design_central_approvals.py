@@ -66,14 +66,20 @@ def test_checker_and_approver_must_differ(client, db, team):
     r = client.post(f"{API}/revisions/{rid}/submit", json={"approver_id": team["checker"].id}, headers=auth(team["author"]))
     assert r.status_code == 400 and "two different people" in r.json()["detail"]
 
-    # …and nobody signs twice, not even an admin standing in at both stages.
+    # …and nobody signs twice: the checker can't also take the approval stage, and an
+    # admin is not named at either stage, so they decide neither.
     doc2 = create_doc(client, team)
     rid2, _ = _submit(client, team, doc2)
     req = engine.latest_request(db, DOC_ENTITY, doc2["id"])
     admin = auth(team["admin"])
-    assert client.post(f"{APPROVALS}/requests/{req.id}/decide", json={"decision": "approve", "comment": "Checker away"}, headers=admin).status_code == 200
+    r = client.post(f"{APPROVALS}/requests/{req.id}/decide", json={"decision": "approve", "comment": "Checker away"}, headers=admin)
+    assert r.status_code == 403, r.text
+    checker = auth(team["checker"])
+    assert client.post(f"{APPROVALS}/requests/{req.id}/decide", json={"decision": "approve", "comment": "Checked"}, headers=checker).status_code == 200
+    r = client.post(f"{APPROVALS}/requests/{req.id}/decide", json={"decision": "approve", "comment": "Approving too"}, headers=checker)
+    assert r.status_code == 403
     r = client.post(f"{APPROVALS}/requests/{req.id}/decide", json={"decision": "approve", "comment": "Approver away"}, headers=admin)
-    assert r.status_code == 403 and ("You checked" in r.json()["detail"] or "different person" in r.json()["detail"])
+    assert r.status_code == 403, r.text
     # The checker can't take the approval stage either.
     r = client.post(f"{API}/revisions/{rid2}/approve", json={"decision": "pass"}, headers=auth(team["checker"]))
     assert r.status_code == 403
@@ -158,6 +164,46 @@ def test_legacy_ecn_approval_through_engine(client, db, team):
     assert r.status_code == 200, r.text
     d = client.get(f"{API}/change-notices/{eid}", headers=auth(team["author"])).json()
     assert d["status"] == "approved" and d["decided_by_id"] == team["approver"].id
+
+
+def test_admin_not_named_cannot_decide_revision_or_ecn(client, db, team):
+    """Owner rule 2026-11-04: an admin decides nothing just because they are admin."""
+    admin = auth(team["admin"])
+    doc = create_doc(client, team)
+    rid, _ = _submit(client, team, doc)
+    # Checking: through the module route and the central endpoint, 403 either way; no action offered.
+    r = client.post(f"{API}/revisions/{rid}/review", json={"decision": "pass", "comment": "Admin check"}, headers=admin)
+    assert r.status_code == 403, r.text
+    req = engine.latest_request(db, DOC_ENTITY, doc["id"])
+    r = client.post(f"{APPROVALS}/requests/{req.id}/decide", json={"decision": "approve", "comment": "Admin check"}, headers=admin)
+    assert r.status_code == 403, r.text
+    assert "review" not in client.get(f"{API}/documents/{doc['id']}", headers=admin).json()["allowed_actions"]
+    assert client.post(f"{API}/revisions/{rid}/review", json={"decision": "pass"}, headers=auth(team["checker"])).status_code == 200
+    # Approving.
+    r = client.post(f"{API}/revisions/{rid}/approve", json={"decision": "pass", "comment": "Admin approve"}, headers=admin)
+    assert r.status_code == 403, r.text
+    assert "approve" not in client.get(f"{API}/documents/{doc['id']}", headers=admin).json()["allowed_actions"]
+    assert client.post(f"{API}/revisions/{rid}/approve", json={"decision": "pass"}, headers=auth(team["approver"])).status_code == 200
+
+    # ECN: approve and reject are refused for an admin who is not the named approver.
+    ecn = client.post(f"{API}/change-notices", json={
+        "title": "Gusset", "documents": [{"document_id": doc["id"]}], "approver_id": team["approver"].id,
+    }, headers=auth(team["author"]))
+    assert ecn.status_code == 201, ecn.text
+    eid = ecn.json()["id"]
+    assert client.post(f"{API}/change-notices/{eid}/submit", headers=auth(team["author"])).status_code == 200
+    r = client.post(f"{API}/change-notices/{eid}/approve", json={"comment": "Go"}, headers=admin)
+    assert r.status_code == 403 and "only they can decide it" in r.json()["detail"]
+    r = client.post(f"{API}/change-notices/{eid}/reject", json={"comment": "No"}, headers=admin)
+    assert r.status_code == 403
+    allowed = client.get(f"{API}/change-notices/{eid}", headers=admin).json()["allowed_actions"]
+    assert "approve" not in allowed and "reject" not in allowed
+    req = engine.latest_request(db, ECN_ENTITY, eid)
+    r = client.post(f"{APPROVALS}/requests/{req.id}/decide", json={"decision": "approve", "comment": "Go"}, headers=admin)
+    assert r.status_code == 403, r.text
+    # The named approver still can.
+    r = client.post(f"{APPROVALS}/requests/{req.id}/decide", json={"decision": "approve", "comment": "Go ahead"}, headers=auth(team["approver"]))
+    assert r.status_code == 200, r.text
 
 
 def test_drawing_data_scope(client, db, team):

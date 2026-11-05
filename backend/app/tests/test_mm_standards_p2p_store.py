@@ -224,7 +224,14 @@ def test_service_line_is_confirmed_by_service_entry_not_grn(client, db):
     e = client.post(f"/api/v1/p2p/purchase-orders/{po['id']}/service-entries",
                     json={"po_item_id": po["items"][0]["id"], "quantity": 4, "description": "AMC Q3"}, headers=auth_header(admin))
     assert e.status_code == 201, e.text
-    acc = client.post(f"/api/v1/p2p/service-entries/{e.json()['id']}/accept", headers=auth_header(admin))
+    # An admin does not accept by role (owner decision 2026-11-04): only a holder of the Approve grant does.
+    denied = client.post(f"/api/v1/p2p/service-entries/{e.json()['id']}/accept", headers=auth_header(admin))
+    assert denied.status_code == 403
+    acceptor = make_user(db, "acceptor.srv1@premnathrail.com", assigned_apps=["p2p", "purchase"])
+    acceptor.granular_permissions = ["p2p:purchase_orders:view", "p2p:purchase_orders:approve"]
+    db.commit()
+    acc = client.post(f"/api/v1/p2p/service-entries/{e.json()['id']}/accept", headers=auth_header(acceptor))
+    assert acc.status_code == 200, acc.text
     assert acc.status_code == 200 and acc.json()["status"] == "accepted"
     db.expire_all()
     assert db.get(P2PPurchaseOrder, po["id"]).status == "fulfilled"

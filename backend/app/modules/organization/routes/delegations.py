@@ -99,6 +99,12 @@ async def create_delegation(payload: DelegationPayload, db: Session = Depends(ge
                                                     "Organization › Delegations › Create.")
     if not db.get(User, delegator_id):
         raise HTTPException(status_code=404, detail="The person whose approvals are being delegated was not found.")
+    if delegator_id != user.id and payload.delegate_id == user.id:
+        # Setting up someone else's delegation must never make you their approver
+        # (an admin would decide approvals through it — owner, 2026-11-04).
+        raise HTTPException(status_code=403, detail="You can't make yourself the delegate when setting up someone else's "
+                                                    "delegation. Pick another person, or ask them to delegate to you "
+                                                    "themselves in My Approvals.")
     _check(db, payload, delegator_id)
     d = ApprovalDelegation(
         delegator_id=delegator_id, delegate_id=payload.delegate_id, start_date=payload.start_date, end_date=payload.end_date,

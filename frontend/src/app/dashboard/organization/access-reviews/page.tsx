@@ -98,10 +98,9 @@ export default function AccessReviewsPage() {
 
   const refresh = () => { load(); if (openId) grcApi.review(openId).then(setDetail).catch(() => {}) }
   // Mirrors the backend (grc.decide_line): the assigned reviewer or an Access Reviews editor decides,
-  // only while the review is open, and nobody but an admin recertifies their own access.
-  const meIsAdmin = user.role === 'admin' || !!(user as { is_azure_admin?: boolean }).is_azure_admin
+  // only while the review is open, and nobody recertifies their own access — admins included (2026-11-04).
   const mayDecide = (l: AccessReviewLineRow, reviewOpen: boolean) =>
-    reviewOpen && (l.reviewer_id === user.id || canEdit) && (l.user_id !== user.id || meIsAdmin)
+    reviewOpen && (l.reviewer_id === user.id || canEdit) && l.user_id !== user.id
   const decide = async (l: AccessReviewLineRow, decision: 'keep' | 'revoke', comment?: string) => {
     setError('')
     try { await grcApi.decide(l.id, decision, comment); refresh() } catch (e) { setError(extractErrorMessages(e, 'Could not save the decision.').join(' ')) }

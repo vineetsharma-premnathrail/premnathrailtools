@@ -436,8 +436,8 @@ export default function MyP2PRequestDetailPage() {
   const myPendingRole = approvalRoles.find((r) => r.id != null && r.id === user?.id && !r.approvedAt)
   // No named approvers (legacy PR): a purchase-team decision, so the matrix
   // Approve / Reject grant applies; named approvers need only View.
-  const canApproveOrReject = pr.status === 'submitted' && (hasAssignedHeads ? (!!myPendingRole || isAdmin) : isPurchaseTeam && can('p2p', 'purchase_requisitions', 'approve'))
-  const canRejectAccess = pr.status === 'submitted' && (hasAssignedHeads ? (approvalRoles.some((r) => r.id != null && r.id === user?.id) || isAdmin) : isPurchaseTeam && can('p2p', 'purchase_requisitions', 'reject'))
+  const canApproveOrReject = pr.status === 'submitted' && (hasAssignedHeads ? !!myPendingRole : isPurchaseTeam && can('p2p', 'purchase_requisitions', 'approve'))
+  const canRejectAccess = pr.status === 'submitted' && (hasAssignedHeads ? approvalRoles.some((r) => r.id != null && r.id === user?.id) : isPurchaseTeam && can('p2p', 'purchase_requisitions', 'reject'))
   // Approvals through the central approval engine (Organization › Approval
   // Workflows) are decided in the Approval panels below; the buttons in the
   // header stay only for requisitions / POs still on the old approval path.
@@ -455,7 +455,7 @@ export default function MyP2PRequestDetailPage() {
   const poApproveBlockedReason = poViaEngine || !fromPoApproval || pr.status !== 'po_raised' || canApprovePo ? null
     : userPoRoles(user, pr).length === 0 ? 'Only the PO approvers picked on this requisition, or a Director, can approve this PO.'
     : 'You have already acted on this PO, or it is no longer pending your approval.'
-  const canRejectPo = fromPoApproval && pr.status === 'po_raised' && (userPoRoles(user, pr).length > 0 || isAdmin) && !poViaEngine
+  const canRejectPo = fromPoApproval && pr.status === 'po_raised' && userPoRoles(user, pr).length > 0 && !poViaEngine
   // Once a PR is approved, the buyer can check store stock per item and
   // decide item-by-item whether to issue it from stock or send it to
   // procurement — not available once the request has been rejected/cancelled

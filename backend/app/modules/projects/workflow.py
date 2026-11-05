@@ -80,7 +80,7 @@ def name_of(db: Session, user_id: int | None) -> str | None:
 # ── Roles ──────────────────────────────────────────────────────────────
 
 def is_admin(user: User) -> bool:
-    return user.role == "admin" or bool(getattr(user, "is_azure_admin", False))
+    return user.role == "admin"
 
 
 def is_management(user: User) -> bool:
@@ -92,6 +92,26 @@ def is_management(user: User) -> bool:
 
 def can_manage(project: PmProject, user: User) -> bool:
     return is_management(user) or project.project_manager_id == user.id
+
+
+def can_decide(project: PmProject, user: User) -> bool:
+    """May DECIDE (accept / reject a WBS) on the old, pre-engine path: Partners, Directors, holders of
+    All Projects › Create, or the project manager. A portal admin who is only an admin does not decide
+    (owner decision 2026-11-04); admins keep every other management action through can_manage."""
+    return (
+        bool(user.is_partner) or bool(user.is_director) or MANAGE_GRANT in user.effective_permissions
+        or project.project_manager_id == user.id
+    )
+
+
+def require_decision(project: PmProject, user: User, action: str) -> None:
+    if not can_decide(project, user):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Only the project manager of {project.project_code}, a Partner, a Director or someone with 'Project Management › "
+                   f"All Projects › Create' can {action}. A portal admin does not decide just because they are admin — "
+                   "an admin can give someone that right in Organization › Role & Permissions.",
+        )
 
 
 def require_management(user: User, action: str) -> None:

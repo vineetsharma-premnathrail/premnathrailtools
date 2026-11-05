@@ -168,7 +168,7 @@ export default function FinancePurchasePage() {
 
   if (isLoading || !isAuthorized) return null
 
-  const ctx = { userId: user?.id, canApproveVariance: (!!user?.is_finance_manager || user?.role === 'admin') && canFeature('accounts', 'purchase_invoices', 'variance_approval', 'approve'), setup, ledgers, rates, vendors, pos }
+  const ctx = { userId: user?.id, canApproveVariance: !!user?.is_finance_manager && canFeature('accounts', 'purchase_invoices', 'variance_approval', 'approve'), setup, ledgers, rates, vendors, pos }
   return (
     <div>
       <FinanceNav />

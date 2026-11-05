@@ -769,8 +769,12 @@ def _tab_action(tt: TransactionType | None, decision: str) -> str:
 def decide(db: Session, request_id: int, user: User, decision: str, comment: str | None = None,
            *, only_step_id: int | None = None) -> ApprovalRequest:
     """only_step_id (approval email link): decide exactly that step, never the
-    stage after it nor as an admin stand-in — a second click of the same link
-    must not approve the next stage once the first click activated it."""
+    stage after it — a second click of the same link must not approve the next
+    stage once the first click activated it.
+
+    Only the named approver, their delegate or an escalation / "also allowed"
+    holder decides. Being a portal admin is never enough (owner, 2026-11-04):
+    an admin moves a stuck step to someone else with reassign_step()."""
     if decision not in ("approve", "reject", "return"):
         raise HTTPException(status_code=422, detail="Decision must be approve, reject or return.")
     comment = (comment or "").strip() or None
@@ -791,42 +795,38 @@ def decide(db: Session, request_id: int, user: User, decision: str, comment: str
         if via:
             step = s
             break
-    if step is None and is_admin_user(user) and pending and only_step_id is None:
-        if not comment:
-            raise HTTPException(status_code=422, detail="You're not an approver of this stage — as an admin you can stand in, "
-                                                        "but write a comment saying why.")
-        step, via = pending[0], "admin"
     if step is None:
         names = ", ".join(sorted({s.approver.name for s in pending if s.approver}))
         stage = pending[0].stage_name if pending else ""
+        hint = (" Being an admin does not let you decide it. If the approver is away or has left, use "
+                "'Reassign approver' to hand this step to someone else." if is_admin_user(user) else "")
         raise HTTPException(status_code=403, detail=f"This request is waiting for {names or 'someone else'} at stage '{stage}' "
-                                                    "— you're not an approver of it (nor their delegate).")
-    # Different person per stage binds admin stand-ins too.
+                                                    f"— you're not an approver of it (nor their delegate).{hint}")
+    # Different person per stage.
     if wf.distinct_approvers and any(
         s.decided_by_id == user.id and s.sequence != step.sequence and s.status == "approved" for s in req.steps
     ):
         raise HTTPException(status_code=403, detail="You already approved an earlier stage of this request — "
                                                     "each stage needs a different person.")
-    # Four-eyes binds admin stand-ins too: nobody approves their own document.
+    # Four-eyes: nobody approves their own document.
     if decision == "approve" and not wf.allow_self_approval:
         if req.requester_id == user.id:
             raise HTTPException(status_code=403, detail="You can't approve your own request — someone else has to (four-eyes rule).")
         if user.id in ((req.context or {}).get("_excluded_user_ids") or []):
             raise HTTPException(status_code=403, detail="You prepared or own this document, so you can't approve it — "
                                                         "someone else has to (four-eyes rule).")
-    if via != "admin":
-        if wf.require_permission and tt is not None:
-            action = _tab_action(tt, decision)
-            if not _can_decide(user, tt, action):
-                feat = MODULES[tt.module_key].get("features", {}).get(tt.subtab_key, {}).get(tt.feature_key or "")
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"You're the approver, but you don't hold the '{action_word(action)}' permission on "
-                           f"{MODULES[tt.module_key]['label']} › {MODULES[tt.module_key]['subtabs'][tt.subtab_key]}"
-                           f"{f' › ' + feat['label'] if feat else ''}. Ask an admin to add it to your role "
-                           "(Organization › Role & Permissions).",
-                )
-    if tt is not None and tt.validate_decision is not None and via != "admin":
+    if wf.require_permission and tt is not None:
+        action = _tab_action(tt, decision)
+        if not _can_decide(user, tt, action):
+            feat = MODULES[tt.module_key].get("features", {}).get(tt.subtab_key, {}).get(tt.feature_key or "")
+            raise HTTPException(
+                status_code=403,
+                detail=f"You're the approver, but you don't hold the '{action_word(action)}' permission on "
+                       f"{MODULES[tt.module_key]['label']} › {MODULES[tt.module_key]['subtabs'][tt.subtab_key]}"
+                       f"{f' › ' + feat['label'] if feat else ''}. Ask an admin to add it to your role "
+                       "(Organization › Role & Permissions).",
+            )
+    if tt is not None and tt.validate_decision is not None:
         tt.validate_decision(db, req, step, user, decision)
     if decision == "approve" and not comment and tt is not None and tt.comment_required_on_approve:
         raise HTTPException(status_code=422, detail=f"Write a comment with your approval — {tt.label} approvals need one "
@@ -904,6 +904,10 @@ def reassign_pending(db: Session, from_user_id: int, to_user_id: int, actor: Use
     )
     # Nor to someone barred as the document's preparer / owner (decide() would refuse them).
     steps = [st for st in steps if to_user_id not in ((st.request.context or {}).get("_excluded_user_ids") or [])]
+    # Nor a second place in a stage they already hold (an "every one" stage would pass with one person).
+    steps = [st for st in steps if not any(
+        o.id != st.id and o.sequence == st.sequence and o.approver_id == to_user_id and o.status in ("waiting", "pending")
+        for o in st.request.steps)]
     for step in steps:
         step.approver_id = to_user_id
         req = step.request
@@ -916,6 +920,76 @@ def reassign_pending(db: Session, from_user_id: int, to_user_id: int, actor: Use
             _queue_mail(db, step, [to_user_id])
     db.flush()
     return len(steps)
+
+
+def reassign_step(db: Session, request_id: int, step_id: int, to_user_id: int, actor: User, reason: str) -> ApprovalRequest:
+    """Admin only: hand ONE open step of a pending request to another person
+    (approver away / left). The admin never decides it — the new approver does.
+    Audited with the reason; the new approver is notified and mailed. Does not commit."""
+    if not is_admin_user(actor):
+        raise HTTPException(status_code=403, detail="Only a portal admin can reassign an approval step. Ask an admin, "
+                                                    "or ask the approver to set up a delegation in My Approvals.")
+    reason = (reason or "").strip()
+    if not reason:
+        raise HTTPException(status_code=422, detail="Write why you are reassigning this approval (e.g. 'approver on leave "
+                                                    "till 20 Nov') — it goes on the approval trail.")
+    req = _get_request(db, request_id, lock=True)
+    if req.status != "pending":
+        raise HTTPException(status_code=409, detail=f"This request is already {req.status} — there is nothing left to reassign. Reload the page.")
+    if actor.id == req.requester_id or actor.id in ((req.context or {}).get("_excluded_user_ids") or []):
+        raise HTTPException(status_code=403, detail="You raised or prepared this document, so you can't choose who approves it. "
+                                                    "Ask another admin to reassign it.")
+    step = next((s for s in req.steps if s.id == step_id), None)
+    if step is None or step.status not in ("waiting", "pending"):
+        raise HTTPException(status_code=409, detail="This step was already decided or moved on — reload the page to see who it waits for now.")
+    if to_user_id == actor.id:
+        raise HTTPException(status_code=422, detail="You can't reassign an approval to yourself — an admin hands it to "
+                                                    "someone else and never decides it. Pick another person.")
+    target = db.get(User, to_user_id)
+    if target is None or not target.is_active:
+        raise HTTPException(status_code=422, detail="That person is not an active portal user. Pick someone who can sign in.")
+    if target.id == step.approver_id:
+        raise HTTPException(status_code=422, detail=f"{target.name} is already the approver of this step. Pick someone else.")
+    from app.modules.hr.services.exit_guard import is_exited  # local: keeps organization ↔ hr imports one-way
+    if is_exited(db, target.id):
+        raise HTTPException(status_code=422, detail=f"{target.name} has been exited in HR. Pick someone who is still with the company.")
+    if any(s.id != step.id and s.sequence == step.sequence and s.approver_id == target.id
+           and s.status in ("waiting", "pending") for s in req.steps):
+        raise HTTPException(status_code=422, detail=f"{target.name} already holds another approval in the '{step.stage_name}' "
+                                                    "stage — one person can't fill two places of the same stage. Pick someone else.")
+    if any(d.delegate_id == actor.id for d in _delegations_from(db, target.id, req.workflow_key, req.module_key)):
+        raise HTTPException(status_code=422, detail=f"{target.name} has delegated their approvals to you, so the step would "
+                                                    "come back to you. Pick someone else.")
+    wf = ensure_workflow(db, req.workflow_key)
+    if not wf.allow_self_approval and (
+        req.requester_id == target.id or target.id in ((req.context or {}).get("_excluded_user_ids") or [])
+    ):
+        raise HTTPException(status_code=422, detail=f"{target.name} raised or prepared this document, so they can't approve "
+                                                    "it (four-eyes rule). Pick someone else.")
+    if wf.distinct_approvers and any(
+        s.decided_by_id == target.id and s.sequence != step.sequence and s.status == "approved" for s in req.steps
+    ):
+        raise HTTPException(status_code=422, detail=f"{target.name} already approved an earlier stage of this request and "
+                                                    "each stage needs a different person. Pick someone else.")
+    tt = _TYPES.get(req.workflow_key)
+    if wf.require_permission and tt is not None and not _can_decide(target, tt, "approve"):
+        raise HTTPException(status_code=422, detail=f"{target.name} doesn't hold Approve on "
+                                                    f"{MODULES[tt.module_key]['label']} › {MODULES[tt.module_key]['subtabs'][tt.subtab_key]}, "
+                                                    "so they could not decide it. Give them that permission in Organization › "
+                                                    "Role & Permissions first, or pick someone who has it.")
+    old_name = step.approver.name if step.approver else "nobody"
+    step.approver_id = target.id
+    _audit(db, req, actor, "approval_reassigned",
+           f"{actor.name} (admin) moved the '{step.stage_name}' approval of {req.reference or req.title} "
+           f"from {old_name} to {target.name}: {reason}")
+    if step.status == "pending":
+        _notify(db, [target.id], f"Approval needed: {req.title}",
+                f"{req.reference or req.title} was handed over to you for approval ({step.stage_name}) by {actor.name}: {reason}",
+                req, teams=True)
+        _queue_mail(db, step, [target.id])
+    db.flush()
+    db.refresh(step)
+    return req
 
 
 # ── Read side ────────────────────────────────────────────────────────────
@@ -981,7 +1055,11 @@ def request_out(db: Session, req: ApprovalRequest, user: User | None = None, cac
         memo = cache.setdefault("user", {}) if cache is not None else {}
         if "admin" not in memo:
             memo["admin"] = is_admin_user(user)
-        out["can_stand_in"] = memo["admin"] and not out["can_decide"]
+        # Admins never decide by being admin (owner, 2026-11-04); they may hand
+        # an open step to someone else. can_stand_in stays for older clients.
+        out["can_stand_in"] = False
+        out["can_reassign"] = memo["admin"] and user.id != req.requester_id and user.id not in (
+            (req.context or {}).get("_excluded_user_ids") or [])
         can_cancel_type = False
         if tt is not None:
             k = ("cancel", tt.module_key, tt.subtab_key)

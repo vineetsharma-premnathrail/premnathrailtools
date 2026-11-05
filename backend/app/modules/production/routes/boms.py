@@ -850,7 +850,7 @@ async def activate_bom(
     try:
         req = submit_and_self_approve(
             db, BOM_KEY, entity_id=bom.id, requester=user, title=f"BOM {bom.bom_number} v{bom.version} activation",
-            reference=bom.bom_number, admin_note="Activated directly by an admin",
+            reference=bom.bom_number,
         )
     except HTTPException:
         db.rollback()

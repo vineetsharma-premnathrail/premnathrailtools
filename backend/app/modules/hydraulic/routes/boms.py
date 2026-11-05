@@ -252,11 +252,7 @@ async def submit_bom(
     req = access.submit(db, access.BOM_KEY, access.BOM_PERM, entity_id=bom.id, user=user, title=s["title"],
                         reference=s["reference"], context=s["context"], amount=s["amount"])
     if req is None:
-        raise HTTPException(
-            status_code=422,
-            detail="Nobody else can approve BOM releases yet — grant 'Hydraulic & Pneumatic › BOM › Approve' to a reviewer "
-                   "in Organization › Role & Permissions, or ask an admin to release it.",
-        )
+        raise access.nobody_approves(access.BOM_PERM)
     access.notify_hyd_event(
         db, background_tasks, "bom_submitted", bom, access.BOM_ENTITY,
         title=f"BOM {bom.bom_number} Rev {bom.revision} waiting for release",

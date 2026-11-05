@@ -144,3 +144,57 @@ def test_notification_rule_sends_bell_to_selected_users(client, db):
 
     client.patch(f"{API}/projects/{project['id']}", json={"delivery_date": "2026-10-01"}, headers=h(creator))
     assert q.filter(Notification.user_id == watcher.id, Notification.notification_type == "erp_rule_dispatch").count() == 1
+
+
+# ── Admin is not an approver just because they are admin (owner decision 2026-11-04) ──
+
+def test_admin_cannot_close_sr_around_the_approvers(client, db):
+    admin = make_user(db, "svc_admin6@premnathrail.com", role="admin")
+    approver = make_user(db, "svc_closer2@premnathrail.com")
+    eng = make_user(db, "svc_eng2@premnathrail.com", erp_permissions=["project_create", "sr_create", "sr_edit"])
+    save(client, admin, {"sr_close_approval_required": True})
+    set_approvers(client, admin, "erp.sr_closure", [approver.id])
+    project = client.post(f"{API}/projects", json={"serial_number": "SN-CLOSE-ADM"}, headers=h(eng)).json()
+    sr = client.post(f"{API}/service-requests", json={"project_id": project["id"], "issue_title": "Leak",
+                                                       "service_type": "repair_breakdown"}, headers=h(eng)).json()
+    client.patch(f"{API}/service-requests/{sr['id']}", json={"resolution_description": "Seal replaced"}, headers=h(eng))
+    r = client.patch(f"{API}/service-requests/{sr['id']}", json={**CLOSE_READY, "status": "closed"}, headers=h(admin))
+    assert r.status_code == 403
+    assert "admin cannot close" in r.json()["detail"] and "Review" in r.json()["detail"]
+    # The admin may still send it for review; the named approver (not the admin) decides.
+    r = client.patch(f"{API}/service-requests/{sr['id']}", json={**CLOSE_READY, "status": "review"}, headers=h(admin))
+    assert r.status_code == 200, r.text
+    r = client.post(f"{API}/service-requests/{sr['id']}/approve-close", json={}, headers=h(admin))
+    assert r.status_code in (403, 422), r.text
+    assert client.get(f"{API}/service-requests/{sr['id']}", headers=h(admin)).json()["status"] == "review"
+
+
+def test_default_machine_and_sr_closure_workflows_name_partners_not_admins():
+    from app.modules.erp import access as erp_access
+    from app.modules.organization.services import approval_engine as engine
+    for key in (erp_access.MACHINE_KEY, erp_access.SR_CLOSE_KEY):
+        stages = engine.get_type(key).default_stages
+        assert [s.approver_rule for s in stages] == ["partner"], key
+        assert not any(s.rule_config.get("field") == "admin_ids" for s in stages)
+
+
+def test_new_machine_default_workflow_asks_the_partner_and_fails_clearly_without_one(client, db):
+    admin = make_user(db, "svc_admin7@premnathrail.com", role="admin")
+    creator = make_user(db, "svc_creator7@premnathrail.com", erp_permissions=["project_create", "project_edit"])
+    save(client, admin, {"project_approval_required": True})
+    # No Partner and no stored workflow: a real reason, not an admin approving or a silent bypass.
+    r = client.post(f"{API}/projects", json={"serial_number": "SN-DEF-1"}, headers=h(creator))
+    assert r.status_code == 422, r.text
+    assert "Partner" in r.json()["detail"]
+    partner = make_user(db, "svc_partner7@premnathrail.com")
+    partner.is_partner = True
+    db.commit()
+    r = client.post(f"{API}/projects", json={"serial_number": "SN-DEF-2"}, headers=h(creator))
+    assert r.status_code == 201, r.text
+    project = r.json()
+    assert project["approval_status"] == "pending"
+    assert db.query(Notification).filter(Notification.user_id == partner.id, Notification.entity_id == project["id"]).count() == 1
+    assert db.query(Notification).filter(Notification.user_id == admin.id, Notification.entity_id == project["id"]).count() == 0
+    # The admin does not decide it either.
+    assert client.post(f"{API}/projects/{project['id']}/approve", json={}, headers=h(admin)).status_code == 403
+    assert client.post(f"{API}/projects/{project['id']}/approve", json={}, headers=h(partner)).json()["approval_status"] == "approved"
