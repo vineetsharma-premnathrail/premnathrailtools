@@ -483,6 +483,7 @@ from app.core.reporting.router import router as reporting_router
 from app.modules.rnd.routes import settings as rnd_settings_routes
 from app.modules.rnd.routes import tasks as rnd_tasks_routes
 from app.modules.rnd.tasks.review_reminders import send_review_reminders
+from app.modules.rnd.tasks.task_reminders import send_task_reminders
 from app.modules.organization.routes import company as organization_company_routes
 from app.modules.organization.routes import branch as organization_branch_routes
 from app.modules.organization.routes import department as organization_department_routes
@@ -906,6 +907,12 @@ async def startup():
         send_review_reminders,  # R&D requirements waiting for Accept / Return
         CronTrigger(hour=9, minute=40),
         id="rnd_review_reminders",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        send_task_reminders,  # R&D tasks due tomorrow / today / overdue (assignee; escalation to giver + R&D heads)
+        CronTrigger(hour=9, minute=45),
+        id="rnd_task_reminders",
         replace_existing=True,
     )
     scheduler.add_job(

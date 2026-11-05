@@ -259,6 +259,31 @@ register_direct(
     "a requirement sent by BD has waited for acceptance beyond the reminder days",
     default_channels=("bell", "teams"), kind="reminder",
 )
+# R&D task due / overdue (modules/rnd/tasks/task_reminders.py) — requirement and project tasks.
+register_direct(
+    "rnd", "rnd_task_due_soon", "R&D task due tomorrow",
+    "The task's assignee",
+    "an open R&D task (requirement or project) is due tomorrow",
+    default_channels=("bell", "teams"), kind="reminder",
+)
+register_direct(
+    "rnd", "rnd_task_due_today", "R&D task due today",
+    "The task's assignee",
+    "an open R&D task (requirement or project) is due today",
+    default_channels=("bell", "teams"), kind="reminder",
+)
+register_direct(
+    "rnd", "rnd_task_overdue", "R&D task overdue",
+    "The task's assignee",
+    "an open R&D task is past its due date — every day until it is submitted or re-dated",
+    default_channels=("bell", "teams"), kind="reminder",
+)
+register_direct(
+    "rnd", "rnd_task_overdue_escalated", "Team R&D task overdue",
+    "Whoever gave the task and the R&D head(s)",
+    "an open R&D task has been overdue for 2 or more days — every 3 days",
+    default_channels=("bell", "teams"), kind="reminder",
+)
 
 # ── Store ────────────────────────────────────────────────────────────────────
 register_direct(

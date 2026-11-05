@@ -37,6 +37,7 @@ JOB_INFO: dict[str, dict] = {
     "access_governance_daily": {"label": "Access expiry + review reminders", "idempotent": True},
     "basis_log_prune": {"label": "Prune job runs, errors, denials > 90 days", "idempotent": True},
     "rnd_review_reminders": {"label": "R&D requirement review reminders", "idempotent": True},
+    "rnd_task_reminders": {"label": "R&D task due / overdue reminders", "idempotent": True},
 }
 
 _FUNCS: dict[str, callable] = {}
