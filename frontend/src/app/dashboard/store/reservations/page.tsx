@@ -329,7 +329,7 @@ export default function StoreStockReservationsPage() {
                           <td style={{ padding: 6, fontSize: 12, color: TEXT.muted, width: 28 }}>{idx + 1}</td>
                           <td style={{ padding: 6, minWidth: 280 }}>
                             <div {...(idx === 0 ? { 'data-tour': 'res-item' } : {})}>
-                              <SearchableSelect value={line.itemId} onChange={(v) => updateLine(idx, { itemId: v })} placeholder="Search item code or name…" options={itemOptions} />
+                              <SearchableSelect value={line.itemId} onChange={(v) => updateLine(idx, { itemId: v })} placeholder="Search code, name or technical details…" options={itemOptions} />
                             </div>
                           </td>
                           <td style={{ padding: 6, width: 120 }}>

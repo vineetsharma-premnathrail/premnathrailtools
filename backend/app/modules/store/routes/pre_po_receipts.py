@@ -151,11 +151,14 @@ async def create_pre_po_receipt(
                 f"{'heat / batch numbers and mill TC' if kind == 'batch-tracked' else 'serial numbers'}. Leave it off this receipt and record it "
                 "with a GRN once its PO exists, or ask the Store manager to receive it."))
 
+    if payload.vendor_invoice_date and payload.vendor_invoice_date > payload.received_date:
+        raise HTTPException(status_code=422, detail="The invoice date is after the date the goods were received - check the date printed on the vendor's bill, or correct the Received on date.")
     receipt = StorePrePoReceipt(
         receipt_number=generate_receipt_number(db), vendor_id=vendor.id, vendor_name=vendor.name,
         received_date=payload.received_date, store_location_id=location_id,
         delivery_challan_number=(payload.delivery_challan_number or "").strip() or None,
         vendor_invoice_number=(payload.vendor_invoice_number or "").strip() or None,
+        vendor_invoice_date=payload.vendor_invoice_date,
         remarks=(payload.remarks or "").strip() or None, status="pending_po", created_by_id=user.id,
     )
     for line in payload.items:

@@ -229,7 +229,7 @@ export default function NewMaterialReturnPage() {
               <div style={{ flex: '1 1 260px' }}>
                 {idx === 0 && <label style={sheetLabel}>Item <Req /></label>}
                 <div {...(idx === 0 ? { 'data-tour': 'return-item' } : {})}>
-                  <SearchableSelect value={line.itemId} onChange={(v) => updateLine(idx, { itemId: v })} placeholder="Search item code or name…"
+                  <SearchableSelect value={line.itemId} onChange={(v) => updateLine(idx, { itemId: v })} placeholder="Search code, name or technical details…"
                     options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, description: itemOptionDetail(i) }))} />
                 </div>
               </div>

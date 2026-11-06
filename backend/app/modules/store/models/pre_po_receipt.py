@@ -30,6 +30,7 @@ class StorePrePoReceipt(Base, TimestampMixin):
     store_location_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("store_locations.id"), nullable=True)
     delivery_challan_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     vendor_invoice_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    vendor_invoice_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="pending_po", server_default="pending_po", nullable=False)
     p2p_request_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("p2p_requests.id"), nullable=True, index=True)

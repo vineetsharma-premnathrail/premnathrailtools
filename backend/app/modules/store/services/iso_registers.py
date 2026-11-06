@@ -385,11 +385,12 @@ def inward_rows(db: Session, user, *, date_from: date, date_to: date, location_i
         for r in receipts:
             loc = locs.get(r.store_location_id)
             challan = r.delivery_challan_number or r.vendor_invoice_number
+            challan_date = None if r.delivery_challan_number else r.vendor_invoice_date
             for line in sorted(r.items, key=lambda l: l.id):
                 out.append({
                     "date": r.received_date, "number": r.receipt_number, "party": r.vendor_name,
                     "article": _desc(items.get(line.store_item_id), line.item_name), "challan": challan,
-                    "challan_date": None, "qty": _qty_text(line.quantity, line.unit), "vehicle": None,
+                    "challan_date": challan_date, "qty": _qty_text(line.quantity, line.unit), "vehicle": None,
                     "from": cities.get(r.vendor_id) if r.vendor_id else None,
                     "store": loc.name if loc else None,
                     "remarks": " · ".join(x for x in (f"Before-PO receipt {r.receipt_number}", line.remarks) if x),

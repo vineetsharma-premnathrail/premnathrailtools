@@ -46,6 +46,7 @@ export interface PrePoReceipt {
   store_location_name?: string | null
   delivery_challan_number?: string | null
   vendor_invoice_number?: string | null
+  vendor_invoice_date?: string | null
   remarks?: string | null
   status: PrePoStatus
   /** True when saving this receipt put the goods into stock (false on receipts made before 2026-11-06). */
@@ -73,6 +74,7 @@ export interface PrePoReceiptCreate {
   store_location_id?: number
   delivery_challan_number?: string
   vendor_invoice_number?: string
+  vendor_invoice_date?: string
   remarks?: string
   items: { store_item_id: number; quantity: number; unit_rate?: number; remarks?: string }[]
 }

@@ -25,6 +25,7 @@ class PrePoReceiptCreate(BaseModel):
     store_location_id: int | None = None
     delivery_challan_number: str | None = Field(default=None, max_length=100)
     vendor_invoice_number: str | None = Field(default=None, max_length=100)
+    vendor_invoice_date: date | None = None
     remarks: str | None = Field(default=None, max_length=2000)
     items: list[PrePoReceiptItemCreate] = Field(min_length=1)
 
@@ -78,6 +79,7 @@ class PrePoReceiptResponse(BaseModel):
     store_location_name: str | None = None
     delivery_challan_number: str | None = None
     vendor_invoice_number: str | None = None
+    vendor_invoice_date: date | None = None
     remarks: str | None = None
     status: str
     p2p_request_id: int | None = None

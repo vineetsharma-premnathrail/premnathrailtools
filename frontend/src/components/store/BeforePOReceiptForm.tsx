@@ -10,6 +10,7 @@ import { storeApi, vendorsApi } from '@/lib/api'
 import { prePoStoreApi, PrePoReceipt } from '@/lib/prePoApi'
 import { ProcurementVendor, StoreItem, StoreLocation } from '@/types'
 import { extractErrorMessages } from '@/lib/validation'
+import { itemOptionDetail } from '@/lib/itemOptions'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import Select from '@/components/shared/Select'
@@ -19,14 +20,13 @@ import { useAuthStore } from '@/store/authStore'
 import DraftBanner from '@/components/shared/DraftBanner'
 import { FormSheet, SheetSection, SheetIcon, SheetError, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
-type Line = { type: string; category: string; itemId: string; quantity: string; rate: string; remarks: string }
-const emptyLine = (): Line => ({ type: '', category: '', itemId: '', quantity: '', rate: '', remarks: '' })
+type Line = { itemId: string; quantity: string; rate: string; remarks: string }
+const emptyLine = (): Line => ({ itemId: '', quantity: '', rate: '', remarks: '' })
 // Item types a Before PO receipt may carry: the "stock" purpose's types (backend
 // p2p/purpose.py PURPOSE_ITEM_TYPES); types Store added beyond the standard five stay offered.
 const STANDARD_ITEM_TYPES = ['material', 'service', 'asset', 'consumable', 'tool_equipment']
 const STOCK_TYPES = ['material', 'consumable', 'tool_equipment']
 const typeFits = (t: string | null | undefined) => !STANDARD_ITEM_TYPES.includes(t || '') || STOCK_TYPES.includes(t || '')
-const typeLabel = (t: string) => { const s = t.replace(/_/g, ' '); return s.charAt(0).toUpperCase() + s.slice(1) }
 
 export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () => void; onSaved: (r: PrePoReceipt, note?: string) => void }) {
   const [vendors, setVendors] = useState<ProcurementVendor[]>([])
@@ -38,16 +38,17 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
   const [locationId, setLocationId] = useState('')
   const [challan, setChallan] = useState('')
   const [invoice, setInvoice] = useState('')
+  const [invoiceDate, setInvoiceDate] = useState('')
   const [remarks, setRemarks] = useState('')
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null)
   const [challanFile, setChallanFile] = useState<File | null>(null)
   const [lines, setLines] = useState<Line[]>([emptyLine()])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
-  const draft = useFormDraft('store-before-po-receipt-new', { vendorId, receivedDate, locationId, challan, invoice, remarks, lines }, (d) => {
+  const draft = useFormDraft('store-before-po-receipt-new', { vendorId, receivedDate, locationId, challan, invoice, invoiceDate, remarks, lines }, (d) => {
     setVendorId(d.vendorId ?? ''); setReceivedDate(d.receivedDate || new Date().toLocaleDateString('en-CA')); setLocationId(d.locationId ?? '')
-    setChallan(d.challan ?? ''); setInvoice(d.invoice ?? ''); setRemarks(d.remarks ?? '')
-    setLines(d.lines?.length ? d.lines.map((l: Partial<Line>) => ({ ...emptyLine(), ...l })) : [emptyLine()])
+    setChallan(d.challan ?? ''); setInvoice(d.invoice ?? ''); setInvoiceDate(d.invoiceDate ?? ''); setRemarks(d.remarks ?? '')
+    setLines(d.lines?.length ? d.lines.map((l: Partial<Line>) => ({ itemId: l.itemId ?? '', quantity: l.quantity ?? '', rate: l.rate ?? '', remarks: l.remarks ?? '' })) : [emptyLine()])
   })
 
   useEffect(() => {
@@ -68,12 +69,8 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
     if (lockedStore && locationId !== String(lockedStore.id)) setLocationId(String(lockedStore.id))
   }, [lockedStore, locationId])
 
-  const itemTypeOptions = (() => {
-    const present = Array.from(new Set(items.map((i) => i.item_type || '').filter(Boolean)))
-    return [...STOCK_TYPES.filter((t) => !present.length || present.includes(t)), ...present.filter((t) => !STANDARD_ITEM_TYPES.includes(t)).sort()]
-  })()
-  const categoriesForType = (type: string) =>
-    Array.from(new Set(items.filter((i) => (!type ? typeFits(i.item_type) : i.item_type === type)).map((i) => i.category || '').filter(Boolean))).sort()
+  // One search over every stock item (code, name and technical details) - no type / category steps (owner, 2026-11-06).
+  const stockItems = items.filter((i) => typeFits(i.item_type))
 
   const setLine = (idx: number, patch: Partial<Line>) => setLines((ls) => ls.map((l, i) => (i === idx ? { ...l, ...patch } : l)))
   const usedIds = new Set(lines.map((l) => l.itemId).filter(Boolean))
@@ -88,6 +85,7 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
         : 'No store is linked to you, so goods cannot be booked. Ask an admin to make you the manager of your store in Store › Settings › Stores.')
       return
     }
+    if (invoiceDate && invoiceDate > receivedDate) { setError('The invoice date is after the date the goods were received — check the date printed on the vendor’s bill, or correct the Received on date.'); return }
     const filled = lines.filter((l) => l.itemId || l.quantity)
     if (!filled.length) { setError('Add at least one item with its quantity.'); return }
     for (const l of filled) {
@@ -104,6 +102,7 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
         store_location_id: locationId ? Number(locationId) : undefined,
         delivery_challan_number: challan.trim() || undefined,
         vendor_invoice_number: invoice.trim() || undefined,
+        vendor_invoice_date: invoiceDate || undefined,
         remarks: remarks.trim() || undefined,
         items: filled.map((l) => ({ store_item_id: Number(l.itemId), quantity: Number(l.quantity), unit_rate: l.rate.trim() !== '' ? Number(l.rate) : undefined, remarks: l.remarks.trim() || undefined })),
       })
@@ -168,6 +167,10 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
               <label style={sheetLabel}>Vendor invoice no. <Optional /></label>
               <input style={sheetInput} value={invoice} onChange={(e) => setInvoice(e.target.value)} maxLength={100} placeholder="As on the bill" />
             </div>
+            <div style={{ flex: '0 1 180px', minWidth: 160 }}>
+              <label style={sheetLabel}>Invoice date <Optional /></label>
+              <DateField value={invoiceDate} onChange={setInvoiceDate} />
+            </div>
           </div>
           <div style={{ marginTop: 14 }}>
             <label style={sheetLabel}>Remarks <Optional /></label>
@@ -195,34 +198,13 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
               {lines.map((line, idx) => {
                 const it = itemOf(line.itemId)
                 const last = idx === lines.length - 1
-                // Pick the type, then the category, then the item (same as the PR form). A line
-                // that already holds an item shows that item's type / category.
-                const lineType = line.type || (it?.item_type && itemTypeOptions.includes(it.item_type) ? it.item_type : '')
-                const lineCategory = line.category || (it && it.item_type === lineType ? it.category || '' : '')
-                const lineCats = categoriesForType(lineType)
-                const itemReady = !!line.itemId || (!!lineType && (!!lineCategory || lineCats.length === 0))
-                const shown = items.filter((i) => String(i.id) === line.itemId
-                  || ((lineType ? i.item_type === lineType : typeFits(i.item_type)) && (!lineCategory || i.category === lineCategory)))
                 return (
                   <div key={idx} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 10, flexWrap: 'wrap' }}>
-                    <div style={{ flex: '0 0 140px' }}>
-                      {idx === 0 && <label style={sheetLabel}>Type <Req /></label>}
-                      <SearchableSelect ariaLabel={`Item type, line ${idx + 1}`} value={lineType} placeholder="1. Type"
-                        onChange={(type) => setLine(idx, { type, category: categoriesForType(type).includes(line.category) ? line.category : '', itemId: it && it.item_type !== type ? '' : line.itemId })}
-                        options={itemTypeOptions.map((t) => ({ value: t, label: typeLabel(t) }))} />
-                    </div>
-                    <div style={{ flex: '0 0 150px' }}>
-                      {idx === 0 && <label style={sheetLabel}>Category</label>}
-                      <SearchableSelect ariaLabel={`Category, line ${idx + 1}`} value={lineCategory} disabled={!lineType}
-                        placeholder={lineType ? (lineCats.length ? '2. Category' : 'No categories') : 'Pick the type first'}
-                        onChange={(category) => setLine(idx, { type: lineType, category, itemId: it && it.category !== category ? '' : line.itemId })}
-                        options={lineCats.map((c) => ({ value: c, label: c }))} />
-                    </div>
-                    <div style={{ flex: '1 1 260px', minWidth: 200 }}>
+                    <div style={{ flex: '1 1 340px', minWidth: 240 }}>
                       {idx === 0 && <label style={sheetLabel}>Item (Item Master) <Req /></label>}
-                      <SearchableSelect ariaLabel={`Item, line ${idx + 1}`} value={line.itemId} onChange={(v) => setLine(idx, { itemId: v })} disabled={!itemReady}
-                        placeholder={!itemReady ? (lineType ? 'Pick the category first' : 'Pick the type first') : `3. Search ${shown.length} item${shown.length === 1 ? '' : 's'}…`}
-                        options={shown.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, disabled: usedIds.has(String(i.id)) && String(i.id) !== line.itemId }))} />
+                      <SearchableSelect ariaLabel={`Item, line ${idx + 1}`} value={line.itemId} onChange={(v) => setLine(idx, { itemId: v })}
+                        placeholder="Search code, name or technical details…"
+                        options={stockItems.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, description: itemOptionDetail(i), disabled: usedIds.has(String(i.id)) && String(i.id) !== line.itemId }))} />
                     </div>
                     <div style={{ flex: '0 0 100px' }}>
                       {idx === 0 && <label style={sheetLabel}>Quantity <Req /></label>}
@@ -247,7 +229,7 @@ export default function BeforePOReceiptForm({ onClose, onSaved }: { onClose: () 
                 )
               })}
             </div>
-            <p style={sheetHint}>Pick the type, then the category, then the Item Master item, so Procurement&apos;s PO carries the same item. An item can be on one line only. Batch- or serial-controlled items cannot be booked here — record those with a GRN after the PO.</p>
+            <p style={sheetHint}>Search the Item Master item by code, name or technical details, so Procurement&apos;s PO carries the same item. An item can be on one line only. Batch- or serial-controlled items cannot be booked here — record those with a GRN after the PO.</p>
           </SheetSection>
         </div>
       </div>

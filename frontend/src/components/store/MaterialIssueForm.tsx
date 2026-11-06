@@ -102,6 +102,13 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
   const [remarks, setRemarks] = useState('')
   const [projects, setProjects] = useState<{ id: number; label: string; third_party_inspection_required: boolean; inspection_agency?: string | null }[]>([])
   const [lines, setLines] = useState<Line[]>([emptyLine()])
+  const [storeHasBins, setStoreHasBins] = useState(false)
+  useEffect(() => {
+    let live = true
+    if (!locationId) { Promise.resolve().then(() => { if (live) setStoreHasBins(false) }); return () => { live = false } }
+    storeApi.listBins(Number(locationId)).then((b: { is_active?: boolean }[]) => { if (live) setStoreHasBins(b.some((x) => x.is_active !== false)) }).catch(() => { if (live) setStoreHasBins(false) })
+    return () => { live = false }
+  }, [locationId])
   const [backLines, setBackLines] = useState<BackLine[]>([emptyBack()])
 
   const [balances, setBalances] = useState<Map<number, Avail>>(new Map())
@@ -341,7 +348,11 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
       )}
     </SheetSection>
   )
-  const lineHeaders = ['#', 'Item', 'Quantity', 'Available in store', 'Batch / bin / serial', 'Remarks', ''].filter(showLineCol)
+  // Batch / bin / serial only when it means something (owner, 2026-11-06): a picked item is
+  // batch- or serial-controlled, or the store has bins. Otherwise the column stays off.
+  const trackedItem = lines.some((l) => { const it = items.find((i) => String(i.id) === l.itemId); return !!(it?.batch_controlled || it?.serial_controlled) })
+  const showTrack = vis.preview || trackedItem || storeHasBins
+  const lineHeaders = ['#', 'Item', 'Quantity', 'Available in store', 'Batch / bin / serial', 'Remarks', ''].filter((h) => showLineCol(h) && (h !== 'Batch / bin / serial' || showTrack))
 
   return (
     <FormPage nav={vis.preview ? undefined : <StoreNav />} icon={isChallan ? 'truck' : 'box'} title={isChallan ? 'New Job Work Challan' : 'New Material Issue'}
@@ -515,7 +526,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
                     <td style={{ padding: '6px', fontSize: 12, color: TEXT.muted, width: 28 }}>{idx + 1}</td>
                     <td style={{ padding: '6px', minWidth: 260 }}>
                       <div {...(idx === 0 ? { 'data-tour': 'issue-item' } : {})}>
-                        <SearchableSelect value={line.itemId} onChange={(v) => updateLine(idx, { itemId: v })} placeholder="Search item code or name…"
+                        <SearchableSelect value={line.itemId} onChange={(v) => updateLine(idx, { itemId: v })} placeholder="Search code, name or technical details…"
                           options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, description: itemOptionDetail(i) }))} />
                       </div>
                     </td>
@@ -536,19 +547,17 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
                         </>
                       )}
                     </VisTd>
-                    <td style={{ padding: '6px', width: 130 }}>
-                      {item?.batch_controlled && locationId ? (
+                    {showTrack && <td style={{ padding: '6px', width: 130 }}>
+                      {item?.batch_controlled && locationId && (
                         <BatchPicker itemId={item.id} locationId={Number(locationId)} quantity={Number(line.quantity || 0)}
                           value={line.batchNumber} onChange={(v) => updateLine(idx, { batchNumber: v })} />
-                      ) : (
-                        <input style={inputStyle} value={line.batchNumber} onChange={(e) => updateLine(idx, { batchNumber: e.target.value })} />
                       )}
                       {item && locationId && (
                         <BinSerialPicker locationId={Number(locationId)} itemId={item.id} serialised={!!item.serial_controlled}
                           quantity={Number(line.quantity || 0)} binId={line.binId || ''} serials={line.serials || []}
                           onChange={(patch) => updateLine(idx, patch)} />
                       )}
-                    </td>
+                    </td>}
                     <VisTd vis={vis} table="form_items" k="remarks" style={{ padding: '6px', minWidth: 140 }}>
                       <input style={inputStyle} value={line.remarks} onChange={(e) => updateLine(idx, { remarks: e.target.value })} />
                     </VisTd>
@@ -588,7 +597,7 @@ export default function MaterialIssueForm({ challan = false }: { challan?: boole
                       <tr key={idx} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
                         <td style={{ padding: '6px', fontSize: 12, color: TEXT.muted, width: 28 }}>{idx + 1}</td>
                         <td style={{ padding: '6px', minWidth: 260 }}>
-                          <SearchableSelect value={line.itemId} onChange={(v) => updateBack(idx, { itemId: v })} placeholder="Search item code or name…"
+                          <SearchableSelect value={line.itemId} onChange={(v) => updateBack(idx, { itemId: v })} placeholder="Search code, name or technical details…"
                             options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}`, description: itemOptionDetail(i) }))} />
                         </td>
                         <td style={{ padding: '6px', width: 160 }}>

@@ -57,7 +57,8 @@ FIELDS: dict[str, dict] = {
 # leaves_factory → challan required. manager_only → only a Store Manager / admin posts it.
 # remarks_label → remarks are required, with this prompt.
 ISSUE_FORMS: dict[str, dict] = {
-    "production": {"fields": {"project_or_work_order": "optional"}},
+    # Every project / machine (past projects too) can be picked on a production issue (owner, 2026-11-06).
+    "production": {"fields": {"erp_project_id": "optional", "project_or_work_order": "optional"}},
     "maintenance": {"fields": {"maintenance_work_order_id": "one_of:against", "asset_id": "one_of:against"}},
     "project": {"leaves_factory": True, "fields": {
         "erp_project_id": "required", "site_address": "optional", "returnable": "optional",
